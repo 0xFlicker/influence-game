@@ -239,10 +239,20 @@ describe("season admission and state", () => {
 
     const game = (await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0];
     expect(game?.seasonId).toBe(season.id);
-    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
+    const replay = await db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
       gameId,
       userId: owner,
       agentProfileId: profile.id,
+      playerId: randomUUID(),
+    }));
+    expect(replay.replayed).toBe(true);
+
+    const lateOwner = await insertUser(db, "late-boundary-owner");
+    const lateProfile = await createProfile(db, lateOwner, "Late Boundary");
+    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
+      gameId,
+      userId: lateOwner,
+      agentProfileId: lateProfile.id,
       playerId: randomUUID(),
     }))).rejects.toMatchObject({ code: "invalid_state" });
   });

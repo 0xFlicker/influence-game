@@ -27,6 +27,8 @@ import {
   acquireDeploymentAdmissionLease,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
+import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
@@ -190,17 +192,43 @@ function terminalCaptureInput(
 }
 
 async function joinTestPlayer(
+  db: DrizzleDB,
   app: Hono,
   gameId: string,
   name: string,
   token: string,
   personality = "Test personality",
 ) {
+  const savedName = savedAgentName(name);
+  let profile = (await db.select({ id: schema.agentProfiles.id })
+    .from(schema.agentProfiles)
+    .where(and(
+      eq(schema.agentProfiles.userId, REGULAR_USER_ID),
+      eq(schema.agentProfiles.name, savedName),
+    )))[0];
+  if (!profile) {
+    const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
+      name: savedName,
+      personality,
+      strategyStyle: `${savedName} strategy`,
+      personaKey: "honest",
+    });
+    profile = { id: created.profile.id };
+  }
   const res = await app.request(
     `/api/games/${gameId}/join`,
-    json({ agentName: name, personality, personaKey: "honest" }, token),
+    json({ agentProfileId: profile.id }, token),
   );
-  return res.json() as Promise<{ playerId: string }>;
+  const body = await res.json() as { playerId: string };
+  return { ...body, agentProfileId: profile.id, agentName: savedName };
+}
+
+function savedAgentName(name: string): string {
+  const houseNames = new Set([
+    "atlas", "vera", "finn", "mira", "rex", "lyra", "kael", "echo", "sage", "jace",
+    "nyx", "orion", "zara", "riven", "luna", "thane", "iris", "cyrus", "wren", "dax",
+  ]);
+  return houseNames.has(name.trim().toLowerCase()) ? `${name} Player` : name;
 }
 
 async function markGameCompleted(db: DrizzleDB, gameId: string): Promise<void> {
@@ -342,7 +370,7 @@ describe("Game REST API", () => {
     test("POST /api/games/:id/start requires admin", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
       const res = await app.request(`/api/games/${id}/start`, authPost(userToken));
       expect(res.status).toBe(403);
@@ -970,8 +998,8 @@ describe("Game REST API", () => {
 
     test("game summaries keep configured seat count while reporting joined players separately", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Atlas", userToken);
-      await joinTestPlayer(app, id, "Vera", userToken);
+      await joinTestPlayer(db, app, id, "Atlas", userToken);
+      await joinTestPlayer(db, app, id, "Vera", userToken);
 
       const res = await app.request("/api/games");
       const body = (await res.json()) as Array<{ playerCount: number; alivePlayers: number }>;
@@ -1185,8 +1213,8 @@ describe("Game REST API", () => {
           reasoningPolicy: "low",
         },
       });
-      await joinTestPlayer(app, id, "Atlas", userToken, "Strategic calculator");
-      await joinTestPlayer(app, id, "Vera", userToken, "Master manipulator");
+      await joinTestPlayer(db, app, id, "Atlas", userToken, "Strategic calculator");
+      await joinTestPlayer(db, app, id, "Vera", userToken, "Master manipulator");
 
       const res = await app.request(`/api/games/${id}`);
       expect(res.status).toBe(200);
@@ -1206,7 +1234,7 @@ describe("Game REST API", () => {
       expect(body.gameKernelSource).toBe("stored");
       expect(body.gameKernelDiagnostics).toEqual([]);
       expect(body.players).toHaveLength(2);
-      expect(body.players[0]!.name).toBe("Atlas");
+      expect(body.players[0]!.name).toBe("Atlas Player");
       expect(body.modelLabel).toBe("xAI Grok 4.3 · Low");
       expect(body).not.toHaveProperty("modelSelection");
     });
@@ -1645,14 +1673,14 @@ describe("Game REST API", () => {
   describe("GET /api/player/games", () => {
     test("returns only completed game history for the authenticated player", async () => {
       const { id: waitingGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
-      await joinTestPlayer(app, waitingGameId, "Zara Quinn", userToken);
+      await joinTestPlayer(db, app, waitingGameId, "Zara Quinn", userToken);
 
       const { id: inProgressGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
-      await joinTestPlayer(app, inProgressGameId, "Kai Rivers", userToken);
+      await joinTestPlayer(db, app, inProgressGameId, "Kai Rivers", userToken);
       await markGameInProgress(db, inProgressGameId);
 
       const { id: completedGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
-      const { playerId } = await joinTestPlayer(app, completedGameId, "Atlas Vale", userToken);
+      const { playerId } = await joinTestPlayer(db, app, completedGameId, "Atlas Vale", userToken);
       await insertResult(db, completedGameId, { winnerId: playerId, roundsPlayed: 3 });
       await markGameCompleted(db, completedGameId);
 
@@ -1684,35 +1712,29 @@ describe("Game REST API", () => {
   describe("POST /api/games/:id/join", () => {
     test("adds a player to a waiting game", async () => {
       const { id } = await createTestGame(app, adminToken);
-
-      const res = await app.request(
-        `/api/games/${id}/join`,
-        json(
-          {
-            agentName: "Atlas",
-            personality: "Strategic calculator",
-            personaKey: "strategic",
-          },
-          userToken,
-        ),
+      const joined = await joinTestPlayer(
+        db,
+        app,
+        id,
+        "Atlas Player",
+        userToken,
+        "Strategic calculator",
       );
-
-      expect(res.status).toBe(201);
-      const body = (await res.json()) as { playerId: string };
-      expect(body.playerId).toBeTruthy();
+      expect(joined.playerId).toBeTruthy();
 
       // Verify in DB
       const players = await db
         .select()
         .from(schema.gamePlayers);
       expect(players).toHaveLength(1);
-      expect(JSON.parse(players[0]!.persona).name).toBe("Atlas");
+      expect(players[0]!.agentProfileId).toBe(joined.agentProfileId);
+      expect(JSON.parse(players[0]!.persona).name).toBe("Atlas Player");
     });
 
     test("rejects join for non-existent game", async () => {
       const res = await app.request(
         `/api/games/${randomUUID()}/join`,
-        json({ agentName: "Atlas", personality: "Test" }, userToken),
+        json({ agentProfileId: randomUUID() }, userToken),
       );
       expect(res.status).toBe(404);
     });
@@ -1721,13 +1743,13 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
       await app.request(`/api/games/${id}/start`, authPost(adminToken));
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Late", personality: "Too late" }, userToken),
+        json({ agentProfileId: randomUUID() }, userToken),
       );
       expect(res.status).toBe(400);
     });
@@ -1736,28 +1758,61 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
 
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
+
+      const waitingAgent = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
+        name: "Full Waitlist Agent",
+        personality: "Waits for a seat.",
+        strategyStyle: "Join only when capacity is available.",
+        personaKey: "honest",
+      });
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Extra", personality: "No room" }, userToken),
+        json({ agentProfileId: waitingAgent.profile.id }, userToken),
       );
       expect(res.status).toBe(400);
     });
 
-    test("rejects join with missing fields", async () => {
+    test("requires an owned saved agent profile", async () => {
       const { id } = await createTestGame(app, adminToken);
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Atlas" }, userToken),
+        json({ agentName: "Legacy Inline Agent", personality: "No longer accepted" }, userToken),
       );
       expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "agentProfileId is required" });
+    });
+
+    test("rejects an unknown agent profile", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentProfileId: randomUUID() }, userToken),
+      );
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "Agent profile not found" });
+    });
+
+    test("rejects an agent profile owned by another player", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const foreignProfile = await createOwnedAgentProfile(db, { userId: ADMIN_USER_ID }, {
+        name: "Admin Agent",
+        personality: "Owned by the admin",
+      });
+
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentProfileId: foreignProfile.profile.id }, userToken),
+      );
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: "Agent profile does not belong to you" });
     });
 
     test("records userId on game_player", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       const players = await db.select().from(schema.gamePlayers);
       expect(players[0]!.userId).toBe(REGULAR_USER_ID);
@@ -1771,7 +1826,7 @@ describe("Game REST API", () => {
         },
       });
 
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       const players = await db.select().from(schema.gamePlayers);
       const agentConfig = JSON.parse(players[0]!.agentConfig);
@@ -1786,7 +1841,7 @@ describe("Game REST API", () => {
   describe("POST /api/games/:id/fill", () => {
     test("returns fill state for refresh without broadcasting operational player frames", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       const published: Array<{ topic: string; data: string }> = [];
       setServer({
@@ -1841,7 +1896,7 @@ describe("Game REST API", () => {
         },
       });
 
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       const res = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
       expect(res.status).toBe(200);
@@ -1864,7 +1919,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
 
       const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -1885,7 +1940,7 @@ describe("Game REST API", () => {
     test("denies a manual start at the deployment barrier without replaying it", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `DrainingPlayer${i}`, userToken);
+        await joinTestPlayer(db, app, id, `DrainingPlayer${i}`, userToken);
       }
       const acquired = await acquireDeploymentAdmissionLease(db, {
         candidateSha: "2".repeat(40),
@@ -1938,7 +1993,7 @@ describe("Game REST API", () => {
     test("returns typed roster-freeze failures to start clients", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `RatedPlayer${i}`, userToken);
+        await joinTestPlayer(db, app, id, `RatedPlayer${i}`, userToken);
       }
       const season = await createSeason(db, {
         slug: `start-contract-${randomUUID()}`,
@@ -1964,7 +2019,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
 
       const savedEnv = {
@@ -2008,7 +2063,7 @@ describe("Game REST API", () => {
     test("unwinds the exact zero-event owner when synchronous runner startup fails", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `StartupPlayer${i}`, userToken);
+        await joinTestPlayer(db, app, id, `StartupPlayer${i}`, userToken);
       }
       const failingApp = new Hono().route("/", createGameRoutes(db, {
         startGame: async () => {
@@ -2042,7 +2097,7 @@ describe("Game REST API", () => {
     test("rejects start with five players", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 5; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
 
       const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -2055,7 +2110,7 @@ describe("Game REST API", () => {
     test("rejects start for non-waiting game", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
+        await joinTestPlayer(db, app, id, `Player${i}`, userToken);
       }
 
       await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -2211,7 +2266,7 @@ describe("Game REST API", () => {
 
     test("returns transcript entries with player names", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
+      const { playerId } = await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       // Insert transcript entries directly
       await db.insert(schema.transcripts)
@@ -2247,7 +2302,7 @@ describe("Game REST API", () => {
         thinking: string | null;
       }>;
       expect(body).toHaveLength(2);
-      expect(body[0]!.fromPlayerName).toBe("Atlas");
+      expect(body[0]!.fromPlayerName).toBe("Atlas Player");
       expect(body[0]!.scope).toBe("public");
       expect(body[0]!.thinking).toBe("I want viewers to understand my opening posture.");
       expect(body[1]!.fromPlayerName).toBeNull();
@@ -2257,7 +2312,7 @@ describe("Game REST API", () => {
 
     test("omits hidden alliance huddle entries from public transcript export", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
+      const { playerId } = await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       await db.insert(schema.transcripts)
         .values([
@@ -2297,7 +2352,7 @@ describe("Game REST API", () => {
 
     test("transcript entries are ordered by timestamp", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
+      const { playerId } = await joinTestPlayer(db, app, id, "Atlas", userToken);
 
       const now = Date.now();
       await db.insert(schema.transcripts)
@@ -2336,8 +2391,8 @@ describe("Game REST API", () => {
 
     test("whisper entries include parsed toPlayerIds", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas", userToken);
-      const { playerId: p2 } = await joinTestPlayer(app, id, "Vera", userToken);
+      const { playerId: p1 } = await joinTestPlayer(db, app, id, "Atlas", userToken);
+      const { playerId: p2 } = await joinTestPlayer(db, app, id, "Vera", userToken);
 
       await db.insert(schema.transcripts)
         .values({
@@ -2359,8 +2414,8 @@ describe("Game REST API", () => {
 
     test("system whisper entries include parsed roomMetadata", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas", userToken);
-      const { playerId: p2 } = await joinTestPlayer(app, id, "Vera", userToken);
+      const { playerId: p1 } = await joinTestPlayer(db, app, id, "Atlas", userToken);
+      const { playerId: p2 } = await joinTestPlayer(db, app, id, "Vera", userToken);
       const roomMetadata = {
         rooms: [{ roomId: 1, round: 1, beat: 1, playerIds: [p1, p2] }],
         excluded: [],
@@ -2672,7 +2727,7 @@ describe("Game REST API", () => {
       // Join 6 players
       const playerIds: string[] = [];
       for (const name of ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"]) {
-        const { playerId } = await joinTestPlayer(app, id, name, userToken, `${name} personality`);
+        const { playerId } = await joinTestPlayer(db, app, id, name, userToken, `${name} personality`);
         playerIds.push(playerId);
       }
 
@@ -2863,39 +2918,60 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("player name uniqueness", () => {
-    test("POST /api/games/:id/join rejects duplicate name (exact match)", async () => {
+    test("POST /api/games/:id/join replays the existing seat for the same owned Agent", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      const { agentProfileId, playerId } = await joinTestPlayer(db, app, id, "Atlas Player", userToken);
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Atlas", personality: "Another Atlas" }, userToken),
+        json({ agentProfileId }, userToken),
       );
-      expect(res.status).toBe(409);
-      const body = (await res.json()) as { error: string };
-      expect(body.error).toContain("already exists");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ playerId });
+      expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id))).toHaveLength(1);
     });
 
-    test("POST /api/games/:id/join rejects duplicate name (case-insensitive)", async () => {
+    test("POST /api/games/:id/join replays the same seat after the game starts", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      const { agentProfileId, playerId } = await joinTestPlayer(db, app, id, "Retry Rowan", userToken);
+      await db.update(schema.games).set({
+        status: "in_progress",
+        startedAt: new Date().toISOString(),
+      }).where(eq(schema.games.id, id));
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "atlas", personality: "Lowercase Atlas" }, userToken),
+        json({ agentProfileId }, userToken),
       );
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ playerId });
+      const lockedReplay = await db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
+        gameId: id,
+        userId: REGULAR_USER_ID,
+        agentProfileId,
+      }));
+      expect(lockedReplay).toMatchObject({ replayed: true, seat: { id: playerId } });
+      expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id))).toHaveLength(1);
     });
 
-    test("POST /api/games/:id/join rejects duplicate name (whitespace trimmed)", async () => {
+    test("POST /api/games/:id/join linearizes concurrent identical joins to one seat", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Atlas", userToken);
+      const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
+        name: "Concurrent Rowan",
+        personality: "Retries one request without multiplying it.",
+        strategyStyle: "Choose one seat.",
+        personaKey: "strategic",
+        gender: "non-binary",
+      });
 
-      const res = await app.request(
-        `/api/games/${id}/join`,
-        json({ agentName: "  Atlas  ", personality: "Padded Atlas" }, userToken),
-      );
-      expect(res.status).toBe(409);
+      const responses = await Promise.all([
+        app.request(`/api/games/${id}/join`, json({ agentProfileId: created.profile.id }, userToken)),
+        app.request(`/api/games/${id}/join`, json({ agentProfileId: created.profile.id }, userToken)),
+      ]);
+      expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+      const bodies = await Promise.all(responses.map((response) => response.json() as Promise<{ playerId: string }>));
+      expect(bodies[0]!.playerId).toBe(bodies[1]!.playerId);
+      expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id))).toHaveLength(1);
     });
 
     test("POST /api/games/:id/start reassigns duplicate House names inside roster freeze", async () => {
@@ -2933,9 +3009,9 @@ describe("Game REST API", () => {
     test("POST /api/games/:id/start does not modify names when no collisions", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      const uniqueNames = ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"];
-      for (const name of uniqueNames) {
-        await joinTestPlayer(app, id, name, userToken);
+      const requestedNames = ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"];
+      for (const name of requestedNames) {
+        await joinTestPlayer(db, app, id, name, userToken);
       }
 
       const startRes = await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -2947,7 +3023,7 @@ describe("Game REST API", () => {
         .from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, id));
       const names = players.map((p) => JSON.parse(p.persona).name);
-      expect(names.sort()).toEqual([...uniqueNames].sort());
+      expect(names.sort()).toEqual(requestedNames.map(savedAgentName).sort());
 
       await app.request(`/api/games/${id}/stop`, authPost(adminToken));
     });

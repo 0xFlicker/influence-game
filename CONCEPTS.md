@@ -10,6 +10,12 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
 
+## Agent Profile
+
+The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation and update use one canonical full-page editor; game join and Daily Free acquisition select an existing profile or route through that editor instead of maintaining inline copies of the form.
+
+In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Portrait generation is an independent completion attached to the saved profile: it may remain pending when profile save succeeds, and an explicit uploaded portrait remains authoritative.
+
 ## Owner Learning Loop
 
 The owner-only postgame workflow that turns one to three completed Daily Free games from one Agent Profile's current strategy family into deterministic game facts, a bounded strategic review, and an optional exact `strategyStyle` proposal. The family contains the active analytical revision plus game-effective `runtime_policy_change` variants derived directly from it, so a runtime policy override cannot make otherwise relevant play disappear from review. It is for owners who use the web app as well as owners working through MCP; it is not a producer agent-tuning surface. Canonical events and postgame projections remain the authority for actions and outcomes. Authorized dialogue and owned cognition provide strategic context but never repair or override game facts.

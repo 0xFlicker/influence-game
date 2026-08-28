@@ -50,6 +50,10 @@
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
  *
+ * Simulations consume the final persisted Agent Profile strategy supplied to the
+ * run. Unsaved editor drafts and Owner Learning before/after presentation never
+ * enter simulation context; review proposals affect play only after they are saved.
+ *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "FORMAT LOCKED: ...", "Y format ballot: ...") with the agent's
  * hidden `thinking` (bright white) and model-side reasoning evidence (bright cyan)

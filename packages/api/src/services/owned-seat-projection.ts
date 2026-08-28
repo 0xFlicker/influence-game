@@ -185,12 +185,34 @@ export async function admitOwnedSeatInTransaction(
     playerId?: string;
     overrides?: OwnedSeatOverrides;
   },
-): Promise<{ game: GameRow; seat: PlayerRow; projection: OwnedSeatProjection }> {
-  const game = await lockWaitingGameForRosterWrite(tx, input.gameId);
-  await assertRatedAdmissionSeason(tx, game);
+): Promise<{ game: GameRow; seat: PlayerRow; projection: OwnedSeatProjection; replayed: boolean }> {
+  const game = (await lockRosterGamesInTransaction(tx, [input.gameId]))[0];
+  if (!game) {
+    throw projectionError("Game not found.", "rated_roster_invalid", "game_not_found");
+  }
   const players = await tx.select().from(schema.gamePlayers)
     .where(eq(schema.gamePlayers.gameId, game.id))
     .orderBy(asc(schema.gamePlayers.id));
+  const existingSeat = players.find((player) => (
+    player.userId === input.userId && player.agentProfileId === input.agentProfileId
+  ));
+  if (existingSeat) {
+    const projection = await projectOwnedSeatInTransaction(tx, {
+      game,
+      userId: input.userId,
+      agentProfileId: input.agentProfileId,
+      overrides: input.overrides,
+    });
+    return { game, seat: existingSeat, projection, replayed: true };
+  }
+  if (game.status !== "waiting" || game.startedAt) {
+    throw projectionError(
+      "This game is no longer accepting roster changes.",
+      "invalid_state",
+      "game_not_waiting",
+    );
+  }
+  await assertRatedAdmissionSeason(tx, game);
   if (players.length >= game.maxPlayers) {
     throw projectionError("This game is full.", "rated_roster_invalid", "capacity", {
       gameId: game.id,
@@ -226,7 +248,7 @@ export async function admitOwnedSeatInTransaction(
     agentConfig: projection.agentConfig,
   }).returning())[0];
   if (!seat) throw new Error("Owned seat insert returned no row");
-  return { game, seat, projection };
+  return { game, seat, projection, replayed: false };
 }
 
 /**

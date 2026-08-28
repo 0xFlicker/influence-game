@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadProfilePicture, type PersonaKey } from "@/lib/api";
 import { AgentAvatarPreview } from "./agent-avatar-preview";
 
@@ -12,13 +12,27 @@ interface AvatarUploadProps {
   persona: PersonaKey;
   name: string;
   onUploaded: (publicUrl: string) => void;
+  onUploadingChange?: (uploading: boolean) => void;
+  size?: "16" | "32";
 }
 
-export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUploadProps) {
+export function AvatarUpload({
+  currentUrl,
+  persona,
+  name,
+  onUploaded,
+  onUploadingChange,
+  size = "16",
+}: AvatarUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const localPreviewRef = useRef<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => () => {
+    if (localPreviewRef.current) URL.revokeObjectURL(localPreviewRef.current);
+  }, []);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -38,23 +52,28 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
 
     setError(null);
     setUploading(true);
+    onUploadingChange?.(true);
 
     // Show local preview immediately
     const localPreview = URL.createObjectURL(file);
+    localPreviewRef.current = localPreview;
     setPreviewUrl(localPreview);
 
     try {
       const { publicUrl } = await uploadProfilePicture(file);
 
       URL.revokeObjectURL(localPreview);
+      localPreviewRef.current = null;
       setPreviewUrl(publicUrl);
       onUploaded(publicUrl);
     } catch (err) {
       URL.revokeObjectURL(localPreview);
+      localPreviewRef.current = null;
       setPreviewUrl(null);
       setError(err instanceof Error ? err.message : "Upload failed. Try again.");
     } finally {
       setUploading(false);
+      onUploadingChange?.(false);
     }
   }
 
@@ -69,7 +88,7 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
           name={name}
           gamesPlayed={null}
           gamesWon={null}
-          size="16"
+          size={size}
         />
         {uploading && (
           <div
@@ -96,7 +115,7 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
         {uploading ? "Uploading..." : "Change portrait"}
       </button>
 
-      {error && <p className="text-red-400 text-xs text-center max-w-48">{error}</p>}
+      {error && <p role="alert" className="text-red-400 text-xs text-center max-w-48">{error}</p>}
     </div>
   );
 }

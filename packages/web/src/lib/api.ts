@@ -1907,14 +1907,7 @@ export async function adminRefillInviteCodes(minCodes: number, minAgeDays?: numb
 // Player types
 // ---------------------------------------------------------------------------
 
-export type JoinGameConfig =
-  | { agentProfileId: string }
-  | {
-      agentName: string;
-      personality: string;
-      strategyHints?: string;
-      personaKey: PersonaKey;
-    };
+export type JoinGameConfig = { agentProfileId: string };
 
 export interface PlayerGameResult {
   gameId: string;
@@ -1963,6 +1956,7 @@ export interface SavedAgent {
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
+  profileRevisionId?: string | null;
   createdAt: string;
   updatedAt: string;
   avatarCompletion?: AvatarCompletion;
@@ -2001,7 +1995,7 @@ export interface AgentMutationReceipt {
   warnings: Array<"avatar_generation_failed">;
 }
 
-export interface CreateAgentParams {
+export interface AgentProfileWriteParams {
   name: string;
   personality: string;
   backstory?: string;
@@ -2012,6 +2006,10 @@ export interface CreateAgentParams {
   avatarGenerationRequestId?: string;
 }
 
+export interface CreateAgentParams extends AgentProfileWriteParams {
+  creationRequestId: string;
+}
+
 export const AGENT_GENDER_OPTIONS = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
@@ -2020,8 +2018,9 @@ export const AGENT_GENDER_OPTIONS = [
 
 export type AgentGender = typeof AGENT_GENDER_OPTIONS[number]["value"];
 
-export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">> & {
+export type UpdateAgentParams = Partial<AgentProfileWriteParams> & {
   sourceReviewId?: string;
+  expectedRevisionId?: string;
 };
 
 export type OwnerLearningAnalysisTrack =
@@ -2263,7 +2262,6 @@ export interface AvatarCompletion {
   failureStage?: "provider_submit" | "provider_poll" | "asset_select" | "asset_download" | "avatar_store" | "profile_update";
   retryable?: boolean;
   reason?: string;
-  profileFingerprint?: string;
 }
 
 export interface GeneratePersonalityParams {
@@ -2304,6 +2302,15 @@ export async function getAgent(id: string): Promise<SavedAgent> {
   return apiFetch(`/api/agent-profiles/${id}`);
 }
 
+export async function getAgentByCreationRequestId(creationRequestId: string): Promise<SavedAgent | null> {
+  try {
+    return await apiFetch(`/api/agent-profiles/creation-requests/${encodeURIComponent(creationRequestId)}`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 export async function createAgent(
   params: CreateAgentParams,
 ): Promise<SavedAgent> {
@@ -2327,10 +2334,20 @@ export async function updateAgent(
   id: string,
   params: UpdateAgentParams,
 ): Promise<SavedAgent> {
-  return apiFetch(`/api/agent-profiles/${id}`, {
+  const agent = await apiFetch<SavedAgent>(`/api/agent-profiles/${id}`, {
     method: "PATCH",
     body: JSON.stringify(params),
   });
+  if (typeof window !== "undefined" && agent.avatarCompletion) {
+    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
+      detail: {
+        agentId: agent.id,
+        agentName: agent.name,
+        completion: agent.avatarCompletion,
+      },
+    }));
+  }
+  return agent;
 }
 
 export async function getOwnerLearningEligibleInputs(): Promise<OwnerLearningEligibleInputs> {
@@ -2466,16 +2483,6 @@ export interface DraftAgentAvatarParams {
   personality: string;
   strategyStyle?: string;
   personaKey: PersonaKey;
-}
-
-export function avatarDraftProfileFingerprint(params: DraftAgentAvatarParams): string {
-  return JSON.stringify([
-    params.gender,
-    params.backstory?.trim() || null,
-    params.personality.trim(),
-    params.strategyStyle?.trim() || null,
-    params.personaKey,
-  ]);
 }
 
 export async function requestDraftAgentAvatarGeneration(

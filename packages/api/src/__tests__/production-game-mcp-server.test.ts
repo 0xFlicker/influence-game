@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { AGENT_PROFILE_LIMITS } from "@influence/engine";
 import {
   ProductionGameMcpJsonRpcServer as ProductionGameMcpJsonRpcServerBase,
   createProductionGameMcpServer,
@@ -1444,6 +1445,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     });
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain("diplomat");
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).not.toContain("broker");
+    expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain("creationRequestId");
+    expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain(`\"maxLength\":${AGENT_PROFILE_LIMITS.strategyStyle}`);
     expect(byName.get("search_agents")?.description).toContain("use update_agent");
     expect(byName.get("create_agent")?.description).toContain("separate competitive identity");
     expect(byName.get("create_agent")?.description).toContain("globally unique");
@@ -2135,6 +2138,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: {
         name: "create_agent",
         arguments: {
+          creationRequestId: "2e59eb95-d64e-4ad7-8b1c-42076b56473c",
           displayName: "Lillith Contract",
           archetype: "strategic",
           personalityPrompt: "Patient and observant.",
@@ -2152,6 +2156,28 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       };
     }).structuredContent;
     expectMatchesJsonSchema(created, commandSchemas.get("create_agent"));
+
+    const replayedResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "replay-create-lillith",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          creationRequestId: "2e59eb95-d64e-4ad7-8b1c-42076b56473c",
+          displayName: "Lillith Contract",
+          archetype: "strategic",
+          personalityPrompt: "Patient and observant.",
+          publicBiography: null,
+          strategyStyle: "Build trust before acting.",
+          avatarUrl: "https://cdn.example/lillith.png",
+        },
+      },
+    }, AGENT_WRITE_AUTH);
+    expect(replayedResponse?.error).toBeUndefined();
+    expect((replayedResponse?.result as {
+      structuredContent: { agent: { id: string } };
+    }).structuredContent.agent.id).toBe(created.agent.id);
 
     await db.insert(schema.games).values({
       id: "mcp-revision-waiting",
@@ -2265,6 +2291,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: {
         name: "create_agent",
         arguments: {
+          creationRequestId: "e0b3c64c-0680-41d8-a270-5ba49c2ff09d",
           displayName: "  PRIVATE CONFLICT ",
           archetype: "strategic",
           personalityPrompt: "A separate attempt.",
@@ -2303,6 +2330,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: {
         name: "create_agent",
         arguments: {
+          creationRequestId: "61fa4f70-d3c3-451b-9479-641ea584ee90",
           displayName: "Broker Maybe",
           archetype: "broker",
           personalityPrompt: "Not currently user-selectable.",
@@ -2340,6 +2368,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: {
         name: "create_agent",
         arguments: {
+          creationRequestId: "b26e63f5-cd55-468b-b06a-4b2bdd8d27b7",
           displayName: "Avatarless MCP",
           archetype: "diplomat",
           publicBiography: null,
@@ -2376,6 +2405,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: {
         name: "create_agent",
         arguments: {
+          creationRequestId: "48ef2095-7e47-4b52-9d16-77176acbf91e",
           displayName: "Avatar MCP",
           archetype: "diplomat",
           publicBiography: null,

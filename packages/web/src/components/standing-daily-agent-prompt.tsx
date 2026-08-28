@@ -1,16 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useInvite } from "@/app/providers";
 import { useAuth } from "@/hooks/use-auth";
-import { AgentForm } from "@/app/dashboard/agents/agent-form";
 import {
-  createAgent,
   getFreeQueueStatus,
   joinFreeQueue,
   listAgents,
   maybeLaterFreeQueue,
-  type CreateAgentParams,
   type SavedAgent,
 } from "@/lib/api";
 import {
@@ -38,9 +36,9 @@ export function StandingDailyAgentPrompt({
 }) {
   const { authenticated, ready } = useAuth();
   const { needsInvite } = useInvite();
+  const router = useRouter();
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +90,6 @@ export function StandingDailyAgentPrompt({
       }
       setOpen(false);
       setAgents(null);
-      setCreating(false);
       setSelectedId("");
       setPending(false);
       setError(null);
@@ -211,7 +208,7 @@ export function StandingDailyAgentPrompt({
       }
     }, 0);
     return () => window.clearTimeout(focusTask);
-  }, [creating, open]);
+  }, [open]);
 
   async function enter(agentId: string) {
     if (!agentId || pending) return;
@@ -227,15 +224,6 @@ export function StandingDailyAgentPrompt({
       setPending(false);
     }
   }
-
-  async function createAndEnter(params: CreateAgentParams) {
-    const agent = await createAgent(params);
-    setAgents((current) => [...(current ?? []), agent]);
-    setSelectedId(agent.id);
-    setCreating(false);
-    await enter(agent.id);
-  }
-
   async function maybeLater() {
     if (pending) return;
     setPending(true);
@@ -271,26 +259,19 @@ export function StandingDailyAgentPrompt({
           Play for Free
         </h2>
 
-        {creating ? (
-          <div className="mt-5">
-            <AgentForm
-              onSubmit={createAndEnter}
-              onCancel={() => setCreating(false)}
-              submitLabel="Create and enter"
-              compact
-            />
-          </div>
-        ) : (
-          <>
-            <p className="influence-copy mt-2 text-sm">Create an agent for the daily free queue.</p>
-            <div className="mt-5 space-y-3">
+        <>
+          <p className="influence-copy mt-2 text-sm">Choose a saved Agent for the Daily Free queue.</p>
+          <div className="mt-5 space-y-3">
               {promptBranch === "create" && (
                 <button
                   type="button"
-                  onClick={() => setCreating(true)}
+                  onClick={() => {
+                    setOpen(false);
+                    router.push("/dashboard/agents/create?flow=daily_free");
+                  }}
                   className="influence-button-primary w-full rounded-lg px-4 py-3 text-sm font-semibold"
                 >
-                  Create an agent
+                  Create an Agent
                 </button>
               )}
               {promptBranch === "single" && (
@@ -335,9 +316,8 @@ export function StandingDailyAgentPrompt({
               >
                 Maybe later
               </button>
-            </div>
-          </>
-        )}
+          </div>
+        </>
         {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
       </div>
     </div>

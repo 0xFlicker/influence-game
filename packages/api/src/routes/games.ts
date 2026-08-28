@@ -5,7 +5,7 @@
  *   POST   /api/games           — create a new game
  *   GET    /api/games           — list games (with status filter)
  *   GET    /api/games/:id       — get game details
- *   POST   /api/games/:id/join  — join a game with agent config
+ *   POST   /api/games/:id/join  — join a game with an owned saved agent
  *   POST   /api/games/:id/start — start a game (min players met)
  *   POST   /api/games/:id/stop  — stop / cancel a running game
  *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
@@ -67,7 +67,6 @@ import {
 import { broadcastRaw } from "../services/ws-manager.js";
 import {
   admitOwnedSeatInTransaction,
-  assertUnownedSeatAdmissionInTransaction,
   lockWaitingGameForRosterWrite,
   OwnedSeatProjectionError,
 } from "../services/owned-seat-projection.js";
@@ -457,7 +456,7 @@ export function createGameRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // POST /api/games/:id/join — join a game with agent config
+  // POST /api/games/:id/join — join a game with an owned saved agent
   // -------------------------------------------------------------------------
 
   app.post("/api/games/:id/join", requireAuth(db), async (c) => {
@@ -472,74 +471,53 @@ export function createGameRoutes(
       return c.json({ error: "Game not found" }, 404);
     }
 
-    if (game.status !== "waiting") {
-      return c.json({ error: "Game is not accepting players" }, 400);
-    }
-
     const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, gameId));
-
-    if (currentPlayers.length >= game.maxPlayers) {
-      return c.json({ error: "Game is full" }, 400);
-    }
 
     const body = await parseJsonBody(c, "POST /api/games/:id/join");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { agentName, personality, strategyHints, personaKey, agentProfileId } = body;
+    const { agentProfileId } = body;
+    if (typeof agentProfileId !== "string" || !agentProfileId.trim()) {
+      return c.json({ error: "agentProfileId is required" }, 400);
+    }
 
     const joinUser = c.get("user");
 
-    // -----------------------------------------------------------------------
-    // Resolve agent identity
-    // -----------------------------------------------------------------------
-    let resolvedName: string;
-    let resolvedPersonality: string;
-    let resolvedBackstory: string | null = null;
-    let resolvedStrategyHints: string | null = strategyHints ?? null;
-    let resolvedPersonaKey: string | null = personaKey ?? null;
-    let resolvedProfile: typeof schema.agentProfiles.$inferSelect | null = null;
+    const existingSeat = currentPlayers.find((player) => (
+      player.userId === joinUser.id && player.agentProfileId === agentProfileId
+    ));
+    if (existingSeat) return c.json({ playerId: existingSeat.id }, 200);
 
-    if (agentProfileId) {
-      const profile = (await db
-        .select()
-        .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
-
-      if (!profile) {
-        return c.json({ error: "Agent profile not found" }, 404);
-      }
-
-      if (profile.userId !== joinUser?.id) {
-        return c.json({ error: "Agent profile does not belong to you" }, 403);
-      }
-
-      resolvedName = profile.name;
-      resolvedPersonality = profile.personality;
-      resolvedBackstory = profile.backstory;
-      resolvedStrategyHints = profile.strategyStyle;
-      resolvedPersonaKey = profile.personaKey;
-      resolvedProfile = profile;
-    } else {
-      if (!agentName || !personality) {
-        return c.json({ error: "agentName and personality are required (or provide agentProfileId)" }, 400);
-      }
-      resolvedName = agentName;
-      resolvedPersonality = personality;
+    if (game.status !== "waiting") {
+      return c.json({ error: "Game is not accepting players" }, 400);
     }
 
-    if (game.seasonId && !resolvedProfile) {
-      return c.json({ error: "Rated games require an owned saved agent." }, 400);
+    const profile = (await db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
+
+    if (!profile) {
+      return c.json({ error: "Agent profile not found" }, 404);
+    }
+
+    if (profile.userId !== joinUser?.id) {
+      return c.json({ error: "Agent profile does not belong to you" }, 403);
+    }
+
+    if (currentPlayers.length >= game.maxPlayers) {
+      return c.json({ error: "Game is full" }, 400);
     }
 
     // -----------------------------------------------------------------------
     // Reject if name collides with an existing player in this game
     // -----------------------------------------------------------------------
-    const normalizedJoinName = resolvedName.trim().toLowerCase();
+    const normalizedJoinName = profile.name.trim().toLowerCase();
     const nameCollision = currentPlayers.some((p) => {
       const persona = JSON.parse(p.persona) as { name: string };
       return persona.name.trim().toLowerCase() === normalizedJoinName;
@@ -548,48 +526,17 @@ export function createGameRoutes(
       return c.json({ error: "A player with that name already exists in this game" }, 409);
     }
 
-    // -----------------------------------------------------------------------
-    // Resolve model from game config
-    // -----------------------------------------------------------------------
-    const gameConfig = JSON.parse(game.config);
-    const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
-    const agentModel = resolvedModelSelection.modelId;
-
     const playerId = randomUUID();
-    const persona = {
-      name: resolvedName,
-      personality: resolvedPersonality,
-      backstory: resolvedBackstory,
-      strategyHints: resolvedStrategyHints,
-      personaKey: resolvedPersonaKey,
-    };
 
-    const agentConfig = {
-      model: agentModel,
-      temperature: 0.9,
-    };
-
+    let admitted;
     try {
-      await db.transaction(async (tx) => {
-        if (resolvedProfile && joinUser) {
-          await admitOwnedSeatInTransaction(tx, {
-            gameId,
-            userId: joinUser.id,
-            agentProfileId: resolvedProfile.id,
-            playerId,
-            overrides: { temperature: agentConfig.temperature },
-          });
-          return;
-        }
-        await assertUnownedSeatAdmissionInTransaction(tx, { gameId, name: resolvedName });
-        await tx.insert(schema.gamePlayers).values({
-          id: playerId,
+      admitted = await db.transaction(async (tx) => {
+        return admitOwnedSeatInTransaction(tx, {
           gameId,
-          userId: joinUser?.id ?? null,
-          agentProfileId: null,
-          agentRevisionId: null,
-          persona: JSON.stringify(persona),
-          agentConfig: JSON.stringify(agentConfig),
+          userId: joinUser!.id,
+          agentProfileId: profile.id,
+          playerId,
+          overrides: { temperature: 0.9 },
         });
       });
     } catch (error) {
@@ -598,9 +545,9 @@ export function createGameRoutes(
       }
       throw error;
     }
-    await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
+    if (!admitted.replayed) await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
 
-    return c.json({ playerId }, 201);
+    return c.json({ playerId: admitted.seat.id }, admitted.replayed ? 200 : 201);
   });
 
   // -------------------------------------------------------------------------

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import { AgentRow } from "../app/admin/agents-admin-panel";
-import { AgentPicker } from "../app/dashboard/join-game-modal";
 import { QueueSection } from "../app/games/free/free-game-content";
 import type { AdminAgent, SavedAgent } from "../lib/api";
 
@@ -39,23 +38,6 @@ function expectSiblingButtons(html: string, expectedCount: number) {
 }
 
 describe("current-agent portrait action separation", () => {
-  it("keeps the custom-game portrait preview independent from agent selection", () => {
-    const html = renderToString(
-      <AgentPicker
-        agents={[savedAgent()]}
-        selectedId={null}
-        onSelect={() => undefined}
-        onClear={() => undefined}
-        onCreateNew={() => undefined}
-      />,
-    );
-
-    expect(html).toContain('aria-label="View Atlas portrait and stats"');
-    expect(html).toContain('aria-label="Select Atlas"');
-    expect(html).toContain('aria-pressed="false"');
-    expectSiblingButtons(html, 3);
-  });
-
   it("keeps the Daily Free portrait preview independent from selection and join", () => {
     const html = renderToString(
       <QueueSection

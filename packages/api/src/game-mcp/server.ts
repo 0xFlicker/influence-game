@@ -16,6 +16,7 @@ import {
   type ProductionGameMcpRoundFactsOptions,
 } from "./read-model.js";
 import {
+  AGENT_PROFILE_LIMITS,
   MCP_FORMAT_FACT_TYPES,
   type CanonicalEventQueryMode,
 } from "@influence/engine";
@@ -1394,17 +1395,18 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Display names are globally unique after trim/case normalization, and House-agent names are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
-        displayName: { type: "string" },
+        creationRequestId: { type: "string", format: "uuid" },
+        displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },
-        personalityPrompt: { type: "string" },
-        publicBiography: nullableStringSchema(),
-        strategyStyle: nullableStringSchema(),
+        personalityPrompt: { type: "string", maxLength: AGENT_PROFILE_LIMITS.personality },
+        publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
+        strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
       },
-      required: ["displayName", "archetype", "personalityPrompt"],
+      required: ["creationRequestId", "displayName", "archetype", "personalityPrompt"],
       scopes: writeScopes,
       readOnlyHint: false,
       outputSchema: agentCommandOutputSchema(),
@@ -1414,11 +1416,11 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
       description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied or reserved House-agent name returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
-        displayName: { type: "string" },
+        displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
         archetype: { anyOf: [{ type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS }, { type: "null" }] },
-        personalityPrompt: { type: "string" },
-        publicBiography: nullableStringSchema(),
-        strategyStyle: nullableStringSchema(),
+        personalityPrompt: { type: "string", maxLength: AGENT_PROFILE_LIMITS.personality },
+        publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
+        strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
         sourceReviewId: { type: "string", minLength: 1, maxLength: 200 },
@@ -2287,10 +2289,10 @@ function resourceOrigin(resource: string): string | undefined {
   }
 }
 
-function nullableStringSchema(): unknown {
+function nullableStringSchema(maxLength?: number): unknown {
   return {
     anyOf: [
-      { type: "string" },
+      { type: "string", ...(maxLength === undefined ? {} : { maxLength }) },
       { type: "null" },
     ],
   };

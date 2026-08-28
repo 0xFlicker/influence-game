@@ -139,7 +139,7 @@ describe("owner learning review", () => {
     expect(html).not.toContain("moment-1");
     expect(html).toContain("− Commit early.");
     expect(html).toContain("+ Wait for reciprocal support before committing.");
-    expect(html).toContain("Edit changes myself");
+    expect(html).toContain("Edit suggested strategy");
     expect(html).toContain("Keep current strategy");
     expect(html).toContain("Apply strategy update");
   });
@@ -169,7 +169,7 @@ describe("owner learning review", () => {
     expect(html).toContain('href="/dashboard/agents/agent-1"');
     expect(html).toContain("View agent");
     expect(html).not.toContain("Apply strategy update");
-    expect(html).not.toContain("Edit changes myself");
+    expect(html).not.toContain("Edit suggested strategy");
     expect(html).not.toContain("Keep current strategy");
   });
 
