@@ -106,6 +106,24 @@ describe("expand-contract release migration policy", () => {
     ).toEqual([]);
   });
 
+  test("still rejects another type change bundled with a bigint widening", () => {
+    expect(
+      inspectReleaseMigrationSql(
+        "mixed-type-changes.sql",
+        `
+          ALTER TABLE games
+            ALTER COLUMN ordinal TYPE bigint,
+            ALTER COLUMN slug TYPE varchar(80);
+        `,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "narrow-type",
+        file: "mixed-type-changes.sql",
+      }),
+    ]);
+  });
+
   test("requires a default when an added column is immediately NOT NULL", () => {
     expect(
       inspectReleaseMigrationSql(
