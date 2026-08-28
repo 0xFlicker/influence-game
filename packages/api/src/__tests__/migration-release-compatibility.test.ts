@@ -73,6 +73,7 @@ describe("release migration identity", () => {
       "0062_provider_native_transports.sql",
       "0070_durable_game_turns.sql",
       "0071_durable_game_turn_pacing.sql",
+      "0072_provider_logical_call_ordinal_bigint.sql",
     ].map((file) => path.resolve(import.meta.dir, "../../drizzle", file));
     for (const migration of migrations) {
       expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);
@@ -92,6 +93,15 @@ describe("expand-contract release migration policy", () => {
       ALTER TABLE games ALTER COLUMN legacy_note DROP NOT NULL;
       CREATE INDEX release_receipts_id_idx ON release_receipts (id);
     `,
+      ),
+    ).toEqual([]);
+  });
+
+  test("allows an integer column to widen to bigint", () => {
+    expect(
+      inspectReleaseMigrationSql(
+        "widen-integer.sql",
+        'ALTER TABLE "provider_logical_calls" ALTER COLUMN "logical_call_ordinal" TYPE bigint;',
       ),
     ).toEqual([]);
   });

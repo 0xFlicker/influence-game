@@ -261,6 +261,26 @@ describe("provider call journal", () => {
     });
   });
 
+  test("persists safe logical-call ordinals beyond the signed integer range", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const logicalCallOrdinal = 3_619_941_329;
+    const baseIntent = makeIntent(gameId, ownerEpoch);
+    const intent: ProviderAttemptIntent = {
+      ...baseIntent,
+      coordinate: {
+        ...baseIntent.coordinate,
+        logicalCallOrdinal,
+      },
+    };
+
+    await allocateAndReserve(hooks, intent);
+
+    expect((await db.select().from(schema.providerLogicalCalls))[0])
+      .toMatchObject({ logicalCallOrdinal });
+  });
+
   test("persists the exact planned durable subcall binding before dispatch", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);

@@ -62,6 +62,14 @@ const RELEASE_MIGRATION_RULES: Array<{
   { rule: "delete", pattern: /\bDELETE\s+FROM\b/i },
 ];
 
+const RELEASE_SAFE_BIGINT_WIDENING = new RegExp(
+  '^\\s*ALTER\\s+TABLE\\s+(?:(?:"[^"]+"|[a-z_][a-z0-9_]*)\\.)?'
+  + '(?:"[^"]+"|[a-z_][a-z0-9_]*)\\s+ALTER\\s+COLUMN\\s+'
+  + '(?:"[^"]+"|[a-z_][a-z0-9_]*)\\s+(?:SET\\s+DATA\\s+)?TYPE\\s+'
+  + '(?:BIGINT|INT8)\\s*$',
+  "i",
+);
+
 export function resolveMigrationsFolder(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -121,6 +129,21 @@ export function inspectReleaseMigrationSql(
   );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
+    if (rule.rule === "narrow-type") {
+      const unsafeTypeChange = policyInput
+        .split(";")
+        .find((statement) =>
+          rule.pattern.test(statement)
+          && !RELEASE_SAFE_BIGINT_WIDENING.test(statement)
+        );
+      if (!unsafeTypeChange) continue;
+      violations.push({
+        file,
+        rule: rule.rule,
+        evidence: unsafeTypeChange.replace(/\s+/g, " ").trim().slice(0, 160),
+      });
+      continue;
+    }
     if (rule.rule === "drop-constraint") {
       const drops = [
         ...policyInput.matchAll(

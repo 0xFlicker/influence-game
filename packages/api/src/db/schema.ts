@@ -1716,7 +1716,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   action: text("action").notNull(),
   phase: text("phase"),
   round: integer("round"),
-  logicalCallOrdinal: integer("logical_call_ordinal").notNull(),
+  logicalCallOrdinal: bigint("logical_call_ordinal", { mode: "number" }).notNull(),
   nextAttemptOrdinal: integer("next_attempt_ordinal").notNull().default(1),
   rateLimitCount: integer("rate_limit_count").notNull().default(0),
   rateLimitOutcome: text("rate_limit_outcome").$type<ProviderCallRateLimitOutcome>(),
