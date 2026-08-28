@@ -36,11 +36,14 @@ import type {
   OwnerLearningAnalysisStatus,
   OwnerLearningAnalysisTrack,
   OwnerLearningCallCostReceipt,
+  OwnerLearningCallEvidenceState,
   OwnerLearningCallFailureCode,
   OwnerLearningCallState,
   OwnerLearningCapacityPath,
   OwnerLearningCapacitySubstatus,
   OwnerLearningCheckpoint,
+  OwnerLearningExecutionPhase,
+  OwnerLearningFailureManifestState,
   OwnerLearningResolution,
   OwnerLearningReviewResult,
   OwnerLearningSafeFailureCode,
@@ -2719,6 +2722,7 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   analysisTrack: text("analysis_track").notNull().$type<Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">>(),
   analysisStatus: text("analysis_status").notNull().$type<OwnerLearningAnalysisStatus>().default("queued"),
   stage: text("stage").notNull().$type<OwnerLearningStage>().default("evidence_ready"),
+  executionPhase: text("execution_phase").$type<OwnerLearningExecutionPhase>(),
   resolution: text("resolution").$type<OwnerLearningResolution>(),
   resolvedAt: text("resolved_at"),
   logicalCallCount: integer("logical_call_count").notNull().default(0),
@@ -2729,6 +2733,9 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   capacitySubstatus: text("capacity_substatus").$type<OwnerLearningCapacitySubstatus>(),
   safeFailureCode: text("safe_failure_code").$type<OwnerLearningSafeFailureCode>(),
   retryable: boolean("retryable").notNull().default(false),
+  ownerRetryCount: integer("owner_retry_count").notNull().default(0),
+  retryTargetAttemptId: text("retry_target_attempt_id")
+    .references((): AnyPgColumn => agentLearningReviewCalls.id, { onDelete: "restrict" }),
   checkpoint: jsonb("checkpoint").$type<OwnerLearningCheckpoint>(),
   checkpointHash: text("checkpoint_hash"),
   result: jsonb("result").$type<OwnerLearningReviewResult>(),
@@ -2761,10 +2768,16 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
     ${table.analysisTrack} IN ('evidence_rich', 'strategy_health_check')
   `),
   check("agent_learning_reviews_analysis_status_check", sql`
-    ${table.analysisStatus} IN ('queued', 'running', 'ready', 'no_change', 'failed')
+    ${table.analysisStatus} IN ('queued', 'retry_queued', 'running', 'ready', 'no_change', 'failed')
   `),
   check("agent_learning_reviews_stage_check", sql`
     ${table.stage} IN ('evidence_ready', 'scanning_narratives', 'investigating_moments', 'drafting_recommendations', 'complete')
+  `),
+  check("agent_learning_reviews_execution_phase_check", sql`
+    ${table.executionPhase} IS NULL OR ${table.executionPhase} IN (
+      'selection', 'evidence_projection', 'materialization', 'call_reservation',
+      'provider_invocation', 'output_validation', 'checkpoint_persistence', 'finalization'
+    )
   `),
   check("agent_learning_reviews_resolution_check", sql`
     ${table.resolution} IS NULL OR ${table.resolution} IN ('applied', 'manual_update', 'declined', 'no_change', 'failed', 'superseded')
@@ -2784,8 +2797,11 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
       'provider_capacity_exhausted', 'provider_timeout', 'provider_error',
       'invalid_structured_output', 'tier_mismatch',
       'output_budget_exhausted', 'logical_call_budget_exhausted',
-      'evidence_unavailable', 'worker_interrupted'
+      'evidence_unavailable', 'worker_interrupted', 'internal_error'
     )
+  `),
+  check("agent_learning_reviews_owner_retry_check", sql`
+    ${table.ownerRetryCount} BETWEEN 0 AND 1
   `),
   check("agent_learning_reviews_result_state_check", sql`
     (${table.analysisStatus} IN ('ready', 'no_change') AND ${table.result} IS NOT NULL AND ${table.stage} = 'complete')
@@ -2817,11 +2833,31 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
     .notNull()
     .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
   ordinal: integer("ordinal").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull().default(1),
+  retryOfAttemptId: text("retry_of_attempt_id")
+    .references((): AnyPgColumn => agentLearningReviewCalls.id, { onDelete: "restrict" }),
   state: text("state").notNull().$type<OwnerLearningCallState>().default("reserved"),
   stage: text("stage").notNull().$type<OwnerLearningStage>(),
   inputPolicyHash: text("input_policy_hash").notNull(),
+  providerTurnProtocol: text("provider_turn_protocol").notNull().default("owner-learning-harness-v2"),
+  retryOfExecutionFingerprint: text("retry_of_execution_fingerprint"),
   validatedCheckpoint: jsonb("validated_checkpoint").$type<OwnerLearningCheckpoint>(),
   finalProviderRequestId: text("final_provider_request_id"),
+  providerResponseId: text("provider_response_id"),
+  providerResponseObservedAt: text("provider_response_observed_at"),
+  providerResponseSha256: text("provider_response_sha256"),
+  requestEvidenceBody: text("request_evidence_body"),
+  requestEvidenceSha256: text("request_evidence_sha256"),
+  requestEvidenceByteLength: integer("request_evidence_byte_length"),
+  responseEvidenceBody: text("response_evidence_body"),
+  responseEvidenceBodySha256: text("response_evidence_body_sha256"),
+  responseEvidenceByteLength: integer("response_evidence_byte_length"),
+  evidenceState: text("evidence_state")
+    .notNull()
+    .$type<OwnerLearningCallEvidenceState>()
+    .default("not_required"),
+  failureDiagnosticId: text("failure_diagnostic_id")
+    .references((): AnyPgColumn => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
   requestedTier: text("requested_tier").notNull().default("flex"),
   effectiveTier: text("effective_tier"),
   requestedReasoningEffort: text("requested_reasoning_effort").notNull().default("low"),
@@ -2842,8 +2878,14 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   dispatchedAt: text("dispatched_at"),
   completedAt: text("completed_at"),
 }, (table) => [
-  uniqueIndex("agent_learning_review_calls_ordinal_unique").on(table.reviewId, table.ordinal),
+  uniqueIndex("agent_learning_review_calls_ordinal_unique")
+    .on(table.reviewId, table.ordinal, table.attemptOrdinal),
+  uniqueIndex("agent_learning_review_calls_succeeded_unique")
+    .on(table.reviewId, table.ordinal)
+    .where(sql`${table.state} = 'succeeded'`),
   check("agent_learning_review_calls_ordinal_check", sql`${table.ordinal} BETWEEN 1 AND 4`),
+  check("agent_learning_review_calls_attempt_ordinal_check", sql`${table.attemptOrdinal} BETWEEN 1 AND 2`),
+  check("agent_learning_review_calls_protocol_check", sql`char_length(${table.providerTurnProtocol}) > 0`),
   check("agent_learning_review_calls_state_check", sql`
     ${table.state} IN ('reserved', 'dispatched', 'succeeded', 'failed', 'ambiguous')
   `),
@@ -2864,6 +2906,43 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   check("agent_learning_review_calls_capacity_path_check", sql`
     ${table.capacityPath} IS NULL OR ${table.capacityPath} IN ('flex', 'standard_fallback')
   `),
+  check("agent_learning_review_calls_response_check", sql`
+    (
+      ${table.providerResponseObservedAt} IS NULL
+      AND ${table.providerResponseSha256} IS NULL
+      AND ${table.providerResponseId} IS NULL
+    ) OR (
+      ${table.providerResponseObservedAt} IS NOT NULL
+      AND ${table.providerResponseSha256} LIKE 'sha256:%'
+    )
+  `),
+  check("agent_learning_review_calls_request_evidence_check", sql`
+    (
+      ${table.requestEvidenceBody} IS NULL
+      AND ${table.requestEvidenceSha256} IS NULL
+      AND ${table.requestEvidenceByteLength} IS NULL
+    ) OR (
+      ${table.requestEvidenceBody} IS NOT NULL
+      AND ${table.requestEvidenceSha256} LIKE 'sha256:%'
+      AND ${table.requestEvidenceByteLength} > 0
+    )
+  `),
+  check("agent_learning_review_calls_response_evidence_check", sql`
+    (
+      ${table.responseEvidenceBody} IS NULL
+      AND ${table.responseEvidenceBodySha256} IS NULL
+      AND ${table.responseEvidenceByteLength} IS NULL
+    ) OR (
+      ${table.responseEvidenceBody} IS NOT NULL
+      AND ${table.responseEvidenceBodySha256} LIKE 'sha256:%'
+      AND ${table.responseEvidenceByteLength} > 0
+      AND ${table.providerResponseObservedAt} IS NOT NULL
+      AND ${table.providerResponseSha256} LIKE 'sha256:%'
+    )
+  `),
+  check("agent_learning_review_calls_evidence_state_check", sql`
+    ${table.evidenceState} IN ('not_required', 'pending', 'stored', 'degraded', 'legacy_unavailable')
+  `),
   check("agent_learning_review_calls_nonnegative_check", sql`
     (${table.latencyMs} IS NULL OR ${table.latencyMs} >= 0)
     AND (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)
@@ -2873,6 +2952,194 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
     (${table.costSource} = 'actual' AND ${table.actualCostMicrousd} IS NOT NULL AND ${table.estimatedCostMicrousd} IS NULL)
     OR (${table.costSource} = 'estimated' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NOT NULL)
     OR (${table.costSource} = 'unavailable' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NULL)
+  `),
+]);
+
+/** Immutable, admin-safe summary. Exact evidence is held by the manifest/outbox. */
+export const agentLearningReviewFailureDiagnostics = pgTable("agent_learning_review_failure_diagnostics", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  callId: text("call_id")
+    .references(() => agentLearningReviewCalls.id, { onDelete: "restrict" }),
+  callOrdinal: integer("call_ordinal"),
+  attemptOrdinal: integer("attempt_ordinal"),
+  /** Null only for legacy failures whose original phase was discarded. */
+  phase: text("phase").$type<OwnerLearningExecutionPhase>(),
+  safeFailureCode: text("safe_failure_code").notNull(),
+  errorClass: text("error_class").notNull(),
+  errorCode: text("error_code"),
+  sanitizedMessage: text("sanitized_message").notNull(),
+  firstApplicationStackFrame: text("first_application_stack_frame"),
+  fingerprint: text("fingerprint").notNull(),
+  providerRequestId: text("provider_request_id"),
+  providerResponseId: text("provider_response_id"),
+  evidenceManifestId: text("evidence_manifest_id").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_review_failure_diagnostics_manifest_unique")
+    .on(table.evidenceManifestId),
+  index("agent_learning_review_failure_diagnostics_review_idx")
+    .on(table.reviewId, table.occurredAt),
+  index("agent_learning_review_failure_diagnostics_fingerprint_idx")
+    .on(table.fingerprint, table.occurredAt),
+  check("agent_learning_review_failure_diagnostics_phase_check", sql`
+    ${table.phase} IS NULL OR ${table.phase} IN (
+      'selection', 'evidence_projection', 'materialization', 'call_reservation',
+      'provider_invocation', 'output_validation', 'checkpoint_persistence', 'finalization'
+    )
+  `),
+  check("agent_learning_review_failure_diagnostics_coordinates_check", sql`
+    (${table.callId} IS NULL AND ${table.callOrdinal} IS NULL AND ${table.attemptOrdinal} IS NULL)
+    OR (
+      ${table.callId} IS NOT NULL
+      AND ${table.callOrdinal} BETWEEN 1 AND 4
+      AND ${table.attemptOrdinal} BETWEEN 1 AND 2
+    )
+  `),
+  check("agent_learning_review_failure_diagnostics_shape_check", sql`
+    char_length(${table.sanitizedMessage}) BETWEEN 1 AND 2000
+    AND (${table.firstApplicationStackFrame} IS NULL OR char_length(${table.firstApplicationStackFrame}) <= 1000)
+    AND ${table.fingerprint} LIKE 'sha256:%'
+  `),
+]);
+
+/** Review-scoped private object manifest. It deliberately has no expiry column. */
+export const agentLearningReviewFailureManifests = pgTable("agent_learning_review_failure_manifests", {
+  id: text("id").primaryKey(),
+  diagnosticId: text("diagnostic_id")
+    .notNull()
+    .unique()
+    .references(() => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  state: text("state").notNull().$type<OwnerLearningFailureManifestState>(),
+  retentionClass: text("retention_class").notNull().default("audit"),
+  accessScope: text("access_scope").notNull().default("admin_developer"),
+  contentType: text("content_type"),
+  byteLength: integer("byte_length"),
+  bodySha256: text("body_sha256"),
+  storageProvider: text("storage_provider"),
+  storageBucket: text("storage_bucket"),
+  storageKey: text("storage_key"),
+  sourcePointers: jsonb("source_pointers").notNull().$type<ReadonlyArray<Record<string, unknown>>>(),
+  metadata: jsonb("metadata").notNull().$type<Record<string, unknown>>(),
+  lastStorageError: text("last_storage_error"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  storedAt: text("stored_at"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_learning_review_failure_manifests_review_idx")
+    .on(table.reviewId, table.createdAt),
+  index("agent_learning_review_failure_manifests_state_idx")
+    .on(table.state, table.updatedAt),
+  check("agent_learning_review_failure_manifests_state_check", sql`
+    ${table.state} IN ('pending', 'stored', 'degraded', 'legacy_unavailable')
+  `),
+  check("agent_learning_review_failure_manifests_policy_check", sql`
+    ${table.retentionClass} = 'audit' AND ${table.accessScope} = 'admin_developer'
+  `),
+  check("agent_learning_review_failure_manifests_shape_check", sql`
+    (
+      ${table.state} = 'legacy_unavailable'
+      AND ${table.contentType} IS NULL
+      AND ${table.byteLength} IS NULL
+      AND ${table.bodySha256} IS NULL
+      AND ${table.storageProvider} IS NULL
+      AND ${table.storageBucket} IS NULL
+      AND ${table.storageKey} IS NULL
+      AND ${table.storedAt} IS NULL
+    ) OR (
+      ${table.state} IN ('pending', 'degraded')
+      AND ${table.contentType} = 'application/json'
+      AND ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.storageProvider} IS NULL
+      AND ${table.storageBucket} IS NULL
+      AND ${table.storageKey} IS NULL
+      AND ${table.storedAt} IS NULL
+    ) OR (
+      ${table.state} = 'stored'
+      AND ${table.contentType} = 'application/json'
+      AND ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.storageProvider} IS NOT NULL
+      AND ${table.storageBucket} IS NOT NULL
+      AND ${table.storageKey} IS NOT NULL
+      AND ${table.storedAt} IS NOT NULL
+    )
+  `),
+]);
+
+/** Complete sanitized bodies remain here until object + stored manifest commit. */
+export const agentLearningReviewFailureEvidenceOutbox = pgTable("agent_learning_review_failure_evidence_outbox", {
+  diagnosticId: text("diagnostic_id")
+    .primaryKey()
+    .references(() => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  manifestId: text("manifest_id")
+    .notNull()
+    .references(() => agentLearningReviewFailureManifests.id, { onDelete: "restrict" }),
+  body: text("body").notNull(),
+  bodySha256: text("body_sha256").notNull(),
+  byteLength: integer("byte_length").notNull(),
+  storageKey: text("storage_key").notNull(),
+  manifestMetadata: jsonb("manifest_metadata").notNull().$type<Record<string, unknown>>(),
+  reconciliationAttemptCount: integer("reconciliation_attempt_count").notNull().default(0),
+  nextReconciliationAt: text("next_reconciliation_at").notNull().default(sql`now()::text`),
+  claimToken: text("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_review_failure_evidence_outbox_manifest_unique")
+    .on(table.manifestId),
+  index("agent_learning_review_failure_evidence_outbox_ready_idx")
+    .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
+  check("agent_learning_review_failure_evidence_outbox_shape_check", sql`
+    ${table.byteLength} > 0
+    AND ${table.bodySha256} LIKE 'sha256:%'
+    AND ${table.reconciliationAttemptCount} >= 0
+    AND (
+      (${table.claimToken} IS NULL AND ${table.claimExpiresAt} IS NULL)
+      OR (${table.claimToken} IS NOT NULL AND ${table.claimExpiresAt} IS NOT NULL)
+    )
+  `),
+]);
+
+/** Append-only audit ledger for every allowed and denied evidence read. */
+export const agentLearningReviewFailureManifestReads = pgTable("agent_learning_review_failure_manifest_reads", {
+  id: serial("id").primaryKey(),
+  manifestId: text("manifest_id")
+    .notNull()
+    .references(() => agentLearningReviewFailureManifests.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  accessorUserId: text("accessor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  accessorRole: text("accessor_role").notNull(),
+  purpose: text("purpose").notNull(),
+  outcome: text("outcome").notNull(),
+  detail: text("detail"),
+  offsetBytes: integer("offset_bytes"),
+  maxBytes: integer("max_bytes"),
+  readAt: text("read_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_learning_review_failure_manifest_reads_manifest_idx")
+    .on(table.manifestId, table.readAt),
+  index("agent_learning_review_failure_manifest_reads_accessor_idx")
+    .on(table.accessorUserId, table.readAt),
+  check("agent_learning_review_failure_manifest_reads_outcome_check", sql`
+    ${table.outcome} IN ('allowed', 'denied', 'unavailable', 'integrity_mismatch', 'storage_error')
+  `),
+  check("agent_learning_review_failure_manifest_reads_range_check", sql`
+    (${table.offsetBytes} IS NULL OR ${table.offsetBytes} >= 0)
+    AND (${table.maxBytes} IS NULL OR ${table.maxBytes} > 0)
   `),
 ]);
 

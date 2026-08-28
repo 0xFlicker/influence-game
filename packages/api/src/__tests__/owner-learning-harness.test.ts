@@ -14,6 +14,17 @@ describe("owner learning bounded harness", () => {
   test("emits explicitly typed enum and const leaves for strict provider schemas", () => {
     expect(untypedChoiceSchemaPaths(OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA)).toEqual([]);
     expect(untypedChoiceSchemaPaths(OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA)).toEqual([]);
+    const finalResult = OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA.properties.finalResult as unknown as {
+      properties: { proposal: { anyOf: Array<Record<string, unknown>> } };
+    };
+    const proposal = finalResult.properties.proposal.anyOf[0] as {
+      additionalProperties: boolean;
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+    expect(proposal.additionalProperties).toBe(false);
+    expect(proposal.required).toEqual(["after"]);
+    expect(Object.keys(proposal.properties)).toEqual(["after"]);
   });
 
   test("completes a scan plus three targeted dives inside four logical calls", async () => {
@@ -22,7 +33,7 @@ describe("owner learning bounded harness", () => {
     const result = await runOwnerLearningHarness({
       reviewId: "review-1",
       analysisTrack: "evidence_rich",
-      currentStrategyStyle: "Build trust.",
+      currentStrategyStyle: "Build trust. \n",
       evidence,
       async invoke(input) {
         invocations.push({ stage: input.stage, isDive: input.isDive });
@@ -57,8 +68,6 @@ describe("owner learning bounded harness", () => {
               evidenceHandles: providerSummaryHandles(input.request).slice(0, 2),
             }],
             proposal: {
-              field: "strategyStyle",
-              before: "Build trust.",
               after: "Build trust, then name a preferred target and one fallback.",
             },
           },
@@ -84,6 +93,11 @@ describe("owner learning bounded harness", () => {
       evidence.games.map((game) => game.candidateMoments[0]!.id),
     );
     expect(JSON.stringify(result)).not.toContain("g1:m");
+    expect(result.result.proposal).toEqual({
+      field: "strategyStyle",
+      before: "Build trust. \n",
+      after: "Build trust, then name a preferred target and one fallback.",
+    });
     expect(result.proposalFingerprint).toMatch(/^sha256:/);
   });
 
@@ -197,8 +211,6 @@ describe("owner learning bounded harness", () => {
               },
             }],
             proposal: {
-              field: "strategyStyle",
-              before: "Build trust.",
               after: "Build trust and name a fallback target.",
             },
             noChange: null,
@@ -286,8 +298,6 @@ describe("owner learning bounded harness", () => {
               },
             }],
             proposal: {
-              field: "strategyStyle",
-              before: "Build trust.",
               after: "Build trust and establish a first-round target plus fallback.",
             },
           },
@@ -408,8 +418,6 @@ describe("owner learning bounded harness", () => {
             analysisTrack: "evidence_rich",
             recommendations: [],
             proposal: {
-              field: "strategyStyle",
-              before: "Build trust.",
               after: "Build trust and verify one commitment.",
             },
           },

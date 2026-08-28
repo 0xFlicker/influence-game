@@ -49,7 +49,10 @@ import {
   type WsConnectionData,
 } from "./services/ws-manager.js";
 import { createOwnerLearningOpenAIProvider } from "./services/owner-learning-provider.js";
-import { startOwnerLearningWorkerLoop } from "./services/owner-learning-worker.js";
+import {
+  startOwnerLearningFailureReconciliationLoop,
+  startOwnerLearningWorkerLoop,
+} from "./services/owner-learning-worker.js";
 import {
   ownerLearningDeploymentEnabled,
   ownerLearningGenerationEnabled,
@@ -332,14 +335,20 @@ async function finishBackgroundRuntimeStartup(
     : await startProviderHealthProbeRuntime(db);
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
   assertNotAborted();
+  const ownerLearningFailureReconciliation = startOwnerLearningFailureReconciliationLoop(db, {
+    canClaimWork: () => runtimeActivation.canClaimWork(),
+  });
   const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
     ? startOwnerLearningWorkerLoop(db, {
         provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
         cursorSecret: process.env.JWT_SECRET,
+        canClaimWork: () => runtimeActivation.canClaimWork(),
       })
     : null;
   if (!ownerLearningDeploymentEnabled()) {
     console.info("[owner-learning] Live review generation disabled by deployment configuration");
+  } else if (activationFence) {
+    console.info("[owner-learning] Worker claims paused until deployment activation completes");
   } else if (!ownerLearningWorker) {
     console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
   }
@@ -373,6 +382,7 @@ async function finishBackgroundRuntimeStartup(
       clearInterval(reconciliationTimer);
       providerHealthProbeRuntime?.stop();
       await providerAttemptReconciliation.stop();
+      await ownerLearningFailureReconciliation.stop();
       await ownerLearningWorker?.stop();
     },
   };

@@ -94,7 +94,11 @@ export function stageIndex(stage: OwnerLearningStage): number {
 
 export function isReviewPolling(review: OwnerLearningReviewStatus): boolean {
   return review.resolution == null
-    && (review.analysisStatus === "queued" || review.analysisStatus === "running");
+    && (
+      review.analysisStatus === "queued"
+      || review.analysisStatus === "retry_queued"
+      || review.analysisStatus === "running"
+    );
 }
 
 export function canonicalFacts(value: unknown): OwnerLearningCanonicalFacts {

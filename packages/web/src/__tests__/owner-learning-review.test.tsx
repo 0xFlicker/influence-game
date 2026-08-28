@@ -229,11 +229,18 @@ describe("owner learning review", () => {
       retryable: true,
       logicalCallCount: 2,
     });
+    const turnFourRetryable = renderReview({
+      ...reviewFixture(),
+      analysisStatus: "failed",
+      safeFailureCode: "provider_timeout",
+      retryable: true,
+      logicalCallCount: 4,
+    });
     const exhausted = renderReview({
       ...reviewFixture(),
       analysisStatus: "failed",
       safeFailureCode: "logical_call_budget_exhausted",
-      retryable: true,
+      retryable: false,
       logicalCallCount: 4,
     });
 
@@ -242,12 +249,13 @@ describe("owner learning review", () => {
     expect(noChange).not.toContain("Apply strategy update");
     expect(retryable).toContain("The game facts are safe");
     expect(retryable).toContain("Retry analysis");
-    expect(retryable).toContain("Resolve failed review");
-    expect(retryable).toContain("Any credit used to start a metered review is not refunded");
+    expect(retryable).toContain("Close review");
+    expect(retryable).toContain("reuses saved progress and does not use another review credit");
     expect(retryable).not.toContain("rolling allowance");
     expect(retryable).not.toContain("Cancel");
+    expect(turnFourRetryable).toContain("Retry analysis");
     expect(exhausted).not.toContain("Retry analysis");
-    expect(exhausted).toContain("Resolve failed review");
+    expect(exhausted).toContain("Close review");
   });
 
   test("keeps every terminal resolution legible", () => {
@@ -325,6 +333,7 @@ function reviewFixture(): OwnerLearningReview {
     proposalFingerprint: null,
     safeFailureCode: null,
     retryable: true,
+    ownerRetriesRemaining: 1,
     logicalCallCount: 1,
     diveCount: 1,
     applyDisposition: "not_ready",

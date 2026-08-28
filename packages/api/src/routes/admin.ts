@@ -84,6 +84,10 @@ import {
   parseAdminOwnerLearningReviewFilters,
 } from "../services/owner-learning-admin.js";
 import {
+  readOwnerLearningFailureEvidence,
+  type ReadOwnerLearningFailureEvidenceResult,
+} from "../services/owner-learning-failure-read-model.js";
+import {
   getDeploymentAdmissionStatus,
   revokeDeploymentAdmissionLease,
   type DeploymentAdmissionErrorCode,
@@ -118,6 +122,7 @@ export function createAdminRoutes(
   dependencies: {
     completionSettlement?: Parameters<typeof retryCapturedGameCompletionAsOperator>[2];
     privateTraceReadModel?: Pick<PrivateTraceReadModel, "readProviderAttemptContent">;
+    readOwnerLearningFailureEvidence?: typeof readOwnerLearningFailureEvidence;
     executeProviderHealthProbe?: typeof executeProviderHealthProbe;
   } = {},
 ) {
@@ -125,6 +130,8 @@ export function createAdminRoutes(
 
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
   const privateTraceReadModel = dependencies.privateTraceReadModel ?? new PrivateTraceReadModel(db);
+  const ownerLearningFailureEvidenceReader = dependencies.readOwnerLearningFailureEvidence
+    ?? readOwnerLearningFailureEvidence;
   const requireCurrentProviderFailureRead = createMiddleware<AuthEnv>(async (c, next) => {
     const walletAddress = c.get("user").walletAddress;
     if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
@@ -145,6 +152,30 @@ export function createAdminRoutes(
         retryable: true,
       }, 503);
     }
+  });
+  const refreshCurrentOwnerLearningEvidenceRoles = createMiddleware<AuthEnv>(async (c, next) => {
+    c.header("Cache-Control", "private, no-store");
+    c.header("Pragma", "no-cache");
+    const walletAddress = c.get("user").walletAddress;
+    if (!walletAddress) {
+      c.set("userRoles", []);
+      c.set("userPermissions", []);
+      await next();
+      return;
+    }
+    let current: Awaited<ReturnType<typeof getPermissionsForAddress>>;
+    try {
+      current = await getPermissionsForAddress(db, walletAddress);
+    } catch {
+      return c.json({
+        error: "Owner review diagnostic permission state is temporarily unavailable",
+        code: "owner_learning_diagnostic_permission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+    c.set("userRoles", current.roles);
+    c.set("userPermissions", current.permissions);
+    await next();
   });
   const requireRoleManagement = requirePermission("manage_roles");
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
@@ -615,6 +646,54 @@ export function createAdminRoutes(
     if (!review) return c.json({ error: "Review not found" }, 404);
     return c.json(review);
   });
+
+  app.get(
+    "/api/admin/owner-learning-reviews/:reviewId/diagnostics/:diagnosticId/content",
+    refreshCurrentOwnerLearningEvidenceRoles,
+    async (c) => {
+      const maxBytes = boundedIntegerQuery(c.req.query("maxBytes"), 256 * 1024, 1, 1024 * 1024);
+      const offsetBytes = boundedIntegerQuery(c.req.query("offsetBytes"), 0, 0, Number.MAX_SAFE_INTEGER);
+      if (maxBytes === null || offsetBytes === null) {
+        return c.json({ error: "Invalid bounded content range" }, 400);
+      }
+      const result = await ownerLearningFailureEvidenceReader(db, {
+        reviewId: c.req.param("reviewId"),
+        diagnosticId: c.req.param("diagnosticId"),
+        accessor: {
+          userId: c.get("user").id,
+          roles: c.get("userRoles"),
+        },
+        purpose: "admin_owner_learning_failure_read_content",
+        maxBytes,
+        offsetBytes,
+      });
+      if (!result.ok) {
+        const status = ownerLearningFailureContentStatus(result.status);
+        return c.json({
+          schemaVersion: 1 as const,
+          state: result.status,
+          error: result.error,
+          retryable: result.status === "pending"
+            || result.status === "degraded"
+            || result.status === "storage_error",
+        }, status);
+      }
+      const { sanitizedMessage, ...diagnostic } = result.response.diagnostic;
+      return c.json({
+        schemaVersion: 1 as const,
+        state: result.response.truncated
+          ? "partial" as const
+          : result.response.offsetBytes === 0
+            ? "complete" as const
+            : "final_chunk" as const,
+        ...result.response,
+        diagnostic: {
+          ...diagnostic,
+          message: sanitizedMessage,
+        },
+      });
+    },
+  );
 
   app.get("/api/admin/free-queue", requireAdminRead, async (c) => {
     const [rows, waitingGames] = await Promise.all([db.select({
@@ -1889,6 +1968,24 @@ function boundedIntegerQuery(
   if (!/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
+}
+
+function ownerLearningFailureContentStatus(
+  status: Extract<ReadOwnerLearningFailureEvidenceResult, { ok: false }>["status"],
+): 200 | 403 | 404 | 503 {
+  switch (status) {
+    case "not_found":
+      return 404;
+    case "denied":
+      return 403;
+    case "pending":
+    case "degraded":
+    case "legacy_unavailable":
+      return 200;
+    case "integrity_mismatch":
+    case "storage_error":
+      return 503;
+  }
 }
 
 function projectAdminDeploymentAdmissionStatus(status: DeploymentAdmissionStatus) {

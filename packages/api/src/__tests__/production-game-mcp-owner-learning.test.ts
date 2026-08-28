@@ -21,6 +21,10 @@ import { createMcpRoutes } from "../routes/mcp.js";
 import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
 import { recordOwnerLearningMcpOfferViewed } from "../services/owner-learning-analytics.js";
 import { fingerprintOwnerLearningValue } from "../services/owner-learning-contracts.js";
+import {
+  persistOwnerLearningFailureEvidence,
+  prepareOwnerLearningFailureEvidence,
+} from "../services/owner-learning-failure-evidence.js";
 import { getOwnedOwnerLearningReview } from "../services/owner-learning-read.js";
 import {
   fakeOwnerLearningProjection,
@@ -487,23 +491,78 @@ describe("production MCP owner-learning parity", () => {
       logicalCallCount: 1,
     }).where(eq(schema.agentLearningReviews.id, failedReviewId));
     const failedAuth = ownerAuth(failed.ownerUserId);
+    const privateFailure = prepareOwnerLearningFailureEvidence({
+      reviewId: failedReviewId,
+      phase: "provider_invocation",
+      diagnostic: {
+        diagnosticId: "diagnostic-mcp-private",
+        failureCode: "provider_timeout",
+      },
+      error: new Error("PRIVATE_MCP_DIAGNOSTIC_MESSAGE"),
+      requestEvidence: { input: "PRIVATE_MCP_DIAGNOSTIC_BODY" },
+    });
+    await persistOwnerLearningFailureEvidence(db, {
+      reviewId: failedReviewId,
+      prepared: privateFailure,
+    });
+    const failedRead = await callTool(server, failedAuth, "read_learning_review", {
+      reviewId: failedReviewId,
+    });
+    expect(JSON.stringify(failedRead)).not.toContain("diagnostic-mcp-private");
+    expect(JSON.stringify(failedRead)).not.toContain("PRIVATE_MCP_DIAGNOSTIC_MESSAGE");
+    expect(JSON.stringify(failedRead)).not.toContain("PRIVATE_MCP_DIAGNOSTIC_BODY");
     const retried = await callTool(server, failedAuth, "retry_learning_review", {
       reviewId: failedReviewId,
     });
     const replayedRetry = await callTool(server, failedAuth, "retry_learning_review", {
       reviewId: failedReviewId,
     });
-    expect(retried).toMatchObject({ review: { analysisStatus: "queued", logicalCallCount: 1 } });
+    expect(retried).toMatchObject({
+      review: {
+        analysisStatus: "retry_queued",
+        logicalCallCount: 1,
+        ownerRetriesRemaining: 0,
+      },
+    });
     expect(replayedRetry).toMatchObject({
-      review: { analysisStatus: "queued", logicalCallCount: 1 },
+      review: { analysisStatus: "retry_queued", logicalCallCount: 1 },
     });
     expectMatchesJsonSchema(retried, READ_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect((await db.select({ kind: schema.agentLearningEvents.kind })
+      .from(schema.agentLearningEvents)
+      .where(eq(schema.agentLearningEvents.reviewId, failedReviewId)))
+      .filter((event) => event.kind === "credit_consumed")).toHaveLength(1);
     await db.update(schema.agentLearningReviews).set({
       analysisStatus: "failed",
       stage: "complete",
       safeFailureCode: "provider_error",
       retryable: false,
     }).where(eq(schema.agentLearningReviews.id, failedReviewId));
+    const nonretryableRetry = await rawToolCall(
+      server,
+      failedAuth,
+      "retry_learning_review",
+      { reviewId: failedReviewId },
+    );
+    expect(nonretryableRetry.error?.data).toEqual({
+      code: "review_not_retryable",
+      statusCode: 409,
+      retryable: false,
+    });
+    await db.update(schema.agentLearningReviews).set({
+      retryable: true,
+    }).where(eq(schema.agentLearningReviews.id, failedReviewId));
+    const exhaustedRetry = await rawToolCall(
+      server,
+      failedAuth,
+      "retry_learning_review",
+      { reviewId: failedReviewId },
+    );
+    expect(exhaustedRetry.error?.data).toEqual({
+      code: "review_state_conflict",
+      statusCode: 409,
+      retryable: false,
+    });
     await callTool(server, failedAuth, "resolve_learning_review", {
       reviewId: failedReviewId,
       resolution: "failed",

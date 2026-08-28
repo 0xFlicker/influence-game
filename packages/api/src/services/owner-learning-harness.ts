@@ -3,6 +3,7 @@ import {
   OWNER_LEARNING_MAX_LOGICAL_CALLS,
   OWNER_LEARNING_PROMPT_VERSION,
   OWNER_LEARNING_SCHEMA_VERSION,
+  OwnerLearningReviewResultValidationError,
   fingerprintOwnerLearningValue,
   parseOwnerLearningReviewResult,
   type OwnerLearningAnalysisTrack,
@@ -22,6 +23,9 @@ import {
   buildBudgetedOwnerLearningProviderInput,
   hydrateOwnerLearningProviderOutput,
 } from "./owner-learning-provider-context.js";
+import {
+  OwnerLearningOutputValidationError,
+} from "./owner-learning-failures.js";
 
 export const OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(false);
 export const OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(true);
@@ -165,7 +169,13 @@ export async function runOwnerLearningHarness(
       evidence: input.evidence.reviewInput,
     });
     const final = await advanceCheckpoint(turn, (parsed, completion) => {
-      if (!completion) throw new Error("Owner learning final turn did not contain a result");
+      if (!completion) {
+        throw new OwnerLearningOutputValidationError(
+          "invalid_result_contract",
+          "Owner learning final turn did not contain a result",
+          "finalResult",
+        );
+      }
       return {
         ...checkpoint,
         provisionalThemes: parsed.provisionalThemes,
@@ -173,7 +183,13 @@ export async function runOwnerLearningHarness(
         lastCompletedStage: "complete",
       };
     });
-    if (!final) throw new Error("Owner learning final turn did not contain a result");
+    if (!final) {
+      throw new OwnerLearningOutputValidationError(
+        "invalid_result_contract",
+        "Owner learning final turn did not contain a result",
+        "finalResult",
+      );
+    }
     return completed(final);
   }
   throw new Error("Owner learning logical call budget exhausted before a final result");
@@ -251,10 +267,11 @@ export async function runOwnerLearningHarness(
     if (resumedCheckpoint) {
       return { invocation, output: null, resumedCheckpoint };
     }
-    const output = await input.invoke(invocation);
+    const rawOutput = await input.invoke(invocation);
+    const output = hydrateOwnerLearningProviderOutput(rawOutput, context);
     return {
       invocation,
-      output: hydrateOwnerLearningProviderOutput(output, context),
+      output,
       resumedCheckpoint: null,
     };
   }
@@ -283,7 +300,11 @@ export async function runOwnerLearningHarness(
 
   function assertRequiredFinalResult(finalResult: unknown): void {
     if (logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS && finalResult == null) {
-      throw new Error("Owner learning final logical call must contain a result");
+      throw new OwnerLearningOutputValidationError(
+        "invalid_result_contract",
+        "Owner learning final logical call must contain a result",
+        "finalResult",
+      );
     }
   }
 
@@ -327,34 +348,70 @@ export function validateOwnerLearningHarnessResult(
     allowedEvidenceRefs: readonly OwnerLearningEvidenceRef[];
   },
 ): OwnerLearningReviewResult {
-  const parsed = parseOwnerLearningReviewResult(value);
+  let parsed: OwnerLearningReviewResult;
+  try {
+    parsed = parseOwnerLearningReviewResult(
+      hydrateServerAuthoredProposal(value, input.currentStrategyStyle),
+    );
+  } catch (error) {
+    if (!(error instanceof OwnerLearningReviewResultValidationError)) throw error;
+    throw new OwnerLearningOutputValidationError(
+      "invalid_result_contract",
+      error.message,
+      undefined,
+      { cause: error },
+    );
+  }
   if (parsed.analysisTrack !== input.analysisTrack) {
-    throw new Error("Generated result changed the purchased analysis track");
+    throw new OwnerLearningOutputValidationError(
+      "analysis_track_mismatch",
+      "Generated result changed the purchased analysis track",
+      "analysisTrack",
+    );
   }
   const allowed = new Set(input.allowedEvidenceRefs.map(evidenceRefKey));
   for (const recommendation of parsed.recommendations) {
     for (const ref of recommendation.evidenceRefs) {
-      if (!allowed.has(evidenceRefKey(ref))) throw new Error("Generated result contains an unknown evidence ref");
+      if (!allowed.has(evidenceRefKey(ref))) {
+        throw new OwnerLearningOutputValidationError(
+          "unknown_evidence_ref",
+          "Generated result contains an unknown evidence ref",
+          "recommendations[].evidenceRefs",
+        );
+      }
     }
-  }
-  if (parsed.proposal && parsed.proposal.before !== input.currentStrategyStyle) {
-    throw new Error("Generated strategy proposal does not start from the reviewed strategy");
   }
   const changeRecommendations = parsed.recommendations.filter((recommendation) =>
     recommendation.disposition === "change"
   );
   if (parsed.proposal && changeRecommendations.length === 0) {
-    throw new Error("Generated strategy proposal requires a change recommendation");
+    throw new OwnerLearningOutputValidationError(
+      "proposal_contract",
+      "Generated strategy proposal requires a change recommendation",
+      "proposal",
+    );
   }
   if (parsed.noChange && changeRecommendations.length > 0) {
-    throw new Error("Generated no-change result cannot contain a change recommendation");
+    throw new OwnerLearningOutputValidationError(
+      "proposal_contract",
+      "Generated no-change result cannot contain a change recommendation",
+      "noChange",
+    );
   }
   if (input.analysisTrack === "strategy_health_check") {
     if (!parsed.strategyHealthClassification) {
-      throw new Error("strategyHealthClassification is required for Strategy Health Check");
+      throw new OwnerLearningOutputValidationError(
+        "strategy_health_classification_missing",
+        "strategyHealthClassification is required for Strategy Health Check",
+        "strategyHealthClassification",
+      );
     }
     if (parsed.noChange && /insufficient|not enough|need more evidence/i.test(parsed.noChange.rationale)) {
-      throw new Error("Strategy Health Check no-change must specifically defend the current guidance");
+      throw new OwnerLearningOutputValidationError(
+        "strategy_health_no_change_unsupported",
+        "Strategy Health Check no-change must specifically defend the current guidance",
+        "noChange.rationale",
+      );
     }
   }
   return {
@@ -369,6 +426,26 @@ export function validateOwnerLearningHarnessResult(
       }).slice("sha256:".length, "sha256:".length + 24)}`,
     })),
   };
+}
+
+function hydrateServerAuthoredProposal(value: unknown, currentStrategyStyle: string): unknown {
+  const hydrated = structuredClone(value);
+  const result = objectValue(hydrated, "review result");
+  if (result.proposal == null) return hydrated;
+  const proposal = objectValue(result.proposal, "proposal");
+  if ("before" in proposal || "field" in proposal) {
+    throw new OwnerLearningOutputValidationError(
+      "proposal_contract",
+      "Generated strategy proposal must contain only the replacement strategy",
+      "proposal",
+    );
+  }
+  result.proposal = {
+    field: "strategyStyle",
+    before: currentStrategyStyle,
+    after: proposal.after,
+  };
+  return hydrated;
 }
 
 function initialCheckpoint(): OwnerLearningCheckpoint {
@@ -401,10 +478,20 @@ function parseHarnessTurn(
   const provisionalThemes = boundedStringArray(record.provisionalThemes, "provisionalThemes", 3, 240);
   const selectedMomentIds = boundedStringArray(record.selectedMomentIds, "selectedMomentIds", 3, 200);
   if (new Set(selectedMomentIds).size !== selectedMomentIds.length) {
-    throw new Error("selectedMomentIds must be distinct");
+    throw new OwnerLearningOutputValidationError(
+      "invalid_turn_contract",
+      "selectedMomentIds must be distinct",
+      "selectedMomentIds",
+    );
   }
   for (const momentId of selectedMomentIds) {
-    if (!allowedMomentIds.has(momentId)) throw new Error("Generated turn selected an unknown moment ID");
+    if (!allowedMomentIds.has(momentId)) {
+      throw new OwnerLearningOutputValidationError(
+        "invalid_turn_contract",
+        "Generated turn selected an unknown moment ID",
+        "selectedMomentIds[]",
+      );
+    }
   }
   const allowedRefs = new Set(allowedEvidenceRefs.map(evidenceRefKey));
   const findings = record.findings === undefined
@@ -414,7 +501,11 @@ function parseHarnessTurn(
       const evidenceRefs = arrayValue(finding.evidenceRefs, `findings[${index}].evidenceRefs`, 6)
         .map((ref) => parseEvidenceRef(ref));
       if (evidenceRefs.some((ref) => !allowedRefs.has(evidenceRefKey(ref)))) {
-        throw new Error("Generated finding contains an unknown evidence ref");
+        throw new OwnerLearningOutputValidationError(
+          "invalid_turn_contract",
+          "Generated finding contains an unknown evidence ref",
+          `findings[${index}].evidenceRefs`,
+        );
       }
       return {
         evidenceRefs,
@@ -487,7 +578,11 @@ function parseEvidenceRef(value: unknown): OwnerLearningEvidenceRef {
   const record = objectValue(value, "evidence ref");
   const kind = boundedString(record.kind, "evidenceRef.kind", 40);
   if (!["canonical_event", "decision", "dialogue", "cognition", "game_summary"].includes(kind)) {
-    throw new Error("evidenceRef.kind is invalid");
+    throw new OwnerLearningOutputValidationError(
+      "invalid_turn_contract",
+      "evidenceRef.kind is invalid",
+      "evidenceRef.kind",
+    );
   }
   return {
     kind: kind as OwnerLearningEvidenceRef["kind"],
@@ -499,18 +594,34 @@ function parseEvidenceRef(value: unknown): OwnerLearningEvidenceRef {
 }
 
 function objectValue(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_turn_contract",
+      `${label} must be an object`,
+      label,
+    );
+  }
   return value as Record<string, unknown>;
 }
 
 function arrayValue(value: unknown, label: string, max: number): unknown[] {
-  if (!Array.isArray(value) || value.length > max) throw new Error(`${label} must contain at most ${max} entries`);
+  if (!Array.isArray(value) || value.length > max) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_turn_contract",
+      `${label} must contain at most ${max} entries`,
+      label,
+    );
+  }
   return value;
 }
 
 function boundedString(value: unknown, label: string, max: number): string {
   if (typeof value !== "string" || value.length < 1 || value.length > max) {
-    throw new Error(`${label} must contain 1-${max} characters`);
+    throw new OwnerLearningOutputValidationError(
+      "invalid_turn_contract",
+      `${label} must contain 1-${max} characters`,
+      label,
+    );
   }
   return value;
 }
@@ -604,10 +715,8 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
         anyOf: [{
           type: "object",
           additionalProperties: false,
-          required: ["field", "before", "after"],
+          required: ["after"],
           properties: {
-            field: { type: "string", const: "strategyStyle" },
-            before: { type: "string", maxLength: 2_000 },
             after: { type: "string", maxLength: 2_000 },
           },
         }, { type: "null" }],

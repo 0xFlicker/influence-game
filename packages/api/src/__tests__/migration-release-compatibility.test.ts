@@ -127,6 +127,19 @@ describe("expand-contract release migration policy", () => {
     ).toEqual([]);
   });
 
+  test("allows a same-named index replacement", () => {
+    expect(
+      inspectReleaseMigrationSql(
+        "replace-index.sql",
+        `
+      DROP INDEX agent_learning_review_calls_ordinal_unique;
+      CREATE UNIQUE INDEX agent_learning_review_calls_ordinal_unique
+        ON agent_learning_review_calls (review_id, ordinal, attempt_ordinal);
+    `,
+      ),
+    ).toEqual([]);
+  });
+
   test("rejects DROP, rename, narrowing, truncation, and data deletion", () => {
     const cases = [
       ["drop-column", "ALTER TABLE games DROP COLUMN legacy_note;"],
@@ -134,6 +147,7 @@ describe("expand-contract release migration policy", () => {
         "drop-constraint",
         "ALTER TABLE games DROP CONSTRAINT games_status_check;",
       ],
+      ["drop-index", "DROP INDEX games_slug_unique;"],
       ["rename-column", "ALTER TABLE games RENAME COLUMN slug TO game_slug;"],
       ["rename-table", "ALTER TABLE games RENAME TO archived_games;"],
       ["narrow-type", "ALTER TABLE games ALTER COLUMN slug TYPE varchar(80);"],

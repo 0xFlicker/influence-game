@@ -449,6 +449,48 @@
       "when": 1787615008839,
       "tag": "0063_provider_call_attempts_game_catalog_index",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1787893171035,
+      "tag": "0064_owner_learning_failure_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1787899000000,
+      "tag": "0065_owner_learning_attempt_protocol",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1787902762961,
+      "tag": "0066_owner_learning_call_evidence_staging",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787905473985,
+      "tag": "0067_owner_learning_response_evidence_invariant",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787905960248,
+      "tag": "0068_owner_learning_retry_queue_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1787906953640,
+      "tag": "0069_owner_learning_failure_commit_invariant",
+      "breakpoints": true
     }
   ]
 }

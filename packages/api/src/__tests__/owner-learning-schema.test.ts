@@ -122,7 +122,7 @@ describe("owner learning schema", () => {
     }));
   });
 
-  test("contains only typed evidence and generated-result storage lanes", async () => {
+  test("contains typed evidence plus review-scoped private failure storage lanes", async () => {
     const db = await setupTestDB();
     const rows = await db.execute<{ table_name: string; column_name: string }>(sql`
       SELECT table_name, column_name
@@ -138,11 +138,15 @@ describe("owner learning schema", () => {
       "agent_learning_review_applications",
       "agent_learning_review_calls",
       "agent_learning_review_entitlements",
+      "agent_learning_review_failure_diagnostics",
+      "agent_learning_review_failure_evidence_outbox",
+      "agent_learning_review_failure_manifest_reads",
+      "agent_learning_review_failure_manifests",
       "agent_learning_review_games",
       "agent_learning_reviews",
     ]));
     const forbidden = rows.filter((row) =>
-      /(raw_|transcript|cognition|prompt_body|provider_response)/.test(row.column_name)
+      /(raw_|transcript|cognition|prompt_body)/.test(row.column_name)
     );
     expect(forbidden).toEqual([]);
   });

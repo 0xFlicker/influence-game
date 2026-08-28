@@ -47,7 +47,7 @@ describe("owner learning contracts", () => {
     expect(result.recommendations).toHaveLength(1);
   });
 
-  test("canonicalizes proposal provenance before persisting or fingerprinting it", () => {
+  test("preserves exact server provenance while normalizing the replacement", () => {
     const result = parseOwnerLearningReviewResult({
       diagnosis: "The agent waits too long to convert trust into a voting plan.",
       analysisTrack: "evidence_rich",
@@ -73,7 +73,7 @@ describe("owner learning contracts", () => {
 
     expect(result.proposal).toEqual({
       field: "strategyStyle",
-      before: "Build trust before committing.",
+      before: " \n Build trust before committing.\t",
       after: "Build trust, then name a preferred target and fallback.",
     });
     expect(fingerprintOwnerLearningValue({ reviewId: "review-1", proposal: result.proposal })).toBe(
@@ -81,14 +81,14 @@ describe("owner learning contracts", () => {
         reviewId: "review-1",
         proposal: {
           field: "strategyStyle",
-          before: "Build trust before committing.",
+          before: " \n Build trust before committing.\t",
           after: "Build trust, then name a preferred target and fallback.",
         },
       }),
     );
   });
 
-  test("applies the proposal length limit after trimming transport whitespace", () => {
+  test("applies the replacement length limit after trimming transport whitespace", () => {
     const before = "b".repeat(2_000);
     const after = "a".repeat(2_000);
     const result = parseOwnerLearningReviewResult({
@@ -109,7 +109,7 @@ describe("owner learning contracts", () => {
       }],
       proposal: {
         field: "strategyStyle",
-        before: ` \n${before}\t`,
+        before,
         after: `\t${after}\n `,
       },
     });

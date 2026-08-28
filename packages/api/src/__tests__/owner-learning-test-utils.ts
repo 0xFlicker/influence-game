@@ -62,7 +62,7 @@ export async function insertPlayedOwnerLearningAgent(
       name: profile.name,
       personality: profile.personality,
       backstory: profile.backstory,
-      strategyStyle: profile.strategyStyle,
+      strategyInstructions: profile.strategyStyle,
       personaKey: profile.personaKey,
     },
     effectiveRuntimeSnapshot: effectiveRuntimeSnapshot as unknown as Record<string, unknown>,

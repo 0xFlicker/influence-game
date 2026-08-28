@@ -133,6 +133,7 @@ import {
   type OwnerLearningMcpDependencies,
 } from "./owner-learning.js";
 import { ownerLearningGenerationEnabled } from "../services/owner-learning-public.js";
+import { OwnerLearningRetryError } from "../services/owner-learning-retry.js";
 import {
   OWNER_LEARNING_MCP_READ_SCOPES,
   OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -1357,7 +1358,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: RETRY_LEARNING_REVIEW_TOOL,
-      description: "Retry the same owned failed learning review by reviewId when it is retryable and its lifetime logical-call budget remains. Replays for already queued/running work return the same review and never reset counters. Requires agents:read, games:read, and agents:write.",
+      description: "Use the owner's single recovery allowance to retry the same failed learning review from its saved checkpoint without consuming another review credit. Replays for already queued/running work return the same review and never reset logical-call counters. Requires agents:read, games:read, and agents:write.",
       inputSchema: RETRY_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: RETRY_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -2246,6 +2247,15 @@ function publicPlayerProfileContent(value: unknown): {
 }
 
 function jsonRpcErrorData(error: unknown): { data?: unknown } {
+  if (error instanceof OwnerLearningRetryError) {
+    return {
+      data: {
+        code: error.code,
+        statusCode: error.code === "review_unavailable" ? 404 : 409,
+        retryable: false,
+      },
+    };
+  }
   if (error instanceof AgentProfileManagementError || error instanceof QueueEnrollmentError) {
     return {
       data: {

@@ -577,6 +577,7 @@ export {
   ExactStructuredOutputRegistry,
   createExactStructuredOutputArtifact,
   exactStructuredOutputRegistry,
+  validateExactStructuredValue,
 } from "./structured-output";
 export type {
   ExactStructuredOutputArtifact,
