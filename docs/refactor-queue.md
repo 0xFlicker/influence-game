@@ -62,6 +62,17 @@ Status legend:
 
 Items are ordered by current priority.
 
+### R33. Replace packed provider-call ordinals with structured coordinates
+
+- Status: `ready`
+- Priority: **high**
+- Sources: staging game `punk-blue-silver`; `packages/engine/src/provider-execution.ts`, `packages/engine/src/diary-room.ts`, `packages/engine/src/house-interviewer.ts`, `packages/api/src/services/provider-call-journal.ts`, and `packages/api/src/db/schema.ts`.
+- Signal: diary-room House calls currently encode `(canonical event boundary, player ordinal, exchange ordinal)` by applying Cantor pairing twice. That deterministic packing preserves replay identity, but it grows roughly with the fourth power of the event sequence: staging game `punk-blue-silver` produced logical-call ordinal `3619941329` during Round 5 and exceeded the journal's original PostgreSQL `integer` column. Widening the column to `bigint` repairs that immediate storage failure, but numeric magnitude remains an accidental property of coordinate encoding rather than a domain requirement.
+- Required direction: make the logical call's typed, structured coordinate authoritative. Give each call site a stable discriminant and explicit bounded components, serialize the coordinate canonically, and derive the existing deterministic logical-call ID from that serialized value. Persist enough structured identity to verify hash matches and diagnose replay conflicts. Do not combine coordinate dimensions into one numeric ordinal, allocate identity from process-local call order, parse an ID back into gameplay facts, or maintain parallel numeric and structured authorities.
+- Durability boundary: the same semantic coordinate must derive the same logical-call ID before and after restart, while different players, exchanges, phases, rounds, and durable-turn subcall slots remain distinct. Accepted-result replay, immutable reservation identity, provider attempt ordering, game-turn bindings, producer evidence, and canonical commit behavior must remain unchanged.
+- Validation path: deterministic unit cases prove canonical serialization and ID stability across key order and restart; adjacent coordinate components never collide; large event sequences do not create packed-number growth or lose identity; and malformed, unknown-version, or hash-mismatched coordinates fail clearly. DB-backed recovery tests interrupt before reservation, after reservation, after accepted provider output, and after canonical commit, then prove exactly one semantic call and one accepted result survive adoption without redispatch.
+- Suggested slice: replace the nested diary-room pairing path first with a versioned structured coordinate carried through the provider execution boundary and journal, then remove `pairProviderLogicalCallOrdinals` after its remaining callers use explicit coordinates. Keep the existing deterministic stable-JSON hashing seam; change the identity payload, not the provider retry or game-turn protocols.
+
 ### R32. Remove prose-parsing escape hatches from structured model turns
 
 - Status: `closed`
