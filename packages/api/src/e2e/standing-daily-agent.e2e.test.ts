@@ -288,8 +288,7 @@ describe("E2E: Standing Daily Agent", () => {
     await surfacePage.keyboard.press("Escape");
     await waitForMissingText(surfacePage, "Play for Free");
     await playerPage.goto(`${webUrl}/dashboard`, { waitUntil: "domcontentloaded" });
-    await playerPage.waitForSelector(`a[href='/games/${gameSlug}']`, { timeout: 45_000 });
-    expect(await pageText(playerPage)).toContain(`${gameSlug} is in progress now.`);
+    await waitForText(playerPage, `${gameSlug} is in progress now.`, 45_000);
     expect(await playerPage.$eval(
       `a[href='/games/${gameSlug}']`,
       (element) => element.getAttribute("href"),
@@ -365,7 +364,7 @@ async function waitForText(page: Page, text: string, timeout = 30_000): Promise<
   try {
     await page.waitForFunction(
       `document.body.innerText.toLowerCase().includes(${JSON.stringify(text.toLowerCase())})`,
-      { timeout },
+      { polling: "mutation", timeout },
     );
   } catch {
     throw new Error(`Page did not render ${JSON.stringify(text)}. Visible text:\n${await pageText(page)}`);
