@@ -7,6 +7,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./alliance-huddle-outcome": "./src/alliance-huddle-outcome.ts",
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./prompt-thread-lab": "./src/prompt-thread-lab.ts",

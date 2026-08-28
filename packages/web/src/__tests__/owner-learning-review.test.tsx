@@ -57,9 +57,9 @@ describe("owner learning review", () => {
   test("renders format-only ballots and every useful format action label", () => {
     const cases = [
       ["save_or_eliminate", "save", "Voted to save Rune"],
-      ["save_or_eliminate", "eliminate", "Voted to eliminate Rune"],
-      ["vote_bomb", null, "Vote Bomb vote against Rune"],
-      ["majority_elimination", null, "Majority Elimination vote against Rune"],
+      ["save_or_eliminate", "eliminate", "Voted to exit Rune"],
+      ["vote_bomb", null, "The Short List vote against Rune"],
+      ["majority_elimination", null, "Highest Count vote against Rune"],
       ["safety_bounce", null, "Safety Bounce vote against Rune"],
     ] as const;
 

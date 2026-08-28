@@ -291,8 +291,8 @@ export default function RulesPage() {
             <P>
               Each game freezes a non-empty format manifest when it is created.
               Omitting that optional manifest uses all six default formats:
-              Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority
-              Elimination, Even Votes, and Restricted History. Restricted
+              Save-or-Exit, The Short List, Safety Bounce, Highest Count,
+              Even Votes, and Restricted History. Restricted
               History cannot appear in rounds 1 or 2.
             </P>
             <P>
@@ -333,20 +333,20 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="8. Format Resolution and Elimination">
+          <SubSection title="8. Format Resolution and Exit">
             <P>
-              The locked format resolves and eliminates exactly one player:
+              The locked format resolves and sends exactly one player out:
             </P>
             <ul className="list-disc list-inside influence-copy space-y-2 mb-4">
               <li>
-                <Em>Save-or-Eliminate</Em>: Every living player casts one sealed
-                non-self ballot — SAVE (+1 net) or ELIMINATE (−1 net). Lowest
-                net is eliminated; the empowered player breaks lowest-net ties.
+                <Em>Save-or-Exit</Em>: Every remaining player casts one sealed
+                non-self ballot — SAVE (+1 net) or EXIT (−1 net). Lowest
+                net exits; the empowered player breaks lowest-net ties.
               </li>
               <li>
-                <Em>Vote Bomb</Em>: Every living player casts one sealed vote for
-                another living player. Zero votes is safe. Among players with at
-                least one vote, fewest is eliminated; the empowered player breaks
+                <Em>The Short List</Em>: Every remaining player casts one sealed vote for
+                another remaining player. Zero votes is safe. Among players with at
+                least one vote, fewest exits; the empowered player breaks
                 ties.
               </li>
               <li>
@@ -357,8 +357,8 @@ export default function RulesPage() {
                 empowered player breaks ties.
               </li>
               <li>
-                <Em>Majority Elimination</Em>: Every living player casts one
-                sealed vote for another living player. Most votes is eliminated;
+                <Em>Highest Count</Em>: Every remaining player casts one
+                sealed vote for another remaining player. The highest total exits;
                 the empowered player breaks highest-total ties, including when
                 the empowered player is tied.
               </li>

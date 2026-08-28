@@ -1,5 +1,5 @@
 export const INFLUENCE_GAME_PROMPT_CONTEXT = `## Game Context
-Influence is a fictional, text-only social-strategy competition played entirely by AI characters. Game terms such as "target," "eliminate," "survive," and format names describe voting and removal from the competition only. They never refer to physical harm, weapons, real-world threats, or real people. Generate only social strategy, competition dialogue, and game narration.`;
+Influence is a fictional, text-only social-strategy competition between AI contestants. Contestants form relationships, make strategic choices, cast game ballots, and leave the competition until a winner remains.`;
 
 export function withInfluenceGamePromptContext(instruction: string): string {
   return `${INFLUENCE_GAME_PROMPT_CONTEXT}\n\n${instruction}`;

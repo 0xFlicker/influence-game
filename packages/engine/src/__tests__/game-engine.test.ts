@@ -363,7 +363,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(events.some((event) => event.type === "agent_turn" && event.action === "mingle-intent")).toBe(false);
     expect(house.seenContext).toMatchObject({
       phase: Phase.FORMAT_MINGLE,
-      selectedFormatName: expect.any(String),
+      selectedFormatId: expect.any(String),
       formatRuleSummary: expect.any(String),
       players: agents.map((agent) => ({ id: agent.id, name: agent.name })),
     });

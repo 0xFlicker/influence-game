@@ -620,7 +620,7 @@ describe("ContextBuilder", () => {
 
     expect(bobContext.gameEventRecord?.some((record) => record.includes("format ballot"))).toBe(false);
     expect(aliceContext.gameEventRecord).toContain(
-      "R1/FORMAT_RESOLVE: Your format ballot: eliminate → Bob (sealed).",
+      "R1/FORMAT_RESOLVE: Your format ballot: EXIT → Bob (sealed).",
     );
   });
 

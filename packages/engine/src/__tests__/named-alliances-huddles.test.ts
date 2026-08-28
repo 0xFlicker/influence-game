@@ -134,6 +134,12 @@ describe("named alliance huddle windows", () => {
 
     const scheduleTurns: Array<{ decision: unknown; allianceId: unknown }> = [];
     const huddleTurns: string[] = [];
+    const houseOutcomeOrdinals: number[] = [];
+    const summarizeAllianceHuddle = ctx.houseInterviewer.summarizeAllianceHuddle.bind(ctx.houseInterviewer);
+    ctx.houseInterviewer.summarizeAllianceHuddle = async (context) => {
+      houseOutcomeOrdinals.push(context.providerLogicalCallOrdinal);
+      return summarizeAllianceHuddle(context);
+    };
     logger.setStreamListener((event) => {
       if (event.type !== "agent_turn") return;
       if (event.action === "alliance-huddle-schedule") {
@@ -181,6 +187,7 @@ describe("named alliance huddle windows", () => {
       expect(entry.dialogueContext?.sessionAudiencePlayerIds?.length).toBe(2);
     }
     expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(2);
+    expect(houseOutcomeOrdinals).toEqual([1, 2]);
     expect(gameState.getAllianceHuddleOutcomes()[0]).toMatchObject({
       facts: expect.any(Array),
       participantPlayerIds: ["alice", "bob"],
@@ -292,11 +299,42 @@ describe("named alliance huddle windows", () => {
     expect(event.payload.outcome.facts).toEqual([]);
   });
 
+  it("rechecks owner authority after House summary before accepting a huddle outcome", async () => {
+    const { gameState, logger, actor, ctx } = createHuddleHarness();
+    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
+    const baseHouse = ctx.houseInterviewer;
+    let houseSummaryReturned = false;
+    let outcomeEmitted = false;
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "alliance-huddle-outcome") {
+        outcomeEmitted = true;
+      }
+    });
+    ctx.houseInterviewer = {
+      planAllianceHuddles: baseHouse.planAllianceHuddles.bind(baseHouse),
+      summarizeAllianceHuddle: async (context) => {
+        const result = await baseHouse.summarizeAllianceHuddle(context);
+        houseSummaryReturned = true;
+        return result;
+      },
+    } as PhaseRunnerContext["houseInterviewer"];
+    ctx.beforeAcceptedCommit = () => {
+      if (houseSummaryReturned) throw new Error("owner lease lost after House summary");
+    };
+
+    await expect(runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE))
+      .rejects.toThrow("owner lease lost after House summary");
+
+    expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
+    expect(outcomeEmitted).toBe(false);
+  });
+
   it("repairs invalid House picks and runs huddles pass-wise with max two sessions per alliance", async () => {
     const { gameState, logger, actor, ctx } = createHuddleHarness(LARGE_PLAYER_ROSTER);
     activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
     activatePair(gameState, "alliance-cd", "lineage-cd", "version-cd", "charlie", "dana");
     const baseHouse = ctx.houseInterviewer;
+    const houseOutcomeOrdinals: number[] = [];
     ctx.houseInterviewer = {
       ...baseHouse,
       planAllianceHuddles: async () => ({
@@ -308,7 +346,10 @@ describe("named alliance huddle windows", () => {
         skipped: [],
         rationale: "The House tried to spend the scarce huddle window.",
       }),
-      summarizeAllianceHuddle: baseHouse.summarizeAllianceHuddle.bind(baseHouse),
+      summarizeAllianceHuddle: async (context) => {
+        houseOutcomeOrdinals.push(context.providerLogicalCallOrdinal);
+        return baseHouse.summarizeAllianceHuddle(context);
+      },
     } as PhaseRunnerContext["houseInterviewer"];
     const huddleTurns: string[] = [];
     logger.setStreamListener((event) => {
@@ -330,6 +371,7 @@ describe("named alliance huddle windows", () => {
     ]);
     expect(huddleTurns).toEqual(["alice", "bob", "charlie", "dana", "alice", "bob"]);
     expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(3);
+    expect(houseOutcomeOrdinals).toEqual([1, 2, 3]);
   });
 
   it("closes universal alliances before huddle eligibility", async () => {

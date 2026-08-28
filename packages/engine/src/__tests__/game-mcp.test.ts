@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { GameMcpReadModel } from "../game-mcp/read-model";
 import { createGameMcpServer } from "../game-mcp/server";
+import { toGameMcpFormatSurface } from "../game-mcp/format-surface";
 import { Phase, PlayerStatus, type AllianceHuddleOutcome, type AllianceProposalLineage, type AllianceRecord } from "../types";
 
 let tempDirs: string[] = [];
@@ -109,6 +110,156 @@ function writeLegacyGame(sessionDir: string, gameNumber = 2): void {
 }
 
 describe("game MCP corpus read model", () => {
+  it("translates structured MCP format bags while leaving prose opaque", () => {
+    expect(toGameMcpFormatSurface({
+      selectedFormatId: "majority_elimination" as const,
+      majorityElimination: { totals: { atlas: 3 } },
+      ballot: {
+        formatId: "save_or_eliminate" as const,
+        polarity: "eliminate" as const,
+      },
+      result: {
+        formatId: "vote_bomb" as const,
+        formatMethod: "vote_bomb" as const,
+        method: "vote_bomb:clear" as const,
+      },
+      turningPoint: { type: "format_vote_bomb_clear_stack" as const },
+      derived: {
+        derivationMethod: "format_vote_bomb_unanimous_target" as const,
+      },
+      internalCanonicalNote: "vote_bomb" as const,
+      message: "Vote Bomb and vote_bomb remain authored prose.",
+    })).toEqual({
+      selectedFormatId: "highest_count",
+      highestCount: { totals: { atlas: 3 } },
+      ballot: {
+        formatId: "save_or_exit",
+        polarity: "exit",
+      },
+      result: {
+        formatId: "short_list",
+        formatMethod: "short_list",
+        method: "short_list:clear",
+      },
+      turningPoint: { type: "format_short_list_clear_stack" },
+      derived: {
+        derivationMethod: "format_short_list_unanimous_target",
+      },
+      internalCanonicalNote: "vote_bomb",
+      message: "Vote Bomb and vote_bomb remain authored prose.",
+    });
+    expect(toGameMcpFormatSurface([
+      { method: "save_or_eliminate:clear" as const },
+      { method: "vote_bomb:auto" as const },
+      { method: "majority_elimination:tiebreak" as const },
+      { method: "plurality" as const },
+    ])).toEqual([
+      { method: "save_or_exit:clear" },
+      { method: "short_list:auto" },
+      { method: "highest_count:tiebreak" },
+      { method: "plurality" },
+    ]);
+    expect(toGameMcpFormatSurface([
+      { derivationMethod: "format_soe_eliminated_with_saves" as const },
+      { derivationMethod: "format_vote_bomb_clear_stack" as const },
+      { derivationMethod: "format_vote_bomb_unanimous_target" as const },
+    ])).toEqual([
+      { derivationMethod: "format_save_or_exit_exited_with_saves" },
+      { derivationMethod: "format_short_list_clear_stack" },
+      { derivationMethod: "format_short_list_unanimous_target" },
+    ]);
+  });
+
+  it("projects historical canonical format IDs on derived reads without rewriting raw artifacts", async () => {
+    const corpusDir = makeTempCorpus();
+    const sessionDir = makeSession(corpusDir, "batch-format-vocabulary");
+    const events = [
+      event({
+        payload: {
+          players: [
+            { id: "atlas", name: "Atlas", status: PlayerStatus.ALIVE, shielded: false },
+            { id: "vera", name: "Vera", status: PlayerStatus.ALIVE, shielded: false },
+          ],
+          formatManifest: ["vote_bomb"],
+        },
+      }),
+      event({
+        sequence: 2,
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        visibility: "public",
+        payload: { empoweredId: "atlas", formatId: "vote_bomb" },
+      }),
+      event({
+        sequence: 3,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_cast",
+        visibility: "producer",
+        payload: {
+          formatId: "save_or_eliminate",
+          voterId: "atlas",
+          targetId: "vera",
+          polarity: "eliminate",
+        },
+      }),
+    ];
+    const eventsPath = join(sessionDir, "game-1-events.jsonl");
+    writeFileSync(
+      eventsPath,
+      `${events.map((canonicalEvent) => JSON.stringify({ canonicalEvent })).join("\n")}\n`,
+    );
+    writeFileSync(
+      join(sessionDir, "game-1.txt"),
+      "Atlas says the old Vote Bomb name verbatim.\n",
+    );
+    const readModel = new GameMcpReadModel(corpusDir);
+
+    const surfaceEvents = readModel.readEventRecords("batch-format-vocabulary", 1)
+      .map((entry) => entry.event);
+    const roster = surfaceEvents.find((candidate) => candidate.type === "game.roster_initialized");
+    const selected = surfaceEvents.find((candidate) => candidate.type === "format.selected");
+    const ballot = surfaceEvents.find((candidate) => candidate.type === "format.ballot_cast");
+
+    expect(roster?.payload.formatManifest).toEqual(["short_list"]);
+    expect(selected?.payload.formatId).toBe("short_list");
+    expect(ballot?.payload).toMatchObject({
+      formatId: "save_or_exit",
+      polarity: "exit",
+    });
+    expect(readModel.readProjection("batch-format-vocabulary", 1).selectedFormatId).toBe("short_list");
+    expect(readModel.searchLogs({
+      query: "vote_bomb",
+      sessionId: "batch-format-vocabulary",
+      gameNumber: 1,
+      sources: ["events"],
+    })).toHaveLength(2);
+    expect(readModel.searchLogs({
+      query: "short_list",
+      sessionId: "batch-format-vocabulary",
+      gameNumber: 1,
+      sources: ["events"],
+    })).toEqual([]);
+    const server = createGameMcpServer(corpusDir);
+    const eventResource = await server.handle({
+      jsonrpc: "2.0",
+      id: "read-raw-format-events",
+      method: "resources/read",
+      params: {
+        uri: "influence-game://sessions/batch-format-vocabulary/games/1/events",
+      },
+    });
+    const resourceText = (eventResource?.result as {
+      contents?: Array<{ text?: string }>;
+    } | undefined)?.contents?.[0]?.text ?? "";
+    expect(resourceText).toContain('\"formatId\":\"vote_bomb\"');
+    expect(resourceText).not.toContain('\"formatId\":\"short_list\"');
+    expect(readModel.readTranscript("batch-format-vocabulary", 1))
+      .toBe("Atlas says the old Vote Bomb name verbatim.\n");
+    expect(readFileSync(eventsPath, "utf8")).toContain('"formatId":"vote_bomb"');
+  });
+
   it("discovers sessions and reports per-game artifact capabilities", () => {
     const corpusDir = makeTempCorpus();
     writeCanonicalGame(makeSession(corpusDir, "batch-2026-06-11T20-05-24"));

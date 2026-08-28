@@ -10,6 +10,10 @@ import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { withInfluenceGamePromptContext } from "./game-prompt-context";
+import {
+  displayNameForFormat,
+  type LaunchFormatId,
+} from "./format-presentation-metadata";
 import type { LlmProviderRuntime, LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
@@ -137,7 +141,7 @@ export interface HouseMingleAssignmentContext {
   round: number;
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE;
   roomCount: number;
-  selectedFormatName: string | null;
+  selectedFormatId: LaunchFormatId | null;
   formatRuleSummary: string | null;
   players: HouseMingleAssignmentPlayer[];
 }
@@ -193,6 +197,7 @@ export interface HouseAllianceHuddleScheduleContext {
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
   budget: number;
+  /** Canonical caller field; provider prompts present these as players remaining. */
   alivePlayers: string[];
   candidates: HouseAllianceHuddleCandidate[];
 }
@@ -214,6 +219,8 @@ export interface HouseAllianceHuddleOutcomeContext {
   round: number;
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
+  /** Stable one-based position in the engine's deterministic schedule for this phase. */
+  providerLogicalCallOrdinal: number;
   alliance: {
     id: UUID;
     name: string;
@@ -260,7 +267,7 @@ const HOUSE_FOLLOW_UP_SCHEMA: Record<string, unknown> = {
 export interface IHouseInterviewer {
   /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
-  /** Select scarce proposer access from living candidates. The engine validates and repairs output. */
+  /** Select scarce proposer access from candidates remaining in the game. The engine validates and repairs output. */
   selectAllianceProposers(
     context: HouseAllianceProposerSelectionContext,
   ): Promise<HouseAllianceProposerSelectionResult>;
@@ -337,6 +344,26 @@ function hasOnlyKeys(record: Record<string, unknown>, keys: readonly string[]): 
   return Object.keys(record).every((key) => allowed.has(key));
 }
 
+function decodeHouseThinking(
+  record: Record<string, unknown>,
+  label: string,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<{ thinking?: string }> {
+  const hasThinking = Object.prototype.hasOwnProperty.call(record, "thinking");
+  if (representation === "provider") {
+    if (!hasThinking || (record.thinking !== null && typeof record.thinking !== "string")) {
+      return { status: "invalid", message: `${label} thinking must be a string or null.` };
+    }
+    const thinking = readNullableString(record.thinking);
+    return { status: "valid", value: thinking ? { thinking } : {} };
+  }
+  if (!hasThinking) return { status: "valid", value: {} };
+  const thinking = readNullableString(record.thinking);
+  return thinking
+    ? { status: "valid", value: { thinking } }
+    : { status: "invalid", message: `Accepted ${label} thinking must be a non-empty string when present.` };
+}
+
 function requireDistinctContextIds(ids: readonly string[], label: string): void {
   if (ids.some((id) => !id.trim()) || new Set(ids).size !== ids.length) {
     throw new Error(`${label} must contain distinct non-empty IDs.`);
@@ -346,6 +373,7 @@ function requireDistinctContextIds(ids: readonly string[], label: string): void 
 function decodeHouseMingleAssignment(
   value: unknown,
   context: HouseMingleAssignmentContext,
+  representation: "provider" | "accepted",
 ): StructuredDomainDecodeResult<HouseMingleAssignmentResult> {
   const decodedRecord = recordValue(value, "House Mingle assignment");
   if (decodedRecord.status === "invalid") return decodedRecord;
@@ -399,15 +427,14 @@ function decodeHouseMingleAssignment(
   }
   const rationale = readNullableString(record.rationale);
   if (!rationale) return { status: "invalid", message: "House Mingle rationale must be non-empty." };
-  if (record.thinking !== null && typeof record.thinking !== "string") {
-    return { status: "invalid", message: "House Mingle thinking must be a string or null." };
-  }
+  const thinking = decodeHouseThinking(record, "House Mingle", representation);
+  if (thinking.status === "invalid") return thinking;
   return {
     status: "valid",
     value: {
       rooms,
       rationale,
-      ...(readNullableString(record.thinking) && { thinking: readString(record.thinking) }),
+      ...thinking.value,
     },
   };
 }
@@ -552,6 +579,7 @@ function isHouseArtifactProviderExhaustion(error: unknown): error is ProviderUna
 function decodeHouseAllianceProposerSelection(
   value: unknown,
   context: HouseAllianceProposerSelectionContext,
+  representation: "provider" | "accepted",
 ): StructuredDomainDecodeResult<HouseAllianceProposerSelectionResult> {
   const decodedRecord = recordValue(value, "House proposer selection");
   if (decodedRecord.status === "invalid") return decodedRecord;
@@ -586,15 +614,14 @@ function decodeHouseAllianceProposerSelection(
   }
   const rationale = readNullableString(record.rationale);
   if (!rationale) return { status: "invalid", message: "House proposer rationale must be non-empty." };
-  if (record.thinking !== null && typeof record.thinking !== "string") {
-    return { status: "invalid", message: "House proposer thinking must be a string or null." };
-  }
+  const thinking = decodeHouseThinking(record, "House proposer", representation);
+  if (thinking.status === "invalid") return thinking;
   return {
     status: "valid",
     value: {
       selected,
       rationale,
-      ...(readNullableString(record.thinking) && { thinking: readString(record.thinking) }),
+      ...thinking.value,
     },
   };
 }
@@ -633,6 +660,7 @@ function normalizedBoundedStrings(value: unknown, maxItems: number, maxChars: nu
 function decodeHouseAllianceHuddleSchedule(
   value: unknown,
   context: HouseAllianceHuddleScheduleContext,
+  representation: "provider" | "accepted",
 ): StructuredDomainDecodeResult<HouseAllianceHuddleScheduleResult> {
   const decodedRecord = recordValue(value, "House huddle schedule");
   if (decodedRecord.status === "invalid") return decodedRecord;
@@ -683,16 +711,15 @@ function decodeHouseAllianceHuddleSchedule(
   }
   const rationale = readNullableString(record.rationale);
   if (!rationale) return { status: "invalid", message: "House huddle schedule rationale must be non-empty." };
-  if (record.thinking !== null && typeof record.thinking !== "string") {
-    return { status: "invalid", message: "House huddle schedule thinking must be a string or null." };
-  }
+  const thinking = decodeHouseThinking(record, "House huddle schedule", representation);
+  if (thinking.status === "invalid") return thinking;
   return {
     status: "valid",
     value: {
       scheduled: scheduled.value,
       skipped: skipped.value,
       rationale,
-      ...(readNullableString(record.thinking) && { thinking: readString(record.thinking) }),
+      ...thinking.value,
     },
   };
 }
@@ -718,6 +745,7 @@ function defaultHuddleAsk(window: AllianceHuddleWindow): string {
 
 function decodeHouseAllianceHuddleOutcome(
   value: unknown,
+  representation: "provider" | "accepted",
 ): StructuredDomainDecodeResult<HouseAllianceHuddleOutcomeResult> {
   const decodedRecord = recordValue(value, "House huddle outcome");
   if (decodedRecord.status === "invalid") return decodedRecord;
@@ -761,9 +789,8 @@ function decodeHouseAllianceHuddleOutcome(
   ) {
     return { status: "invalid", message: "House huddle posture is unsupported." };
   }
-  if (record.thinking !== null && typeof record.thinking !== "string") {
-    return { status: "invalid", message: "House huddle thinking must be a string or null." };
-  }
+  const thinking = decodeHouseThinking(record, "House huddle", representation);
+  if (thinking.status === "invalid") return thinking;
   return {
     status: "valid",
     value: {
@@ -774,7 +801,7 @@ function decodeHouseAllianceHuddleOutcome(
       confidence: record.confidence,
       posture: record.posture,
       leakOrBetrayalClaims,
-      ...(readNullableString(record.thinking) && { thinking: readString(record.thinking) }),
+      ...thinking.value,
     },
   };
 }
@@ -1372,13 +1399,16 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       .join("\n");
 
     const roomList = Array.from({ length: context.roomCount }, (_, index) => index + 1).join(", ");
+    const selectedFormatName = context.selectedFormatId === null
+      ? null
+      : displayNameForFormat(context.selectedFormatId);
     const prompt = `Assign initial Mingle rooms for Round ${context.round}.
 
 Phase: ${context.phase}
-Locked format: ${context.selectedFormatName ?? "none"}
+Locked format: ${selectedFormatName ?? "none"}
 Locked rules: ${context.formatRuleSummary ?? "No locked format rules are available."}
 Rooms available: ${roomList}
-Alive players:
+Players remaining:
 ${playerLines}
 
 Your job:
@@ -1441,8 +1471,8 @@ Respond with JSON only:
           additionalProperties: false,
         },
         decoder: {
-          decodeProvider: (record) => decodeHouseMingleAssignment(record, context),
-          decodeAccepted: (accepted) => decodeHouseMingleAssignment(accepted, context),
+          decodeProvider: (record) => decodeHouseMingleAssignment(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseMingleAssignment(accepted, context, "accepted"),
         },
         maxTokens: 1200,
         temperature: 0.4,
@@ -1494,11 +1524,11 @@ Respond with JSON only:
 Round: ${context.round}
 Phase: ${context.phase}
 Proposer budget: ${context.budget}
-Eligible living players:
+Eligible players remaining:
 ${candidates || "(none)"}
 
 Your job:
-- Select exactly ${context.budget} unique eligible living players to receive a propose, amend, or pass opportunity.
+- Select exactly ${context.budget} unique eligible players to receive a propose, amend, or pass opportunity.
 - Prefer players with fewer active alliances so underrepresented players receive access before already well-connected players.
 - Use only the exact player IDs listed above.
 - Select access only. Do not choose alliance members or terms, create or rewrite alliances, dissolve alliances, enforce promises, or assume a selected player will propose.
@@ -1548,8 +1578,8 @@ Respond with JSON only.`;
           additionalProperties: false,
         },
         decoder: {
-          decodeProvider: (record) => decodeHouseAllianceProposerSelection(record, context),
-          decodeAccepted: (accepted) => decodeHouseAllianceProposerSelection(accepted, context),
+          decodeProvider: (record) => decodeHouseAllianceProposerSelection(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceProposerSelection(accepted, context, "accepted"),
         },
         maxTokens: 1200,
         temperature: 0.3,
@@ -1602,7 +1632,7 @@ Round: ${context.round}
 Phase: ${context.phase}
 Window: ${context.window}
 Global huddle budget: ${context.budget}
-Alive players: ${context.alivePlayers.join(", ")}
+Players remaining: ${context.alivePlayers.join(", ")}
 
 Eligible active alliances:
 ${candidates || "(none)"}
@@ -1671,8 +1701,8 @@ Respond with JSON only.`;
           additionalProperties: false,
         },
         decoder: {
-          decodeProvider: (record) => decodeHouseAllianceHuddleSchedule(record, context),
-          decodeAccepted: (accepted) => decodeHouseAllianceHuddleSchedule(accepted, context),
+          decodeProvider: (record) => decodeHouseAllianceHuddleSchedule(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceHuddleSchedule(accepted, context, "accepted"),
         },
         maxTokens: 1800,
         temperature: 0.4,
@@ -1743,11 +1773,18 @@ Respond with JSON only.`;
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
+      const traceContext = this.privateTraceContext(
+        "house-alliance-huddle-outcome",
+        context.round,
+        context.phase,
+        context.providerLogicalCallOrdinal,
+      );
       const { value, response } = await this.callHouseJsonSchema({
         action: "house-alliance-huddle-outcome",
         source: "House/alliance-huddle-outcome",
         round: context.round,
         phase: context.phase,
+        traceContext,
         messages,
         schemaName: "house_alliance_huddle_outcome",
         schema: {
@@ -1766,8 +1803,8 @@ Respond with JSON only.`;
           additionalProperties: false,
         },
         decoder: {
-          decodeProvider: decodeHouseAllianceHuddleOutcome,
-          decodeAccepted: decodeHouseAllianceHuddleOutcome,
+          decodeProvider: (record) => decodeHouseAllianceHuddleOutcome(record, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceHuddleOutcome(accepted, "accepted"),
         },
         maxTokens: 1800,
         temperature: 0.35,
@@ -1777,7 +1814,7 @@ Respond with JSON only.`;
         : value;
       if (response) {
         await this.emitPrivateDecisionTrace({
-          context: this.privateTraceContext("house-alliance-huddle-outcome", context.round, context.phase),
+          context: traceContext,
           messages,
           response,
           output,
@@ -2158,11 +2195,11 @@ Return the decision and text through the required structured response:
         precedingPhase,
       },
       playerVisibleBoard: {
-        alivePlayers: playerKnowledge.alivePlayers,
+        remainingPlayers: playerKnowledge.alivePlayers,
         empoweredId: playerKnowledge.empoweredId ?? null,
         councilCandidates: playerKnowledge.councilCandidates ?? null,
         revealedVoteLedger: playerKnowledge.revealedVoteLedger ?? [],
-        latestEliminatedPlayerName: playerKnowledge.latestEliminatedPlayerName ?? null,
+        latestExitedPlayerName: playerKnowledge.latestEliminatedPlayerName ?? null,
         endgameStage: playerKnowledge.endgameStage ?? null,
         finalists: playerKnowledge.finalists ?? null,
       },
@@ -2217,7 +2254,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
     return {
       selected: deterministicAllianceProposerSelection(context, "Template House selected"),
       rationale:
-        "Template House selected proposer access by lowest active-alliance count, breaking ties by living-player order.",
+        "Template House selected proposer access by lowest active-alliance count, breaking ties by roster order.",
     };
   }
 
@@ -2281,7 +2318,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
       : event
         ? `The game shifts as ${event.type.split(".").join(" ")}.`
         : narration.projection
-          ? `${narration.projection.alive.length} players remain as the next move takes shape.`
+          ? `${narration.projection.remainingPlayers.length} players remain as the next move takes shape.`
           : null;
     if (!publicSummary) {
       return {
@@ -2327,8 +2364,8 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const { precedingPhase, round, agentName, playerKnowledge } = context;
-    const alivePlayers = playerKnowledge.alivePlayers.map((player) => player.name);
-    const lastEliminated = playerKnowledge.latestEliminatedPlayerName ?? null;
+    const remainingPlayers = playerKnowledge.alivePlayers.map((player) => player.name);
+    const latestExitedPlayer = playerKnowledge.latestEliminatedPlayerName ?? null;
     const recentDecision = playerKnowledge.recentDecisions?.at(-1)?.detail;
     const playerName = (playerId: UUID): string =>
       playerKnowledge.alivePlayers.find((player) => player.id === playerId)?.name ?? playerId;
@@ -2341,7 +2378,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         return `${agentName}, the introductions are done and the game is about to begin. What's your strategy going in? Who are you thinking of working with, and who should watch their back?`;
 
       case Phase.LOBBY:
-        return `${agentName}, the public discussion for round ${round} just wrapped. With ${alivePlayers.length} players still in the game, what did you pick up on? Are any alliances forming?`;
+        return `${agentName}, the public discussion for round ${round} just wrapped. With ${remainingPlayers.length} players still in the game, what did you pick up on? Are any alliances forming?`;
 
       case Phase.RUMOR:
         return `${agentName}, the rumors have been flying this round. What do you believe, what do you think is misinformation, and how does it affect your strategy?`;
@@ -2355,7 +2392,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
       case Phase.COUNCIL:
         return recentDecision
           ? `${agentName}, your record says: ${recentDecision} What does that decision change about your next move?`
-          : `${agentName}, ${lastEliminated ?? "the Council result"} has changed the board. Which relationship does that put under the most pressure?`;
+          : `${agentName}, ${latestExitedPlayer ?? "the Council result"} has changed the board. Which relationship does that put under the most pressure?`;
 
       default:
         return `${agentName}, tell the audience what's on your mind. What's your strategy going forward?`;

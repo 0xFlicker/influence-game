@@ -339,7 +339,7 @@ export class GameMcpJsonRpcServer {
           },
           {
             name: "linked_records",
-            description: "Return a canonical event and any linked turn records addressed by source pointers.",
+            description: "Return a current-vocabulary MCP event shape and any linked raw turn records addressed by source pointers.",
             inputSchema: {
               type: "object",
               properties: {

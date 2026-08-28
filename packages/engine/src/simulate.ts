@@ -101,7 +101,7 @@
  * `game-{N}.txt` output.
  *
  * Live standard rounds make one House `mingle-room-assignment` request from the
- * living roster and locked format, then emit one assignment record per player
+ * remaining roster and locked format, then emit one assignment record per player
  * with source/repair metadata. They do not request per-player `mingle-intent`;
  * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
@@ -109,13 +109,16 @@
  * `ceil(alive / 4)` access set, underrepresentation preference, and engine
  * repair notes without creating alliance facts. Only finalized players receive
  * proposer `alliance-action` calls; invitee response/counter calls remain
- * demand-driven. Each call exposes only its current legal opportunity, selected
- * agents retain propose/amend/pass ownership, and the engine binds proposal/version
- * identity and maps request-local amendment handles. `alliance-huddle-schedule` turns capture private House
+ * demand-driven. Each provider call exposes only its current legal opportunity
+ * through a closed nested decision union, while accepted artifacts retain the
+ * flat canonical ID-based shape. Selected agents retain propose/amend/pass
+ * ownership, and the engine binds proposal/version identity and maps request-local
+ * amendment handles. `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and
  * `alliance-huddle-outcome` records carry those facts forward alongside a
- * compact House summary. Huddle transcript entries use `scope: "huddle"` and
+ * compact House summary. Repeated outcome calls use their one-based position in
+ * the sorted schedule as a stable provider logical-call ordinal. Huddle transcript entries use `scope: "huddle"` and
  * are producer/debug evidence, not public/player-safe live transcript.
  * Modern product-dialogue capture also carries additive normalized actor
  * identity, audience, dialogue kind, and formal-speech correlation context for
@@ -138,6 +141,14 @@
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
  * prompts render the acting player's computed status and the exact consequence:
  * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
+ * Provider requests call the renamed formats Save-or-Exit (`save_or_exit`),
+ * The Short List (`short_list`), and Highest Count (`highest_count`), use
+ * remaining/exited/exit vocabulary, and expose matching provider tool names.
+ * The engine maps those provider values back to canonical
+ * `save_or_eliminate`/`vote_bomb`/`majority_elimination` format IDs and the
+ * canonical `eliminate` action before validation, journaling, checkpointing,
+ * or event emission. Raw simulation events remain canonical evidence; derived
+ * MCP reads translate them to the current surface vocabulary.
  * Specialized
  * `candidate-selection`, `power-action`, and Council records remain readable
  * for legacy/classic runs but are not the expected standard-round lane.

@@ -6,6 +6,7 @@ import {
   TemplateHouseInterviewer,
   type DiaryRoomContext,
   type HouseAllianceHuddleOutcomeContext,
+  type HouseAllianceHuddleOutcomeResult,
   type HouseAllianceHuddleScheduleContext,
   type HouseAllianceProposerSelectionContext,
   type HouseMingleAssignmentContext,
@@ -134,11 +135,11 @@ function makeHouseSummaryContext(
     dialogueHead: 8,
   };
   const continuity = createEmptyHouseNarrativeContinuity(boundary.gameId);
-  continuity.privateNarrativeNotebook = "PRIVATE NOTEBOOK CANARY: Blair suspects Ada.";
+  continuity.privateNarrativeNotebook = "  PRIVATE NOTEBOOK CANARY: Vote Bomb left Blair eliminated but alive in this authored note.  ";
   continuity.recentBeats = [{
     version: 2,
     boundary: { ...boundary, id: "house-beat/v2:1:format_menu:4:7", actorCoordinate: "format_menu" },
-    publicSummary: "Ada has a choice to make.",
+    publicSummary: "  AUTHORED BEAT CANARY: Save-or-Eliminate kept the old words.  ",
   }];
   return {
     narrationContext: {
@@ -151,16 +152,19 @@ function makeHouseSummaryContext(
         type: "format.selected",
         round: 1,
         phase: Phase.FORMAT_PICK,
-        data: { empowered: "Ada", selectedFormat: "vote_bomb" },
+        data: {
+          empowered: "Ada",
+          selectedFormat: { id: "short_list", name: "The Short List" },
+        },
       }],
       projection: {
         headSequence: 5,
         round: 1,
         phase: Phase.FORMAT_PICK,
-        alive: ["Ada", "Blair"],
-        eliminated: [],
+        remainingPlayers: ["Ada", "Blair"],
+        exitedPlayers: [],
         empowered: "Ada",
-        selectedFormat: "vote_bomb",
+        selectedFormat: { id: "short_list", name: "The Short List" },
         councilCandidates: [],
         endgameStage: null,
       },
@@ -213,8 +217,8 @@ function makeAssignmentContext(): HouseMingleAssignmentContext {
     round: 2,
     phase: Phase.FORMAT_MINGLE,
     roomCount: 2,
-    selectedFormatName: "Vote Bomb",
-    formatRuleSummary: "Each player places a sealed bomb ballot on another living player.",
+    selectedFormatId: "vote_bomb",
+    formatRuleSummary: "Each remaining contestant casts one sealed vote for someone else still competing.",
     players: [
       {
         id: "atlas-id",
@@ -430,6 +434,7 @@ function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
     round: 2,
     phase: Phase.FORMAT_MINGLE,
     window: "format" as const,
+    providerLogicalCallOrdinal: 1,
     alliance: {
       id: "alliance-glass",
       name: "Glass Table",
@@ -486,6 +491,12 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
     ]);
     expect(result.rationale).toBe("Spend scarce time where the locked-format decision is most relevant.");
     expect(result.thinking).toBe("Glass Table has the sharper immediate choice.");
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    const producerPrompt = messages[1]?.content ?? "";
+    expect(producerPrompt).toContain("Players remaining: Atlas, Mira, Vera");
+    expect(producerPrompt).not.toContain("Alive players:");
+    // Alliance purpose is player-authored input, so old terminology remains opaque.
+    expect(producerPrompt).toContain("purpose=Coordinate Vote Bomb ballots.");
     expect(requests[0]?.response_format).toMatchObject({
       type: "json_schema",
       json_schema: {
@@ -547,6 +558,10 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
       posture: "coordinating",
       thinking: "The plan is concrete but still conditional.",
     });
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    expect(messages[1]?.content).toContain(
+      'Atlas: "Mira, place your Vote Bomb ballot on Vera and I will do the same."',
+    );
     expect(requests[0]?.response_format).toMatchObject({
       type: "json_schema",
       json_schema: {
@@ -554,6 +569,155 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
         strict: true,
       },
     });
+  });
+
+  it("replays canonical House values after provider null thinking is normalized away", async () => {
+    const acceptedValues = new Map<string, { value: unknown; catalogId?: string }>();
+    const liveRequests: Array<Record<string, unknown>> = [];
+    const liveHouse = new LLMHouseInterviewer(
+      makeOpenAIStub(liveRequests, [
+        { content: assignmentContent({ thinking: null }) },
+        { content: allianceProposerSelectionContent({ thinking: null }) },
+        { content: huddleScheduleContent({ thinking: null }) },
+        { content: huddleOutcomeContent({ thinking: null }) },
+      ]),
+      "test-model",
+      {
+        providerExecutionHooks: {
+          onTerminal: (record) => {
+            acceptedValues.set(record.coordinate.action, {
+              value: structuredClone(record.acceptedValue),
+              catalogId: record.preparedRequest.catalogId,
+            });
+            return { acceptedAttemptId: `accepted-${record.coordinate.action}` };
+          },
+        },
+      },
+    );
+
+    const liveResults = [
+      await liveHouse.assignMingleRooms(makeAssignmentContext()),
+      await liveHouse.selectAllianceProposers(makeAllianceProposerSelectionContext()),
+      await liveHouse.planAllianceHuddles(makeHuddleScheduleContext()),
+      await liveHouse.summarizeAllianceHuddle(makeHuddleOutcomeContext()),
+    ];
+
+    expect(liveRequests).toHaveLength(4);
+    expect([...acceptedValues.values()]).toHaveLength(4);
+    for (const accepted of acceptedValues.values()) {
+      expect(accepted.value).not.toHaveProperty("thinking");
+    }
+
+    const replayRequests: Array<Record<string, unknown>> = [];
+    const replayHouse = new LLMHouseInterviewer(
+      makeOpenAIStub(replayRequests, []),
+      "test-model",
+      {
+        providerExecutionHooks: {
+          onReadAccepted: (coordinate) => {
+            const accepted = acceptedValues.get(coordinate.action)!;
+            return {
+              attemptId: `accepted-${coordinate.action}`,
+              attemptOrdinal: 1,
+              catalogId: accepted.catalogId,
+              value: structuredClone(accepted.value),
+            };
+          },
+        },
+      },
+    );
+    const replayedResults = [
+      await replayHouse.assignMingleRooms(makeAssignmentContext()),
+      await replayHouse.selectAllianceProposers(makeAllianceProposerSelectionContext()),
+      await replayHouse.planAllianceHuddles(makeHuddleScheduleContext()),
+      await replayHouse.summarizeAllianceHuddle(makeHuddleOutcomeContext()),
+    ];
+
+    expect(replayedResults).toEqual(liveResults);
+    expect(replayRequests).toEqual([]);
+  });
+
+  it("rejects noncanonical accepted House huddle thinking without dispatch", async () => {
+    const base = JSON.parse(huddleOutcomeContent()) as Record<string, unknown>;
+    for (const acceptedValue of [
+      { ...base, thinking: null },
+      { ...base, thinking: "   " },
+      { ...base, thinking: 7 },
+      { ...base, thinking: { private: "reasoning" } },
+      { ...base, extraField: "unsupported" },
+    ]) {
+      const requests: Array<Record<string, unknown>> = [];
+      const house = new LLMHouseInterviewer(
+        makeOpenAIStub(requests, []),
+        "test-model",
+        {
+          providerExecutionHooks: {
+            onReadAccepted: () => ({ attemptOrdinal: 1, value: acceptedValue }),
+          },
+        },
+      );
+
+      await expect(house.summarizeAllianceHuddle(makeHuddleOutcomeContext()))
+        .rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+      expect(requests).toEqual([]);
+    }
+  });
+
+  it("uses distinct stable coordinates for multiple House huddle outcomes and replays each summary", async () => {
+    const attempts: ProviderAttemptRecord[] = [];
+    const liveHouse = new LLMHouseInterviewer(
+      makeOpenAIStub([], [
+        { content: huddleOutcomeContent({ ask: "First alliance ask.", plan: "First alliance plan." }) },
+        { content: huddleOutcomeContent({ ask: "Second alliance ask.", plan: "Second alliance plan." }) },
+      ]),
+      "test-model",
+      {
+        providerExecutionHooks: {
+          onTerminal: (record) => {
+            attempts.push(record);
+            return { acceptedAttemptId: `accepted-huddle-${record.coordinate.logicalCallOrdinal}` };
+          },
+        },
+      },
+    );
+    const contexts = [1, 2].map((providerLogicalCallOrdinal) => ({
+      ...makeHuddleOutcomeContext(),
+      providerLogicalCallOrdinal,
+    }));
+    const liveResults: HouseAllianceHuddleOutcomeResult[] = [];
+    for (const context of contexts) liveResults.push(await liveHouse.summarizeAllianceHuddle(context));
+
+    expect(attempts.map((attempt) => attempt.coordinate.logicalCallOrdinal)).toEqual([1, 2]);
+    expect(liveResults.map((result) => result.plan)).toEqual([
+      "First alliance plan.",
+      "Second alliance plan.",
+    ]);
+
+    const acceptedByOrdinal = new Map(
+      attempts.map((attempt) => [attempt.coordinate.logicalCallOrdinal, attempt.acceptedValue]),
+    );
+    const replayRequests: Array<Record<string, unknown>> = [];
+    const replayHouse = new LLMHouseInterviewer(
+      makeOpenAIStub(replayRequests, []),
+      "test-model",
+      {
+        providerExecutionHooks: {
+          onReadAccepted: (coordinate) => ({
+            attemptId: `accepted-huddle-${coordinate.logicalCallOrdinal}`,
+            attemptOrdinal: 1,
+            catalogId: attempts.find(
+              (attempt) => attempt.coordinate.logicalCallOrdinal === coordinate.logicalCallOrdinal,
+            )?.preparedRequest.catalogId,
+            value: structuredClone(acceptedByOrdinal.get(coordinate.logicalCallOrdinal)),
+          }),
+        },
+      },
+    );
+    const replayedResults: HouseAllianceHuddleOutcomeResult[] = [];
+    for (const context of contexts) replayedResults.push(await replayHouse.summarizeAllianceHuddle(context));
+
+    expect(replayedResults).toEqual(liveResults);
+    expect(replayRequests).toEqual([]);
   });
 });
 
@@ -704,8 +868,9 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       makeOpenAIStub(requests, [{ content: assignmentContent() }]),
       "test-model",
     );
+    const context = makeAssignmentContext();
 
-    const result = await house.assignMingleRooms(makeAssignmentContext());
+    const result = await house.assignMingleRooms(context);
 
     expect(result.rooms).toEqual([
       { roomId: 1, playerIds: ["atlas-id", "nyx-id"] },
@@ -716,9 +881,9 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     expect(requests).toHaveLength(1);
     const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
     expect(messages[0]).toMatchObject({ role: "system" });
-    expect(messages[0]?.content).toContain("fictional, text-only social-strategy competition");
-    expect(messages[0]?.content).toContain("removal from the competition only");
-    expect(messages[0]?.content).toContain("never refer to physical harm, weapons, real-world threats, or real people");
+    expect(messages[1]?.content).toContain("Locked format: The Short List");
+    expect(messages[1]?.content).toContain("Players remaining:");
+    expect(messages[1]?.content).not.toMatch(/alive|living|eliminat|vote bomb|vote_bomb/i);
     expect(requests[0]?.response_format).toMatchObject({
       type: "json_schema",
       json_schema: {
@@ -1065,6 +1230,36 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     });
   });
 
+  it("uses safe diary board keys while preserving prior player-authored Q&A exactly", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: "What changed after that result?" }]),
+      "test-model",
+    );
+    const context = makeDiaryContext({
+      previousDiaryEntries: [{
+        round: 1,
+        question: "  Did Vote Bomb eliminate Nyx?  ",
+        answer: "  Nyx is alive in my story.  ",
+      }],
+      playerKnowledge: {
+        ...makeDiaryContext().playerKnowledge,
+        latestEliminatedPlayerName: "Mira",
+      },
+    });
+
+    await house.generateQuestion(context);
+
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    const playerPrompt = messages[1]?.content ?? "";
+    expect(playerPrompt).toContain('"remainingPlayers"');
+    expect(playerPrompt).toContain('"latestExitedPlayerName": "Mira"');
+    expect(playerPrompt).not.toContain('"alivePlayers"');
+    expect(playerPrompt).not.toContain('"latestEliminatedPlayerName"');
+    expect(playerPrompt).toContain('"question": "  Did Vote Bomb eliminate Nyx?  "');
+    expect(playerPrompt).toContain('"answer": "  Nyx is alive in my story.  "');
+  });
+
   it("maps a structured diary close decision to a closing remark", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
@@ -1352,6 +1547,27 @@ describe("LLMHouseInterviewer authored House summaries", () => {
     expect(serializedRequest).not.toContain("sourceValuesByAlias");
     expect(serializedRequest).not.toContain("read_facts");
     expect(serializedRequest).not.toContain('"claims"');
+    const messages = requests[0]?.params.messages as Array<{ role: string; content: string }>;
+    const producerPayload = JSON.parse(messages[1]?.content ?? "{}") as {
+      gameInformation: {
+        canonicalEvents: unknown[];
+        projection: unknown;
+      };
+      houseNarrativeContext: {
+        recentPublicBeats: Array<{ publicSummary: string }>;
+        privateNarrativeNotebook: string;
+      };
+    };
+    const engineOwnedGameInformation = JSON.stringify(producerPayload.gameInformation);
+    expect(engineOwnedGameInformation).toContain('"id":"short_list"');
+    expect(engineOwnedGameInformation).toContain('"remainingPlayers"');
+    expect(engineOwnedGameInformation).not.toMatch(/alive|living|eliminat|vote_bomb|save_or_eliminate|majority_elimination/i);
+    expect(producerPayload.houseNarrativeContext.recentPublicBeats[0]?.publicSummary).toBe(
+      "  AUTHORED BEAT CANARY: Save-or-Eliminate kept the old words.  ",
+    );
+    expect(producerPayload.houseNarrativeContext.privateNarrativeNotebook).toBe(
+      "  PRIVATE NOTEBOOK CANARY: Vote Bomb left Blair eliminated but alive in this authored note.  ",
+    );
 
     const responseFormat = requests[0]?.params.response_format as {
       json_schema?: { strict?: boolean; schema?: Record<string, unknown> };
@@ -1550,6 +1766,21 @@ describe("LLMHouseInterviewer authored long-form producer copy", () => {
     expect(serialized).toContain("PRIVATE NOTEBOOK CANARY");
     expect(serialized).not.toContain("sourceAlias");
     expect(serialized).not.toContain('"claims"');
+    const messages = requests[0]?.params.messages as Array<{ role: string; content: string }>;
+    const producerPayload = JSON.parse(messages[1]?.content ?? "{}") as {
+      gameInformation: unknown;
+      recentPublicBeats: Array<{ publicSummary: string }>;
+      privateNarrativeNotebook: string;
+    };
+    expect(JSON.stringify(producerPayload.gameInformation)).not.toMatch(
+      /alive|living|eliminat|vote_bomb|save_or_eliminate|majority_elimination/i,
+    );
+    expect(producerPayload.recentPublicBeats[0]?.publicSummary).toBe(
+      "  AUTHORED BEAT CANARY: Save-or-Eliminate kept the old words.  ",
+    );
+    expect(producerPayload.privateNarrativeNotebook).toBe(
+      "  PRIVATE NOTEBOOK CANARY: Vote Bomb left Blair eliminated but alive in this authored note.  ",
+    );
     expect(requests[0]?.params.response_format).toMatchObject({
       type: "json_schema",
       json_schema: {

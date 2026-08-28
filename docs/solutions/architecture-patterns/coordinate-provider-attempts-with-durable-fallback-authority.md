@@ -30,6 +30,8 @@ The unsafe shape is to add independent retry or fallback logic to each player an
 
 Route player and House calls through one coordinator. Give every logical call stable game/owner/actor/action coordinates, allocate each attempt ordinal durably, reserve before dispatch, disable hidden transport retries, classify the outcome, and journal the terminal result.
 
+When one phase legitimately schedules the same action more than once, derive a stable logical-call ordinal from the phase's deterministic schedule and include it in the coordinate. Do not let repeated House calls fall back to a shared default ordinal: accepted-result replay would then let a later call consume an earlier call's value.
+
 The coordinator owns attempt mechanics and manifest traversal. It does not decide legal game actions. Optional speech may return typed absence; required actions still delegate to the phase that owns the current legal target set.
 
 ```ts
@@ -84,6 +86,8 @@ The local guarantee is different and enforceable:
 
 This permits one canonical gameplay effect without claiming exactly-once remote inference or billing.
 
+Validate provider payloads and accepted domain values as separate representations when normalization changes shape. For example, a provider schema may require a nullable `thinking` field while the canonical accepted value omits it after a `null` result. Provider validation must still require the field; replay validation must accept only the canonical omission or a retained non-empty string, then round-trip the value through the domain decoder before reuse. Do not weaken the provider schema or reinterpret noncanonical accepted values to make replay pass.
+
 ### Treat systemic provider health as separate durable authority
 
 Request-specific refusal and rate limiting remain call-scoped. Authentication failures open provider health immediately; unsupported configuration can open only the affected entry; repeated service or transport failures open after a bounded threshold. Ambiguous 4xx responses stay call-scoped without corroboration.
@@ -137,7 +141,7 @@ indeterminate dispatch after crash
   -> one canonical gameplay effect
 ```
 
-Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
+Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, distinct deterministic coordinates for repeated same-action calls, provider-to-domain normalization and replay validation, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
 
 ## Related
 

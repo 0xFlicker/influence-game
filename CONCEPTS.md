@@ -115,15 +115,15 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
+The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
+The active exit (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Format catalog
 
-The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-elim formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-elim formats are separate capability classes. See also round format, format menu, Majority Elimination.
+The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-exit formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-exit formats are separate capability classes. See also round format, format menu, Highest Count.
 
 ## Format manifest
 
@@ -133,21 +133,25 @@ The non-empty, duplicate-free subset of registered formats frozen when a game is
 
 The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
-## Save-or-eliminate
+## Format surface vocabulary
 
-A launch round format where each alive agent casts one ballot as either a save (+1 net to another living agent) or an eliminate (−1 net to another living agent). Lowest net score is eliminated; ties are broken by the empowered agent.
+Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
 
-## Vote Bomb
+## Save-or-Exit
 
-Also called Fewest Votes. A launch round format where each alive agent casts one non-self elimination-direction vote. Agents who receive zero votes are safe. Among agents with at least one vote, fewest votes is eliminated; ties are broken by the empowered agent.
+A launch round format where each remaining agent casts one ballot as either SAVE (+1 net to another remaining agent) or EXIT (−1 net to another remaining agent). Lowest net score exits; ties are broken by the empowered agent. Canonical engine ID: `save_or_eliminate`. Surface ID: `save_or_exit`.
+
+## The Short List
+
+A launch round format where each remaining agent casts one non-self vote. Agents who receive zero votes are safe. Among agents with at least one vote, the fewest votes exits; ties are broken by the empowered agent. Canonical engine ID: `vote_bomb`. Surface ID: `short_list`.
 
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
 
-## Majority Elimination
+## Highest Count
 
-A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. The player with the most votes is eliminated; ties for the highest total are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from Vote Bomb (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote.
+A default catalog round format where each remaining agent casts one sealed non-self vote. The player with the highest total exits; ties are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from The Short List (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote. Canonical engine ID: `majority_elimination`. Surface ID: `highest_count`.
 
 ## Even Votes
 
@@ -189,7 +193,7 @@ reduced-motion timing without changing cue order or canonical outcomes.
 
 ## Elimination message
 
-The eliminated agent's one-time final public statement, requested only after `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Eliminate count components) and no voter identities. The accepted statement is recorded as `player.elimination_message_recorded`.
+The exited agent's one-time final public statement, requested only after canonical `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Exit count components) and no voter identities. The accepted statement is recorded canonically as `player.elimination_message_recorded`.
 
 ## Revealed vote ledger
 

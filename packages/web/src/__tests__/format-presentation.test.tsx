@@ -70,7 +70,7 @@ describe("FormatPresentation", () => {
       />,
     );
 
-    expect(menuHtml.indexOf("Vote Bomb")).toBeLessThan(
+    expect(menuHtml.indexOf("The Short List")).toBeLessThan(
       menuHtml.indexOf("Safety Bounce"),
     );
     expect(menuHtml).toContain('data-format-card="vote_bomb"');
@@ -97,7 +97,7 @@ describe("FormatPresentation", () => {
     expect(selectedHtml).toContain('tabindex="0"');
   });
 
-  it("offers Majority Elimination with catalog copy and renders highest-total scoring only", () => {
+  it("offers Highest Count with catalog copy and renders highest-total scoring only", () => {
     const offer = renderToString(
       <FormatPresentation
         cue={majorityMenuCue()}
@@ -121,11 +121,11 @@ describe("FormatPresentation", () => {
     );
 
     expect(offer).toContain('data-format-card="majority_elimination"');
-    expect(offer).toContain("Majority Elimination");
+    expect(offer).toContain("Highest Count");
     expect(selection).toContain(
       FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
     );
-    expect(resolution).toContain("Highest total · elimination eligible");
+    expect(resolution).toContain("Highest total · exit eligible");
     expect(resolution).toContain("Below the high vote");
     expect(resolution).toContain('data-aggregate-player="p2"');
     expect(resolution).toContain('data-aggregate-state="eligible"');
@@ -134,7 +134,7 @@ describe("FormatPresentation", () => {
     );
   });
 
-  it("renders Even Votes parity eligibility without Vote Bomb zero-safety copy", () => {
+  it("renders Even Votes parity eligibility without The Short List zero-safety copy", () => {
     const resolution = renderToString(
       <FormatPresentation
         cue={evenVotesAggregateCue()}
@@ -144,7 +144,7 @@ describe("FormatPresentation", () => {
     );
 
     expect(resolution).toContain("Even Votes aggregate");
-    expect(resolution).toContain("Highest even total · elimination eligible");
+    expect(resolution).toContain("Highest even total · exit eligible");
     expect(resolution).toContain("Odd total · safe");
     expect(resolution).toContain("Even total · below danger");
     expect(resolution).not.toContain("Zero votes · safe");
@@ -165,7 +165,7 @@ describe("FormatPresentation", () => {
     );
 
     expect(html).toContain('data-format-auto-selected="majority_elimination"');
-    expect(html).toContain("Majority Elimination");
+    expect(html).toContain("Highest Count");
     expect(html).toContain(
       FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
     );
@@ -189,13 +189,13 @@ describe("FormatPresentation", () => {
     );
     const afterText = withoutReactMarkers(afterSelection);
 
-    expect(beforeSelection).toContain("Vote Bomb");
+    expect(beforeSelection).toContain("The Short List");
     expect(beforeSelection).toContain("Safety Bounce");
     expect(beforeSelection).not.toContain('data-active-format="vote_bomb"');
 
     expect(afterSelection).toContain('data-active-format="vote_bomb"');
     expect(afterText).toContain("Active format");
-    expect(afterText).toContain("Vote Bomb");
+    expect(afterText).toContain("The Short List");
     expect(afterSelection).not.toContain("Zero votes is safe");
     expect(afterSelection).not.toContain("button");
   });
@@ -216,7 +216,7 @@ describe("FormatPresentation", () => {
     expect(html).not.toContain("Zero votes is safe");
   });
 
-  it("renders Save-or-Eliminate math and sole-vulnerable Safety Bounce explicitly", () => {
+  it("renders Save-or-Exit math and sole-vulnerable Safety Bounce explicitly", () => {
     const saveHtml = renderToString(
       <FormatPresentation
         cue={saveOrEliminateAggregateCue()}
@@ -233,9 +233,9 @@ describe("FormatPresentation", () => {
     );
 
     expect(saveHtml).toContain("Saves");
-    expect(saveHtml).toContain("Eliminates");
+    expect(saveHtml).toContain("Exits");
     expect(saveHtml).toContain("Net");
-    expect(saveHtml).toContain("Elimination eligible");
+    expect(saveHtml).toContain("Exit eligible");
     expect(saveHtml).toContain('data-aggregate-player="p2"');
     expect(saveHtml).toContain('data-aggregate-state="eligible"');
 
@@ -265,6 +265,8 @@ describe("FormatPresentation", () => {
     expect(html).toContain("Lyra");
     expect(html).toContain("Echo");
     expect(html).toContain('data-ballot-polarity="eliminate"');
+    expect(html).toContain(">exit</p>");
+    expect(html).not.toContain(">eliminate</p>");
   });
 
   it("names the empowered tiebreak receipt and eliminated agent", () => {

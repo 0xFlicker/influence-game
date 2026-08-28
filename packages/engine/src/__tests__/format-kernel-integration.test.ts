@@ -278,7 +278,7 @@ describe("Format kernel integration (MockAgent)", () => {
     ) ?? [];
 
     expect(aliceBallotLines).toEqual([
-      "R1/FORMAT_RESOLVE: Your format ballot: eliminate → Bob (sealed).",
+      "R1/FORMAT_RESOLVE: Your format ballot: EXIT → Bob (sealed).",
     ]);
     expect(charlieBallotLines).toEqual([]);
 
@@ -307,9 +307,9 @@ describe("Format kernel integration (MockAgent)", () => {
       .gameEventRecord
       ?.filter((line) => line.includes("format ballot")) ?? [];
     expect(resolvedLines).toEqual([
-      "R1/FORMAT_RESOLVE: Alice format ballot: eliminate → Bob.",
-      "R1/FORMAT_RESOLVE: Bob format ballot: eliminate → Charlie.",
-      "R1/FORMAT_RESOLVE: Charlie format ballot: eliminate → Bob.",
+      "R1/FORMAT_RESOLVE: Alice format ballot: EXIT → Bob.",
+      "R1/FORMAT_RESOLVE: Bob format ballot: EXIT → Charlie.",
+      "R1/FORMAT_RESOLVE: Charlie format ballot: EXIT → Bob.",
     ]);
   });
 
@@ -807,10 +807,17 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     expect(formatLocks.length).toBeGreaterThan(0);
 
-    const formatElines = result.transcript.filter(
-      (e) => e.scope === "system" && typeof e.text === "string" && e.text.includes("Format ") && e.text.includes("eliminated"),
+    const formatExitLines = result.transcript.filter(
+      (e) => e.scope === "system" && typeof e.text === "string" && e.text.includes("exited under"),
     );
-    expect(formatElines.length).toBeGreaterThan(0);
+    expect(formatExitLines.length).toBeGreaterThan(0);
+    const systemTranscript = result.transcript
+      .filter((entry) => entry.scope === "system")
+      .map((entry) => entry.text)
+      .join("\n");
+    expect(systemTranscript).not.toMatch(
+      /Save-or-Eliminate|Vote Bomb|Majority Elimination/,
+    );
 
     const formatMinglePressure = formatMingleContexts[0]?.formatPressure;
     expect(formatMinglePressure?.offeredFormats).toHaveLength(2);

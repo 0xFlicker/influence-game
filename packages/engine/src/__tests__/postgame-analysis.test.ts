@@ -14,7 +14,7 @@ import {
 } from "../index";
 
 describe("buildPostgameAnalysisProjection", () => {
-  it("uses format-kernel dual-shape copy for format eliminations", () => {
+  it("uses current format names in format-kernel summary copy", () => {
     const state = new GameState(
       [
         { id: "alice", name: "Alice" },
@@ -60,8 +60,19 @@ describe("buildPostgameAnalysisProjection", () => {
     expect(completed.eliminationOrder.every((entry) => entry.source === "format")).toBe(true);
     expect(projection.executiveSummary.some((line) =>
       line.derivationMethod === "executive_summary_format_boots"
-      && line.text.includes("Format eliminations:")
+      && line.text.includes("Format exits:")
+      && line.text.includes("The Short List")
     )).toBe(true);
+    expect(projection.executiveSummary.some((line) =>
+      /vote[_ ]bomb/i.test(line.text)
+    )).toBe(false);
+    expect(projection.turningPoints.find((point) =>
+      point.type === "threat_removed"
+      && point.criteria.source === "format"
+    )).toMatchObject({
+      description: expect.stringContaining("The Short List"),
+      criteria: { formatId: "vote_bomb" },
+    });
     expect(projection.executiveSummary.some((line) =>
       line.derivationMethod === "executive_summary_repeated_empowerment"
       && line.text.includes("held empower")

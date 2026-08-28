@@ -257,10 +257,10 @@ describe("goodbye message handling", () => {
       },
     });
 
-    expect(capturedTool?.function.name).toBe("elimination_message");
+    expect(capturedTool?.function.name).toBe("farewell_message");
     expect(capturedTool?.function.strict).toBe(true);
     expect(capturedTool?.function.parameters?.additionalProperties).toBe(false);
-    expect(capturedPrompt).toContain("You have been ELIMINATED.");
+    expect(capturedPrompt).toContain("You have EXITED the game.");
     expect(capturedPrompt).toContain("You will not get another turn");
     expect(capturedPrompt).toContain("Do NOT discuss future strategy");
     expect(capturedPrompt).toContain("You were exposed by: Mira, Vera");
@@ -318,7 +318,7 @@ describe("goodbye message handling", () => {
     expect(capturedPrompt).toContain("This vote was sealed.");
     expect(capturedPrompt).toContain("You received 3 votes.");
     expect(capturedPrompt).toContain(
-      "Sealed count detail: 1 SAVE, 2 ELIMINATE, net -1.",
+      "Sealed count detail: 1 SAVE, 2 EXIT, net -1.",
     );
     expect(capturedPrompt).toContain("You are not being told who cast those ballots.");
     expect(capturedPrompt).not.toContain("Echo voted");
@@ -1156,7 +1156,7 @@ describe("InfluenceAgent exact tool-call boundary", () => {
         toolName: "use_power",
         toolArguments: JSON.stringify({
           thinking: "Take the shot before the council can scatter.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
           shieldPullUpCandidates: [],
           strategyDelta: null,
@@ -1187,7 +1187,7 @@ describe("InfluenceAgent exact tool-call boundary", () => {
       {
         content: JSON.stringify({
           thinking: "Take the shot before the council can scatter.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
         }),
       },
@@ -1209,7 +1209,7 @@ describe("InfluenceAgent exact tool-call boundary", () => {
       {
         content: JSON.stringify({
           thinking: "This response should not be requested.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
         }),
       },
@@ -1291,7 +1291,7 @@ describe("InfluenceAgent exact tool-call boundary", () => {
         toolName: "use_power",
         toolArguments: JSON.stringify({
           thinking: "Take one direct shot.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
           shieldPullUpCandidates: [],
           strategyDelta: null,
@@ -1318,9 +1318,9 @@ describe("InfluenceAgent exact tool-call boundary", () => {
     await agent.getPowerAction(round2Ctx, ["vera-id", "mira-id"]);
 
     const secondPrompt = getUserPrompt(calls[1]);
-    expect(secondPrompt).toContain("Your last empowered action: R1 eliminate -> Mira.");
+    expect(secondPrompt).toContain("Your last empowered action: R1 exit -> Mira.");
     expect(secondPrompt).toContain("Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt");
-    expect(secondPrompt).toContain("eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate");
+    expect(secondPrompt).toContain("exit is gated by fresh current-round Power Lobby evidence against that exact candidate");
     expect(secondPrompt).toContain("your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby");
     expect(secondPrompt).toContain("When the lobby record conflicts, when council would expose useful public votes");
   });

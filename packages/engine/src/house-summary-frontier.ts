@@ -1,4 +1,6 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
+import { displayNameForFormat } from "./format-presentation-metadata";
+import { formatSurfaceId, type FormatSurfaceId } from "./format-vocabulary";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { StructuredDomainDecodeResult } from "./structured-output";
 import { Phase, type UUID } from "./types";
@@ -90,20 +92,45 @@ export interface HouseNarrationTranscriptEntry {
 
 export interface HouseNarrationCanonicalEvent {
   sequence: number;
-  type: CanonicalGameEventType;
+  type: HouseNarrationEventKind;
   round: number;
   phase: Phase | null;
   data: Record<string, unknown>;
+}
+
+export type HouseNarrationEventKind =
+  | "game.roster_initialized"
+  | "round.started"
+  | "shields.expired"
+  | "vote.empower_tally_resolved"
+  | "vote.empowered_set"
+  | "format.menu_offered"
+  | "format.selected"
+  | "format.ballot_cast"
+  | "format.ballot_forfeited"
+  | "format.resolved"
+  | "power.action_set"
+  | "power.candidates_resolved"
+  | "council.exit_resolved"
+  | "player.exited"
+  | "endgame.stage_set"
+  | "endgame.exit_resolved"
+  | "jury.winner_determined"
+  | "round.result_recorded";
+
+export interface HouseNarrationFormat {
+  id: FormatSurfaceId;
+  name: string;
 }
 
 export interface HouseNarrationProjection {
   headSequence: number;
   round: number;
   phase: Phase | null;
-  alive: string[];
-  eliminated: string[];
+  remainingPlayers: string[];
+  exitedPlayers: string[];
   empowered: string | null;
-  selectedFormat: string | null;
+  selectedFormat: HouseNarrationFormat | null;
   councilCandidates: string[];
   endgameStage: string | null;
 }
@@ -162,7 +189,7 @@ export interface CompileHouseNarrationContextInput {
 
 const MAX_EVENT_ROWS = 24;
 const MAX_DIALOGUE_ROWS = 12;
-const MAX_CONTEXT_STRING_CHARS = 280;
+const MAX_CONTEXT_LABEL_CHARS = 80;
 const MAX_RECENT_BEATS = 8;
 export const HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS = 1_200;
 
@@ -189,18 +216,18 @@ const PROJECTION_TRIGGER_TYPES = new Set<CanonicalGameEventType>([
   "jury.winner_determined",
 ]);
 
-function normalizeContextString(value: string, maxChars = MAX_CONTEXT_STRING_CHARS): string {
+function normalizeContextLabel(value: string): string {
   return value
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, maxChars);
+    .slice(0, MAX_CONTEXT_LABEL_CHARS);
 }
 
 function playerName(projection: CanonicalGameProjection, id: string | null | undefined): string | null {
   if (!id) return null;
   const name = projection.players[id]?.name;
-  return name ? normalizeContextString(name, 80) : "Unknown player";
+  return name ? normalizeContextLabel(name) : "Unknown player";
 }
 
 function namedCounts(projection: CanonicalGameProjection, counts: Record<string, number>): Array<{ player: string; value: number }> {
@@ -209,83 +236,199 @@ function namedCounts(projection: CanonicalGameProjection, counts: Record<string,
     .sort((left, right) => left.player.localeCompare(right.player));
 }
 
-function narrationEventData(event: CanonicalGameEvent, projection: CanonicalGameProjection): Record<string, unknown> {
+function narrationFormat(formatId: Parameters<typeof formatSurfaceId>[0]): HouseNarrationFormat {
+  return {
+    id: formatSurfaceId(formatId),
+    name: displayNameForFormat(formatId),
+  };
+}
+
+function providerPowerAction(action: string): string {
+  return action === "eliminate" ? "exit" : action;
+}
+
+function providerResolutionMethod(method: string): string {
+  return method === "auto_eliminate" ? "automatic_exit" : method;
+}
+
+/**
+ * Explicit producer projection. Canonical payloads never cross the provider
+ * boundary by default; an event is either mapped here or omitted.
+ */
+function narrationEvent(
+  event: CanonicalGameEvent,
+  projection: CanonicalGameProjection,
+): HouseNarrationCanonicalEvent | null {
+  const base = {
+    sequence: event.sequence,
+    round: event.round,
+    phase: event.phase,
+  };
   switch (event.type) {
-    case "game.roster_initialized": return { players: event.payload.players.map((player) => normalizeContextString(player.name, 80)) };
-    case "round.started": return { round: event.payload.round };
-    case "shields.expired": return { players: event.payload.expiredPlayerIds.map((id) => playerName(projection, id)) };
-    case "vote.empower_tally_resolved": return {
-      counts: namedCounts(projection, event.payload.counts),
-      empowered: playerName(projection, event.payload.empowered),
-      tied: event.payload.tied?.map((id) => playerName(projection, id)) ?? [],
-      method: event.payload.method,
+    case "game.roster_initialized": return {
+      ...base,
+      type: "game.roster_initialized",
+      data: { players: event.payload.players.map((player) => normalizeContextLabel(player.name)) },
     };
-    case "vote.empowered_set": return { empowered: playerName(projection, event.payload.empowered), method: event.payload.method };
-    case "format.menu_offered": return { empowered: playerName(projection, event.payload.empoweredId), offeredFormats: [...event.payload.offeredFormatIds] };
-    case "format.selected": return { empowered: playerName(projection, event.payload.empoweredId), selectedFormat: event.payload.formatId };
+    case "round.started": return { ...base, type: "round.started", data: { round: event.payload.round } };
+    case "shields.expired": return {
+      ...base,
+      type: "shields.expired",
+      data: { players: event.payload.expiredPlayerIds.map((id) => playerName(projection, id)) },
+    };
+    case "vote.empower_tally_resolved": return {
+      ...base,
+      type: "vote.empower_tally_resolved",
+      data: {
+        counts: namedCounts(projection, event.payload.counts),
+        empowered: playerName(projection, event.payload.empowered),
+        tied: event.payload.tied?.map((id) => playerName(projection, id)) ?? [],
+        method: event.payload.method,
+      },
+    };
+    case "vote.empowered_set": return {
+      ...base,
+      type: "vote.empowered_set",
+      data: { empowered: playerName(projection, event.payload.empowered), method: event.payload.method },
+    };
+    case "format.menu_offered": return {
+      ...base,
+      type: "format.menu_offered",
+      data: {
+        empowered: playerName(projection, event.payload.empoweredId),
+        offeredFormats: event.payload.offeredFormatIds.map(narrationFormat),
+      },
+    };
+    case "format.selected": return {
+      ...base,
+      type: "format.selected",
+      data: {
+        empowered: playerName(projection, event.payload.empoweredId),
+        selectedFormat: narrationFormat(event.payload.formatId),
+      },
+    };
     case "format.ballot_cast": return {
-      format: event.payload.formatId,
-      voter: playerName(projection, event.payload.voterId),
-      target: playerName(projection, event.payload.targetId),
-      polarity: event.payload.polarity,
+      ...base,
+      type: "format.ballot_cast",
+      data: {
+        format: narrationFormat(event.payload.formatId),
+        voter: playerName(projection, event.payload.voterId),
+        target: playerName(projection, event.payload.targetId),
+        polarity: event.payload.polarity === "eliminate" ? "exit" : event.payload.polarity,
+      },
     };
     case "format.ballot_forfeited": return {
-      format: event.payload.formatId,
-      voter: playerName(projection, event.payload.voterId),
-      reason: event.payload.reason,
+      ...base,
+      type: "format.ballot_forfeited",
+      data: {
+        format: narrationFormat(event.payload.formatId),
+        voter: playerName(projection, event.payload.voterId),
+        reason: event.payload.reason,
+      },
     };
     case "format.resolved": return {
-      selectedFormat: event.payload.formatId,
-      empowered: playerName(projection, event.payload.empoweredId),
-      eliminated: playerName(projection, event.payload.eliminatedId),
-      resolutionKind: event.payload.resolutionKind,
-      tied: event.payload.tiedPlayerIds.map((id) => playerName(projection, id)),
-      tiebreaker: playerName(projection, event.payload.tiebreakerId),
+      ...base,
+      type: "format.resolved",
+      data: {
+        selectedFormat: narrationFormat(event.payload.formatId),
+        empowered: playerName(projection, event.payload.empoweredId),
+        exitedPlayer: playerName(projection, event.payload.eliminatedId),
+        resolutionKind: event.payload.resolutionKind,
+        tied: event.payload.tiedPlayerIds.map((id) => playerName(projection, id)),
+        tiebreaker: playerName(projection, event.payload.tiebreakerId),
+      },
     };
-    case "power.action_set": return { action: event.payload.action.action, target: playerName(projection, event.payload.action.target) };
+    case "power.action_set": return {
+      ...base,
+      type: "power.action_set",
+      data: {
+        action: providerPowerAction(event.payload.action.action),
+        target: playerName(projection, event.payload.action.target),
+      },
+    };
     case "power.candidates_resolved": return {
-      candidates: event.payload.candidates?.map((id) => playerName(projection, id)) ?? [],
-      autoEliminated: playerName(projection, event.payload.autoEliminated),
-      shieldGranted: playerName(projection, event.payload.shieldGranted),
-      method: event.payload.method,
+      ...base,
+      type: "power.candidates_resolved",
+      data: {
+        candidates: event.payload.candidates?.map((id) => playerName(projection, id)) ?? [],
+        automaticExit: playerName(projection, event.payload.autoEliminated),
+        shieldGranted: playerName(projection, event.payload.shieldGranted),
+        method: providerResolutionMethod(event.payload.method),
+      },
     };
     case "council.elimination_resolved": return {
-      candidates: event.payload.candidates.map((id) => playerName(projection, id)),
-      eliminated: playerName(projection, event.payload.eliminated),
-      method: event.payload.method,
+      ...base,
+      type: "council.exit_resolved",
+      data: {
+        candidates: event.payload.candidates.map((id) => playerName(projection, id)),
+        exitedPlayer: playerName(projection, event.payload.eliminated),
+        method: event.payload.method,
+      },
     };
-    case "player.eliminated": return { player: normalizeContextString(event.payload.playerName, 80), eliminatedRound: event.payload.eliminatedRound };
-    case "endgame.stage_set": return { stage: event.payload.stage };
-    case "endgame.elimination_resolved": return { stage: event.payload.stage, eliminated: playerName(projection, event.payload.eliminated), method: event.payload.method };
+    case "player.eliminated": return {
+      ...base,
+      type: "player.exited",
+      data: {
+        exitedPlayer: normalizeContextLabel(event.payload.playerName),
+        exitRound: event.payload.eliminatedRound,
+      },
+    };
+    case "endgame.stage_set": return {
+      ...base,
+      type: "endgame.stage_set",
+      data: { stage: event.payload.stage },
+    };
+    case "endgame.elimination_resolved": return {
+      ...base,
+      type: "endgame.exit_resolved",
+      data: {
+        stage: event.payload.stage,
+        exitedPlayer: playerName(projection, event.payload.eliminated),
+        method: event.payload.method,
+      },
+    };
     case "jury.winner_determined": return {
-      winner: playerName(projection, event.payload.winnerId),
-      voteCounts: event.payload.voteCounts.map((count) => ({ player: normalizeContextString(count.name, 80), votes: count.votes })),
-      method: event.payload.method,
+      ...base,
+      type: "jury.winner_determined",
+      data: {
+        winner: playerName(projection, event.payload.winnerId),
+        voteCounts: event.payload.voteCounts.map((count) => ({
+          player: normalizeContextLabel(count.name),
+          votes: count.votes,
+        })),
+        method: event.payload.method,
+      },
     };
     case "round.result_recorded": return {
-      round: event.payload.result.round,
-      eliminated: playerName(projection, event.payload.result.eliminated),
-      empowered: playerName(projection, event.payload.result.empoweredId),
+      ...base,
+      type: "round.result_recorded",
+      data: {
+        round: event.payload.result.round,
+        exitedPlayer: playerName(projection, event.payload.result.eliminated),
+        empowered: playerName(projection, event.payload.result.empoweredId),
+      },
     };
-    default: return { payload: structuredClone(event.payload) };
+    default: return null;
   }
 }
 
 function compileProjection(projection: CanonicalGameProjection): HouseNarrationProjection {
-  const alive = projection.playerOrder.map((id) => projection.players[id])
+  const remainingPlayers = projection.playerOrder.map((id) => projection.players[id])
     .filter((player) => player?.status === "alive")
-    .map((player) => normalizeContextString(player!.name, 80));
-  const eliminated = projection.playerOrder.map((id) => projection.players[id])
+    .map((player) => normalizeContextLabel(player!.name));
+  const exitedPlayers = projection.playerOrder.map((id) => projection.players[id])
     .filter((player) => player?.status === "eliminated")
-    .map((player) => normalizeContextString(player!.name, 80));
+    .map((player) => normalizeContextLabel(player!.name));
   return {
     headSequence: projection.lastSequence,
     round: projection.round,
     phase: projection.phase,
-    alive,
-    eliminated,
+    remainingPlayers,
+    exitedPlayers,
     empowered: playerName(projection, projection.empoweredId),
-    selectedFormat: projection.selectedFormatId,
+    selectedFormat: projection.selectedFormatId === null
+      ? null
+      : narrationFormat(projection.selectedFormatId),
     councilCandidates: projection.councilCandidates?.map((id) => playerName(projection, id) ?? "Unknown player") ?? [],
     endgameStage: projection.endgameStage,
   };
@@ -390,10 +533,12 @@ function toNarrationDialogue(
     sequence: entry.entrySequence,
     round: entry.round,
     phase: entry.phase,
-    speaker: entry.anonymous ? "Anonymous" : normalizeContextString(entry.from, 80),
-    text: normalizeContextString(entry.text),
+    speaker: entry.anonymous ? "Anonymous" : normalizeContextLabel(entry.from),
+    text: entry.text,
     anonymous: entry.anonymous === true,
-    dialogueKind: entry.dialogueKind ?? fallbackKind,
+    dialogueKind: entry.dialogueKind === "system_elimination"
+      ? "system_exit"
+      : entry.dialogueKind ?? fallbackKind,
   };
 }
 
@@ -422,13 +567,8 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
   );
   const deltaEvents = input.events.filter((event) => event.sequence > input.afterCanonicalSequence);
   const canonicalEvents = deltaEvents
-    .map((event): HouseNarrationCanonicalEvent => ({
-      sequence: event.sequence,
-      type: event.type,
-      round: event.round,
-      phase: event.phase,
-      data: narrationEventData(event, input.projection),
-    }))
+    .map((event) => narrationEvent(event, input.projection))
+    .filter((event): event is HouseNarrationCanonicalEvent => event !== null)
     .slice(-MAX_EVENT_ROWS);
   const publicDialogue = input.transcript.filter((entry): entry is HouseNarrationTranscriptEntry & { entrySequence: number } => entry.scope === "public"
       && hasDialogueSequence(entry) && entry.entrySequence > input.afterDialogueSequence
@@ -446,9 +586,9 @@ export function compileHouseNarrationContext(input: CompileHouseNarrationContext
     ? input.diaryEntries.slice(-8).map((entry): HouseNarrationDiaryEntry => ({
         round: entry.round,
         precedingPhase: entry.precedingPhase,
-        player: normalizeContextString(entry.agentName, 80),
-        question: normalizeContextString(entry.question),
-        answer: normalizeContextString(entry.answer),
+        player: normalizeContextLabel(entry.agentName),
+        question: entry.question,
+        answer: entry.answer,
       }))
     : [];
   const projection = deltaEvents.some((event) => PROJECTION_TRIGGER_TYPES.has(event.type)) ? compileProjection(input.projection) : null;

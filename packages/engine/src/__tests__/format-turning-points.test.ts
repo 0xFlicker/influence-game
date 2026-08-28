@@ -55,9 +55,12 @@ describe("format-kernel turning points", () => {
     // SoE is full-field eligibility — not a special chooser-survival beat.
     expect(projection.turningPoints.some((point) => point.type === "format_chooser_survived")).toBe(false);
     expect(projection.turningPoints.some((point) => point.type === "format_soe_elim_with_saves")).toBe(true);
-    expect(
-      projection.turningPoints.find((point) => point.type === "format_soe_elim_with_saves")?.description,
-    ).toContain("despite 2 saves");
+    const savedExit = projection.turningPoints.find(
+      (point) => point.type === "format_soe_elim_with_saves",
+    );
+    expect(savedExit?.description).toContain("Save-or-Exit");
+    expect(savedExit?.description).toContain("despite 2 saves");
+    expect(savedExit?.description).not.toContain("Save-or-Eliminate");
     expect(projection.turningPoints.some((point) => point.type === "format_tiebreak")).toBe(true);
     expect(
       projection.turningPoints.find((point) => point.type === "format_tiebreak")?.description,
@@ -139,8 +142,16 @@ describe("format-kernel turning points", () => {
     expect(
       projection.turningPoints.find((point) => point.type === "format_chooser_eliminated")?.description,
     ).toContain("was eliminated under it");
-    expect(projection.turningPoints.some((point) => point.type === "format_vote_bomb_clear_stack")).toBe(true);
-    expect(projection.turningPoints.some((point) => point.type === "format_vote_bomb_unanimous_target")).toBe(true);
+    const clearStack = projection.turningPoints.find(
+      (point) => point.type === "format_vote_bomb_clear_stack",
+    );
+    const unanimousTarget = projection.turningPoints.find(
+      (point) => point.type === "format_vote_bomb_unanimous_target",
+    );
+    expect(clearStack?.description).toContain("The Short List");
+    expect(unanimousTarget?.description).toContain("The Short List");
+    expect(clearStack?.description).not.toContain("Vote Bomb");
+    expect(unanimousTarget?.description).not.toContain("Vote Bomb");
   });
 
   it("preserves Majority Elimination identity in postgame turning points", () => {
@@ -187,7 +198,7 @@ describe("format-kernel turning points", () => {
     const point = projection.turningPoints.find(
       (candidate) => candidate.type === "format_chooser_eliminated",
     );
-    expect(point?.description).toContain("Majority Elimination");
+    expect(point?.description).toContain("Highest Count");
     expect(point?.criteria.formatId).toBe("majority_elimination");
     expect(point?.description).not.toContain("Vote Bomb");
     expect(point?.description).not.toContain("Safety Bounce");

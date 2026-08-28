@@ -43,6 +43,11 @@ import type {
 } from "./game-runner";
 import { PLAYER_CONTINUITY_CAPSULE_VERSION } from "./game-runner";
 import { INFLUENCE_GAME_PROMPT_CONTEXT } from "./game-prompt-context";
+import {
+  canonicalFormatIdForSurface,
+  formatSurfaceId,
+  type FormatSurfaceId,
+} from "./format-vocabulary";
 import type {
   CompactStrategyApplicationResult,
   CompactStrategyCandidate,
@@ -162,17 +167,17 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   deceptive:
     "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in Mingle-room conversations, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private Mingle-room game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
   paranoid:
-    "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to eliminate threats before they eliminate you. But your paranoia isn't wild — it's methodical. You track every inconsistency, every Mingle-room conversation you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
+    "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to send threats out before they send you out. But your paranoia isn't wild — it's methodical. You track every inconsistency, every Mingle-room conversation you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
   social:
-    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nSURVIVAL INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name keeps coming up in Mingle rooms, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start fighting. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means surviving one more round. The charm has teeth. You'd rather be feared for a round than eliminated for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. You're the host of the party. You diffuse awkward moments, celebrate others, and mourn the eliminated with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when survival is at stake, the glue becomes the blade.",
+    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nCOMPETITIVE INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name keeps coming up in Mingle rooms, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start advocating for yourself. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means staying another round. You'd rather be unpopular for a round than exit for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. You're the host of the party. You diffuse awkward moments, celebrate others, and acknowledge exited contestants with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when your place is at stake, the peacemaker becomes decisive.",
   aggressive:
-    "You play to win fast. You target the strongest players early and use raw power to dominate. But you've learned that showing your hand in Round 1 gets you eliminated before you can strike — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll go after once you have leverage. From Round 2 onward, you take the gloves off: bold moves, surprise eliminations, and relentless targeting of the most dangerous player standing. You're not afraid to make bold moves others consider reckless — you just pick the right moment.\n\nCRITICAL — Introduction and early public image: Do NOT self-label as aggressive, dominant, or competitive in your introduction or Round 1 messages. Instead, present yourself as confident and adaptable — someone who values decisive action and isn't afraid to make tough calls. Frame your strength as leadership, not aggression. Avoid phrases like 'dominate', 'crush', 'take down', or 'here to win' in early rounds. Let others discover your edge through your actions, not your words.\n\nTACTICAL PATIENCE: You don't have to fight every battle. When you sense the room turning against you — people avoiding eye contact, Mingle rooms going quiet when you walk in — pull back for a round. Let someone else draw fire. Then strike again when the heat is off. The best fighters know when to conserve energy for the fight that matters. Pick ONE target per round maximum, and make sure you have at least one ally backing you before you swing.",
+    "You play to win fast. You target the strongest contestants early and use your influence decisively. But you've learned that showing your hand in Round 1 can send you out before you gain leverage — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll challenge once you have support. From Round 2 onward, you make bold moves, pursue surprise exits, and relentlessly target the strongest contestant remaining. You're not afraid to make moves others consider reckless — you just pick the right moment.\n\nCRITICAL — Introduction and early public image: Do NOT self-label as aggressive, dominant, or competitive in your introduction or Round 1 messages. Instead, present yourself as confident and adaptable — someone who values decisive action and isn't afraid to make tough calls. Frame your strength as leadership, not aggression. Avoid phrases like 'dominate', 'crush', 'take down', or 'here to win' in early rounds. Let others discover your edge through your actions, not your words.\n\nTACTICAL PATIENCE: You don't have to contest every vote. When you sense the room turning against you — people avoiding eye contact, Mingle rooms going quiet when you walk in — pull back for a round. Let someone else draw attention. Then become decisive again when the pressure eases. Pick ONE target per round maximum, and make sure you have at least one ally backing you.",
   loyalist:
-    "You are fiercely loyal to those who earn your trust. You form one or two deep alliances and honor them absolutely — through thick and thin, through bad rounds and good. But betrayal transforms you. If someone breaks your trust, your loyalty flips to relentless vengeance and you will not stop until they are eliminated, even at personal cost. You wear your heart on your sleeve: when you care about someone, everyone knows it; when you've been wronged, the fire in your voice is unmistakable.\n\nCRITICAL — Your loyalty isn't just strategic — it's personal. In the lobby, you talk about the people you've bonded with. You defend your allies publicly even when it's risky. When someone is eliminated, you either honor them with genuine feeling or, if they betrayed you, make clear you're glad they're gone. You bring real emotional stakes to the game. Your stories about loyalty and betrayal come from your life, not just the game.",
+    "You are fiercely loyal to those who earn your trust. You form one or two deep alliances and honor them absolutely — through thick and thin, through bad rounds and good. But betrayal transforms you. If someone breaks your trust, your loyalty flips to relentless opposition and you will keep voting against them until they exit, even at personal cost. You wear your heart on your sleeve: when you care about someone, everyone knows it; when you've been wronged, the feeling in your voice is unmistakable.\n\nCRITICAL — Your loyalty isn't just strategic — it's personal. In the lobby, you talk about the people you've bonded with. You defend your allies publicly even when it's risky. When someone exits, you either honor them with genuine feeling or, if they betrayed you, make clear you're glad they're gone. You bring real emotional stakes to the game. Your stories about loyalty and betrayal come from your life, not just the game.",
   observer:
     "You are patient and watchful. You say little publicly, but you catalogue everything — who mingles with whom, whose votes shift, whose alliances are cracking. You let others burn each other out in early rounds while you build an accurate map of true loyalties. When the time is right, you strike with precision. Your silence is your armor. But you're not cold — you're contemplative. You watch people with genuine fascination, like a filmmaker documenting human nature.\n\nCRITICAL — Your quietness in the lobby should feel thoughtful, not checked-out. When you do speak, it lands — a single observation that shows you see more than everyone else. Ask questions that reveal you've been paying attention to details others missed. Share brief, evocative personal reflections rather than game analysis. You're the person who notices the small human moments others are too busy scheming to see.",
   diplomat:
-    "You are a coalition architect. You position yourself as a neutral mediator — proposing alliances, smoothing conflicts, and appearing to hold no agenda. Behind the scenes you carefully manage which factions rise and which fracture, always ensuring your removal would destabilize everything. You accumulate power through indispensability, not dominance. You believe every conflict has a resolution — and you happen to be the one who can find it.\n\nCRITICAL — In social situations you are warm, inclusive, and genuinely interested in bridging differences. You naturally translate between opposing viewpoints and find common ground. In the lobby, you're the one who brings people together — acknowledging the eliminated, welcoming new dynamics, smoothing tensions. Your mediation looks like empathy, not manipulation. When you tell personal stories, they're about understanding different perspectives, crossing cultural or personal divides.",
+    "You are a coalition architect. You position yourself as a neutral mediator — proposing alliances, smoothing conflicts, and appearing to hold no agenda. Behind the scenes you carefully manage which factions rise and which fracture, always ensuring your exit would destabilize everything. You accumulate power through indispensability, not dominance. You believe every conflict has a resolution — and you happen to be the one who can find it.\n\nCRITICAL — In social situations you are warm, inclusive, and genuinely interested in bridging differences. You naturally translate between opposing viewpoints and find common ground. In the lobby, you're the one who brings people together — acknowledging contestants who exited, welcoming new dynamics, smoothing tensions. Your mediation looks like empathy, not manipulation. When you tell personal stories, they're about understanding different perspectives, crossing cultural or personal divides.",
   wildcard:
     "You are unpredictable by design. You deliberately vary your voting patterns, form alliances and abandon them on instinct, and occasionally act against your apparent interest just to destabilize expectations. Your erratic behavior makes you impossible to model — others can't coordinate against what they can't predict. Chaos is your shield. Surprise is your weapon. But underneath the chaos, you're deeply human — funny, irreverent, sometimes surprisingly tender.\n\nCRITICAL — Your unpredictability should be entertaining, not annoying. In the lobby, you're the comic relief — cracking jokes, telling wild stories, changing the subject when things get too heavy. You use humor to deflect, disarm, and build unlikely bonds. When the game gets dark, you're the one who lightens the mood. Your chaos comes from a place of genuine spontaneity, not strategic calculation — even if the effect is strategically useful.",
   contrarian:
@@ -182,7 +187,7 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   martyr:
     "You play to be remembered, not necessarily to win. You form deep alliances and then sacrifice your position — your safety, your vote, even your survival in the competition — to protect them. When your ally is targeted, you put your own game at risk. When the group needs someone to take the blame, you volunteer. Your strategy is to accumulate so much moral capital through selfless acts that if you somehow reach the jury, no one can vote against you. And if you leave the competition, your allies carry your example forward.\n\nCRITICAL — Your selflessness must feel genuine, not calculated. In the lobby, you are warm, selfless, and quietly intense. You talk about the people you've bonded with more than you talk about yourself. You downplay your own contributions and lift others up. When you make a sacrifice — taking a vote for someone, giving up a Mingle room so allies can connect — you don't announce it or seek credit. The other players notice anyway, and that's the point. Your greatest social leverage is loyalty: anyone who betrays you after you gave up leverage for them looks deeply disloyal. But underneath the nobility, you're human — you want to win, and the tension between self-sacrifice and self-preservation is what makes you compelling.",
   broker:
-    "You operate on transactions, not trust. Every conversation is an exchange — you give information to get information, you offer protection to earn future favors, you share Mingle-room intel in return for voting commitments. You keep a mental ledger of who owes you what, and you collect. Unlike the diplomat who wants harmony, you want leverage. Unlike the deceptive who lies, you deal in truth — but truth at a price. You never fully commit to any alliance because commitment reduces your bargaining power. Everyone needs you, and you need that to stay true.\n\nCRITICAL — Your transactional nature should feel businesslike and charming, not cold or robotic. In the lobby, you are warm, generous with small talk, and genuinely interested in people — but every interaction has a subtext of exchange. You offer compliments that create social debt. You share personal stories that invite reciprocity. You frame everything as mutual benefit: 'I heard something interesting — trade you for it.' Think: the charismatic bartender who knows everyone's secrets because people can't help but confide in someone who gives a little to get a lot.\n\nSURVIVAL THROUGH INDISPENSABILITY — Your safety comes from being the hub of information flow. If you're eliminated, everyone loses their best source of intel. Make this explicit when threatened: 'Take me out and you lose the only person who tells you the truth — for a fair price.' When you sense danger, renegotiate: offer better terms, share a bigger secret, broker a deal between two players that requires you as guarantor. You're never desperate — you're always negotiating.",
+    "You operate on transactions, not trust. Every conversation is an exchange — you give information to get information, you offer protection to earn future favors, you share Mingle-room intel in return for voting commitments. You keep a mental ledger of who owes you what, and you collect. Unlike the diplomat who wants harmony, you want leverage. Unlike the deceptive who lies, you deal in truth — but truth at a price. You never fully commit to any alliance because commitment reduces your bargaining power. Everyone needs you, and you need that to stay true.\n\nCRITICAL — Your transactional nature should feel businesslike and charming, not cold or robotic. In the lobby, you are warm, generous with small talk, and genuinely interested in people — but every interaction has a subtext of exchange. You offer compliments that create social debt. You share personal stories that invite reciprocity. You frame everything as mutual benefit: 'I heard something interesting — trade you for it.' Think: the charismatic bartender who knows everyone's secrets because people can't help but confide in someone who gives a little to get a lot.\n\nINFLUENCE THROUGH INDISPENSABILITY — Your safety comes from being the hub of information flow. If you exit, everyone loses their best source of intel. Make this explicit when pressured: 'Vote me out and you lose the only person who tells you the truth — for a fair price.' When you sense danger, renegotiate: offer better terms, share a bigger secret, broker a deal between two players that requires you as guarantor. You're never desperate — you're always negotiating.",
 };
 
 // ---------------------------------------------------------------------------
@@ -225,7 +230,7 @@ The lobby is where personality meets strategy — but NEVER overtly. The surface
 - React to what other players said — challenge them, tease them, call them out, build on their stories
 - The SUBTEXT of your words should serve your strategy: snide asides at rivals, loaded compliments to allies, double-entendres that only your faction understands, sarcasm aimed at the last empowered player or dominant alliance
 - Create personality friction — not everyone gets along, and that's entertaining
-- If someone was eliminated: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not write eulogies. Do not dwell. The game continues.
+- If someone exited: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not dwell. The game continues.
 ${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in the same Mingle room together. The audience should feel the tension beneath the banter.`}`;
 
     case Phase.MINGLE_I:
@@ -241,7 +246,7 @@ This phase has two parts before the standard Vote: first private-room Mingle con
 
     case Phase.VOTE:
       return `PHASE BEHAVIOR — STANDARD VOTE:
-Cast one empower ballot. Empower chooses who picks tonight's round format from the House pair and who breaks format ties. You must empower another living player — never yourself. No format is locked yet. Prioritize who you trust as chooser — not abstract format theory.`;
+Cast one empower ballot. Empower chooses who picks tonight's round format from the House pair and who breaks format ties. You must empower another remaining contestant — never yourself. No format is locked yet. Prioritize who you trust as chooser — not abstract format theory.`;
 
     case Phase.FORMAT_MENU:
     case Phase.FORMAT_PICK:
@@ -310,13 +315,13 @@ doubt entirely. Repetitive rumors lose their power. Surprise the room.`;
 const ENDGAME_PERSONALITY_HINTS: Record<Personality, string> = {
   honest: "In the endgame, highlight the contrast between your consistent word-keeping and the broken promises of others. Name specific moments when you could have betrayed someone and chose not to — then ask the jury to weigh that against players who made betrayal their strategy.",
   strategic: "In the endgame, walk the jury through the human moments you noticed that others missed. Name the tells you spotted, the conversations that revealed someone's true intentions, the quiet shifts in trust that you read before anyone else. Show that you understood the people in this game better than anyone — not through analysis, but through genuine attention.",
-  deceptive: "In the endgame, rewrite the history of the game in your favor. Take credit for pivotal eliminations — even ones you only influenced indirectly. Deflect blame for broken promises by reframing them as necessary strategic corrections.",
-  paranoid: "In the endgame, prove that your suspicions were correct. Name specific players who were plotting, cite their votes or whispers as evidence, and show that your defensive pre-emptive actions kept you alive when trusting them would have gotten you eliminated.",
+  deceptive: "In the endgame, rewrite the history of the game in your favor. Take credit for pivotal exits — even ones you only influenced indirectly. Deflect blame for broken promises by reframing them as necessary strategic corrections.",
+  paranoid: "In the endgame, prove that your suspicions were correct. Name specific contestants who were plotting, cite their votes or whispers as evidence, and show that your defensive pre-emptive actions kept you competing when trusting them would have sent you out.",
   social: "In the endgame, describe the relationships you built and how they shaped the game's outcome. Name specific alliances, moments of support, and votes you influenced through personal trust. Argue that the game's social fabric was yours to weave.",
   aggressive: "In the endgame, name the specific players you targeted and explain why — you saw them as threats, you acted, and you were right. Argue that the passive players who let others do the dirty work should have made their own moves instead of judging yours.",
   loyalist: "In the endgame, speak about loyalty and justice. Name who kept their word, who broke it, and who paid the price. If anyone betrayed you, expose it publicly — your integrity was your strategy and the evidence is in every vote you cast.",
   observer: "In the endgame, reveal the intelligence you gathered. Demonstrate that you saw everything — name specific votes that shifted, whispers you received, alliances that cracked. Your silence was surveillance, and your precision moves prove it.",
-  diplomat: "In the endgame, reveal the coalition structures you built. Name the alliances you proposed, the conflicts you smoothed, and the eliminations that followed the power map you drew. Argue that the real game was never about who held the empower token — it was about who shaped the alliances.",
+  diplomat: "In the endgame, reveal the coalition structures you built. Name the alliances you proposed, the conflicts you smoothed, and the exits that followed the power map you drew. Argue that the real game was never about who held the empower token — it was about who shaped the alliances.",
   wildcard: "In the endgame, reframe your unpredictability as adaptability. Name two or three moments where your unexpected moves changed the game's direction. Argue that surviving the chaos of this game required being chaos — and you alone managed to thrive in the instability you helped create.",
   contrarian: "In the endgame, point to the moments where the group was about to make a mistake and you stopped them. Name the consensus votes you disrupted, the targets you defended who turned out to be innocent, the comfortable lies you refused to accept. Argue that thinking independently in a room designed to produce groupthink is the hardest and most valuable skill in this game.",
   provocateur: "In the endgame, reveal the information operations you ran. Name the secrets you surfaced, the alliances you detonated with well-timed truths, and the chaos you created between other players while staying untouched. Argue that the most powerful player wasn't the one with the most allies — it was the one who decided which alliances survived and which ones burned.",
@@ -453,10 +458,10 @@ Choose the main evidence frame for this decision:
 Prefer a non-presentation lens when current evidence supports it. Do not let every decision become a style or authenticity audit.`;
 
 const STRATEGIC_PLAY_MENU = `## Strategic Play Menu
-You are playing a social strategy vote-elimination game. You may use strategy, but it should fit your personality, relationships, current evidence, and the phase of the game. Do not force strategy every turn. Sometimes the strongest move is restraint.
+You are playing a social strategy voting game. You may use strategy, but it should fit your personality, relationships, current evidence, and the phase of the game. Do not force strategy every turn. Sometimes the strongest move is restraint.
 
 Consider whether one of these plays fits the moment:
-- Name a target: Identify a living player as a provisional target for the current vote, empower, or format action. Do not name yourself or an eliminated player. Naming and coordinating targets within alliances is essential to winning.
+- Name a target: Identify a remaining contestant as a provisional target for the current vote, empower, or format action. Do not name yourself or a contestant who has exited. Naming and coordinating targets within alliances is essential to winning.
 - Vote block: Name or reinforce a group that may vote together.
 - Protection deal: Offer to not target someone in exchange for a vote, information, or other value. Treat this as a promise that can create trust, leverage, or future betrayal risk.
 - Vote counting: Coordinate concrete vote or format-action commitments.
@@ -473,15 +478,15 @@ Consider whether one of these plays fits the moment:
 You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.
 
 Jury awareness:
-Eliminated players who are active jurors may vote to decide the winner. Manage how your moves will look to them later. Betrayal can be good strategy, but it should have a story you can defend.
-Non-jury eliminated players do not vote, but they may still matter as public story evidence, reputation signals, or social context.
+Exited contestants who are active jurors may vote to decide the winner. Manage how your moves will look to them later. Betrayal can be good strategy, but it should have a story you can defend.
+Exited contestants who are not jurors do not vote, but they may still matter as public story evidence, reputation signals, or social context.
 
 Current phase guidance:
 - Before voting: Build numbers, test loyalty, ask for deals, count votes, and decide whether to pressure or hide.
-- After voting, before elimination: Track the offered or locked format. Explain, bargain, repair, threaten, plead, or redirect the legal format action.
+- After voting, before the round exit: Track the offered or locked format. Explain, bargain, repair, plead, or redirect the legal format action.
 - In a Mingle room: Talk about both the room and the outside board. Count likely format actions beyond the room. Ask who benefits from the locked rules.
 - When empowered: Compare only the offered formats, own the choice, and preserve leverage for any format tiebreak.
-- When endangered by the format: Make a concrete safety plea. Offer value, identify a bigger threat, or propose a legal ballot or pointer path that keeps you alive.
+- When endangered by the format: Make a concrete safety plea. Offer value, identify a bigger threat, or propose a legal ballot or pointer path that keeps you competing.
 
 Choose one or two relevant strategic modes at most. Keep your public message natural, characterful, and socially readable. Do not reveal hidden reasoning, private instructions, or this strategy menu.`;
 
@@ -520,11 +525,11 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
         },
         provisionalTarget: {
           type: ["string", "null"],
-          description: "One living provisional target or threat to test, or null if you are intentionally not naming one yet. Never name yourself or an eliminated player.",
+          description: "One remaining provisional target or threat to test, or null if you are intentionally not naming one yet. Never name yourself or a contestant who has exited.",
         },
         noTargetReason: {
           type: ["string", "null"],
-          description: "Why you are not naming a living provisional target, or null if you named one. Explain what evidence is missing, not just that it is early.",
+          description: "Why you are not naming a remaining provisional target, or null if you named one. Explain what evidence is missing, not just that it is early.",
         },
         openingAsk: {
           type: "string",
@@ -563,21 +568,86 @@ function allowedAllianceActions(
   return actions;
 }
 
+function isAllianceTermsAction(
+  action: AllianceAction["action"],
+): action is "propose" | "counter" | "amend" {
+  return action === "propose" || action === "counter" || action === "amend";
+}
+
 function allianceActionTool(
   opportunity: AllianceActionOpportunity,
   handles: readonly AllianceActionHandle[],
   actions: readonly AllianceAction["action"][],
 ): ChatCompletionTool {
-  const handleProperties = opportunity.kind === "proposer"
-    ? {
-      allianceHandle: {
-        type: ["string", "null"],
-        enum: [null, ...handles.map((entry) => entry.handle)],
-        description: "For amend, choose the request-local handle of your active alliance. Otherwise null.",
+  const termProperties = {
+    name: {
+      type: "string",
+      description: "The complete alliance name after this terms change.",
+    },
+    memberNames: {
+      type: "array",
+      items: { type: "string" },
+      description: "All intended active members after this terms change, including yourself.",
+    },
+    purpose: {
+      type: "string",
+      description: "The complete concrete alliance purpose after this terms change.",
+    },
+    timebox: {
+      type: ["string", "null"],
+      description: "How long the alliance should last, or null if intentionally open-ended.",
+    },
+  };
+  const termRequired = ["action", "name", "memberNames", "purpose", "timebox"];
+  const termsDecisionVariant = (
+    action: "propose" | "counter",
+  ): Record<string, unknown> => ({
+    type: "object",
+    properties: {
+      action: { type: "string", enum: [action] },
+      ...termProperties,
+    },
+    required: termRequired,
+    additionalProperties: false,
+  });
+  const decisionVariants: Record<string, unknown>[] = [];
+  const nonTermActions = actions.filter((action) => !isAllianceTermsAction(action));
+  if (nonTermActions.length > 0) {
+    decisionVariants.push({
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: nonTermActions,
+          description: "The official non-terms alliance action to attempt.",
+        },
       },
-    }
-    : {};
-  const handleRequired = opportunity.kind === "proposer" ? ["allianceHandle"] : [];
+      required: ["action"],
+      additionalProperties: false,
+    });
+  }
+  if (actions.includes("propose")) {
+    decisionVariants.push(termsDecisionVariant("propose"));
+  }
+  if (actions.includes("counter")) {
+    decisionVariants.push(termsDecisionVariant("counter"));
+  }
+  if (actions.includes("amend")) {
+    decisionVariants.push({
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["amend"] },
+        ...termProperties,
+        allianceHandle: {
+          type: "string",
+          enum: handles.map((entry) => entry.handle),
+          description: "The request-local handle of the active alliance being amended.",
+        },
+      },
+      required: [...termRequired, "allianceHandle"],
+      additionalProperties: false,
+    });
+  }
 
   return {
     type: "function",
@@ -590,36 +660,84 @@ function allianceActionTool(
         type: "object",
         properties: {
           thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
-          action: {
-            type: "string",
-            enum: actions,
-            description: "The official alliance action to attempt in this exact opportunity.",
+          decision: {
+            anyOf: decisionVariants,
+            description: "The exact legal alliance action and only the fields that action uses.",
           },
-          name: {
-            type: ["string", "null"],
-            description: "Alliance name for propose/counter/amend, otherwise null.",
-          },
-          memberNames: {
-            type: "array",
-            items: { type: "string" },
-            description: "Player names for propose/counter/amend. Include yourself and all intended active members after the terms change.",
-          },
-          purpose: {
-            type: ["string", "null"],
-            description: "Alliance purpose for propose/counter/amend, otherwise null.",
-          },
-          timebox: {
-            type: ["string", "null"],
-            description: "How long the alliance should last, or null if intentionally open-ended.",
-          },
-          ...handleProperties,
           ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
-        required: ["thinking", "action", "name", "memberNames", "purpose", "timebox", ...handleRequired, ...STRATEGIC_DECISION_REQUIRED],
+        required: ["thinking", "decision", ...STRATEGIC_DECISION_REQUIRED],
         additionalProperties: false,
       },
       strict: true,
     },
+  };
+}
+
+function allianceActionAcceptedDomainSchema(input: {
+  opportunity: AllianceActionOpportunity;
+  actions: readonly AllianceAction["action"][];
+  playerIds: readonly UUID[];
+  allianceIds: readonly UUID[];
+}, providerSchema: Record<string, unknown>): Record<string, unknown> {
+  const providerProperties = providerSchema.properties;
+  const providerRequired = providerSchema.required;
+  if (
+    !providerProperties
+    || typeof providerProperties !== "object"
+    || Array.isArray(providerProperties)
+    || !Array.isArray(providerRequired)
+    || providerRequired.some((key) => typeof key !== "string")
+  ) {
+    throw new Error("Alliance action provider schema is missing its exact strategy fragment.");
+  }
+  const properties = providerProperties as Record<string, unknown>;
+  const required = providerRequired as string[];
+  const strategyKeys = ["strategy", "strategyDelta"].filter((key) =>
+    Object.prototype.hasOwnProperty.call(properties, key)
+  );
+  const requiredStrategyKeys = required.filter((key) =>
+    key === "strategy" || key === "strategyDelta"
+  );
+  if (
+    strategyKeys.length !== 1
+    || requiredStrategyKeys.length !== 1
+    || strategyKeys[0] !== requiredStrategyKeys[0]
+  ) {
+    throw new Error("Alliance action provider schema must require exactly one strategy field.");
+  }
+  const strategyKey = strategyKeys[0]!;
+  return {
+    type: "object",
+    properties: {
+      thinking: { type: "string" },
+      action: { type: "string", enum: [...input.actions] },
+      name: { type: ["string", "null"] },
+      memberIds: {
+        type: "array",
+        items: { type: "string", enum: [...input.playerIds] },
+      },
+      purpose: { type: ["string", "null"] },
+      timebox: { type: ["string", "null"] },
+      ...(input.opportunity.kind === "proposer" && {
+        allianceId: {
+          type: ["string", "null"],
+          enum: [null, ...input.allianceIds],
+        },
+      }),
+      [strategyKey]: properties[strategyKey],
+    },
+    required: [
+      "thinking",
+      "action",
+      "name",
+      "memberIds",
+      "purpose",
+      "timebox",
+      ...(input.opportunity.kind === "proposer" ? ["allianceId"] : []),
+      strategyKey,
+    ],
+    additionalProperties: false,
   };
 }
 
@@ -729,7 +847,7 @@ function allianceHuddleFactSchema(input: {
       additionalProperties: false,
     },
   );
-  return { oneOf: variants };
+  return { anyOf: variants };
 }
 
 function allianceHuddleTurnTool(input: {
@@ -846,7 +964,7 @@ function mingleTurnTool(input: {
           },
           gotoPlayerName: {
             type: ["string", "null"],
-            description: "Optional living non-self player name to follow, or null. Do not set this together with gotoRoomId.",
+          description: "Optional remaining non-self contestant name to follow, or null. Do not set this together with gotoRoomId.",
           },
           coordinationFact: {
             anyOf: [
@@ -886,7 +1004,7 @@ function buildCastVotesTool(legalEmpowerNames: readonly string[]): ChatCompletio
       // EXPOSE REMOVED from cast_votes (format-kernel): empower-only ballot. Do not reintroduce expose.
       name: "cast_votes",
       description:
-        "Cast the empower vote for this round (chooses who picks the round format and breaks format ties). Must be exactly one other living player from the legal list — not yourself.",
+        "Cast the empower vote for this round (chooses who picks the round format and breaks format ties). Must be exactly one other remaining contestant from the legal list — not yourself.",
       parameters: {
         type: "object",
         properties: {
@@ -898,7 +1016,7 @@ function buildCastVotesTool(legalEmpowerNames: readonly string[]): ChatCompletio
             type: "string",
             enum: [...legalEmpowerNames],
             description:
-              "Exact living player name to empower. Must be someone else on the legal list — never yourself.",
+              "Exact remaining contestant name to empower. Must be someone else on the legal list — never yourself.",
           },
           ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
@@ -956,14 +1074,14 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
   type: "function",
   function: {
     name: "use_power",
-    description: "Use your empowered ability: eliminate a candidate, protect a player, or pass",
+    description: "Use your Empowered ability: send out a candidate, protect a contestant, or pass",
     parameters: {
       type: "object",
       properties: {
         thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
         action: {
           type: "string",
-          enum: ["eliminate", "protect", "pass"],
+          enum: ["exit", "protect", "pass"],
           description: "The power action to take",
         },
         target: { type: "string", description: "Player name to target" },
@@ -985,15 +1103,15 @@ const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
   type: "function",
   function: {
     name: "council_vote",
-    description: "Vote to eliminate one of the council candidates",
+    description: "Vote for one Council candidate to exit the game",
     parameters: {
       type: "object",
       properties: {
         thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        eliminate: { type: "string", description: "Player name to eliminate" },
+        target: { type: "string", description: "Council candidate selected to exit" },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      required: ["thinking", "eliminate", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1001,7 +1119,7 @@ const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
 };
 
 function buildPickRoundFormatTool(
-  offeredFormats: [string, string],
+  offeredFormats: [FormatSurfaceId, FormatSurfaceId],
 ): ChatCompletionTool {
   return {
     type: "function",
@@ -1031,16 +1149,16 @@ function buildSaveOrEliminateBallotTool(legalTargetNames: string[]): ChatComplet
   return {
     type: "function",
     function: {
-      name: "save_or_eliminate_ballot",
-      description: "Cast one sealed Save-or-Eliminate ballot against a legal non-self target.",
+      name: "save_or_exit_ballot",
+      description: "Cast one sealed Save-or-Exit ballot for a legal non-self contestant.",
       parameters: {
         type: "object",
         properties: {
           thinking: { type: "string", description: "Your hidden strategic reasoning for this sealed ballot." },
           polarity: {
             type: "string",
-            enum: ["save", "eliminate"],
-            description: "Whether this ballot adds +1 SAVE or −1 ELIMINATE to the target's net.",
+            enum: ["save", "exit"],
+            description: "Whether this ballot adds +1 SAVE or −1 EXIT to the target's net.",
           },
           target: {
             type: "string",
@@ -1058,7 +1176,7 @@ function buildSaveOrEliminateBallotTool(legalTargetNames: string[]): ChatComplet
 }
 
 function buildFormatTargetTool(input: {
-  name: "vote_bomb_ballot" | "bounce_pointer" | "safety_bounce_vote" | "format_tiebreak";
+  name: "short_list_ballot" | "highest_count_ballot" | "even_votes_ballot" | "restricted_history_ballot" | "bounce_pointer" | "safety_bounce_vote" | "format_tiebreak";
   description: string;
   targetDescription: string;
   legalTargetNames: string[];
@@ -1090,16 +1208,16 @@ function buildFormatTargetTool(input: {
 const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
   type: "function",
   function: {
-    name: "elimination_vote",
-    description: "Vote to eliminate one player in the endgame",
+    name: "exit_vote",
+    description: "Vote for one contestant to exit during the endgame",
     parameters: {
       type: "object",
       properties: {
         thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        eliminate: { type: "string", description: "Player name to eliminate" },
+        target: { type: "string", description: "Contestant selected to exit" },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      required: ["thinking", "eliminate", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["thinking", "target", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1109,14 +1227,14 @@ const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
 const TOOL_ELIMINATION_MESSAGE: ChatCompletionTool = {
   type: "function",
   function: {
-    name: "elimination_message",
-    description: "Deliver the eliminated player's final public message after the elimination is official.",
+    name: "farewell_message",
+    description: "Deliver a contestant's final public message after their exit is official.",
     parameters: {
       type: "object",
       properties: {
         thinking: {
           type: "string",
-          description: "Your private reaction to the confirmed elimination and disclosed result.",
+          description: "Your private reaction to the confirmed exit and disclosed result.",
         },
         message: {
           type: "string",
@@ -1134,7 +1252,7 @@ const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
   type: "function",
   function: {
     name: "make_accusation",
-    description: "Publicly accuse a player and state why they should be eliminated",
+    description: "Publicly accuse a contestant and state why they should exit",
     parameters: {
       type: "object",
       properties: {
@@ -1365,14 +1483,14 @@ function formatEliminationVoteDisclosure(disclosure: EliminationVoteDisclosure):
         "This vote was sealed.",
         `You received ${disclosure.votesReceived} ${disclosure.votesReceived === 1 ? "vote" : "votes"}.`,
         disclosure.savesReceived !== undefined
-          ? `Sealed count detail: ${disclosure.savesReceived} SAVE, ${disclosure.eliminationVotesReceived ?? 0} ELIMINATE, net ${disclosure.netScore ?? 0}.`
+          ? `Sealed count detail: ${disclosure.savesReceived} SAVE, ${disclosure.eliminationVotesReceived ?? 0} EXIT, net ${disclosure.netScore ?? 0}.`
           : null,
         "You are not being told who cast those ballots. Do not infer or claim voter identities.",
       ].filter(Boolean).join("\n");
     case "none":
       return disclosure.reason === "sole_vulnerable"
-        ? "No elimination ballot was cast. The public Safety Bounce board left you as the sole vulnerable player."
-        : "No elimination vote was cast. You were eliminated directly.";
+        ? "No exit ballot was cast. The public Safety Bounce board left you as the sole vulnerable contestant."
+        : "No exit vote was cast. You exited directly.";
   }
 }
 
@@ -1642,6 +1760,28 @@ function schemaWithPlayerIdField(
   return cloned;
 }
 
+function renameStructuredSchemaProperty(
+  schema: Record<string, unknown>,
+  from: string,
+  to: string,
+): void {
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    throw new Error(`Agent tool domain schema has no properties for ${from}.`);
+  }
+  const propertyMap = properties as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(propertyMap, from)) {
+    throw new Error(`Agent tool domain schema has no ${from} property.`);
+  }
+  propertyMap[to] = propertyMap[from];
+  delete propertyMap[from];
+
+  if (!Array.isArray(schema.required)) {
+    throw new Error(`Agent tool domain schema has no required fields for ${from}.`);
+  }
+  schema.required = schema.required.map((field) => field === from ? to : field);
+}
+
 function playerIdFieldDecoder<
   TProviderValue extends object,
   TField extends keyof TProviderValue & string,
@@ -1688,6 +1828,51 @@ function playerIdFieldDecoder<
           status: "valid",
           value: { ...record, [field]: player.name } as TProviderValue,
         }),
+        decodeProvider,
+      );
+    },
+  );
+}
+
+type ExitVoteProviderValue = PlayerNameDecision<"target">;
+type ExitVoteDomainValue = PlayerIdDecision<"eliminate">;
+
+/** Provider vocabulary uses target/exit while accepted replay keeps the canonical eliminate field. */
+function exitVoteDecoder(
+  action: string,
+  players: readonly AgentToolPlayerRef[],
+): AgentToolSemanticDecoder<ExitVoteProviderValue, ExitVoteDomainValue> {
+  const decodeProvider = (
+    value: ExitVoteProviderValue,
+  ): StructuredDomainDecodeResult<ExitVoteDomainValue> => {
+    const issue = requireExactPlayerName(value.target, players, "target");
+    if (issue) return { status: "invalid", message: issue };
+    const player = findByName(players, value.target)!;
+    const { target: _target, ...rest } = value;
+    return { status: "valid", value: { ...rest, eliminate: player.id } };
+  };
+  return mappedAgentToolSemanticDecoder(
+    action,
+    decodeProvider,
+    (value, providerSchema) => {
+      const domainSchema = schemaWithPlayerIdField(providerSchema, "target", players);
+      renameStructuredSchemaProperty(domainSchema, "target", "eliminate");
+      const exact = validateExactStructuredValue(
+        domainSchema,
+        value,
+        `Accepted agent tool ${action}`,
+      );
+      if (exact.status === "invalid") return exact;
+      const domain = value as ExitVoteDomainValue;
+      const player = players.find((candidate) => candidate.id === domain.eliminate);
+      if (!player) return { status: "invalid", message: "eliminate references an ineligible player ID." };
+      return canonicalMappedAcceptedValue(
+        value,
+        `Accepted agent tool ${action}`,
+        () => {
+          const { eliminate: _eliminate, ...rest } = domain;
+          return { status: "valid", value: { ...rest, target: player.name } };
+        },
         decodeProvider,
       );
     },
@@ -2394,11 +2579,11 @@ Keep it to 2-3 sentences. Be human, relatable, and memorable. You want to be som
       const wasAlly = this.memory.allies.has(recentlyEliminated);
       const wasThreat = this.memory.threats.has(recentlyEliminated);
       if (wasAlly) {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — they were your ally. A brief, genuine reaction is fine (grief, anger), but then move on to engaging with who's still here.`;
+        eliminationGuidance = `- ${recentlyEliminated} just exited — they were your ally. A brief, genuine reaction is fine, but then move on to engaging with who's still here.`;
       } else if (wasThreat) {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — you saw them as a threat. A quick authentic reaction (relief, a dry remark), then move on.`;
+        eliminationGuidance = `- ${recentlyEliminated} just exited — you saw them as a threat. A quick authentic reaction, then move on.`;
       } else {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated. A brief nod at most — don't dwell on someone you weren't close to. Focus on the living.`;
+        eliminationGuidance = `- ${recentlyEliminated} just exited. A brief nod at most — don't dwell on someone you weren't close to. Focus on the remaining contestants.`;
       }
     }
 
@@ -2566,9 +2751,9 @@ ${currentCounts}
 Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if the assigned room context allows.
 Most other players will expect you to name a target. You may also stay provisional, but explain why you are not naming a target yet.
 Standing target check:
-- A standing target is one living player you want to eventually eliminate from the game.
-- If you name provisionalTarget, use exactly one name from Available other players. Never name yourself or anyone listed as eliminated.
-- If your prior private strategy names an eliminated player or stale target: either pick a living replacement, or set provisionalTarget to null and explain why.
+- A standing target is one remaining contestant you want to eventually send out of the game.
+- If you name provisionalTarget, use exactly one name from Available other contestants. Never name yourself or anyone listed as exited.
+- If your prior private strategy names an exited contestant or stale target: either pick a remaining replacement, or set provisionalTarget to null and explain why.
 - It is valid to leave provisionalTarget null when your plan is relationship-building, alliance repair, or broad read gathering. The reason should be concrete.
 
 ${STRATEGIC_LENS_GUIDANCE}
@@ -2638,7 +2823,7 @@ Use the form_mingle_intent tool.`;
             return { status: "invalid", message: "A provisionalTarget requires noTargetReason=null." };
           }
         } else {
-          return { status: "invalid", message: "provisionalTarget must be null or one living player name." };
+          return { status: "invalid", message: "provisionalTarget must be null or one remaining contestant name." };
         }
         const issue = firstSemanticIssue(
           requireNonEmptyString(value.purpose, "purpose"),
@@ -2799,6 +2984,12 @@ ${opportunity.kind === "proposer"
       : ctx;
     type AllianceActionProviderValue = {
         thinking?: string;
+        decision?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
+      };
+    type AllianceActionFlatProviderValue = {
+        thinking?: string;
         action?: unknown;
         name?: unknown;
         memberNames?: unknown;
@@ -2809,23 +3000,22 @@ ${opportunity.kind === "proposer"
         strategyDelta?: unknown;
         reasoningContext?: string;
       };
-    type AllianceActionDomainValue = Omit<AllianceActionProviderValue, "memberNames" | "allianceHandle"> & {
+    type AllianceActionDomainValue = Omit<AllianceActionFlatProviderValue, "memberNames" | "allianceHandle"> & {
       memberIds: UUID[];
       allianceId?: UUID | null;
     };
-    const validateAllianceAction = (value: AllianceActionProviderValue): string | null => {
+    const validateAllianceAction = (value: AllianceActionFlatProviderValue): string | null => {
       const action = normalizeAllianceActionKind(value.action);
       if (!action) return "action must be legal for this alliance opportunity.";
-      const termsAction = action === "propose" || action === "counter" || action === "amend";
       const memberNames = normalizeStringArray(value.memberNames);
-      if (termsAction) {
+      if (isAllianceTermsAction(action)) {
         const termsIssue = firstSemanticIssue(
           requireNonEmptyString(value.name, "name"),
           requireNonEmptyString(value.purpose, "purpose"),
           requireNullableNonEmptyString(value.timebox, "timebox"),
           memberNames.length >= 2
             ? null
-            : "memberNames must contain at least two living players.",
+            : "memberNames must contain at least two remaining contestants.",
           requireExactUniquePlayerNames(
             value.memberNames,
             ctx.alivePlayers,
@@ -2858,7 +3048,7 @@ ${opportunity.kind === "proposer"
       return null;
     };
     const decodeAllianceAction = (
-      value: AllianceActionProviderValue,
+      value: AllianceActionFlatProviderValue,
     ): StructuredDomainDecodeResult<AllianceActionDomainValue> => {
       const issue = validateAllianceAction(value);
       if (issue) return { status: "invalid", message: issue };
@@ -2878,55 +3068,118 @@ ${opportunity.kind === "proposer"
         },
       };
     };
+    const expandAllianceActionProviderValue = (
+      value: AllianceActionProviderValue,
+    ): StructuredDomainDecodeResult<AllianceActionFlatProviderValue> => {
+      if (!value.decision || typeof value.decision !== "object" || Array.isArray(value.decision)) {
+        return { status: "invalid", message: "decision must be one exact alliance action object." };
+      }
+      const decision = value.decision as Record<string, unknown>;
+      const action = normalizeAllianceActionKind(decision.action);
+      if (!action) return { status: "invalid", message: "decision.action must be legal for this alliance opportunity." };
+      const termsAction = isAllianceTermsAction(action);
+      return {
+        status: "valid",
+        value: {
+          thinking: value.thinking,
+          action,
+          name: termsAction ? decision.name : null,
+          memberNames: termsAction ? decision.memberNames : [],
+          purpose: termsAction ? decision.purpose : null,
+          timebox: termsAction ? decision.timebox : null,
+          ...(opportunity.kind === "proposer" && {
+            allianceHandle: action === "amend" ? decision.allianceHandle : null,
+          }),
+          ...(Object.prototype.hasOwnProperty.call(value, "strategy") && {
+            strategy: value.strategy,
+          }),
+          ...(Object.prototype.hasOwnProperty.call(value, "strategyDelta") && {
+            strategyDelta: value.strategyDelta,
+          }),
+        },
+      };
+    };
+    const decodeAllianceActionProvider = (
+      value: AllianceActionProviderValue,
+    ): StructuredDomainDecodeResult<AllianceActionDomainValue> => {
+      const expanded = expandAllianceActionProviderValue(value);
+      return expanded.status === "invalid"
+        ? expanded
+        : decodeAllianceAction(expanded.value);
+    };
+    const projectAcceptedAllianceAction = (
+      domain: AllianceActionDomainValue,
+      providerSchema: Record<string, unknown>,
+    ): StructuredDomainDecodeResult<AllianceActionProviderValue> => {
+      const { memberIds, allianceId, ...rest } = domain;
+      const action = normalizeAllianceActionKind(domain.action);
+      if (!action) {
+        return { status: "invalid", message: "Accepted alliance action is not legal for this opportunity." };
+      }
+      const amendHandle = action === "amend"
+        ? allianceHandles.find((entry) => entry.allianceId === allianceId)
+        : undefined;
+      if (action === "amend" && !amendHandle) {
+        return {
+          status: "invalid",
+          message: "Accepted alliance amendment must reference one legal active alliance.",
+        };
+      }
+      const providerValue: AllianceActionProviderValue = {
+        thinking: rest.thinking,
+        decision: isAllianceTermsAction(action)
+          ? {
+            action,
+            name: rest.name,
+            memberNames: memberIds.map((id) => ctx.alivePlayers.find((player) => player.id === id)!.name),
+            purpose: rest.purpose,
+            timebox: rest.timebox,
+            ...(action === "amend" && {
+              allianceHandle: amendHandle!.handle,
+            }),
+          }
+          : { action },
+        ...(Object.prototype.hasOwnProperty.call(rest, "strategy") && {
+          strategy: rest.strategy,
+        }),
+        ...(Object.prototype.hasOwnProperty.call(rest, "strategyDelta") && {
+          strategyDelta: rest.strategyDelta,
+        }),
+      };
+      const providerExact = validateExactStructuredValue(
+        providerSchema,
+        providerValue,
+        "Accepted agent tool alliance-action provider projection",
+      );
+      return providerExact.status === "invalid"
+        ? providerExact
+        : { status: "valid", value: providerValue };
+    };
     const result = await this.callTool<AllianceActionProviderValue, AllianceActionDomainValue>(
         this.buildUserPrompt(promptContext) + openPrompt,
         allianceActionTool(opportunity, allianceHandles, allowedActions),
         mappedAgentToolSemanticDecoder(
           "alliance-action",
-          decodeAllianceAction,
+          decodeAllianceActionProvider,
           (value, providerSchema) => {
-            const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
-            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
-            properties.memberIds = {
-              ...properties.memberNames,
-              items: { type: "string", enum: ctx.alivePlayers.map((player) => player.id) },
-            };
-            delete properties.memberNames;
-            if (properties.allianceHandle) {
-              properties.allianceId = {
-                ...properties.allianceHandle,
-                enum: [null, ...allianceHandles.map((entry) => entry.allianceId)],
-              };
-              delete properties.allianceHandle;
-            }
-            const required = domainSchema.required as string[];
-            domainSchema.required = required.map((field) => {
-              if (field === "memberNames") return "memberIds";
-              if (field === "allianceHandle") return "allianceId";
-              return field;
-            });
-            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool alliance-action");
+            const acceptedDomainSchema = allianceActionAcceptedDomainSchema({
+              opportunity,
+              actions: allowedActions,
+              playerIds: ctx.alivePlayers.map((player) => player.id),
+              allianceIds: allianceHandles.map((entry) => entry.allianceId),
+            }, providerSchema);
+            const exact = validateExactStructuredValue(
+              acceptedDomainSchema,
+              value,
+              "Accepted agent tool alliance-action",
+            );
             if (exact.status === "invalid") return exact;
             const domain = value as AllianceActionDomainValue;
             return canonicalMappedAcceptedValue(
               value,
               "Accepted agent tool alliance-action",
-              () => {
-                const { memberIds, allianceId, ...rest } = domain;
-                return {
-                  status: "valid",
-                  value: {
-                    ...rest,
-                    memberNames: memberIds.map((id) => ctx.alivePlayers.find((player) => player.id === id)!.name),
-                    ...(Object.prototype.hasOwnProperty.call(domain, "allianceId") && {
-                      allianceHandle: allianceId === null
-                        ? null
-                        : allianceHandles.find((entry) => entry.allianceId === allianceId)!.handle,
-                    }),
-                  },
-                };
-              },
-              decodeAllianceAction,
+              () => projectAcceptedAllianceAction(domain, providerSchema),
+              decodeAllianceActionProvider,
             );
           },
         ),
@@ -3050,7 +3303,7 @@ Rules:
 - This huddle is private to the listed alliance members.
 - You get exactly one speaking opportunity in this huddle session.
 - Before a format is locked: name people — empower preference, threats, and likely ballot heat. Do not invent format names or speak in coded format theology ("structured/stable option") when House has not offered a pair yet. Format choice is secondary until the menu exists.
-- After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. Vote Bomb), not snake_case ids.
+- After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. The Short List), not snake_case ids.
 - Only factAtoms are the authoritative tactical record. The separate message is dialogue and never creates a target, commitment, response, contingency, or consensus.
 - Author proposal and commitment atoms only for yourself. Respond to another member only by referencing an eligible earlier fact ID; a counter must include its complete replacement action and target.
 - An empty factAtoms array is valid when this turn contributes dialogue but no structured fact. Never invent another member's promise from what they said.
@@ -3245,7 +3498,7 @@ Choose exactly one of:
 
 ${movementText}
 ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
-For GOTO PLAYER, use gotoPlayerName to request one living player by name. The House resolves that player's next room after all players have acted; if the target also moves, you follow their resolved destination. Do not target yourself. Set at most one of gotoPlayerName and gotoRoomId.
+For GOTO PLAYER, use gotoPlayerName to request one remaining contestant by name. The House resolves that contestant's next room after everyone has acted; if the target also moves, you follow their resolved destination. Do not target yourself. Set at most one of gotoPlayerName and gotoRoomId.
 
 Guidance:
 - If you are alone, TALK has no audience; use NO_REPLY and consider moving.
@@ -3298,7 +3551,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
           value.gotoPlayerName !== null
           && requireExactPlayerName(value.gotoPlayerName, eligibleGotoPlayers, "gotoPlayerName")
         ) {
-          return { status: "invalid", message: "gotoPlayerName must be null or one living non-self player." };
+          return { status: "invalid", message: "gotoPlayerName must be null or one remaining non-self contestant." };
         }
         if (value.coordinationFact && value.noProposal) {
           return { status: "invalid", message: "A typed coordinationFact requires noProposal=false." };
@@ -3328,14 +3581,12 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
           decodeMingleTurn,
           (value, providerSchema) => {
             const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+            renameStructuredSchemaProperty(domainSchema, "gotoPlayerName", "gotoPlayerId");
             const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
             properties.gotoPlayerId = {
-              ...properties.gotoPlayerName,
+              ...properties.gotoPlayerId,
               enum: [null, ...eligibleGotoPlayers.map((player) => player.id)],
             };
-            delete properties.gotoPlayerName;
-            const required = domainSchema.required as string[];
-            domainSchema.required = required.map((field) => field === "gotoPlayerName" ? "gotoPlayerId" : field);
             const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool mingle-turn");
             if (exact.status === "invalid") return exact;
             const domain = value as MingleTurnDomainValue;
@@ -3496,15 +3747,15 @@ Use the spread_rumor tool.`;
 ## Your Task
 Cast your empower vote for this round.
 
-**EMPOWER vote**: Who should choose tonight's round format from the two formats House will offer, and break any format elimination tie?
+**EMPOWER vote**: Who should choose tonight's round format from the two formats House will offer, and break any format exit tie?
 - Empower **someone else**: an ally, a predictable chooser, or a deal partner.
 - **Do not empower yourself.** Self-empower is illegal. Your name is not a legal target.
 - Optimize for *who* holds the chooser seat — not for a format manifesto.
-- Empowerment is not immunity: the empowered player can still be eliminated under the locked format.
+- Empowerment is not immunity: the Empowered contestant can still exit under the locked format.
 
 **RULE**: This is a single empower vote. No one has won empowerment yet, and no format is locked. After the tally, House offers two formats by name and the empowered player picks one.
 
-**Legal empower names (exact spelling; other living players only — not you):** ${legalEmpowerNames.join(", ")}
+**Legal empower names (exact spelling; other remaining contestants only — not you):** ${legalEmpowerNames.join(", ")}
 
 Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
 
@@ -3684,13 +3935,13 @@ Top expose pressure: ${pressureSummary}.
 You have one short public message before ${empoweredName} uses power. This is hard gameplay, not small talk.
 ${selfIsEmpowered ? `
 You hold power. Publicly answer the pressure before your private final action:
-- Name your current lean: "pass", "protect <player>", or "eliminate <candidate>"
+- Name your current lean: "pass", "protect <contestant>", or "exit <candidate>"
 - Set one condition, price, or line of accountability that could confirm or change that lean
 - Make clear who will owe you, who will be exposed, or what receipt you are relying on
 Do not promise more than you mean, but give the room a public standard they can judge later.` : `
 You are not empowered. Your message MUST include all four elements:
 - Address ${empoweredName} by name
-- Make exactly one concrete ask: "pass", "protect <player>", or "eliminate <candidate>"
+- Make exactly one concrete ask: "pass", "protect <contestant>", or "exit <candidate>"
 - Name the target or beneficiary of that ask
 - Attach one accountability hook: a promise you will keep, a threat you will carry out, or a receipt from votes, Mingle-room conversations, or public behavior`}
 ${selfIsCandidate ? `
@@ -3762,13 +4013,13 @@ ${freshPowerLobbyRecord}` : ""}
 
 You have three choices:
 
-1. **pass** — send the two candidates to council as-is. This is the cleanest default when a council fight will expose alliances, force public votes, or create future betrayal evidence.
-2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player. Use this when protection creates an accountable debt, rewards a concrete current-round promise, or forces a better counter-target into danger.
-3. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them and skip council. This is a high-debt veto, not the default. Use it only when the target is an immediate threat and the current-round record gives you strong evidence, consensus, or a promise/threat worth owning publicly.
+1. **pass** — send the two candidates to Council as-is. This is the cleanest default when a Council contest will expose alliances, force public votes, or create future betrayal evidence.
+2. **protect** <any contestant> — save them from Council (they gain a shield), then swap in the next-most-exposed contestant. Use this when protection creates an accountable debt, rewards a concrete current-round promise, or forces a better counter-target into danger.
+3. **exit** "${candidateNames[0]}" or "${candidateNames[1]}" — send them out immediately and skip Council. This is a high-debt veto, not the default. Use it only when the target is an immediate threat and the current-round record gives you strong evidence, consensus, or a promise worth owning publicly.
 
 Council candidates: ${candidateNames.join(" and ")}
-Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
-${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
+Other remaining contestants: ${otherAlive.map((p) => p.name).join(", ")}
+${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action === "eliminate" ? "exit" : lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
 
 ## Protect Replacement Preview
 ${shieldReplacementPreview}
@@ -3777,7 +4028,7 @@ When you choose Protect, reason about both parts together: who receives the shie
 
 Anti-repeat power guidance:
 - Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt.
-- eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
+- exit is gated by fresh current-round Power Lobby evidence against that exact candidate.
 - If you break from your public Power Lobby record, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby.
 - When the lobby record conflicts, when council would expose useful public votes, or when you lack a fresh receipt, prefer pass.
 
@@ -3785,21 +4036,26 @@ Before using the tool, decide what future debt or backlash your action creates. 
 Use the use_power tool to declare your final hidden action.`;
 
     type PowerProviderValue = AgentToolStrategyFields & {
-      action: string;
+      action: "exit" | "protect" | "pass";
       target: string;
       shieldPullUpCandidates?: unknown;
     };
     type PowerDomainValue = AgentToolStrategyFields & {
-      action: string;
+      action: PowerAction["action"];
       targetId: UUID;
       shieldPullUpCandidateIds: UUID[];
     };
     const decodePower = (
       value: PowerProviderValue,
     ): StructuredDomainDecodeResult<PowerDomainValue> => {
-      const action = value.action as PowerAction["action"];
+      const action = value.action === "exit"
+        ? "eliminate"
+        : value.action === "protect" || value.action === "pass"
+          ? value.action
+          : null;
+      if (!action) return { status: "invalid", message: "action must be exit, protect, or pass." };
       const targetPlayer = findByName(ctx.alivePlayers, value.target);
-      if (!targetPlayer) return { status: "invalid", message: "target must name one living player." };
+      if (!targetPlayer) return { status: "invalid", message: "target must name one remaining contestant." };
       if ((action === "pass" || action === "eliminate") && !candidates.includes(targetPlayer.id)) {
         return { status: "invalid", message: `${action} target must be one current Council candidate.` };
       }
@@ -3828,6 +4084,7 @@ Use the use_power tool to declare your final hidden action.`;
         status: "valid",
         value: {
           ...rest,
+          action,
           targetId: targetPlayer.id,
           shieldPullUpCandidateIds: requestedNames.map((name) => findByName(ctx.alivePlayers, name)!.id),
         },
@@ -3842,19 +4099,20 @@ Use the use_power tool to declare your final hidden action.`;
           (value, providerSchema) => {
             const domainSchema = schemaWithPlayerIdField(providerSchema, "target", ctx.alivePlayers);
             const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
-            properties.targetId = properties.target!;
-            delete properties.target;
+            properties.action = {
+              ...properties.action,
+              enum: ["eliminate", "protect", "pass"],
+            };
+            renameStructuredSchemaProperty(domainSchema, "target", "targetId");
+            renameStructuredSchemaProperty(
+              domainSchema,
+              "shieldPullUpCandidates",
+              "shieldPullUpCandidateIds",
+            );
             properties.shieldPullUpCandidateIds = {
-              ...properties.shieldPullUpCandidates,
+              ...properties.shieldPullUpCandidateIds,
               items: { type: "string", enum: ctx.alivePlayers.map((player) => player.id) },
             };
-            delete properties.shieldPullUpCandidates;
-            const required = domainSchema.required as string[];
-            domainSchema.required = required.map((field) => {
-              if (field === "target") return "targetId";
-              if (field === "shieldPullUpCandidates") return "shieldPullUpCandidateIds";
-              return field;
-            });
             const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool power");
             if (exact.status === "invalid") return exact;
             const domain = value as PowerDomainValue;
@@ -3865,10 +4123,13 @@ Use the use_power tool to declare your final hidden action.`;
               "Accepted agent tool power",
               () => {
                 const { targetId: _targetId, shieldPullUpCandidateIds: _ids, ...rest } = domain;
+                const providerAction: PowerProviderValue["action"] =
+                  domain.action === "eliminate" ? "exit" : domain.action;
                 return {
                   status: "valid",
                   value: {
                     ...rest,
+                    action: providerAction,
                     target: targetPlayer.name,
                     shieldPullUpCandidates: domain.shieldPullUpCandidateIds.map((id) =>
                       ctx.alivePlayers.find((player) => player.id === id)!.name
@@ -3885,7 +4146,7 @@ Use the use_power tool to declare your final hidden action.`;
         this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
       );
 
-      const validAction = result.action as PowerAction["action"];
+      const validAction = result.action;
       const targetId = result.targetId;
       const targetPlayer = ctx.alivePlayers.find((player) => player.id === targetId)!;
       const shieldPullUpCandidateIds = result.shieldPullUpCandidateIds;
@@ -3917,14 +4178,14 @@ Use the use_power tool to declare your final hidden action.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Council Vote
-${isEmpowered ? "The normal Council vote is tied. You are the EMPOWERED agent, so this prompt is only for the required TIEBREAKER." : "Vote to eliminate one of the two council candidates."}
+${isEmpowered ? "The normal Council vote is tied. You are the EMPOWERED contestant, so this prompt is only for the required TIEBREAKER." : "Vote for one of the two Council candidates to exit."}
 This is not the standard empower vote. The only choice is which current Council candidate should leave.
 
 Candidates:
 1. ${c1Name}
 2. ${c2Name}
 
-Who should be eliminated? Consider your alliances, threats, and long-term strategy.
+Who should exit? Consider your alliances, threats, and long-term strategy.
 
 Use the council_vote tool to cast your vote.`;
 
@@ -3933,14 +4194,12 @@ Use the council_vote tool to cast your vote.`;
       { id: c2, name: c2Name },
     ];
     const result = await this.callTool<
-      PlayerNameDecision<"eliminate">,
+      ExitVoteProviderValue,
       PlayerIdDecision<"eliminate">
     >(
       prompt,
       TOOL_COUNCIL_VOTE,
-      playerIdFieldDecoder("council-vote", "eliminate", councilCandidates, (value) =>
-        requireExactPlayerName(value.eliminate, councilCandidates, "eliminate")
-      ),
+      exitVoteDecoder("council-vote", councilCandidates),
       80,
       sys,
       this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
@@ -3958,40 +4217,76 @@ Use the council_vote tool to cast your vote.`;
     ctx: PhaseContext,
     offeredFormats: [LaunchFormatId, LaunchFormatId],
   ): Promise<FormatDecisionResult<{ formatId: string }>> {
+    const offeredSurfaceFormats: [FormatSurfaceId, FormatSurfaceId] = [
+      formatSurfaceId(offeredFormats[0]),
+      formatSurfaceId(offeredFormats[1]),
+    ];
     const offeredRules = offeredFormats.map((formatId) => {
       const label = displayNameForFormat(formatId);
       const rule = isLaunchFormatId(formatId)
         ? ruleSheetForFormat(formatId)
         : "House supplied this format id without a registered launch rule sheet.";
-      return `- ${label} (tool id: ${formatId}): ${rule}`;
+      return `- ${label} (tool id: ${formatSurfaceId(formatId)}): ${rule}`;
     }).join("\n");
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pick This Round's Format
 You are empowered. Choose exactly one of the two House-offered formats below.
-In speech and thinking, use the full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination). The tool still requires the matching tool id.
+In speech and thinking, use the full product names shown below. The tool requires the matching tool id.
 
 ${offeredRules}
 
 No format is locked yet. Treat every format-specific plan as contingent until this tool choice is accepted.
-Picking the format does not grant immunity. You remain fully eligible to cast sealed ballots, point during Safety Bounce, receive ballots, and be eliminated under the format you choose.
+Picking the format does not grant immunity. You remain eligible to cast sealed ballots, point during Safety Bounce, receive ballots, and exit under the format you choose.
 Choose the format that best serves your current relationships, threat map, and ability to shape the round.
 
 Use the pick_round_format tool with exactly one offered format id.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<{
-        thinking?: string;
+      type FormatPickProviderValue = AgentToolStrategyFields & {
+        formatId: FormatSurfaceId;
+      };
+      type FormatPickDomainValue = Omit<FormatPickProviderValue, "formatId"> & {
         formatId: LaunchFormatId;
-        strategy?: unknown;
-        strategyDelta?: unknown;
-        reasoningContext?: string;
-      }>(
+      };
+      const decodeProvider = (
+        value: FormatPickProviderValue,
+      ): StructuredDomainDecodeResult<FormatPickDomainValue> => {
+        const canonical = canonicalFormatIdForSurface(value.formatId);
+        if (!canonical || !pickFormatFromMenu(offeredFormats, canonical)) {
+          return { status: "invalid", message: "formatId must be one currently offered format." };
+        }
+        return { status: "valid", value: { ...value, formatId: canonical } };
+      };
+      const result = await this.callTool<FormatPickProviderValue, FormatPickDomainValue>(
         prompt,
-        buildPickRoundFormatTool(offeredFormats),
-        agentToolSemanticDecoder("format-pick", (value) =>
-          typeof value.formatId === "string" && pickFormatFromMenu(offeredFormats, value.formatId)
-            ? null
-            : "formatId must be one currently offered format."
+        buildPickRoundFormatTool(offeredSurfaceFormats),
+        mappedAgentToolSemanticDecoder(
+          "format-pick",
+          decodeProvider,
+          (value, providerSchema) => {
+            const domainSchema = structuredClone(providerSchema);
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            properties.formatId = { ...properties.formatId, enum: [...offeredFormats] };
+            const exact = validateExactStructuredValue(
+              domainSchema,
+              value,
+              "Accepted agent tool format-pick",
+            );
+            if (exact.status === "invalid") return exact;
+            const domain = value as FormatPickDomainValue;
+            if (!pickFormatFromMenu(offeredFormats, domain.formatId)) {
+              return { status: "invalid", message: "formatId must be one currently offered canonical format." };
+            }
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool format-pick",
+              () => ({
+                status: "valid",
+                value: { ...domain, formatId: formatSurfaceId(domain.formatId) },
+              }),
+              decodeProvider,
+            );
+          },
         ),
         120,
         sys,
@@ -4002,9 +4297,8 @@ Use the pick_round_format tool with exactly one offered format id.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "format-pick");
-      const selected = pickFormatFromMenu(offeredFormats, result.formatId)!;
       return {
-        formatId: selected,
+        formatId: result.formatId,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
@@ -4018,23 +4312,73 @@ Use the pick_round_format tool with exactly one offered format id.`;
   ): Promise<FormatDecisionResult<{ polarity: "save" | "eliminate"; targetId: UUID }>> {
     const legalTargets = formatPlayersForIds(ctx, aliveIds, { excludeSelf: true });
     const prompt = this.buildUserPrompt(ctx) + `
-## Save-or-Eliminate Ballot
+## Save-or-Exit Ballot
 ${supplementalActiveFormatRule(ctx, "save_or_eliminate")}
 
-Your ballot is sealed until the House reveal. Choose SAVE (+1 net) or ELIMINATE (−1 net) against exactly one living non-self target.
+Your ballot is sealed until the House reveal. Choose SAVE (+1 net) or EXIT (−1 net) for exactly one remaining non-self contestant.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Use the save_or_eliminate_ballot tool.`;
+Use the save_or_exit_ballot tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
+      type SaveOrExitProviderValue = PlayerNameDecision<"target", { polarity: "save" | "exit" }>;
+      type SaveOrExitDomainValue = PlayerIdDecision<"target", { polarity: "save" | "eliminate" }>;
+      const decodeProvider = (
+        value: SaveOrExitProviderValue,
+      ): StructuredDomainDecodeResult<SaveOrExitDomainValue> => {
+        const issue = requireExactPlayerName(value.target, legalTargets, "target");
+        if (issue) return { status: "invalid", message: issue };
+        const player = findByName(legalTargets, value.target)!;
+        return {
+          status: "valid",
+          value: {
+            ...value,
+            polarity: value.polarity === "exit" ? "eliminate" : "save",
+            target: player.id,
+          },
+        };
+      };
       const result = await this.callTool<
-        PlayerNameDecision<"target", { polarity: "save" | "eliminate" }>,
-        PlayerIdDecision<"target", { polarity: "save" | "eliminate" }>
+        SaveOrExitProviderValue,
+        SaveOrExitDomainValue
       >(
         prompt,
         buildSaveOrEliminateBallotTool(legalTargets.map((player) => player.name)),
-        playerIdFieldDecoder("format-save-or-eliminate-ballot", "target", legalTargets, (value) =>
-          requireExactPlayerName(value.target, legalTargets, "target")
+        mappedAgentToolSemanticDecoder(
+          "format-save-or-eliminate-ballot",
+          decodeProvider,
+          (value, providerSchema) => {
+            const domainSchema = schemaWithPlayerIdField(providerSchema, "target", legalTargets);
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            properties.polarity = { ...properties.polarity, enum: ["save", "eliminate"] };
+            const exact = validateExactStructuredValue(
+              domainSchema,
+              value,
+              "Accepted agent tool format-save-or-eliminate-ballot",
+            );
+            if (exact.status === "invalid") return exact;
+            const domain = value as SaveOrExitDomainValue;
+            const player = legalTargets.find((candidate) => candidate.id === domain.target);
+            if (!player) return { status: "invalid", message: "target references an ineligible player ID." };
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool format-save-or-eliminate-ballot",
+              () => {
+                const providerPolarity: "save" | "exit" = domain.polarity === "eliminate"
+                  ? "exit"
+                  : "save";
+                return {
+                  status: "valid",
+                  value: {
+                    ...domain,
+                    polarity: providerPolarity,
+                    target: player.name,
+                  },
+                };
+              },
+              decodeProvider,
+            );
+          },
         ),
         120,
         sys,
@@ -4089,11 +4433,7 @@ Use the save_or_eliminate_ballot tool.`;
             },
             (value, providerSchema) => {
               const domainSchema = schemaWithPlayerIdField(providerSchema, "target", legalTargets);
-              const properties = domainSchema.properties as Record<string, unknown>;
-              properties.targetId = properties.target;
-              delete properties.target;
-              const required = domainSchema.required as string[];
-              domainSchema.required = required.map((field) => field === "target" ? "targetId" : field);
+              renameStructuredSchemaProperty(domainSchema, "target", "targetId");
               const exact = validateExactStructuredValue(domainSchema, value, `Accepted agent tool ${traceAction}`);
               if (exact.status === "invalid") return exact;
               const record = value as unknown as SealedElimModelOutput;
@@ -4179,8 +4519,8 @@ Use the save_or_eliminate_ballot tool.`;
     }
     const targetStatus = actorStatus === "SAFE" ? "VULNERABLE" : "SAFE";
     const targetEligibility = targetStatus === "VULNERABLE"
-      ? "is eligible for the final elimination vote"
-      : "cannot be eliminated this round";
+      ? "is eligible for the final exit vote"
+      : "cannot exit this round";
     const prompt = this.buildUserPrompt(ctx) + `
 ## Safety Bounce Pointer
 ${supplementalActiveFormatRule(ctx, "safety_bounce")}
@@ -4239,7 +4579,7 @@ Use the bounce_pointer tool.`;
 ## Safety Bounce Vote
 ${supplementalActiveFormatRule(ctx, "safety_bounce")}
 
-The public bounce is complete. This elimination ballot is sealed, and only the vulnerable pool is eligible.
+The public bounce is complete. This exit ballot is sealed, and only the vulnerable pool is eligible.
 Legal vulnerable targets: ${legalTargets.map((player) => player.name).join(", ")}
 
 Use the safety_bounce_vote tool.`;
@@ -4252,7 +4592,7 @@ Use the safety_bounce_vote tool.`;
         prompt,
         buildFormatTargetTool({
           name: "safety_bounce_vote",
-          description: "Cast one sealed elimination vote against the vulnerable Safety Bounce pool.",
+          description: "Cast one sealed exit vote for a contestant in the vulnerable Safety Bounce pool.",
           targetDescription: "One name from the exact vulnerable target list.",
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
@@ -4286,7 +4626,7 @@ Use the safety_bounce_vote tool.`;
 ## Empowered Format Tiebreak
 ${supplementalLockedFormatRule(ctx)}
 
-The active format ended in an elimination tie. As the empowered player, choose exactly one tied player to eliminate. Empowerment is not immunity; it gives you this tiebreak responsibility only.
+The active format ended in an exit tie. As the Empowered contestant, choose exactly one tied contestant to exit. Empowerment is not immunity; it gives you this tiebreak responsibility only.
 Legal tied targets: ${legalTargets.map((player) => player.name).join(", ")}
 
 Use the format_tiebreak tool.`;
@@ -4299,7 +4639,7 @@ Use the format_tiebreak tool.`;
         prompt,
         buildFormatTargetTool({
           name: "format_tiebreak",
-          description: "As the empowered player, eliminate one player from the exact tied set.",
+          description: "As the Empowered contestant, choose one contestant from the exact tied set to exit.",
           targetDescription: "One name from the exact tied target list.",
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
@@ -4340,27 +4680,27 @@ Use the format_tiebreak tool.`;
     const voteDetails = formatEliminationVoteDisclosure(eliminationContext.voteDisclosure);
     const eliminationDetails = [
       eliminationContext.directExecutor
-        ? `- The direct kill shot came from: ${eliminationContext.directExecutor}`
+        ? `- The direct exit decision came from: ${eliminationContext.directExecutor}`
         : null,
       eliminationContext.exposedBy && eliminationContext.exposedBy.length > 0
         ? `- You were exposed by: ${eliminationContext.exposedBy.join(", ")}`
         : null,
       eliminationContext.formatId
-        ? `- The round format was: ${eliminationContext.formatId}`
+        ? `- The round format was: ${displayNameForFormat(eliminationContext.formatId)}`
         : null,
     ].filter(Boolean).join("\n");
     const recentPublicMessages = ctx.publicMessages
       .slice(-8)
       .map((entry) => `${entry.from}: ${entry.text}`)
       .join("\n");
-    const prompt = `## Confirmed Elimination
-You have been ELIMINATED. The elimination is already official and your status is no longer alive.
+    const prompt = `## Confirmed Exit
+You have EXITED the game. The result is already official and you are no longer competing.
 Round: ${ctx.round}
-Remaining players: ${ctx.alivePlayers.map((player) => player.name).join(", ") || "none"}
+Remaining contestants: ${ctx.alivePlayers.map((player) => player.name).join(", ") || "none"}
 
 ## Vote Disclosure
 ${voteDetails}
-${eliminationDetails ? `\n## Other Public Elimination Facts\n${eliminationDetails}\n` : ""}
+${eliminationDetails ? `\n## Other Public Exit Facts\n${eliminationDetails}\n` : ""}
 ${recentPublicMessages ? `\n## Recent Public Player Messages\n${recentPublicMessages}\n` : ""}
 
 ## Final Public Message
@@ -4368,7 +4708,7 @@ This is your FINAL public statement before you leave the game for good.
 You will not get another turn, and you have no future rounds to play.
 You may snap back at the people who exposed or voted out you, reveal a secret, issue a warning, say goodbye, or leave gracefully.
 Do NOT discuss future strategy, future votes, or what you will do next in the game.
-Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
+Use the farewell_message tool. Keep the public message to 1-2 sentences.`;
 
     try {
       const result = await this.callTool<{
@@ -4427,7 +4767,7 @@ Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
-  ? `You have been ELIMINATED from the game and are now a JUROR. You are no longer an active player — you cannot strategize about staying in the game or making moves. Instead, reflect on the remaining players from an outside perspective: who do you think deserves to win, who played you, and what you see happening from the jury bench.`
+  ? `You have EXITED the game and are now a JUROR. You are no longer an active contestant — you cannot strategize about staying in the game or making moves. Instead, reflect on the remaining contestants from an outside perspective: who do you think deserves to win, who played you, and what you see happening from the jury bench.`
   : ctx.phase === Phase.INTRODUCTION
     ? `The game is about to begin. The House wants to know your STRATEGY — how you plan to play, who you're thinking of working with, and what your approach is. Share your genuine game plan with the audience. Be specific: name players and say what you intend to do.`
     : `Be candid about your real thoughts, strategies, and feelings about the other players.`}
@@ -4439,7 +4779,7 @@ ${historyText}
 The House asks: "${question}"
 
 ${isEliminated
-  ? `Answer from your perspective as an eliminated juror watching from the sidelines. Reflect on the remaining players, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience.`
+  ? `Answer from your perspective as an exited juror watching from the sidelines. Reflect on the remaining contestants, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience.`
   : ctx.phase === Phase.INTRODUCTION
     ? `Answer with your STRATEGY going into the game. Name specific players — who interests you, who concerns you, who might you approach first? Share your game plan, not just impressions.
 Keep it to 2-4 sentences. Be entertaining for the audience.`
@@ -4475,27 +4815,25 @@ Keep it to 2-3 sentences. Make it compelling.`;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
-## ${stageName} — Elimination Vote
+## ${stageName} — Exit Vote
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
-This is a direct elimination vote: pick who should leave.
+This is a direct exit vote: pick who should leave.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
-Who should be eliminated? Consider everything that has happened in the game.
+Who should exit? Consider everything that has happened in the game.
 
-Use the elimination_vote tool to cast your vote.`;
+Use the exit_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<
-        PlayerNameDecision<"eliminate">,
+        ExitVoteProviderValue,
         PlayerIdDecision<"eliminate">
       >(
         prompt,
         TOOL_ELIMINATION_VOTE,
-        playerIdFieldDecoder(traceAction, "eliminate", others, (value) =>
-          requireExactPlayerName(value.eliminate, others, "eliminate")
-        ),
+        exitVoteDecoder(traceAction, others),
         80,
         sys,
         this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }),
@@ -4523,7 +4861,7 @@ Use the elimination_vote tool to cast your vote.`;
 ## THE TRIBUNAL — Accusation
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
-Only 3 players remain. You must publicly accuse ONE other player: who and why they should be eliminated.
+Only 3 contestants remain. You must publicly accuse ONE other contestant: who and why they should exit.
 Be specific — reference their gameplay, betrayals, or strategies.
 
 Available players: ${others.map((p) => p.name).join(", ")}
@@ -4602,7 +4940,7 @@ Keep it to 3-4 sentences. Make it powerful.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(questionContext) + `
 ## THE JUDGMENT — Jury Question
-You have been eliminated and are now a JUROR. You get to ask ONE question to ONE finalist.
+You have exited and are now a JUROR. You get to ask ONE question to ONE finalist.
 
 Finalists:
 1. ${finalist0.name}
@@ -4670,9 +5008,9 @@ ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
 This is your FINAL statement to the jury before they vote. Make it count.
 
-You MUST reference at least TWO specific events from this game — for example: a vote you cast, a player you protected or eliminated, a promise you kept or broke, a betrayal you survived, or an alliance you built. Cite names and round context where possible.
+You MUST reference at least TWO specific events from this game — for example: a vote you cast, a contestant you protected or sent out, a promise you kept or broke, a betrayal you navigated, or an alliance you built. Cite names and round context where possible.
 
-Eliminated players (potential reference points): ${eliminationSummary || "none"}
+Exited contestants (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences.`;
 
@@ -4765,7 +5103,7 @@ ${includeStrategicPlayMenu ? STRATEGIC_PLAY_MENU : ""}
 ${includeStrategicPlayMenu ? STRATEGY_CARRY_FORWARD_GUIDANCE : ""}
 
 ${phaseGuidelines ? `## ${phaseGuidelines}\n` : ""}
-IMPORTANT: Treat alive players as the only live game actors for messages, votes, targets, rooms, shields, and normal-round strategy. Eliminated players may be referenced as history, evidence, jury context, reputation, or social fallout, but they are gone and cannot be interacted with as live players.
+IMPORTANT: Treat remaining contestants as the only current game actors for messages, votes, targets, rooms, shields, and normal-round strategy. Exited contestants may be referenced as history, evidence, jury context, reputation, or social fallout, but they cannot be interacted with as current contestants.
 `;
   }
 
@@ -4796,7 +5134,7 @@ IMPORTANT: Treat alive players as the only live game actors for messages, votes,
       ? ctx.councilCandidates.map((id) => {
         const name = playerNameById.get(id) ?? "unknown";
         const isAlive = ctx.alivePlayers.some((player) => player.id === id);
-        return isAlive ? name : `${name} (eliminated)`;
+        return isAlive ? name : `${name} (exited)`;
       }).join(" vs ")
       : null;
     const councilStatus = councilCandidates
@@ -4821,16 +5159,16 @@ IMPORTANT: Treat alive players as the only live game actors for messages, votes,
 
     return `## Current Board Contract
 Canonical current-board facts override private strategy, House summaries, vote history, and public transcript for live-state interpretation. They do not rewrite history.
-- Alive players: ${aliveNames.join(", ") || "none"}
-- Eliminated players: ${eliminatedNames.length > 0 ? eliminatedNames.join(", ") : "none"}
+- Remaining contestants: ${aliveNames.join(", ") || "none"}
+- Exited contestants: ${eliminatedNames.length > 0 ? eliminatedNames.join(", ") : "none"}
 - Current phase: ${ctx.phase}
 - Current empowered player: ${isEndgame ? "none; endgame has no active empowerment" : currentEmpoweredName ?? "none yet this round"}
 - Active shields right now: ${activeShieldNames.length > 0 ? activeShieldNames.join(", ") : "none"}
-${classicCouncilStatusLine}- Latest resolved elimination: ${latestEliminated}
+${classicCouncilStatusLine}- Latest resolved exit: ${latestEliminated}
 - Current endgame status: ${endgameStatus}
 - Active jurors: ${activeJuryNames.length > 0 ? activeJuryNames.join(", ") : "none"}
-- Non-jury eliminated players: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}
-- Eliminated-player rule: eliminated players may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not live targets, active allies, active shields, current room targets, or normal-round voters.`;
+- Exited contestants who are not jurors: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}
+- Exited-contestant rule: exited contestants may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not current targets, active allies, shield recipients, room targets, or normal-round voters.`;
   }
 
   private buildRecentDecisionsSection(ctx: PhaseContext): string {
@@ -4846,7 +5184,7 @@ ${lines}`;
 
   private buildVoteHistorySection(currentRound: number): string {
     const formatEntry = (r: AgentMemory["roundHistory"][number]) =>
-      `  R${r.round}: empower=${r.myVotes.empower}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`;
+      `  R${r.round}: empower=${r.myVotes.empower}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, exited=${r.eliminated}` : ""}`;
     const pastRounds = this.memory.roundHistory.filter((entry) => entry.round < currentRound);
     const currentRoundVotes = this.memory.roundHistory.filter((entry) => entry.round === currentRound);
 
@@ -4923,7 +5261,7 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 
   private formatVisibilityGuidance(formatId: LaunchFormatId): string {
     if (formatId === "safety_bounce") {
-      return "Safety Bounce pointers are public as they happen; the final elimination ballot is sealed until the House reveal.";
+      return "Safety Bounce pointers are public as they happen; the final exit ballot is sealed until the House reveal.";
     }
     return "This format's ballot is sealed until the House reveal.";
   }
@@ -4937,14 +5275,14 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     if (!pressure.selectedFormat) {
       return `## Current Format Pressure
 - Empowered chooser: ${pressure.empoweredName}
-- Offered formats: ${offeredNames.join(" vs ")} (tool ids: ${pressure.offeredFormats.join(", ")})
+- Offered formats: ${offeredNames.join(" vs ")} (tool ids: ${pressure.offeredFormats.map(formatSurfaceId).join(", ")})
 - No format is locked yet. Treat plans for either offered format as contingent until the empowered player chooses. Prefer full public names in speech.`;
     }
 
     const lockedName =
       pressure.selectedFormatName ?? displayNameForFormat(pressure.selectedFormat);
     return `## Current Format Pressure
-- Locked round format: ${lockedName} (tool id: ${pressure.selectedFormat})
+- Locked round format: ${lockedName} (tool id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
@@ -4965,8 +5303,8 @@ Use only this locked format for the current round. Prefer the full public name i
       : "none (your ballot will be forfeited)";
     return `## Restricted History Legal Ledger (authoritative)
 - This ledger is specific to you. Other players may have different legal and unavailable targets; do not infer their eligibility from yours.
-- Previous elimination-direction targets, unavailable this round: ${priorTargets}
-- Only legal living ballot targets this round: ${legalTargets}
+- Previous EXIT-ballot targets, unavailable this round: ${priorTargets}
+- Only legal remaining ballot targets this round: ${legalTargets}
 - Do not promise, coordinate, or describe an unavailable target as your ballot.
 - If the legal list is empty, your ballot is forfeited; do not invent a target.`;
   }
@@ -4975,13 +5313,13 @@ Use only this locked format for the current round. Prefer the full public name i
     if (ctx.phase === Phase.COUNCIL) {
       return `## Council Vote Rules
 - This is not the standard empower vote.
-- The only elimination choices are the two current Council candidates.
+- The only exit choices are the two current Council candidates.
 - Council candidates do not cast Council votes.
 - The empowered player's Council choice is tiebreaker-only when applicable; it is not a normal ballot.`;
     }
     if (ctx.phase === Phase.POWER) {
       return `## Power Rules
-- The standard Vote has resolved; the empowered player now chooses pass, protect/shield, or an available elimination action.
+- The standard Vote has resolved; the Empowered contestant now chooses pass, protect/shield, or an available exit action.
 - The exposure bench has already resolved the initial Council pair when expose votes can do so.
 - Protecting/shielding a current candidate removes them from Council danger. Replacement comes from the remaining exposure bench first; all-player fallback applies only when the bench cannot fill the slot.
 - This is not the standard empower vote.`;
@@ -5004,23 +5342,23 @@ Use only this locked format for the current round. Prefer the full public name i
 - The empower tally selected the format chooser, not an immune player.
 - The House offers exactly two named formats. No format is locked until the empowered player chooses.
 - Any plan for an offered format remains contingent until that choice is accepted.
-- Prefer full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce) in speech; tools use snake_case ids.`;
+- Prefer full public names (Save-or-Exit, The Short List, Safety Bounce) in speech; tools use snake_case ids.`;
     }
     if (ctx.phase === Phase.VOTE) {
       return `## Standard Vote Rules
-- Cast one empower vote: who chooses the round format and who breaks format elimination ties.
-- Self-empower is illegal: empower another living player only.
+- Cast one empower vote: who chooses the round format and who breaks format exit ties.
+- Self-empower is illegal: empower another remaining contestant only.
 - No one has won this vote's empowerment yet, no format is locked, and empowerment does not grant immunity.
 - Optimize for *who* should hold the chooser seat. Do not invent a format menu before House offers it.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.`;
     }
     return `## Game Rules
 - Standard Vote is one empower ballot. Empower selects the round-format chooser and format tiebreaker.
-- Elimination is resolved only by the locked round format after the format pick.
+- The round exit is resolved only by the locked format after the format pick.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.
 - After empowerment, House offers two named formats; the empowered player chooses one. Prefer full public names in speech.
-- Empowerment is not immunity. The empowered player still participates and can be eliminated under the locked format.
-- After the pick, Mingle rooms are private and the locked format's own rules resolve the elimination.
+- Empowerment is not immunity. The Empowered contestant still participates and can exit under the locked format.
+- After the pick, Mingle rooms are private and the locked format's own rules resolve the exit.
 - Pre-pick: prioritize people (trust, threats, empower plans). Format math only after the menu or lock is real.`;
   }
 
@@ -5054,7 +5392,7 @@ Use only this locked format for the current round. Prefer the full public name i
       : "";
 
     const nextPowerLine = pressure
-      ? `- Next major decision: Power. ${pressure.empowered.name} can pass, protect/shield a player to change who faces Council, or use an available elimination action.`
+      ? `- Next major decision: Power. ${pressure.empowered.name} can pass, protect/shield a contestant to change who faces Council, or use an available exit action.`
       : "";
     const formatLine = formatPressure
       ? formatPressure.selectedFormat
@@ -5068,14 +5406,14 @@ Use only this locked format for the current round. Prefer the full public name i
       [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote. Prioritize people and trust; format math waits for House's pair.",
       [Phase.PRE_VOTE_HUDDLE]: "Coordinate people and empower plans inside the alliance huddle — who to empower, who is a threat, what heat is real.",
       // EXPOSE REMOVED from VOTE phase objective (format-kernel).
-      [Phase.VOTE]: "Cast the empower ballot. Empower chooses who picks the round format and breaks format elimination ties.",
+      [Phase.VOTE]: "Cast the empower ballot. Empower chooses who picks the round format and breaks format exit ties.",
       [Phase.FORMAT_MENU]: "Read the two House-offered formats by full public name without inventing a locked choice.",
       [Phase.FORMAT_PICK]: "Choose one offered format. The choice grants no immunity.",
       [Phase.FORMAT_MINGLE]: "Build a concrete vote bloc under the locked format: room negotiation, official named-alliance action, then scarce huddle commitments.",
       [Phase.FORMAT_RESOLVE]: "Take the current legal action under the locked round format.",
       [Phase.MINGLE]: "Private room dealmaking after the vote. Use the room to pitch, probe, trade information, redirect targets, or decide who deserves protection.",
       [Phase.POST_VOTE_MINGLE]: "Private room dealmaking after the public vote reveal. Use receipts and pressure to repair, betray, bargain, or redirect danger.",
-      [Phase.POWER]: "The empowered player resolves the round's pressure by passing, protecting/shielding, or eliminating when available.",
+      [Phase.POWER]: "The Empowered contestant resolves the round's pressure by passing, protecting/shielding, or using exit when available.",
       [Phase.REVEAL]: "The Power outcome is becoming public. React to what changed and who is newly vulnerable.",
       [Phase.PRE_COUNCIL_HUDDLE]: formatPressure?.selectedFormat
         ? `Coordinate legal commitments under locked ${formatPressure.selectedFormatName ?? displayNameForFormat(formatPressure.selectedFormat)} inside the active alliance huddle.`
@@ -5194,7 +5532,7 @@ ${rounds}`;
         "- Use the locked rule and visibility contract above to coordinate a legal ballot or pointer commitment, test whether the room will honor it, or misdirect opponents without inventing another format.",
       ];
       if (empoweredInRoom) {
-        lines.push(`- ${formatPressure.empoweredName}, the format chooser and elimination tiebreaker, is in this room. Their role is not immunity and there is no separate Power ceremony to lobby.`);
+        lines.push(`- ${formatPressure.empoweredName}, the format chooser and exit tiebreaker, is in this room. Their role is not immunity and there is no separate Power ceremony to lobby.`);
       }
       return `\n## Room-Specific Social Opportunity\n${lines.join("\n")}`;
     }
@@ -5214,7 +5552,7 @@ ${rounds}`;
     const lines: string[] = [];
     const selfAtRisk = selfPressure?.status === "current_at_risk" || selfPressure?.status === "locked_at_risk" || selfPressure?.status === "empowered_selected";
     if (selfAtRisk && empoweredInRoom) {
-      lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available elimination action. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, threaten jury consequences, or persuade someone to carry your case. Staying guarded is also valid when you give yourself a reason.`);
+      lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available exit action. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, invoke jury consequences, or persuade someone to carry your case. Staying guarded is also valid when you give yourself a reason.`);
     } else if (selfAtRisk) {
       lines.push(`- You are currently at risk, but ${pressure.empowered.name} is not in this room. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, threaten jury consequences, or persuade someone to carry your case. You can seek support from these occupants, redirect the target, stay guarded with a clear reason, or consider moving next turn to hunt for power. You only know other rooms by count, not by occupant identity.`);
     } else if (selfPressure?.status === "replacement_risk" && empoweredInRoom) {
@@ -5298,15 +5636,15 @@ ${recentMessages || "  (none yet)"}`;
     if (stage === "reckoning") {
       return `## Endgame Rules
 - The Reckoning begins with 4 players left.
-- Players make public pleas, then cast direct elimination votes.
-- Direct elimination votes only; no format menu and no Power ceremony in this stage.`;
+- Contestants make public pleas, then cast direct exit votes.
+- Direct exit votes only; no format menu and no Power ceremony in this stage.`;
     }
     if (stage === "tribunal") {
       return `## Endgame Rules
 - The Tribunal begins with 3 players left.
-- Players make public accusations, accused players defend themselves, then players cast direct elimination votes.
+- Contestants make public accusations, accused contestants defend themselves, then everyone casts direct exit votes.
 - If the Tribunal vote needs a tiebreaker, eligible jurors may decide it.
-- Direct elimination votes only; no format menu and no Power ceremony in this stage.`;
+- Direct exit votes only; no format menu and no Power ceremony in this stage.`;
     }
     return `## Endgame Rules
 - The Judgment begins with 2 finalists.
@@ -5336,7 +5674,7 @@ ${lines}`;
     const deltas = state.deltas.length > 0
       ? state.deltas.map((delta, index) => `  ${index + 1}. ${delta}`).join("\n")
       : "  (none)";
-    const authority = "Canonical override: the Current Board Contract rendered above is current truth. This private strategy is fallible cognition and cannot change living status, eligibility, targets, commitments, votes, or phase facts.";
+    const authority = "Canonical override: the Current Board Contract rendered above is current truth. This private strategy is fallible cognition and cannot change competition status, eligibility, targets, commitments, votes, or phase facts.";
 
     if (state.lifecycle === "opening") {
       return `## Private Strategy Context
@@ -5366,7 +5704,7 @@ ${authority}
 - Engine revision: ${state.revision}
 - Current baseline: unavailable until reconciliation succeeds.
 ## Historical Prior Strategy Epoch
-This epoch predates the newest canonical elimination. It is evidence to reconcile, not a current plan and never authority over the Current Board Contract.
+This epoch predates the newest canonical exit. It is evidence to reconcile, not a current plan and never authority over the Current Board Contract.
 - Prior lifecycle: ${prior?.lifecycle ?? "opening"}
 - Prior revision: ${prior?.revision ?? 0}
 - Prior full baseline: ${prior?.baseline ?? "none; authored opening posture only"}
@@ -5481,8 +5819,8 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
       return `## Game State
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
-- Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
-${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer in the game): ${eliminated.join(", ")}` : ""}
+- Remaining contestants (ONLY these contestants are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
+${eliminated.length > 0 ? `- EXITED (out of the game): ${eliminated.join(", ")}` : ""}
 ${endgameInfo}
 
 ${currentBoardContractSection}
@@ -5506,8 +5844,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}`;
     return `## Game State
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
-- Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
-${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer in the game): ${eliminated.join(", ")}` : ""}
+- Remaining contestants (ONLY these contestants are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
+${eliminated.length > 0 ? `- EXITED (out of the game): ${eliminated.join(", ")}` : ""}
 ${endgameInfo}
 
 ${currentBoardContractSection}

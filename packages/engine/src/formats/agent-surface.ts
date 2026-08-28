@@ -4,6 +4,7 @@ import type {
   FormatDecisionProvenance,
   StrategicDecisionMetadata,
 } from "../game-runner.types";
+import { displayNameForFormat } from "../format-presentation-metadata";
 import type { UUID } from "../types";
 import {
   requireSealedElimRegistration,
@@ -29,7 +30,7 @@ export const STRATEGY_DELTA_TOOL_PROPERTIES = {
 export const FULL_STRATEGY_TOOL_PROPERTIES = {
   strategy: {
     type: "string",
-    description: "Your concise but complete private strategy after reconciling the current living board, material commitments, coalition posture, target posture, and important uncertainty.",
+    description: "Your concise but complete private strategy after reconciling the current remaining field, material commitments, coalition posture, target posture, and important uncertainty.",
   },
 };
 
@@ -146,7 +147,7 @@ export function buildSealedElimBallotTool(
           target: {
             type: "string",
             enum: [...legalTargetNames],
-            description: "One legal living non-self target name.",
+            description: "One remaining non-self contestant from the legal target list.",
           },
           ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
@@ -163,19 +164,20 @@ export async function runSealedElimTargetDecision(
   input: RunSealedElimTargetDecisionInput,
 ): Promise<SealedElimTargetDecision> {
   const surface = requireSealedElimRegistration(input.formatId).decision;
+  const publicName = displayNameForFormat(input.formatId);
   const legalTargets = legalTargetsFor(input);
   const fallbackTarget = legalTargets[0];
   if (!fallbackTarget) {
     throw new Error(
-      `${surface.publicName} requires at least one living non-self target`,
+      `${publicName} requires at least one remaining non-self target`,
     );
   }
 
   const prompt = `${input.basePrompt}
-## ${surface.ballotHeading}
+## ${publicName} Ballot
 Fixed rule sheet: ${input.ruleSheet}
 
-Your ballot is sealed until the House reveal. Cast one sealed vote for exactly one living non-self target.
+Your ballot is sealed until the House reveal. Cast one sealed vote for exactly one remaining non-self contestant.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 
 ${surface.strategyGuidance}

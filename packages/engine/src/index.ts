@@ -352,7 +352,9 @@ export {
   createGameMcpServer,
   GameMcpJsonRpcServer,
   GameMcpReadModel,
+  MCP_FORMAT_FACT_TYPES,
   runStdioGameMcpServer,
+  toGameMcpFormatSurface,
 } from "./game-mcp";
 export type {
   GameMcpEventFilter,
@@ -368,6 +370,7 @@ export type {
   GameMcpSessionSummary,
   GameMcpSourceCitation,
   GameMcpSourceKind,
+  GameMcpFormatSurface,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./game-mcp";
@@ -473,6 +476,12 @@ export {
   formatPresentationMetadata,
 } from "./format-presentation-metadata";
 export type { LaunchFormatPresentationMetadata } from "./format-presentation-metadata";
+export {
+  FORMAT_SURFACE_IDS,
+  canonicalFormatIdForSurface,
+  formatSurfaceId,
+} from "./format-vocabulary";
+export type { FormatSurfaceId } from "./format-vocabulary";
 export {
   buildMingleInboxReplayFromTranscript,
   hydrateMingleInboxFromReplay,

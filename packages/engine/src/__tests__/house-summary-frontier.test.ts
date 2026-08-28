@@ -101,7 +101,7 @@ const transcript = [
     phase: Phase.FORMAT_PICK,
     from: "Blair",
     scope: "public",
-    text: "Ada promised me another route.",
+    text: "  Ada said Vote Bomb keeps eliminated players alive in her story.  ",
     entrySequence: 6,
     dialogueKind: "public_speech",
   },
@@ -110,7 +110,7 @@ const transcript = [
     phase: Phase.FORMAT_PICK,
     from: "Ada",
     scope: "mingle",
-    text: "PRIVATE CONVERSATION CANARY: Blair is still useful.",
+    text: "  PRIVATE CONVERSATION CANARY: Vote Bomb left Blair eliminated but alive in Ada's telling.  ",
     entrySequence: 7,
     dialogueKind: "mingle_message",
   },
@@ -138,8 +138,8 @@ const diaryEntries = [{
   round: 1,
   precedingPhase: Phase.VOTE,
   agentName: "Blair",
-  question: "Who do you trust?",
-  answer: "PRIVATE DIARY CANARY: not Ada.",
+  question: "  Who was eliminated by Vote Bomb?  ",
+  answer: "  PRIVATE DIARY CANARY: Blair says nobody is alive to that plan.  ",
 }] as const;
 
 function compile(beatClass: "ordinary" | "milestone") {
@@ -188,25 +188,32 @@ describe("House narration context V2", () => {
     ]);
     expect(context.canonicalEvents[1]?.data).toEqual({
       empowered: "Ada",
-      offeredFormats: ["vote_bomb", "save_or_eliminate"],
+      offeredFormats: [
+        { id: "short_list", name: "The Short List" },
+        { id: "save_or_exit", name: "Save-or-Exit" },
+      ],
     });
     expect(context.projection).toMatchObject({
-      alive: ["Ada", "Blair"],
+      remainingPlayers: ["Ada", "Blair"],
+      exitedPlayers: [],
       empowered: "Ada",
-      selectedFormat: "vote_bomb",
+      selectedFormat: { id: "short_list", name: "The Short List" },
     });
     expect(context.publicDialogue).toEqual([expect.objectContaining({
       speaker: "Blair",
-      text: "Ada promised me another route.",
+      text: "  Ada said Vote Bomb keeps eliminated players alive in her story.  ",
     })]);
     expect(context.privateDialogueAndDecisions.map((entry) => entry.text)).toEqual([
-      "PRIVATE CONVERSATION CANARY: Blair is still useful.",
+      "  PRIVATE CONVERSATION CANARY: Vote Bomb left Blair eliminated but alive in Ada's telling.  ",
       "PRIVATE DECISION CANARY: selected Blair as the pressure target.",
     ]);
     expect(context.diaryEntries).toEqual([expect.objectContaining({
       player: "Blair",
-      answer: "PRIVATE DIARY CANARY: not Ada.",
+      question: "  Who was eliminated by Vote Bomb?  ",
+      answer: "  PRIVATE DIARY CANARY: Blair says nobody is alive to that plan.  ",
     })]);
+    expect(JSON.stringify(context.canonicalEvents)).not.toContain("vote_bomb");
+    expect(JSON.stringify(context.canonicalEvents)).not.toContain("save_or_eliminate");
     expect(JSON.stringify(context)).not.toContain("Old House summary");
     expect(JSON.stringify(context)).not.toContain("sourceAlias");
     expect(JSON.stringify(context)).not.toContain("sourceValuesByAlias");
@@ -280,15 +287,110 @@ describe("House narration context V2", () => {
     expect(context.canonicalEvents).toEqual([
       expect.objectContaining({
         type: "format.ballot_cast",
-        data: { format: "vote_bomb", voter: "Ada", target: "Blair", polarity: null },
+        data: {
+          format: { id: "short_list", name: "The Short List" },
+          voter: "Ada",
+          target: "Blair",
+          polarity: null,
+        },
       }),
       expect.objectContaining({
         type: "format.ballot_forfeited",
-        data: { format: "restricted_history", voter: "Blair", reason: "history_exhausted" },
+        data: {
+          format: { id: "restricted_history", name: "Restricted History" },
+          voter: "Blair",
+          reason: "history_exhausted",
+        },
       }),
     ]);
     expect(JSON.stringify(context.canonicalEvents)).not.toContain("player-ada");
     expect(JSON.stringify(context.canonicalEvents)).not.toContain("player-blair");
+  });
+
+  it("maps exit outcomes and omits canonical payloads without an explicit producer projection", () => {
+    const baseEvents = formatPickEvents();
+    const events: CanonicalGameEvent[] = [
+      ...baseEvents,
+      event({
+        sequence: 6,
+        gameId: GAME_ID,
+        round: 1,
+        phase: Phase.COUNCIL,
+        type: "council.elimination_resolved",
+        timestamp: "2026-08-27T00:00:05.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          empoweredId: ADA,
+          candidates: [ADA, BLAIR],
+          tally: { votes: { [ADA]: BLAIR, [BLAIR]: BLAIR } },
+          eliminated: BLAIR,
+          method: "plurality",
+        },
+      }),
+      event({
+        sequence: 7,
+        gameId: GAME_ID,
+        round: 1,
+        phase: Phase.COUNCIL,
+        type: "player.eliminated",
+        timestamp: "2026-08-27T00:00:06.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          playerId: BLAIR,
+          playerName: "Blair",
+          eliminatedRound: 1,
+          juryMember: { playerId: BLAIR, playerName: "Blair", eliminatedRound: 1 },
+        },
+      }),
+      event({
+        sequence: 8,
+        gameId: GAME_ID,
+        round: 1,
+        phase: Phase.COUNCIL,
+        type: "player.elimination_message_recorded",
+        timestamp: "2026-08-27T00:00:07.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: { playerId: BLAIR, message: "Unprojected payload canary" },
+      }),
+    ];
+    const context = compileHouseNarrationContext({
+      actorCoordinate: "council",
+      round: 1,
+      phase: Phase.COUNCIL,
+      beatClass: "milestone",
+      events,
+      projection: replayCanonicalEvents(baseEvents),
+      transcript: [],
+      diaryEntries: [],
+      afterCanonicalSequence: 5,
+      afterDialogueSequence: 0,
+    });
+
+    expect(context.canonicalEvents).toEqual([
+      expect.objectContaining({
+        type: "council.exit_resolved",
+        data: {
+          candidates: ["Ada", "Blair"],
+          exitedPlayer: "Blair",
+          method: "plurality",
+        },
+      }),
+      expect.objectContaining({
+        type: "player.exited",
+        data: { exitedPlayer: "Blair", exitRound: 1 },
+      }),
+    ]);
+    expect(JSON.stringify(context.canonicalEvents)).not.toContain("Unprojected payload canary");
+    expect(JSON.stringify(context.canonicalEvents)).not.toMatch(/alive|eliminat/i);
   });
 
   it("round-trips exact V2 continuity and rejects V1, extras, and presentation controls", () => {

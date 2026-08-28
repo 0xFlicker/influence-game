@@ -37,8 +37,8 @@ describe("completed results review components", () => {
     );
 
     expect(html).toContain("Read-only format snapshot");
-    expect(html).toContain("Save-or-Eliminate");
-    expect(html).toContain("Vote Bomb");
+    expect(html).toContain("Save-or-Exit");
+    expect(html).toContain("The Short List");
     expect(html).not.toContain("Power");
     expect(html).not.toContain("Council");
   });
@@ -99,7 +99,7 @@ describe("completed results review components", () => {
       />,
     );
     expect(selectedHtml).toContain("Format selected");
-    expect(selectedHtml).toContain("Save-or-Eliminate");
+    expect(selectedHtml).toContain("Save-or-Exit");
     expect(selectedHtml).not.toContain('data-format-cue="format_elimination"');
     expect(sealedHtml).toContain("Ballot sealed when the game ended");
     expect(sealedHtml).not.toContain('data-format-cue="format_elimination"');
@@ -308,7 +308,7 @@ describe("completed results review components", () => {
         recap={{
           round: 2,
           status: "available",
-          offeredFormats: ["Safety Bounce", "Vote Bomb"],
+          offeredFormats: ["Safety Bounce", "The Short List"],
           selectedFormat: "Safety Bounce",
           resolution: "Clear",
           eliminatedName: "Dax",
@@ -349,14 +349,14 @@ describe("completed results review components", () => {
     expect(html).toContain("Dax");
   });
 
-  it("renders Majority Elimination plurality labels without legacy aliases", () => {
+  it("renders Highest Count plurality labels without legacy aliases", () => {
     const html = renderToString(
       <CompletedFormatRoundRecap
         recap={{
           round: 2,
           status: "available",
-          offeredFormats: ["Majority Elimination", "Vote Bomb"],
-          selectedFormat: "Majority Elimination",
+          offeredFormats: ["Highest Count", "The Short List"],
+          selectedFormat: "Highest Count",
           resolution: "Auto",
           eliminatedName: "Dax",
           scoring: {
@@ -375,7 +375,7 @@ describe("completed results review components", () => {
       />,
     );
 
-    expect(html).toContain("Majority Elimination");
+    expect(html).toContain("Highest Count");
     expect(html).toContain("Plurality status");
     expect(html).toContain("Highest total");
     expect(html).not.toMatch(/zero.safe|Vulnerable|Power|Council/i);
@@ -387,8 +387,8 @@ describe("completed results review components", () => {
         recap={{
           round: 3,
           status: "incomplete",
-          offeredFormats: ["Vote Bomb", "Save-or-Eliminate"],
-          selectedFormat: "Vote Bomb",
+          offeredFormats: ["The Short List", "Save-or-Exit"],
+          selectedFormat: "The Short List",
           resolution: null,
           eliminatedName: null,
           scoring: null,

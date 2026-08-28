@@ -478,7 +478,7 @@ export type FormatBallotPayload = {
   formatId: LaunchFormatId;
   voterId: UUID;
   targetId: UUID;
-  /** Present for Save-or-Eliminate only. */
+  /** Present for canonical Save-or-Exit rounds only. */
   polarity: "save" | "eliminate" | null;
 };
 

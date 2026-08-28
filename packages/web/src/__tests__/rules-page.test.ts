@@ -25,7 +25,7 @@ describe("rules page", () => {
     expect(source).toContain("Pre-Format Alliance Huddles");
     expect(source).toContain("Format Selection");
     expect(source).toContain("Format-Aware Mingle");
-    expect(source).toContain("Format Resolution and Elimination");
+    expect(source).toContain("Format Resolution and Exit");
     expect(source).toContain("Named Alliances");
     expect(source).toContain("consent to the same version");
     expect(source).not.toContain("current Council");
@@ -33,10 +33,10 @@ describe("rules page", () => {
 
   it("documents the frozen six-format catalog and round-aware selection path", () => {
     expect(normalizedSource).toContain("all six default formats");
-    expect(normalizedSource).toContain("Elimination, Even Votes, and Restricted History");
+    expect(normalizedSource).toContain("Highest Count, Even Votes, and Restricted History");
     expect(normalizedSource).toContain("automatically locks that card without inventing an offer");
     expect(normalizedSource).toContain("A round with one available format has already locked that card");
-    expect(normalizedSource).toContain("Most votes is eliminated");
+    expect(normalizedSource).toContain("The highest total exits");
     expect(normalizedSource).toContain("highest-total ties");
     expect(normalizedSource).toContain("highest even total is eliminated");
     expect(normalizedSource).toContain("every total is odd");

@@ -106,7 +106,7 @@ export interface RevealedCouncilFacts {
 export interface RevealedFormatBallotEntry {
   voter: RevealedPlayerRef;
   target: RevealedPlayerRef;
-  /** Present for Save-or-Eliminate; null for Vote Bomb / Safety Bounce final votes. */
+  /** Present for Save-or-Exit; null for The Short List / Safety Bounce final votes. */
   polarity: "save" | "eliminate" | null;
 }
 

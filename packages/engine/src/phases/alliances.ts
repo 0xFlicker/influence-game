@@ -648,6 +648,7 @@ async function completeHuddleSession(
   phase: AllianceHuddlePhase,
   alliance: AllianceRecord,
   schedule: AllianceHuddleScheduleRecord,
+  providerLogicalCallOrdinal: number,
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
@@ -762,6 +763,7 @@ async function completeHuddleSession(
     round: schedule.round,
     phase,
     window: schedule.window,
+    providerLogicalCallOrdinal,
     alliance: {
       id: alliance.id,
       name: alliance.name,
@@ -772,6 +774,7 @@ async function completeHuddleSession(
     transcript: conversationHistory,
     facts,
   });
+  await assertCanAcceptCommit(ctx);
   const outcome: AllianceHuddleOutcome = {
     id: deterministicHuddleId(["alliance-huddle-outcome-v1", sessionId]),
     sessionId: session.id,
@@ -1030,7 +1033,7 @@ export async function runAllianceHuddleWindow(
         ?? "The House did not grant this alliance huddle time in the current scarce window.",
     }));
 
-  for (const { alliance, rationale, pass } of scheduled) {
+  for (const [scheduledIndex, { alliance, rationale, pass }] of scheduled.entries()) {
     const schedule = huddleScheduleRecord({
       alliance,
       window,
@@ -1043,7 +1046,7 @@ export async function runAllianceHuddleWindow(
     await assertCanAcceptCommit(ctx);
     ctx.gameState.recordAllianceHuddleSchedule(schedule);
     emitHuddleScheduleTurn(ctx, phase, schedule);
-    await completeHuddleSession(ctx, phase, alliance, schedule);
+    await completeHuddleSession(ctx, phase, alliance, schedule, scheduledIndex + 1);
   }
 
   for (const { alliance, rationale } of skipped) {

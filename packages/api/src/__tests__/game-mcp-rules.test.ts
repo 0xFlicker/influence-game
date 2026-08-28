@@ -14,7 +14,7 @@ describe("game MCP rules catalog", () => {
     const rules = getGameMcpRules();
     const serialized = JSON.stringify(rules).toLowerCase();
 
-    expect(rules.schemaVersion).toBe(1);
+    expect(rules.schemaVersion).toBe(2);
     expect(rules.rules.ratingProvenance.kind).toBe("account-level-free-track");
     expect(serialized).toContain("account-level");
     expect(serialized).not.toContain("rating resets");
@@ -48,24 +48,27 @@ describe("game MCP rules catalog", () => {
     expect(standardRound?.body).toContain("format-aware Mingle");
     expect(standardRound?.body).toContain("one elimination");
     expect(formats?.title).toBe("Formats");
-    expect(formats?.body).toContain("Save-or-Eliminate");
-    expect(formats?.body).toContain("Vote Bomb");
+    expect(formats?.body).toContain("Save-or-Exit");
+    expect(formats?.body).toContain("The Short List");
+    expect(formats?.body).toContain("Highest Count");
     expect(formats?.body).toContain("Safety Bounce");
     expect(formats?.body).toContain("Empowerment is not immunity");
     expect(formats?.body).toContain("sealed");
     expect(formats?.body).toContain("pointers are public");
-    expect(formats?.body).toContain("every living player casts a sealed elimination ballot targeting the vulnerable pool");
+    expect(formats?.body).toContain("every remaining player casts a sealed ballot targeting the vulnerable pool");
     expect(formats?.body).toContain("sealed only from in-game agent context");
     expect(formats?.body).toContain(
       "sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality",
     );
     expect(formats?.body).toContain("immediately after durable record");
     expect(formats?.body).not.toContain("sealed until reveal");
+    expect(JSON.stringify(formats)).not.toMatch(/Save-or-Eliminate|Vote Bomb|Majority Elimination/);
     expect(standardContract).not.toContain("Power / Reveal");
     expect(standardContract).not.toContain("pre-Council");
     expect(standardContract).not.toContain("pass the final choice to Council");
 
     const formatMatches = searchGameMcpRules({ query: "formats" });
+    expect(formatMatches.schemaVersion).toBe(2);
     expect(formatMatches.matches.map((match) => match.id)).toContain("formats");
   });
 

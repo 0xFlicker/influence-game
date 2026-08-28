@@ -4,6 +4,7 @@ import {
   canonicalEventIsVisibleTo,
   decodeLegacyAllianceHuddleOutcomeV1,
   formatAllianceHuddleFacts,
+  toGameMcpFormatSurface,
   Phase,
   projectViewerDecisionEvent,
   resolveGameKernel,
@@ -16,6 +17,7 @@ import {
   type CanonicalGameEventType,
   type GameKernel,
   type GameKernelContradictionDiagnostic,
+  type GameMcpFormatSurface,
   type PostgameAnalysisDetailLevel,
   type PostgameAnalysisProjection,
   type PostgamePlayerGameSummary,
@@ -144,19 +146,22 @@ export interface ProductionGameEventResult {
   phase: string | null;
   visibility: string;
   createdAt: string;
-  /** Distinguishes a safe viewer decision from a canonical event envelope. */
+  /** Distinguishes a safe viewer decision from the canonical envelope shape. */
   eventShape: "canonical" | "viewer_decision";
   /**
    * Public/player decision events use the allowlisted viewer DTO immediately,
    * including accepted format ballots. Producer mode retains the raw canonical
-   * envelope for provenance diagnostics.
+   * envelope shape and provenance for diagnostics. Both ordinary MCP shapes
+   * use current surface format IDs; persisted canonical envelopes are not
+   * rewritten.
    */
-  event: ProductionGameEventEnvelope | ViewerDecisionEvent;
+  event: GameMcpFormatSurface<ProductionGameEventEnvelope | ViewerDecisionEvent>;
   matchSources?: string[];
 }
 
 /**
- * Canonical board facts serialized through MCP event reads.
+ * Canonical board facts serialized through MCP event reads before the current
+ * format vocabulary is applied at the response boundary.
  *
  * Producer-authorized reads retain source pointers for diagnosis. Subject
  * reads omit the field entirely so private decision identity cannot leak.
@@ -652,10 +657,10 @@ export class ProductionGameMcpReadModel {
   }
 
   async readProjection(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
-      projection: ReturnType<typeof getPersistedGameProjection>;
+      projection: GameMcpFormatSurface<ReturnType<typeof getPersistedGameProjection>>;
     };
   }> {
     const game = await this.requireGame(gameIdOrSlug, access);
@@ -668,12 +673,14 @@ export class ProductionGameMcpReadModel {
       settlementState,
     );
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       game,
       canonicalGameFacts: {
-        projection: isGamesSubjectAccess(access)
-          ? redactGamesScopeProjection(projection)
-          : projection,
+        projection: toGameMcpFormatSurface(
+          isGamesSubjectAccess(access)
+            ? redactGamesScopeProjection(projection)
+            : projection,
+        ),
       },
     };
   }
@@ -682,9 +689,9 @@ export class ProductionGameMcpReadModel {
     options: ProductionGameMcpRoundFactsOptions,
     access: ProductionGameMcpAccess,
   ): Promise<{
-    schemaVersion: 2;
+    schemaVersion: 3;
     game: ProductionGameMcpGameIdentity;
-    canonicalGameFacts: RevealedRoundFactsRead;
+    canonicalGameFacts: GameMcpFormatSurface<RevealedRoundFactsRead>;
   }> {
     // This is an operator read: acceptedBallots is immediate sanitized transport
     // state, while ballotPresentation is the resolution/UI lifecycle projected
@@ -706,15 +713,15 @@ export class ProductionGameMcpReadModel {
       events: terminalSafeEvents,
     });
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       game,
-      canonicalGameFacts: buildRevealedRoundFacts({
+      canonicalGameFacts: toGameMcpFormatSurface(buildRevealedRoundFacts({
         events: terminalSafeEvents.map((event) => event.envelope),
         kernel: game.gameKernel,
         round: options.round,
         eventLogStatus: events.status,
         projectionStatus: projection.status,
-      }),
+      })),
     };
   }
 
@@ -782,7 +789,7 @@ export class ProductionGameMcpReadModel {
   }
 
   async filterEvents(options: ProductionGameMcpEventFilter, access: ProductionGameMcpAccess): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
       eventLogStatus: string;
@@ -850,7 +857,7 @@ export class ProductionGameMcpReadModel {
     }
 
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       game,
       canonicalGameFacts: {
         eventLogStatus: eventRead.status,
@@ -863,7 +870,7 @@ export class ProductionGameMcpReadModel {
   }
 
   async playerTimeline(options: ProductionGameMcpPlayerTimelineOptions, access: ProductionGameMcpAccess): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
       player: string;
@@ -881,7 +888,7 @@ export class ProductionGameMcpReadModel {
       limit: options.limit ?? DEFAULT_EVENT_LIMIT,
     }, access);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       game: filtered.game,
       canonicalGameFacts: {
         player: options.player,
@@ -912,27 +919,28 @@ export class ProductionGameMcpReadModel {
   async readGameBrief(
     options: ProductionGameMcpPostgameOptions,
     access: ProductionGameMcpAccess,
-  ): Promise<{
-    schemaVersion: 1;
-    ok: true;
-    game: PostgameAnalysisOk["game"];
-    postgame: ReturnType<typeof buildCompactPostgameBrief>;
-  } | PostgameAnalysisError> {
+  ) {
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const result = await getPostgameAnalysis(this.db, game.id, {
       detailLevel: options.detailLevel,
       includeEvidence: options.includeEvidence,
     });
     if (!result.ok) return result;
+    const postgame = toGameMcpFormatSurface(
+      buildCompactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
+    );
     return {
-      schemaVersion: 1,
+      schemaVersion: 2 as const,
       ok: true,
       game: {
         ...result.game,
         gameKernel: game.gameKernel,
         gameKernelSource: game.gameKernelSource,
       },
-      postgame: buildCompactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
+      postgame: {
+        ...postgame,
+        schemaVersion: 3 as const,
+      },
     };
   }
 
@@ -950,33 +958,45 @@ export class ProductionGameMcpReadModel {
   async readPlayerGameSummary(
     options: ProductionGameMcpPlayerGameSummaryOptions,
     access: ProductionGameMcpAccess,
-  ): Promise<Awaited<ReturnType<typeof getPostgamePlayerSummary>>> {
+  ) {
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    return getPostgamePlayerSummary(this.db, game.id, options.player, {
+    const result = await getPostgamePlayerSummary(this.db, game.id, options.player, {
       detailLevel: options.detailLevel,
       includeEvidence: options.includeEvidence,
     });
+    return result.ok
+      ? {
+          ...toGameMcpFormatSurface(result),
+          schemaVersion: 2 as const,
+        }
+      : result;
   }
 
   async readGameTurningPoints(
     options: ProductionGameMcpPostgameOptions,
     access: ProductionGameMcpAccess,
-  ): Promise<Awaited<ReturnType<typeof getPostgameTurningPoints>>> {
+  ) {
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    return getPostgameTurningPoints(this.db, game.id, {
+    const result = await getPostgameTurningPoints(this.db, game.id, {
       detailLevel: options.detailLevel,
       includeEvidence: options.includeEvidence,
     });
+    return result.ok
+      ? {
+          ...toGameMcpFormatSurface(result),
+          schemaVersion: 2 as const,
+        }
+      : result;
   }
 
   async readProducerGameAnalysis(
     options: ProductionGameMcpPostgameOptions,
     access: ProductionGameMcpAccess,
   ): Promise<{
-    schemaVersion: 2;
+    schemaVersion: 3;
     ok: true;
     game: PostgameAnalysisOk["game"];
-    producerAnalysis: ReturnType<typeof buildProducerPostgameAnalysis>;
+    producerAnalysis: GameMcpFormatSurface<ReturnType<typeof buildProducerPostgameAnalysis>>;
     developerEvidence: {
       cognitiveArtifacts: unknown;
       traceManifests: unknown;
@@ -1000,10 +1020,10 @@ export class ProductionGameMcpReadModel {
       }),
     ]);
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       ok: true,
       game: result.game,
-      producerAnalysis: buildProducerPostgameAnalysis(result.analysis),
+      producerAnalysis: toGameMcpFormatSurface(buildProducerPostgameAnalysis(result.analysis)),
       developerEvidence: {
         cognitiveArtifacts,
         traceManifests,
@@ -1919,9 +1939,11 @@ function eventResult(
     visibility: viewerDecision ? "public" : row.visibility,
     createdAt: row.createdAt,
     eventShape: viewerDecision ? "viewer_decision" : "canonical",
-    event: viewerDecision ?? (includePrivateCorrelation
-      ? row.envelope
-      : sanitizedCanonicalEventEnvelope(row.envelope)),
+    event: toGameMcpFormatSurface(
+      viewerDecision ?? (includePrivateCorrelation
+        ? row.envelope
+        : sanitizedCanonicalEventEnvelope(row.envelope)),
+    ),
     ...(matchSources.length > 0 && { matchSources }),
   };
 }

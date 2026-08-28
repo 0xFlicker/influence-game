@@ -47,7 +47,7 @@ export function FormatBallotReveal({
               : "text-rose-300"
           }`}
         >
-          {cue.ballot.polarity}
+          {displayBallotPolarity(cue.ballot.polarity)}
         </p>
       ) : null}
       <div className="mt-5 overflow-x-auto">
@@ -87,7 +87,11 @@ export function FormatBallotReveal({
                     {playerName(ballot.voterId, roster)}
                   </th>
                   <td className="px-3 py-3 uppercase tracking-[0.14em]">
-                    {ballot.targetId === null ? "forfeit" : ballot.polarity ?? "vote"}
+                    {ballot.targetId === null
+                      ? "forfeit"
+                      : ballot.polarity
+                        ? displayBallotPolarity(ballot.polarity)
+                        : "vote"}
                   </td>
                   <td className="px-3 py-3">
                     {ballot.targetId === null ? "FORFEIT" : playerName(ballot.targetId, roster)}
@@ -100,6 +104,10 @@ export function FormatBallotReveal({
       </div>
     </section>
   );
+}
+
+function displayBallotPolarity(polarity: "save" | "eliminate"): "save" | "exit" {
+  return polarity === "eliminate" ? "exit" : polarity;
 }
 
 function BallotName({ label, name }: { label: string; name: string }) {

@@ -7,7 +7,7 @@ import type {
   PublicGameAlliancesResponse,
 } from "@/lib/api";
 import type { MatchWatchModel } from "./match-watch-model";
-import { formatAllianceHuddleFacts } from "@influence/engine";
+import { formatAllianceHuddleFacts } from "@influence/engine/alliance-huddle-outcome";
 
 export type AllianceFactsLoadState = "idle" | "loading" | "ready" | "error";
 

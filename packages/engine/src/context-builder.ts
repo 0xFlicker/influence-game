@@ -62,6 +62,7 @@ import {
   type HistoricalFormatBallot,
 } from "./formats/restricted-history";
 import type { CanonicalGameEvent } from "./canonical-events";
+import { displayNameForFormat } from "./format-presentation-metadata";
 import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
 export type PhaseContextBuildExtra = {
@@ -348,11 +349,11 @@ export class ContextBuilder {
       case "vote.empowered_set":
         return `${prefix}: Empowered player set to ${this.name(event.payload.empowered)} by ${event.payload.method}.`;
       case "format.menu_offered":
-        return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.join(" vs ")}.`;
+        return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.map(displayNameForFormat).join(" vs ")}.`;
       case "format.selected":
-        return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${event.payload.formatId}.`;
+        return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${displayNameForFormat(event.payload.formatId)}.`;
       case "format.ballot_cast": {
-        const polarity = event.payload.polarity ?? "eliminate";
+        const polarity = event.payload.polarity === "save" ? "SAVE" : "EXIT";
         const target = this.name(event.payload.targetId);
         return `${prefix}: Your format ballot: ${polarity} → ${target} (sealed).`;
       }
@@ -363,11 +364,11 @@ export class ContextBuilder {
       case "format.safety_bounce_pointer":
         return `${prefix}: ${this.name(event.payload.actorId)} pointed to ${this.name(event.payload.targetId)} (${event.payload.classification}).`;
       case "format.resolved":
-        return `${prefix}: Format ${event.payload.formatId} resolved; eliminated ${this.name(event.payload.eliminatedId)} (${event.payload.resolutionKind}).`;
+        return `${prefix}: ${displayNameForFormat(event.payload.formatId)} resolved; ${this.name(event.payload.eliminatedId)} exited (${event.payload.resolutionKind}).`;
       case "power.action_set":
-        return `${prefix}: Power action: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
+        return `${prefix}: Power action: ${event.payload.action.action === "eliminate" ? "exit" : event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
       case "power.candidates_resolved":
-        return `${prefix}: Power resolved candidates=${event.payload.candidates ? this.formatPlayerList(event.payload.candidates) : "none"}; shield granted=${this.name(event.payload.shieldGranted)}; auto-eliminated=${this.name(event.payload.autoEliminated)}; expose scores ${this.formatCounts(event.payload.exposeScores)}.`;
+        return `${prefix}: Power resolved candidates=${event.payload.candidates ? this.formatPlayerList(event.payload.candidates) : "none"}; shield granted=${this.name(event.payload.shieldGranted)}; automatic exit=${this.name(event.payload.autoEliminated)}; expose scores ${this.formatCounts(event.payload.exposeScores)}.`;
       case "alliance.proposal_submitted":
         return `${prefix}: Alliance proposal submitted for ${event.payload.lineage.versions[0]?.terms.name ?? event.payload.lineage.allianceId}.`;
       case "alliance.response_recorded":
@@ -393,20 +394,20 @@ export class ContextBuilder {
       case "alliance.huddle_outcome_recorded":
         return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payloadVersion === 2 ? event.payload.outcome.facts.length : 0} structured facts.`;
       case "council.vote_cast":
-        return `${prefix}: ${this.name(event.payload.voterId)} voted at Council to eliminate ${this.name(event.payload.target)}.`;
+        return `${prefix}: ${this.name(event.payload.voterId)} voted at Council for ${this.name(event.payload.target)} to exit.`;
       case "council.elimination_resolved":
-        return `${prefix}: Council resolved: candidates ${this.formatPlayerList(event.payload.candidates)}; votes ${this.formatVoteMap(event.payload.tally.votes)}; eliminated ${this.name(event.payload.eliminated)} by ${event.payload.method}.`;
+        return `${prefix}: Council resolved: candidates ${this.formatPlayerList(event.payload.candidates)}; votes ${this.formatVoteMap(event.payload.tally.votes)}; ${this.name(event.payload.eliminated)} exited by ${event.payload.method}.`;
       case "player.last_message_recorded":
       case "player.elimination_message_recorded":
         return `${prefix}: ${this.name(event.payload.playerId)} gave final words: "${event.payload.message}"`;
       case "player.eliminated":
-        return `${prefix}: ${event.payload.playerName} was eliminated.`;
+        return `${prefix}: ${event.payload.playerName} exited the game.`;
       case "endgame.stage_set":
         return `${prefix}: Endgame stage set to ${event.payload.stage}; last regular empowered=${this.name(event.payload.lastEmpoweredFromRegularRounds)}.`;
       case "endgame.elimination_vote_cast":
-        return `${prefix}: ${this.name(event.payload.voterId)} voted to eliminate ${this.name(event.payload.target)}.`;
+        return `${prefix}: ${this.name(event.payload.voterId)} voted for ${this.name(event.payload.target)} to exit.`;
       case "endgame.elimination_resolved":
-        return `${prefix}: ${event.payload.stage ?? "endgame"} elimination resolved: votes ${this.formatVoteMap(event.payload.tally.votes)}${event.payload.juryTiebreakerVotes ? `; jury tiebreaker ${this.formatVoteMap(event.payload.juryTiebreakerVotes)}` : ""}; eliminated ${this.name(event.payload.eliminated)} by ${event.payload.method}.`;
+        return `${prefix}: ${event.payload.stage ?? "endgame"} exit resolved: votes ${this.formatVoteMap(event.payload.tally.votes)}${event.payload.juryTiebreakerVotes ? `; jury tiebreaker ${this.formatVoteMap(event.payload.juryTiebreakerVotes)}` : ""}; ${this.name(event.payload.eliminated)} exited by ${event.payload.method}.`;
       case "jury.vote_cast":
         return `${prefix}: Juror ${this.name(event.payload.jurorId)} voted for finalist ${this.name(event.payload.finalistId)}.`;
       case "jury.winner_determined":
@@ -431,7 +432,7 @@ export class ContextBuilder {
         return `${prefix}: ${speaker} ${kindLabel}${target}${counterpart}: "${event.payload.text}"`;
       }
       case "round.result_recorded":
-        return `${prefix}: Round result recorded: empowered=${this.name(event.payload.result.empoweredId)}, candidates=${this.formatPlayerList(event.payload.result.candidates)}, power=${event.payload.result.powerAction}, shield granted=${this.name(event.payload.result.shieldGranted)}, eliminated=${this.name(event.payload.result.eliminated)}.`;
+        return `${prefix}: Round result recorded: empowered=${this.name(event.payload.result.empoweredId)}, candidates=${this.formatPlayerList(event.payload.result.candidates)}, power=${event.payload.result.powerAction === "eliminate" ? "exit" : event.payload.result.powerAction}, shield granted=${this.name(event.payload.result.shieldGranted)}, exited=${this.name(event.payload.result.eliminated)}.`;
     }
   }
 
@@ -548,7 +549,7 @@ export class ContextBuilder {
       if (entry.targetId === null) {
         return `${prefix}: ${this.name(entry.voterId)} forfeited their Restricted History ballot (no legal target).`;
       }
-      const polarity = entry.polarity ?? "eliminate";
+      const polarity = entry.polarity === "save" ? "SAVE" : "EXIT";
       return `${prefix}: ${this.name(entry.voterId)} format ballot: ${polarity} → ${this.name(entry.targetId)}.`;
     });
   }
@@ -650,7 +651,7 @@ export class ContextBuilder {
               round: event.round,
               phase: Phase.POWER,
               label: "Power Action",
-              detail: `Your Power action in Round ${event.round}: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`,
+              detail: `Your Power action in Round ${event.round}: ${event.payload.action.action === "eliminate" ? "exit" : event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`,
             });
           }
           break;
@@ -675,8 +676,8 @@ export class ContextBuilder {
             decisions.push({
               round: event.round,
               phase: event.phase ?? Phase.VOTE,
-              label: "Endgame Elimination Vote",
-              detail: `Your endgame direct elimination vote in Round ${event.round}: ${this.name(event.payload.target)}. This was not empower/expose.`,
+              label: "Endgame Exit Vote",
+              detail: `Your endgame direct exit vote in Round ${event.round}: ${this.name(event.payload.target)}. This was not empower/expose.`,
             });
           }
           break;
@@ -726,7 +727,7 @@ export class ContextBuilder {
         round: resolved.round,
         phase: Phase.COUNCIL,
         label: "Council Candidate",
-        detail: `You were a Council candidate this round and did not cast a Council vote. Candidates: ${this.formatPlayerList(resolved.payload.candidates)}; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+        detail: `You were a Council candidate this round and did not cast a Council vote. Candidates: ${this.formatPlayerList(resolved.payload.candidates)}; exited: ${this.name(resolved.payload.eliminated)}.`,
       });
     }
 
@@ -743,7 +744,7 @@ export class ContextBuilder {
         round: resolved.round,
         phase: Phase.COUNCIL,
         label: "Council Tiebreak Not Needed",
-        detail: `You were empowered in Round ${resolved.round}, but the Council vote resolved by plurality. You did not cast a tiebreaker; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+        detail: `You were empowered in Round ${resolved.round}, but the Council vote resolved by plurality. You did not cast a tiebreaker; exited: ${this.name(resolved.payload.eliminated)}.`,
       });
     }
 

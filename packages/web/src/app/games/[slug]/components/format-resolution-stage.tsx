@@ -3,7 +3,10 @@ import type {
   FormatPresentationRosterPlayer,
   FormatResolutionPresentation,
 } from "./types";
-import { getFormatRegistration } from "@influence/engine/format-rules";
+import {
+  displayNameForFormat,
+  getFormatRegistration,
+} from "@influence/engine/format-rules";
 
 export function FormatResolutionStage({
   cue,
@@ -57,14 +60,14 @@ function SaveOrEliminateAggregate({
   const ids = orderedIds(facts.nets, roster);
   return (
     <AggregateTable
-      caption="Save-or-Eliminate aggregate"
-      columns={["Agent", "Saves", "Eliminates", "Net", "Status"]}
+      caption="Save-or-Exit aggregate"
+      columns={["Agent", "Saves", "Exits", "Net", "Status"]}
       rows={ids.map((playerId) => [
         playerName(playerId, roster),
         String(facts.savesReceived[playerId] ?? 0),
         String(facts.eliminateReceived[playerId] ?? 0),
         signed(facts.nets[playerId] ?? 0),
-        facts.nets[playerId] === lowestNet ? "Elimination eligible" : "Above the line",
+        facts.nets[playerId] === lowestNet ? "Exit eligible" : "Above the line",
       ])}
       rowIds={ids}
       rowState={(playerId) =>
@@ -101,10 +104,10 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
     }
     if (isDanger(playerId)) {
       if (registration.presentation.scoring === "highest_total") {
-        return "Highest total · elimination eligible";
+        return "Highest total · exit eligible";
       }
       if (registration.presentation.scoring === "highest_even") {
-        return "Highest even total · elimination eligible";
+        return "Highest even total · exit eligible";
       }
       return "Fewest positive · eligible";
     }
@@ -114,7 +117,7 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
   };
   return (
     <AggregateTable
-      caption={`${registration.decision.publicName} aggregate`}
+      caption={`${displayNameForFormat(resolution.formatId)} aggregate`}
       columns={["Agent", "Votes", "Status"]}
       rows={ids.map((playerId) => [
         playerName(playerId, roster),
