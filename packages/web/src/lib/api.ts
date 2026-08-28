@@ -2631,6 +2631,8 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  /** Durable game-local dialogue identity. */
+  entrySequence?: number;
   round: number;
   phase: string;
   from: string; // player UUID or "SYSTEM"
@@ -2645,12 +2647,8 @@ export interface WsTranscriptEntry {
   timestamp: number;
 }
 
-/** WebSocket event types pushed from the server (matches WsOutboundEvent in packages/api) */
-export type WsGameEvent =
-  | {
-      type: "watch_state";
-      state: GameWatchState;
-    }
+/** Choreography payload inside one sequenced durable publication. */
+export type WsPublicationPayload =
   | {
       type: "viewer_decision_event";
       /** Combined with event.sequence, this is the idempotent client key. */
@@ -2683,11 +2681,34 @@ export type WsGameEvent =
       terminal: true;
       reasonCode: string;
       message?: string;
+    };
+
+export interface WsPublicationEvent {
+  type: "publication";
+  gameId: string;
+  publicationSequence: number;
+  turnSequence: number;
+  payload: WsPublicationPayload;
+}
+
+/** WebSocket frames pushed from the server (matches WsOutboundEvent in packages/api). */
+export type WsGameEvent =
+  | {
+      type: "watch_state";
+      state: GameWatchState;
+      /** Highest due publication represented by this current-state snapshot. */
+      throughPublicationSequence: number;
     }
+  | WsPublicationEvent
   | {
       type: "error";
       message: string;
     };
+
+/** Viewer reducer input after the WebSocket hook unwraps durable publications. */
+export type WsViewerEvent =
+  | Exclude<WsGameEvent, WsPublicationEvent>
+  | WsPublicationPayload;
 
 // ---------------------------------------------------------------------------
 // Game detail API calls

@@ -20,6 +20,10 @@ const BUDGET_INDEX_MIGRATION_PATH = new URL(
   "../../drizzle/0063_provider_call_attempts_game_catalog_index.sql",
   import.meta.url,
 );
+const ORDINAL_WIDENING_MIGRATION_PATH = new URL(
+  "../../drizzle/0072_provider_logical_call_ordinal_bigint.sql",
+  import.meta.url,
+);
 
 describe("provider call journal migration", () => {
   test("applies over populated pre-U2 game ownership data", async () => {
@@ -219,6 +223,39 @@ describe("provider call journal migration", () => {
         WHERE "id" = 'logical-upgrade';
       `),
       );
+    } finally {
+      await db.execute(sql.raw(`DROP SCHEMA "${testSchema}" CASCADE`));
+    }
+  });
+
+  test("widens populated logical-call ordinals beyond the signed integer range", async () => {
+    const db = await setupTestDB();
+    const testSchema = `provider_journal_bigint_${randomUUID().replaceAll("-", "")}`;
+    await createPopulatedFixture(db, testSchema);
+
+    try {
+      await applyScopedMigration(db, testSchema, BASE_MIGRATION_PATH);
+      await db.execute(sql.raw(`
+        INSERT INTO "${testSchema}"."provider_logical_calls" (
+          "id", "game_id", "actor_name", "actor_role", "action", "logical_call_ordinal"
+        ) VALUES ('logical-wide', 'game-1', 'The House', 'house', 'house-question', 1)
+      `));
+
+      await applyScopedMigration(db, testSchema, ORDINAL_WIDENING_MIGRATION_PATH);
+      await db.execute(sql.raw(`
+        UPDATE "${testSchema}"."provider_logical_calls"
+        SET "logical_call_ordinal" = 3619941329
+        WHERE "id" = 'logical-wide'
+      `));
+
+      const rows = await db.execute<{ id: string; logical_call_ordinal: string }>(sql.raw(`
+        SELECT "id", "logical_call_ordinal"::text AS "logical_call_ordinal"
+        FROM "${testSchema}"."provider_logical_calls"
+      `));
+      expect(rows[0]).toEqual({
+        id: "logical-wide",
+        logical_call_ordinal: "3619941329",
+      });
     } finally {
       await db.execute(sql.raw(`DROP SCHEMA "${testSchema}" CASCADE`));
     }

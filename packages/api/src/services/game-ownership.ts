@@ -21,14 +21,56 @@ import {
   checkGameStartAdmissionInTransaction,
   checkRecoveryAdmissionInTransaction,
 } from "./deployment-admission.js";
-import { resolveProviderManifestFromGameConfig } from "@influence/engine";
+import {
+  resolveProviderManifestFromGameConfig,
+  type GameExecutionStateV1,
+} from "@influence/engine";
 import { checkDailyProviderAdmissionInTransaction } from "./provider-health.js";
+import { gameExecutionStateFromRow } from "./game-execution-state.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
 export interface GameOwnerClaim {
   ownerEpoch: string;
 }
+
+export interface AdoptedDurableGameOwner extends GameOwnerClaim {
+  executionState: GameExecutionStateV1;
+}
+
+export interface AdoptedUninitializedDurableGameOwner extends GameOwnerClaim {
+  executionState: null;
+}
+
+export type AdoptDurableGameOwnerResult =
+  | { ok: true; claim: AdoptedDurableGameOwner }
+  | {
+      ok: false;
+      error: string;
+      statusCode: 404 | 409;
+      code: "game_not_running" | "missing_execution_state" | "invalid_execution_state";
+    };
+
+export type AdoptUninitializedDurableGameOwnerResult =
+  | { ok: true; claim: AdoptedUninitializedDurableGameOwner }
+  | {
+      ok: false;
+      error: string;
+      statusCode: 404 | 409;
+      code:
+        | "game_not_running"
+        | "execution_state_exists"
+        | "nonempty_frontier";
+    };
+
+export type AdoptPreDurableGameOwnerResult =
+  | { ok: true; claim: AdoptedUninitializedDurableGameOwner }
+  | {
+      ok: false;
+      error: string;
+      statusCode: 404 | 409;
+      code: "game_not_running" | "execution_state_exists" | "frontier_changed";
+    };
 
 export type GameOwnerClaimResult =
   | { ok: true; claim: GameOwnerClaim }
@@ -72,6 +114,398 @@ export type OwnerStartupFailureResult =
 
 function ownerExpiresAt(now: Date, leaseMs = DEFAULT_OWNER_LEASE_MS): string {
   return new Date(now.getTime() + leaseMs).toISOString();
+}
+
+/**
+ * Adopt a normally interrupted durable game without changing product status.
+ * The committed execution row is the restart authority; phase checkpoints and
+ * coordinate allowlists are deliberately not consulted.
+ */
+export async function adoptDurableGameRunOwner(
+  db: DrizzleDB,
+  gameId: string,
+  options: { processId?: string; leaseMs?: number } = {},
+): Promise<AdoptDurableGameOwnerResult> {
+  const now = new Date();
+  const ownerEpoch = randomUUID();
+  const ownerId = randomUUID();
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('influence.game-turn'),
+        hashtext(${gameId})
+      )
+    `);
+
+    const game = (await tx
+      .select({ status: schema.games.status })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .for("update"))[0];
+    if (!game) {
+      return {
+        ok: false,
+        error: "Game not found",
+        statusCode: 404,
+        code: "game_not_running",
+      };
+    }
+    if (game.status !== "in_progress") {
+      return {
+        ok: false,
+        error: "Only an in-progress game can be adopted",
+        statusCode: 409,
+        code: "game_not_running",
+      };
+    }
+
+    const executionRow = (await tx
+      .select()
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId))
+      .for("update"))[0];
+    if (!executionRow) {
+      return {
+        ok: false,
+        error: "Game has no durable execution state",
+        statusCode: 409,
+        code: "missing_execution_state",
+      };
+    }
+
+    let priorState: GameExecutionStateV1;
+    try {
+      priorState = gameExecutionStateFromRow(executionRow);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Game execution state is invalid",
+        statusCode: 409,
+        code: "invalid_execution_state",
+      };
+    }
+
+    await tx
+      .select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+      .from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId))
+      .for("update");
+
+    await tx.update(schema.gameRunOwners)
+      .set({
+        status: "expired",
+        closedAt: now.toISOString(),
+        failureReason: "process_restarted",
+      })
+      .where(and(
+        eq(schema.gameRunOwners.gameId, gameId),
+        eq(schema.gameRunOwners.status, "active"),
+      ));
+
+    await tx.insert(schema.gameRunOwners).values({
+      id: ownerId,
+      gameId,
+      ownerEpoch,
+      processId: options.processId ?? process.pid.toString(),
+      expiresAt: ownerExpiresAt(now, options.leaseMs),
+      lastPersistedEventSequence: priorState.heads.eventSequence,
+    });
+
+    const updated = (await tx.update(schema.gameExecutionStates)
+      .set({ ownerEpoch, updatedAt: now.toISOString() })
+      .where(and(
+        eq(schema.gameExecutionStates.gameId, gameId),
+        eq(schema.gameExecutionStates.ownerEpoch, priorState.ownerEpoch),
+        eq(schema.gameExecutionStates.committedTurnSequence, priorState.heads.turnSequence),
+      ))
+      .returning())[0];
+    if (!updated) {
+      throw new GameOwnerTransitionError(
+        "Game execution state changed during adoption",
+        "stale_owner",
+      );
+    }
+
+    return {
+      ok: true,
+      claim: {
+        ownerEpoch,
+        executionState: gameExecutionStateFromRow(updated),
+      },
+    };
+  });
+}
+
+/**
+ * Close the owner-claim -> execution-initialization crash window. This is not a
+ * compatibility recovery path: adoption is legal only while every durable
+ * authority is still at genesis, so the replacement runner can perform the
+ * normal initialization and roster-bootstrap turns.
+ */
+export async function adoptUninitializedDurableGameRunOwner(
+  db: DrizzleDB,
+  gameId: string,
+  options: { processId?: string; leaseMs?: number } = {},
+): Promise<AdoptUninitializedDurableGameOwnerResult> {
+  const now = new Date();
+  const ownerEpoch = randomUUID();
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('influence.game-turn'),
+        hashtext(${gameId})
+      )
+    `);
+
+    const game = (await tx.select({ status: schema.games.status })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .for("update"))[0];
+    if (!game) {
+      return {
+        ok: false,
+        error: "Game not found",
+        statusCode: 404,
+        code: "game_not_running",
+      };
+    }
+    if (game.status !== "in_progress") {
+      return {
+        ok: false,
+        error: "Only an in-progress game can be adopted",
+        statusCode: 409,
+        code: "game_not_running",
+      };
+    }
+
+    const execution = (await tx.select({ gameId: schema.gameExecutionStates.gameId })
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId))
+      .for("update"))[0];
+    if (execution) {
+      return {
+        ok: false,
+        error: "Game execution authority already exists",
+        statusCode: 409,
+        code: "execution_state_exists",
+      };
+    }
+
+    const [event, transcriptState, completion] = await Promise.all([
+      tx.select({ sequence: schema.gameEvents.sequence })
+        .from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, gameId))
+        .limit(1),
+      tx.select({
+        durableEventSequence: schema.gameTranscriptStates.durableEventSequence,
+        durableSequence: schema.gameTranscriptStates.durableSequence,
+        terminalState: schema.gameTranscriptStates.terminalState,
+      }).from(schema.gameTranscriptStates)
+        .where(eq(schema.gameTranscriptStates.gameId, gameId))
+        .for("update")
+        .limit(1),
+      tx.select({ gameId: schema.gameCompletionSettlements.gameId })
+        .from(schema.gameCompletionSettlements)
+        .where(eq(schema.gameCompletionSettlements.gameId, gameId))
+        .limit(1),
+    ]);
+    const transcript = transcriptState[0];
+    if (
+      event.length > 0
+      || !transcript
+      || transcript.durableEventSequence !== 0
+      || transcript.durableSequence !== 0
+      || transcript.terminalState !== "unset"
+      || completion.length > 0
+    ) {
+      return {
+        ok: false,
+        error: "Game has durable facts but no execution authority",
+        statusCode: 409,
+        code: "nonempty_frontier",
+      };
+    }
+
+    await tx.select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+      .from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId))
+      .for("update");
+    await tx.update(schema.gameRunOwners).set({
+      status: "expired",
+      closedAt: now.toISOString(),
+      failureReason: "process_restarted_before_initialization",
+    }).where(and(
+      eq(schema.gameRunOwners.gameId, gameId),
+      eq(schema.gameRunOwners.status, "active"),
+    ));
+    await tx.insert(schema.gameRunOwners).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      processId: options.processId ?? process.pid.toString(),
+      expiresAt: ownerExpiresAt(now, options.leaseMs),
+      lastPersistedEventSequence: 0,
+    });
+
+    return {
+      ok: true,
+      claim: { ownerEpoch, executionState: null },
+    };
+  });
+}
+
+/**
+ * Claim an exact validated phase-boundary frontier for its one-time conversion
+ * into logical-turn authority. This function does not interpret checkpoints;
+ * the caller supplies the already validated canonical head and the transaction
+ * only proves that durable rows have not changed before ownership is replaced.
+ */
+export async function adoptPreDurableGameRunOwner(
+  db: DrizzleDB,
+  gameId: string,
+  expectedEventSequence: number,
+  options: { processId?: string; leaseMs?: number } = {},
+): Promise<AdoptPreDurableGameOwnerResult> {
+  const now = new Date();
+  const ownerEpoch = randomUUID();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('influence.game-turn'),
+        hashtext(${gameId})
+      )
+    `);
+    const game = (await tx.select({ status: schema.games.status })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .for("update"))[0];
+    if (!game) {
+      return { ok: false, error: "Game not found", statusCode: 404, code: "game_not_running" };
+    }
+    if (game.status !== "in_progress") {
+      return {
+        ok: false,
+        error: "Only an in-progress game can be upgraded",
+        statusCode: 409,
+        code: "game_not_running",
+      };
+    }
+    const execution = (await tx.select({ gameId: schema.gameExecutionStates.gameId })
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId))
+      .for("update"))[0];
+    if (execution) {
+      return {
+        ok: false,
+        error: "Game execution authority already exists",
+        statusCode: 409,
+        code: "execution_state_exists",
+      };
+    }
+    const [eventHead, transcriptState, settlement] = await Promise.all([
+      tx.select({ sequence: schema.gameEvents.sequence })
+        .from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, gameId))
+        .orderBy(sql`${schema.gameEvents.sequence} DESC`)
+        .limit(1),
+      tx.select({
+        durableEventSequence: schema.gameTranscriptStates.durableEventSequence,
+        terminalState: schema.gameTranscriptStates.terminalState,
+      }).from(schema.gameTranscriptStates)
+        .where(eq(schema.gameTranscriptStates.gameId, gameId))
+        .for("update")
+        .limit(1),
+      tx.select({ gameId: schema.gameCompletionSettlements.gameId })
+        .from(schema.gameCompletionSettlements)
+        .where(eq(schema.gameCompletionSettlements.gameId, gameId))
+        .limit(1),
+    ]);
+    if (
+      expectedEventSequence < 1
+      || eventHead[0]?.sequence !== expectedEventSequence
+      || transcriptState[0]?.durableEventSequence !== expectedEventSequence
+      || transcriptState[0]?.terminalState !== "unset"
+      || settlement.length > 0
+    ) {
+      return {
+        ok: false,
+        error: "Validated active-game frontier changed before upgrade",
+        statusCode: 409,
+        code: "frontier_changed",
+      };
+    }
+    await tx.select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+      .from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId))
+      .for("update");
+    await tx.update(schema.gameRunOwners).set({
+      status: "expired",
+      closedAt: now.toISOString(),
+      failureReason: "upgraded_to_durable_game_turns",
+    }).where(and(
+      eq(schema.gameRunOwners.gameId, gameId),
+      eq(schema.gameRunOwners.status, "active"),
+    ));
+    await tx.insert(schema.gameRunOwners).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      processId: options.processId ?? process.pid.toString(),
+      expiresAt: ownerExpiresAt(now, options.leaseMs),
+      lastPersistedEventSequence: expectedEventSequence,
+    });
+    return { ok: true, claim: { ownerEpoch, executionState: null } };
+  });
+}
+
+/**
+ * Graceful process shutdown relinquishes ownership after the current turn. The
+ * game remains in progress so the next runtime can adopt its committed cursor.
+ */
+export async function relinquishDurableGameRunOwner(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  reason = "process_shutdown",
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('influence.game-turn'),
+        hashtext(${gameId})
+      )
+    `);
+    const game = (await tx
+      .select({ status: schema.games.status })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .for("update"))[0];
+    if (!game || game.status !== "in_progress") return false;
+
+    const execution = (await tx
+      .select({ ownerEpoch: schema.gameExecutionStates.ownerEpoch })
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId))
+      .for("update"))[0];
+    if (!execution || execution.ownerEpoch !== ownerEpoch) return false;
+
+    const closed = await tx.update(schema.gameRunOwners)
+      .set({
+        status: "expired",
+        closedAt: now,
+        failureReason: reason,
+      })
+      .where(and(
+        eq(schema.gameRunOwners.gameId, gameId),
+        eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+        eq(schema.gameRunOwners.status, "active"),
+      ))
+      .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+    return closed.length === 1;
+  });
 }
 
 export async function acquireGameRunOwner(
@@ -457,9 +891,13 @@ export async function markOwnerStartupFailed(
       .from(schema.gameCompletionSettlements)
       .where(eq(schema.gameCompletionSettlements.gameId, gameId))
       .limit(1))[0];
-    if (firstEvent || settlement) {
+    const execution = (await tx.select({ gameId: schema.gameExecutionStates.gameId })
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId))
+      .limit(1))[0];
+    if (firstEvent || settlement || execution) {
       throw new GameOwnerTransitionError(
-        `Owner epoch ${ownerEpoch} has durable game state and cannot return to waiting.`,
+        `Owner epoch ${ownerEpoch} has durable game authority and cannot return to waiting.`,
         "stale_owner",
       );
     }

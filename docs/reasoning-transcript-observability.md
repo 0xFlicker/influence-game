@@ -68,7 +68,7 @@ House creative turns keep exact schemas for routing and typed failure, not for f
 
 The engine validates authored copy only as presentation: expected shape, non-empty strings, control characters, and the existing 180-character ordinary / 360-character milestone beat bounds. It does not grade, rewrite, fact-check, or render the prose. Provider refusal, malformed output, or exhaustion emits no fabricated summary and preserves the prior notebook. Pending delta still follows the bounded carry/drop cadence policy.
 
-`HouseNarrativeContinuityV2` contains recent public beats, one private opaque notebook snapshot, actor-coordinate heads, and pending-delta state. Null notebook output preserves the snapshot; non-null output replaces the whole bounded snapshot. The accepted beat and matching notebook are placed in the same checkpoint before any buffered viewer event is released. Version-1 House continuity is not accepted on recovery; drain active games before deploying an incompatible checkpoint boundary.
+`HouseNarrativeContinuityV2` contains recent public beats, one private opaque notebook snapshot, actor-coordinate heads, and pending-delta state. Null notebook output preserves the snapshot; non-null output replaces the whole bounded snapshot. The accepted beat and matching notebook commit in the same durable logical turn before its viewer publication is released. Version-1 House continuity is not accepted as current authority; supported active pre-logical-turn games use the one-time exact checkpoint cutover, so an ordinary reload does not require a drain.
 
 The omniscient producer context may include canonical events, projection state, private dialogue, sealed decisions, and diary Q&A. That is a producer/showrunner capability, not contestant knowledge. Diary and Judgment prompts are built from an actor-scoped projection and must not contain the House notebook, House summaries, operator traces, or information private to other players.
 
@@ -300,7 +300,7 @@ For producer diagnosis, inspect indexes before content:
 4. Use producer `filter_events` at that exact sequence/type to verify the canonical envelope and decision source pointer.
 5. Only then call `read_trace_content` for that explicit manifest, with a bounded `maxBytes`. Raw content explains the choice; it never repairs missing board history.
 
-Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
+Private trace content is not public transcript, not canonical board truth, and not logical-turn execution authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal. Reload reconstructs from the typed cursor, committed canonical/transcript rows, continuity, and accepted provider journal values—never from trace prose.
 
 ## Owner Learning Review Evidence
 

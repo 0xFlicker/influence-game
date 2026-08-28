@@ -32,6 +32,8 @@ Route player and House calls through one coordinator. Give every logical call st
 
 When one phase legitimately schedules the same action more than once, derive a stable logical-call ordinal from the phase's deterministic schedule and include it in the coordinate. Do not let repeated House calls fall back to a shared default ordinal: accepted-result replay would then let a later call consume an earlier call's value.
 
+Treat that ordinal as a positive JavaScript safe integer throughout the persistence contract. Deterministic tuple pairing can exceed PostgreSQL's signed 32-bit range even in an ordinary game, so `provider_logical_calls.logical_call_ordinal` must remain a `bigint` mapped in number mode rather than an `integer`.
+
 The coordinator owns attempt mechanics and manifest traversal. It does not decide legal game actions. Optional speech may return typed absence; required actions still delegate to the phase that owns the current legal target set.
 
 ```ts
@@ -141,7 +143,7 @@ indeterminate dispatch after crash
   -> one canonical gameplay effect
 ```
 
-Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, distinct deterministic coordinates for repeated same-action calls, provider-to-domain normalization and replay validation, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
+Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, distinct deterministic coordinates for repeated same-action calls, persistence beyond the signed 32-bit ordinal range, provider-to-domain normalization and replay validation, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
 
 ## Related
 

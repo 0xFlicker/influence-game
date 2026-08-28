@@ -575,6 +575,22 @@ export function evaluateSupportedRecovery(params: {
   });
 }
 
+/** Validate the same exact boundary for the one-time active-game cutover. */
+export function evaluateDurableActiveGameUpgrade(params: {
+  gameStatus: GameStatus;
+  checkpoint: HistoricalCheckpointIntegrityInput;
+  persistedEvents: PersistedEventsResult;
+}): SupportedRecoveryEvaluation {
+  if (params.gameStatus !== "in_progress") {
+    return { ok: false, reason: `unsupported_game_status:${params.gameStatus}` };
+  }
+  return evaluateCheckpointIntegrity({
+    checkpoint: params.checkpoint,
+    persistedEvents: params.persistedEvents,
+    mode: "resume",
+  });
+}
+
 export function checkpointHasImplementedResumeSupport(params: {
   gameStatus: GameStatus;
   checkpoint: {

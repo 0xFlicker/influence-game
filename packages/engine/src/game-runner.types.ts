@@ -32,6 +32,14 @@ import type {
   HouseProviderUsage,
   HouseSummaryBoundary,
 } from "./house-summary-frontier";
+import type {
+  DurableJsonObject,
+  GameExecutionCursorV1,
+  GameExecutionStateV1,
+  GameTurnCommitDraftV1,
+  GameTurnCommitResultV1,
+  GameTurnIntentV1,
+} from "./durable-game-turn";
 export type { TokenCostCursor };
 export type {
   ProviderAttemptFailureKind,
@@ -95,6 +103,8 @@ export interface GameRunnerOptions {
   maxRoundsMode?: "completion_scaled" | "exact";
   /** Runtime resume input for supported completed phase-boundary checkpoints. */
   resumeFrom?: GameRunnerResumeOptions;
+  /** One-time upgrade of a validated pre-logical-turn phase boundary into the current durable authority. */
+  durableUpgradeFrom?: GameRunnerResumeOptions;
   /** Optional producer/debug sink for private model-call traces. */
   privateTraceSink?: PrivateTraceSink;
   /** Awaited durability boundary for API-backed canonical event persistence. */
@@ -107,6 +117,55 @@ export interface GameRunnerOptions {
   tokenTracker?: TokenTracker;
   /** Injectable format-menu RNG for deterministic simulation and tests. */
   random?: () => number;
+  /**
+   * Atomic logical-turn authority for crash-safe games. This capability replaces
+   * phase-boundary event/checkpoint sinks; callers must not configure both paths.
+   * `durableUpgradeFrom` is the single cutover exception and is consumed only
+   * while creating the first logical-turn authority for an existing active game.
+   */
+  durableTurnStore?: DurableGameTurnStore;
+}
+
+/** Authoritative engine inputs used only when a durable game has no cursor yet. */
+export interface DurableGameTurnInitializationV1 {
+  version: 1;
+  gameId: UUID;
+  xstateSnapshot: DurableJsonObject;
+  cursor: GameExecutionCursorV1;
+  playerContinuityCapsules: PlayerContinuityCapsule[];
+  houseNarrativeContinuity: HouseNarrativeContinuityV2 | null;
+  canonicalEvents: CanonicalGameEvent[];
+  transcriptEntries: TranscriptEntry[];
+}
+
+/** Full committed frontier required to reconstruct every next-turn consumer. */
+export interface DurableGameTurnSnapshotV1 {
+  version: 1;
+  execution: GameExecutionStateV1;
+  canonicalEvents: CanonicalGameEvent[];
+  transcriptEntries: TranscriptEntry[];
+}
+
+export interface DurableGameTurnCommittedV1 {
+  version: 1;
+  result: GameTurnCommitResultV1;
+  snapshot: DurableGameTurnSnapshotV1;
+}
+
+export type DurableGameTurnPlanV1 =
+  | { version: 1; status: "execute"; intent: GameTurnIntentV1 }
+  | ({ version: 1; status: "committed" } & DurableGameTurnCommittedV1);
+
+/**
+ * GameRunner-facing durable coordinator. `planNextTurn` is always called before
+ * model dispatch; `commitTurn` atomically advances events, dialogue, publications,
+ * continuity, the native XState snapshot, and the closed execution cursor.
+ */
+export interface DurableGameTurnStore {
+  load(gameId: UUID): Promise<DurableGameTurnSnapshotV1 | null>;
+  initialize(input: DurableGameTurnInitializationV1): Promise<DurableGameTurnSnapshotV1>;
+  planNextTurn(intent: GameTurnIntentV1): Promise<DurableGameTurnPlanV1>;
+  commitTurn(draft: GameTurnCommitDraftV1): Promise<DurableGameTurnCommittedV1>;
 }
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
@@ -990,6 +1049,8 @@ export interface IAgent {
    * the implementation emits private decision traces. Optional for mock agents.
    */
   getLastPrivateDecisionId?(): UUID | undefined;
+  /** Bind the next provider call to an already-planned durable turn slot. */
+  setDurableProviderTurnBinding?(binding: DurableProviderTurnBinding | null): void;
   /** Current private compact-strategy state. Phase code never mutates this value directly. */
   getCompactStrategyState?(): CompactStrategyState;
   /**
@@ -1162,6 +1223,12 @@ export interface IAgent {
   addNote(playerName: string, note: string): void;
   /** Remove a player from memory (after elimination) */
   removeFromMemory?(playerName: string): void;
+}
+
+export interface DurableProviderTurnBinding {
+  turnId: string;
+  subcallSlot: number;
+  logicalCallId: string;
 }
 
 // ---------------------------------------------------------------------------

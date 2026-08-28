@@ -2307,7 +2307,7 @@ describe("admin route RBAC", () => {
       };
       diagnostics: unknown[];
     };
-    expect(body.schemaVersion).toBe(2);
+    expect(body.schemaVersion).toBe(3);
     expect(body.game.id).toBe(gameId);
     expect(body.eventLog).toMatchObject({
       status: "complete",

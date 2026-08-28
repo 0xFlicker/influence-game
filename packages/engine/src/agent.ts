@@ -53,6 +53,7 @@ import type {
   CompactStrategyCandidate,
   CompactStrategyDecisionBoundary,
   CompactStrategyState,
+  DurableProviderTurnBinding,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
 } from "./game-runner.types";
@@ -1981,6 +1982,7 @@ export class InfluenceAgent implements IAgent {
   private tokenTracker: TokenTracker | null = null;
   /** Most recent private-decision id minted while emitting a private decision trace. */
   private lastPrivateDecisionId: string | undefined;
+  private durableProviderTurnBinding: DurableProviderTurnBinding | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
   private memoryStore: MemoryStore | null = null;
@@ -2049,6 +2051,10 @@ export class InfluenceAgent implements IAgent {
     return this.lastPrivateDecisionId;
   }
 
+  setDurableProviderTurnBinding(binding: DurableProviderTurnBinding | null): void {
+    this.durableProviderTurnBinding = binding ? structuredClone(binding) : null;
+  }
+
   getCompactStrategyState(): CompactStrategyState {
     return cloneCompactStrategyState(this.compactStrategyState);
   }
@@ -2087,6 +2093,9 @@ export class InfluenceAgent implements IAgent {
       ...(trace?.phase && { phase: trace.phase }),
       ...(trace?.round !== undefined && { round: trace.round }),
       logicalCallOrdinal: trace?.logicalCallOrdinal ?? 1,
+      ...(this.durableProviderTurnBinding
+        ? { durableTurn: structuredClone(this.durableProviderTurnBinding) }
+        : {}),
     });
   }
 

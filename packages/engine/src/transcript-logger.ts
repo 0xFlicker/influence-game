@@ -141,6 +141,7 @@ export class TranscriptLogger {
   }
 
   emitPhaseChange(phase: Phase): void {
+    this.gameState.recordPhaseEntered(phase);
     const alivePlayers = this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name }));
     this.emitStream({ type: "phase_change", phase, round: this.gameState.round, alivePlayers });
   }
@@ -385,7 +386,13 @@ export class TranscriptLogger {
     this.pushDialogueEntry(entry);
   }
 
-  logDiary(from: string, text: string, thinking?: string, reasoningContext?: string): void {
+  logDiary(
+    from: string,
+    text: string,
+    thinking?: string,
+    reasoningContext?: string,
+    recipientPlayerId?: string,
+  ): void {
     const speakerPlayerId = resolvePlayerIdByName(this.gameState, from);
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -395,6 +402,7 @@ export class TranscriptLogger {
       scope: "diary",
       text,
       speakerPlayerId,
+      ...(recipientPlayerId && { to: [recipientPlayerId] }),
       ...(thinking && { thinking }),
       ...(reasoningContext && { reasoningContext }),
     };

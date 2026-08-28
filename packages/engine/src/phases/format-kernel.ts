@@ -950,7 +950,7 @@ async function resolveSafetyBounceRound(
   const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
-  const starterId = aliveIds[Math.floor(Math.random() * aliveIds.length)]!;
+  const starterId = aliveIds[Math.floor((ctx.random ?? Math.random)() * aliveIds.length)]!;
   let board = createBounceBoard(aliveIds, starterId);
   updateBounceBoardPressure(ctx, board);
   await assertCanAcceptCommit(ctx);

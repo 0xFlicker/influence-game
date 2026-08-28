@@ -71,6 +71,9 @@ describe("release migration identity", () => {
       "0060_provider_health.sql",
       "0061_provider_resilience_runtime_upgrade.sql",
       "0062_provider_native_transports.sql",
+      "0070_durable_game_turns.sql",
+      "0071_durable_game_turn_pacing.sql",
+      "0072_provider_logical_call_ordinal_bigint.sql",
     ].map((file) => path.resolve(import.meta.dir, "../../drizzle", file));
     for (const migration of migrations) {
       expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);
@@ -92,6 +95,33 @@ describe("expand-contract release migration policy", () => {
     `,
       ),
     ).toEqual([]);
+  });
+
+  test("allows an integer column to widen to bigint", () => {
+    expect(
+      inspectReleaseMigrationSql(
+        "widen-integer.sql",
+        'ALTER TABLE "provider_logical_calls" ALTER COLUMN "logical_call_ordinal" TYPE bigint;',
+      ),
+    ).toEqual([]);
+  });
+
+  test("still rejects another type change bundled with a bigint widening", () => {
+    expect(
+      inspectReleaseMigrationSql(
+        "mixed-type-changes.sql",
+        `
+          ALTER TABLE games
+            ALTER COLUMN ordinal TYPE bigint,
+            ALTER COLUMN slug TYPE varchar(80);
+        `,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        rule: "narrow-type",
+        file: "mixed-type-changes.sql",
+      }),
+    ]);
   });
 
   test("requires a default when an added column is immediately NOT NULL", () => {

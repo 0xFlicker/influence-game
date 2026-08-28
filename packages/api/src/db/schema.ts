@@ -28,6 +28,16 @@ import { sql } from "drizzle-orm";
 import {
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
+  type DurableJsonObject,
+  type GameExecutionCursorV1,
+  type GameExecutionRetryV1,
+  type GameExecutionStatusV1,
+  type GamePublicationPayloadV1,
+  type GameTurnCommitResultV1,
+  type GameTurnIntentV1,
+  type HouseNarrativeContinuityV2,
+  type Phase,
+  type PlayerContinuityCapsule,
   type ProviderAttemptAccountingFacts,
   type ProviderAttemptRecord,
 } from "@influence/engine";
@@ -617,6 +627,10 @@ export const transcripts = pgTable("transcripts", {
   text: text("text").notNull(),
   thinking: text("thinking"), // Per-message thinking (null for old entries / system messages)
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms
+  /** Logical-turn identity for every current durable transcript row. */
+  gameTurnId: text("game_turn_id"),
+  /** Stable one-based position inside gameTurnId; presentation timestamps are not ordering authority. */
+  gameTurnTranscriptOrdinal: integer("game_turn_transcript_ordinal"),
   // --- Current-capture product dialogue identity (nullable; never backfilled on legacy rows) ---
   /** 1-based game-local product dialogue sequence; null for legacy and diary/thinking. */
   entrySequence: integer("entry_sequence"),
@@ -643,6 +657,9 @@ export const transcripts = pgTable("transcripts", {
     .on(table.gameId, table.entrySequence)
     .where(sql`${table.entrySequence} IS NOT NULL`),
   index("transcripts_game_id_timestamp_id_idx").on(table.gameId, table.timestamp, table.id),
+  uniqueIndex("transcripts_game_turn_ordinal_unique")
+    .on(table.gameId, table.gameTurnId, table.gameTurnTranscriptOrdinal)
+    .where(sql`${table.gameTurnId} IS NOT NULL`),
   index("transcripts_audience_player_ids_gin_idx").using("gin", table.audiencePlayerIds),
   index("transcripts_speaker_player_id_idx").on(table.gameId, table.speakerPlayerId),
   check(
@@ -656,6 +673,13 @@ export const transcripts = pgTable("transcripts", {
   check(
     "transcripts_capture_version_positive_check",
     sql`${table.captureVersion} IS NULL OR ${table.captureVersion} > 0`,
+  ),
+  check(
+    "transcripts_game_turn_shape_check",
+    sql`
+      (${table.gameTurnId} IS NULL AND ${table.gameTurnTranscriptOrdinal} IS NULL)
+      OR (${table.gameTurnId} IS NOT NULL AND ${table.gameTurnTranscriptOrdinal} > 0)
+    `,
   ),
   // Current-capture dialogue scopes require sequence, audience, and context.
   check(
@@ -1078,6 +1102,160 @@ export const gameRunOwners = pgTable("game_run_owners", {
   check("game_run_owners_run_source_check", sql`${table.runSource} IN ('api', 'simulation_import')`),
   check("game_run_owners_kernel_health_check", sql`${table.kernelHealth} IN ('healthy', 'degraded', 'suspended')`),
   check("game_run_owners_last_persisted_event_sequence_check", sql`${table.lastPersistedEventSequence} >= 0`),
+]);
+
+/** One authoritative committed program counter per durable game. */
+export const gameExecutionStates = pgTable("game_execution_states", {
+  gameId: text("game_id")
+    .primaryKey()
+    .references(() => games.id, { onDelete: "cascade" }),
+  contractVersion: integer("contract_version").notNull().default(1),
+  ownerEpoch: text("owner_epoch").notNull(),
+  status: text("status").notNull().$type<GameExecutionStatusV1>().default("ready"),
+  committedTurnSequence: integer("committed_turn_sequence").notNull().default(0),
+  eventHeadSequence: integer("event_head_sequence").notNull().default(0),
+  eventHeadHash: text("event_head_hash"),
+  dialogueHeadSequence: integer("dialogue_head_sequence").notNull().default(0),
+  publicationHeadSequence: integer("publication_head_sequence").notNull().default(0),
+  lastPresentationPhase: text("last_presentation_phase").$type<Phase>(),
+  nextPublicationAvailableAt: text("next_publication_available_at"),
+  xstateSnapshot: jsonb("xstate_snapshot").notNull().$type<DurableJsonObject>(),
+  executionCursor: jsonb("execution_cursor").notNull().$type<GameExecutionCursorV1>(),
+  playerContinuityCapsules: jsonb("player_continuity_capsules")
+    .notNull()
+    .$type<PlayerContinuityCapsule[]>()
+    .default(sql`'[]'::jsonb`),
+  houseNarrativeContinuity: jsonb("house_narrative_continuity")
+    .$type<HouseNarrativeContinuityV2>(),
+  retryState: jsonb("retry_state").$type<GameExecutionRetryV1>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  foreignKey({
+    name: "game_execution_states_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_execution_states_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_execution_states_status_check", sql`${table.status} IN ('ready', 'waiting_retry', 'terminal', 'repair_required')`),
+  check("game_execution_states_heads_check", sql`
+    ${table.committedTurnSequence} >= 0
+    AND ${table.eventHeadSequence} >= 0
+    AND ${table.dialogueHeadSequence} >= 0
+    AND ${table.publicationHeadSequence} >= 0
+  `),
+  check("game_execution_states_event_hash_check", sql`
+    (${table.eventHeadSequence} = 0 AND ${table.eventHeadHash} IS NULL)
+    OR (
+      ${table.eventHeadSequence} > 0
+      AND ${table.eventHeadHash} ~ '^sha256:[0-9a-f]{64}$'
+    )
+  `),
+  check("game_execution_states_retry_check", sql`
+    (${table.status} = 'waiting_retry' AND ${table.retryState} IS NOT NULL)
+    OR (${table.status} <> 'waiting_retry' AND ${table.retryState} IS NULL)
+  `),
+]);
+
+/** Immutable planned intent and its optional single atomic commit. */
+export const gameTurns = pgTable("game_turns", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  contractVersion: integer("contract_version").notNull().default(1),
+  turnSequence: integer("turn_sequence").notNull(),
+  status: text("status").notNull().$type<"planned" | "committed">().default("planned"),
+  plannedOwnerEpoch: text("planned_owner_epoch").notNull(),
+  committedOwnerEpoch: text("committed_owner_epoch"),
+  baseEventSequence: integer("base_event_sequence").notNull(),
+  baseDialogueSequence: integer("base_dialogue_sequence").notNull(),
+  basePublicationSequence: integer("base_publication_sequence").notNull(),
+  intent: jsonb("intent").notNull().$type<GameTurnIntentV1>(),
+  intentHash: text("intent_hash").notNull(),
+  effectHash: text("effect_hash"),
+  commitResult: jsonb("commit_result").$type<GameTurnCommitResultV1>(),
+  plannedAt: text("planned_at").notNull().default(sql`now()::text`),
+  committedAt: text("committed_at"),
+}, (table) => [
+  unique("game_turns_game_id_id_unique").on(table.gameId, table.id),
+  uniqueIndex("game_turns_game_sequence_unique").on(table.gameId, table.turnSequence),
+  uniqueIndex("game_turns_one_planned_per_game")
+    .on(table.gameId)
+    .where(sql`${table.status} = 'planned'`),
+  index("game_turns_game_status_idx").on(table.gameId, table.status),
+  foreignKey({
+    name: "game_turns_planned_owner_fk",
+    columns: [table.gameId, table.plannedOwnerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_turns_committed_owner_fk",
+    columns: [table.gameId, table.committedOwnerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_turns_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_turns_sequence_check", sql`${table.turnSequence} > 0`),
+  check("game_turns_base_heads_check", sql`
+    ${table.baseEventSequence} >= 0
+    AND ${table.baseDialogueSequence} >= 0
+    AND ${table.basePublicationSequence} >= 0
+  `),
+  check("game_turns_hashes_check", sql`
+    ${table.intentHash} ~ '^sha256:[0-9a-f]{64}$'
+    AND (${table.effectHash} IS NULL OR ${table.effectHash} ~ '^sha256:[0-9a-f]{64}$')
+  `),
+  check("game_turns_commit_shape_check", sql`
+    (
+      ${table.status} = 'planned'
+      AND ${table.committedOwnerEpoch} IS NULL
+      AND ${table.effectHash} IS NULL
+      AND ${table.commitResult} IS NULL
+      AND ${table.committedAt} IS NULL
+    ) OR (
+      ${table.status} = 'committed'
+      AND ${table.committedOwnerEpoch} IS NOT NULL
+      AND ${table.effectHash} IS NOT NULL
+      AND ${table.commitResult} IS NOT NULL
+      AND ${table.committedAt} IS NOT NULL
+    )
+  `),
+]);
+
+/** Ordered, durable viewer feed. Null availableAt holds terminal output. */
+export const gamePublications = pgTable("game_publications", {
+  id: serial("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  publicationSequence: integer("publication_sequence").notNull(),
+  turnId: text("turn_id").notNull(),
+  turnSequence: integer("turn_sequence").notNull(),
+  turnPublicationOrdinal: integer("turn_publication_ordinal").notNull(),
+  contractVersion: integer("contract_version").notNull().default(1),
+  kind: text("kind")
+    .notNull()
+    .$type<"canonical_event" | "transcript_entry" | "completion">(),
+  payload: jsonb("payload").notNull().$type<GamePublicationPayloadV1>(),
+  availableAt: text("available_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_publications_game_sequence_unique").on(table.gameId, table.publicationSequence),
+  uniqueIndex("game_publications_turn_ordinal_unique").on(table.turnId, table.turnPublicationOrdinal),
+  index("game_publications_available_idx").on(table.gameId, table.availableAt, table.publicationSequence),
+  index("game_publications_due_idx").on(table.availableAt, table.gameId, table.publicationSequence),
+  foreignKey({
+    name: "game_publications_game_turn_fk",
+    columns: [table.gameId, table.turnId],
+    foreignColumns: [gameTurns.gameId, gameTurns.id],
+  }),
+  check("game_publications_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_publications_sequence_check", sql`
+    ${table.publicationSequence} > 0
+    AND ${table.turnSequence} > 0
+    AND ${table.turnPublicationOrdinal} > 0
+  `),
+  check("game_publications_kind_check", sql`${table.kind} IN ('canonical_event', 'transcript_entry', 'completion')`),
 ]);
 
 /**
@@ -1538,7 +1716,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   action: text("action").notNull(),
   phase: text("phase"),
   round: integer("round"),
-  logicalCallOrdinal: integer("logical_call_ordinal").notNull(),
+  logicalCallOrdinal: bigint("logical_call_ordinal", { mode: "number" }).notNull(),
   nextAttemptOrdinal: integer("next_attempt_ordinal").notNull().default(1),
   rateLimitCount: integer("rate_limit_count").notNull().default(0),
   rateLimitOutcome: text("rate_limit_outcome").$type<ProviderCallRateLimitOutcome>(),
@@ -1552,11 +1730,22 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   acceptedAt: text("accepted_at"),
   canonicalEventSequence: integer("canonical_event_sequence"),
   canonicalCommittedAt: text("canonical_committed_at"),
+  gameTurnId: text("game_turn_id"),
+  gameTurnSubcallSlot: integer("game_turn_subcall_slot"),
+  gameTurnCommittedAt: text("game_turn_committed_at"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
   uniqueIndex("provider_logical_calls_id_game_unique").on(table.id, table.gameId),
   index("provider_logical_calls_game_idx").on(table.gameId, table.createdAt),
+  uniqueIndex("provider_logical_calls_turn_slot_unique")
+    .on(table.gameTurnId, table.gameTurnSubcallSlot)
+    .where(sql`${table.gameTurnId} IS NOT NULL`),
+  foreignKey({
+    name: "provider_logical_calls_game_turn_fk",
+    columns: [table.gameId, table.gameTurnId],
+    foreignColumns: [gameTurns.gameId, gameTurns.id],
+  }),
   check(
     "provider_logical_calls_actor_role_check",
     sql`${table.actorRole} IN ('player', 'juror', 'house', 'system', 'producer')`,
@@ -1602,6 +1791,19 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
           (${table.canonicalEventSequence} IS NULL AND ${table.canonicalCommittedAt} IS NULL)
           OR (${table.canonicalEventSequence} > 0 AND ${table.canonicalCommittedAt} IS NOT NULL)
         )
+      )
+    `,
+  ),
+  check(
+    "provider_logical_calls_game_turn_shape_check",
+    sql`
+      (
+        ${table.gameTurnId} IS NULL
+        AND ${table.gameTurnSubcallSlot} IS NULL
+        AND ${table.gameTurnCommittedAt} IS NULL
+      ) OR (
+        ${table.gameTurnId} IS NOT NULL
+        AND ${table.gameTurnSubcallSlot} > 0
       )
     `,
   ),
