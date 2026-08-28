@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
+import { failFixtureOwnerLearningReview } from "./owner-learning-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("owner learning schema", () => {
@@ -26,13 +27,16 @@ describe("owner learning schema", () => {
       idempotencyKey: "start-2",
     }));
 
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      resolution: "failed",
-      resolvedAt: "2026-08-04T00:10:00.000Z",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: firstReviewId,
+      failureCode: "provider_error",
       retryable: false,
-      safeFailureCode: "provider_error",
-    }).where(eq(schema.agentLearningReviews.id, firstReviewId));
+      now: new Date("2026-08-04T00:10:00.000Z"),
+      reviewUpdates: {
+        resolution: "failed",
+        resolvedAt: "2026-08-04T00:10:00.000Z",
+      },
+    });
 
     await insertReview(db, {
       id: randomUUID(),

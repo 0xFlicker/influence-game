@@ -210,11 +210,6 @@ describe("owner learning failure evidence", () => {
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
     const callId = await insertFailedCall(db, reviewId);
-    await db.update(schema.agentLearningReviewCalls).set({
-      providerResponseId: "resp-raw-receipt",
-      providerResponseObservedAt: "2026-08-27T21:59:59.000Z",
-      providerResponseSha256: "sha256:raw-provider-response",
-    }).where(eq(schema.agentLearningReviewCalls.id, callId));
     const prepared = prepareOwnerLearningFailureEvidence({
       reviewId,
       phase: "output_validation",
@@ -233,6 +228,14 @@ describe("owner learning failure evidence", () => {
       validation: { code: "proposal_contract" },
       now: new Date("2026-08-27T22:00:01.000Z"),
     });
+    await db.update(schema.agentLearningReviewCalls).set({
+      providerResponseId: "resp-raw-receipt",
+      providerResponseObservedAt: "2026-08-27T21:59:59.000Z",
+      providerResponseSha256: "sha256:raw-provider-response",
+      responseEvidenceBody: prepared.body,
+      responseEvidenceBodySha256: prepared.bodySha256,
+      responseEvidenceByteLength: prepared.byteLength,
+    }).where(eq(schema.agentLearningReviewCalls.id, callId));
 
     await persistOwnerLearningFailureEvidence(db, {
       reviewId,

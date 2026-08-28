@@ -21,12 +21,9 @@ import { createMcpRoutes } from "../routes/mcp.js";
 import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
 import { recordOwnerLearningMcpOfferViewed } from "../services/owner-learning-analytics.js";
 import { fingerprintOwnerLearningValue } from "../services/owner-learning-contracts.js";
-import {
-  persistOwnerLearningFailureEvidence,
-  prepareOwnerLearningFailureEvidence,
-} from "../services/owner-learning-failure-evidence.js";
 import { getOwnedOwnerLearningReview } from "../services/owner-learning-read.js";
 import {
+  failFixtureOwnerLearningReview,
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
@@ -483,27 +480,16 @@ describe("production MCP owner-learning parity", () => {
 
     const failed = await insertPlayedOwnerLearningAgent(db);
     const failedReviewId = await startFixtureOwnerLearningReview(db, failed);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "complete",
-      safeFailureCode: "provider_timeout",
-      retryable: true,
-      logicalCallCount: 1,
-    }).where(eq(schema.agentLearningReviews.id, failedReviewId));
     const failedAuth = ownerAuth(failed.ownerUserId);
-    const privateFailure = prepareOwnerLearningFailureEvidence({
+    await failFixtureOwnerLearningReview(db, {
       reviewId: failedReviewId,
+      failureCode: "provider_timeout",
+      retryable: true,
       phase: "provider_invocation",
-      diagnostic: {
-        diagnosticId: "diagnostic-mcp-private",
-        failureCode: "provider_timeout",
-      },
+      diagnosticId: "diagnostic-mcp-private",
       error: new Error("PRIVATE_MCP_DIAGNOSTIC_MESSAGE"),
       requestEvidence: { input: "PRIVATE_MCP_DIAGNOSTIC_BODY" },
-    });
-    await persistOwnerLearningFailureEvidence(db, {
-      reviewId: failedReviewId,
-      prepared: privateFailure,
+      reviewUpdates: { stage: "complete", logicalCallCount: 1 },
     });
     const failedRead = await callTool(server, failedAuth, "read_learning_review", {
       reviewId: failedReviewId,
@@ -532,12 +518,13 @@ describe("production MCP owner-learning parity", () => {
       .from(schema.agentLearningEvents)
       .where(eq(schema.agentLearningEvents.reviewId, failedReviewId)))
       .filter((event) => event.kind === "credit_consumed")).toHaveLength(1);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "complete",
-      safeFailureCode: "provider_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: failedReviewId,
+      failureCode: "provider_error",
       retryable: false,
-    }).where(eq(schema.agentLearningReviews.id, failedReviewId));
+      now: new Date("2026-08-04T03:00:01.000Z"),
+      reviewUpdates: { stage: "complete" },
+    });
     const nonretryableRetry = await rawToolCall(
       server,
       failedAuth,

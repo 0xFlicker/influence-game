@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import type {
+  OwnerLearningExecutionPhase,
+  OwnerLearningSafeFailureCode,
+} from "../services/owner-learning-contracts.js";
+import type {
   OwnerLearningEvidenceProjection,
   OwnerLearningMaterializedEvidenceProjection,
 } from "../services/owner-learning-evidence.js";
@@ -15,6 +19,11 @@ import {
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
 } from "../services/owner-learning-review.js";
+import {
+  enqueueOwnerLearningFailureEvidence,
+  prepareOwnerLearningFailureEvidence,
+} from "../services/owner-learning-failure-evidence.js";
+import { createOwnerLearningEvent } from "../services/owner-learning-events.js";
 
 export async function insertPlayedOwnerLearningAgent(
   db: DrizzleDB,
@@ -199,4 +208,127 @@ export async function startFixtureOwnerLearningReview(
   });
   if (!result.reviewId) throw new Error(`Expected fixture review, received ${result.status}`);
   return result.reviewId;
+}
+
+export async function failFixtureOwnerLearningReview(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    failureCode: OwnerLearningSafeFailureCode;
+    retryable: boolean;
+    phase?: OwnerLearningExecutionPhase;
+    now?: Date;
+    reviewUpdates?: Partial<typeof schema.agentLearningReviews.$inferInsert>;
+    call?: { id: string; ordinal: number; attemptOrdinal: number };
+    diagnosticId?: string;
+    error?: Error;
+    requestEvidence?: unknown;
+    responseEvidence?: unknown;
+  },
+): Promise<string> {
+  const nowIso = (input.now ?? new Date("2026-08-04T03:00:30.000Z")).toISOString();
+  const phase = input.phase ?? failurePhase(input.failureCode);
+  const responseObservedAt = input.failureCode === "invalid_structured_output"
+    ? nowIso
+    : undefined;
+  if (input.failureCode === "invalid_structured_output" && !input.call) {
+    throw new Error("invalid_structured_output fixture failures require a provider call");
+  }
+  const prepared = prepareOwnerLearningFailureEvidence({
+    reviewId: input.reviewId,
+    phase,
+    diagnostic: {
+      ...(input.diagnosticId && { diagnosticId: input.diagnosticId }),
+      failureCode: input.failureCode,
+      errorCode: "fixture_failure",
+    },
+    error: input.error ?? new Error(`Fixture ${input.failureCode}`),
+    requestEvidence: input.requestEvidence ?? { fixture: true },
+    ...(responseObservedAt && {
+      responseObservedAt,
+      responseEvidence: input.responseEvidence ?? { output: "INVALID_FIXTURE_OUTPUT" },
+      validation: { code: "fixture_failure" },
+    }),
+    now: new Date(nowIso),
+  });
+
+  await db.transaction(async (tx) => {
+    const review = (await tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+    if (!review) throw new Error("Owner learning fixture review not found");
+    if (input.call && responseObservedAt) {
+      await tx.update(schema.agentLearningReviewCalls).set({
+        providerResponseId: `fixture-response-${prepared.diagnostic.id}`,
+        providerResponseObservedAt: responseObservedAt,
+        providerResponseSha256: prepared.providerResponseSha256,
+        responseEvidenceBody: prepared.body,
+        responseEvidenceBodySha256: prepared.bodySha256,
+        responseEvidenceByteLength: prepared.byteLength,
+      }).where(eq(schema.agentLearningReviewCalls.id, input.call.id));
+    }
+    await enqueueOwnerLearningFailureEvidence(tx, {
+      reviewId: input.reviewId,
+      ...(input.call && { call: input.call }),
+      prepared,
+    });
+    const diagnostic = {
+      diagnosticId: prepared.diagnostic.id,
+      phase,
+      failureCode: input.failureCode,
+      errorClass: prepared.diagnostic.errorClass,
+      errorCode: prepared.diagnostic.errorCode ?? "fixture_failure",
+      message: prepared.diagnostic.sanitizedMessage,
+      firstApplicationFrame: prepared.diagnostic.firstApplicationStackFrame ?? null,
+      fingerprint: prepared.diagnostic.fingerprint,
+      callId: input.call?.id ?? null,
+      callOrdinal: input.call?.ordinal ?? null,
+      attemptOrdinal: input.call?.attemptOrdinal ?? null,
+      stage: review.stage,
+      providerRequestId: null,
+      providerResponseId: input.call ? `fixture-response-${prepared.diagnostic.id}` : null,
+      evidenceManifestId: prepared.manifestId,
+      evidenceState: "pending" as const,
+    };
+    const event = createOwnerLearningEvent("review_failed", {
+      ownerUserId: review.ownerUserId,
+      reviewId: review.id,
+      agentProfileId: review.agentProfileId,
+      occurredAt: nowIso,
+    }, {
+      failureCode: input.failureCode,
+      retryable: input.retryable,
+      diagnostic,
+    });
+    await tx.insert(schema.agentLearningEvents).values({
+      id: randomUUID(),
+      ownerUserId: event.ownerUserId,
+      reviewId: event.reviewId,
+      agentProfileId: event.agentProfileId,
+      kind: event.kind,
+      payload: event.payload,
+      occurredAt: event.occurredAt,
+    });
+    await tx.update(schema.agentLearningReviews).set({
+      ...input.reviewUpdates,
+      analysisStatus: "failed",
+      safeFailureCode: input.failureCode,
+      retryable: input.retryable,
+      executionPhase: phase,
+      updatedAt: nowIso,
+    }).where(eq(schema.agentLearningReviews.id, input.reviewId));
+  });
+  return prepared.diagnostic.id;
+}
+
+function failurePhase(code: OwnerLearningSafeFailureCode): OwnerLearningExecutionPhase {
+  if (code === "invalid_structured_output") return "output_validation";
+  if (code === "evidence_unavailable") return "evidence_projection";
+  if (
+    code === "provider_capacity_exhausted"
+    || code === "provider_timeout"
+    || code === "provider_error"
+    || code === "tier_mismatch"
+    || code === "output_budget_exhausted"
+  ) return "provider_invocation";
+  return "finalization";
 }

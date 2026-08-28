@@ -30,15 +30,12 @@ import {
 } from "../services/owner-learning-provider.js";
 import { OwnerLearningOutputValidationError } from "../services/owner-learning-failures.js";
 import {
-  persistOwnerLearningFailureEvidence,
-  prepareOwnerLearningFailureEvidence,
-} from "../services/owner-learning-failure-evidence.js";
-import {
   lockOwnerLearningReviewForProfileMutation,
   resolveOwnedOwnerLearningReview,
   resolveOwnerLearningReviewForProfileMutation,
 } from "../services/owner-learning-resolution.js";
 import {
+  failFixtureOwnerLearningReview,
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
@@ -1726,14 +1723,16 @@ describe("owner learning worker durability", () => {
       ...validatedCheckpoint(),
       logicalCallCount: "1",
     } as unknown as OwnerLearningCheckpoint;
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "internal_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "internal_error",
       retryable: true,
-      logicalCallCount: 1,
-      checkpoint: incoherentCheckpoint,
-      checkpointHash: fingerprintOwnerLearningValue(incoherentCheckpoint),
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      reviewUpdates: {
+        logicalCallCount: 1,
+        checkpoint: incoherentCheckpoint,
+        checkpointHash: fingerprintOwnerLearningValue(incoherentCheckpoint),
+      },
+    });
 
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -1751,12 +1750,12 @@ describe("owner learning worker durability", () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "internal_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "internal_error",
       retryable: true,
-      promptVersion: "owner-learning-prompt-v1",
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      reviewUpdates: { promptVersion: "owner-learning-prompt-v1" },
+    });
 
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -1789,11 +1788,24 @@ describe("owner learning worker durability", () => {
       const db = await setupTestDB();
       const fixture = await insertPlayedOwnerLearningAgent(db);
       const reviewId = await startFixtureOwnerLearningReview(db, fixture);
-      await db.update(schema.agentLearningReviews).set({
-        analysisStatus: "failed",
-        safeFailureCode: failureCode,
+      let call: { id: string; ordinal: number; attemptOrdinal: number } | undefined;
+      if (failureCode === "invalid_structured_output") {
+        call = { id: `invalid-fixture-${reviewId}`, ordinal: 1, attemptOrdinal: 1 };
+        await db.insert(schema.agentLearningReviewCalls).values({
+          ...call,
+          reviewId,
+          state: "failed",
+          stage: "scanning_narratives",
+          inputPolicyHash: `sha256:${reviewId}`,
+          safeFailureCode: "invalid_result_contract",
+        });
+      }
+      await failFixtureOwnerLearningReview(db, {
+        reviewId,
+        failureCode,
         retryable: true,
-      }).where(eq(schema.agentLearningReviews.id, reviewId));
+        ...(call && { call, reviewUpdates: { logicalCallCount: 1 } }),
+      });
       const creditEventsBefore = (await db.select().from(schema.agentLearningEvents))
         .filter((event) => event.kind === "credit_consumed").length;
 
@@ -1952,37 +1964,19 @@ describe("owner learning worker durability", () => {
       estimatedCostMicrousd: 300,
       completedAt: "2026-08-04T03:00:00.000Z",
     });
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "drafting_recommendations",
-      executionPhase: "output_validation",
-      safeFailureCode: "invalid_structured_output",
+    const originalDiagnosticId = await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "invalid_structured_output",
       retryable: true,
-      logicalCallCount: 4,
-      diveCount: 2,
-      checkpoint,
-      checkpointHash: fingerprintOwnerLearningValue(checkpoint),
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
-    const originalEvidence = prepareOwnerLearningFailureEvidence({
-      reviewId,
-      phase: "output_validation",
-      diagnostic: {
-        diagnosticId: "original-fourth-attempt-diagnostic",
-        failureCode: "invalid_structured_output",
-        errorCode: "invalid_result_contract",
-      },
-      error: new OwnerLearningOutputValidationError(
-        "invalid_result_contract",
-        "The original fourth response was malformed",
-      ),
-      requestEvidence: { input: "ORIGINAL_REQUEST" },
-      responseEvidence: { output: "ORIGINAL_MALFORMED_RESPONSE" },
-      responseObservedAt: "2026-08-04T03:00:00.000Z",
-    });
-    await persistOwnerLearningFailureEvidence(db, {
-      reviewId,
       call: { id: failedAttemptId, ordinal: 4, attemptOrdinal: 1 },
-      prepared: originalEvidence,
+      responseEvidence: { output: "ORIGINAL_MALFORMED_RESPONSE" },
+      reviewUpdates: {
+        stage: "drafting_recommendations",
+        logicalCallCount: 4,
+        diveCount: 2,
+        checkpoint,
+        checkpointHash: fingerprintOwnerLearningValue(checkpoint),
+      },
     });
     const creditEventsBefore = (await db.select().from(schema.agentLearningEvents))
       .filter((event) => event.kind === "credit_consumed").length;
@@ -2074,7 +2068,7 @@ describe("owner learning worker durability", () => {
     });
     expect(providerInvocations).toBe(1);
     expect((await db.select().from(schema.agentLearningReviewFailureDiagnostics)
-      .where(eq(schema.agentLearningReviewFailureDiagnostics.id, originalEvidence.diagnostic.id))))
+      .where(eq(schema.agentLearningReviewFailureDiagnostics.id, originalDiagnosticId))))
       .toHaveLength(1);
     const finalReview = (await db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
@@ -2103,16 +2097,18 @@ describe("owner learning worker durability", () => {
       inputPolicyHash: "sha256:failed-first-attempt",
       safeFailureCode: "provider_error",
     });
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "scanning_narratives",
-      executionPhase: "provider_invocation",
-      safeFailureCode: "provider_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_error",
       retryable: true,
-      logicalCallCount: 1,
-      checkpoint: null,
-      checkpointHash: null,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      call: { id: failedAttemptId, ordinal: 1, attemptOrdinal: 1 },
+      reviewUpdates: {
+        stage: "scanning_narratives",
+        logicalCallCount: 1,
+        checkpoint: null,
+        checkpointHash: null,
+      },
+    });
 
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -2198,14 +2194,13 @@ describe("owner learning worker durability", () => {
         dispatchIntentAt: "2026-08-04T03:01:01.000Z",
       }],
     });
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "scanning_narratives",
-      executionPhase: "provider_invocation",
-      safeFailureCode: "worker_interrupted",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "worker_interrupted",
       retryable: true,
-      logicalCallCount: 1,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      call: { id: ambiguousAttemptId, ordinal: 1, attemptOrdinal: 1 },
+      reviewUpdates: { stage: "scanning_narratives", logicalCallCount: 1 },
+    });
 
     expect(await retryOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
@@ -2236,12 +2231,12 @@ describe("owner learning worker durability", () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "provider_timeout",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_timeout",
       retryable: true,
-      logicalCallCount: 1,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      reviewUpdates: { logicalCallCount: 1 },
+    });
 
     const [retry, resolve] = await Promise.allSettled([
       retryOwnerLearningReview(db, {
