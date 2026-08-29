@@ -33,6 +33,7 @@ const TEST_CONFIG: GameConfig = {
   maxRounds: 1,
   minPlayers: 5,
   maxPlayers: 12,
+  formatManifest: ["vote_bomb"],
 };
 
 class CountingHouseInterviewer extends TemplateHouseInterviewer {

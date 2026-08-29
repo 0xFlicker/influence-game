@@ -536,6 +536,12 @@ export {
   displayNameForFormat,
 } from "./formats";
 export {
+  projectTwoNamesRound,
+  validateTwoNamesCanonicalPrefixes,
+  type TwoNamesLifecycleStage,
+  type TwoNamesRoundProjection,
+} from "./formats/two-names-events";
+export {
   FORMAT_PRESENTATION_METADATA,
   formatPresentationMetadata,
 } from "./format-presentation-metadata";

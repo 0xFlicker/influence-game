@@ -983,11 +983,34 @@ export type FormatDecisionFallbackReason =
   | "invalid_restricted_history_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
-  | "invalid_format_tiebreak_target";
+  | "invalid_format_tiebreak_target"
+  | "invalid_two_names_initial_names"
+  | "invalid_two_names_override"
+  | "invalid_two_names_replacement"
+  | "invalid_two_names_ballot"
+  | "invalid_two_names_tiebreak";
 
 export type FormatDecisionProvenance =
   | { decisionSource: "llm"; fallbackReason: null }
   | { decisionSource: "fallback"; fallbackReason: FormatDecisionFallbackReason };
+
+export type TwoNamesDecisionMetadata = FormatDecisionProvenance
+  & StrategicDecisionMetadata
+  & { thinking?: string; reasoningContext?: string };
+
+export type TwoNamesInitialNamesDecision = TwoNamesDecisionMetadata & {
+  firstNomineeId: UUID;
+  secondNomineeId: UUID;
+};
+
+export type TwoNamesOverrideDecision = TwoNamesDecisionMetadata & (
+  | { action: "decline"; removedNomineeId: null }
+  | { action: "use"; removedNomineeId: UUID }
+);
+
+export type TwoNamesTargetDecision = TwoNamesDecisionMetadata & {
+  targetId: UUID;
+};
 
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
@@ -1149,6 +1172,31 @@ export interface IAgent {
     context: PhaseContext,
     legalTargetIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getTwoNamesInitialNames?(
+    context: PhaseContext,
+    legalNomineeIds: UUID[],
+  ): Promise<TwoNamesInitialNamesDecision>;
+  getTwoNamesOverride?(
+    context: PhaseContext,
+    initialNomineeIds: [UUID, UUID],
+  ): Promise<TwoNamesOverrideDecision>;
+  getTwoNamesReplacement?(
+    context: PhaseContext,
+    legalReplacementIds: UUID[],
+  ): Promise<TwoNamesTargetDecision>;
+  getTwoNamesBallot?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision>;
+  breakTwoNamesTie?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision>;
+  getTwoNamesPlea?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+    options?: AgentCallOptions,
+  ): Promise<AgentResponse>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },

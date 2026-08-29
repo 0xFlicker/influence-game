@@ -55,6 +55,14 @@ export const FORMAT_PRESENTATION_METADATA = {
     ruleSheet:
       "Each remaining contestant casts one sealed EXIT vote for someone still competing whom they have not selected in an earlier round. SAVE ballots do not consume target history. A contestant with no legal target forfeits their ballot. The highest vote total exits the game; the Empowered contestant breaks highest-total ties. This format is unavailable in rounds 1 and 2.",
   },
+  two_names: {
+    id: "two_names",
+    displayName: "Two Names",
+    conciseRules:
+      "Empowered names two contestants. A random Override holder may replace one name, then eligible contestants vote between the final pair. Empowered breaks a tie.",
+    ruleSheet:
+      "Empowered names two distinct living contestants, then the House draws one living Override holder. After the first Mingle, the holder may leave the names unchanged or remove one nominee; if used, Empowered names a legal replacement and a second Mingle follows. The two final nominees make ordered public pleas. Every living contestant except Empowered and the final nominees casts one sealed ballot for a final nominee. The higher total exits; Empowered chooses between the final nominees on an exact tie.",
+  },
 } as const;
 
 export type LaunchFormatId = keyof typeof FORMAT_PRESENTATION_METADATA;
@@ -69,6 +77,7 @@ export const LAUNCH_FORMAT_IDS: readonly LaunchFormatId[] = [
   "majority_elimination",
   "even_votes",
   "restricted_history",
+  "two_names",
 ] as const;
 
 export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
@@ -81,6 +90,7 @@ export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
     FORMAT_PRESENTATION_METADATA.majority_elimination.displayName,
   even_votes: FORMAT_PRESENTATION_METADATA.even_votes.displayName,
   restricted_history: FORMAT_PRESENTATION_METADATA.restricted_history.displayName,
+  two_names: FORMAT_PRESENTATION_METADATA.two_names.displayName,
 };
 
 export function isLaunchFormatId(value: string): value is LaunchFormatId {

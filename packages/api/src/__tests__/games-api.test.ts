@@ -765,6 +765,7 @@ describe("Game REST API", () => {
         "majority_elimination",
         "even_votes",
         "restricted_history",
+        "two_names",
       ]);
     });
 

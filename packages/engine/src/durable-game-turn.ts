@@ -161,6 +161,22 @@ export interface FormatProgressV1 {
   tiedPlayerIds: string[];
 }
 
+export type TwoNamesProgressStageV1 =
+  | "setup"
+  | "initial_mingle"
+  | "override"
+  | "final_mingle"
+  | "plea"
+  | "ballots"
+  | "tiebreak"
+  | "resolve";
+
+export interface TwoNamesProgressV1 {
+  version: 1;
+  stage: TwoNamesProgressStageV1;
+  pleaIndex: 0 | 1 | 2;
+}
+
 export type DiaryInterviewRoleV1 = "player" | "juror" | "finalist";
 export type DiaryInterviewStatusV1 =
   | "question"
@@ -206,6 +222,7 @@ export type GameExecutionCursorV1 =
   | { version: 1; kind: "alliance"; progress: AllianceProgressV1 }
   | { version: 1; kind: "huddle"; progress: HuddleProgressV1 }
   | { version: 1; kind: "format"; progress: FormatProgressV1 }
+  | { version: 1; kind: "two_names"; progress: TwoNamesProgressV1 }
   | { version: 1; kind: "diary"; progress: DiaryProgressV1 }
   | { version: 1; kind: "rules"; operation: RulesOperationV1 }
   | { version: 1; kind: "house"; operation: HouseOperationV1 }
@@ -613,6 +630,10 @@ function validateCursor(value: unknown): string[] {
       if (!exactRecord(value, ["version", "kind", "progress"])) return ["format cursor fields are not exact"];
       errors.push(...validateFormatProgress(value.progress));
       break;
+    case "two_names":
+      if (!exactRecord(value, ["version", "kind", "progress"])) return ["Two Names cursor fields are not exact"];
+      errors.push(...validateTwoNamesProgress(value.progress));
+      break;
     case "diary":
       if (!exactRecord(value, ["version", "kind", "progress"])) return ["diary cursor fields are not exact"];
       errors.push(...validateDiaryProgress(value.progress));
@@ -771,6 +792,28 @@ function validateFormatProgress(value: unknown): string[] {
       validateBoundedUniqueStrings(value.safetyBounce.safePlayerIds, "format safetyBounce safePlayerIds", errors);
       validateBoundedUniqueStrings(value.safetyBounce.vulnerablePlayerIds, "format safetyBounce vulnerablePlayerIds", errors);
     }
+  }
+  return errors;
+}
+
+function validateTwoNamesProgress(value: unknown): string[] {
+  if (!exactRecord(value, ["version", "stage", "pleaIndex"])) {
+    return ["Two Names progress fields are not exact"];
+  }
+  const errors: string[] = [];
+  if (value.version !== 1) errors.push("Two Names progress version must be 1");
+  if (
+    value.stage !== "setup"
+    && value.stage !== "initial_mingle"
+    && value.stage !== "override"
+    && value.stage !== "final_mingle"
+    && value.stage !== "plea"
+    && value.stage !== "ballots"
+    && value.stage !== "tiebreak"
+    && value.stage !== "resolve"
+  ) errors.push("Two Names progress stage is invalid");
+  if (value.pleaIndex !== 0 && value.pleaIndex !== 1 && value.pleaIndex !== 2) {
+    errors.push("Two Names pleaIndex must be 0, 1, or 2");
   }
   return errors;
 }

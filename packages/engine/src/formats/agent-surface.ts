@@ -66,6 +66,109 @@ export interface SealedElimToolCallRequest {
   traceAction: string;
 }
 
+export type TwoNamesTargetAction = "replacement" | "ballot" | "tiebreak";
+
+function exactTool(
+  name: string,
+  description: string,
+  properties: Record<string, unknown>,
+  required: readonly string[],
+): ChatCompletionTool {
+  return {
+    type: "function",
+    function: {
+      name,
+      description,
+      parameters: {
+        type: "object",
+        properties: {
+          ...STRATEGIC_THINKING_TOOL_PROPERTIES,
+          ...properties,
+          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        },
+        required: ["thinking", ...required, ...STRATEGIC_DECISION_REQUIRED],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+  };
+}
+
+export function buildTwoNamesInitialNamesTool(
+  legalNomineeNames: readonly string[],
+): ChatCompletionTool {
+  return exactTool(
+    "two_names_initial_names",
+    "Name two distinct legal contestants for the Two Names round.",
+    {
+      first: {
+        type: "string",
+        enum: [...legalNomineeNames],
+        description: "The first nominee revealed to the room.",
+      },
+      second: {
+        type: "string",
+        enum: [...legalNomineeNames],
+        description: "The second, distinct nominee revealed to the room.",
+      },
+    },
+    ["first", "second"],
+  );
+}
+
+export function buildTwoNamesOverrideTool(
+  initialNomineeNames: readonly [string, string],
+): ChatCompletionTool {
+  return exactTool(
+    "two_names_override",
+    "Decline Override or remove exactly one current nominee.",
+    {
+      useOverride: {
+        type: "boolean",
+        description: "True to remove one nominee; false to leave both names unchanged.",
+      },
+      removed: {
+        type: ["string", "null"],
+        enum: [...initialNomineeNames, null],
+        description: "The removed nominee when useOverride is true; otherwise null.",
+      },
+    },
+    ["useOverride", "removed"],
+  );
+}
+
+export function buildTwoNamesTargetTool(
+  action: TwoNamesTargetAction,
+  legalTargetNames: readonly string[],
+): ChatCompletionTool {
+  const config = {
+    replacement: {
+      name: "two_names_replacement",
+      description: "Choose one legal replacement nominee.",
+    },
+    ballot: {
+      name: "two_names_ballot",
+      description: "Cast one sealed exit ballot for a final nominee.",
+    },
+    tiebreak: {
+      name: "two_names_tiebreak",
+      description: "Break the tied vote by eliminating one final nominee.",
+    },
+  } as const;
+  return exactTool(
+    config[action].name,
+    config[action].description,
+    {
+      target: {
+        type: "string",
+        enum: [...legalTargetNames],
+        description: "One player from the exact legal choice list.",
+      },
+    },
+    ["target"],
+  );
+}
+
 export interface RunSealedElimTargetDecisionInput {
   formatId: SealedElimFormatId;
   selfId: UUID;

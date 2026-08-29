@@ -2223,6 +2223,103 @@ export class GameState {
     });
   }
 
+  recordTwoNamesSetup(
+    setup: {
+      empoweredId: UUID;
+      initialNomineeIds: [UUID, UUID];
+      overrideHolderId: UUID;
+    },
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_setup", {
+      empoweredId: setup.empoweredId,
+      initialNomineeIds: [...setup.initialNomineeIds],
+      overrideHolderId: setup.overrideHolderId,
+    }, {
+      phase: Phase.FORMAT_PICK,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
+  recordTwoNamesMingleCompleted(
+    window: "initial_names" | "final_names",
+    finalistPlayerIds: [UUID, UUID],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_mingle_completed", {
+      window,
+      finalistPlayerIds: [...finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+    });
+  }
+
+  recordTwoNamesOverrideDeclined(
+    overrideHolderId: UUID,
+    finalistPlayerIds: [UUID, UUID],
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_override_declined", {
+      overrideHolderId,
+      finalistPlayerIds: [...finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
+  /** Durable callers commit both returned events in one logical turn. */
+  recordTwoNamesOverrideUsed(
+    transition: {
+      overrideHolderId: UUID;
+      removedNomineeId: UUID;
+      empoweredId: UUID;
+      replacementNomineeId: UUID;
+      finalistPlayerIds: [UUID, UUID];
+    },
+    pointers: {
+      override: CanonicalSourcePointer[];
+      replacement: CanonicalSourcePointer[];
+    },
+  ): void {
+    this.appendCanonicalEvent("format.two_names_override_used", {
+      overrideHolderId: transition.overrideHolderId,
+      removedNomineeId: transition.removedNomineeId,
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers: pointers.override,
+    });
+    this.appendCanonicalEvent("format.two_names_replacement_named", {
+      empoweredId: transition.empoweredId,
+      replacementNomineeId: transition.replacementNomineeId,
+      finalistPlayerIds: [...transition.finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers: pointers.replacement,
+    });
+  }
+
+  recordTwoNamesPlea(
+    plea: {
+      speakerId: UUID;
+      ordinal: 0 | 1;
+      status: "accepted" | "absent";
+      text: string | null;
+      absenceReason: "provider_unavailable" | null;
+    },
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_plea_recorded", { ...plea }, {
+      phase: Phase.FORMAT_RESOLVE,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
   /**
    * Raw producer envelope for an accepted format ballot. Viewer surfaces project
    * its sanitized voter-to-target fact; source pointers remain producer-only.
@@ -2312,13 +2409,25 @@ export class GameState {
               savesReceived: { ...resolution.aggregate.savesReceived },
               eliminateReceived: { ...resolution.aggregate.eliminateReceived },
             }
-          : {
-              capability: "public_chain" as const,
-              starterId: resolution.aggregate.starterId,
-              safePlayerIds: [...resolution.aggregate.safePlayerIds],
-              vulnerablePlayerIds: [...resolution.aggregate.vulnerablePlayerIds],
-              voteTotals: { ...resolution.aggregate.voteTotals },
-            },
+          : resolution.aggregate.capability === "two_names"
+            ? {
+                capability: "two_names" as const,
+                initialNomineeIds: [...resolution.aggregate.initialNomineeIds],
+                overrideHolderId: resolution.aggregate.overrideHolderId,
+                overrideAction: resolution.aggregate.overrideAction,
+                removedNomineeId: resolution.aggregate.removedNomineeId,
+                replacementNomineeId: resolution.aggregate.replacementNomineeId,
+                finalistPlayerIds: [...resolution.aggregate.finalistPlayerIds],
+                eligibleVoterIds: [...resolution.aggregate.eligibleVoterIds],
+                totals: { ...resolution.aggregate.totals },
+              }
+            : {
+                capability: "public_chain" as const,
+                starterId: resolution.aggregate.starterId,
+                safePlayerIds: [...resolution.aggregate.safePlayerIds],
+                vulnerablePlayerIds: [...resolution.aggregate.vulnerablePlayerIds],
+                voteTotals: { ...resolution.aggregate.voteTotals },
+              },
     }, {
       phase: Phase.FORMAT_RESOLVE,
       visibility: "public",

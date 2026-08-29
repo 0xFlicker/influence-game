@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision } from "../game-runner";
+import type { AgentResponse, AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision, TwoNamesInitialNamesDecision, TwoNamesOverrideDecision, TwoNamesTargetDecision } from "../game-runner";
 import type { CompactStrategyCandidate, CompactStrategyDecisionBoundary, FormatDecisionProvenance } from "../game-runner.types";
 import type { LaunchFormatId } from "../formats";
 import {
@@ -399,6 +399,85 @@ export class MockAgent implements IAgent {
       decisionSource: "llm",
       fallbackReason: null,
     };
+  }
+
+  async getTwoNamesInitialNames(
+    _ctx: PhaseContext,
+    legalNomineeIds: UUID[],
+  ): Promise<TwoNamesInitialNamesDecision> {
+    const firstNomineeId = legalNomineeIds[0] ?? this.id;
+    const secondNomineeId = legalNomineeIds.find((id) => id !== firstNomineeId) ?? this.id;
+    return {
+      firstNomineeId,
+      secondNomineeId,
+      thinking: "mock: nominate the first two legal players",
+      strategyDelta: this.strategyDelta("two names initial nominees"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
+  async getTwoNamesOverride(
+    _ctx: PhaseContext,
+    _initialNomineeIds: [UUID, UUID],
+  ): Promise<TwoNamesOverrideDecision> {
+    return {
+      action: "decline",
+      removedNomineeId: null,
+      thinking: "mock: decline Override",
+      strategyDelta: this.strategyDelta("two names override"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
+  async getTwoNamesReplacement(
+    _ctx: PhaseContext,
+    legalReplacementIds: UUID[],
+  ): Promise<TwoNamesTargetDecision> {
+    return {
+      targetId: legalReplacementIds[0] ?? this.id,
+      thinking: "mock: use the first legal replacement",
+      strategyDelta: this.strategyDelta("two names replacement"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
+  async getTwoNamesBallot(
+    _ctx: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision> {
+    return {
+      targetId: finalistIds[0],
+      thinking: "mock: vote for the first finalist",
+      strategyDelta: this.strategyDelta("two names ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
+  async breakTwoNamesTie(
+    _ctx: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision> {
+    return {
+      targetId: finalistIds[0],
+      thinking: "mock: break the tie against the first finalist",
+      strategyDelta: this.strategyDelta("two names tiebreak"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
+  async getTwoNamesPlea(
+    _ctx: PhaseContext,
+    _finalistIds: [UUID, UUID],
+  ): Promise<AgentResponse> {
+    return respond(
+      `${this.name} asks the room to keep them in the game.`,
+      "mock: make a Two Names plea",
+    );
   }
 
   async getBouncePointer(

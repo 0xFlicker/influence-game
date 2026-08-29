@@ -88,6 +88,12 @@ export type CanonicalGameEventType =
   | "vote.empowered_set"
   | "format.menu_offered"
   | "format.selected"
+  | "format.two_names_setup"
+  | "format.two_names_mingle_completed"
+  | "format.two_names_override_declined"
+  | "format.two_names_override_used"
+  | "format.two_names_replacement_named"
+  | "format.two_names_plea_recorded"
   | "format.ballot_cast"
   | "format.ballot_forfeited"
   | "format.safety_bounce_started"
@@ -144,6 +150,36 @@ export const ACCEPTED_ACTION_REGISTRY = {
     actorPayloadPath: "empoweredId",
     cardinality: "one_to_one",
   },
+  "format.two_names_setup": {
+    sourceActions: ["format-two-names-initial-names"],
+    traceActions: ["format-two-names-initial-names"],
+    actorPayloadPath: "empoweredId",
+    cardinality: "one_to_one",
+  },
+  "format.two_names_override_declined": {
+    sourceActions: ["format-two-names-override"],
+    traceActions: ["format-two-names-override"],
+    actorPayloadPath: "overrideHolderId",
+    cardinality: "one_to_one",
+  },
+  "format.two_names_override_used": {
+    sourceActions: ["format-two-names-override"],
+    traceActions: ["format-two-names-override"],
+    actorPayloadPath: "overrideHolderId",
+    cardinality: "one_to_one",
+  },
+  "format.two_names_replacement_named": {
+    sourceActions: ["format-two-names-replacement"],
+    traceActions: ["format-two-names-replacement"],
+    actorPayloadPath: "empoweredId",
+    cardinality: "one_to_one",
+  },
+  "format.two_names_plea_recorded": {
+    sourceActions: ["format-two-names-plea"],
+    traceActions: ["format-two-names-plea"],
+    actorPayloadPath: "speakerId",
+    cardinality: "one_to_one",
+  },
   "format.ballot_cast": {
     sourceActions: [
       "format-save-or-eliminate-ballot",
@@ -152,6 +188,7 @@ export const ACCEPTED_ACTION_REGISTRY = {
       "format-even-votes-ballot",
       "format-restricted-history-ballot",
       "format-safety-bounce-vote",
+      "format-two-names-ballot",
     ],
     traceActions: [
       "format-save-or-eliminate-ballot",
@@ -160,6 +197,7 @@ export const ACCEPTED_ACTION_REGISTRY = {
       "format-even-votes-ballot",
       "format-restricted-history-ballot",
       "format-safety-bounce-vote",
+      "format-two-names-ballot",
     ],
     actorPayloadPath: "voterId",
     cardinality: "one_to_one",
@@ -171,8 +209,8 @@ export const ACCEPTED_ACTION_REGISTRY = {
     cardinality: "one_to_one",
   },
   "format.resolved": {
-    sourceActions: ["format-tiebreak"],
-    traceActions: ["format-tiebreak"],
+    sourceActions: ["format-tiebreak", "format-two-names-tiebreak"],
+    traceActions: ["format-tiebreak", "format-two-names-tiebreak"],
     actorPayloadPath: "tiebreakerId",
     cardinality: "one_to_one",
   },
@@ -348,6 +386,12 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "vote.empowered_set",
   "format.menu_offered",
   "format.selected",
+  "format.two_names_setup",
+  "format.two_names_mingle_completed",
+  "format.two_names_override_declined",
+  "format.two_names_override_used",
+  "format.two_names_replacement_named",
+  "format.two_names_plea_recorded",
   "format.ballot_cast",
   "format.ballot_forfeited",
   "format.safety_bounce_started",
@@ -458,6 +502,17 @@ export type FormatResolutionAggregate =
       safePlayerIds: UUID[];
       vulnerablePlayerIds: UUID[];
       voteTotals: Record<UUID, number>;
+    }
+  | {
+      capability: "two_names";
+      initialNomineeIds: [UUID, UUID];
+      overrideHolderId: UUID;
+      overrideAction: "declined" | "used";
+      removedNomineeId: UUID | null;
+      replacementNomineeId: UUID | null;
+      finalistPlayerIds: [UUID, UUID];
+      eligibleVoterIds: UUID[];
+      totals: Record<UUID, number>;
     };
 
 /** Version-2 format resolution. Aggregate shape is selected by catalog capability. */
@@ -488,6 +543,43 @@ export type FormatBallotForfeitedPayload = {
   formatId: "restricted_history";
   voterId: UUID;
   reason: "history_exhausted";
+};
+
+export type TwoNamesMingleWindow = "initial_names" | "final_names";
+
+export type TwoNamesSetupPayload = {
+  empoweredId: UUID;
+  initialNomineeIds: [UUID, UUID];
+  overrideHolderId: UUID;
+};
+
+export type TwoNamesMingleCompletedPayload = {
+  window: TwoNamesMingleWindow;
+  finalistPlayerIds: [UUID, UUID];
+};
+
+export type TwoNamesOverrideDeclinedPayload = {
+  overrideHolderId: UUID;
+  finalistPlayerIds: [UUID, UUID];
+};
+
+export type TwoNamesOverrideUsedPayload = {
+  overrideHolderId: UUID;
+  removedNomineeId: UUID;
+};
+
+export type TwoNamesReplacementNamedPayload = {
+  empoweredId: UUID;
+  replacementNomineeId: UUID;
+  finalistPlayerIds: [UUID, UUID];
+};
+
+export type TwoNamesPleaRecordedPayload = {
+  speakerId: UUID;
+  ordinal: 0 | 1;
+  status: "accepted" | "absent";
+  text: string | null;
+  absenceReason: "provider_unavailable" | null;
 };
 
 export type CanonicalGameEvent =
@@ -547,6 +639,12 @@ export type CanonicalGameEvent =
       "format.selected",
       { empoweredId: UUID; formatId: LaunchFormatId }
     >
+  | CanonicalEventEnvelope<"format.two_names_setup", TwoNamesSetupPayload>
+  | CanonicalEventEnvelope<"format.two_names_mingle_completed", TwoNamesMingleCompletedPayload>
+  | CanonicalEventEnvelope<"format.two_names_override_declined", TwoNamesOverrideDeclinedPayload>
+  | CanonicalEventEnvelope<"format.two_names_override_used", TwoNamesOverrideUsedPayload>
+  | CanonicalEventEnvelope<"format.two_names_replacement_named", TwoNamesReplacementNamedPayload>
+  | CanonicalEventEnvelope<"format.two_names_plea_recorded", TwoNamesPleaRecordedPayload>
   | CanonicalEventEnvelope<"format.ballot_cast", FormatBallotPayload>
   | CanonicalEventEnvelope<"format.ballot_forfeited", FormatBallotForfeitedPayload>
   | CanonicalEventEnvelope<"format.safety_bounce_started", { starterId: UUID }>
@@ -1031,6 +1129,99 @@ function validateFormatResolutionV2(payload: unknown): string[] {
   ) {
     return ["format.resolved v2 public_chain aggregate requires starterId, classifications, and voteTotals"];
   }
+  if (aggregate.capability === "two_names") {
+    if (
+      !Array.isArray(aggregate.initialNomineeIds)
+      || aggregate.initialNomineeIds.length !== 2
+      || !aggregate.initialNomineeIds.every(isNonEmptyString)
+      || new Set(aggregate.initialNomineeIds).size !== 2
+      || !isNonEmptyString(aggregate.overrideHolderId)
+      || (aggregate.overrideAction !== "declined" && aggregate.overrideAction !== "used")
+      || !Array.isArray(aggregate.finalistPlayerIds)
+      || aggregate.finalistPlayerIds.length !== 2
+      || !aggregate.finalistPlayerIds.every(isNonEmptyString)
+      || new Set(aggregate.finalistPlayerIds).size !== 2
+      || !isStringArray(aggregate.eligibleVoterIds)
+      || new Set(aggregate.eligibleVoterIds).size !== aggregate.eligibleVoterIds.length
+      || !isRecord(aggregate.totals)
+    ) {
+      return ["format.resolved v2 two_names aggregate has an invalid lifecycle shape"];
+    }
+    const used = aggregate.overrideAction === "used";
+    if (
+      (used && (!isNonEmptyString(aggregate.removedNomineeId) || !isNonEmptyString(aggregate.replacementNomineeId)))
+      || (!used && (aggregate.removedNomineeId !== null || aggregate.replacementNomineeId !== null))
+    ) {
+      return ["format.resolved v2 two_names Override fields are inconsistent"];
+    }
+    const finalistIds = aggregate.finalistPlayerIds as string[];
+    const eligibleVoterIds = aggregate.eligibleVoterIds as string[];
+    const totals = aggregate.totals as Record<string, unknown>;
+    if (
+      !isNonEmptyString(payload.eliminatedId)
+      || !isNonEmptyString(payload.empoweredId)
+      || !finalistIds.includes(payload.eliminatedId)
+      || eligibleVoterIds.includes(payload.empoweredId)
+      || finalistIds.some((id) => eligibleVoterIds.includes(id))
+      || Object.keys(totals).some((id) => !finalistIds.includes(id))
+      || finalistIds.some((id) => !Number.isInteger(totals[id]) || Number(totals[id]) < 0)
+    ) {
+      return ["format.resolved v2 two_names aggregate contradicts its roles, finalists, or totals"];
+    }
+  }
+  return [];
+}
+
+function validateTwoNamesEventPayload(type: string, payload: unknown): string[] {
+  if (!isRecord(payload)) return [`${type} payload must be an object`];
+  const pair = (value: unknown): value is [string, string] =>
+    Array.isArray(value)
+    && value.length === 2
+    && value.every(isNonEmptyString)
+    && new Set(value).size === 2;
+  if (type === "format.two_names_setup") {
+    return isNonEmptyString(payload.empoweredId)
+      && pair(payload.initialNomineeIds)
+      && isNonEmptyString(payload.overrideHolderId)
+      ? []
+      : ["format.two_names_setup requires empoweredId, two distinct nominees, and overrideHolderId"];
+  }
+  if (type === "format.two_names_mingle_completed") {
+    return (payload.window === "initial_names" || payload.window === "final_names")
+      && pair(payload.finalistPlayerIds)
+      ? []
+      : ["format.two_names_mingle_completed requires a valid window and finalist pair"];
+  }
+  if (type === "format.two_names_override_declined") {
+    return isNonEmptyString(payload.overrideHolderId) && pair(payload.finalistPlayerIds)
+      ? []
+      : ["format.two_names_override_declined requires holder and finalist pair"];
+  }
+  if (type === "format.two_names_override_used") {
+    return isNonEmptyString(payload.overrideHolderId) && isNonEmptyString(payload.removedNomineeId)
+      ? []
+      : ["format.two_names_override_used requires holder and removed nominee"];
+  }
+  if (type === "format.two_names_replacement_named") {
+    return isNonEmptyString(payload.empoweredId)
+      && isNonEmptyString(payload.replacementNomineeId)
+      && pair(payload.finalistPlayerIds)
+      ? []
+      : ["format.two_names_replacement_named requires empowered, replacement, and finalist pair"];
+  }
+  if (type === "format.two_names_plea_recorded") {
+    const accepted = payload.status === "accepted"
+      && isNonEmptyString(payload.text)
+      && payload.absenceReason === null;
+    const absent = payload.status === "absent"
+      && payload.text === null
+      && payload.absenceReason === "provider_unavailable";
+    return isNonEmptyString(payload.speakerId)
+      && (payload.ordinal === 0 || payload.ordinal === 1)
+      && (accepted || absent)
+      ? []
+      : ["format.two_names_plea_recorded has inconsistent speech status"];
+  }
   return [];
 }
 
@@ -1092,6 +1283,8 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
         ? validateHuddleOutcomeV1(value.payload)
         : validateHuddleOutcomeV2(value.payload)),
     );
+  } else if (typeof value.type === "string" && value.type.startsWith("format.two_names_")) {
+    errors.push(...validateTwoNamesEventPayload(value.type, value.payload));
   }
   if (!Array.isArray(value.sourcePointers) || !value.sourcePointers.every(isSourcePointer)) {
     errors.push("sourcePointers must be an array of source pointer records");

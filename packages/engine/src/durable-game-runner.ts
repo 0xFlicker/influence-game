@@ -60,6 +60,12 @@ const STAGED_AGENT_METHODS = new Set<PropertyKey>([
   "getMajorityEliminationBallot",
   "getEvenVotesBallot",
   "getRestrictedHistoryBallot",
+  "getTwoNamesInitialNames",
+  "getTwoNamesOverride",
+  "getTwoNamesReplacement",
+  "getTwoNamesBallot",
+  "breakTwoNamesTie",
+  "getTwoNamesPlea",
   "getBouncePointer",
   "getSafetyBounceVote",
   "breakFormatEliminationTie",
@@ -159,7 +165,7 @@ export function capturePlayerContinuity(
 function stagedAgent(
   agent: IAgent,
   initial: PlayerContinuityCapsule | null,
-  providerBinding: GameTurnIntentV1["providerSubcalls"][number] | null,
+  providerBindings: readonly GameTurnIntentV1["providerSubcalls"][number][],
   acceptedProviderCallIds: Set<string>,
 ): { agent: IAgent; readCapsule: () => PlayerContinuityCapsule | null } {
   let capsule = initial ? structuredClone(initial) : null;
@@ -219,6 +225,7 @@ function stagedAgent(
       });
     }
   }
+  let providerBindingIndex = 0;
   let proxy: IAgent;
   proxy = new Proxy(agent, {
     get(target, property) {
@@ -227,12 +234,23 @@ function stagedAgent(
       const value: unknown = Reflect.get(target, property);
       if (typeof value !== "function") return value;
       if (!STAGED_AGENT_METHODS.has(property)) return value.bind(target);
-      return (...args: unknown[]) => Promise.resolve(Reflect.apply(value, proxy, args)).then((result: unknown) => {
-        if (providerBinding && providerResultWasAccepted(result)) {
-          acceptedProviderCallIds.add(providerBinding.logicalCallId);
-        }
-        return result;
-      });
+      return (...args: unknown[]) => {
+        const providerBinding = providerBindings[providerBindingIndex++] ?? null;
+        target.setDurableProviderTurnBinding?.(providerBinding ? {
+          turnId: providerBinding.logicalCallId.slice(
+            0,
+            providerBinding.logicalCallId.lastIndexOf(":provider:"),
+          ),
+          subcallSlot: providerBinding.slot,
+          logicalCallId: providerBinding.logicalCallId,
+        } : null);
+        return Promise.resolve(Reflect.apply(value, proxy, args)).then((result: unknown) => {
+          if (providerBinding && providerResultWasAccepted(result)) {
+            acceptedProviderCallIds.add(providerBinding.logicalCallId);
+          }
+          return result;
+        });
+      };
     },
   });
   return {
@@ -251,9 +269,13 @@ export function createStagedAgents(
   readAcceptedProviderCallIds: () => string[];
 } {
   const capsules = new Map(continuity.map((entry) => [entry.playerId, entry]));
-  const providerBindingByActor = new Map(
-    providerSubcalls.flatMap((entry) => entry.actorId ? [[entry.actorId, entry] as const] : []),
-  );
+  const providerBindingsByActor = new Map<string, GameTurnIntentV1["providerSubcalls"][number][]>();
+  for (const entry of providerSubcalls) {
+    if (!entry.actorId) continue;
+    const bindings = providerBindingsByActor.get(entry.actorId) ?? [];
+    bindings.push(entry);
+    providerBindingsByActor.set(entry.actorId, bindings);
+  }
   const acceptedProviderCallIds = new Set<string>();
   const readers: Array<() => PlayerContinuityCapsule | null> = [];
   const staged = new Map<UUID, IAgent>();
@@ -261,7 +283,7 @@ export function createStagedAgents(
     const wrapped = stagedAgent(
       agent,
       capsules.get(id) ?? null,
-      providerBindingByActor.get(id) ?? null,
+      providerBindingsByActor.get(id) ?? [],
       acceptedProviderCallIds,
     );
     staged.set(id, wrapped.agent);

@@ -10,9 +10,24 @@ export type {
   SealedElimAggregate,
   SealedElimBallot,
   SealedElimScore,
+  TwoNamesBallot,
+  TwoNamesPair,
+  TwoNamesScore,
   VoteBombBallot,
 } from "./types";
 export { displayNameForFormat, LAUNCH_FORMAT_DISPLAY_NAMES, LAUNCH_FORMAT_IDS } from "./types";
+
+export {
+  computeTwoNamesTallies,
+  isLegalTwoNamesBallot,
+  isLegalTwoNamesInitialPair,
+  resolveTwoNames,
+  twoNamesOrdinaryVoterIds,
+  twoNamesOverrideCandidates,
+  twoNamesRemovalChoices,
+  twoNamesReplacementCandidates,
+  type TwoNamesReplacementInput,
+} from "./two-names";
 
 export {
   buildFormatMenu,
@@ -62,7 +77,7 @@ export {
   DEFAULT_FORMAT_MANIFEST,
   LEGACY_FORMAT_MANIFEST,
   FORMAT_CATALOG,
-  formatsAvailableInRound,
+  formatsAvailableForSelection,
   getFormatRegistration,
   isRegisteredFormatId,
   resolveFormatManifest,
@@ -70,6 +85,7 @@ export {
   type FormatCatalog,
   type FormatRegistration,
   type FormatRegistrationFor,
+  type FormatSelectionContext,
   type PublicChainRegistration,
   type SealedElimAggregateAdapter,
   type SealedElimDecisionContract,
@@ -77,6 +93,7 @@ export {
   type SealedElimPresentationContract,
   type SealedElimRegistration,
   type SealedPolarityRegistration,
+  type TwoNamesRegistration,
 } from "./catalog";
 
 export {

@@ -4,7 +4,7 @@ import type {
   ViewerDecisionEvent,
 } from "@/lib/api";
 import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
-import { formatsAvailableInRound } from "@influence/engine/format-rules";
+import { formatsAvailableForSelection } from "@influence/engine/format-rules";
 import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 import type {
   FormatPresentationBallot,
@@ -419,7 +419,10 @@ function applyDecision(input: {
       if (
         formatManifest
         && !decision.payload.offeredFormatIds.every((formatId) =>
-          formatsAvailableInRound(formatManifest, decision.round).includes(formatId)
+          formatsAvailableForSelection(formatManifest, {
+            round: decision.round,
+            livingIds: eligiblePlayerIds,
+          }).includes(formatId)
         )
       ) {
         return incomplete(
@@ -462,7 +465,10 @@ function applyDecision(input: {
     }
     case "format.selected": {
       const availableFormats = formatManifest
-        ? formatsAvailableInRound(formatManifest, decision.round)
+        ? formatsAvailableForSelection(formatManifest, {
+            round: decision.round,
+            livingIds: eligiblePlayerIds,
+          })
         : [];
       const automaticSelection = !snapshot.offeredFormatIds
         && availableFormats.length === 1
@@ -528,6 +534,240 @@ function applyDecision(input: {
         key: cueKey(gameId, decision.sequence, "selected-rules"),
         stage: "rules_reveal",
         baseDurationMs: FIXED_CUE_DURATION_MS.format_selected / 2,
+      });
+      break;
+    }
+    case "format.two_names_setup": {
+      if (
+        snapshot.activeFormatId !== "two_names"
+        || snapshot.empoweredId !== decision.payload.empoweredId
+        || decision.payload.initialNomineeIds[0] === decision.payload.initialNomineeIds[1]
+        || decision.payload.initialNomineeIds.includes(decision.payload.empoweredId)
+        || !eligiblePlayerSet.has(decision.payload.overrideHolderId)
+        || !decision.payload.initialNomineeIds.every((id) => eligiblePlayerSet.has(id))
+        || snapshot.twoNames
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "format_mismatch",
+          decision.sequence,
+          "Two Names setup does not match the trusted selection and living roster.",
+        );
+      }
+      let cueBefore = cloneSnapshot(snapshot);
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: {
+          empoweredId: decision.payload.empoweredId,
+          initialNomineeIds: null,
+          overrideHolderId: null,
+          overrideAction: null,
+          removedNomineeId: null,
+          replacementNomineeId: null,
+          finalistPlayerIds: null,
+          completedMingleWindows: [],
+          pleaCount: 0,
+          ballotsSealed: 0,
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-empowered"),
+        kind: "two_names_empowered_intro",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_empowered_intro,
+        empoweredId: decision.payload.empoweredId,
+        before: cueBefore,
+        after: cloneSnapshot(snapshot),
+      });
+      cueBefore = cloneSnapshot(snapshot);
+      snapshot = {
+        ...snapshot,
+        twoNames: {
+          ...snapshot.twoNames!,
+          initialNomineeIds: [...decision.payload.initialNomineeIds],
+          finalistPlayerIds: [...decision.payload.initialNomineeIds],
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-nominees"),
+        kind: "two_names_initial_names",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_initial_names,
+        empoweredId: decision.payload.empoweredId,
+        nomineeIds: [...decision.payload.initialNomineeIds],
+        before: cueBefore,
+        after: cloneSnapshot(snapshot),
+      });
+      cueBefore = cloneSnapshot(snapshot);
+      snapshot = {
+        ...snapshot,
+        twoNames: {
+          ...snapshot.twoNames!,
+          overrideHolderId: decision.payload.overrideHolderId,
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-override-draw"),
+        kind: "two_names_override_draw",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_draw,
+        overrideHolderId: decision.payload.overrideHolderId,
+        before: cueBefore,
+        after: cloneSnapshot(snapshot),
+      });
+      break;
+    }
+    case "format.two_names_mingle_completed": {
+      const state = snapshot.twoNames;
+      const expectedPair = decision.payload.window === "initial_names"
+        ? state?.initialNomineeIds
+        : state?.finalistPlayerIds;
+      if (
+        !state
+        || !expectedPair
+        || state.completedMingleWindows.includes(decision.payload.window)
+        || expectedPair.some((id, index) => id !== decision.payload.finalistPlayerIds[index])
+      ) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names Mingle marker contradicts the trusted pair.");
+      }
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: {
+          ...state,
+          completedMingleWindows: [...state.completedMingleWindows, decision.payload.window],
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, `two-names-${decision.payload.window}-complete`),
+        kind: "two_names_mingle_complete",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_mingle_complete,
+        window: decision.payload.window,
+        finalistPlayerIds: [...decision.payload.finalistPlayerIds],
+        after: cloneSnapshot(snapshot),
+      });
+      break;
+    }
+    case "format.two_names_override_declined": {
+      const state = snapshot.twoNames;
+      if (
+        !state?.initialNomineeIds
+        || state.overrideHolderId !== decision.payload.overrideHolderId
+        || state.overrideAction
+        || state.initialNomineeIds.some((id, index) => id !== decision.payload.finalistPlayerIds[index])
+      ) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names Override decline contradicts setup.");
+      }
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: { ...state, overrideAction: "declined", finalistPlayerIds: [...decision.payload.finalistPlayerIds] },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-override-declined"),
+        kind: "two_names_override_declined",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_declined,
+        ...decision.payload,
+        after: cloneSnapshot(snapshot),
+      });
+      break;
+    }
+    case "format.two_names_override_used": {
+      const state = snapshot.twoNames;
+      if (
+        !state?.initialNomineeIds
+        || state.overrideHolderId !== decision.payload.overrideHolderId
+        || state.overrideAction
+        || !state.initialNomineeIds.includes(decision.payload.removedNomineeId)
+      ) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names Override removal contradicts setup.");
+      }
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: {
+          ...state,
+          overrideAction: "used",
+          removedNomineeId: decision.payload.removedNomineeId,
+          finalistPlayerIds: null,
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-removed"),
+        kind: "two_names_override_removed",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_override_removed,
+        ...decision.payload,
+        after: cloneSnapshot(snapshot),
+      });
+      break;
+    }
+    case "format.two_names_replacement_named": {
+      const state = snapshot.twoNames;
+      if (
+        !state?.initialNomineeIds
+        || state.overrideAction !== "used"
+        || !state.removedNomineeId
+        || state.replacementNomineeId
+        || decision.payload.empoweredId !== snapshot.empoweredId
+        || state.initialNomineeIds.includes(decision.payload.replacementNomineeId)
+      ) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names replacement contradicts the removal.");
+      }
+      const retained = state.initialNomineeIds.find((id) => id !== state.removedNomineeId);
+      if (!retained || !decision.payload.finalistPlayerIds.includes(retained) || !decision.payload.finalistPlayerIds.includes(decision.payload.replacementNomineeId)) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names replacement does not preserve the retained nominee.");
+      }
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: {
+          ...state,
+          replacementNomineeId: decision.payload.replacementNomineeId,
+          finalistPlayerIds: [...decision.payload.finalistPlayerIds],
+        },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, "two-names-replacement"),
+        kind: "two_names_replacement",
+        baseDurationMs: FIXED_CUE_DURATION_MS.two_names_replacement,
+        ...decision.payload,
+        after: cloneSnapshot(snapshot),
+      });
+      break;
+    }
+    case "format.two_names_plea_recorded": {
+      const state = snapshot.twoNames;
+      const expectedSpeaker = state?.finalistPlayerIds?.[state.pleaCount];
+      if (!state || state.pleaCount > 1 || decision.payload.ordinal !== state.pleaCount || decision.payload.speakerId !== expectedSpeaker) {
+        return incomplete(cues, snapshot, "format_mismatch", decision.sequence, "Two Names plea is out of finalist order.");
+      }
+      snapshot = {
+        ...snapshot,
+        phase,
+        canonicalSequence: decision.sequence,
+        twoNames: { ...state, pleaCount: state.pleaCount + 1 },
+      };
+      cues.push({
+        ...base,
+        key: cueKey(gameId, decision.sequence, `two-names-plea-${decision.payload.ordinal}`),
+        kind: "two_names_plea",
+        baseDurationMs: Math.max(FIXED_CUE_DURATION_MS.two_names_plea, (decision.payload.text?.length ?? 0) * 45),
+        speakerId: decision.payload.speakerId,
+        ordinal: decision.payload.ordinal,
+        status: decision.payload.status,
+        text: decision.payload.text,
+        after: cloneSnapshot(snapshot),
       });
       break;
     }
@@ -628,7 +868,24 @@ function applyDecision(input: {
         ...snapshot,
         phase,
         canonicalSequence: decision.sequence,
+        twoNames: decision.payload.formatId === "two_names" && snapshot.twoNames
+          ? { ...snapshot.twoNames, ballotsSealed: snapshot.twoNames.ballotsSealed + 1 }
+          : snapshot.twoNames,
       };
+      if (decision.payload.formatId === "two_names" && snapshot.twoNames?.finalistPlayerIds) {
+        const eligibleCount = eligiblePlayerIds.filter((id) =>
+          id !== snapshot.empoweredId && !snapshot.twoNames!.finalistPlayerIds!.includes(id)
+        ).length;
+        cues.push({
+          ...base,
+          key: cueKey(gameId, decision.sequence, "two-names-ballot-sealed"),
+          kind: "two_names_ballots_sealing",
+          baseDurationMs: FIXED_CUE_DURATION_MS.two_names_ballots_sealing,
+          sealedCount: snapshot.twoNames.ballotsSealed,
+          eligibleCount,
+          after: cloneSnapshot(snapshot),
+        });
+      }
       break;
     }
     case "format.ballot_forfeited": {

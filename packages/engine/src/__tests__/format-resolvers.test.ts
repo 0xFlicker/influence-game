@@ -8,7 +8,9 @@ import {
   computeRestrictedHistoryTallies,
   computeSaveOrEliminateNets,
   computeVoteBombTallies,
+  computeTwoNamesTallies,
   createBounceBoard,
+  DEFAULT_FORMAT_MANIFEST,
   expectedBouncePoolSizes,
   FORMAT_CATALOG,
   getFormatRegistration,
@@ -17,6 +19,8 @@ import {
   isLegalEvenVotesBallot,
   isLegalSaveOrEliminateBallot,
   isLegalVoteBombBallot,
+  isLegalTwoNamesBallot,
+  isLegalTwoNamesInitialPair,
   LAUNCH_FORMAT_IDS,
   pickFormatFromMenu,
   requireSealedElimRegistration,
@@ -31,6 +35,11 @@ import {
   resolveSaveOrEliminate,
   scoreSealedElimBallots,
   resolveVoteBomb,
+  resolveTwoNames,
+  twoNamesOrdinaryVoterIds,
+  twoNamesOverrideCandidates,
+  twoNamesRemovalChoices,
+  twoNamesReplacementCandidates,
   type LaunchFormatId,
   type SaveOrEliminateBallot,
   type SealedElimBallot,
@@ -49,6 +58,7 @@ describe("format menu", () => {
       formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce", "majority_elimination"],
       lastFormatId: null,
       round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     });
     expect(offered).toHaveLength(2);
@@ -61,6 +71,7 @@ describe("format menu", () => {
       formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce", "majority_elimination"],
       lastFormatId: "vote_bomb",
       round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     });
     expect(offered).not.toContain("vote_bomb");
@@ -72,6 +83,7 @@ describe("format menu", () => {
       formatManifest: ["vote_bomb", "majority_elimination"],
       lastFormatId: "vote_bomb",
       round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     });
     expect(offered).toEqual(["majority_elimination", "vote_bomb"]);
@@ -82,8 +94,35 @@ describe("format menu", () => {
       formatManifest: ["majority_elimination"],
       lastFormatId: null,
       round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     })).toEqual({ offered: null, autoSelected: "majority_elimination" });
+  });
+
+  it("admits Two Names only with at least five living players", () => {
+    expect(buildFormatMenu({
+      formatManifest: ["two_names"],
+      lastFormatId: null,
+      round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
+      random: () => 0,
+    })).toEqual({ offered: null, autoSelected: "two_names" });
+
+    expect(() => buildFormatMenu({
+      formatManifest: ["two_names"],
+      lastFormatId: null,
+      round: 1,
+      livingIds: ids("A", "B", "C", "D"),
+      random: () => 0,
+    })).toThrow("no formats available");
+
+    expect(buildFormatMenu({
+      formatManifest: ["two_names", "vote_bomb"],
+      lastFormatId: null,
+      round: 1,
+      livingIds: ids("A", "B", "C", "D"),
+      random: () => 0,
+    })).toEqual({ offered: null, autoSelected: "vote_bomb" });
   });
 
   it("rejects empty, duplicate, and unregistered manifests", () => {
@@ -99,18 +138,21 @@ describe("format menu", () => {
       formatManifest: manifest,
       lastFormatId: null,
       round: 1,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     })).toEqual({ offered: null, autoSelected: "majority_elimination" });
     expect(buildFormatMenu({
       formatManifest: manifest,
       lastFormatId: null,
       round: 2,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     })).toEqual({ offered: null, autoSelected: "majority_elimination" });
     expect(buildFormatMenu({
       formatManifest: manifest,
       lastFormatId: null,
       round: 3,
+      livingIds: ids("A", "B", "C", "D", "E"),
       random: () => 0,
     }).offered).toEqual(["restricted_history", "majority_elimination"]);
   });
@@ -120,6 +162,113 @@ describe("format menu", () => {
     expect(pickFormatFromMenu(offered, "vote_bomb")).toBe("vote_bomb");
     expect(pickFormatFromMenu(offered, "save_or_eliminate")).toBeNull();
     expect(pickFormatFromMenu(offered, "nope")).toBeNull();
+  });
+});
+
+describe("two names", () => {
+  const living = ids("A", "B", "C", "D", "E");
+
+  it("owns initial names, draw candidates, removal choices, and replacement exclusions", () => {
+    expect(isLegalTwoNamesInitialPair(["b", "c"], "a", living)).toBe(true);
+    expect(isLegalTwoNamesInitialPair(["b", "b"], "a", living)).toBe(false);
+    expect(isLegalTwoNamesInitialPair(["a", "b"], "a", living)).toBe(false);
+    expect(isLegalTwoNamesInitialPair(["b", "z"], "a", living)).toBe(false);
+    expect(twoNamesOverrideCandidates(living)).toEqual(living);
+    expect(twoNamesRemovalChoices(["b", "c"])).toEqual(["b", "c"]);
+
+    expect(twoNamesReplacementCandidates({
+      livingIds: living,
+      empoweredId: "a",
+      overrideHolderId: "d",
+      removedNomineeId: "b",
+      retainedNomineeId: "c",
+    })).toEqual(["e"]);
+
+    expect(twoNamesReplacementCandidates({
+      livingIds: living,
+      empoweredId: "a",
+      overrideHolderId: "b",
+      removedNomineeId: "b",
+      retainedNomineeId: "c",
+    })).toEqual(["d", "e"]);
+
+    expect(twoNamesReplacementCandidates({
+      livingIds: living,
+      empoweredId: "a",
+      overrideHolderId: "a",
+      removedNomineeId: "b",
+      retainedNomineeId: "c",
+    })).toEqual(["d", "e"]);
+  });
+
+  it("proves five players covers the outsider-holder replacement edge while four does not", () => {
+    expect(twoNamesReplacementCandidates({
+      livingIds: living,
+      empoweredId: "a",
+      overrideHolderId: "d",
+      removedNomineeId: "b",
+      retainedNomineeId: "c",
+    })).toEqual(["e"]);
+    expect(twoNamesReplacementCandidates({
+      livingIds: ids("A", "B", "C", "D"),
+      empoweredId: "a",
+      overrideHolderId: "d",
+      removedNomineeId: "b",
+      retainedNomineeId: "c",
+    })).toEqual([]);
+  });
+
+  it("derives ordinary voters from the final pair after either named-holder branch", () => {
+    expect(twoNamesOrdinaryVoterIds(living, "a", ["d", "c"])).toEqual(["b", "e"]);
+    expect(twoNamesOrdinaryVoterIds(living, "a", ["b", "d"])).toEqual(["c", "e"]);
+  });
+
+  it("accepts ballots only from ordinary voters and only for a finalist", () => {
+    const finalists: [string, string] = ["b", "c"];
+    const voters = ["d", "e"];
+    expect(isLegalTwoNamesBallot("d", "b", voters, finalists)).toBe(true);
+    expect(isLegalTwoNamesBallot("a", "b", voters, finalists)).toBe(false);
+    expect(isLegalTwoNamesBallot("b", "c", voters, finalists)).toBe(false);
+    expect(isLegalTwoNamesBallot("d", "a", voters, finalists)).toBe(false);
+  });
+
+  it("scores only the final pair and resolves a clear plurality or exact tie", () => {
+    const finalists: [string, string] = ["b", "c"];
+    const voters = ["d", "e"];
+    const clearBallots = [
+      { voterId: "d", targetId: "b" },
+      { voterId: "e", targetId: "b" },
+    ];
+    expect(computeTwoNamesTallies(finalists, voters, clearBallots)).toEqual({
+      totals: { b: 2, c: 0 },
+      finalistIds: finalists,
+      eligibleVoterIds: voters,
+    });
+    expect(resolveTwoNames(finalists, voters, clearBallots)).toEqual({
+      kind: "clear",
+      eliminatedId: "b",
+      tiedSet: ["b"],
+    });
+
+    const tieBallots = [
+      { voterId: "d", targetId: "b" },
+      { voterId: "e", targetId: "c" },
+    ];
+    expect(resolveTwoNames(finalists, voters, tieBallots)).toEqual({
+      kind: "tie",
+      eliminatedId: null,
+      tiedSet: finalists,
+    });
+  });
+
+  it("registers and activates Two Names after end-to-end proof", () => {
+    expect(FORMAT_CATALOG.two_names).toMatchObject({
+      id: "two_names",
+      capability: "two_names",
+      minimumLivingPlayers: 5,
+    });
+    expect(DEFAULT_FORMAT_MANIFEST).toContain("two_names");
+    expect(resolveFormatManifest(["two_names"])).toEqual(["two_names"]);
   });
 });
 
@@ -468,7 +617,7 @@ describe("even votes", () => {
 });
 
 describe("format catalog", () => {
-  it("exhaustively registers the six launch formats by capability", () => {
+  it("exhaustively registers every format by capability", () => {
     expect(Object.keys(FORMAT_CATALOG)).toEqual([...LAUNCH_FORMAT_IDS]);
     expect(FORMAT_CATALOG.save_or_eliminate.capability).toBe(
       "sealed_polarity",
@@ -480,6 +629,7 @@ describe("format catalog", () => {
     );
     expect(FORMAT_CATALOG.even_votes.capability).toBe("sealed_elim");
     expect(FORMAT_CATALOG.restricted_history.capability).toBe("sealed_elim");
+    expect(FORMAT_CATALOG.two_names.capability).toBe("two_names");
   });
 
   it("restricts elimination-direction target history and preserves SAVE targets", () => {

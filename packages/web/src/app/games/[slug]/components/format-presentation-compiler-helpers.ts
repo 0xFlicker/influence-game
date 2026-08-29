@@ -1,9 +1,11 @@
 import type { PhaseKey, ViewerDecisionEvent } from "@/lib/api";
 import {
   applyFormatTiebreak,
+  computeTwoNamesTallies,
   computeSaveOrEliminateNets,
   getFormatRegistration,
   resolveSafetyBounceVote,
+  resolveTwoNames,
 } from "@influence/engine/format-rules";
 import type { FormatEliminationResolution } from "@influence/engine/format-rules";
 import type { FormatPresentationCompilation } from "./format-presentation-model";
@@ -50,6 +52,9 @@ export function applyResolution(input: {
   let { snapshot } = input;
   const phase = phaseKey(decision.phase);
   const payload = cloneResolution(decision.payload);
+  const ballotEligiblePlayerIds = payload.aggregate.capability === "two_names"
+    ? payload.aggregate.eligibleVoterIds
+    : eligiblePlayerIds;
 
   if (
     snapshot.activeFormatId !== payload.formatId
@@ -61,6 +66,27 @@ export function applyResolution(input: {
       "format_mismatch",
       decision.sequence,
       "Format resolution does not match the trusted selection.",
+    );
+  }
+  if (
+    payload.aggregate.capability === "two_names"
+    && (
+      !snapshot.twoNames?.initialNomineeIds
+      || !snapshot.twoNames.finalistPlayerIds
+      || snapshot.twoNames.overrideHolderId !== payload.aggregate.overrideHolderId
+      || snapshot.twoNames.overrideAction !== payload.aggregate.overrideAction
+      || snapshot.twoNames.removedNomineeId !== payload.aggregate.removedNomineeId
+      || snapshot.twoNames.replacementNomineeId !== payload.aggregate.replacementNomineeId
+      || !sameMembers(snapshot.twoNames.initialNomineeIds, payload.aggregate.initialNomineeIds)
+      || !sameMembers(snapshot.twoNames.finalistPlayerIds, payload.aggregate.finalistPlayerIds)
+    )
+  ) {
+    return incomplete(
+      cues,
+      snapshot,
+      "aggregate_mismatch",
+      decision.sequence,
+      "Two Names resolution disagrees with the trusted setup and Override history.",
     );
   }
   if (
@@ -104,18 +130,18 @@ export function applyResolution(input: {
       "Sole-vulnerable Safety Bounce must resolve without a final ballot.",
     );
   }
-  if (!automaticSoleVulnerable && ballots.size !== eligiblePlayerIds.length) {
+  if (!automaticSoleVulnerable && ballots.size !== ballotEligiblePlayerIds.length) {
     return incomplete(
       cues,
       snapshot,
       "incomplete_ballot",
       decision.sequence,
-      `Format resolution has ${ballots.size} accepted ballots for ${eligiblePlayerIds.length} eligible agents.`,
+      `Format resolution has ${ballots.size} accepted ballots for ${ballotEligiblePlayerIds.length} eligible agents.`,
     );
   }
   if (
     !automaticSoleVulnerable
-    && !aggregatesMatch(payload, ballots, eligiblePlayerIds)
+    && !aggregatesMatch(payload, ballots, ballotEligiblePlayerIds)
   ) {
     return incomplete(
       cues,
@@ -160,7 +186,7 @@ export function applyResolution(input: {
 
   const orderedBallots = automaticSoleVulnerable
     ? []
-    : eligiblePlayerIds.flatMap((voterId) => {
+    : ballotEligiblePlayerIds.flatMap((voterId) => {
     const ballot = ballots.get(voterId);
     return ballot ? [ballot] : [];
     });
@@ -442,6 +468,26 @@ function resolutionOutcomeMatchesRules(
 
   const registration = getFormatRegistration(resolution.formatId);
 
+  if (registration.capability === "two_names") {
+    if (resolution.aggregate.capability !== "two_names") return false;
+    const accepted = unpolarizedBallots(ballots);
+    if (!accepted) return false;
+    const expected = resolveTwoNames(
+      resolution.aggregate.finalistPlayerIds,
+      resolution.aggregate.eligibleVoterIds,
+      accepted,
+    );
+    return expected.kind === "clear"
+      ? resolution.resolutionKind === "clear"
+        && resolution.eliminatedId === expected.eliminatedId
+        && resolution.tiebreakerId === null
+        && sameMembers(resolution.tiedPlayerIds, [expected.eliminatedId])
+      : resolution.resolutionKind === "auto"
+        && resolution.tiebreakerId === resolution.empoweredId
+        && expected.tiedSet.includes(resolution.eliminatedId)
+        && sameMembers(resolution.tiedPlayerIds, expected.tiedSet);
+  }
+
   if (registration.capability === "sealed_polarity") {
     if (resolution.aggregate.capability !== "sealed_polarity") return false;
     const accepted = saveOrEliminateBallots(ballots);
@@ -505,6 +551,21 @@ function aggregatesMatch(
   rosterIds: readonly string[],
 ): boolean {
   const registration = getFormatRegistration(resolution.formatId);
+
+  if (registration.capability === "two_names") {
+    if (resolution.aggregate.capability !== "two_names") return false;
+    const aggregate = resolution.aggregate;
+    if (!sameMembers(aggregate.eligibleVoterIds, rosterIds)) return false;
+    if (!hasExactKeys(aggregate.totals, aggregate.finalistPlayerIds)) return false;
+    const accepted = unpolarizedBallots(ballots);
+    if (!accepted) return false;
+    const expected = computeTwoNamesTallies(
+      aggregate.finalistPlayerIds,
+      aggregate.eligibleVoterIds,
+      accepted,
+    );
+    return sameCountRecord(aggregate.totals, expected.totals);
+  }
 
   if (registration.capability === "sealed_polarity") {
     if (resolution.aggregate.capability !== "sealed_polarity") return false;

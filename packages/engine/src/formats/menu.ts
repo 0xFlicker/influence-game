@@ -1,4 +1,5 @@
-import { formatsAvailableInRound, isRegisteredFormatId } from "./catalog";
+import { formatsAvailableForSelection, isRegisteredFormatId } from "./catalog";
+import type { UUID } from "../types";
 import type { LaunchFormatId } from "./types";
 
 export interface FormatMenuInput {
@@ -8,6 +9,8 @@ export interface FormatMenuInput {
   lastFormatId: LaunchFormatId | null;
   /** One-based game round used for catalog admission rules. */
   round: number;
+  /** Canonical living roster at this round's selection boundary. */
+  livingIds: readonly UUID[];
   /** Optional RNG in [0, 1). Defaults to Math.random. */
   random?: () => number;
 }
@@ -24,7 +27,10 @@ export interface FormatMenuResult {
 export function buildFormatMenu(input: FormatMenuInput): FormatMenuResult {
   const random = input.random ?? Math.random;
   const last = input.lastFormatId;
-  const manifest = formatsAvailableInRound(input.formatManifest, input.round);
+  const manifest = formatsAvailableForSelection(input.formatManifest, {
+    round: input.round,
+    livingIds: input.livingIds,
+  });
   if (manifest.length === 0) {
     throw new Error(`Format manifest has no formats available in round ${input.round}`);
   }

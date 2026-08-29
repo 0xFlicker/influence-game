@@ -1,0 +1,1672 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Two Names — Viewer Beat Storyboard</title>
+  <style>
+    :root {
+      --void: #050507;
+      --ink: #f5f1ea;
+      --muted: #a49dac;
+      --quiet: #6f6878;
+      --gold: #e7bd70;
+      --gold-rgb: 231, 189, 112;
+      --violet: #a68cff;
+      --violet-rgb: 166, 140, 255;
+      --rose: #ff7b91;
+      --rose-rgb: 255, 123, 145;
+      --cyan: #8bd8d1;
+      --panel: rgba(20, 18, 24, 0.92);
+      --panel-soft: rgba(255, 255, 255, 0.038);
+      --curve: cubic-bezier(0.32, 0.72, 0, 1);
+      --curve-heavy: cubic-bezier(0.16, 1, 0.3, 1);
+      --display: "PP Editorial New", "Iowan Old Style", Baskerville, serif;
+      --body: Geist, "Avenir Next", "Segoe UI Variable", sans-serif;
+      --mono: "JetBrains Mono", "SFMono-Regular", monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--void);
+      color: var(--ink);
+      font-family: var(--body);
+    }
+
+    body {
+      min-height: 100dvh;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse 68% 48% at 50% -8%, rgba(var(--gold-rgb), 0.12), transparent 68%),
+        radial-gradient(ellipse 44% 64% at -8% 62%, rgba(var(--violet-rgb), 0.09), transparent 66%),
+        radial-gradient(ellipse 44% 64% at 108% 66%, rgba(var(--rose-rgb), 0.08), transparent 66%),
+        linear-gradient(180deg, #09080c 0%, var(--void) 46%, #030304 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 6;
+      pointer-events: none;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.83' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.58'/%3E%3C/svg%3E");
+    }
+
+    button { font: inherit; }
+
+    .broadcast {
+      position: relative;
+      display: flex;
+      min-height: 100dvh;
+      flex-direction: column;
+      isolation: isolate;
+    }
+
+    .ambient {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .ambient::before,
+    .ambient::after {
+      content: "";
+      position: absolute;
+      width: 44rem;
+      height: 44rem;
+      border-radius: 50%;
+      opacity: 0.22;
+      transition: transform 1400ms var(--curve-heavy), opacity 900ms var(--curve);
+    }
+
+    .ambient::before {
+      left: -25rem;
+      top: 12%;
+      background: radial-gradient(circle, rgba(var(--violet-rgb), 0.34), transparent 66%);
+    }
+
+    .ambient::after {
+      right: -25rem;
+      top: 20%;
+      background: radial-gradient(circle, rgba(var(--rose-rgb), 0.28), transparent 66%);
+    }
+
+    body[data-beat="replacement"] .ambient::after,
+    body[data-beat="mingle-final"] .ambient::after {
+      transform: translate3d(-7rem, -2rem, 0) scale(1.16);
+      opacity: 0.42;
+    }
+
+    .topline {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem 0.75rem;
+    }
+
+    .wordmark {
+      font-size: 0.72rem;
+      font-weight: 620;
+      letter-spacing: 0.42em;
+    }
+
+    .round-label,
+    .live-label {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .live-label { justify-self: end; }
+    .live-label::before {
+      content: "";
+      display: inline-block;
+      width: 0.38rem;
+      height: 0.38rem;
+      margin-right: 0.5rem;
+      border-radius: 50%;
+      background: var(--rose);
+      box-shadow: 0 0 1.2rem rgba(var(--rose-rgb), 0.72);
+    }
+
+    .role-rail-shell {
+      margin: 0 auto;
+      width: min(74rem, calc(100% - 3rem));
+      border-radius: 1.7rem;
+      padding: 0.38rem;
+      background: linear-gradient(145deg, rgba(255,255,255,0.10), rgba(255,255,255,0.018));
+      box-shadow: 0 28px 100px rgba(0, 0, 0, 0.26);
+    }
+
+    .role-rail {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(18rem, 1.55fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 0.75rem;
+      min-height: 5rem;
+      padding: 0.66rem 0.8rem;
+      border-radius: 1.35rem;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.052), transparent 70%),
+        rgba(10, 9, 13, 0.96);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+    }
+
+    .role-chip,
+    .rail-pair {
+      min-width: 0;
+    }
+
+    .role-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.45rem 0.55rem;
+    }
+
+    .role-chip:last-child { justify-content: flex-end; text-align: right; }
+
+    .role-avatar {
+      width: 2.5rem;
+      height: 2.5rem;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      object-fit: cover;
+      box-shadow:
+        0 0 0 0.28rem rgba(255,255,255,0.035),
+        0 0 0 0.34rem rgba(255,255,255,0.08),
+        0 0 2rem rgba(var(--gold-rgb), 0.12);
+    }
+
+    .role-chip.override .role-avatar {
+      box-shadow:
+        0 0 0 0.28rem rgba(var(--violet-rgb), 0.05),
+        0 0 0 0.34rem rgba(var(--violet-rgb), 0.22),
+        0 0 2rem rgba(var(--violet-rgb), 0.15);
+    }
+
+    .micro {
+      color: var(--quiet);
+      font-size: 0.56rem;
+      font-weight: 650;
+      letter-spacing: 0.19em;
+      text-transform: uppercase;
+    }
+
+    .role-name {
+      overflow: hidden;
+      margin-top: 0.2rem;
+      color: rgba(245, 241, 234, 0.92);
+      font-size: 0.78rem;
+      font-weight: 630;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rail-pair {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.62rem 0.85rem;
+      border-radius: 1rem;
+      background: rgba(255,255,255,0.036);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+    }
+
+    .rail-name {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: var(--display);
+      font-size: clamp(1rem, 1.7vw, 1.34rem);
+      letter-spacing: -0.02em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      transition: opacity 500ms var(--curve), transform 800ms var(--curve-heavy);
+    }
+
+    .rail-name:last-child { text-align: right; }
+    .rail-versus {
+      color: var(--rose);
+      font-family: var(--mono);
+      font-size: 0.56rem;
+      letter-spacing: 0.12em;
+    }
+
+    .rail-state {
+      position: absolute;
+      left: 50%;
+      bottom: -0.55rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      color: rgba(245, 241, 234, 0.68);
+      background: #121016;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+      font-family: var(--mono);
+      font-size: 0.48rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .power-anchor {
+      position: fixed;
+      top: 3.65rem;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      min-width: 9.5rem;
+      padding: 0.48rem 0.72rem 0.48rem 0.5rem;
+      border-radius: 999px;
+      opacity: 0;
+      background: rgba(10, 9, 13, 0.88);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.10),
+        0 24px 80px rgba(0,0,0,0.24);
+      pointer-events: none;
+      transform: translate3d(0, -0.8rem, 0) scale(0.94);
+      transition: opacity 620ms var(--curve), transform 900ms var(--curve-heavy);
+    }
+
+    .power-anchor.empowered { left: 1.5rem; }
+    .power-anchor.override { right: 1.5rem; flex-direction: row-reverse; text-align: right; }
+    .power-anchor.is-visible { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+    .power-anchor.override .role-avatar {
+      box-shadow:
+        0 0 0 0.28rem rgba(var(--violet-rgb), 0.05),
+        0 0 0 0.34rem rgba(var(--violet-rgb), 0.22),
+        0 0 2rem rgba(var(--violet-rgb), 0.15);
+    }
+
+    .continuity-ghost {
+      position: fixed;
+      z-index: 5;
+      margin: 0;
+      object-fit: cover;
+      pointer-events: none;
+      will-change: transform, opacity;
+      box-shadow:
+        0 0 0 0.35rem rgba(255,255,255,0.05),
+        0 0 0 0.43rem rgba(255,255,255,0.14),
+        0 0 4rem rgba(var(--gold-rgb),0.22);
+    }
+
+    .naming-intro {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      opacity: 1;
+      transform: translate3d(0,0,0) scale(1);
+      transition: opacity 600ms var(--curve), transform 900ms var(--curve-heavy);
+    }
+
+    .naming-intro.is-exiting { opacity: 0; transform: translate3d(0,-1.4rem,0) scale(0.97); }
+    .intro-avatar-shell {
+      width: clamp(9rem, 22vw, 14rem);
+      padding: 0.48rem;
+      margin: 0 auto;
+      border-radius: 50%;
+      background: linear-gradient(145deg, rgba(var(--gold-rgb),0.34), rgba(255,255,255,0.035));
+      box-shadow: 0 0 8rem rgba(var(--gold-rgb),0.16), 0 40px 120px rgba(0,0,0,0.36);
+    }
+    .intro-avatar-shell img { display:block; width:100%; aspect-ratio:1; border-radius:50%; object-fit:cover; }
+    .naming-intro .micro { margin-top: 1.4rem; color: var(--gold); }
+    .naming-intro h1 { margin:0.5rem 0 0; font-family:var(--display); font-size:clamp(4rem,10vw,8rem); font-weight:420; letter-spacing:-0.065em; line-height:0.82; }
+
+    .naming-sequence {
+      opacity: 0;
+      transform: translate3d(0,1.5rem,0);
+      transition: opacity 650ms var(--curve), transform 900ms var(--curve-heavy);
+    }
+    .naming-sequence.is-visible { opacity:1; transform:translate3d(0,0,0); }
+    .naming-sequence .nominee-shell {
+      opacity: 0;
+      transform: perspective(900px) rotateY(-64deg) translate3d(-2.5rem,0,0) scale(0.92);
+    }
+    .naming-sequence .nominee-shell.right {
+      transform: perspective(900px) rotateY(64deg) translate3d(2.5rem,0,0) scale(0.92);
+    }
+    .naming-sequence .nominee-shell.is-revealed {
+      opacity:1;
+      transform:perspective(900px) rotateY(0) translate3d(0,0,0) scale(1);
+    }
+
+    .beat.is-mingle {
+      transform: none;
+      transition: opacity 620ms var(--curve), visibility 0s 700ms;
+    }
+    .beat.is-mingle.is-active { transform: none; }
+
+    .mingle-role-tags { display:flex; flex-wrap:wrap; gap:0.45rem; margin-top:1.25rem; }
+    .mingle-role-tag {
+      padding:0.42rem 0.62rem;
+      border-radius:999px;
+      color:rgba(245,241,234,0.72);
+      background:rgba(255,255,255,0.045);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,0.08);
+      font-family:var(--mono);
+      font-size:0.5rem;
+      letter-spacing:0.1em;
+      text-transform:uppercase;
+    }
+    .mingle-role-tag[data-role="empowered"] { color:var(--gold); }
+    .mingle-role-tag[data-role="override"] { color:var(--violet); }
+    .mingle-role-tag[data-role="named"] { color:var(--rose); }
+
+    .removal-card { position:relative; }
+    .removal-card .card-strike {
+      position:absolute;
+      left:9%;
+      top:49%;
+      z-index:3;
+      width:82%;
+      height:0.38rem;
+      border-radius:999px;
+      background:var(--rose);
+      box-shadow:0 0 2.6rem rgba(var(--rose-rgb),0.55);
+      opacity:0;
+      transform:rotate(-18deg) scaleX(0);
+      transform-origin:left center;
+      transition:opacity 240ms var(--curve), transform 760ms var(--curve-heavy);
+    }
+    .removal-card.is-struck .card-strike { opacity:1; transform:rotate(-18deg) scaleX(1); }
+    .removal-card.is-dismissed { opacity:0.24; transform:perspective(900px) rotateY(-28deg) translate3d(-2.6rem,0.7rem,0) scale(0.9); }
+
+    .replacement-card {
+      opacity:0;
+      transform:perspective(900px) rotateY(-68deg) translate3d(-2.5rem,0,0) scale(0.9);
+    }
+    .replacement-card.is-revealed {
+      opacity:1;
+      transform:perspective(900px) rotateY(0) translate3d(0,0,0) scale(1);
+    }
+
+    .stage {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      margin: 0 auto;
+      width: min(76rem, 100%);
+      padding: 5.6rem 1.5rem 6.9rem;
+    }
+
+    .beat {
+      position: absolute;
+      inset: 5.6rem 1.5rem 6.9rem;
+      display: grid;
+      place-items: center;
+      visibility: hidden;
+      opacity: 0;
+      transform: translate3d(0, 2rem, 0) scale(0.985);
+      transition:
+        opacity 700ms var(--curve),
+        transform 1000ms var(--curve-heavy),
+        visibility 0s 1000ms;
+    }
+
+    .beat.is-active {
+      visibility: visible;
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+      transition-delay: 0ms;
+    }
+
+    .beat-inner {
+      width: 100%;
+      max-width: 68rem;
+    }
+
+    .beat-heading {
+      margin-bottom: 1.25rem;
+      text-align: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.48rem;
+      padding: 0.34rem 0.7rem;
+      border-radius: 999px;
+      color: rgba(245, 241, 234, 0.56);
+      background: rgba(255,255,255,0.038);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.075);
+      font-size: 0.58rem;
+      font-weight: 640;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 0.32rem;
+      height: 0.32rem;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0.9rem currentColor;
+    }
+
+    h1, h2, p { margin-top: 0; }
+
+    .beat-heading h1,
+    .beat-heading h2 {
+      margin: 0.6rem 0 0;
+      font-family: var(--display);
+      font-size: clamp(2.5rem, 6vw, 5.9rem);
+      font-weight: 420;
+      letter-spacing: -0.052em;
+      line-height: 0.88;
+    }
+
+    .beat-heading p {
+      max-width: 38rem;
+      margin: 0.75rem auto 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+
+    .duel {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 5rem minmax(0, 1fr);
+      align-items: center;
+      gap: clamp(0.75rem, 2vw, 1.5rem);
+      max-width: 55rem;
+      margin: 0 auto;
+    }
+
+    .nominee-shell {
+      padding: 0.42rem;
+      border-radius: 2rem;
+      background: linear-gradient(145deg, rgba(255,255,255,0.13), rgba(255,255,255,0.02));
+      box-shadow: 0 38px 100px rgba(0,0,0,0.32);
+      transition: opacity 700ms var(--curve), transform 1100ms var(--curve-heavy);
+    }
+
+    .nominee-shell.left { transform: rotate(-1.1deg) translate3d(0, 0.3rem, 0); }
+    .nominee-shell.right { transform: rotate(1.2deg) translate3d(0, -0.2rem, 0); }
+
+    .nominee-core {
+      position: relative;
+      min-height: clamp(15rem, 39vh, 25rem);
+      overflow: hidden;
+      padding: clamp(1.2rem, 3vw, 2rem);
+      border-radius: 1.62rem;
+      background:
+        linear-gradient(155deg, rgba(255,255,255,0.07), transparent 52%),
+        linear-gradient(180deg, #17141c, #0c0a0f);
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.13);
+    }
+
+    .nominee-core::after {
+      content: "";
+      position: absolute;
+      inset: auto -15% -48% -15%;
+      height: 65%;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(var(--rose-rgb), 0.15), transparent 68%);
+      pointer-events: none;
+    }
+
+    .nominee-index {
+      color: var(--quiet);
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.18em;
+    }
+
+    .portrait-shell {
+      width: clamp(6.4rem, 13vw, 9rem);
+      margin: 1rem auto 0;
+      padding: 0.34rem;
+      border-radius: 2rem;
+      background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.025));
+      box-shadow: 0 22px 70px rgba(0,0,0,0.32);
+    }
+
+    .portrait-shell img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 1.7rem;
+      object-fit: cover;
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.14);
+    }
+
+    .nominee-name {
+      position: relative;
+      z-index: 1;
+      margin-top: 1.1rem;
+      text-align: center;
+      font-family: var(--display);
+      font-size: clamp(2rem, 4vw, 3.7rem);
+      line-height: 0.9;
+      letter-spacing: -0.045em;
+    }
+
+    .nominee-status {
+      position: relative;
+      z-index: 1;
+      margin-top: 0.65rem;
+      color: var(--rose);
+      text-align: center;
+      font-size: 0.58rem;
+      font-weight: 650;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .axis {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 15rem;
+    }
+
+    .axis-mark {
+      position: relative;
+      width: 3.5rem;
+      height: 3.5rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: var(--rose);
+      background: #0b090d;
+      box-shadow:
+        0 0 0 0.35rem rgba(var(--rose-rgb), 0.05),
+        0 0 0 0.42rem rgba(var(--rose-rgb), 0.18),
+        0 0 3rem rgba(var(--rose-rgb), 0.18);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+    }
+
+    .axis-mark::before,
+    .axis-mark::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      width: 1px;
+      height: 5rem;
+      background: linear-gradient(transparent, rgba(var(--rose-rgb), 0.38));
+      transform: translateX(-50%);
+    }
+
+    .axis-mark::before { bottom: calc(100% + 0.5rem); }
+    .axis-mark::after {
+      top: calc(100% + 0.5rem);
+      background: linear-gradient(rgba(var(--rose-rgb), 0.38), transparent);
+    }
+
+    .draw-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.8fr);
+      align-items: center;
+      gap: clamp(2rem, 6vw, 6rem);
+      max-width: 60rem;
+      margin: 0 auto;
+    }
+
+    .draw-orbit {
+      position: relative;
+      aspect-ratio: 1;
+      width: min(27rem, 78vw);
+      margin: 0 auto;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, rgba(var(--violet-rgb),0.12), transparent 42%),
+        repeating-radial-gradient(circle, transparent 0 22%, rgba(255,255,255,0.055) 22.2% 22.6%, transparent 22.8% 34%);
+      box-shadow: 0 0 8rem rgba(var(--violet-rgb),0.08);
+    }
+
+    .draw-orbit::before {
+      content: "";
+      position: absolute;
+      inset: 14%;
+      border-radius: 50%;
+      background: conic-gradient(from 20deg, transparent, rgba(var(--violet-rgb),0.44), transparent 26%, transparent 70%, rgba(var(--gold-rgb),0.2), transparent);
+      animation: orbit-scan 5s var(--curve) infinite;
+    }
+
+    @keyframes orbit-scan { to { transform: rotate(360deg); } }
+
+    .orbit-person {
+      position: absolute;
+      width: 3.4rem;
+      height: 3.4rem;
+      padding: 0.22rem;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      box-shadow: 0 12px 35px rgba(0,0,0,0.28);
+    }
+
+    .orbit-person img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .orbit-person:nth-child(1) { left: 43%; top: 3%; }
+    .orbit-person:nth-child(2) { right: 7%; top: 25%; }
+    .orbit-person:nth-child(3) { right: 12%; bottom: 15%; }
+    .orbit-person:nth-child(4) { left: 17%; bottom: 8%; }
+    .orbit-person:nth-child(5) { left: 4%; top: 37%; }
+    .orbit-person.is-drawn {
+      left: 50%;
+      top: 50%;
+      width: 8.2rem;
+      height: 8.2rem;
+      padding: 0.38rem;
+      background: linear-gradient(145deg, rgba(var(--violet-rgb),0.35), rgba(255,255,255,0.06));
+      box-shadow: 0 0 0 0.5rem rgba(var(--violet-rgb),0.08), 0 0 5rem rgba(var(--violet-rgb),0.32);
+      transform: translate(-50%, -50%);
+      z-index: 2;
+    }
+
+    .draw-copy h2 {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(3rem, 7vw, 6.2rem);
+      font-weight: 420;
+      letter-spacing: -0.055em;
+      line-height: 0.84;
+    }
+
+    .draw-copy .draw-name {
+      margin-top: 1rem;
+      color: var(--violet);
+      font-size: 0.72rem;
+      font-weight: 650;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+    }
+
+    .mingle-card-shell {
+      max-width: 58rem;
+      margin: 0 auto;
+      padding: 0.48rem;
+      border-radius: 2.25rem;
+      background: linear-gradient(145deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02));
+      box-shadow: 0 42px 120px rgba(0,0,0,0.34);
+    }
+
+    .mingle-card {
+      display: grid;
+      grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.25fr);
+      min-height: 23rem;
+      overflow: hidden;
+      border-radius: 1.82rem;
+      background: linear-gradient(160deg, rgba(255,255,255,0.06), transparent 50%), #0d0b10;
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.12);
+    }
+
+    .stakes-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 2rem;
+      background: linear-gradient(145deg, rgba(var(--rose-rgb),0.075), transparent 65%);
+    }
+
+    .stakes-panel h2 {
+      margin: 0.7rem 0 0;
+      font-family: var(--display);
+      font-size: clamp(2.2rem, 5vw, 4.2rem);
+      font-weight: 420;
+      letter-spacing: -0.05em;
+      line-height: 0.9;
+    }
+
+    .stakes-mini-pair { display: flex; align-items: center; gap: 0.5rem; }
+    .stakes-mini-pair img {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 1rem;
+      object-fit: cover;
+      box-shadow: 0 0 0 0.24rem rgba(255,255,255,0.04);
+    }
+
+    .conversation {
+      padding: 2rem;
+      background: rgba(255,255,255,0.018);
+    }
+
+    .conversation-row {
+      display: grid;
+      grid-template-columns: 2.8rem minmax(0, 1fr);
+      gap: 0.8rem;
+      margin-top: 1rem;
+    }
+
+    .conversation-row img { width: 2.8rem; height: 2.8rem; border-radius: 50%; object-fit: cover; }
+    .conversation-bubble {
+      padding: 0.9rem 1rem;
+      border-radius: 1.1rem 1.1rem 1.1rem 0.36rem;
+      color: rgba(245,241,234,0.79);
+      background: rgba(255,255,255,0.045);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.075);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+
+    .override-layout {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.54fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 1.4rem;
+      max-width: 62rem;
+      margin: 0 auto;
+    }
+
+    .override-subject {
+      text-align: center;
+      transition: opacity 700ms var(--curve), transform 1000ms var(--curve-heavy);
+    }
+
+    .override-subject img {
+      width: clamp(7rem, 15vw, 10rem);
+      aspect-ratio: 1;
+      border-radius: 2rem;
+      object-fit: cover;
+      box-shadow: 0 0 0 0.38rem rgba(255,255,255,0.045), 0 0 0 0.45rem rgba(255,255,255,0.10), 0 34px 80px rgba(0,0,0,0.35);
+    }
+
+    .override-subject h3 {
+      margin: 1rem 0 0;
+      font-family: var(--display);
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      font-weight: 420;
+      letter-spacing: -0.045em;
+    }
+
+    .override-subject.is-removed {
+      opacity: 0.38;
+      transform: translate3d(-1.8rem, 1rem, 0) rotate(-5deg) scale(0.92);
+    }
+
+    .slash {
+      position: absolute;
+      left: 10%;
+      top: 48%;
+      width: 24%;
+      height: 0.34rem;
+      border-radius: 999px;
+      background: var(--rose);
+      box-shadow: 0 0 2.5rem rgba(var(--rose-rgb),0.5);
+      transform: rotate(-18deg) scaleX(1.25);
+    }
+
+    .override-holder-card {
+      padding: 1.5rem 1rem;
+      border-radius: 1.8rem;
+      text-align: center;
+      background: linear-gradient(160deg, rgba(var(--violet-rgb),0.17), rgba(255,255,255,0.025));
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.15), 0 0 4rem rgba(var(--violet-rgb),0.14);
+    }
+
+    .override-holder-card img { width: 5.5rem; height: 5.5rem; border-radius: 50%; object-fit: cover; }
+    .override-holder-card .decision { margin-top: 0.9rem; color: var(--violet); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
+
+    .withheld {
+      position: relative;
+      min-height: 15rem;
+      overflow: hidden;
+      border-radius: 2rem;
+      background:
+        repeating-linear-gradient(135deg, rgba(255,255,255,0.055) 0 0.4rem, transparent 0.4rem 0.82rem),
+        #0c0a0f;
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.1), 0 34px 90px rgba(0,0,0,0.32);
+    }
+
+    .withheld span {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      color: rgba(245,241,234,0.42);
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      transform: translate(-50%, -50%);
+      white-space: nowrap;
+    }
+
+    .plea-layout {
+      display: grid;
+      grid-template-columns: minmax(11rem, 0.48fr) minmax(0, 1.35fr);
+      gap: clamp(1.5rem, 5vw, 5rem);
+      align-items: center;
+      max-width: 62rem;
+      margin: 0 auto;
+    }
+
+    .plea-portrait {
+      position: relative;
+      padding: 0.42rem;
+      border-radius: 2.4rem;
+      background: linear-gradient(145deg, rgba(var(--gold-rgb),0.32), rgba(255,255,255,0.03));
+      box-shadow: 0 40px 110px rgba(0,0,0,0.38), 0 0 6rem rgba(var(--gold-rgb),0.10);
+    }
+
+    .plea-portrait img { display: block; width: 100%; aspect-ratio: 0.86; border-radius: 2rem; object-fit: cover; }
+    .plea-copy blockquote {
+      margin: 0;
+      font-family: var(--display);
+      font-size: clamp(2.1rem, 5vw, 4.7rem);
+      letter-spacing: -0.048em;
+      line-height: 0.98;
+    }
+
+    .plea-copy cite {
+      display: block;
+      margin-top: 1.5rem;
+      color: var(--gold);
+      font-style: normal;
+      font-size: 0.62rem;
+      font-weight: 650;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .plea-counter {
+      margin-bottom: 1rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    .ballot-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.75fr) minmax(0, 1fr);
+      gap: 1.2rem;
+      align-items: center;
+      max-width: 62rem;
+      margin: 0 auto;
+    }
+
+    .ballot-finalist {
+      padding: 1.4rem;
+      border-radius: 2rem;
+      text-align: center;
+      background: linear-gradient(155deg, rgba(255,255,255,0.07), rgba(255,255,255,0.022));
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.10), 0 34px 90px rgba(0,0,0,0.32);
+    }
+
+    .ballot-finalist img { width: clamp(6rem, 14vw, 9rem); aspect-ratio: 1; border-radius: 2rem; object-fit: cover; }
+    .ballot-finalist h3 { margin: 0.8rem 0 0; font-family: var(--display); font-size: clamp(2rem,4vw,3.3rem); font-weight: 420; letter-spacing: -0.04em; }
+    .tally-number { margin-top: 0.4rem; color: var(--rose); font-family: var(--mono); font-size: 1.4rem; }
+
+    .sealed-center { text-align: center; }
+    .sealed-disc {
+      width: 8rem;
+      height: 8rem;
+      display: grid;
+      place-items: center;
+      margin: 0 auto;
+      border-radius: 50%;
+      background: conic-gradient(from 215deg, rgba(var(--gold-rgb),0.78), rgba(var(--violet-rgb),0.5), rgba(var(--gold-rgb),0.78));
+      box-shadow: 0 0 0 0.55rem rgba(255,255,255,0.035), 0 0 5rem rgba(var(--gold-rgb),0.16);
+    }
+
+    .sealed-disc::before {
+      content: "SEALED";
+      width: 6.7rem;
+      height: 6.7rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: rgba(245,241,234,0.84);
+      background: #0b090d;
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.17em;
+    }
+
+    .receipt-pips { display: flex; justify-content: center; gap: 0.46rem; margin-top: 1.25rem; }
+    .receipt-pips span {
+      width: 0.48rem;
+      height: 0.48rem;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 1rem rgba(var(--gold-rgb),0.55);
+      transform: scale(1);
+    }
+    .receipt-pips span.pending { opacity: 0.18; transform: scale(0.7); }
+    .sealed-label { margin-top: 0.9rem; color: var(--muted); font-size: 0.64rem; line-height: 1.5; }
+
+    .tie-card {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 0.48rem;
+      border-radius: 2.4rem;
+      background: linear-gradient(145deg, rgba(var(--gold-rgb),0.22), rgba(255,255,255,0.025));
+      box-shadow: 0 45px 130px rgba(0,0,0,0.4), 0 0 7rem rgba(var(--gold-rgb),0.12);
+    }
+
+    .tie-core {
+      padding: clamp(1.8rem, 5vw, 4rem);
+      border-radius: 2rem;
+      text-align: center;
+      background: linear-gradient(160deg, rgba(var(--gold-rgb),0.10), transparent 58%), #0d0b0f;
+      box-shadow: inset 0 1px 1px rgba(255,255,255,0.13);
+    }
+
+    .tie-core img { width: 7rem; height: 7rem; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 0.45rem rgba(var(--gold-rgb),0.08); }
+    .tie-core h2 { margin: 1.2rem 0 0; font-family: var(--display); font-size: clamp(2.8rem,6vw,5rem); font-weight: 420; letter-spacing: -0.05em; line-height: 0.9; }
+    .tie-core p { margin: 1rem 0 0; color: var(--muted); font-size: 0.76rem; }
+
+    .elimination {
+      text-align: center;
+    }
+
+    .elimination .portrait-shell { width: clamp(8rem, 20vw, 13rem); opacity: 0.46; transform: translate3d(0, 0.5rem, 0) scale(0.96); }
+    .elimination h2 { margin: 1.6rem 0 0; font-family: var(--display); font-size: clamp(3.8rem,10vw,9rem); font-weight: 420; letter-spacing: -0.07em; line-height: 0.78; }
+    .elimination p { margin-top: 1.1rem; color: var(--rose); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.25em; text-transform: uppercase; }
+
+    .controls-shell {
+      position: fixed;
+      left: 50%;
+      bottom: 1rem;
+      z-index: 5;
+      width: min(58rem, calc(100% - 2rem));
+      padding: 0.34rem;
+      border-radius: 1.6rem;
+      background: rgba(255,255,255,0.09);
+      transform: translateX(-50%);
+      box-shadow: 0 24px 90px rgba(0,0,0,0.38);
+      backdrop-filter: blur(24px);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: auto minmax(0,1fr) auto;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.55rem;
+      border-radius: 1.28rem;
+      background: rgba(7,6,9,0.88);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10);
+    }
+
+    .control-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-height: 2.7rem;
+      padding: 0.28rem 0.35rem 0.28rem 0.8rem;
+      border: 0;
+      border-radius: 999px;
+      color: rgba(245,241,234,0.8);
+      background: rgba(255,255,255,0.06);
+      cursor: pointer;
+      transition: opacity 500ms var(--curve), transform 700ms var(--curve-heavy), background-color 700ms var(--curve);
+    }
+
+    .control-button:hover { background: rgba(255,255,255,0.10); transform: translate3d(0,-0.1rem,0); }
+    .control-button:active { transform: scale(0.98); }
+    .control-button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+    .control-button .button-island {
+      width: 2.1rem;
+      height: 2.1rem;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.075);
+      transition: transform 700ms var(--curve-heavy);
+    }
+    .control-button:hover .button-island { transform: translate3d(0.12rem,-0.05rem,0) scale(1.05); }
+
+    .beat-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .beat-nav::-webkit-scrollbar { display: none; }
+    .beat-dot {
+      flex: 0 0 auto;
+      width: 0.54rem;
+      height: 0.54rem;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.18);
+      cursor: pointer;
+      transition: opacity 500ms var(--curve), transform 700ms var(--curve-heavy), background-color 700ms var(--curve);
+    }
+    .beat-dot:hover { transform: scale(1.35); background: rgba(255,255,255,0.45); }
+    .beat-dot.is-active { background: var(--gold); box-shadow: 0 0 1rem rgba(var(--gold-rgb),0.56); transform: scale(1.18); }
+
+    .control-copy { min-width: 9rem; text-align: center; }
+    .control-title { color: rgba(245,241,234,0.86); font-size: 0.65rem; font-weight: 630; }
+    .control-count { margin-top: 0.16rem; color: var(--quiet); font-family: var(--mono); font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 767px) {
+      body { overflow-y: auto; }
+      .broadcast { min-height: 100dvh; }
+      .topline { grid-template-columns: 1fr 1fr; padding: 0.85rem 1rem 0.55rem; }
+      .wordmark { display: none; }
+      .live-label { grid-column: 2; }
+      .power-anchor { top:3.35rem; min-width:0; max-width:46vw; padding:0.4rem 0.52rem; }
+      .power-anchor.empowered { left:0.65rem; }
+      .power-anchor.override { right:0.65rem; }
+      .power-anchor .role-avatar { width:2rem; height:2rem; }
+      .power-anchor .micro { font-size:0.44rem; letter-spacing:0.12em; }
+      .power-anchor .role-name { font-size:0.68rem; }
+      .stage { min-height: 47rem; width: 100%; padding: 5.6rem 0.75rem 7.2rem; }
+      .beat { inset: 5.6rem 0.75rem 7.2rem; align-items: start; padding-top: 1.2rem; }
+      .beat-heading h1, .beat-heading h2 { font-size: clamp(2.7rem, 15vw, 4.6rem); }
+      .duel { grid-template-columns: minmax(0,1fr) 2rem minmax(0,1fr); gap: 0.5rem; }
+      .nominee-shell.left, .nominee-shell.right { transform: none; }
+      .naming-sequence .nominee-shell,
+      .naming-sequence .nominee-shell.right,
+      .replacement-card { transform:perspective(700px) rotateY(-58deg) scale(0.92); }
+      .naming-sequence .nominee-shell.is-revealed,
+      .naming-sequence .nominee-shell.right.is-revealed,
+      .replacement-card.is-revealed { transform:perspective(700px) rotateY(0) scale(1); }
+      .nominee-core { min-height: 16rem; padding: 0.85rem; border-radius: 1.3rem; }
+      .nominee-shell { border-radius: 1.6rem; }
+      .portrait-shell { width: min(6rem, 31vw); border-radius: 1.45rem; }
+      .portrait-shell img { border-radius: 1.2rem; }
+      .nominee-name { font-size: clamp(1.75rem, 9vw, 2.5rem); }
+      .axis-mark { width: 2rem; height: 2rem; font-size: 0.5rem; }
+      .axis-mark::before, .axis-mark::after { display: none; }
+      .draw-layout, .mingle-card, .plea-layout, .ballot-layout, .override-layout { grid-template-columns: 1fr; }
+      .draw-copy { text-align: center; }
+      .draw-orbit { width: min(18rem, 74vw); }
+      .mingle-card { min-height: 0; }
+      .stakes-panel, .conversation { padding: 1.3rem; }
+      .override-layout { max-width: 20rem; }
+      .override-holder-card { order: -1; }
+      .override-subject.is-removed { transform: translate3d(-0.8rem,0,0) rotate(-3deg) scale(0.93); }
+      .slash { left: 19%; top: 58%; width: 62%; }
+      .withheld { min-height: 10rem; }
+      .plea-layout { text-align: center; }
+      .plea-portrait { width: 9rem; margin: 0 auto; }
+      .plea-copy blockquote { font-size: clamp(2.2rem, 11vw, 3.5rem); }
+      .ballot-layout { grid-template-columns: 1fr 1fr; }
+      .sealed-center { grid-column: 1 / -1; grid-row: 1; }
+      .ballot-finalist { padding: 0.85rem; }
+      .ballot-finalist img { width: 5.5rem; }
+      .controls-shell { bottom: 0.55rem; width: calc(100% - 1rem); }
+      .controls { grid-template-columns: auto minmax(0,1fr) auto; }
+      .control-button { padding-left: 0.3rem; }
+      .control-button > span:not(.button-island) { display: none; }
+      .control-copy { min-width: 6.5rem; }
+      .beat-nav { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body data-beat="naming">
+  <main class="broadcast">
+    <div class="ambient" aria-hidden="true"></div>
+
+    <header class="topline">
+      <div class="round-label">Round 04 · Format Resolve</div>
+      <div class="wordmark">INFLUENCE</div>
+      <div class="live-label">Storyboard</div>
+    </header>
+
+    <div class="power-anchor empowered" id="empowered-anchor" aria-label="Empowered: Atlas">
+      <img class="role-avatar" src="../../packages/web/public/avatars/personas/strategic.png" alt="" />
+      <div>
+        <div class="micro">Empowered</div>
+        <div class="role-name">Atlas</div>
+      </div>
+    </div>
+
+    <div class="power-anchor override" id="override-anchor" aria-label="Override holder: Mira">
+      <img class="role-avatar" src="../../packages/web/public/avatars/personas/social.png" alt="" />
+      <div>
+        <div class="micro">Override holder</div>
+        <div class="role-name">Mira</div>
+      </div>
+    </div>
+
+    <section class="stage" aria-label="Two Names presentation beats">
+      <article class="beat is-active" data-beat="naming" data-title="The two names">
+        <div class="naming-intro" id="naming-intro">
+          <div>
+            <div class="intro-avatar-shell">
+              <img id="empowered-intro-avatar" src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" />
+            </div>
+            <div class="micro">Empowered</div>
+            <h1>Atlas</h1>
+          </div>
+        </div>
+        <div class="beat-inner naming-sequence" id="naming-sequence">
+          <header class="beat-heading">
+            <h1>Atlas nominates:</h1>
+          </header>
+          <div class="duel">
+            <div class="nominee-shell left" id="initial-nominee-left">
+              <div class="nominee-core">
+                <div class="nominee-index">NAME 01</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" /></div>
+                <div class="nominee-name">Nyx</div>
+                <div class="nominee-status">Named by Atlas</div>
+              </div>
+            </div>
+            <div class="axis"><div class="axis-mark">VS</div></div>
+            <div class="nominee-shell right" id="initial-nominee-right">
+              <div class="nominee-core">
+                <div class="nominee-index">NAME 02</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" /></div>
+                <div class="nominee-name">Sage</div>
+                <div class="nominee-status">Named by Atlas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="draw" data-title="Override draw">
+        <div class="beat-inner draw-layout">
+          <div class="draw-orbit" aria-label="Public random draw settled on Mira">
+            <div class="orbit-person"><img src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" /></div>
+            <div class="orbit-person"><img src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" /></div>
+            <div class="orbit-person"><img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" /></div>
+            <div class="orbit-person"><img src="../../packages/web/public/avatars/personas/observer.png" alt="Echo" /></div>
+            <div class="orbit-person"><img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" /></div>
+            <div class="orbit-person is-drawn"><img id="override-draw-avatar" src="../../packages/web/public/avatars/personas/social.png" alt="Mira" /></div>
+          </div>
+          <div class="draw-copy">
+            <h2>Override<br />goes to:</h2>
+            <div class="draw-name">Mira</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat is-mingle" data-beat="mingle-initial" data-title="First Mingle">
+        <div class="beat-inner">
+          <div class="mingle-card-shell">
+            <div class="mingle-card">
+              <section class="stakes-panel">
+                <div>
+                  <span class="eyebrow">Initial-names Mingle</span>
+                  <h2>Existing Mingle view</h2>
+                  <div class="mingle-role-tags" aria-label="Player role tags">
+                    <span class="mingle-role-tag" data-role="empowered">Atlas · Empowered</span>
+                    <span class="mingle-role-tag" data-role="named">Nyx · Nominated</span>
+                    <span class="mingle-role-tag" data-role="named">Sage · Nominated</span>
+                    <span class="mingle-role-tag" data-role="override">Mira · Override</span>
+                  </div>
+                </div>
+                <div class="stakes-mini-pair" aria-label="Nyx and Sage are currently named">
+                  <img src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" />
+                  <span class="rail-versus">VS</span>
+                  <img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" />
+                </div>
+              </section>
+              <section class="conversation" aria-label="Example Mingle conversation">
+                <div class="micro">Conversation remains primary</div>
+                <div class="conversation-row">
+                  <img src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" />
+                  <div class="conversation-bubble">Mira, you know this pair protects exactly the people Atlas needs. Break it.</div>
+                </div>
+                <div class="conversation-row">
+                  <img src="../../packages/web/public/avatars/personas/social.png" alt="Mira" />
+                  <div class="conversation-bubble">I know what changing it costs. I’m deciding who benefits from the chaos.</div>
+                </div>
+                <div class="conversation-row">
+                  <img src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" />
+                  <div class="conversation-bubble">If you use it, I name the replacement. Don’t mistake disruption for control.</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="decline" data-title="Override declined">
+        <div class="beat-inner tie-card">
+          <div class="tie-core">
+            <img src="../../packages/web/public/avatars/personas/social.png" alt="Mira" />
+            <div class="plea-counter" style="margin-top:1.2rem">Override decision</div>
+            <h2>Mira leaves the<br />names untouched.</h2>
+            <p>Nyx and Sage become the final pair. The second Mingle is skipped.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="removal" data-title="Override used">
+        <div class="beat-inner">
+          <header class="beat-heading">
+            <h2>Mira overrides:</h2>
+          </header>
+          <div class="duel">
+            <div class="nominee-shell left removal-card" id="removed-nominee-card">
+              <div class="card-strike" aria-hidden="true"></div>
+              <div class="nominee-core">
+                <div class="nominee-index">REMOVED</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" /></div>
+                <div class="nominee-name">Nyx</div>
+                <div class="nominee-status">Overridden by Mira</div>
+              </div>
+            </div>
+            <div class="axis"><div class="axis-mark">VS</div></div>
+            <div class="nominee-shell right">
+              <div class="nominee-core">
+                <div class="nominee-index">RETAINED</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" /></div>
+                <div class="nominee-name">Sage</div>
+                <div class="nominee-status">Still nominated</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="replacement" data-title="Replacement reveal">
+        <div class="beat-inner">
+          <header class="beat-heading">
+            <h2>Atlas nominates:</h2>
+          </header>
+          <div class="duel">
+            <div class="nominee-shell left replacement-card" id="replacement-nominee-card">
+              <div class="nominee-core">
+                <div class="nominee-index">REPLACEMENT</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" /></div>
+                <div class="nominee-name">Rex</div>
+                <div class="nominee-status">Named by Atlas</div>
+              </div>
+            </div>
+            <div class="axis"><div class="axis-mark">VS</div></div>
+            <div class="nominee-shell right">
+              <div class="nominee-core">
+                <div class="nominee-index">RETAINED</div>
+                <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" /></div>
+                <div class="nominee-name">Sage</div>
+                <div class="nominee-status">Final name</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat is-mingle" data-beat="mingle-final" data-title="Final Mingle">
+        <div class="beat-inner">
+          <div class="mingle-card-shell">
+            <div class="mingle-card">
+              <section class="stakes-panel">
+                <div>
+                  <span class="eyebrow">Final-names Mingle</span>
+                  <h2>Existing Mingle view</h2>
+                  <div class="mingle-role-tags" aria-label="Player role tags">
+                    <span class="mingle-role-tag" data-role="empowered">Atlas · Empowered</span>
+                    <span class="mingle-role-tag" data-role="named">Rex · Nominated</span>
+                    <span class="mingle-role-tag" data-role="named">Sage · Nominated</span>
+                    <span class="mingle-role-tag" data-role="override">Mira · Override used</span>
+                  </div>
+                </div>
+                <div class="stakes-mini-pair" aria-label="Rex and Sage are the final names">
+                  <img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" />
+                  <span class="rail-versus">VS</span>
+                  <img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" />
+                </div>
+              </section>
+              <section class="conversation" aria-label="Example final Mingle conversation">
+                <div class="micro">A fresh social window · no stale room state</div>
+                <div class="conversation-row">
+                  <img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" />
+                  <div class="conversation-bubble">Atlas just showed everyone I was the hidden target. If I leave, that fear wins.</div>
+                </div>
+                <div class="conversation-row">
+                  <img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" />
+                  <div class="conversation-bubble">The Override changed a name, not the evidence. Ask who still benefits from my exit.</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="plea-sage" data-title="First final plea">
+        <div class="beat-inner plea-layout">
+          <div class="plea-portrait"><img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" /></div>
+          <div class="plea-copy">
+            <div class="plea-counter">Final plea · 01 / 02 · uninterrupted</div>
+            <blockquote>“Do not reward the person who made fear look like certainty.”</blockquote>
+            <cite>Sage · Final name</cite>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="plea-rex" data-title="Second final plea">
+        <div class="beat-inner plea-layout">
+          <div class="plea-portrait"><img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" /></div>
+          <div class="plea-copy">
+            <div class="plea-counter">Final plea · 02 / 02 · uninterrupted</div>
+            <blockquote>“You saw the target move. Now decide who was honest about wanting it.”</blockquote>
+            <cite>Rex · Replacement name</cite>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="sealed" data-title="Exit voting begins">
+        <div class="beat-inner">
+          <header class="beat-heading">
+            <h2>Exit voting begins</h2>
+          </header>
+          <div class="ballot-layout">
+            <div class="ballot-finalist">
+              <img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" />
+              <h3>Rex</h3>
+              <div class="micro">Final name</div>
+            </div>
+            <div class="sealed-center">
+              <div class="sealed-disc" aria-hidden="true"></div>
+              <div class="receipt-pips" aria-label="Three of four ballots sealed"><span></span><span></span><span></span><span class="pending"></span></div>
+              <div class="sealed-label">3 of 4 ballots sealed<br />No targets exposed</div>
+            </div>
+            <div class="ballot-finalist">
+              <img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" />
+              <h3>Sage</h3>
+              <div class="micro">Final name</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="tally" data-title="Tie">
+        <div class="beat-inner">
+          <header class="beat-heading">
+            <h2>Tie</h2>
+          </header>
+          <div class="ballot-layout">
+            <div class="ballot-finalist">
+              <img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" />
+              <h3>Rex</h3>
+              <div class="tally-number">02</div>
+            </div>
+            <div class="sealed-center">
+              <div class="sealed-label">Echo → Sage<br />Lyra → Rex<br />Mira → Sage<br />Nyx → Rex</div>
+            </div>
+            <div class="ballot-finalist">
+              <img src="../../packages/web/public/avatars/personas/diplomat.png" alt="Sage" />
+              <h3>Sage</h3>
+              <div class="tally-number">02</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="tiebreak" data-title="Empowered tiebreak">
+        <div class="beat-inner tie-card">
+          <div class="tie-core">
+            <img src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" />
+            <div class="plea-counter" style="margin-top:1.2rem">The vote is tied · 2–2</div>
+            <h2>Power returns<br />to Atlas.</h2>
+            <p>Empowered must choose between the two final names.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="beat" data-beat="elimination" data-title="Elimination">
+        <div class="beat-inner elimination">
+          <span class="eyebrow">Two Names resolved</span>
+          <div class="portrait-shell"><img src="../../packages/web/public/avatars/personas/aggressive.png" alt="Rex" /></div>
+          <h2>Rex</h2>
+          <p>Eliminated by Empowered tiebreak</p>
+        </div>
+      </article>
+    </section>
+
+    <div class="controls-shell">
+      <nav class="controls" aria-label="Storyboard controls">
+        <button class="control-button" id="previous" type="button">
+          <span>Previous</span><span class="button-island" aria-hidden="true">←</span>
+        </button>
+        <div>
+          <div class="beat-nav" id="beat-nav" aria-label="Choose presentation beat"></div>
+          <div class="control-copy">
+            <div class="control-title" id="control-title">The two names</div>
+            <div class="control-count" id="control-count">Beat 01 / 13</div>
+          </div>
+        </div>
+        <button class="control-button" id="next" type="button">
+          <span>Next beat</span><span class="button-island" aria-hidden="true">→</span>
+        </button>
+      </nav>
+    </div>
+
+    <p class="sr-only" id="announcement" aria-live="polite"></p>
+  </main>
+
+  <script>
+    const beats = [...document.querySelectorAll(".beat")];
+    const empoweredAnchor = document.getElementById("empowered-anchor");
+    const overrideAnchor = document.getElementById("override-anchor");
+    const namingIntro = document.getElementById("naming-intro");
+    const namingSequence = document.getElementById("naming-sequence");
+    const initialNomineeLeft = document.getElementById("initial-nominee-left");
+    const initialNomineeRight = document.getElementById("initial-nominee-right");
+    const removedNomineeCard = document.getElementById("removed-nominee-card");
+    const replacementNomineeCard = document.getElementById("replacement-nominee-card");
+    const title = document.getElementById("control-title");
+    const count = document.getElementById("control-count");
+    const announcement = document.getElementById("announcement");
+    const nav = document.getElementById("beat-nav");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timers = new Set();
+    const activeAnimations = new Set();
+    let index = 0;
+
+    const beatAnnouncements = {
+      naming: "Atlas is Empowered. Atlas nominates Nyx and Sage.",
+      draw: "Mira is drawn as Override holder.",
+      "mingle-initial": "Initial Mingle. Atlas is Empowered. Nyx and Sage are nominated. Mira holds Override.",
+      decline: "Mira declines Override. Nyx and Sage remain nominated.",
+      removal: "Mira uses Override and removes Nyx. Sage remains nominated.",
+      replacement: "Atlas nominates Rex as the replacement. Rex and Sage are the final nominees.",
+      "mingle-final": "Final Mingle. Rex and Sage are nominated.",
+      "plea-sage": "Sage gives the first final plea.",
+      "plea-rex": "Rex gives the second final plea.",
+      sealed: "Exit voting begins. Three of four ballots are sealed.",
+      tally: "The exit vote is tied, two votes for Rex and two votes for Sage.",
+      tiebreak: "The tie returns the decision to Atlas.",
+      elimination: "Rex is eliminated by Empowered tiebreak.",
+    };
+
+    beats.forEach((beat, beatIndex) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = "beat-dot";
+      dot.setAttribute("aria-label", `Show beat ${beatIndex + 1}: ${beat.dataset.title}`);
+      dot.addEventListener("click", () => showBeat(beatIndex));
+      nav.appendChild(dot);
+    });
+
+    function schedule(callback, delay) {
+      if (reducedMotion) {
+        callback();
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        timers.delete(timer);
+        callback();
+      }, delay);
+      timers.add(timer);
+    }
+
+    function clearBeatMotion() {
+      timers.forEach((timer) => window.clearTimeout(timer));
+      timers.clear();
+      activeAnimations.forEach((animation) => animation.cancel());
+      activeAnimations.clear();
+      document.querySelectorAll(".continuity-ghost").forEach((ghost) => ghost.remove());
+    }
+
+    function resetBeatVisuals() {
+      const animatedNodes = [
+        namingIntro,
+        namingSequence,
+        initialNomineeLeft,
+        initialNomineeRight,
+        removedNomineeCard,
+        replacementNomineeCard,
+      ];
+      animatedNodes.forEach((node) => { node.style.transition = "none"; });
+      namingIntro.classList.remove("is-exiting");
+      namingSequence.classList.remove("is-visible");
+      initialNomineeLeft.classList.remove("is-revealed");
+      initialNomineeRight.classList.remove("is-revealed");
+      removedNomineeCard.classList.remove("is-struck", "is-dismissed");
+      replacementNomineeCard.classList.remove("is-revealed");
+      document.getElementById("empowered-intro-avatar").style.opacity = "1";
+      document.getElementById("override-draw-avatar").style.opacity = "1";
+      document.body.offsetHeight;
+      animatedNodes.forEach((node) => { node.style.removeProperty("transition"); });
+    }
+
+    function setAnchorVisibility({ empowered, override }) {
+      [[empoweredAnchor, empowered], [overrideAnchor, override]].forEach(([anchor, visible]) => {
+        if (visible) {
+          anchor.classList.add("is-visible");
+          return;
+        }
+
+        anchor.style.transition = "none";
+        anchor.classList.remove("is-visible");
+        anchor.offsetHeight;
+        anchor.style.removeProperty("transition");
+      });
+    }
+
+    function transferAvatar(sourceId, anchor) {
+      const source = document.getElementById(sourceId);
+      const target = anchor.querySelector("img");
+      if (!source || !target) return;
+
+      if (reducedMotion) {
+        source.style.opacity = "0";
+        anchor.classList.add("is-visible");
+        return;
+      }
+
+      const sourceRect = source.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const ghost = source.cloneNode(true);
+      ghost.removeAttribute("id");
+      ghost.alt = "";
+      ghost.className = "continuity-ghost";
+      ghost.style.left = `${sourceRect.left}px`;
+      ghost.style.top = `${sourceRect.top}px`;
+      ghost.style.width = `${sourceRect.width}px`;
+      ghost.style.height = `${sourceRect.height}px`;
+      ghost.style.borderRadius = getComputedStyle(source).borderRadius;
+      document.body.appendChild(ghost);
+      source.style.opacity = "0";
+
+      const deltaX = targetRect.left - sourceRect.left;
+      const deltaY = targetRect.top - sourceRect.top;
+      const scale = targetRect.width / sourceRect.width;
+      const animation = ghost.animate(
+        [
+          { transform: "translate3d(0,0,0) scale(1)", opacity: 1 },
+          { transform: `translate3d(${deltaX}px,${deltaY}px,0) scale(${scale})`, opacity: 1 },
+        ],
+        { duration: 1050, easing: "cubic-bezier(0.16, 1, 0.3, 1)", fill: "forwards" },
+      );
+      activeAnimations.add(animation);
+      animation.finished.then(() => {
+        activeAnimations.delete(animation);
+        anchor.classList.add("is-visible");
+        ghost.remove();
+      }).catch(() => ghost.remove());
+    }
+
+    function choreographBeat(beatKey) {
+      if (beatKey === "naming") {
+        setAnchorVisibility({ empowered: false, override: false });
+        schedule(() => namingIntro.classList.add("is-exiting"), 1350);
+        schedule(() => transferAvatar("empowered-intro-avatar", empoweredAnchor), 1250);
+        schedule(() => namingSequence.classList.add("is-visible"), 2250);
+        schedule(() => initialNomineeLeft.classList.add("is-revealed"), 2480);
+        schedule(() => initialNomineeRight.classList.add("is-revealed"), 3180);
+        return;
+      }
+
+      if (beatKey === "draw") {
+        setAnchorVisibility({ empowered: true, override: false });
+        schedule(() => transferAvatar("override-draw-avatar", overrideAnchor), 1700);
+        return;
+      }
+
+      if (beatKey === "mingle-initial" || beatKey === "mingle-final") {
+        setAnchorVisibility({ empowered: false, override: false });
+        return;
+      }
+
+      setAnchorVisibility({ empowered: true, override: true });
+      if (beatKey === "removal") {
+        schedule(() => removedNomineeCard.classList.add("is-struck"), 420);
+        schedule(() => removedNomineeCard.classList.add("is-dismissed"), 1180);
+      }
+      if (beatKey === "replacement") {
+        schedule(() => replacementNomineeCard.classList.add("is-revealed"), 420);
+      }
+    }
+
+    function showBeat(nextIndex) {
+      clearBeatMotion();
+      resetBeatVisuals();
+      index = (nextIndex + beats.length) % beats.length;
+      beats.forEach((beat, beatIndex) => beat.classList.toggle("is-active", beatIndex === index));
+      [...nav.children].forEach((dot, beatIndex) => dot.classList.toggle("is-active", beatIndex === index));
+
+      const beat = beats[index];
+      const beatKey = beat.dataset.beat;
+      document.body.dataset.beat = beatKey;
+      title.textContent = beat.dataset.title;
+      count.textContent = `Beat ${String(index + 1).padStart(2, "0")} / ${String(beats.length).padStart(2, "0")}`;
+      announcement.textContent = beatAnnouncements[beatKey];
+      choreographBeat(beatKey);
+    }
+
+    document.getElementById("previous").addEventListener("click", () => showBeat(index - 1));
+    document.getElementById("next").addEventListener("click", () => showBeat(index + 1));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") showBeat(index - 1);
+      if (event.key === "ArrowRight") showBeat(index + 1);
+    });
+
+    showBeat(0);
+  </script>
+</body>
+</html>

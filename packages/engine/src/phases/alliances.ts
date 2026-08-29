@@ -957,7 +957,9 @@ export async function runAllianceHuddleWindow(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
   phase: AllianceHuddlePhase,
+  options: { completePhase?: boolean } = {},
 ): Promise<void> {
+  const completePhase = options.completePhase ?? true;
   const label = phase === Phase.FORMAT_MINGLE
     ? "POST-FORMAT ALLIANCE HUDDLES"
     : phase === Phase.PRE_VOTE_HUDDLE
@@ -971,8 +973,10 @@ export async function runAllianceHuddleWindow(
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
   const window = huddleWindowForPhase(phase);
   if (eligible.length === 0) {
-    actor.send({ type: "PHASE_COMPLETE" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (completePhase) {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     return;
   }
   const eligibleById = new Map(eligible.map((alliance) => [alliance.id, alliance]));
@@ -1064,6 +1068,8 @@ export async function runAllianceHuddleWindow(
     emitHuddleScheduleTurn(ctx, phase, schedule);
   }
 
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (completePhase) {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }

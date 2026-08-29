@@ -17,6 +17,7 @@ export const FORMAT_SURFACE_IDS = {
   majority_elimination: "highest_count",
   even_votes: "even_votes",
   restricted_history: "restricted_history",
+  two_names: "two_names",
 } as const satisfies Record<LaunchFormatId, string>;
 
 export type FormatSurfaceId =
@@ -43,4 +44,3 @@ export function canonicalFormatIdForSurface(
     ? CANONICAL_FORMAT_IDS_BY_SURFACE.get(value as FormatSurfaceId) ?? null
     : null;
 }
-

@@ -45,10 +45,24 @@ export interface SealedElimAggregate {
   eligiblePlayerIds: UUID[];
 }
 
+export type TwoNamesPair = [UUID, UUID];
+
+export interface TwoNamesBallot {
+  voterId: UUID;
+  targetId: UUID;
+}
+
+export interface TwoNamesScore {
+  totals: Record<UUID, number>;
+  finalistIds: TwoNamesPair;
+  eligibleVoterIds: UUID[];
+}
+
 export type FormatCapabilityClass =
   | "sealed_elim"
   | "sealed_polarity"
-  | "public_chain";
+  | "public_chain"
+  | "two_names";
 
 export type BounceClassification = "safe" | "vulnerable";
 

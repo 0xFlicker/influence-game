@@ -150,6 +150,86 @@ const decisions: ViewerDecisionEvent[] = [
 ];
 
 describe("format presentation compiler", () => {
+  it("compiles Two Names role reveals, substitution, pleas, sealed progress, and tie in canonical order", () => {
+    const twoNamesRoster = ["atlas", "blair", "cyra", "dax", "echo"].map((id) => ({ id, name: id }));
+    const twoNames = [
+      event({ sequence: 1, phase: Phase.FORMAT_PICK, type: "format.selected", payload: { empoweredId: "atlas", formatId: "two_names" } }),
+      event({ sequence: 2, phase: Phase.FORMAT_PICK, type: "format.two_names_setup", payload: { empoweredId: "atlas", initialNomineeIds: ["blair", "cyra"], overrideHolderId: "atlas" } }),
+      event({ sequence: 3, phase: Phase.FORMAT_MINGLE, type: "format.two_names_mingle_completed", payload: { window: "initial_names", finalistPlayerIds: ["blair", "cyra"] } }),
+      event({ sequence: 4, phase: Phase.FORMAT_MINGLE, type: "format.two_names_override_used", payload: { overrideHolderId: "atlas", removedNomineeId: "blair" } }),
+      event({ sequence: 5, phase: Phase.FORMAT_MINGLE, type: "format.two_names_replacement_named", payload: { empoweredId: "atlas", replacementNomineeId: "dax", finalistPlayerIds: ["dax", "cyra"] } }),
+      event({ sequence: 6, phase: Phase.FORMAT_MINGLE, type: "format.two_names_mingle_completed", payload: { window: "final_names", finalistPlayerIds: ["dax", "cyra"] } }),
+      event({ sequence: 7, phase: Phase.FORMAT_RESOLVE, type: "format.two_names_plea_recorded", payload: { speakerId: "dax", ordinal: 0, status: "accepted", text: "Keep me.", absenceReason: null } }),
+      event({ sequence: 8, phase: Phase.FORMAT_RESOLVE, type: "format.two_names_plea_recorded", payload: { speakerId: "cyra", ordinal: 1, status: "absent", text: null, absenceReason: "provider_unavailable" } }),
+      event({ sequence: 9, phase: Phase.FORMAT_RESOLVE, type: "format.ballot_cast", payload: { formatId: "two_names", voterId: "blair", targetId: "dax", polarity: null } }),
+      event({ sequence: 10, phase: Phase.FORMAT_RESOLVE, type: "format.ballot_cast", payload: { formatId: "two_names", voterId: "echo", targetId: "cyra", polarity: null } }),
+      event({
+        sequence: 11,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.resolved",
+        payload: {
+          formatId: "two_names",
+          empoweredId: "atlas",
+          eliminatedId: "dax",
+          resolutionKind: "auto",
+          tiedPlayerIds: ["dax", "cyra"],
+          tiebreakerId: "atlas",
+          aggregate: {
+            capability: "two_names",
+            initialNomineeIds: ["blair", "cyra"],
+            overrideHolderId: "atlas",
+            overrideAction: "used",
+            removedNomineeId: "blair",
+            replacementNomineeId: "dax",
+            finalistPlayerIds: ["dax", "cyra"],
+            eligibleVoterIds: ["blair", "echo"],
+            totals: { dax: 1, cyra: 1 },
+          },
+        },
+      }),
+    ] satisfies ViewerDecisionEvent[];
+    const compiled = compileFormatPresentationPrefix({
+      gameId: "two-names",
+      gameKernel: "format",
+      roster: twoNamesRoster,
+      decisions: twoNames,
+      formatManifest: ["two_names"],
+    });
+
+    expect(compiled.diagnostic).toBeNull();
+    expect(compiled.status).toBe("ready");
+    expect(compiled.cues.map((cue) => cue.kind)).toEqual([
+      "format_selected",
+      "format_selected",
+      "two_names_empowered_intro",
+      "two_names_initial_names",
+      "two_names_override_draw",
+      "two_names_mingle_complete",
+      "two_names_override_removed",
+      "two_names_replacement",
+      "two_names_mingle_complete",
+      "two_names_plea",
+      "two_names_plea",
+      "two_names_ballots_sealing",
+      "two_names_ballots_sealing",
+      "format_aggregate",
+      "format_roll_call",
+      "format_roll_call",
+      "format_tiebreak",
+      "format_elimination",
+    ]);
+    expect(compiled.snapshot.twoNames).toMatchObject({
+      empoweredId: "atlas",
+      overrideHolderId: "atlas",
+      removedNomineeId: "blair",
+      replacementNomineeId: "dax",
+      finalistPlayerIds: ["dax", "cyra"],
+      completedMingleWindows: ["initial_names", "final_names"],
+      pleaCount: 2,
+      ballotsSealed: 2,
+    });
+  });
+
   it("produces equal cue streams for live decisions and replay frames at every prefix", () => {
     const ordered = [...decisions].sort((left, right) => left.sequence - right.sequence);
     const frames = ordered.map(frameFor);

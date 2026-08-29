@@ -310,6 +310,12 @@ export function applyCanonicalEvent(
     }
     case "format.ballot_cast":
     case "format.ballot_forfeited":
+    case "format.two_names_setup":
+    case "format.two_names_mingle_completed":
+    case "format.two_names_override_declined":
+    case "format.two_names_override_used":
+    case "format.two_names_replacement_named":
+    case "format.two_names_plea_recorded":
     case "format.safety_bounce_started":
     case "format.safety_bounce_pointer":
     case "format.resolved": {

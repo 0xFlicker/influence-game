@@ -366,7 +366,14 @@ function DramaticReplayTheater({
   const isFormatGame =
     (game.gameKernel ?? game.watchState?.gameKernel) === "format";
   const formatRoster = useMemo(
-    () => players.map((player) => ({ id: player.id, name: player.name })),
+    () => players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      persona: player.persona,
+      personaKey: player.personaKey,
+      avatarUrl: player.avatarUrl,
+      currentAgent: player.currentAgent,
+    })),
     [players],
   );
   const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);

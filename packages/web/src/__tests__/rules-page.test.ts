@@ -31,9 +31,9 @@ describe("rules page", () => {
     expect(source).not.toContain("current Council");
   });
 
-  it("documents the frozen six-format catalog and round-aware selection path", () => {
-    expect(normalizedSource).toContain("all six default formats");
-    expect(normalizedSource).toContain("Highest Count, Even Votes, and Restricted History");
+  it("documents the frozen seven-format catalog and round-aware selection path", () => {
+    expect(normalizedSource).toContain("all seven default formats");
+    expect(normalizedSource).toContain("Highest Count, Even Votes, Restricted History, and Two Names");
     expect(normalizedSource).toContain("automatically locks that card without inventing an offer");
     expect(normalizedSource).toContain("A round with one available format has already locked that card");
     expect(normalizedSource).toContain("The highest total exits");
@@ -42,6 +42,7 @@ describe("rules page", () => {
     expect(normalizedSource).toContain("every total is odd");
     expect(normalizedSource).toContain("Restricted History cannot appear in rounds 1 or 2");
     expect(normalizedSource).toContain("forfeits their ballot");
+    expect(normalizedSource).toContain("Only living players who are neither Empowered nor a finalist");
   });
 
   it("separates sealed agent context from the viewer and MCP ballot ledger", () => {

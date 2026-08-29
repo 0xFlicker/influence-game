@@ -50,6 +50,10 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { runMinglePhase } from "./mingle";
+import {
+  runTwoNamesFormatMingle,
+  runTwoNamesFormatResolve,
+} from "./two-names";
 import type { CanonicalSourcePointer, FormatResolutionPayload } from "../canonical-events";
 
 type FormatRoundElimination = {
@@ -154,6 +158,7 @@ export async function runFormatMenuPhase(
     formatManifest: gameState.formatManifest,
     lastFormatId: state.lastSelectedFormat,
     round: gameState.round,
+    livingIds: gameState.getAlivePlayerIds(),
     random: ctx.random,
   });
   state.offeredFormats = menu.offered;
@@ -361,6 +366,10 @@ export async function runFormatMinglePhase(
   actor: PhaseActor,
   options: { completePhase?: boolean } = {},
 ): Promise<void> {
+  if (ctx.formatKernelState.selectedFormat === "two_names") {
+    await runTwoNamesFormatMingle(ctx, actor);
+    return;
+  }
   const { logger } = ctx;
   const pressure = ctx.formatKernelState.pressure;
   if (pressure) {
@@ -399,6 +408,9 @@ export async function runFormatResolvePhase(
     elimination = await resolveSaveOrEliminateRound(ctx, empoweredId);
   } else if (registration.capability === "public_chain") {
     elimination = await resolveSafetyBounceRound(ctx, empoweredId);
+  } else if (registration.capability === "two_names") {
+    await runTwoNamesFormatResolve(ctx, actor);
+    return;
   } else {
     const unreachable: never = registration;
     throw new Error(`Unsupported format capability at resolve: ${String(unreachable)}`);
