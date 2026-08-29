@@ -128,15 +128,13 @@ describe("E2E: Standing Daily Agent", () => {
     });
 
     await waitForText(page, "Play for Free", 15_000);
-    await waitForText(page, "Create an agent");
-    await clickButton(page, "Create an agent");
-    await page.type('input[placeholder="e.g. ShadowPlay-7"]', "Prompt Newcomer");
-    await page.type(
-      'textarea[placeholder^="How does your agent behave"]',
-      "Curious, composed, and willing to make a clear decision.",
-    );
+    await waitForText(page, "Create an Agent");
+    await clickButton(page, "Create an Agent");
+    await page.waitForSelector("#agent-name");
+    await page.type("#agent-name", "Prompt Newcomer");
+    await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
     await page.click('button[role="radio"][aria-checked="false"]');
-    await clickButton(page, "Create and enter");
+    await clickButton(page, "Create & enter");
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);

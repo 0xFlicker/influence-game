@@ -1,7 +1,7 @@
 import { normalizeVerifiedEmail } from "../lib/verified-email.js";
 import { createClerkClient } from "@clerk/backend";
 
-export type AuthenticationProviderName = "privy" | "clerk";
+export type AuthenticationProviderName = "privy" | "clerk" | "farcaster";
 
 export interface VerifiedEmailOwner {
   kind: "email";
@@ -11,6 +11,12 @@ export interface VerifiedEmailOwner {
 export interface VerifiedExternalWalletOwner {
   kind: "external_wallet";
   address: string;
+}
+
+/** Farcaster identity without a resolvable primary Ethereum address. */
+export interface VerifiedFarcasterOwner {
+  kind: "farcaster";
+  fid: number;
 }
 
 export interface UnclassifiedOwner {
@@ -28,6 +34,7 @@ export interface UnclassifiedOwner {
 export type VerifiedAccountOwner =
   | VerifiedEmailOwner
   | VerifiedExternalWalletOwner
+  | VerifiedFarcasterOwner
   | UnclassifiedOwner;
 
 export interface VerifiedProviderEvidence {
@@ -63,9 +70,15 @@ export type ClerkProviderVerificationResult =
   | { status: "locked" }
   | { status: "invalid" };
 
+export type FarcasterProviderVerificationResult =
+  | { status: "verified"; evidence: VerifiedProviderEvidence }
+  | { status: "profile_unavailable"; provider: "farcaster"; subject: string | null }
+  | { status: "invalid" };
+
 export type ProviderVerificationResult =
   | PrivyProviderVerificationResult
-  | ClerkProviderVerificationResult;
+  | ClerkProviderVerificationResult
+  | FarcasterProviderVerificationResult;
 
 export interface AuthenticationProviderVerifier<
   Result extends ProviderVerificationResult,
@@ -370,4 +383,130 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Farcaster Quick Auth
+// ---------------------------------------------------------------------------
+
+export interface FarcasterJwtPayload {
+  /** FID of the authenticated Farcaster user (JWT `sub`). */
+  sub: number | string;
+}
+
+export interface FarcasterAdapterDependencies {
+  verifyJwt(input: {
+    token: string;
+    domain: string;
+  }): Promise<FarcasterJwtPayload>;
+  resolvePrimaryAddress?(fid: number): Promise<string | null>;
+  timeoutMs?: number;
+}
+
+export interface FarcasterAuthenticationProviderVerifier {
+  readonly provider: "farcaster";
+  verify(
+    token: string,
+    domain: string,
+  ): Promise<FarcasterProviderVerificationResult>;
+}
+
+/**
+ * Verifies a Farcaster Quick Auth JWT and builds Influence provider evidence.
+ * Primary Ethereum address is optional; when present it enables shared-EOA
+ * account resolution with Privy wallet careers.
+ */
+export function createFarcasterAuthenticationVerifier(
+  dependencies: FarcasterAdapterDependencies,
+): FarcasterAuthenticationProviderVerifier {
+  const timeoutMs = dependencies.timeoutMs ?? 4_000;
+  return {
+    provider: "farcaster",
+    async verify(token, domain) {
+      let payload: FarcasterJwtPayload;
+      try {
+        payload = await withTimeout(
+          dependencies.verifyJwt({ token, domain }),
+          timeoutMs,
+        );
+      } catch {
+        return { status: "invalid" };
+      }
+
+      const fid = typeof payload.sub === "number"
+        ? payload.sub
+        : Number.parseInt(String(payload.sub), 10);
+      if (!Number.isFinite(fid) || fid <= 0) {
+        return { status: "invalid" };
+      }
+      const subject = String(fid);
+
+      let primaryAddress: string | null = null;
+      if (dependencies.resolvePrimaryAddress) {
+        try {
+          primaryAddress = await withTimeout(
+            dependencies.resolvePrimaryAddress(fid),
+            timeoutMs,
+          );
+        } catch {
+          return {
+            status: "profile_unavailable",
+            provider: "farcaster",
+            subject,
+          };
+        }
+      }
+
+      if (primaryAddress !== null && !isEthereumAddress(primaryAddress)) {
+        primaryAddress = null;
+      }
+      const normalizedAddress = primaryAddress?.toLowerCase() ?? null;
+
+      return {
+        status: "verified",
+        evidence: {
+          provider: "farcaster",
+          subject,
+          owner: normalizedAddress
+            ? { kind: "external_wallet", address: normalizedAddress }
+            : { kind: "farcaster", fid },
+          productWalletAddress: null,
+        },
+      };
+    },
+  };
+}
+
+export async function resolveFarcasterPrimaryAddress(
+  fid: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
+  const response = await fetchImpl(
+    `https://api.farcaster.xyz/fc/primary-address?fid=${fid}&protocol=ethereum`,
+  );
+  if (!response.ok) return null;
+  const body: unknown = await response.json();
+  if (!body || typeof body !== "object") return null;
+  const result = (body as { result?: unknown }).result;
+  if (!result || typeof result !== "object") return null;
+  const address = (result as { address?: unknown }).address;
+  if (!address || typeof address !== "object") return null;
+  const value = (address as { address?: unknown }).address;
+  if (typeof value !== "string" || !isEthereumAddress(value)) return null;
+  return value.toLowerCase();
+}
+
+export function createDefaultFarcasterAuthenticationVerifier(
+  options?: { timeoutMs?: number },
+): FarcasterAuthenticationProviderVerifier {
+  // Lazy import keeps unit tests free to inject a mock verifier without loading
+  // the Quick Auth edge client at module init.
+  return createFarcasterAuthenticationVerifier({
+    timeoutMs: options?.timeoutMs,
+    async verifyJwt({ token, domain }) {
+      const { createClient } = await import("@farcaster/quick-auth");
+      return createClient().verifyJwt({ token, domain });
+    },
+    resolvePrimaryAddress: resolveFarcasterPrimaryAddress,
+  });
 }

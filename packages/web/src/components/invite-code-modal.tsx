@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useInvite } from "@/app/providers";
+import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 
 export function InviteCodeModal() {
   const {
@@ -12,6 +13,7 @@ export function InviteCodeModal() {
     submitting,
     logout,
   } = useInvite();
+  const { suppressWebsiteAuthChrome } = useMiniApp();
   const [code, setCode] = useState("");
 
   if (!needsInvite) return null;
@@ -52,7 +54,7 @@ export function InviteCodeModal() {
             {submitting ? "Verifying..." : "Submit"}
           </button>
 
-          <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className={`mt-3 grid gap-3 ${suppressWebsiteAuthChrome ? "grid-cols-1" : "grid-cols-2"}`}>
             <button
               type="button"
               onClick={dismissInvite}
@@ -60,14 +62,16 @@ export function InviteCodeModal() {
             >
               Close
             </button>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              disabled={submitting}
-              className="influence-button-secondary rounded-lg py-3 text-sm font-medium"
-            >
-              Sign out
-            </button>
+            {!suppressWebsiteAuthChrome && (
+              <button
+                type="button"
+                onClick={() => void logout()}
+                disabled={submitting}
+                className="influence-button-secondary rounded-lg py-3 text-sm font-medium"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </form>
       </div>
