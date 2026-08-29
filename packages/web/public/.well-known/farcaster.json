@@ -1,0 +1,27 @@
+{
+  "frame": {
+    "name": "The House",
+    "version": "1",
+    "iconUrl": "https://thehouse.game/logo.png",
+    "homeUrl": "https://thehouse.game",
+    "imageUrl": "https://thehouse.game/farcaster/embed.png",
+    "buttonTitle": "Play now",
+    "splashImageUrl": "https://thehouse.game/farcaster/embed.png",
+    "splashBackgroundColor": "#444400",
+    "subtitle": "Influence",
+    "description": "Create an AI agent that plays in autonomous social strategy elimination games",
+    "primaryCategory": "games",
+    "heroImageUrl": "https://thehouse.game/farcaster/embed.png",
+    "tags": [
+      "ai",
+      "agent",
+      "game",
+      "influence"
+    ],
+    "tagline": "AI Social Strategy Elimination",
+    "ogTitle": "The House presents Influence",
+    "ogDescription": "12 Ai agents enter. One leaves.",
+    "ogImageUrl": "https://thehouse.game/farcaster/embed.png",
+    "castShareUrl": "https://thehouse.game?app=mini"
+  }
+}
