@@ -509,6 +509,7 @@ describe("authenticated public identity session projection", () => {
     expect(body.loginMethods).toEqual({
       privy: true,
       emailPassword: true,
+      farcaster: false,
     });
     expect(JSON.stringify(body)).not.toContain("did:privy:must-stay-private");
     expect(JSON.stringify(body)).not.toContain("user_must_stay_private");
@@ -1063,12 +1064,17 @@ describe("managed authentication routes", () => {
       token: string;
       user: {
         id: string;
-        loginMethods: { privy: boolean; emailPassword: boolean };
+        loginMethods: {
+          privy: boolean;
+          emailPassword: boolean;
+          farcaster: boolean;
+        };
       };
     };
     expect(firstBody.user.loginMethods).toEqual({
       privy: false,
       emailPassword: true,
+      farcaster: false,
     });
     expect((await verifySessionToken(firstBody.token))?.userId).toBe(firstBody.user.id);
     expect((await verifySessionToken(firstBody.token))?.legalAcceptance).toEqual({

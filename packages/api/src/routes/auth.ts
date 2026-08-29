@@ -24,8 +24,10 @@ import { projectAuthenticatedPublicIdentity } from "../services/authenticated-pu
 import {
   createClerkAuthenticationVerifier,
   createClerkSdkDependencies,
+  createDefaultFarcasterAuthenticationVerifier,
   createPrivyAuthenticationVerifier,
   type ClerkAuthenticationProviderVerifier,
+  type FarcasterAuthenticationProviderVerifier,
   type VerifiedProviderEvidence,
 } from "../services/authentication-providers.js";
 import {
@@ -59,6 +61,9 @@ interface AuthRouteDependencies {
   verifyPrivyToken?: typeof verifyPrivyToken;
   getPrivyUser?: typeof getPrivyUser;
   clerkVerifier?: ClerkAuthenticationProviderVerifier;
+  farcasterVerifier?: FarcasterAuthenticationProviderVerifier;
+  /** Hostname used for Quick Auth JWT domain verification (no protocol). */
+  farcasterAuthDomain?: string;
   isInviteRequired?: typeof isInviteRequired;
   redeemInviteCode?: typeof redeemInviteCode;
   compatibilityBridgeEnabled?: boolean;
@@ -91,6 +96,8 @@ export function createAuthRoutes(
     loadUser: loadPrivyUser,
     timeoutMs: dependencies.privyTimeoutMs,
   });
+  const farcasterVerifier = dependencies.farcasterVerifier
+    ?? createDefaultFarcasterAuthenticationVerifier();
   const managedRateLimiter = new AuthRateLimiter(
     dependencies.managedRateLimits ?? {
       preVerification: 30,
@@ -252,6 +259,87 @@ export function createAuthRoutes(
     }
     if (body.intent === "create_account" && !authentication.created) {
       return accountAlreadyExistsResponse(c);
+    }
+    return c.json(await issueInfluenceSession(db, authentication.user));
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/auth/farcaster/login — exchange Quick Auth JWT for session JWT
+  // -------------------------------------------------------------------------
+
+  app.post("/api/auth/farcaster/login", async (c) => {
+    const body = await parseJsonBody(c, "POST /api/auth/farcaster/login");
+    if (!body?.token || typeof body.token !== "string") {
+      return c.json({ error: "token is required" }, 400);
+    }
+
+    const domain = resolveFarcasterAuthDomain(
+      dependencies.farcasterAuthDomain,
+      c.req.header("x-forwarded-host") ?? c.req.header("host"),
+      c.req.url,
+    );
+    if (!domain) {
+      return c.json({
+        error: "Farcaster auth domain is not configured",
+        code: "AUTH_PROVIDER_UNAVAILABLE",
+      }, 503);
+    }
+
+    const verification = await farcasterVerifier.verify(body.token, domain);
+    if (verification.status === "invalid") {
+      return c.json({ error: "Invalid Farcaster token" }, 401);
+    }
+    if (verification.status === "profile_unavailable") {
+      return c.json({
+        error: "Authentication provider profile is temporarily unavailable",
+        code: "AUTH_PROVIDER_UNAVAILABLE",
+      }, 503);
+    }
+
+    const authentication = await resolveAccountAuthentication(db, {
+      provider: verification.evidence.provider,
+      subject: verification.evidence.subject,
+      evidence: verification.evidence,
+      compatibilityBridgeEnabled: true,
+      checkInviteRequired: (tx) => inviteIsRequired(tx),
+      redeemInvite: typeof body.inviteCode === "string"
+        ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
+        : undefined,
+    });
+
+    if (authentication.status === "profile_unavailable") {
+      return c.json({
+        error: "Authentication provider profile is temporarily unavailable",
+        code: "AUTH_PROVIDER_UNAVAILABLE",
+      }, 503);
+    }
+    if (authentication.status === "link_required") {
+      return c.json({
+        error: "This sign-in method must be linked to the existing account",
+        code: "ACCOUNT_LINK_REQUIRED",
+      }, 409);
+    }
+    if (authentication.status === "invite_required") {
+      return c.json({
+        error: "Invite code required",
+        code: "INVITE_REQUIRED",
+      }, 403);
+    }
+    if (authentication.status === "invalid_invite") {
+      return c.json({
+        error: "Invalid or already used invite code",
+        code: "INVALID_INVITE_CODE",
+      }, 403);
+    }
+    if (
+      authentication.status === "support_blocked"
+      || authentication.status === "setup_incomplete"
+      || authentication.status === "reauth_required"
+    ) {
+      return c.json({
+        error: "This account needs support before it can sign in",
+        code: "ACCOUNT_SUPPORT_REQUIRED",
+      }, 409);
     }
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -970,4 +1058,37 @@ function hostFromUrl(requestUrl: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Quick Auth JWT `domain` must match the Mini App host exactly.
+ * Prefer WEB_BASE_URL / explicit override; fall back to request Host.
+ */
+export function resolveFarcasterAuthDomain(
+  explicit: string | undefined,
+  hostHeader: string | undefined,
+  requestUrl?: string,
+): string | null {
+  const fromExplicit = explicit?.trim().toLowerCase();
+  if (fromExplicit) {
+    return stripPort(fromExplicit.replace(/^https?:\/\//, "").split("/")[0] ?? "");
+  }
+  const fromEnv = process.env.WEB_BASE_URL?.trim();
+  if (fromEnv) {
+    try {
+      return new URL(fromEnv).hostname.toLowerCase();
+    } catch {
+      // fall through
+    }
+  }
+  return hostFromHeader(hostHeader) ?? hostFromUrl(requestUrl) ?? null;
+}
+
+function stripPort(host: string): string | null {
+  if (!host) return null;
+  if (host.startsWith("[")) {
+    const closingBracket = host.indexOf("]");
+    return closingBracket === -1 ? host : host.slice(0, closingBracket + 1);
+  }
+  return host.split(":")[0] || null;
 }

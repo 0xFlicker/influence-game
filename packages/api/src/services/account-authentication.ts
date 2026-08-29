@@ -334,6 +334,8 @@ async function resolveInTransaction(
 
   // Even after adoption is disabled, inspect exact legacy subject/wallet facts
   // so an unbound legacy row cannot be mistaken for a brand-new account.
+  // Farcaster always allows wallet-based attach so a shared EOA with a Privy
+  // career resolves to one Influence account (no separate merge product).
   const legacyUser = await resolveLegacyUser(tx, input.evidence);
 
   if (legacyUser.status === "conflict") return { status: "support_blocked" };
@@ -341,7 +343,9 @@ async function resolveInTransaction(
     if (input.allowAccountCreation === true) {
       return { status: "authenticated", user: legacyUser.user, created: false };
     }
-    if (input.compatibilityBridgeEnabled === false) {
+    const allowWalletAttach = input.provider === "farcaster"
+      || input.compatibilityBridgeEnabled !== false;
+    if (!allowWalletAttach) {
       return { status: "support_blocked" };
     }
     const claimOutcome = await validateClaimAttachment(tx, legacyUser.user.id, input.evidence);
@@ -391,6 +395,24 @@ async function resolveInTransaction(
   const email = input.evidence.owner.kind === "email"
     ? input.evidence.owner.normalizedEmail
     : null;
+  // Concurrent create can commit a wallet owner between legacy lookup and insert.
+  // Attach to that row instead of inventing a second career or fail-closing.
+  if (projectedWalletAddress) {
+    const walletOwner = (await tx
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.walletAddress, projectedWalletAddress)))[0];
+    if (walletOwner) {
+      const claimOutcome = await validateClaimAttachment(
+        tx,
+        walletOwner.id,
+        input.evidence,
+      );
+      if (claimOutcome !== "ok") return { status: claimOutcome };
+      await insertCredentialAndClaim(tx, walletOwner.id, input.evidence);
+      return { status: "authenticated", user: walletOwner, created: false };
+    }
+  }
   const [createdUser] = await tx.insert(schema.users).values({
     id: userId,
     walletAddress: projectedWalletAddress,
@@ -474,6 +496,11 @@ async function knownEvidenceIsConsistent(
   evidence: VerifiedProviderEvidence,
 ): Promise<boolean> {
   if (evidence.owner.kind === "unclassified") return false;
+
+  if (evidence.owner.kind === "farcaster") {
+    return evidence.provider === "farcaster"
+      && evidence.subject === String(evidence.owner.fid);
+  }
 
   const candidateAddresses = verifiedWalletAddresses(evidence);
   if (candidateAddresses.length > 0) {

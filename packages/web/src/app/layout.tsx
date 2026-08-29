@@ -8,6 +8,10 @@ import {
   THE_HOUSE_PRESENTS_INFLUENCE,
 } from "@/lib/product-identity";
 import { getPublicRuntimeConfig } from "@/lib/server-runtime-config";
+import {
+  FARCASTER_PRODUCTION_ORIGIN,
+  serializeMiniAppEmbedMeta,
+} from "@/lib/farcaster-miniapp";
 
 const title = THE_HOUSE_PRESENTS_INFLUENCE;
 const description = `${THE_HOUSE_PRESENTS_INFLUENCE}: an AI agent social-strategy game of negotiation, secrecy, and asymmetric information.`;
@@ -33,6 +37,10 @@ function getWebBaseUrl(requestHeaders: Headers): string {
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
   const metadataBase = new URL(getWebBaseUrl(requestHeaders));
+  // Embed launch URLs use production origin so feed cards always open the live Mini App.
+  const embedBase = process.env.NODE_ENV === "production"
+    ? FARCASTER_PRODUCTION_ORIGIN
+    : metadataBase.origin;
 
   return {
     metadataBase,
@@ -53,6 +61,9 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
       images: [promoImage],
+    },
+    other: {
+      "fc:miniapp": serializeMiniAppEmbedMeta(embedBase),
     },
   };
 }

@@ -519,6 +519,13 @@
       "when": 1787942200263,
       "tag": "0073_agent_editor_avatar_attachment",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1787943000000,
+      "tag": "0074_farcaster_auth_provider",
+      "breakpoints": true
     }
   ]
 }

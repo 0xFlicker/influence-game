@@ -2,11 +2,13 @@
 
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
+import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 
 /** Gates content behind the `view_admin` permission (or admin role). */
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, openSignIn } = useAuth();
   const { loading, isAdmin } = usePermissions();
+  const { suppressWebsiteAuthChrome, isMiniApp } = useMiniApp();
 
   if (!ready || loading) {
     return (
@@ -19,13 +21,19 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
   if (!authenticated) {
     return (
       <div className="influence-panel mx-auto flex min-h-64 max-w-lg flex-col items-center justify-center gap-4 rounded-xl px-6 py-10 text-center">
-        <p className="influence-copy">Sign in to access the admin panel.</p>
-        <button
-          onClick={openSignIn}
-          className="influence-button-primary rounded-lg px-6 py-2"
-        >
-          Sign in
-        </button>
+        <p className="influence-copy">
+          {isMiniApp || suppressWebsiteAuthChrome
+            ? "Connecting with Farcaster…"
+            : "Sign in to access the admin panel."}
+        </p>
+        {!suppressWebsiteAuthChrome && (
+          <button
+            onClick={openSignIn}
+            className="influence-button-primary rounded-lg px-6 py-2"
+          >
+            Sign in
+          </button>
+        )}
       </div>
     );
   }
