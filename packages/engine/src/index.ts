@@ -545,7 +545,19 @@ export {
   FORMAT_PRESENTATION_METADATA,
   formatPresentationMetadata,
 } from "./format-presentation-metadata";
-export type { LaunchFormatPresentationMetadata } from "./format-presentation-metadata";
+export type {
+  LaunchFormatPresentationMetadata,
+} from "./format-presentation-metadata";
+export {
+  ENDGAME_STARTING_PLAYER_COUNT,
+  FORMAT_SELECTION_METADATA,
+  canFormatAppearInStandardRounds,
+  isFormatEligibleForSelection,
+} from "./format-selection-policy";
+export type {
+  FormatSelectionEligibilityContext,
+  FormatSelectionMetadata,
+} from "./format-selection-policy";
 export {
   FORMAT_SURFACE_IDS,
   canonicalFormatIdForSurface,

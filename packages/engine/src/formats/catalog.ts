@@ -4,7 +4,13 @@
  * Runtime dispatch goes through this catalog and fails closed. Presentation
  * metadata deliberately remains in its browser-safe leaf module.
  */
-import type { LaunchFormatId } from "../format-presentation-metadata";
+import {
+  type LaunchFormatId,
+} from "../format-presentation-metadata";
+import {
+  FORMAT_SELECTION_METADATA,
+  isFormatEligibleForSelection,
+} from "../format-selection-policy";
 import type { UUID } from "../types";
 import {
   computeMajorityEliminationTallies,
@@ -257,7 +263,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   save_or_eliminate: {
     id: "save_or_eliminate",
     capability: "sealed_polarity",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.save_or_eliminate.availableFromRound,
     handler: "save_or_eliminate",
     resolve: resolveSaveOrEliminate,
     isLegalBallot: isLegalSaveOrEliminateBallot,
@@ -271,7 +277,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   vote_bomb: {
     id: "vote_bomb",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.vote_bomb.availableFromRound,
     ballotParticipation: "required",
     score: voteBombScore,
     resolve: resolveVoteBomb,
@@ -297,7 +303,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   safety_bounce: {
     id: "safety_bounce",
     capability: "public_chain",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.safety_bounce.availableFromRound,
     handler: "safety_bounce",
     resolveVote: resolveSafetyBounceVote,
     isLegalVote: isLegalSafetyBounceVote,
@@ -308,7 +314,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   majority_elimination: {
     id: "majority_elimination",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.majority_elimination.availableFromRound,
     ballotParticipation: "required",
     score: computeMajorityEliminationTallies,
     resolve: resolveMajorityElimination,
@@ -334,7 +340,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   even_votes: {
     id: "even_votes",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.even_votes.availableFromRound,
     ballotParticipation: "required",
     score: computeEvenVotesTallies,
     resolve: resolveEvenVotes,
@@ -360,7 +366,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   restricted_history: {
     id: "restricted_history",
     capability: "sealed_elim",
-    availableFromRound: 3,
+    availableFromRound: FORMAT_SELECTION_METADATA.restricted_history.availableFromRound,
     ballotParticipation: "forfeit_if_no_legal_target",
     score: computeRestrictedHistoryTallies,
     resolve: resolveRestrictedHistory,
@@ -386,8 +392,9 @@ export const FORMAT_CATALOG: FormatCatalog = {
   two_names: {
     id: "two_names",
     capability: "two_names",
-    availableFromRound: 1,
-    minimumLivingPlayers: 5,
+    availableFromRound: FORMAT_SELECTION_METADATA.two_names.availableFromRound,
+    minimumLivingPlayers:
+      FORMAT_SELECTION_METADATA.two_names.minimumLivingPlayers,
     initialNames: {
       isLegal: isLegalTwoNamesInitialPair,
     },
@@ -509,10 +516,10 @@ export function formatsAvailableForSelection(
     throw new Error(`Format round must be a positive integer: ${context.round}`);
   }
   return resolveFormatManifest(manifest).filter((formatId) => {
-    const registration = FORMAT_CATALOG[formatId];
-    if (registration.availableFromRound > context.round) return false;
-    return registration.capability !== "two_names"
-      || context.livingIds.length >= registration.minimumLivingPlayers;
+    return isFormatEligibleForSelection(formatId, {
+      round: context.round,
+      livingPlayerCount: context.livingIds.length,
+    });
   });
 }
 
