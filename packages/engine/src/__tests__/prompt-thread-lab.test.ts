@@ -27,17 +27,20 @@ const ROSTER = [
 
 function continuity(playerId: string, playerName: string) {
   return {
-    version: 1,
+    version: 2,
     playerId,
     playerName,
-    strategyPacket: null,
-    reflectionSummary: null,
+    compactStrategy: {
+      lifecycle: "opening",
+      baseline: null,
+      deltas: [],
+      priorEpoch: null,
+      revision: 0,
+    },
     notes: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],
-    recentStrategicDecisions: [],
-    strategyPacketRevisionCounter: 0,
   };
 }
 
@@ -69,7 +72,7 @@ function intent(actorId: string, other: string, round = 1) {
         openingAsk: `Ask ${other} what changed`,
         strategicLens: "broad_read",
         strategicLensRationale: "Use the room to compare reads.",
-        decisionLog: `Keep ${other} close for this vote.`,
+        strategyDelta: null,
         thinking: "fixture intent",
       },
     },
@@ -106,11 +109,9 @@ function speech(
         noReply: false,
         gotoRoomId,
         gotoPlayerName,
-        proposedTarget: null,
-        proposedAction: null,
-        commitment: null,
-        noProposalReason: null,
-        decisionLog: `Recorded ${id}`,
+        coordinationFact: null,
+        noProposal: true,
+        strategyDelta: null,
         thinking: `Thinking ${id}`,
       },
     },
@@ -367,7 +368,7 @@ describe("real prompt-thread replay", () => {
     expect(returningTurnUser).not.toContain(
       "This is your final Mingle turn this phase.",
     );
-    expect(capture.traces[2]?.promptReuse?.requestShape).toBe("responses");
+    expect(capture.traces[2]?.promptReuse?.requestShape).toBe("openai.responses");
 
     const accepted = withCapturedSource(fixture, capture.traces);
     const acceptedCapture = await capturePromptThreadReplay(accepted);
@@ -510,30 +511,28 @@ describe("real prompt-thread replay", () => {
 });
 
 function generatedResponse(turn: number): Record<string, unknown> {
-  const outputText = JSON.stringify({
+  const output = JSON.stringify({
     thinking: `thinking ${turn}`,
     message: `generated turn ${turn}`,
     noReply: false,
     gotoRoomId: null,
     gotoPlayerName: null,
-    proposedTarget: null,
-    proposedAction: null,
-    commitment: null,
-    noProposalReason: null,
-    decisionLog: `generated ${turn}`,
+    coordinationFact: null,
+    noProposal: true,
+    strategyDelta: null,
   });
   return {
     id: `generated-${turn}`,
     object: "response",
     status: "completed",
     service_tier: "flex",
-    output_text: outputText,
+    output_text: output,
     output: [{
-      id: `message-${turn}`,
-      type: "message",
-      role: "assistant",
-      status: "completed",
-      content: [{ type: "output_text", text: outputText }],
+      id: `function-${turn}`,
+      type: "function_call",
+      call_id: `call-${turn}`,
+      name: "mingle_turn",
+      arguments: output,
     }],
     usage: {
       input_tokens: 2_000,

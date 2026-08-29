@@ -142,7 +142,7 @@ export async function recordOwnerLearningMcpOfferViewed(
     (review) => {
       if (
         review.resolvedAt != null
-        || !["queued", "running", "ready"].includes(review.analysisStatus)
+        || !["queued", "retry_queued", "running", "ready"].includes(review.analysisStatus)
       ) {
         throw new OwnerLearningAnalyticsError("recommendations_unavailable");
       }

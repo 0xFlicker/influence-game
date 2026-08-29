@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import {
   GameState,
   Phase,
+  createOpeningStrategyState,
   replayCanonicalEvents,
   buildActorWitness,
   buildPhaseAccumulatorRegistry,
@@ -10,6 +11,7 @@ import {
   accumulatorProof,
   sealBoundaryIdentity,
   createEngineBoundaryPlaceholder,
+  createEmptyHouseNarrativeContinuity,
   requiredPhaseBoundaryAccumulatorIds,
   type CanonicalGameEvent,
   type GameCheckpointCapsule,
@@ -261,38 +263,19 @@ export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCa
     { playerId: "mira", playerName: "Mira" },
     { playerId: "nyx", playerName: "Nyx" },
   ].map((player) => ({
-    version: 1 as const,
+    version: 2 as const,
     playerId: player.playerId,
     playerName: player.playerName,
-    strategyPacket: null,
-    reflectionSummary: null,
+    compactStrategy: createOpeningStrategyState(),
     notes: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],
-    recentStrategicDecisions: [],
-    strategyPacketRevisionCounter: 0,
   }));
 }
 
-export function buildPositiveHouseContinuityCapsule(capsule: GameCheckpointCapsule) {
-  return {
-    revisionId: "h1",
-    previousRevisionId: null,
-    updatedAtRound: capsule.round,
-    updatedAtPhase: capsule.phase,
-    summary: "",
-    alliances: [],
-    tensions: [],
-    promises: [],
-    voteBlocs: [],
-    mingleDiscoveries: [],
-    playerTrajectories: [],
-    storyArcs: [],
-    droppedThreads: [],
-    openQuestions: [],
-    changedSincePrevious: "",
-  };
+export function buildPositiveHouseNarrativeContinuityCapsule(capsule: GameCheckpointCapsule) {
+  return createEmptyHouseNarrativeContinuity(capsule.gameId);
 }
 
 export function enrichCapsuleForV1Candidate(
@@ -314,11 +297,10 @@ export function enrichCapsuleForV1Candidate(
   });
 
   const playerContinuityCapsules = buildPositivePlayerContinuityCapsules(capsule);
-  const houseContinuityCapsule = buildPositiveHouseContinuityCapsule(capsule);
+  const houseNarrativeContinuityCapsule = buildPositiveHouseNarrativeContinuityCapsule(capsule);
 
   return {
     ...capsule,
-    houseContinuityRequirement: "required" as const,
     boundaryCertificate: {
       gameId: capsule.gameId,
       ownerEpoch: params.ownerEpoch,
@@ -332,7 +314,7 @@ export function enrichCapsuleForV1Candidate(
     },
     runtimeSnapshot,
     playerContinuityCapsules,
-    houseContinuityCapsule,
+    houseNarrativeContinuityCapsule,
     transcriptCursor: {
       entries: runtimeSnapshot.transcriptWatermark.entryCount,
       version: 1,
@@ -387,7 +369,7 @@ export function createCheckpointCapsule(
       noPendingEffectsAsserted: true,
     },
     playerContinuityCapsules: [],
-    houseContinuityCapsule: null,
+    houseNarrativeContinuityCapsule: createEmptyHouseNarrativeContinuity(projection.gameId),
     runtimeSnapshot: null,
     transcriptCursor: {
       entries: 0,

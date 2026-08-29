@@ -106,13 +106,22 @@ export interface RevealedCouncilFacts {
 export interface RevealedFormatBallotEntry {
   voter: RevealedPlayerRef;
   target: RevealedPlayerRef;
-  /** Present for Save-or-Eliminate; null for Vote Bomb / Safety Bounce final votes. */
+  /** Present for Save-or-Exit; null for The Short List / Safety Bounce final votes. */
   polarity: "save" | "eliminate" | null;
 }
 
+export type RevealedFormatBallotPresentationEntry =
+  | RevealedFormatBallotEntry
+  | {
+      voter: RevealedPlayerRef;
+      target: null;
+      polarity: null;
+      forfeited: true;
+    };
+
 export interface RevealedFormatBallotPresentation {
   status: FormatBallotPresentationStatus;
-  rollCall: RevealedFormatBallotEntry[];
+  rollCall: RevealedFormatBallotPresentationEntry[];
 }
 
 export interface RevealedFormatBouncePointer {
@@ -136,6 +145,16 @@ export interface RevealedMajorityEliminationFacts {
   totals: RevealedVoteCount[];
 }
 
+export interface RevealedEvenVotesFacts {
+  totals: RevealedVoteCount[];
+  eligible: RevealedPlayerRef[];
+}
+
+export interface RevealedRestrictedHistoryFacts {
+  totals: RevealedVoteCount[];
+  forfeited: RevealedPlayerRef[];
+}
+
 export interface RevealedSafetyBounceFacts {
   starter: RevealedPlayerRef | null;
   pointers: RevealedFormatBouncePointer[];
@@ -157,6 +176,9 @@ export interface RevealedFormatFacts {
   saveOrEliminate: RevealedSaveOrEliminateFacts | null;
   voteBomb: RevealedVoteBombFacts | null;
   majorityElimination: RevealedMajorityEliminationFacts | null;
+  evenVotes: RevealedEvenVotesFacts | null;
+  /** Added with Restricted History; absent only from older serialized fixtures. */
+  restrictedHistory?: RevealedRestrictedHistoryFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
   /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
   acceptedBallots: RevealedFormatBallotEntry[];
@@ -458,8 +480,9 @@ function buildFormatFacts(
   const bounceStarted = latestEvent(events, "format.safety_bounce_started");
   const hasBouncePointers = eventsOfType(events, "format.safety_bounce_pointer").length > 0;
   const hasBallots = eventsOfType(events, "format.ballot_cast").length > 0;
+  const hasForfeitures = eventsOfType(events, "format.ballot_forfeited").length > 0;
 
-  if (!menu && !selected && !resolved && !bounceStarted && !hasBouncePointers && !hasBallots) {
+  if (!menu && !selected && !resolved && !bounceStarted && !hasBouncePointers && !hasBallots && !hasForfeitures) {
     return emptyFormat("not_yet_resolved");
   }
 
@@ -512,6 +535,21 @@ function buildFormatFacts(
         totals: countsToVoteCounts(aggregate.totals, projection),
       }
     : null;
+  const evenVotes = resolved?.payload.formatId === "even_votes"
+    && aggregate?.capability === "sealed_elim"
+    ? {
+        totals: countsToVoteCounts(aggregate.totals, projection),
+        eligible: aggregate.eligiblePlayerIds.map((id) => playerRef(projection, id)),
+      }
+    : null;
+  const restrictedHistory = resolved?.payload.formatId === "restricted_history"
+    && aggregate?.capability === "sealed_elim"
+    ? {
+        totals: countsToVoteCounts(aggregate.totals, projection),
+        forfeited: eventsOfType(events, "format.ballot_forfeited")
+          .map((event) => playerRef(projection, event.payload.voterId)),
+      }
+    : null;
 
   const eliminatedId = resolved?.payload.eliminatedId ?? null;
   const rawTiedIds = resolved?.payload.tiedPlayerIds ?? [];
@@ -540,11 +578,20 @@ function buildFormatFacts(
   });
   const ballotPresentation: RevealedFormatBallotPresentation = {
     status: projectedPresentation.status,
-    rollCall: projectedPresentation.rollCall.map((entry) => ({
-      voter: playerRef(projection, entry.voterId),
-      target: playerRef(projection, entry.targetId),
-      polarity: entry.polarity,
-    })),
+    rollCall: projectedPresentation.rollCall.map((entry) =>
+      entry.targetId === null
+        ? {
+            voter: playerRef(projection, entry.voterId),
+            target: null,
+            polarity: null,
+            forfeited: true as const,
+          }
+        : {
+            voter: playerRef(projection, entry.voterId),
+            target: playerRef(projection, entry.targetId),
+            polarity: entry.polarity,
+          }
+    ),
   };
 
   // Status: available once any public format fact exists (menu/pick/bounce/resolve).
@@ -561,6 +608,8 @@ function buildFormatFacts(
     saveOrEliminate,
     voteBomb,
     majorityElimination,
+    evenVotes,
+    restrictedHistory,
     safetyBounce,
     acceptedBallots,
     ballotPresentation,
@@ -822,6 +871,8 @@ function emptyFormat(
     saveOrEliminate: null,
     voteBomb: null,
     majorityElimination: null,
+    evenVotes: null,
+    restrictedHistory: null,
     safetyBounce: null,
     acceptedBallots: [],
     ballotPresentation: {

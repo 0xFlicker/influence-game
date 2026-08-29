@@ -18,6 +18,7 @@ import type {
   GameKernel as EngineGameKernel,
   GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
   GameKernelSource as EngineGameKernelSource,
+  AllianceHuddleFactAtom as EngineAllianceHuddleFactAtom,
   LaunchFormatId as EngineLaunchFormatId,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
@@ -162,11 +163,15 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
     const parsed = JSON.parse(body) as unknown;
     if (parsed && typeof parsed === "object") {
       const error = parsed as Record<string, unknown>;
-      if (typeof error.error === "string" && typeof error.code === "string") {
+      if (typeof error.error === "string") {
         return new ApiError(
           status,
           error.error,
-          error.code,
+          typeof error.code === "string"
+            ? error.code
+            : typeof error.status === "string"
+              ? error.status
+              : undefined,
           typeof error.retryable === "boolean" ? error.retryable : undefined,
           error,
         );
@@ -421,8 +426,7 @@ export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
   playerCount: CreateGamePlayerCount;
-  slotType: "all_ai" | "mixed";
-  modelSelection: GameModelSelection;
+  providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
   timingPreset: TimingPreset;
@@ -437,6 +441,36 @@ export type ModelReasoningPolicy = "action-policy" | "low" | "medium" | "high";
 export interface GameModelSelection {
   catalogId: string;
   reasoningPolicy: ModelReasoningPolicy;
+}
+
+export interface GameProviderManifestEntry extends GameModelSelection {
+  maxCallsPerGame?: number;
+}
+
+export interface ProviderModelInventoryEntry {
+  catalogId: string;
+  providerProfileId: "openai" | "katana" | "lm-studio" | "custom-openai-compatible";
+  modelId: string;
+  displayName: string;
+  configured: boolean;
+  available: boolean | null;
+  defaultReasoningPolicy: ModelReasoningPolicy;
+  allowedReasoningPolicies: ModelReasoningPolicy[];
+  capabilities: {
+    supportsReasoningEffort: boolean;
+    supportsToolReasoningEffort: boolean;
+    usesMaxCompletionTokens: boolean;
+    supportsTemperature: boolean;
+    supportsOpenAIResponses: boolean;
+    supportsStructuredOutput: boolean;
+    supportsTools: boolean;
+  };
+  notes: string | null;
+}
+
+export interface ProviderModelInventory {
+  status: "complete" | "unavailable";
+  models: ProviderModelInventoryEntry[];
 }
 
 export interface GameSummary {
@@ -483,6 +517,10 @@ export async function createGame(
   });
 }
 
+export async function getProviderModels(): Promise<ProviderModelInventory> {
+  return apiFetch("/api/provider-models", { cache: "no-store" });
+}
+
 export async function listGames(
   status?: GameStatus | GameStatus[],
 ): Promise<GameSummary[]> {
@@ -497,6 +535,119 @@ export interface AdminGameSummary extends GameSummary {
   hiddenAt?: string;
   cost?: AdminGameCostSummary | null;
   completionSettlement: GameCompletionSettlementSummary;
+  providerFailures?: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
+}
+
+export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
+
+export interface AdminProviderFailureSummary {
+  schemaVersion: 1;
+  state: "empty" | AdminProviderFailureState;
+  failureCount: number;
+  exactFailureCount: number;
+  rateLimitCount: number;
+  recoveredCount: number;
+  terminalCount: number;
+  degradedCount: number;
+  transitionedCount: number;
+  lastFailureAt: string | null;
+}
+
+export interface AdminProviderFailureSummaryUnavailable {
+  schemaVersion: 1;
+  state: "unavailable";
+  error: string;
+  retryable: boolean;
+}
+
+export interface AdminProviderFailureAttempt {
+  kind: "attempt";
+  id: string;
+  logicalCallId: string;
+  occurredAt: string;
+  state: AdminProviderFailureState;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  phase: string | null;
+  round: number | null;
+  providerProfileId: string;
+  transport: string;
+  modelName: string;
+  attemptOrdinal: number;
+  outcomeKind: string;
+  outcomeMessage: string | null;
+  retryable: boolean | null;
+  disposition: string | null;
+  providerRequestId: string | null;
+  evidence: {
+    state: "available" | "degraded" | "unavailable";
+    manifestId: string | null;
+    error: string | null;
+  };
+}
+
+export interface AdminProviderFailureRateLimit {
+  kind: "rate_limit";
+  id: string;
+  logicalCallId: string;
+  occurredAt: string;
+  state: AdminProviderFailureState;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  phase: string | null;
+  round: number | null;
+  count: number;
+  outcome: "pending" | "recovered" | "exhausted";
+  terminalReason: string | null;
+}
+
+export interface AdminProviderFailureDetail {
+  schemaVersion: 1;
+  gameId: string;
+  summary: AdminProviderFailureSummary;
+  budgets: AdminProviderFailureBudget[];
+  failures: Array<AdminProviderFailureAttempt | AdminProviderFailureRateLimit>;
+  page: {
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+  };
+}
+
+export interface AdminProviderFailureBudget {
+  catalogId: string;
+  providerProfileId: string;
+  modelName: string;
+  role: "primary" | "fallback";
+  usedCalls: number;
+  maxCallsPerGame: number | null;
+  remainingCalls: number | null;
+  state: "unbounded" | "available" | "exhausted";
+  cost: {
+    state: "no_calls" | "actual" | "estimated" | "unavailable";
+    callCount: number;
+    actualCostMicrousd: number;
+    estimatedCostMicrousd: number;
+    unpricedCallCount: number;
+  };
+}
+
+export interface AdminProviderFailureContent {
+  schemaVersion: 1;
+  state: "partial" | "complete" | "final_chunk";
+  content: string;
+  contentType?: string;
+  byteLength: number;
+  returnedByteLength: number;
+  totalByteLength?: number;
+  offsetBytes: number;
+  nextOffsetBytes?: number;
+  truncated: boolean;
+  sha256: string;
+  hashScope: "complete_object" | "chunk";
 }
 
 export interface GameCompletionSettlementSummary {
@@ -597,7 +748,34 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 }
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
-  return apiFetch("/api/admin/games");
+  return apiFetch("/api/admin/games", { cache: "no-store" });
+}
+
+export async function getAdminProviderFailures(
+  idOrSlug: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<AdminProviderFailureDetail> {
+  const query = new URLSearchParams();
+  if (options.cursor !== undefined) query.set("cursor", options.cursor);
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  const suffix = query.size > 0 ? `?${query}` : "";
+  return apiFetch(`/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures${suffix}`, {
+    cache: "no-store",
+  });
+}
+
+export async function getAdminProviderFailureContent(
+  idOrSlug: string,
+  manifestId: string,
+  options: { offsetBytes?: number; maxBytes?: number } = {},
+): Promise<AdminProviderFailureContent> {
+  const query = new URLSearchParams();
+  if (options.offsetBytes !== undefined) query.set("offsetBytes", String(options.offsetBytes));
+  if (options.maxBytes !== undefined) query.set("maxBytes", String(options.maxBytes));
+  return apiFetch(
+    `/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures/${encodeURIComponent(manifestId)}/content?${query}`,
+    { cache: "no-store" },
+  );
 }
 
 export async function retryGameSettlement(
@@ -639,18 +817,7 @@ export interface FillGameResult {
   players: Array<{ id: string; name: string; archetype: string }>;
 }
 
-export interface FillGameAccepted {
-  filling: true;
-  slotsToFill: number;
-  filled: number;
-  totalPlayers: number;
-  maxPlayers: number;
-  players: Array<{ id: string; name: string; archetype: string }>;
-}
-
-export type FillGameResponse = FillGameResult | FillGameAccepted;
-
-export async function fillGame(id: string): Promise<FillGameResponse> {
+export async function fillGame(id: string): Promise<FillGameResult> {
   const token = getAuthToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -668,11 +835,7 @@ export async function fillGame(id: string): Promise<FillGameResponse> {
     }
     throw new ApiError(res.status, text);
   }
-  return res.json() as Promise<FillGameResponse>;
-}
-
-export function isFillAccepted(r: FillGameResponse): r is FillGameAccepted {
-  return "filling" in r && r.filling === true;
+  return res.json() as Promise<FillGameResult>;
 }
 
 export interface CognitiveArtifactIndexEntry {
@@ -1357,13 +1520,7 @@ export interface PublicAllianceOutcomeRead {
   id: string;
   round: number;
   window: string;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: EngineAllianceHuddleFactAtom[];
 }
 
 export interface PublicAllianceConsequenceRead {
@@ -1469,7 +1626,30 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
     emailPassword: boolean;
     farcaster?: boolean;
   };
+  legal: {
+    termsVersion: string;
+    privacyVersion: string;
+    accepted: boolean;
+    acceptedAt: string | null;
+  };
 }
+
+export const PRESENTED_LEGAL_ACCEPTANCE = {
+  acceptTerms: true,
+  termsVersion: "2026-08-12",
+  privacyVersion: "2026-08-12",
+  deploymentSha: process.env.NEXT_PUBLIC_GIT_SHA ?? "unknown",
+} as const;
+
+export type PresentedLegalAcceptance = typeof PRESENTED_LEGAL_ACCEPTANCE;
+
+export type PrivyAuthenticationRequest =
+  | { intent: "sign_in" }
+  | {
+    intent: "create_account";
+    legalAcceptance: PresentedLegalAcceptance;
+    inviteCode?: string;
+  };
 
 export async function getMe(): Promise<AuthMe> {
   return apiFetch("/api/auth/me");
@@ -1477,14 +1657,23 @@ export async function getMe(): Promise<AuthMe> {
 
 export async function loginWithPrivyToken(
   privyToken: string,
-  inviteCode?: string,
+  request: PrivyAuthenticationRequest,
 ): Promise<{
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
   return providerAuthFetch("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+    body: JSON.stringify({
+      token: privyToken,
+      intent: request.intent,
+      ...(request.intent === "create_account"
+        ? {
+          ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
+          ...request.legalAcceptance,
+        }
+        : {}),
+    }),
   });
 }
 
@@ -1523,11 +1712,37 @@ export async function exchangeManagedAuthentication(
 export async function createManagedAuthentication(
   token: string,
   correlationId?: string,
+  inviteCode?: string,
 ): Promise<InfluenceSessionResult> {
   return providerAuthFetch("/api/auth/managed/create", {
     method: "POST",
     headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
-    body: JSON.stringify({ token, confirm: true }),
+    body: JSON.stringify({
+      token,
+      ...(inviteCode ? { inviteCode } : {}),
+      ...PRESENTED_LEGAL_ACCEPTANCE,
+    }),
+  });
+}
+
+export async function acceptCurrentLegalTerms(): Promise<AuthMe["legal"]> {
+  const influenceToken = getAuthToken();
+  if (!influenceToken) throw new Error("Authentication required");
+  const session = await acceptCurrentLegalTermsForSession(influenceToken);
+  if (getAuthToken() !== influenceToken) {
+    throw new Error("Your session changed before acceptance finished. Sign in again.");
+  }
+  setAuthToken(session.token);
+  return session.user.legal;
+}
+
+export async function acceptCurrentLegalTermsForSession(
+  influenceToken: string,
+): Promise<InfluenceSessionResult> {
+  return providerAuthFetch("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${influenceToken}` },
+      body: JSON.stringify(PRESENTED_LEGAL_ACCEPTANCE),
   });
 }
 
@@ -1709,14 +1924,7 @@ export async function adminRefillInviteCodes(minCodes: number, minAgeDays?: numb
 // Player types
 // ---------------------------------------------------------------------------
 
-export type JoinGameConfig =
-  | { agentProfileId: string }
-  | {
-      agentName: string;
-      personality: string;
-      strategyHints?: string;
-      personaKey: PersonaKey;
-    };
+export type JoinGameConfig = { agentProfileId: string };
 
 export interface PlayerGameResult {
   gameId: string;
@@ -1765,6 +1973,7 @@ export interface SavedAgent {
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
+  profileRevisionId?: string | null;
   createdAt: string;
   updatedAt: string;
   avatarCompletion?: AvatarCompletion;
@@ -1803,7 +2012,7 @@ export interface AgentMutationReceipt {
   warnings: Array<"avatar_generation_failed">;
 }
 
-export interface CreateAgentParams {
+export interface AgentProfileWriteParams {
   name: string;
   personality: string;
   backstory?: string;
@@ -1814,6 +2023,10 @@ export interface CreateAgentParams {
   avatarGenerationRequestId?: string;
 }
 
+export interface CreateAgentParams extends AgentProfileWriteParams {
+  creationRequestId: string;
+}
+
 export const AGENT_GENDER_OPTIONS = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
@@ -1822,8 +2035,9 @@ export const AGENT_GENDER_OPTIONS = [
 
 export type AgentGender = typeof AGENT_GENDER_OPTIONS[number]["value"];
 
-export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">> & {
+export type UpdateAgentParams = Partial<AgentProfileWriteParams> & {
   sourceReviewId?: string;
+  expectedRevisionId?: string;
 };
 
 export type OwnerLearningAnalysisTrack =
@@ -1831,7 +2045,7 @@ export type OwnerLearningAnalysisTrack =
   | "evidence_rich"
   | "strategy_health_check";
 
-export type OwnerLearningAnalysisStatus = "queued" | "running" | "ready" | "no_change" | "failed";
+export type OwnerLearningAnalysisStatus = "queued" | "retry_queued" | "running" | "ready" | "no_change" | "failed";
 export type OwnerLearningStage =
   | "evidence_ready"
   | "scanning_narratives"
@@ -1956,6 +2170,7 @@ export interface OwnerLearningReview {
   proposalFingerprint: string | null;
   safeFailureCode: string | null;
   retryable: boolean;
+  ownerRetriesRemaining: 0 | 1;
   logicalCallCount: number;
   diveCount: number;
   applyDisposition: OwnerLearningApplyDisposition;
@@ -1992,6 +2207,7 @@ export type OwnerLearningReviewStatus = Pick<
   | "proposalFingerprint"
   | "safeFailureCode"
   | "retryable"
+  | "ownerRetriesRemaining"
   | "logicalCallCount"
   | "diveCount"
   | "applyDisposition"
@@ -2063,7 +2279,6 @@ export interface AvatarCompletion {
   failureStage?: "provider_submit" | "provider_poll" | "asset_select" | "asset_download" | "avatar_store" | "profile_update";
   retryable?: boolean;
   reason?: string;
-  profileFingerprint?: string;
 }
 
 export interface GeneratePersonalityParams {
@@ -2104,6 +2319,15 @@ export async function getAgent(id: string): Promise<SavedAgent> {
   return apiFetch(`/api/agent-profiles/${id}`);
 }
 
+export async function getAgentByCreationRequestId(creationRequestId: string): Promise<SavedAgent | null> {
+  try {
+    return await apiFetch(`/api/agent-profiles/creation-requests/${encodeURIComponent(creationRequestId)}`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 export async function createAgent(
   params: CreateAgentParams,
 ): Promise<SavedAgent> {
@@ -2127,10 +2351,20 @@ export async function updateAgent(
   id: string,
   params: UpdateAgentParams,
 ): Promise<SavedAgent> {
-  return apiFetch(`/api/agent-profiles/${id}`, {
+  const agent = await apiFetch<SavedAgent>(`/api/agent-profiles/${id}`, {
     method: "PATCH",
     body: JSON.stringify(params),
   });
+  if (typeof window !== "undefined" && agent.avatarCompletion) {
+    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
+      detail: {
+        agentId: agent.id,
+        agentName: agent.name,
+        completion: agent.avatarCompletion,
+      },
+    }));
+  }
+  return agent;
 }
 
 export async function getOwnerLearningEligibleInputs(): Promise<OwnerLearningEligibleInputs> {
@@ -2266,16 +2500,6 @@ export interface DraftAgentAvatarParams {
   personality: string;
   strategyStyle?: string;
   personaKey: PersonaKey;
-}
-
-export function avatarDraftProfileFingerprint(params: DraftAgentAvatarParams): string {
-  return JSON.stringify([
-    params.gender,
-    params.backstory?.trim() || null,
-    params.personality.trim(),
-    params.strategyStyle?.trim() || null,
-    params.personaKey,
-  ]);
 }
 
 export async function requestDraftAgentAvatarGeneration(
@@ -2431,6 +2655,8 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  /** Durable game-local dialogue identity. */
+  entrySequence?: number;
   round: number;
   phase: string;
   from: string; // player UUID or "SYSTEM"
@@ -2445,12 +2671,8 @@ export interface WsTranscriptEntry {
   timestamp: number;
 }
 
-/** WebSocket event types pushed from the server (matches WsOutboundEvent in packages/api) */
-export type WsGameEvent =
-  | {
-      type: "watch_state";
-      state: GameWatchState;
-    }
+/** Choreography payload inside one sequenced durable publication. */
+export type WsPublicationPayload =
   | {
       type: "viewer_decision_event";
       /** Combined with event.sequence, this is the idempotent client key. */
@@ -2483,11 +2705,34 @@ export type WsGameEvent =
       terminal: true;
       reasonCode: string;
       message?: string;
+    };
+
+export interface WsPublicationEvent {
+  type: "publication";
+  gameId: string;
+  publicationSequence: number;
+  turnSequence: number;
+  payload: WsPublicationPayload;
+}
+
+/** WebSocket frames pushed from the server (matches WsOutboundEvent in packages/api). */
+export type WsGameEvent =
+  | {
+      type: "watch_state";
+      state: GameWatchState;
+      /** Highest due publication represented by this current-state snapshot. */
+      throughPublicationSequence: number;
     }
+  | WsPublicationEvent
   | {
       type: "error";
       message: string;
     };
+
+/** Viewer reducer input after the WebSocket hook unwraps durable publications. */
+export type WsViewerEvent =
+  | Exclude<WsGameEvent, WsPublicationEvent>
+  | WsPublicationPayload;
 
 // ---------------------------------------------------------------------------
 // Game detail API calls
@@ -2562,6 +2807,30 @@ export interface AdminOwnerLearningCostTotals {
   unavailableCallCount: number;
 }
 
+export interface AdminOwnerLearningFailureDiagnostic {
+  id: string;
+  phase: "selection" | "evidence_projection" | "materialization" | "call_reservation" | "provider_invocation" | "output_validation" | "checkpoint_persistence" | "finalization" | null;
+  safeFailureCode: string;
+  errorClass: string;
+  errorCode: string | null;
+  message: string;
+  firstApplicationStackFrame: string | null;
+  fingerprint: string;
+  callId: string | null;
+  callOrdinal: number | null;
+  attemptOrdinal: number | null;
+  providerRequestId: string | null;
+  providerResponseId: string | null;
+  occurredAt: string;
+  evidence: {
+    manifestId: string;
+    state: "pending" | "stored" | "degraded" | "legacy_unavailable";
+    byteLength: number | null;
+    sha256: string | null;
+    lastStorageError: string | null;
+  };
+}
+
 export interface AdminOwnerLearningReviewSummary {
   id: string;
   owner: { userId: string; displayName: string | null; handle: string | null };
@@ -2576,6 +2845,7 @@ export interface AdminOwnerLearningReviewSummary {
   acceptance: AdminOwnerLearningAcceptance;
   logicalCallCount: number;
   diveCount: number;
+  failure: AdminOwnerLearningFailureDiagnostic | null;
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   createdAt: string;
@@ -2615,10 +2885,14 @@ export interface AdminOwnerLearningReviewDetail {
     track: "evidence_rich" | "strategy_health_check";
     status: OwnerLearningAnalysisStatus;
     stage: OwnerLearningStage;
+    executionPhase: AdminOwnerLearningFailureDiagnostic["phase"];
     capacitySubstatus: string | null;
     resolution: OwnerLearningResolution | null;
     safeFailureCode: string | null;
     retryable: boolean;
+    ownerRetryCount: number;
+    ownerRetriesRemaining: 0 | 1;
+    retryTargetAttemptId: string | null;
     logicalCallCount: number;
     diveCount: number;
     createdAt: string;
@@ -2630,7 +2904,14 @@ export interface AdminOwnerLearningReviewDetail {
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
   calls: Array<{
+    id: string;
     ordinal: number;
+    attemptOrdinal: number;
+    retryOfAttemptId: string | null;
+    executionKind: "provider_invocation" | "local_recovery";
+    providerTurnProtocol: string;
+    executionFingerprint: string;
+    retryOfExecutionFingerprint: string | null;
     state: string;
     stage: string;
     requestedTier: string;
@@ -2640,6 +2921,13 @@ export interface AdminOwnerLearningReviewDetail {
     flex429Count: number;
     terminalHttpStatus: number | null;
     providerRequestId: string | null;
+    providerResponseId: string | null;
+    providerResponseObservedAt: string | null;
+    providerResponseSha256: string | null;
+    requestEvidence: { sha256: string | null; byteLength: number | null };
+    responseEvidence: { sha256: string | null; byteLength: number | null };
+    evidenceState: string;
+    failureDiagnosticId: string | null;
     safeFailureCode: string | null;
     latencyMs: number | null;
     tokens: {
@@ -2659,6 +2947,7 @@ export interface AdminOwnerLearningReviewDetail {
     dispatchedAt: string | null;
     completedAt: string | null;
   }>;
+  diagnostics: AdminOwnerLearningFailureDiagnostic[];
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: null | {
@@ -2691,6 +2980,62 @@ export async function getAdminOwnerLearningReview(
   reviewId: string,
 ): Promise<AdminOwnerLearningReviewDetail> {
   return apiFetch(`/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}`);
+}
+
+export type AdminOwnerLearningFailureContent = {
+  schemaVersion: 1;
+  state: "complete" | "partial" | "final_chunk";
+  diagnostic: Omit<AdminOwnerLearningFailureDiagnostic, "evidence">;
+  manifest: {
+    id: string;
+    state: "stored";
+    contentType: string;
+    byteLength: number;
+    sha256: string;
+    metadata: Record<string, unknown>;
+  };
+  content: string;
+  contentBase64: string;
+  offsetBytes: number;
+  returnedByteLength: number;
+  totalByteLength: number;
+  nextOffsetBytes?: number;
+  truncated: boolean;
+  sha256: string;
+  hashScope: "complete_object" | "chunk";
+} | {
+  schemaVersion: 1;
+  state: "pending" | "degraded" | "legacy_unavailable" | "integrity_mismatch" | "storage_error";
+  error: string;
+  retryable: boolean;
+};
+
+export async function getAdminOwnerLearningFailureContent(
+  reviewId: string,
+  diagnosticId: string,
+  options: { offsetBytes?: number; maxBytes?: number } = {},
+): Promise<AdminOwnerLearningFailureContent> {
+  const params = new URLSearchParams();
+  if (options.offsetBytes !== undefined) params.set("offsetBytes", String(options.offsetBytes));
+  if (options.maxBytes !== undefined) params.set("maxBytes", String(options.maxBytes));
+  const query = params.toString();
+  try {
+    return await apiFetch(
+      `/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}/diagnostics/${encodeURIComponent(diagnosticId)}/content${query ? `?${query}` : ""}`,
+    );
+  } catch (error) {
+    if (
+      error instanceof ApiError
+      && error.status === 503
+      && error.payload?.schemaVersion === 1
+      && (error.payload.state === "integrity_mismatch" || error.payload.state === "storage_error")
+      && typeof error.payload.error === "string"
+      && typeof error.payload.retryable === "boolean"
+    ) {
+      return error.payload as AdminOwnerLearningFailureContent;
+    }
+    throw error;
+  }
 }
 
 export interface AdminAgent {
@@ -2750,6 +3095,91 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export type AdminDeploymentAdmissionPhase =
+  | "draining"
+  | "validating"
+  | "switching"
+  | "accepting"
+  | "restoring";
+
+export interface AdminDeploymentAdmissionStatus {
+  schemaVersion: 1;
+  admissionBlocked: boolean;
+  activeGameCount: number;
+  lease: null | {
+    id: string;
+    revision: number;
+    candidateSha: string;
+    sourceRepository: string;
+    workflowRunId: number;
+    workflowRunAttempt: number;
+    actor: string;
+    phase: AdminDeploymentAdmissionPhase;
+    status: "active";
+    acquiredAt: string;
+    heartbeatAt: string;
+    expiresAt: string;
+    absoluteDeadlineAt: string;
+    canResume: boolean;
+  };
+}
+
+export interface AdminDeploymentAdmissionResumeResult {
+  schemaVersion: 1;
+  outcome: "revoked" | "already_resumed";
+  leaseId: string;
+  revision: number;
+}
+
+export type AdminProviderHealthState = "closed" | "open" | "probing";
+export type AdminProviderHealthReason =
+  | "authentication"
+  | "configuration"
+  | "service_error"
+  | "transport_timeout"
+  | "transport_error";
+
+export interface AdminProviderHealthStatus {
+  scopeKey: string;
+  scopeKind: "provider" | "entry";
+  providerProfileId: string;
+  catalogId: string | null;
+  state: AdminProviderHealthState;
+  reason: AdminProviderHealthReason | null;
+  revision: number;
+  consecutiveFailureCount: number;
+  windowStartedAt: string | null;
+  openedAt: string | null;
+  cooldownUntil: string | null;
+  lastFailureAt: string | null;
+  lastSuccessAt: string | null;
+  lastAttemptId: string | null;
+  lastProbeEvidenceId: string | null;
+  probeLeaseOwner: string | null;
+  probeLeaseExpiresAt: string | null;
+  lastProbeAt: string | null;
+  updatedAt: string;
+}
+
+export interface AdminProviderHealthResponse {
+  schemaVersion: 1;
+  dailyAdmissionPaused: boolean;
+  affectedDailyPrimaryScopeKeys: string[];
+  providers: AdminProviderHealthStatus[];
+}
+
+export interface AdminProviderHealthProbeResponse {
+  schemaVersion: 1;
+  target: {
+    scopeKey: string;
+    providerProfileId: string;
+    catalogId: string;
+    modelId: string;
+  };
+  outcome: { kind: string; message?: string; retryable?: boolean };
+  status: AdminProviderHealthStatus;
+}
+
 // ---------------------------------------------------------------------------
 // Admin RBAC API calls
 // ---------------------------------------------------------------------------
@@ -2784,6 +3214,33 @@ export async function revokeRole(
 
 export async function listAdminUsers(): Promise<AdminUser[]> {
   return apiFetch("/api/admin/users");
+}
+
+export async function getAdminDeploymentAdmission(): Promise<AdminDeploymentAdmissionStatus> {
+  return apiFetch("/api/admin/deployment-admission");
+}
+
+export async function resumeAdminDeploymentAdmission(
+  leaseId: string,
+  revision: number,
+  reason: string,
+): Promise<AdminDeploymentAdmissionResumeResult> {
+  return apiFetch(`/api/admin/deployment-admission/${encodeURIComponent(leaseId)}/resume`, {
+    method: "POST",
+    body: JSON.stringify({ revision, reason }),
+  });
+}
+
+export async function getAdminProviderHealth(): Promise<AdminProviderHealthResponse> {
+  return apiFetch("/api/admin/provider-health");
+}
+
+export async function probeAdminProviderHealth(
+  scopeKey: string,
+): Promise<AdminProviderHealthProbeResponse> {
+  return apiFetch(`/api/admin/provider-health/${encodeURIComponent(scopeKey)}/probe`, {
+    method: "POST",
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  normalizeGameModelSelection,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
   resolveToolChoiceMode,
 } from "@influence/engine";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -138,8 +137,11 @@ export async function projectOwnedSeatInTransaction(
 
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
-  const modelSelection = normalizeGameModelSelection(gameConfig.modelSelection);
-  const resolvedModelSelection = resolveModelSelection(modelSelection);
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
+  const modelSelection = {
+    catalogId: resolvedModelSelection.catalogId,
+    reasoningPolicy: resolvedModelSelection.reasoningPolicy,
+  };
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
     modelSelection,
     temperature,
@@ -183,12 +185,34 @@ export async function admitOwnedSeatInTransaction(
     playerId?: string;
     overrides?: OwnedSeatOverrides;
   },
-): Promise<{ game: GameRow; seat: PlayerRow; projection: OwnedSeatProjection }> {
-  const game = await lockWaitingGameForRosterWrite(tx, input.gameId);
-  await assertRatedAdmissionSeason(tx, game);
+): Promise<{ game: GameRow; seat: PlayerRow; projection: OwnedSeatProjection; replayed: boolean }> {
+  const game = (await lockRosterGamesInTransaction(tx, [input.gameId]))[0];
+  if (!game) {
+    throw projectionError("Game not found.", "rated_roster_invalid", "game_not_found");
+  }
   const players = await tx.select().from(schema.gamePlayers)
     .where(eq(schema.gamePlayers.gameId, game.id))
     .orderBy(asc(schema.gamePlayers.id));
+  const existingSeat = players.find((player) => (
+    player.userId === input.userId && player.agentProfileId === input.agentProfileId
+  ));
+  if (existingSeat) {
+    const projection = await projectOwnedSeatInTransaction(tx, {
+      game,
+      userId: input.userId,
+      agentProfileId: input.agentProfileId,
+      overrides: input.overrides,
+    });
+    return { game, seat: existingSeat, projection, replayed: true };
+  }
+  if (game.status !== "waiting" || game.startedAt) {
+    throw projectionError(
+      "This game is no longer accepting roster changes.",
+      "invalid_state",
+      "game_not_waiting",
+    );
+  }
+  await assertRatedAdmissionSeason(tx, game);
   if (players.length >= game.maxPlayers) {
     throw projectionError("This game is full.", "rated_roster_invalid", "capacity", {
       gameId: game.id,
@@ -224,7 +248,7 @@ export async function admitOwnedSeatInTransaction(
     agentConfig: projection.agentConfig,
   }).returning())[0];
   if (!seat) throw new Error("Owned seat insert returned no row");
-  return { game, seat, projection };
+  return { game, seat, projection, replayed: false };
 }
 
 /**
@@ -429,23 +453,6 @@ export async function assertUnownedSeatAdmissionInTransaction(
   return game;
 }
 
-/** A generated House persona may only enrich an unfrozen House seat. */
-export async function updateWaitingHouseSeatPersonaInTransaction(
-  tx: DrizzleTransaction,
-  input: { gameId: string; playerId: string; persona: string },
-): Promise<boolean> {
-  await lockWaitingGameForRosterWrite(tx, input.gameId);
-  const updated = await tx.update(schema.gamePlayers)
-    .set({ persona: input.persona })
-    .where(and(
-      eq(schema.gamePlayers.id, input.playerId),
-      eq(schema.gamePlayers.gameId, input.gameId),
-      isNull(schema.gamePlayers.agentProfileId),
-    ))
-    .returning({ id: schema.gamePlayers.id });
-  return updated.length === 1;
-}
-
 /**
  * Deletion uses the same game-before-profile order. After the profile lock,
  * any live seat is a hard conflict; historical seats may still be detached.
@@ -556,10 +563,11 @@ function personaName(persona: string): string {
   );
 }
 
-function parseGameConfig(value: string): { modelSelection?: unknown } {
+function parseGameConfig(value: string): { providerManifest?: unknown; modelSelection?: unknown } {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     return {
+      providerManifest: parsed.providerManifest,
       modelSelection: parsed.modelSelection,
     };
   } catch {

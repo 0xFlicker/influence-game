@@ -57,9 +57,9 @@ describe("owner learning review", () => {
   test("renders format-only ballots and every useful format action label", () => {
     const cases = [
       ["save_or_eliminate", "save", "Voted to save Rune"],
-      ["save_or_eliminate", "eliminate", "Voted to eliminate Rune"],
-      ["vote_bomb", null, "Vote Bomb vote against Rune"],
-      ["majority_elimination", null, "Majority Elimination vote against Rune"],
+      ["save_or_eliminate", "eliminate", "Voted to exit Rune"],
+      ["vote_bomb", null, "The Short List vote against Rune"],
+      ["majority_elimination", null, "Highest Count vote against Rune"],
       ["safety_bounce", null, "Safety Bounce vote against Rune"],
     ] as const;
 
@@ -139,7 +139,7 @@ describe("owner learning review", () => {
     expect(html).not.toContain("moment-1");
     expect(html).toContain("− Commit early.");
     expect(html).toContain("+ Wait for reciprocal support before committing.");
-    expect(html).toContain("Edit changes myself");
+    expect(html).toContain("Edit suggested strategy");
     expect(html).toContain("Keep current strategy");
     expect(html).toContain("Apply strategy update");
   });
@@ -169,7 +169,7 @@ describe("owner learning review", () => {
     expect(html).toContain('href="/dashboard/agents/agent-1"');
     expect(html).toContain("View agent");
     expect(html).not.toContain("Apply strategy update");
-    expect(html).not.toContain("Edit changes myself");
+    expect(html).not.toContain("Edit suggested strategy");
     expect(html).not.toContain("Keep current strategy");
   });
 
@@ -229,11 +229,18 @@ describe("owner learning review", () => {
       retryable: true,
       logicalCallCount: 2,
     });
+    const turnFourRetryable = renderReview({
+      ...reviewFixture(),
+      analysisStatus: "failed",
+      safeFailureCode: "provider_timeout",
+      retryable: true,
+      logicalCallCount: 4,
+    });
     const exhausted = renderReview({
       ...reviewFixture(),
       analysisStatus: "failed",
       safeFailureCode: "logical_call_budget_exhausted",
-      retryable: true,
+      retryable: false,
       logicalCallCount: 4,
     });
 
@@ -242,12 +249,13 @@ describe("owner learning review", () => {
     expect(noChange).not.toContain("Apply strategy update");
     expect(retryable).toContain("The game facts are safe");
     expect(retryable).toContain("Retry analysis");
-    expect(retryable).toContain("Resolve failed review");
-    expect(retryable).toContain("Any credit used to start a metered review is not refunded");
+    expect(retryable).toContain("Close review");
+    expect(retryable).toContain("reuses saved progress and does not use another review credit");
     expect(retryable).not.toContain("rolling allowance");
     expect(retryable).not.toContain("Cancel");
+    expect(turnFourRetryable).toContain("Retry analysis");
     expect(exhausted).not.toContain("Retry analysis");
-    expect(exhausted).toContain("Resolve failed review");
+    expect(exhausted).toContain("Close review");
   });
 
   test("keeps every terminal resolution legible", () => {
@@ -325,6 +333,7 @@ function reviewFixture(): OwnerLearningReview {
     proposalFingerprint: null,
     safeFailureCode: null,
     retryable: true,
+    ownerRetriesRemaining: 1,
     logicalCallCount: 1,
     diveCount: 1,
     applyDisposition: "not_ready",

@@ -5,6 +5,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
+  attachOwnedDraftAvatarCompletion,
   buildAvatarPrompt,
   completeAvatarGenerationRequest,
   requestAvatarCompletion,
@@ -207,6 +208,75 @@ describe("avatar generation service", () => {
     expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(1);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+  });
+
+  test("applies a draft portrait when save attaches it during provider completion", async () => {
+    process.env.API_KAT_IMGNAI_KEY = "kat-key";
+    process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
+    let signalAssetDownload!: () => void;
+    const assetDownloadStarted = new Promise<void>((resolve) => { signalAssetDownload = resolve; });
+    let releaseAssetDownload!: () => void;
+    const assetDownloadRelease = new Promise<void>((resolve) => { releaseAssetDownload = resolve; });
+    const fetchImpl = async (url: string | URL | Request): Promise<Response> => {
+      const value = String(url);
+      if (value.endsWith("/v1/generation-requests?wait=false")) {
+        return jsonResponse({ request_id: "draft-save-race", status: "queued" });
+      }
+      if (value.endsWith("/v1/generation-requests/draft-save-race")) {
+        return jsonResponse({
+          request_id: "draft-save-race",
+          status: "completed",
+          responses: [{ output_assets: [{ original_data_url: "https://assets.example/race.png" }] }],
+        });
+      }
+      if (value === "https://assets.example/race.png") {
+        signalAssetDownload();
+        await assetDownloadRelease;
+        return new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "image/png" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${value}`);
+    };
+    const requested = await requestDraftAvatarCompletion(db, {
+      userId: USER_ID,
+      profile: {
+        name: "Prompt Snapshot",
+        gender: "non-binary",
+        backstory: null,
+        personality: "Original prompt personality.",
+        strategyStyle: "Original prompt strategy.",
+        personaKey: "strategic",
+      },
+    });
+    const completionPromise = completeAvatarGenerationRequest(db, requested.generationRequestId!, {
+      fetch: fetchImpl as typeof fetch,
+      sleep: async () => undefined,
+      publicBaseUrl: "http://127.0.0.1:3000",
+    });
+    await assetDownloadStarted;
+
+    const attached = await db.transaction((tx) => attachOwnedDraftAvatarCompletion(tx, {
+      userId: USER_ID,
+      generationRequestId: requested.generationRequestId!,
+      agentProfileId: AGENT_ID,
+    }));
+    expect(attached).toMatchObject({ attached: true, completion: { status: "processing" } });
+    releaseAssetDownload();
+    const completed = await completionPromise;
+
+    expect(completed.status).toBe("completed");
+    const [agent] = await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, AGENT_ID));
+    expect(agent?.avatarUrl).toBe(completed.avatarUrl ?? null);
+    const changes = await db.select().from(schema.avatarChangeEvents);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      agentProfileId: AGENT_ID,
+      generationRequestId: requested.generationRequestId,
+      source: "web_generated_completion",
+    });
   });
 
   test("serializes concurrent draft quota reservations per user", async () => {
@@ -496,7 +566,7 @@ describe("avatar generation service", () => {
     expect(generation!.status).toBe("completed");
   });
 
-  test("restarts stale processing requests by polling the existing provider request", async () => {
+  test("lets one worker reclaim stale processing and poll the existing provider request", async () => {
     process.env.API_KAT_IMGNAI_KEY = "kat-key";
     process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
     const old = "2026-07-02T00:00:00.000Z";
@@ -548,14 +618,23 @@ describe("avatar generation service", () => {
       throw new Error(`Unexpected fetch: ${value}`);
     };
 
-    const completion = await completeAvatarGenerationRequest(db, "stale-generation", {
-      fetch: fetchImpl as typeof fetch,
-      sleep: async () => undefined,
-      publicBaseUrl: "http://127.0.0.1:3000",
-    });
+    const completions = await Promise.all([
+      completeAvatarGenerationRequest(db, "stale-generation", {
+        fetch: fetchImpl as typeof fetch,
+        sleep: async () => undefined,
+        publicBaseUrl: "http://127.0.0.1:3000",
+      }),
+      completeAvatarGenerationRequest(db, "stale-generation", {
+        fetch: fetchImpl as typeof fetch,
+        sleep: async () => undefined,
+        publicBaseUrl: "http://127.0.0.1:3000",
+      }),
+    ]);
 
-    expect(completion.status).toBe("completed");
+    expect(completions.some((completion) => completion.status === "completed")).toBe(true);
     expect(calls.some((value) => value.endsWith("/v1/generation-requests?wait=false"))).toBe(false);
+    expect(calls.filter((value) => value.endsWith("/v1/generation-requests/existing-katana-request"))).toHaveLength(1);
+    expect(calls.filter((value) => value === "https://assets.example/stale-avatar.webp")).toHaveLength(1);
   });
 
   test("enforces quota before provider calls", async () => {

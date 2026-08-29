@@ -12,12 +12,13 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner, GameState, Phase, projectViewerDecisionEvent } from "@influence/engine";
-import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
+import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import {
   appendDurableEventsAndPublishWatchState,
   classifyGameRunFailure,
+  preflightProviderManifest,
   preflightSelectedModel,
   reconcilePostgameMediaAfterCompletion,
   serializeTranscriptEntry,
@@ -339,6 +340,87 @@ describe("preflightSelectedModel", () => {
 
     expect(calls).toEqual(["retrieve:gpt-5-nano"]);
   });
+
+  test("preflights every sealed manifest entry with one request per provider profile", async () => {
+    const calls: string[] = [];
+    const clients: string[] = [];
+    const openai = {
+      id: "openai",
+      displayName: "OpenAI",
+      baseURL: "https://api.openai.com/v1",
+      envKeyVar: "OPENAI_API_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+    const katana = {
+      id: "katana",
+      displayName: "Katana",
+      baseURL: "https://api.katana.invalid/v1",
+      envKeyVar: "API_KAT_IMGNAI_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+
+    await preflightProviderManifest(
+      [
+        { modelId: "gpt-5.6-luna", providerProfile: openai },
+        { modelId: "grok-4-5", providerProfile: katana },
+        { modelId: "glm-5-2", providerProfile: katana },
+      ] as never,
+      (providerProfileId) => {
+        clients.push(providerProfileId);
+        return {
+          providerLabel: providerProfileId,
+          client: {
+            models: {
+              async list() {
+                calls.push(`${providerProfileId}:list`);
+                return { data: [{ id: "grok-4-5" }, { id: "glm-5-2" }] };
+              },
+              async retrieve(modelId: string) {
+                calls.push(`${providerProfileId}:retrieve:${modelId}`);
+                return { id: modelId };
+              },
+            },
+          },
+        };
+      },
+    );
+
+    expect(clients).toEqual(["openai", "katana"]);
+    expect(calls).toEqual([
+      "openai:retrieve:gpt-5.6-luna",
+      "katana:list",
+    ]);
+  });
+
+  test("rejects a sealed Katana entry missing from the provider catalog", async () => {
+    const katana = {
+      id: "katana",
+      displayName: "Katana",
+      baseURL: "https://api.katana.invalid/v1",
+      envKeyVar: "API_KAT_IMGNAI_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+
+    await expect(preflightProviderManifest(
+      [
+        { modelId: "grok-4-5", providerProfile: katana },
+        { modelId: "glm-5-2", providerProfile: katana },
+      ] as never,
+      () => ({
+        providerLabel: "Katana",
+        client: {
+          models: {
+            async list() {
+              return { data: [{ id: "grok-4-5" }] };
+            },
+            async retrieve(modelId: string) {
+              return { id: modelId };
+            },
+          },
+        },
+      }),
+    )).rejects.toThrow("Model glm-5-2 is not available from Katana");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -428,19 +510,6 @@ class LifecycleMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "lifecycle mock jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "lifecycle mock plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "lifecycle mock broad reflection",
-      thinking: "lifecycle mock strategic reflection",
-    };
-  }
-
   // Memory methods (no-ops for mock)
   updateAlly(_playerName: string): void { /* no-op */ }
   updateThreat(_playerName: string): void { /* no-op */ }
@@ -675,6 +744,26 @@ describe("Game lifecycle integration", () => {
     expect(row.captureVersion).toBe(1);
     expect(row.dialogueKind).toBe("public_speech");
     expect(row.safeContext).toEqual({ version: 1 });
+  });
+
+  test("serializeTranscriptEntry accepts viewer-safe House summaries", () => {
+    const row = serializeTranscriptEntry("game-house-summary", {
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      timestamp: 123,
+      from: "House",
+      scope: "system",
+      text: "Ada chose Vote Bomb.",
+      speakerPlayerId: null,
+      entrySequence: 2,
+      dialogueKind: "house_summary",
+      audiencePlayerIds: [],
+      dialogueContext: { version: 1 },
+    }, { transcriptCaptureVersion: 1 });
+
+    expect(row.dialogueKind).toBe("house_summary");
+    expect(row.entrySequence).toBe(2);
+    expect(row.audiencePlayerIds).toEqual([]);
   });
 
   test("serializeTranscriptEntry rejects legacy-shaped dialogue in current-capture games", () => {

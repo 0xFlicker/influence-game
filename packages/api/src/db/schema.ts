@@ -25,17 +25,35 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "@influence/engine";
+import {
+  MAX_NEW_GAME_PLAYERS,
+  MIN_NEW_GAME_PLAYERS,
+  type DurableJsonObject,
+  type GameExecutionCursorV1,
+  type GameExecutionRetryV1,
+  type GameExecutionStatusV1,
+  type GamePublicationPayloadV1,
+  type GameTurnCommitResultV1,
+  type GameTurnIntentV1,
+  type HouseNarrativeContinuityV2,
+  type Phase,
+  type PlayerContinuityCapsule,
+  type ProviderAttemptAccountingFacts,
+  type ProviderAttemptRecord,
+} from "@influence/engine";
 import type { AgentGender } from "../lib/agent-gender.js";
 import type {
   OwnerLearningAnalysisStatus,
   OwnerLearningAnalysisTrack,
   OwnerLearningCallCostReceipt,
+  OwnerLearningCallEvidenceState,
   OwnerLearningCallFailureCode,
   OwnerLearningCallState,
   OwnerLearningCapacityPath,
   OwnerLearningCapacitySubstatus,
   OwnerLearningCheckpoint,
+  OwnerLearningExecutionPhase,
+  OwnerLearningFailureManifestState,
   OwnerLearningResolution,
   OwnerLearningReviewResult,
   OwnerLearningSafeFailureCode,
@@ -201,6 +219,32 @@ export const users = pgTable("users", {
   ),
 ]);
 
+export const legalAcceptances = pgTable("legal_acceptances", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  termsVersion: text("terms_version").notNull(),
+  privacyVersion: text("privacy_version").notNull(),
+  deploymentSha: text("deployment_sha").notNull(),
+  source: text("source")
+    .notNull()
+    .$type<"account_creation" | "existing_account">(),
+  acceptedAt: text("accepted_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("legal_acceptances_user_versions_unique").on(
+    table.userId,
+    table.termsVersion,
+    table.privacyVersion,
+  ),
+  check(
+    "legal_acceptances_source_check",
+    sql`${table.source} IN ('account_creation', 'existing_account')`,
+  ),
+]);
+
 export type AuthenticationProvider = "privy" | "clerk" | "farcaster";
 
 export const authenticationCredentials = pgTable("authentication_credentials", {
@@ -345,6 +389,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
+  creationRequestId: text("creation_request_id"),
+  creationPayloadFingerprint: text("creation_payload_fingerprint"),
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
@@ -367,6 +413,9 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_name_idx").on(table.name),
   index("agent_profiles_name_id_idx").on(table.name, table.id),
   uniqueIndex("agent_profiles_normalized_name_unique").on(sql`lower(btrim(${table.name}))`),
+  uniqueIndex("agent_profiles_user_creation_request_unique")
+    .on(table.userId, table.creationRequestId)
+    .where(sql`${table.creationRequestId} IS NOT NULL`),
   index("agent_profiles_current_revision_idx").on(table.currentRevisionId),
   check("agent_profiles_name_not_house_reserved", sql`
     lower(btrim(${table.name})) NOT IN (
@@ -419,8 +468,7 @@ export const avatarGenerationRequests = pgTable("avatar_generation_requests", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
-  agentProfileId: text("agent_profile_id")
-    .notNull(),
+  agentProfileId: text("agent_profile_id"),
   purpose: text("purpose").notNull().$type<AvatarGenerationPurpose>(),
   status: text("status").notNull().$type<AvatarGenerationStatus>(),
   triggerSource: text("trigger_source").notNull().$type<AvatarGenerationTriggerSource>(),
@@ -532,6 +580,7 @@ export type TranscriptDialogueKind =
   | "system_phase_banner"
   | "system_room_allocation"
   | "system_elimination"
+  | "house_summary"
   | "system_announcement";
 
 export type GameTranscriptTerminalState =
@@ -582,6 +631,10 @@ export const transcripts = pgTable("transcripts", {
   text: text("text").notNull(),
   thinking: text("thinking"), // Per-message thinking (null for old entries / system messages)
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms
+  /** Logical-turn identity for every current durable transcript row. */
+  gameTurnId: text("game_turn_id"),
+  /** Stable one-based position inside gameTurnId; presentation timestamps are not ordering authority. */
+  gameTurnTranscriptOrdinal: integer("game_turn_transcript_ordinal"),
   // --- Current-capture product dialogue identity (nullable; never backfilled on legacy rows) ---
   /** 1-based game-local product dialogue sequence; null for legacy and diary/thinking. */
   entrySequence: integer("entry_sequence"),
@@ -608,6 +661,9 @@ export const transcripts = pgTable("transcripts", {
     .on(table.gameId, table.entrySequence)
     .where(sql`${table.entrySequence} IS NOT NULL`),
   index("transcripts_game_id_timestamp_id_idx").on(table.gameId, table.timestamp, table.id),
+  uniqueIndex("transcripts_game_turn_ordinal_unique")
+    .on(table.gameId, table.gameTurnId, table.gameTurnTranscriptOrdinal)
+    .where(sql`${table.gameTurnId} IS NOT NULL`),
   index("transcripts_audience_player_ids_gin_idx").using("gin", table.audiencePlayerIds),
   index("transcripts_speaker_player_id_idx").on(table.gameId, table.speakerPlayerId),
   check(
@@ -621,6 +677,13 @@ export const transcripts = pgTable("transcripts", {
   check(
     "transcripts_capture_version_positive_check",
     sql`${table.captureVersion} IS NULL OR ${table.captureVersion} > 0`,
+  ),
+  check(
+    "transcripts_game_turn_shape_check",
+    sql`
+      (${table.gameTurnId} IS NULL AND ${table.gameTurnTranscriptOrdinal} IS NULL)
+      OR (${table.gameTurnId} IS NOT NULL AND ${table.gameTurnTranscriptOrdinal} > 0)
+    `,
   ),
   // Current-capture dialogue scopes require sequence, audience, and context.
   check(
@@ -896,6 +959,117 @@ export type CognitiveArtifactReadOutcome =
   | "expired"
   | "redacted";
 
+export type DeploymentAdmissionPhase =
+  | "draining"
+  | "validating"
+  | "switching"
+  | "accepting"
+  | "restoring";
+export type DeploymentAdmissionLeaseStatus =
+  | "active"
+  | "accepted"
+  | "restored"
+  | "aborted"
+  | "revoked"
+  | "expired";
+export type DeploymentRecoveryReconciliationStatus = "pending" | "running" | "succeeded";
+
+/** Singleton lock and monotonic fence source for every start/release race. */
+export const deploymentAdmissionState = pgTable("deployment_admission_state", {
+  id: integer("id").primaryKey().default(1),
+  nextFencingToken: bigint("next_fencing_token", { mode: "number" }).notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("deployment_admission_state_singleton_check", sql`${table.id} = 1`),
+  check("deployment_admission_state_next_fence_check", sql`${table.nextFencingToken} > 0`),
+]);
+
+/** Append-only lease identities; terminal rows retain release and Resume audit. */
+export const deploymentAdmissionLeases = pgTable("deployment_admission_leases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fencingToken: bigint("fencing_token", { mode: "number" }).notNull(),
+  candidateSha: text("candidate_sha").notNull(),
+  sourceRepository: text("source_repository").notNull(),
+  workflowRunId: bigint("workflow_run_id", { mode: "number" }).notNull(),
+  workflowRunAttempt: integer("workflow_run_attempt").notNull(),
+  actor: text("actor").notNull(),
+  phase: text("phase").notNull().$type<DeploymentAdmissionPhase>().default("draining"),
+  status: text("status").notNull().$type<DeploymentAdmissionLeaseStatus>().default("active"),
+  revision: integer("revision").notNull().default(1),
+  acquiredAt: text("acquired_at").notNull().default(sql`now()::text`),
+  heartbeatAt: text("heartbeat_at").notNull().default(sql`now()::text`),
+  expiresAt: text("expires_at").notNull(),
+  absoluteDeadlineAt: text("absolute_deadline_at").notNull(),
+  completedAt: text("completed_at"),
+  completionReason: text("completion_reason"),
+  revokedAt: text("revoked_at"),
+  revokedBy: text("revoked_by"),
+  revocationReason: text("revocation_reason"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("deployment_admission_leases_fence_unique").on(table.fencingToken),
+  uniqueIndex("deployment_admission_leases_one_active")
+    .on(table.status)
+    .where(sql`${table.status} = 'active'`),
+  index("deployment_admission_leases_candidate_sha_idx").on(table.candidateSha),
+  check("deployment_admission_leases_fence_check", sql`${table.fencingToken} > 0`),
+  check("deployment_admission_leases_candidate_sha_check", sql`${table.candidateSha} ~ '^[0-9a-f]{40}$'`),
+  check("deployment_admission_leases_source_repository_check", sql`${table.sourceRepository} = '0xFlicker/linode-iac'`),
+  check("deployment_admission_leases_workflow_run_check", sql`${table.workflowRunId} > 0 AND ${table.workflowRunAttempt} > 0`),
+  check("deployment_admission_leases_actor_check", sql`${table.actor} ~ '^[A-Za-z0-9][A-Za-z0-9-]{0,38}$'`),
+  check("deployment_admission_leases_phase_check", sql`${table.phase} IN ('draining', 'validating', 'switching', 'accepting', 'restoring')`),
+  check("deployment_admission_leases_status_check", sql`${table.status} IN ('active', 'accepted', 'restored', 'aborted', 'revoked', 'expired')`),
+  check("deployment_admission_leases_revision_check", sql`${table.revision} > 0`),
+  check("deployment_admission_leases_deadline_order_check", sql`${table.expiresAt}::timestamptz <= ${table.absoluteDeadlineAt}::timestamptz`),
+  check(
+    "deployment_admission_leases_revocation_audit_check",
+    sql`(
+      ${table.status} = 'revoked'
+      AND ${table.revokedAt} IS NOT NULL
+      AND ${table.revokedBy} IS NOT NULL
+      AND ${table.revocationReason} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'revoked'
+      AND ${table.revokedAt} IS NULL
+      AND ${table.revokedBy} IS NULL
+      AND ${table.revocationReason} IS NULL
+    )`,
+  ),
+]);
+
+/** One durable, single-flight recovery reconciliation for each terminal deployment lease. */
+export const deploymentRecoveryReconciliations = pgTable("deployment_recovery_reconciliations", {
+  leaseId: uuid("lease_id")
+    .primaryKey()
+    .references(() => deploymentAdmissionLeases.id),
+  status: text("status").notNull().$type<DeploymentRecoveryReconciliationStatus>().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  claimToken: uuid("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
+  lastError: text("last_error"),
+  requestedAt: text("requested_at").notNull().default(sql`now()::text`),
+  completedAt: text("completed_at"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("deployment_recovery_reconciliations_status_idx").on(table.status, table.updatedAt),
+  check(
+    "deployment_recovery_reconciliations_status_check",
+    sql`${table.status} IN ('pending', 'running', 'succeeded')`,
+  ),
+  check(
+    "deployment_recovery_reconciliations_claim_check",
+    sql`(
+      ${table.status} = 'running'
+      AND ${table.claimToken} IS NOT NULL
+      AND ${table.claimExpiresAt} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'running'
+      AND ${table.claimToken} IS NULL
+      AND ${table.claimExpiresAt} IS NULL
+    )`,
+  ),
+]);
+
 export const gameRunOwners = pgTable("game_run_owners", {
   id: text("id").primaryKey(), // UUID
   gameId: text("game_id")
@@ -932,6 +1106,160 @@ export const gameRunOwners = pgTable("game_run_owners", {
   check("game_run_owners_run_source_check", sql`${table.runSource} IN ('api', 'simulation_import')`),
   check("game_run_owners_kernel_health_check", sql`${table.kernelHealth} IN ('healthy', 'degraded', 'suspended')`),
   check("game_run_owners_last_persisted_event_sequence_check", sql`${table.lastPersistedEventSequence} >= 0`),
+]);
+
+/** One authoritative committed program counter per durable game. */
+export const gameExecutionStates = pgTable("game_execution_states", {
+  gameId: text("game_id")
+    .primaryKey()
+    .references(() => games.id, { onDelete: "cascade" }),
+  contractVersion: integer("contract_version").notNull().default(1),
+  ownerEpoch: text("owner_epoch").notNull(),
+  status: text("status").notNull().$type<GameExecutionStatusV1>().default("ready"),
+  committedTurnSequence: integer("committed_turn_sequence").notNull().default(0),
+  eventHeadSequence: integer("event_head_sequence").notNull().default(0),
+  eventHeadHash: text("event_head_hash"),
+  dialogueHeadSequence: integer("dialogue_head_sequence").notNull().default(0),
+  publicationHeadSequence: integer("publication_head_sequence").notNull().default(0),
+  lastPresentationPhase: text("last_presentation_phase").$type<Phase>(),
+  nextPublicationAvailableAt: text("next_publication_available_at"),
+  xstateSnapshot: jsonb("xstate_snapshot").notNull().$type<DurableJsonObject>(),
+  executionCursor: jsonb("execution_cursor").notNull().$type<GameExecutionCursorV1>(),
+  playerContinuityCapsules: jsonb("player_continuity_capsules")
+    .notNull()
+    .$type<PlayerContinuityCapsule[]>()
+    .default(sql`'[]'::jsonb`),
+  houseNarrativeContinuity: jsonb("house_narrative_continuity")
+    .$type<HouseNarrativeContinuityV2>(),
+  retryState: jsonb("retry_state").$type<GameExecutionRetryV1>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  foreignKey({
+    name: "game_execution_states_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_execution_states_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_execution_states_status_check", sql`${table.status} IN ('ready', 'waiting_retry', 'terminal', 'repair_required')`),
+  check("game_execution_states_heads_check", sql`
+    ${table.committedTurnSequence} >= 0
+    AND ${table.eventHeadSequence} >= 0
+    AND ${table.dialogueHeadSequence} >= 0
+    AND ${table.publicationHeadSequence} >= 0
+  `),
+  check("game_execution_states_event_hash_check", sql`
+    (${table.eventHeadSequence} = 0 AND ${table.eventHeadHash} IS NULL)
+    OR (
+      ${table.eventHeadSequence} > 0
+      AND ${table.eventHeadHash} ~ '^sha256:[0-9a-f]{64}$'
+    )
+  `),
+  check("game_execution_states_retry_check", sql`
+    (${table.status} = 'waiting_retry' AND ${table.retryState} IS NOT NULL)
+    OR (${table.status} <> 'waiting_retry' AND ${table.retryState} IS NULL)
+  `),
+]);
+
+/** Immutable planned intent and its optional single atomic commit. */
+export const gameTurns = pgTable("game_turns", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  contractVersion: integer("contract_version").notNull().default(1),
+  turnSequence: integer("turn_sequence").notNull(),
+  status: text("status").notNull().$type<"planned" | "committed">().default("planned"),
+  plannedOwnerEpoch: text("planned_owner_epoch").notNull(),
+  committedOwnerEpoch: text("committed_owner_epoch"),
+  baseEventSequence: integer("base_event_sequence").notNull(),
+  baseDialogueSequence: integer("base_dialogue_sequence").notNull(),
+  basePublicationSequence: integer("base_publication_sequence").notNull(),
+  intent: jsonb("intent").notNull().$type<GameTurnIntentV1>(),
+  intentHash: text("intent_hash").notNull(),
+  effectHash: text("effect_hash"),
+  commitResult: jsonb("commit_result").$type<GameTurnCommitResultV1>(),
+  plannedAt: text("planned_at").notNull().default(sql`now()::text`),
+  committedAt: text("committed_at"),
+}, (table) => [
+  unique("game_turns_game_id_id_unique").on(table.gameId, table.id),
+  uniqueIndex("game_turns_game_sequence_unique").on(table.gameId, table.turnSequence),
+  uniqueIndex("game_turns_one_planned_per_game")
+    .on(table.gameId)
+    .where(sql`${table.status} = 'planned'`),
+  index("game_turns_game_status_idx").on(table.gameId, table.status),
+  foreignKey({
+    name: "game_turns_planned_owner_fk",
+    columns: [table.gameId, table.plannedOwnerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_turns_committed_owner_fk",
+    columns: [table.gameId, table.committedOwnerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_turns_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_turns_sequence_check", sql`${table.turnSequence} > 0`),
+  check("game_turns_base_heads_check", sql`
+    ${table.baseEventSequence} >= 0
+    AND ${table.baseDialogueSequence} >= 0
+    AND ${table.basePublicationSequence} >= 0
+  `),
+  check("game_turns_hashes_check", sql`
+    ${table.intentHash} ~ '^sha256:[0-9a-f]{64}$'
+    AND (${table.effectHash} IS NULL OR ${table.effectHash} ~ '^sha256:[0-9a-f]{64}$')
+  `),
+  check("game_turns_commit_shape_check", sql`
+    (
+      ${table.status} = 'planned'
+      AND ${table.committedOwnerEpoch} IS NULL
+      AND ${table.effectHash} IS NULL
+      AND ${table.commitResult} IS NULL
+      AND ${table.committedAt} IS NULL
+    ) OR (
+      ${table.status} = 'committed'
+      AND ${table.committedOwnerEpoch} IS NOT NULL
+      AND ${table.effectHash} IS NOT NULL
+      AND ${table.commitResult} IS NOT NULL
+      AND ${table.committedAt} IS NOT NULL
+    )
+  `),
+]);
+
+/** Ordered, durable viewer feed. Null availableAt holds terminal output. */
+export const gamePublications = pgTable("game_publications", {
+  id: serial("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  publicationSequence: integer("publication_sequence").notNull(),
+  turnId: text("turn_id").notNull(),
+  turnSequence: integer("turn_sequence").notNull(),
+  turnPublicationOrdinal: integer("turn_publication_ordinal").notNull(),
+  contractVersion: integer("contract_version").notNull().default(1),
+  kind: text("kind")
+    .notNull()
+    .$type<"canonical_event" | "transcript_entry" | "completion">(),
+  payload: jsonb("payload").notNull().$type<GamePublicationPayloadV1>(),
+  availableAt: text("available_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_publications_game_sequence_unique").on(table.gameId, table.publicationSequence),
+  uniqueIndex("game_publications_turn_ordinal_unique").on(table.turnId, table.turnPublicationOrdinal),
+  index("game_publications_available_idx").on(table.gameId, table.availableAt, table.publicationSequence),
+  index("game_publications_due_idx").on(table.availableAt, table.gameId, table.publicationSequence),
+  foreignKey({
+    name: "game_publications_game_turn_fk",
+    columns: [table.gameId, table.turnId],
+    foreignColumns: [gameTurns.gameId, gameTurns.id],
+  }),
+  check("game_publications_contract_version_check", sql`${table.contractVersion} = 1`),
+  check("game_publications_sequence_check", sql`
+    ${table.publicationSequence} > 0
+    AND ${table.turnSequence} > 0
+    AND ${table.turnPublicationOrdinal} > 0
+  `),
+  check("game_publications_kind_check", sql`${table.kind} IN ('canonical_event', 'transcript_entry', 'completion')`),
 ]);
 
 /**
@@ -1267,6 +1595,8 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
 
 export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   id: text("id").primaryKey(), // UUID
+  /** Immutable insertion XID for cursor snapshot visibility; historical rows remain null. */
+  indexInsertXid: text("index_insert_xid").default(sql`pg_current_xact_id()::text`),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -1340,6 +1670,433 @@ export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads",
     foreignColumns: [gameEvidenceManifests.id],
   }),
   check("game_evidence_manifest_reads_outcome_check", sql`${table.outcome} IN ('allowed', 'denied', 'expired', 'redacted')`),
+]);
+
+// ---------------------------------------------------------------------------
+// Provider call journal (authoritative dispatch and attempt reconciliation)
+// ---------------------------------------------------------------------------
+
+export type ProviderCallRateLimitOutcome =
+  | "pending"
+  | "recovered"
+  | "exhausted";
+export type ProviderCallAttemptStatus = "reserved" | "indeterminate" | "terminal";
+export type ProviderAttemptEvidenceState =
+  | "pending"
+  | "not_required"
+  | "stored"
+  | "aggregated"
+  | "degraded";
+export type ProviderAttemptSpendProjectionState =
+  | "pending"
+  | "projected"
+  | "failed";
+export type ProviderHealthScopeKind = "provider" | "entry";
+export type ProviderHealthState = "closed" | "open" | "probing";
+export type ProviderHealthReason =
+  | "authentication"
+  | "configuration"
+  | "service_error"
+  | "transport_timeout"
+  | "transport_error";
+export type ProviderHealthEventKind =
+  | "failure_recorded"
+  | "success_recorded"
+  | "opened"
+  | "probe_started"
+  | "probe_expired"
+  | "probe_succeeded"
+  | "probe_failed";
+
+/** One stable phase-owned logical call. Its id is a deterministic coordinate hash. */
+export const providerLogicalCalls = pgTable("provider_logical_calls", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  actorId: text("actor_id"),
+  actorName: text("actor_name").notNull(),
+  actorRole: text("actor_role").notNull(),
+  action: text("action").notNull(),
+  phase: text("phase"),
+  round: integer("round"),
+  logicalCallOrdinal: bigint("logical_call_ordinal", { mode: "number" }).notNull(),
+  nextAttemptOrdinal: integer("next_attempt_ordinal").notNull().default(1),
+  rateLimitCount: integer("rate_limit_count").notNull().default(0),
+  rateLimitOutcome: text("rate_limit_outcome").$type<ProviderCallRateLimitOutcome>(),
+  rateLimitTerminalReason: text("rate_limit_terminal_reason"),
+  diagnosticsDegraded: boolean("diagnostics_degraded").notNull().default(false),
+  evidenceFailureCount: integer("evidence_failure_count").notNull().default(0),
+  acceptedAttemptId: text("accepted_attempt_id"),
+  acceptedCatalogId: text("accepted_catalog_id"),
+  acceptedValue: jsonb("accepted_value").$type<unknown>(),
+  acceptedValueSha256: text("accepted_value_sha256"),
+  acceptedAt: text("accepted_at"),
+  canonicalEventSequence: integer("canonical_event_sequence"),
+  canonicalCommittedAt: text("canonical_committed_at"),
+  gameTurnId: text("game_turn_id"),
+  gameTurnSubcallSlot: integer("game_turn_subcall_slot"),
+  gameTurnCommittedAt: text("game_turn_committed_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("provider_logical_calls_id_game_unique").on(table.id, table.gameId),
+  index("provider_logical_calls_game_idx").on(table.gameId, table.createdAt),
+  uniqueIndex("provider_logical_calls_turn_slot_unique")
+    .on(table.gameTurnId, table.gameTurnSubcallSlot)
+    .where(sql`${table.gameTurnId} IS NOT NULL`),
+  foreignKey({
+    name: "provider_logical_calls_game_turn_fk",
+    columns: [table.gameId, table.gameTurnId],
+    foreignColumns: [gameTurns.gameId, gameTurns.id],
+  }),
+  check(
+    "provider_logical_calls_actor_role_check",
+    sql`${table.actorRole} IN ('player', 'juror', 'house', 'system', 'producer')`,
+  ),
+  check(
+    "provider_logical_calls_ordinal_check",
+    sql`${table.logicalCallOrdinal} > 0 AND ${table.nextAttemptOrdinal} > 0`,
+  ),
+  check(
+    "provider_logical_calls_round_check",
+    sql`${table.round} IS NULL OR ${table.round} >= 0`,
+  ),
+  check(
+    "provider_logical_calls_rate_limit_check",
+    sql`
+      ${table.rateLimitCount} >= 0
+      AND ${table.evidenceFailureCount} >= 0
+      AND (
+        (${table.rateLimitCount} = 0 AND ${table.rateLimitOutcome} IS NULL AND ${table.rateLimitTerminalReason} IS NULL)
+        OR (${table.rateLimitCount} > 0 AND ${table.rateLimitOutcome} IN ('pending', 'recovered', 'exhausted'))
+      )
+      AND (${table.rateLimitOutcome} = 'exhausted' OR ${table.rateLimitTerminalReason} IS NULL)
+    `,
+  ),
+  check(
+    "provider_logical_calls_accepted_shape_check",
+    sql`
+      (
+        ${table.acceptedAttemptId} IS NULL
+        AND ${table.acceptedCatalogId} IS NULL
+        AND ${table.acceptedValue} IS NULL
+        AND ${table.acceptedValueSha256} IS NULL
+        AND ${table.acceptedAt} IS NULL
+        AND ${table.canonicalEventSequence} IS NULL
+        AND ${table.canonicalCommittedAt} IS NULL
+      ) OR (
+        ${table.acceptedAttemptId} IS NOT NULL
+        AND ${table.acceptedCatalogId} IS NOT NULL
+        AND ${table.acceptedValue} IS NOT NULL
+        AND ${table.acceptedValueSha256} LIKE 'sha256:%'
+        AND ${table.acceptedAt} IS NOT NULL
+        AND (
+          (${table.canonicalEventSequence} IS NULL AND ${table.canonicalCommittedAt} IS NULL)
+          OR (${table.canonicalEventSequence} > 0 AND ${table.canonicalCommittedAt} IS NOT NULL)
+        )
+      )
+    `,
+  ),
+  check(
+    "provider_logical_calls_game_turn_shape_check",
+    sql`
+      (
+        ${table.gameTurnId} IS NULL
+        AND ${table.gameTurnSubcallSlot} IS NULL
+        AND ${table.gameTurnCommittedAt} IS NULL
+      ) OR (
+        ${table.gameTurnId} IS NOT NULL
+        AND ${table.gameTurnSubcallSlot} > 0
+      )
+    `,
+  ),
+]);
+
+/** One dispatch reservation and terminal fact set per logical call ordinal. */
+export const providerCallAttempts = pgTable("provider_call_attempts", {
+  id: text("id").primaryKey(),
+  logicalCallId: text("logical_call_id").notNull(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull(),
+  transportAttemptId: text("transport_attempt_id").notNull(),
+  reservationHash: text("reservation_hash").notNull(),
+  terminalHash: text("terminal_hash"),
+  status: text("status").notNull().$type<ProviderCallAttemptStatus>().default("reserved"),
+  transport: text("request_shape").notNull(),
+  providerProfileId: text("provider_profile_id").notNull(),
+  catalogId: text("catalog_id"),
+  modelName: text("model_name").notNull(),
+  startedAt: text("started_at").notNull(),
+  indeterminateAt: text("indeterminate_at"),
+  indeterminateReason: text("indeterminate_reason"),
+  completedAt: text("completed_at"),
+  latencyMs: integer("latency_ms"),
+  outcomeKind: text("outcome_kind"),
+  outcomeMessage: text("outcome_message"),
+  retryable: boolean("retryable"),
+  disposition: text("disposition"),
+  providerRequestId: text("provider_request_id"),
+  accounting: jsonb("accounting").$type<ProviderAttemptAccountingFacts>(),
+  evidenceState: text("evidence_state")
+    .notNull()
+    .$type<ProviderAttemptEvidenceState>()
+    .default("not_required"),
+  evidenceManifestId: text("evidence_manifest_id")
+    .references(() => gameEvidenceManifests.id),
+  evidenceError: text("evidence_error"),
+  spendProjectionState: text("spend_projection_state")
+    .notNull()
+    .$type<ProviderAttemptSpendProjectionState>()
+    .default("pending"),
+  spendProjectionError: text("spend_projection_error"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("provider_call_attempts_id_game_unique").on(table.id, table.gameId),
+  uniqueIndex("provider_call_attempts_call_ordinal_unique")
+    .on(table.logicalCallId, table.attemptOrdinal),
+  uniqueIndex("provider_call_attempts_transport_id_unique")
+    .on(table.transportAttemptId),
+  index("provider_call_attempts_game_idx").on(table.gameId, table.createdAt),
+  index("provider_call_attempts_game_catalog_idx")
+    .on(table.gameId, table.catalogId),
+  index("provider_call_attempts_projection_idx")
+    .on(table.spendProjectionState, table.updatedAt),
+  index("provider_call_attempts_evidence_idx")
+    .on(table.evidenceState, table.updatedAt),
+  foreignKey({
+    name: "provider_call_attempts_logical_call_game_fk",
+    columns: [table.logicalCallId, table.gameId],
+    foreignColumns: [providerLogicalCalls.id, providerLogicalCalls.gameId],
+  }),
+  foreignKey({
+    name: "provider_call_attempts_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check(
+    "provider_call_attempts_ordinal_check",
+    sql`${table.attemptOrdinal} > 0`,
+  ),
+  check(
+    "provider_call_attempts_status_check",
+    sql`${table.status} IN ('reserved', 'indeterminate', 'terminal')`,
+  ),
+  check(
+    "provider_call_attempts_request_shape_check",
+    sql`${table.transport} IN ('chat_completions', 'responses')
+      OR (
+        char_length(${table.transport}) BETWEEN 3 AND 80
+        AND ${table.transport} ~ '^[a-z][a-z0-9-]*([.][a-z][a-z0-9_-]*)+$'
+      )`,
+  ),
+  check(
+    "provider_call_attempts_outcome_check",
+    sql`${table.outcomeKind} IS NULL OR ${table.outcomeKind} IN (
+      'usable', 'refusal', 'rate_limit', 'service_error',
+      'transport_timeout', 'transport_error', 'authentication',
+      'configuration', 'request_error', 'cancellation', 'empty_output', 'malformed_output',
+      'wrong_tool', 'undecodable_structured_output'
+    )`,
+  ),
+  check(
+    "provider_call_attempts_disposition_check",
+    sql`${table.disposition} IS NULL OR ${table.disposition} IN ('accepted', 'retry_scheduled', 'exhausted')`,
+  ),
+  check(
+    "provider_call_attempts_evidence_state_check",
+    sql`${table.evidenceState} IN ('pending', 'not_required', 'stored', 'aggregated', 'degraded')`,
+  ),
+  check(
+    "provider_call_attempts_spend_state_check",
+    sql`${table.spendProjectionState} IN ('pending', 'projected', 'failed')`,
+  ),
+  check(
+    "provider_call_attempts_terminal_shape_check",
+    sql`
+      (
+        ${table.status} = 'reserved'
+        AND ${table.terminalHash} IS NULL
+        AND ${table.indeterminateAt} IS NULL
+        AND ${table.indeterminateReason} IS NULL
+        AND ${table.completedAt} IS NULL
+        AND ${table.outcomeKind} IS NULL
+        AND ${table.disposition} IS NULL
+      ) OR (
+        ${table.status} = 'indeterminate'
+        AND ${table.terminalHash} IS NULL
+        AND ${table.indeterminateAt} IS NOT NULL
+        AND ${table.indeterminateReason} = 'owner_lost_before_terminal'
+        AND ${table.completedAt} IS NULL
+        AND ${table.outcomeKind} IS NULL
+        AND ${table.disposition} IS NULL
+      ) OR (
+        ${table.status} = 'terminal'
+        AND ${table.terminalHash} IS NOT NULL
+        AND ${table.completedAt} IS NOT NULL
+        AND ${table.outcomeKind} IS NOT NULL
+        AND ${table.disposition} IS NOT NULL
+        AND ${table.latencyMs} >= 0
+      )
+    `,
+  ),
+]);
+
+/**
+ * Durable exact-evidence handoff. The private payload is removed only after a
+ * deterministic object and manifest are linked to the terminal attempt.
+ */
+export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_outbox", {
+  attemptId: text("attempt_id").primaryKey(),
+  logicalCallId: text("logical_call_id").notNull(),
+  gameId: text("game_id").notNull(),
+  ownerEpoch: text("owner_epoch").notNull(),
+  body: text("body").notNull(),
+  bodySha256: text("body_sha256").notNull(),
+  byteLength: integer("byte_length").notNull(),
+  storageKey: text("storage_key").notNull(),
+  manifestId: text("manifest_id").notNull(),
+  manifestMetadata: jsonb("manifest_metadata")
+    .$type<Record<string, unknown>>()
+    .notNull(),
+  reconciliationAttemptCount: integer("reconciliation_attempt_count").notNull().default(0),
+  nextReconciliationAt: text("next_reconciliation_at").notNull().default(sql`now()::text`),
+  claimToken: text("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("provider_attempt_evidence_outbox_ready_idx")
+    .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
+  foreignKey({
+    name: "provider_attempt_evidence_outbox_attempt_game_fk",
+    columns: [table.attemptId, table.gameId],
+    foreignColumns: [providerCallAttempts.id, providerCallAttempts.gameId],
+  }),
+  foreignKey({
+    name: "provider_attempt_evidence_outbox_logical_call_game_fk",
+    columns: [table.logicalCallId, table.gameId],
+    foreignColumns: [providerLogicalCalls.id, providerLogicalCalls.gameId],
+  }),
+  foreignKey({
+    name: "provider_attempt_evidence_outbox_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check(
+    "provider_attempt_evidence_outbox_shape_check",
+    sql`
+      ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.reconciliationAttemptCount} >= 0
+      AND (
+        (${table.claimToken} IS NULL AND ${table.claimExpiresAt} IS NULL)
+        OR (${table.claimToken} IS NOT NULL AND ${table.claimExpiresAt} IS NOT NULL)
+      )
+    `,
+  ),
+]);
+
+// ---------------------------------------------------------------------------
+// Provider health (durable circuit-breaker authority)
+// ---------------------------------------------------------------------------
+
+export const providerHealthStates = pgTable("provider_health_states", {
+  scopeKey: text("scope_key").primaryKey(),
+  scopeKind: text("scope_kind").notNull().$type<ProviderHealthScopeKind>(),
+  providerProfileId: text("provider_profile_id").notNull(),
+  catalogId: text("catalog_id"),
+  state: text("state").notNull().$type<ProviderHealthState>().default("closed"),
+  reason: text("reason").$type<ProviderHealthReason>(),
+  revision: integer("revision").notNull().default(1),
+  consecutiveFailureCount: integer("consecutive_failure_count").notNull().default(0),
+  windowStartedAt: text("window_started_at"),
+  openedAt: text("opened_at"),
+  cooldownUntil: text("cooldown_until"),
+  lastFailureAt: text("last_failure_at"),
+  lastSuccessAt: text("last_success_at"),
+  lastAttemptId: text("last_attempt_id").references(() => providerCallAttempts.id),
+  lastProbeEvidenceId: text("last_probe_evidence_id"),
+  probeLeaseToken: text("probe_lease_token"),
+  probeLeaseOwner: text("probe_lease_owner"),
+  probeLeaseExpiresAt: text("probe_lease_expires_at"),
+  lastProbeAt: text("last_probe_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("provider_health_states_provider_idx").on(table.providerProfileId, table.state),
+  index("provider_health_states_catalog_idx").on(table.catalogId, table.state),
+  check("provider_health_states_scope_check", sql`${table.scopeKind} IN ('provider', 'entry')`),
+  check("provider_health_states_state_check", sql`${table.state} IN ('closed', 'open', 'probing')`),
+  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_states_counts_check", sql`${table.revision} > 0 AND ${table.consecutiveFailureCount} >= 0`),
+  check("provider_health_states_scope_shape_check", sql`
+    (${table.scopeKind} = 'provider' AND ${table.catalogId} IS NULL)
+    OR (${table.scopeKind} = 'entry' AND ${table.catalogId} IS NOT NULL)
+  `),
+  check("provider_health_states_probe_shape_check", sql`
+    (
+      ${table.state} = 'probing'
+      AND ${table.probeLeaseToken} IS NOT NULL
+      AND ${table.probeLeaseOwner} IS NOT NULL
+      AND ${table.probeLeaseExpiresAt} IS NOT NULL
+    ) OR (
+      ${table.state} <> 'probing'
+      AND ${table.probeLeaseToken} IS NULL
+      AND ${table.probeLeaseOwner} IS NULL
+      AND ${table.probeLeaseExpiresAt} IS NULL
+    )
+  `),
+]);
+
+/**
+ * Exact coordinator-sanitized evidence for one fenced health probe. This is
+ * operationally private and is exposed only through current admin/sysop or
+ * producer MCP authority; public game surfaces never join this table.
+ */
+export const providerHealthProbeEvidence = pgTable("provider_health_probe_evidence", {
+  id: text("id").primaryKey(),
+  scopeKey: text("scope_key")
+    .notNull()
+    .references(() => providerHealthStates.scopeKey),
+  leaseRevision: integer("lease_revision").notNull(),
+  recordSha256: text("record_sha256").notNull(),
+  record: jsonb("record").notNull().$type<ProviderAttemptRecord>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("provider_health_probe_evidence_scope_revision_idx")
+    .on(table.scopeKey, table.leaseRevision),
+  check("provider_health_probe_evidence_revision_check", sql`${table.leaseRevision} > 0`),
+  check("provider_health_probe_evidence_hash_check", sql`${table.recordSha256} LIKE 'sha256:%'`),
+]);
+
+export const providerHealthEvents = pgTable("provider_health_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scopeKey: text("scope_key")
+    .notNull()
+    .references(() => providerHealthStates.scopeKey),
+  eventKind: text("event_kind").notNull().$type<ProviderHealthEventKind>(),
+  fromState: text("from_state").$type<ProviderHealthState>(),
+  toState: text("to_state").notNull().$type<ProviderHealthState>(),
+  reason: text("reason").$type<ProviderHealthReason>(),
+  revision: integer("revision").notNull(),
+  attemptId: text("attempt_id").references(() => providerCallAttempts.id),
+  actor: text("actor"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("provider_health_events_scope_idx").on(table.scopeKey, table.createdAt),
+  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed')`),
+  check("provider_health_events_state_check", sql`
+    (${table.fromState} IS NULL OR ${table.fromState} IN ('closed', 'open', 'probing'))
+    AND ${table.toState} IN ('closed', 'open', 'probing')
+  `),
+  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_events_revision_check", sql`${table.revision} > 0`),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -1701,6 +2458,8 @@ export const gamePostgameMediaAuditEvents = pgTable("game_postgame_media_audit_e
 
 export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
   id: text("id").primaryKey(), // UUID
+  /** Immutable insertion XID for cursor snapshot visibility; historical rows remain null. */
+  indexInsertXid: text("index_insert_xid").default(sql`pg_current_xact_id()::text`),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -2169,6 +2928,7 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   analysisTrack: text("analysis_track").notNull().$type<Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">>(),
   analysisStatus: text("analysis_status").notNull().$type<OwnerLearningAnalysisStatus>().default("queued"),
   stage: text("stage").notNull().$type<OwnerLearningStage>().default("evidence_ready"),
+  executionPhase: text("execution_phase").$type<OwnerLearningExecutionPhase>(),
   resolution: text("resolution").$type<OwnerLearningResolution>(),
   resolvedAt: text("resolved_at"),
   logicalCallCount: integer("logical_call_count").notNull().default(0),
@@ -2179,6 +2939,9 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   capacitySubstatus: text("capacity_substatus").$type<OwnerLearningCapacitySubstatus>(),
   safeFailureCode: text("safe_failure_code").$type<OwnerLearningSafeFailureCode>(),
   retryable: boolean("retryable").notNull().default(false),
+  ownerRetryCount: integer("owner_retry_count").notNull().default(0),
+  retryTargetAttemptId: text("retry_target_attempt_id")
+    .references((): AnyPgColumn => agentLearningReviewCalls.id, { onDelete: "restrict" }),
   checkpoint: jsonb("checkpoint").$type<OwnerLearningCheckpoint>(),
   checkpointHash: text("checkpoint_hash"),
   result: jsonb("result").$type<OwnerLearningReviewResult>(),
@@ -2211,10 +2974,16 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
     ${table.analysisTrack} IN ('evidence_rich', 'strategy_health_check')
   `),
   check("agent_learning_reviews_analysis_status_check", sql`
-    ${table.analysisStatus} IN ('queued', 'running', 'ready', 'no_change', 'failed')
+    ${table.analysisStatus} IN ('queued', 'retry_queued', 'running', 'ready', 'no_change', 'failed')
   `),
   check("agent_learning_reviews_stage_check", sql`
     ${table.stage} IN ('evidence_ready', 'scanning_narratives', 'investigating_moments', 'drafting_recommendations', 'complete')
+  `),
+  check("agent_learning_reviews_execution_phase_check", sql`
+    ${table.executionPhase} IS NULL OR ${table.executionPhase} IN (
+      'selection', 'evidence_projection', 'materialization', 'call_reservation',
+      'provider_invocation', 'output_validation', 'checkpoint_persistence', 'finalization'
+    )
   `),
   check("agent_learning_reviews_resolution_check", sql`
     ${table.resolution} IS NULL OR ${table.resolution} IN ('applied', 'manual_update', 'declined', 'no_change', 'failed', 'superseded')
@@ -2234,8 +3003,11 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
       'provider_capacity_exhausted', 'provider_timeout', 'provider_error',
       'invalid_structured_output', 'tier_mismatch',
       'output_budget_exhausted', 'logical_call_budget_exhausted',
-      'evidence_unavailable', 'worker_interrupted'
+      'evidence_unavailable', 'worker_interrupted', 'internal_error'
     )
+  `),
+  check("agent_learning_reviews_owner_retry_check", sql`
+    ${table.ownerRetryCount} BETWEEN 0 AND 1
   `),
   check("agent_learning_reviews_result_state_check", sql`
     (${table.analysisStatus} IN ('ready', 'no_change') AND ${table.result} IS NOT NULL AND ${table.stage} = 'complete')
@@ -2267,11 +3039,31 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
     .notNull()
     .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
   ordinal: integer("ordinal").notNull(),
+  attemptOrdinal: integer("attempt_ordinal").notNull().default(1),
+  retryOfAttemptId: text("retry_of_attempt_id")
+    .references((): AnyPgColumn => agentLearningReviewCalls.id, { onDelete: "restrict" }),
   state: text("state").notNull().$type<OwnerLearningCallState>().default("reserved"),
   stage: text("stage").notNull().$type<OwnerLearningStage>(),
   inputPolicyHash: text("input_policy_hash").notNull(),
+  providerTurnProtocol: text("provider_turn_protocol").notNull().default("owner-learning-harness-v2"),
+  retryOfExecutionFingerprint: text("retry_of_execution_fingerprint"),
   validatedCheckpoint: jsonb("validated_checkpoint").$type<OwnerLearningCheckpoint>(),
   finalProviderRequestId: text("final_provider_request_id"),
+  providerResponseId: text("provider_response_id"),
+  providerResponseObservedAt: text("provider_response_observed_at"),
+  providerResponseSha256: text("provider_response_sha256"),
+  requestEvidenceBody: text("request_evidence_body"),
+  requestEvidenceSha256: text("request_evidence_sha256"),
+  requestEvidenceByteLength: integer("request_evidence_byte_length"),
+  responseEvidenceBody: text("response_evidence_body"),
+  responseEvidenceBodySha256: text("response_evidence_body_sha256"),
+  responseEvidenceByteLength: integer("response_evidence_byte_length"),
+  evidenceState: text("evidence_state")
+    .notNull()
+    .$type<OwnerLearningCallEvidenceState>()
+    .default("not_required"),
+  failureDiagnosticId: text("failure_diagnostic_id")
+    .references((): AnyPgColumn => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
   requestedTier: text("requested_tier").notNull().default("flex"),
   effectiveTier: text("effective_tier"),
   requestedReasoningEffort: text("requested_reasoning_effort").notNull().default("low"),
@@ -2292,8 +3084,14 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   dispatchedAt: text("dispatched_at"),
   completedAt: text("completed_at"),
 }, (table) => [
-  uniqueIndex("agent_learning_review_calls_ordinal_unique").on(table.reviewId, table.ordinal),
+  uniqueIndex("agent_learning_review_calls_ordinal_unique")
+    .on(table.reviewId, table.ordinal, table.attemptOrdinal),
+  uniqueIndex("agent_learning_review_calls_succeeded_unique")
+    .on(table.reviewId, table.ordinal)
+    .where(sql`${table.state} = 'succeeded'`),
   check("agent_learning_review_calls_ordinal_check", sql`${table.ordinal} BETWEEN 1 AND 4`),
+  check("agent_learning_review_calls_attempt_ordinal_check", sql`${table.attemptOrdinal} BETWEEN 1 AND 2`),
+  check("agent_learning_review_calls_protocol_check", sql`char_length(${table.providerTurnProtocol}) > 0`),
   check("agent_learning_review_calls_state_check", sql`
     ${table.state} IN ('reserved', 'dispatched', 'succeeded', 'failed', 'ambiguous')
   `),
@@ -2314,6 +3112,43 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   check("agent_learning_review_calls_capacity_path_check", sql`
     ${table.capacityPath} IS NULL OR ${table.capacityPath} IN ('flex', 'standard_fallback')
   `),
+  check("agent_learning_review_calls_response_check", sql`
+    (
+      ${table.providerResponseObservedAt} IS NULL
+      AND ${table.providerResponseSha256} IS NULL
+      AND ${table.providerResponseId} IS NULL
+    ) OR (
+      ${table.providerResponseObservedAt} IS NOT NULL
+      AND ${table.providerResponseSha256} LIKE 'sha256:%'
+    )
+  `),
+  check("agent_learning_review_calls_request_evidence_check", sql`
+    (
+      ${table.requestEvidenceBody} IS NULL
+      AND ${table.requestEvidenceSha256} IS NULL
+      AND ${table.requestEvidenceByteLength} IS NULL
+    ) OR (
+      ${table.requestEvidenceBody} IS NOT NULL
+      AND ${table.requestEvidenceSha256} LIKE 'sha256:%'
+      AND ${table.requestEvidenceByteLength} > 0
+    )
+  `),
+  check("agent_learning_review_calls_response_evidence_check", sql`
+    (
+      ${table.responseEvidenceBody} IS NULL
+      AND ${table.responseEvidenceBodySha256} IS NULL
+      AND ${table.responseEvidenceByteLength} IS NULL
+    ) OR (
+      ${table.responseEvidenceBody} IS NOT NULL
+      AND ${table.responseEvidenceBodySha256} LIKE 'sha256:%'
+      AND ${table.responseEvidenceByteLength} > 0
+      AND ${table.providerResponseObservedAt} IS NOT NULL
+      AND ${table.providerResponseSha256} LIKE 'sha256:%'
+    )
+  `),
+  check("agent_learning_review_calls_evidence_state_check", sql`
+    ${table.evidenceState} IN ('not_required', 'pending', 'stored', 'degraded', 'legacy_unavailable')
+  `),
   check("agent_learning_review_calls_nonnegative_check", sql`
     (${table.latencyMs} IS NULL OR ${table.latencyMs} >= 0)
     AND (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)
@@ -2323,6 +3158,194 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
     (${table.costSource} = 'actual' AND ${table.actualCostMicrousd} IS NOT NULL AND ${table.estimatedCostMicrousd} IS NULL)
     OR (${table.costSource} = 'estimated' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NOT NULL)
     OR (${table.costSource} = 'unavailable' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NULL)
+  `),
+]);
+
+/** Immutable, admin-safe summary. Exact evidence is held by the manifest/outbox. */
+export const agentLearningReviewFailureDiagnostics = pgTable("agent_learning_review_failure_diagnostics", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  callId: text("call_id")
+    .references(() => agentLearningReviewCalls.id, { onDelete: "restrict" }),
+  callOrdinal: integer("call_ordinal"),
+  attemptOrdinal: integer("attempt_ordinal"),
+  /** Null only for legacy failures whose original phase was discarded. */
+  phase: text("phase").$type<OwnerLearningExecutionPhase>(),
+  safeFailureCode: text("safe_failure_code").notNull(),
+  errorClass: text("error_class").notNull(),
+  errorCode: text("error_code"),
+  sanitizedMessage: text("sanitized_message").notNull(),
+  firstApplicationStackFrame: text("first_application_stack_frame"),
+  fingerprint: text("fingerprint").notNull(),
+  providerRequestId: text("provider_request_id"),
+  providerResponseId: text("provider_response_id"),
+  evidenceManifestId: text("evidence_manifest_id").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_review_failure_diagnostics_manifest_unique")
+    .on(table.evidenceManifestId),
+  index("agent_learning_review_failure_diagnostics_review_idx")
+    .on(table.reviewId, table.occurredAt),
+  index("agent_learning_review_failure_diagnostics_fingerprint_idx")
+    .on(table.fingerprint, table.occurredAt),
+  check("agent_learning_review_failure_diagnostics_phase_check", sql`
+    ${table.phase} IS NULL OR ${table.phase} IN (
+      'selection', 'evidence_projection', 'materialization', 'call_reservation',
+      'provider_invocation', 'output_validation', 'checkpoint_persistence', 'finalization'
+    )
+  `),
+  check("agent_learning_review_failure_diagnostics_coordinates_check", sql`
+    (${table.callId} IS NULL AND ${table.callOrdinal} IS NULL AND ${table.attemptOrdinal} IS NULL)
+    OR (
+      ${table.callId} IS NOT NULL
+      AND ${table.callOrdinal} BETWEEN 1 AND 4
+      AND ${table.attemptOrdinal} BETWEEN 1 AND 2
+    )
+  `),
+  check("agent_learning_review_failure_diagnostics_shape_check", sql`
+    char_length(${table.sanitizedMessage}) BETWEEN 1 AND 2000
+    AND (${table.firstApplicationStackFrame} IS NULL OR char_length(${table.firstApplicationStackFrame}) <= 1000)
+    AND ${table.fingerprint} LIKE 'sha256:%'
+  `),
+]);
+
+/** Review-scoped private object manifest. It deliberately has no expiry column. */
+export const agentLearningReviewFailureManifests = pgTable("agent_learning_review_failure_manifests", {
+  id: text("id").primaryKey(),
+  diagnosticId: text("diagnostic_id")
+    .notNull()
+    .unique()
+    .references(() => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  state: text("state").notNull().$type<OwnerLearningFailureManifestState>(),
+  retentionClass: text("retention_class").notNull().default("audit"),
+  accessScope: text("access_scope").notNull().default("admin_developer"),
+  contentType: text("content_type"),
+  byteLength: integer("byte_length"),
+  bodySha256: text("body_sha256"),
+  storageProvider: text("storage_provider"),
+  storageBucket: text("storage_bucket"),
+  storageKey: text("storage_key"),
+  sourcePointers: jsonb("source_pointers").notNull().$type<ReadonlyArray<Record<string, unknown>>>(),
+  metadata: jsonb("metadata").notNull().$type<Record<string, unknown>>(),
+  lastStorageError: text("last_storage_error"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  storedAt: text("stored_at"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_learning_review_failure_manifests_review_idx")
+    .on(table.reviewId, table.createdAt),
+  index("agent_learning_review_failure_manifests_state_idx")
+    .on(table.state, table.updatedAt),
+  check("agent_learning_review_failure_manifests_state_check", sql`
+    ${table.state} IN ('pending', 'stored', 'degraded', 'legacy_unavailable')
+  `),
+  check("agent_learning_review_failure_manifests_policy_check", sql`
+    ${table.retentionClass} = 'audit' AND ${table.accessScope} = 'admin_developer'
+  `),
+  check("agent_learning_review_failure_manifests_shape_check", sql`
+    (
+      ${table.state} = 'legacy_unavailable'
+      AND ${table.contentType} IS NULL
+      AND ${table.byteLength} IS NULL
+      AND ${table.bodySha256} IS NULL
+      AND ${table.storageProvider} IS NULL
+      AND ${table.storageBucket} IS NULL
+      AND ${table.storageKey} IS NULL
+      AND ${table.storedAt} IS NULL
+    ) OR (
+      ${table.state} IN ('pending', 'degraded')
+      AND ${table.contentType} = 'application/json'
+      AND ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.storageProvider} IS NULL
+      AND ${table.storageBucket} IS NULL
+      AND ${table.storageKey} IS NULL
+      AND ${table.storedAt} IS NULL
+    ) OR (
+      ${table.state} = 'stored'
+      AND ${table.contentType} = 'application/json'
+      AND ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.storageProvider} IS NOT NULL
+      AND ${table.storageBucket} IS NOT NULL
+      AND ${table.storageKey} IS NOT NULL
+      AND ${table.storedAt} IS NOT NULL
+    )
+  `),
+]);
+
+/** Complete sanitized bodies remain here until object + stored manifest commit. */
+export const agentLearningReviewFailureEvidenceOutbox = pgTable("agent_learning_review_failure_evidence_outbox", {
+  diagnosticId: text("diagnostic_id")
+    .primaryKey()
+    .references(() => agentLearningReviewFailureDiagnostics.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  manifestId: text("manifest_id")
+    .notNull()
+    .references(() => agentLearningReviewFailureManifests.id, { onDelete: "restrict" }),
+  body: text("body").notNull(),
+  bodySha256: text("body_sha256").notNull(),
+  byteLength: integer("byte_length").notNull(),
+  storageKey: text("storage_key").notNull(),
+  manifestMetadata: jsonb("manifest_metadata").notNull().$type<Record<string, unknown>>(),
+  reconciliationAttemptCount: integer("reconciliation_attempt_count").notNull().default(0),
+  nextReconciliationAt: text("next_reconciliation_at").notNull().default(sql`now()::text`),
+  claimToken: text("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_review_failure_evidence_outbox_manifest_unique")
+    .on(table.manifestId),
+  index("agent_learning_review_failure_evidence_outbox_ready_idx")
+    .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
+  check("agent_learning_review_failure_evidence_outbox_shape_check", sql`
+    ${table.byteLength} > 0
+    AND ${table.bodySha256} LIKE 'sha256:%'
+    AND ${table.reconciliationAttemptCount} >= 0
+    AND (
+      (${table.claimToken} IS NULL AND ${table.claimExpiresAt} IS NULL)
+      OR (${table.claimToken} IS NOT NULL AND ${table.claimExpiresAt} IS NOT NULL)
+    )
+  `),
+]);
+
+/** Append-only audit ledger for every allowed and denied evidence read. */
+export const agentLearningReviewFailureManifestReads = pgTable("agent_learning_review_failure_manifest_reads", {
+  id: serial("id").primaryKey(),
+  manifestId: text("manifest_id")
+    .notNull()
+    .references(() => agentLearningReviewFailureManifests.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "restrict" }),
+  accessorUserId: text("accessor_user_id").references(() => users.id, { onDelete: "restrict" }),
+  accessorRole: text("accessor_role").notNull(),
+  purpose: text("purpose").notNull(),
+  outcome: text("outcome").notNull(),
+  detail: text("detail"),
+  offsetBytes: integer("offset_bytes"),
+  maxBytes: integer("max_bytes"),
+  readAt: text("read_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_learning_review_failure_manifest_reads_manifest_idx")
+    .on(table.manifestId, table.readAt),
+  index("agent_learning_review_failure_manifest_reads_accessor_idx")
+    .on(table.accessorUserId, table.readAt),
+  check("agent_learning_review_failure_manifest_reads_outcome_check", sql`
+    ${table.outcome} IN ('allowed', 'denied', 'unavailable', 'integrity_mismatch', 'storage_error')
+  `),
+  check("agent_learning_review_failure_manifest_reads_range_check", sql`
+    (${table.offsetBytes} IS NULL OR ${table.offsetBytes} >= 0)
+    AND (${table.maxBytes} IS NULL OR ${table.maxBytes} > 0)
   `),
 ]);
 

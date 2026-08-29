@@ -2,10 +2,13 @@ import { describe, expect, it } from "bun:test";
 import {
   comparePromptScenarioReports,
   runPromptScenario,
+  runPromptScenarioChain,
   type PromptScenario,
+  type PromptScenarioChain,
 } from "../prompt-scenario-lab";
 import { Phase } from "../types";
 import { getRecallBaselineCase } from "./fixtures/recall-baseline/late-game-corpus";
+import { ACCEPTED_SAGE_ROUND_2_SCENARIO } from "./fixtures/prompt-scenarios/sage-round-2";
 
 function makeScenario(overrides: Partial<PromptScenario> = {}): PromptScenario {
   const baseline = getRecallBaselineCase("huddle_heavy_strategic_decision");
@@ -49,6 +52,13 @@ function makeScenario(overrides: Partial<PromptScenario> = {}): PromptScenario {
   };
 }
 
+function makeChainScenario(overrides: Partial<PromptScenarioChain> = {}): PromptScenarioChain {
+  return {
+    ...ACCEPTED_SAGE_ROUND_2_SCENARIO,
+    ...overrides,
+  };
+}
+
 describe("prompt scenario lab", () => {
   it("replays a real public action path and emits only structural diagnostics", async () => {
     const report = await runPromptScenario(makeScenario());
@@ -58,7 +68,7 @@ describe("prompt scenario lab", () => {
     expect(report.renderedPrompt.characters).toBeGreaterThan(0);
     expect(report.renderedPrompt.rendererOverheadCharacters).toBeGreaterThan(0);
     expect(report.recallPlanReceipt.eventBoundary.authorizedCandidateCount).toBe(1);
-    expect(report.requestFingerprint?.requestShape).toBe("chat_completions");
+    expect(report.requestFingerprint?.requestShape).toBe("openai.responses");
     expect(report.scenarioKey).toMatch(/^[a-f0-9]{24}$/);
     expect(serialized).not.toContain("atlas-id");
     expect(serialized).not.toContain("Atlas");
@@ -106,4 +116,113 @@ describe("prompt scenario lab", () => {
     expect(report.recallPlanReceipt.promptClass).toBe("ordinary_speech");
     expect(report.recallPlanReceipt.selectedLaneCounts.history).toBe(0);
   });
+
+  it("replays the human-accepted Sage Round 2 chain through lobby and the next legal vote", async () => {
+    const run = await runPromptScenarioChain(makeChainScenario());
+    const { report, privatePack } = run;
+
+    expect(report.canonicalElimination).toMatchObject({ committed: true });
+    expect(report.canonicalElimination.survivorCount).toBe(10);
+    expect(report.diary).toEqual({
+      firstMessageAccepted: true,
+      firstStrategyStatus: "accepted",
+      followUpPresent: true,
+      followUpStrategyStatus: "accepted",
+    });
+    expect(report.nextEligibleDecision).toMatchObject({
+      action: "lobby",
+      modelActionAccepted: true,
+      strategyStatus: "no_change",
+    });
+    expect(report.choiceDecision).toMatchObject({
+      action: "vote",
+      modelActionAccepted: true,
+      selectedTargetWasLiving: true,
+      strategyStatus: "accepted",
+    });
+    expect(report.choiceDecision.legalChoiceCount).toBe(9);
+    expect(report.finalStrategy).toEqual({
+      lifecycle: "active",
+      revision: privatePack.finalStrategy.revision,
+      hasBaseline: true,
+      deltaCount: 2,
+      priorEpochRetained: false,
+    });
+    expect(privatePack.finalStrategy).toMatchObject({
+      lifecycle: "active",
+      baseline: expect.stringContaining("Treat Luna as a consequential"),
+      deltas: [
+        expect.stringContaining("Audit Riven"),
+        expect.stringContaining("Treat Zara as the pivotal swing"),
+      ],
+    });
+    expect(privatePack.canonicalEvents.some((event) => event.type === "player.eliminated")).toBe(true);
+    expect(privatePack.canonicalEvents.filter((event) => event.type === "player.eliminated")).toHaveLength(2);
+    expect(privatePack.providerRequests).toHaveLength(4);
+    for (const request of privatePack.providerRequests) {
+      const systemPrompt = request.instructions;
+      expect(systemPrompt).toBeString();
+      expect(systemPrompt).toContain("## Strategy Carry-Forward");
+      expect(systemPrompt).toContain("material, actionable change");
+      expect(systemPrompt).toContain("Do not summarize the action");
+    }
+
+    for (const request of privatePack.providerRequests.slice(1, 3)) {
+      const text = request.text as {
+        format?: {
+          schema?: {
+            properties?: Record<string, { description?: unknown }>;
+          };
+        };
+      };
+      const description = text.format?.schema?.properties?.strategyDelta?.description;
+      expect(description).toContain("material, actionable change");
+      expect(description).toContain("Do not summarize the action");
+    }
+    const voteTools = privatePack.providerRequests[3]?.tools as Array<{
+      parameters?: {
+        properties?: Record<string, { description?: unknown }>;
+      };
+    }>;
+    const voteDescription = voteTools[0]?.parameters?.properties?.strategyDelta?.description;
+    expect(voteDescription).toContain("material, actionable change");
+    expect(voteDescription).toContain("Do not summarize the action");
+    expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);
+    expect(privatePack.nextLobbyResponse.message).toContain("living choices matter");
+    expect(privatePack.nextVoteResponse.empowerTarget).toBe("1e846a8f-4df7-4cc4-a94e-c74452769080");
+    expect(JSON.stringify(privatePack.providerRequests[2])).toContain("Audit Riven");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Treat Luna as a consequential");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Audit Riven");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Zara has my support for empower");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("my provisional target is **Sage**");
+    expect(JSON.stringify(privatePack.providerRequests[0])).toContain("Own Atlas as a provisional");
+    expect(JSON.stringify(privatePack.providerRequests[1])).toContain("Treat Luna as a consequential");
+    expect(privatePack.scenario.source).toMatchObject({
+      acceptedAt: "2026-08-15",
+      label: "Sage Round 2",
+      game: {
+        slug: "calm-cyan-frost",
+        playerCount: 12,
+        modelCatalogId: "openai:gpt-5.6-luna",
+      },
+      canonical: {
+        eliminationSequence: 221,
+        roundResultSequence: 223,
+      },
+    });
+
+    const serializedReport = JSON.stringify(report);
+    for (const privateText of [
+      "Treat Luna as a consequential",
+      "Audit Riven",
+      "Treat Zara as the pivotal swing",
+      makeChainScenario().actor.name,
+      makeChainScenario().actor.id,
+      makeChainScenario().source.game.id,
+      makeChainScenario().source.decisions.firstDiary.decisionId,
+    ]) {
+      expect(serializedReport).not.toContain(privateText);
+    }
+  });
+
 });

@@ -68,7 +68,6 @@ export interface AvatarCompletionRead {
   failureCode?: string;
   failureStage?: AvatarGenerationStage;
   retryable?: boolean;
-  profileFingerprint?: string;
 }
 
 export interface AvatarCompletionInput {
@@ -85,6 +84,10 @@ export interface DraftAvatarCompletionInput {
   publicBaseUrl?: string;
   userRoles?: readonly string[];
 }
+
+export type DraftAvatarAttachmentResult =
+  | { attached: true; completion: AvatarCompletionRead; avatarUrl: string | null }
+  | { attached: false; completion: AvatarCompletionRead };
 
 export interface AvatarGenerationOptions {
   fetch?: typeof fetch;
@@ -235,10 +238,10 @@ export async function requestDraftAvatarCompletion(
   input: DraftAvatarCompletionInput,
   options: AvatarCompletionStartOptions = {},
 ): Promise<AvatarCompletionRead> {
-  const draftId = `draft-${randomUUID()}`;
-  const requestInput: AvatarCompletionInput = {
+  const requestInput: Pick<AvatarCompletionInput, "userId" | "triggerSource">
+    & { agentProfileId: null; publicBaseUrl?: string; userRoles?: readonly string[] } = {
     userId: input.userId,
-    agentProfileId: draftId,
+    agentProfileId: null,
     triggerSource: "web_ai_help_draft",
     publicBaseUrl: input.publicBaseUrl,
     userRoles: input.userRoles,
@@ -276,7 +279,7 @@ export async function requestDraftAvatarCompletion(
     const [request] = await tx.insert(schema.avatarGenerationRequests).values({
       id: randomUUID(),
       userId: input.userId,
-      agentProfileId: draftId,
+      agentProfileId: null,
       purpose: AVATAR_GENERATION_PURPOSE,
       status: "queued",
       triggerSource: "web_ai_help_draft",
@@ -347,40 +350,161 @@ export async function resumeOwnedDraftAvatarCompletion(
   return generationRead(request);
 }
 
-export async function consumeOwnedDraftAvatarCompletion(
+export async function resumeOwnedAttachedAvatarCompletions(
+  db: DrizzleDB,
+  userId: string,
+  agentProfileIds: readonly string[],
+  options: AvatarCompletionStartOptions = {},
+): Promise<void> {
+  if (agentProfileIds.length === 0) return;
+  const requests = await db.select().from(schema.avatarGenerationRequests).where(and(
+    eq(schema.avatarGenerationRequests.userId, userId),
+    inArray(schema.avatarGenerationRequests.agentProfileId, [...agentProfileIds]),
+    inArray(schema.avatarGenerationRequests.status, ["queued", "processing"]),
+  ));
+  for (const request of requests) {
+    if (request.status !== "queued" && !isStaleActiveGeneration(request, options)) continue;
+    void completeAvatarGenerationRequest(db, request.id, options).catch((error) => {
+      console.warn("[avatar-generation] Failed to resume attached avatar completion:", error);
+    });
+  }
+}
+
+export async function attachOwnedDraftAvatarCompletion(
   db: DatabaseExecutor,
-  input: { userId: string; generationRequestId: string; profile: AvatarPromptProfile },
-): Promise<
-  | { ok: true; completion: AvatarCompletionRead }
-  | { ok: false; reason: "not_found" | "pending" | "profile_changed" | "already_consumed" }
-> {
+  input: { userId: string; generationRequestId: string; agentProfileId: string },
+): Promise<DraftAvatarAttachmentResult> {
+  await db.execute(sql`
+    SELECT id
+    FROM avatar_generation_requests
+    WHERE id = ${input.generationRequestId}
+      AND user_id = ${input.userId}
+    FOR UPDATE
+  `);
   const request = (await db.select().from(schema.avatarGenerationRequests).where(and(
     eq(schema.avatarGenerationRequests.id, input.generationRequestId),
     eq(schema.avatarGenerationRequests.userId, input.userId),
   )).limit(1))[0];
-  if (!request || !readDraftProfile(request)) return { ok: false, reason: "not_found" };
-  if (request.status === "queued" || request.status === "processing") {
-    return { ok: false, reason: "pending" };
+  if (!request || !readDraftProfile(request)) return rejectedAttachment();
+  if (request.agentProfileId !== null) {
+    if (request.agentProfileId !== input.agentProfileId) return rejectedAttachment();
+    const profile = await requireOwnedAgentProfile(db, input.userId, input.agentProfileId);
+    return { attached: true, completion: generationRead(request), avatarUrl: profile.avatarUrl };
   }
 
   const metadata = isRecord(request.safeMetadata) ? request.safeMetadata : {};
-  if (metadata.profileFingerprint !== avatarProfileFingerprint(input.profile)) {
-    return { ok: false, reason: "profile_changed" };
-  }
-  if (typeof metadata.consumedAt === "string") {
-    return { ok: false, reason: "already_consumed" };
-  }
-
-  const [consumed] = await db.update(schema.avatarGenerationRequests).set({
-    safeMetadata: { ...metadata, consumedAt: new Date().toISOString() },
-    updatedAt: new Date().toISOString(),
+  const now = new Date().toISOString();
+  const [attached] = await db.update(schema.avatarGenerationRequests).set({
+    agentProfileId: input.agentProfileId,
+    safeMetadata: {
+      ...metadata,
+      attachedAt: now,
+      attachedAgentProfileId: input.agentProfileId,
+    },
+    updatedAt: now,
   }).where(and(
     eq(schema.avatarGenerationRequests.id, request.id),
-    sql`NOT (${schema.avatarGenerationRequests.safeMetadata} ? 'consumedAt')`,
+    isNull(schema.avatarGenerationRequests.agentProfileId),
+    sql`NOT EXISTS (
+      SELECT 1
+      FROM avatar_generation_requests active_request
+      WHERE active_request.user_id = ${input.userId}
+        AND active_request.agent_profile_id = ${input.agentProfileId}
+        AND active_request.purpose = ${AVATAR_GENERATION_PURPOSE}
+        AND active_request.status IN ('queued', 'processing', 'completed')
+        AND active_request.id <> ${request.id}
+    )`,
   )).returning();
-  return consumed
-    ? { ok: true, completion: generationRead(consumed) }
-    : { ok: false, reason: "already_consumed" };
+  if (!attached) return rejectedAttachment();
+
+  const storedAvatarUrl = storedAvatarUrlFromRequest(attached);
+  if (attached.status !== "completed" || !storedAvatarUrl) {
+    const profile = await requireOwnedAgentProfile(db, input.userId, input.agentProfileId);
+    return { attached: true, completion: generationRead(attached), avatarUrl: profile.avatarUrl };
+  }
+
+  const applied = await applyStoredAvatarInTransaction(db, attached, storedAvatarUrl, now);
+  return { attached: true, completion: generationRead(applied.request), avatarUrl: applied.avatarUrl };
+}
+
+function rejectedAttachment(): DraftAvatarAttachmentResult {
+  return {
+    attached: false,
+    completion: {
+      status: "failed",
+      failureCode: "portrait_attachment_rejected",
+      reason: "The requested portrait could not be attached.",
+      retryable: false,
+    },
+  };
+}
+
+function storedAvatarUrlFromRequest(request: AvatarGenerationRequestRow): string | null {
+  const metadata = isRecord(request.safeMetadata) ? request.safeMetadata : {};
+  return typeof metadata.avatarUrl === "string" ? metadata.avatarUrl : null;
+}
+
+function requireAttachedProfileId(request: AvatarGenerationRequestRow): string {
+  if (request.agentProfileId === null) {
+    throw new Error("Avatar generation request is not attached to an agent profile.");
+  }
+  return request.agentProfileId;
+}
+
+async function applyStoredAvatarInTransaction(
+  db: DatabaseExecutor,
+  request: AvatarGenerationRequestRow,
+  storedAvatarUrl: string,
+  now: string,
+  options: Pick<AvatarGenerationOptions, "now"> = {},
+): Promise<{ request: AvatarGenerationRequestRow; avatarUrl: string }> {
+  const agentProfileId = requireAttachedProfileId(request);
+  const before = await requireOwnedAgentProfile(db, request.userId, agentProfileId);
+  const [assigned] = await db.update(schema.agentProfiles).set({
+    avatarUrl: storedAvatarUrl,
+    updatedAt: now,
+  }).where(and(
+    eq(schema.agentProfiles.id, agentProfileId),
+    eq(schema.agentProfiles.userId, request.userId),
+    isNull(schema.agentProfiles.avatarUrl),
+  )).returning();
+
+  if (!assigned) {
+    const current = await requireOwnedAgentProfile(db, request.userId, agentProfileId);
+    const skipped = await updateGenerationRequest(db, request.id, {
+      status: "skipped",
+      failureCode: "avatar_already_provided",
+      failureMessage: displayFailureMessage("avatar_already_provided"),
+      completedAt: now,
+      safeMetadata: mergeSafeMetadata(request.safeMetadata, { avatarUrl: storedAvatarUrl }),
+    }, options);
+    await recordAvatarChange(db, {
+      userId: request.userId,
+      agentProfileId,
+      source: "generation_skipped",
+      status: "skipped",
+      generationRequestId: request.id,
+      previousAvatarUrl: before.avatarUrl,
+      newAvatarUrl: current.avatarUrl,
+      safeMetadata: { reason: "avatar_already_provided" },
+    }, options);
+    return { request: skipped, avatarUrl: current.avatarUrl ?? storedAvatarUrl };
+  }
+
+  await recordAvatarChange(db, {
+    userId: request.userId,
+    agentProfileId,
+    source: request.triggerSource === "web_user_prompt"
+      || request.triggerSource === "web_ai_help_draft"
+      || request.triggerSource === "web_create_default"
+      ? "web_generated_completion"
+      : "backend_generated_completion",
+    status: "completed",
+    generationRequestId: request.id,
+    previousAvatarUrl: before.avatarUrl,
+    newAvatarUrl: storedAvatarUrl,
+  }, options);
+  return { request, avatarUrl: storedAvatarUrl };
 }
 
 export function avatarProfileFingerprint(profile: AvatarPromptProfile): string {
@@ -413,7 +537,7 @@ export async function completeAvatarGenerationRequest(
   }
 
   const draftProfile = readDraftProfile(request);
-  const profile = draftProfile ?? await requireOwnedAgentProfile(db, request.userId, request.agentProfileId);
+  const profile = draftProfile ?? await requireOwnedAgentProfile(db, request.userId, requireAttachedProfileId(request));
   if (!draftProfile && profile.avatarUrl) {
     const skipped = await db.transaction(async (tx) => {
       const row = await updateGenerationRequest(tx, request.id, {
@@ -424,7 +548,7 @@ export async function completeAvatarGenerationRequest(
       }, options);
       await recordAvatarChange(tx, {
         userId: request.userId,
-        agentProfileId: request.agentProfileId,
+        agentProfileId: requireAttachedProfileId(request),
         source: "generation_skipped",
         status: "skipped",
         generationRequestId: request.id,
@@ -443,21 +567,25 @@ export async function completeAvatarGenerationRequest(
   const katana = getKatanaConfig();
   if (!katana) {
     const failed = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM avatar_generation_requests WHERE id = ${request.id} FOR UPDATE`);
+      const current = await requireGenerationRequest(tx, request.id);
+      if (isTerminalGeneration(current)) return current;
       const row = await updateGenerationRequest(tx, request.id, {
         status: "skipped",
         failureCode: "provider_not_configured",
         failureMessage: displayFailureMessage("provider_not_configured"),
         completedAt: isoNow(options),
       }, options);
-      if (!draftProfile) {
+      if (current.agentProfileId !== null) {
+        const currentProfile = await requireOwnedAgentProfile(tx, request.userId, current.agentProfileId);
         await recordAvatarChange(tx, {
           userId: request.userId,
-          agentProfileId: request.agentProfileId,
+          agentProfileId: current.agentProfileId,
           source: "generation_skipped",
           status: "skipped",
           generationRequestId: request.id,
-          previousAvatarUrl: profile.avatarUrl,
-          newAvatarUrl: profile.avatarUrl,
+          previousAvatarUrl: currentProfile.avatarUrl,
+          newAvatarUrl: currentProfile.avatarUrl,
           safeMetadata: { reason: "provider_not_configured" },
         }, options);
       }
@@ -500,7 +628,13 @@ export async function completeAvatarGenerationRequest(
     }
 
     stage = "provider_poll";
-    const completed = await pollKatanaGeneration(fetchImpl, katana, providerRequestId, options);
+    const completed = await pollKatanaGeneration(
+      fetchImpl,
+      katana,
+      providerRequestId,
+      options,
+      () => heartbeatGenerationProviderWork(db, request.id, providerRequestId!, options),
+    );
     providerStatus = completed.status ?? providerStatus;
     stage = "asset_select";
     const asset = selectOutputAsset(completed);
@@ -520,11 +654,22 @@ export async function completeAvatarGenerationRequest(
     );
     const now = isoNow(options);
 
-    if (draftProfile) {
-      const finished = await updateGenerationRequest(db, request.id, {
+    stage = "profile_update";
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM avatar_generation_requests WHERE id = ${request.id} FOR UPDATE`);
+      const current = await requireGenerationRequest(tx, request.id);
+      if (isTerminalGeneration(current)) {
+        const currentAvatarUrl = storedAvatarUrlFromRequest(current)
+          ?? (current.agentProfileId === null
+            ? stored.publicUrl
+            : (await requireOwnedAgentProfile(tx, current.userId, current.agentProfileId)).avatarUrl)
+          ?? stored.publicUrl;
+        return { request: current, avatarUrl: currentAvatarUrl };
+      }
+      const finished = await updateGenerationRequest(tx, request.id, {
         status: "completed",
         completedAt: now,
-        safeMetadata: mergeSafeMetadata(request.safeMetadata, {
+        safeMetadata: mergeSafeMetadata(current.safeMetadata, {
           providerStatus: completed.status ?? "completed",
           width: asset?.width,
           height: asset?.height,
@@ -532,88 +677,14 @@ export async function completeAvatarGenerationRequest(
           avatarUrl: stored.publicUrl,
         }),
       }, options);
-      return {
-        ...generationRead(finished),
-        avatarUrl: stored.publicUrl,
-      };
-    }
-
-    stage = "profile_update";
-    const result = await db.transaction(async (tx) => {
-      const [assignedProfile] = await tx
-        .update(schema.agentProfiles)
-        .set({
-          avatarUrl: stored.publicUrl,
-          updatedAt: now,
-        })
-        .where(and(
-          eq(schema.agentProfiles.id, request.agentProfileId),
-          eq(schema.agentProfiles.userId, request.userId),
-          isNull(schema.agentProfiles.avatarUrl),
-        ))
-        .returning();
-
-      if (!assignedProfile) {
-        const currentProfile = await requireOwnedAgentProfile(tx, request.userId, request.agentProfileId);
-        const skipped = await updateGenerationRequest(tx, request.id, {
-          status: "skipped",
-          failureCode: "avatar_already_provided",
-          failureMessage: displayFailureMessage("avatar_already_provided"),
-          completedAt: now,
-          safeMetadata: {
-            storageKey: stored.key,
-            providerStatus: completed.status ?? "completed",
-          },
-        }, options);
-        await recordAvatarChange(tx, {
-          userId: request.userId,
-          agentProfileId: request.agentProfileId,
-          source: "generation_skipped",
-          status: "skipped",
-          generationRequestId: request.id,
-          previousAvatarUrl: profile.avatarUrl,
-          newAvatarUrl: currentProfile.avatarUrl,
-          safeMetadata: {
-            reason: "avatar_already_provided",
-            storageKey: stored.key,
-          },
-        }, options);
-        return {
-          completion: skipped,
-          avatarUrl: currentProfile.avatarUrl,
-        };
+      if (finished.agentProfileId === null) {
+        return { request: finished, avatarUrl: stored.publicUrl };
       }
-
-      const finished = await updateGenerationRequest(tx, request.id, {
-        status: "completed",
-        completedAt: now,
-        safeMetadata: {
-          providerStatus: completed.status ?? "completed",
-          width: asset?.width,
-          height: asset?.height,
-          storageKey: stored.key,
-        },
-      }, options);
-      await recordAvatarChange(tx, {
-        userId: request.userId,
-        agentProfileId: request.agentProfileId,
-        source: request.triggerSource === "web_user_prompt" || request.triggerSource === "web_create_default"
-          ? "web_generated_completion"
-          : "backend_generated_completion",
-        status: "completed",
-        generationRequestId: request.id,
-        previousAvatarUrl: profile.avatarUrl,
-        newAvatarUrl: stored.publicUrl,
-        safeMetadata: { storageKey: stored.key },
-      }, options);
-      return {
-        completion: finished,
-        avatarUrl: stored.publicUrl,
-      };
+      return applyStoredAvatarInTransaction(tx, finished, stored.publicUrl, now, options);
     });
 
     return {
-      ...generationRead(result.completion),
+      ...generationRead(result.request),
       avatarUrl: result.avatarUrl,
     };
   } catch (error) {
@@ -628,12 +699,15 @@ export async function completeAvatarGenerationRequest(
       providerStatus,
     });
     const failed = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM avatar_generation_requests WHERE id = ${request.id} FOR UPDATE`);
+      const current = await requireGenerationRequest(tx, request.id);
+      if (isTerminalGeneration(current)) return current;
       const row = await updateGenerationRequest(tx, request.id, {
         status: "failed",
         failureCode: failure.code,
         failureMessage: failure.message,
         completedAt: isoNow(options),
-        safeMetadata: mergeSafeMetadata(request.safeMetadata, {
+        safeMetadata: mergeSafeMetadata(current.safeMetadata, {
           retryable: failure.retryable,
           stage: failure.stage,
           providerRequestId,
@@ -641,15 +715,16 @@ export async function completeAvatarGenerationRequest(
           errorName: error instanceof Error ? error.name : typeof error,
         }),
       }, options);
-      if (!draftProfile) {
+      if (row.agentProfileId !== null) {
+        const currentProfile = await requireOwnedAgentProfile(tx, request.userId, row.agentProfileId);
         await recordAvatarChange(tx, {
           userId: request.userId,
-          agentProfileId: request.agentProfileId,
+          agentProfileId: row.agentProfileId,
           source: "generation_failed",
           status: "failed",
           generationRequestId: request.id,
-          previousAvatarUrl: profile.avatarUrl,
-          newAvatarUrl: profile.avatarUrl,
+          previousAvatarUrl: currentProfile.avatarUrl,
+          newAvatarUrl: currentProfile.avatarUrl,
           safeMetadata: {
             reason: failure.code,
             retryable: failure.retryable,
@@ -703,6 +778,7 @@ export async function latestAvatarCompletionsByAgentProfileId(
 
   const completions = new Map<string, AvatarCompletionRead>();
   for (const row of rows) {
+    if (row.agentProfileId === null) continue;
     if (completions.has(row.agentProfileId)) continue;
     completions.set(row.agentProfileId, generationRead(row));
   }
@@ -836,7 +912,22 @@ async function claimGenerationProviderWork(
   | { action: "wait"; request: AvatarGenerationRequestRow }
 > {
   if (request.providerRequestId) {
-    return { action: "poll", request, providerRequestId: request.providerRequestId };
+    if (request.status !== "processing" || !isStaleActiveGeneration(request, options)) {
+      return { action: "wait", request };
+    }
+    const [claimed] = await db
+      .update(schema.avatarGenerationRequests)
+      .set({ updatedAt: isoNow(options) })
+      .where(and(
+        eq(schema.avatarGenerationRequests.id, request.id),
+        eq(schema.avatarGenerationRequests.status, "processing"),
+        eq(schema.avatarGenerationRequests.updatedAt, request.updatedAt),
+        eq(schema.avatarGenerationRequests.providerRequestId, request.providerRequestId),
+      ))
+      .returning();
+    return claimed
+      ? { action: "poll", request: claimed, providerRequestId: request.providerRequestId }
+      : generationClaimInProgress(db, request.id);
   }
 
   if (request.status === "queued") {
@@ -883,19 +974,38 @@ async function claimGenerationProviderWork(
 async function generationClaimInProgress(
   db: AvatarGenerationWriteDB,
   generationRequestId: string,
-): Promise<
-  | { action: "poll"; request: AvatarGenerationRequestRow; providerRequestId: string }
-  | { action: "wait"; request: AvatarGenerationRequestRow }
-> {
+): Promise<{ action: "wait"; request: AvatarGenerationRequestRow }> {
   const current = await requireGenerationRequest(db, generationRequestId);
-  return current.providerRequestId
-    ? { action: "poll", request: current, providerRequestId: current.providerRequestId }
-    : { action: "wait", request: current };
+  return { action: "wait", request: current };
+}
+
+async function heartbeatGenerationProviderWork(
+  db: AvatarGenerationWriteDB,
+  generationRequestId: string,
+  providerRequestId: string,
+  options: Pick<AvatarGenerationOptions, "now">,
+): Promise<void> {
+  const [owned] = await db
+    .update(schema.avatarGenerationRequests)
+    .set({ updatedAt: isoNow(options) })
+    .where(and(
+      eq(schema.avatarGenerationRequests.id, generationRequestId),
+      eq(schema.avatarGenerationRequests.status, "processing"),
+      eq(schema.avatarGenerationRequests.providerRequestId, providerRequestId),
+    ))
+    .returning({ id: schema.avatarGenerationRequests.id });
+  if (!owned) {
+    throw new AvatarGenerationFailure(
+      "generation_claim_lost",
+      "Avatar generation was completed or cancelled by another worker.",
+      true,
+    );
+  }
 }
 
 async function insertTerminalGeneration(
   db: DatabaseExecutor,
-  input: AvatarCompletionInput,
+  input: Pick<AvatarCompletionInput, "userId" | "triggerSource"> & { agentProfileId: string | null },
   status: "skipped" | "failed",
   failureCode: string,
   failureMessage: string,
@@ -1005,12 +1115,14 @@ async function pollKatanaGeneration(
   config: { key: string; secret: string },
   requestId: string,
   options: AvatarGenerationOptions,
+  heartbeat?: () => Promise<void>,
 ): Promise<KatanaGenerationEnvelope> {
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const maxPolls = options.maxPolls ?? DEFAULT_MAX_POLLS;
   const fallbackDelay = options.pollDelayMs ?? DEFAULT_POLL_DELAY_MS;
 
   for (let poll = 0; poll < maxPolls; poll += 1) {
+    await heartbeat?.();
     const envelope = await katanaFetch(fetchImpl, config, `/v1/generation-requests/${encodeURIComponent(requestId)}`);
     if (envelope.status === "completed" || envelope.status === "partial_failure") {
       return envelope;
@@ -1165,7 +1277,6 @@ function generationRead(row: AvatarGenerationRequestRow): AvatarCompletionRead {
     failureCode: row.failureCode ?? undefined,
     failureStage,
     retryable,
-    profileFingerprint: typeof metadata.profileFingerprint === "string" ? metadata.profileFingerprint : undefined,
     reason: row.failureMessage ?? undefined,
   };
 }
@@ -1207,6 +1318,10 @@ function isStaleActiveGeneration(
   const updatedAt = Date.parse(row.updatedAt);
   if (!Number.isFinite(updatedAt)) return false;
   return (options.now?.() ?? new Date()).getTime() - updatedAt > ACTIVE_GENERATION_STALE_MS;
+}
+
+function isTerminalGeneration(row: AvatarGenerationRequestRow): boolean {
+  return row.status === "completed" || row.status === "failed" || row.status === "skipped";
 }
 
 function getKatanaConfig(): { key: string; secret: string } | null {
@@ -1350,7 +1465,7 @@ function logAvatarGenerationFailure(input: {
   error: unknown;
   failure: { code: string; message: string; retryable: boolean; stage: AvatarGenerationStage };
   generationRequestId: string;
-  agentProfileId: string;
+  agentProfileId: string | null;
   userId: string;
   providerRequestId: string | null;
   providerStatus: string | null;

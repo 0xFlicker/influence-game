@@ -1,7 +1,9 @@
 import type { TranscriptEntry } from "./game-runner.types";
+import type { CanonicalGameEvent } from "./canonical-events";
+import type { HouseSummaryPhaseTelemetry } from "./house-summary-frontier";
 import type { TokenUsage } from "./token-tracker";
 import type { MingleSessionDiagnostics } from "./types";
-import { Phase } from "./types";
+import { Phase, type EndgameStage } from "./types";
 
 interface MingleAssignmentSourceSummary {
   house: number;
@@ -31,6 +33,11 @@ export interface SimulatorArgsSnapshot {
   modelCatalogId?: string;
   providerProfileId?: string;
   reasoningPolicy?: string;
+  providerManifest?: Array<{
+    catalogId: string;
+    reasoningPolicy?: string;
+    maxCallsPerGame?: number;
+  }>;
   variant: string;
   /** Whole-game timeout ms, or null when none was requested. */
   gameTimeoutMs: number | null;
@@ -38,7 +45,6 @@ export interface SimulatorArgsSnapshot {
   /** Default operator action feed (choices/outcomes, no thinking). */
   operatorFeed?: boolean;
   houseSummaries?: boolean;
-  enableStrategicReflections?: boolean;
   richProducer?: boolean;
   enableDiary?: boolean;
   openAIReasoningSummary?: "auto" | "concise" | "detailed";
@@ -100,13 +106,77 @@ export interface CouncilMarkerInstrumentation {
   candidatePairs: Array<{ round: number; candidates: [string, string] }>;
 }
 
-export interface EndgameMarkerInstrumentation {
+export interface EndgameInstrumentation {
+  /** Counts of accepted canonical `endgame.stage_set` events by stage. */
   reckoning: number;
   tribunal: number;
   judgment: number;
+  /** Accepted canonical Judgment question speeches. */
   juryQuestions: number;
+  /** Accepted canonical jury ballots. */
   juryVotes: number;
+  /** Accepted canonical endgame/Judgment events grouped by their canonical phase. */
   byPhase: Partial<Record<Phase, number>>;
+}
+
+export type SimulationEndgameType = EndgameStage | "normal";
+
+/**
+ * Classify a simulation from accepted canonical stage transitions only.
+ * Transcript/House copy is presentation and cannot change this result.
+ */
+export function classifyCanonicalEndgame(
+  events: readonly CanonicalGameEvent[],
+): SimulationEndgameType {
+  let latest: Extract<CanonicalGameEvent, { type: "endgame.stage_set" }> | undefined;
+  for (const event of events) {
+    if (event.type !== "endgame.stage_set") continue;
+    if (!latest || event.sequence >= latest.sequence) latest = event;
+  }
+  return latest?.payload.stage ?? "normal";
+}
+
+function buildEndgameInstrumentation(
+  events: readonly CanonicalGameEvent[],
+): EndgameInstrumentation {
+  const endgame: EndgameInstrumentation = {
+    reckoning: 0,
+    tribunal: 0,
+    judgment: 0,
+    juryQuestions: 0,
+    juryVotes: 0,
+    byPhase: {},
+  };
+
+  for (const event of events) {
+    let endgameEvent = false;
+    switch (event.type) {
+      case "endgame.stage_set":
+        endgame[event.payload.stage] += 1;
+        endgameEvent = true;
+        break;
+      case "judgment.speech_recorded":
+        if (event.payload.speechKind === "jury_question") endgame.juryQuestions += 1;
+        endgameEvent = true;
+        break;
+      case "jury.vote_cast":
+        endgame.juryVotes += 1;
+        endgameEvent = true;
+        break;
+      case "endgame.elimination_vote_cast":
+      case "endgame.elimination_resolved":
+      case "jury.winner_determined":
+      case "endgame.speech_recorded":
+        endgameEvent = true;
+        break;
+      default:
+        break;
+    }
+
+    if (endgameEvent && event.phase !== null) increment(endgame.byPhase, event.phase);
+  }
+
+  return endgame;
 }
 
 export interface RoomPairObservation {
@@ -163,12 +233,39 @@ export interface ActionUsageInstrumentation {
 }
 
 export interface HouseProducerInstrumentation {
-  strategyBibleCalls: number;
   mcSummaryCalls: number;
   longFormSummaryCalls: number;
-  producerBriefCalls: number;
   mcSummaryTranscriptEntries: number;
   totalHouseProducerCalls: number;
+}
+
+export interface HouseSummaryCadenceInstrumentation {
+  boundaries: number;
+  materiallyEligibleBoundaries: number;
+  emitted: number;
+  preflightSkipped: number;
+  modelSkipped: number;
+  failed: number;
+  eligibleEmissionRate: number;
+  providerCalls: number;
+  providerCallIds: string[];
+  uniqueProviderCallIds: number;
+  knownTokenSubtotal: number;
+  trackerCallCount: number;
+  trackerTokenSubtotal: number;
+  usageAvailable: boolean;
+  callIdentitiesReconciled: boolean;
+  tokenSubtotalReconciled: boolean;
+  accountingReconciled: boolean;
+  byActorCoordinate: Record<string, {
+    boundaries: number;
+    materiallyEligibleBoundaries: number;
+    emitted: number;
+    preflightSkipped: number;
+    modelSkipped: number;
+    failed: number;
+    providerCalls: number;
+  }>;
 }
 
 export interface GameInstrumentation {
@@ -192,10 +289,11 @@ export interface GameInstrumentation {
     eliminations: AutoEliminateObservation[];
   };
   council: CouncilMarkerInstrumentation;
-  endgame: EndgameMarkerInstrumentation;
+  endgame: EndgameInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
   houseProducer: HouseProducerInstrumentation;
+  houseSummaryCadence: HouseSummaryCadenceInstrumentation;
 }
 
 export interface BatchInstrumentation {
@@ -203,10 +301,11 @@ export interface BatchInstrumentation {
   powerActions: GameInstrumentation["powerActions"];
   autoEliminations: GameInstrumentation["autoEliminations"];
   council: CouncilMarkerInstrumentation;
-  endgame: EndgameMarkerInstrumentation;
+  endgame: EndgameInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
   houseProducer: HouseProducerInstrumentation;
+  houseSummaryCadence: HouseSummaryCadenceInstrumentation;
 }
 
 const EMPTY_USAGE: TokenUsage = {
@@ -493,32 +592,93 @@ function buildHouseProducerInstrumentation(
   transcript: readonly TranscriptEntry[],
   perSourceUsage: Record<string, TokenUsage>,
 ): HouseProducerInstrumentation {
-  const strategyBibleCalls = perSourceUsage["House/strategy-bible"]?.callCount ?? 0;
   const mcSummaryCalls = perSourceUsage["House/mc-summary"]?.callCount ?? 0;
   const longFormSummaryCalls = perSourceUsage["House/long-form-summary"]?.callCount ?? 0;
-  const producerBriefCalls = perSourceUsage["House/producer-brief"]?.callCount ?? 0;
   const detectedMcSummaryEntries = transcript.filter(isHouseMcSummaryTranscriptEntry).length;
   return {
-    strategyBibleCalls,
     mcSummaryCalls,
     longFormSummaryCalls,
-    producerBriefCalls,
     mcSummaryTranscriptEntries: Math.max(detectedMcSummaryEntries, mcSummaryCalls),
-    totalHouseProducerCalls: strategyBibleCalls + mcSummaryCalls + longFormSummaryCalls + producerBriefCalls,
+    totalHouseProducerCalls: mcSummaryCalls + longFormSummaryCalls,
   };
 }
 
 function isHouseMcSummaryTranscriptEntry(entry: TranscriptEntry): boolean {
   if (entry.scope !== "system" || entry.from !== "House") return false;
+  if (entry.dialogueKind === "house_summary") return true;
   if (entry.text.startsWith("[House MC]")) return true;
   if (entry.text.includes("Round facts:")) return false;
   return /^Round \d+:\s/.test(entry.text) && /\bThe House\b/.test(entry.text);
+}
+
+function buildHouseSummaryCadenceInstrumentation(
+  telemetry: readonly HouseSummaryPhaseTelemetry[],
+  perSourceUsage: Record<string, TokenUsage>,
+): HouseSummaryCadenceInstrumentation {
+  const materiallyEligibleBoundaries = telemetry.filter((entry) => entry.status !== "preflight_skipped").length;
+  const emitted = telemetry.filter((entry) => entry.status === "emitted").length;
+  const usage = telemetry.flatMap((entry) => entry.usage);
+  const providerCallIds = usage.map((entry) => entry.callId);
+  const uniqueProviderCallIds = new Set(providerCallIds).size;
+  const providerCalls = telemetry.reduce((sum, entry) => sum + entry.providerCalls, 0);
+  const knownTokenSubtotal = usage.reduce((sum, entry) => sum + (entry.totalTokens ?? 0), 0);
+  const tracker = perSourceUsage["House/mc-summary"] ?? EMPTY_USAGE;
+  const usageAvailable = telemetry.every((entry) => entry.usageAvailable);
+  const callIdentitiesReconciled = providerCallIds.length === providerCalls
+    && uniqueProviderCallIds === providerCalls;
+  const tokenSubtotalReconciled = usageAvailable
+    && knownTokenSubtotal === tracker.totalTokens;
+  const byActorCoordinate: HouseSummaryCadenceInstrumentation["byActorCoordinate"] = {};
+  for (const entry of telemetry) {
+    const current = byActorCoordinate[entry.actorCoordinate] ?? {
+      boundaries: 0,
+      materiallyEligibleBoundaries: 0,
+      emitted: 0,
+      preflightSkipped: 0,
+      modelSkipped: 0,
+      failed: 0,
+      providerCalls: 0,
+    };
+    current.boundaries += 1;
+    if (entry.status !== "preflight_skipped") current.materiallyEligibleBoundaries += 1;
+    if (entry.status === "preflight_skipped") current.preflightSkipped += 1;
+    else if (entry.status === "model_skipped") current.modelSkipped += 1;
+    else if (entry.status === "failed") current.failed += 1;
+    else current.emitted += 1;
+    current.providerCalls += entry.providerCalls;
+    byActorCoordinate[entry.actorCoordinate] = current;
+  }
+  return {
+    boundaries: telemetry.length,
+    materiallyEligibleBoundaries,
+    emitted,
+    preflightSkipped: telemetry.filter((entry) => entry.status === "preflight_skipped").length,
+    modelSkipped: telemetry.filter((entry) => entry.status === "model_skipped").length,
+    failed: telemetry.filter((entry) => entry.status === "failed").length,
+    eligibleEmissionRate: rate(emitted, materiallyEligibleBoundaries),
+    providerCalls,
+    providerCallIds,
+    uniqueProviderCallIds,
+    knownTokenSubtotal,
+    trackerCallCount: tracker.callCount,
+    trackerTokenSubtotal: tracker.totalTokens,
+    usageAvailable,
+    callIdentitiesReconciled,
+    tokenSubtotalReconciled,
+    accountingReconciled: usageAvailable
+      && callIdentitiesReconciled
+      && tokenSubtotalReconciled
+      && tracker.callCount === providerCalls,
+    byActorCoordinate,
+  };
 }
 
 export function instrumentGame(
   transcript: readonly TranscriptEntry[],
   perSourceUsage: Record<string, TokenUsage>,
   playerNameById: Record<string, string>,
+  houseSummaryTelemetry: readonly HouseSummaryPhaseTelemetry[] = [],
+  canonicalEvents: readonly CanonicalGameEvent[] = [],
 ): GameInstrumentation {
   const powerActions: PowerActionObservation[] = [];
   const autoEliminations: AutoEliminateObservation[] = [];
@@ -529,14 +689,7 @@ export function instrumentGame(
     councilVotes: 0,
     candidatePairs,
   };
-  const endgame: EndgameMarkerInstrumentation = {
-    reckoning: 0,
-    tribunal: 0,
-    judgment: 0,
-    juryQuestions: 0,
-    juryVotes: 0,
-    byPhase: {},
-  };
+  const endgame = buildEndgameInstrumentation(canonicalEvents);
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
@@ -566,36 +719,6 @@ export function instrumentGame(
     }
     if (entry.scope === "system" && /\bcouncil vote ->/.test(entry.text)) {
       council.councilVotes += 1;
-    }
-
-    if (entry.scope === "system") {
-      if (entry.text.includes("THE RECKONING") || entry.text.includes("RECKONING:")) {
-        endgame.reckoning += 1;
-      }
-      if (entry.text.includes("THE TRIBUNAL") || entry.text.includes("TRIBUNAL:")) {
-        endgame.tribunal += 1;
-      }
-      if (entry.text.includes("THE JUDGMENT") || entry.text.includes("JUDGMENT:")) {
-        endgame.judgment += 1;
-      }
-      if (entry.text.includes("JURY QUESTIONS")) {
-        endgame.juryQuestions += 1;
-      }
-      if (entry.text.includes("JURY VOTE")) {
-        endgame.juryVotes += 1;
-      }
-    }
-
-    if (
-      entry.phase === Phase.PLEA ||
-      entry.phase === Phase.ACCUSATION ||
-      entry.phase === Phase.DEFENSE ||
-      entry.phase === Phase.OPENING_STATEMENTS ||
-      entry.phase === Phase.JURY_QUESTIONS ||
-      entry.phase === Phase.CLOSING_ARGUMENTS ||
-      entry.phase === Phase.JURY_VOTE
-    ) {
-      increment(endgame.byPhase, entry.phase);
     }
 
     if (entry.roomMetadata) {
@@ -648,6 +771,7 @@ export function instrumentGame(
     },
     actionUsage: buildActionUsageInstrumentation(perSourceUsage),
     houseProducer: buildHouseProducerInstrumentation(transcript, perSourceUsage),
+    houseSummaryCadence: buildHouseSummaryCadenceInstrumentation(houseSummaryTelemetry, perSourceUsage),
   };
 }
 
@@ -677,7 +801,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     councilVotes: 0,
     candidatePairs: [],
   };
-  const endgame: EndgameMarkerInstrumentation = {
+  const endgame: EndgameInstrumentation = {
     reckoning: 0,
     tribunal: 0,
     judgment: 0,
@@ -700,10 +824,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   let totalCalls = 0;
   let totalEmptyResponses = 0;
   const houseProducer: HouseProducerInstrumentation = {
-    strategyBibleCalls: 0,
     mcSummaryCalls: 0,
     longFormSummaryCalls: 0,
-    producerBriefCalls: 0,
     mcSummaryTranscriptEntries: 0,
     totalHouseProducerCalls: 0,
   };
@@ -800,10 +922,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       repeatedPairTotals.set(key, existing);
     }
 
-    houseProducer.strategyBibleCalls += game.houseProducer.strategyBibleCalls;
     houseProducer.mcSummaryCalls += game.houseProducer.mcSummaryCalls;
     houseProducer.longFormSummaryCalls += game.houseProducer.longFormSummaryCalls;
-    houseProducer.producerBriefCalls += game.houseProducer.producerBriefCalls;
     houseProducer.mcSummaryTranscriptEntries += game.houseProducer.mcSummaryTranscriptEntries;
     houseProducer.totalHouseProducerCalls += game.houseProducer.totalHouseProducerCalls;
 
@@ -876,5 +996,55 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       bySource,
     },
     houseProducer,
+    houseSummaryCadence: aggregateHouseSummaryCadence(games),
+  };
+}
+
+function aggregateHouseSummaryCadence(
+  games: readonly GameInstrumentation[],
+): HouseSummaryCadenceInstrumentation {
+  const byActorCoordinate: HouseSummaryCadenceInstrumentation["byActorCoordinate"] = {};
+  const providerCallIds = games.flatMap((game) => game.houseSummaryCadence.providerCallIds);
+  for (const game of games) {
+    for (const [coordinate, counts] of Object.entries(game.houseSummaryCadence.byActorCoordinate)) {
+      const current = byActorCoordinate[coordinate] ?? {
+        boundaries: 0,
+        materiallyEligibleBoundaries: 0,
+        emitted: 0,
+        preflightSkipped: 0,
+        modelSkipped: 0,
+        failed: 0,
+        providerCalls: 0,
+      };
+      for (const key of Object.keys(current) as Array<keyof typeof current>) current[key] += counts[key];
+      byActorCoordinate[coordinate] = current;
+    }
+  }
+  const materiallyEligibleBoundaries = games.reduce(
+    (sum, game) => sum + game.houseSummaryCadence.materiallyEligibleBoundaries,
+    0,
+  );
+  const emitted = games.reduce((sum, game) => sum + game.houseSummaryCadence.emitted, 0);
+  return {
+    boundaries: games.reduce((sum, game) => sum + game.houseSummaryCadence.boundaries, 0),
+    materiallyEligibleBoundaries,
+    emitted,
+    preflightSkipped: games.reduce((sum, game) => sum + game.houseSummaryCadence.preflightSkipped, 0),
+    modelSkipped: games.reduce((sum, game) => sum + game.houseSummaryCadence.modelSkipped, 0),
+    failed: games.reduce((sum, game) => sum + game.houseSummaryCadence.failed, 0),
+    eligibleEmissionRate: rate(emitted, materiallyEligibleBoundaries),
+    providerCalls: games.reduce((sum, game) => sum + game.houseSummaryCadence.providerCalls, 0),
+    providerCallIds,
+    uniqueProviderCallIds: new Set(providerCallIds).size,
+    knownTokenSubtotal: games.reduce((sum, game) => sum + game.houseSummaryCadence.knownTokenSubtotal, 0),
+    trackerCallCount: games.reduce((sum, game) => sum + game.houseSummaryCadence.trackerCallCount, 0),
+    trackerTokenSubtotal: games.reduce((sum, game) => sum + game.houseSummaryCadence.trackerTokenSubtotal, 0),
+    usageAvailable: games.every((game) => game.houseSummaryCadence.usageAvailable),
+    callIdentitiesReconciled: games.every((game) => game.houseSummaryCadence.callIdentitiesReconciled)
+      && new Set(providerCallIds).size === providerCallIds.length,
+    tokenSubtotalReconciled: games.every((game) => game.houseSummaryCadence.tokenSubtotalReconciled),
+    accountingReconciled: games.every((game) => game.houseSummaryCadence.accountingReconciled)
+      && new Set(providerCallIds).size === providerCallIds.length,
+    byActorCoordinate,
   };
 }

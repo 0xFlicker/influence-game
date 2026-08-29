@@ -5,11 +5,18 @@ import {
 } from "../accepted-formal-speech";
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import type { AgentResponse, TargetDecision } from "../game-runner.types";
+import type { AgentResponse, StrategicDecisionMetadata, TargetDecision } from "../game-runner.types";
+import type { EngineFallbackReason } from "../game-runner.types";
+import {
+  deterministicEngineFallback,
+  engineFallbackMetadata,
+} from "../engine-fallback";
+import { ProviderUnavailableError } from "../provider-execution";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -18,7 +25,7 @@ import {
 
 type TimedEndgameResult<T> = {
   value: T;
-  provenance: "agent" | "timeout";
+  provenance: "agent" | "provider_exhausted" | "timeout";
 };
 
 async function withEndgameActionTimeout<T>(
@@ -26,24 +33,31 @@ async function withEndgameActionTimeout<T>(
   phase: Phase,
   label: string,
   operation: (signal: AbortSignal) => Promise<T>,
-  fallback: () => T,
+  fallback: (reason: EngineFallbackReason) => T,
 ): Promise<TimedEndgameResult<T>> {
   const timeoutMs = ctx.config.agentActionTimeoutMs;
   if (!timeoutMs || timeoutMs < 1) {
-    return { value: await operation(new AbortController().signal), provenance: "agent" };
+    try {
+      return { value: await operation(new AbortController().signal), provenance: "agent" };
+    } catch (error) {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return { value: fallback("provider_exhausted"), provenance: "provider_exhausted" };
+    }
   }
 
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  type Tagged = { source: "agent" | "timeout"; value: T };
-  const operationTagged: Promise<Tagged> = operation(controller.signal).then((value) => ({
-    source: "agent" as const,
-    value,
-  }));
+  type Tagged = { source: TimedEndgameResult<T>["provenance"]; value: T };
+  const operationTagged: Promise<Tagged> = operation(controller.signal)
+    .then((value) => ({ source: "agent" as const, value }))
+    .catch((error) => {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return { source: "provider_exhausted" as const, value: fallback("provider_exhausted") };
+    });
   const timeoutTagged = new Promise<Tagged>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, phase);
-      resolve({ source: "timeout", value: fallback() });
+      resolve({ source: "timeout", value: fallback("action_timed_out") });
       controller.abort();
     }, timeoutMs);
   });
@@ -54,17 +68,24 @@ async function withEndgameActionTimeout<T>(
   return { value: tagged.value, provenance: tagged.source };
 }
 
-function fallbackMessage(message: string): AgentResponse {
-  return { thinking: "House fallback after unresolved endgame action.", message };
+function fallbackMessage(): AgentResponse {
+  return {
+    thinking: "",
+    message: "",
+    providerAbsence: { kind: "provider_exhausted", outcome: "transport_timeout" },
+  };
 }
 
 function finalizePublicSpeech(
   message: string,
-  provenance: "agent" | "timeout",
+  provenance: TimedEndgameResult<unknown>["provenance"],
   houseLine: string,
-): { text: string; provenance: JudgmentSpeechProvenance } {
-  if (message.trim().length > 0) return { text: message, provenance };
-  return { text: houseLine, provenance: "fallback" };
+): { text: string; provenance: JudgmentSpeechProvenance } | null {
+  if (message.trim().length > 0 && provenance === "agent") {
+    return { text: message, provenance: "agent" };
+  }
+  void houseLine;
+  return null;
 }
 
 export async function runReckoningPlea(
@@ -88,15 +109,16 @@ export async function runReckoningPlea(
         Phase.PLEA,
         `${player.name} plea`,
         (signal) => agent.getPlea(phaseCtx, { signal }),
-        () => fallbackMessage(housePlea),
+        () => fallbackMessage(),
       );
       return { player, agent, timed };
     }),
   );
 
   for (const { player, agent, timed } of generated) {
-    const { message, thinking, reasoningContext, decisionLog } = timed.value;
+    const { message, thinking, reasoningContext } = timed.value;
     const speechText = finalizePublicSpeech(message, timed.provenance, housePlea);
+    if (!speechText) continue;
     await assertCanAcceptCommit(ctx);
     const accepted = createAcceptedFormalSpeech({
       kind: "plea",
@@ -112,10 +134,16 @@ export async function runReckoningPlea(
       {
         action: "plea",
         actor: { id: player.id, name: player.name, role: "player" },
-        response: { message: speechText.text, ...strategicDecisionResponse({ decisionLog }) },
+        response: { message: speechText.text, ...strategicDecisionResponse(timed.value) },
         thinking,
         reasoningContext,
-        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext),
+        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext, timed.value),
+        commitStrategy: () => resolveActionStrategyCandidate(
+          agent,
+          timed.value,
+          speechText.provenance === "agent"
+            && timed.value.strategyGameplayAccepted !== false,
+        ),
       },
       {
         sourcePointers: [
@@ -147,17 +175,33 @@ export async function runTribunalAccusation(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.ACCUSATION, "ordinary_speech");
-      const fallbackTarget = alivePlayers.find((candidate) => candidate.id !== player.id) ?? player;
-      const houseAccusation = `I accuse ${fallbackTarget.name}.`;
-      const timed = await withEndgameActionTimeout<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>(
+      const houseAccusation = "";
+      const timed = await withEndgameActionTimeout<StrategicDecisionMetadata & {
+        targetId: UUID;
+        text: string;
+        thinking?: string;
+        reasoningContext?: string;
+      }>(
         ctx,
         Phase.ACCUSATION,
         `${player.name} accusation`,
         (signal) => agent.getAccusation(phaseCtx, { signal }),
-        () => ({
-          targetId: fallbackTarget.id,
-          text: houseAccusation,
-          thinking: "House fallback after unresolved endgame action.",
+        (reason) => ({
+          targetId: deterministicEngineFallback(
+            alivePlayers
+              .filter((candidate) => candidate.id !== player.id)
+              .map((candidate) => candidate.id),
+            phaseCtx,
+            player.id,
+            "accusation-target",
+          ),
+          text: "",
+          ...engineFallbackMetadata(
+            phaseCtx,
+            player.id,
+            "accusation-target",
+            reason,
+          ),
         }),
       );
       return { player, agent, timed, houseAccusation };
@@ -165,9 +209,56 @@ export async function runTribunalAccusation(
   );
 
   for (const { player, agent, timed, houseAccusation } of generated) {
-    const { targetId, text: rawText, thinking, reasoningContext } = timed.value;
+    const legalTargets = alivePlayers
+      .filter((candidate) => candidate.id !== player.id)
+      .map((candidate) => candidate.id);
+    const phaseCtx = {
+      gameId: gameState.gameId,
+      round: gameState.round,
+      phase: Phase.ACCUSATION,
+    };
+    let acceptedAccusation = timed.value;
+    if (!legalTargets.includes(acceptedAccusation.targetId)) {
+      acceptedAccusation = {
+        targetId: deterministicEngineFallback(
+          legalTargets,
+          phaseCtx,
+          player.id,
+          "accusation-target",
+        ),
+        text: "",
+        ...engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          "accusation-target",
+          "invalid_model_output",
+        ),
+      };
+    }
+    const { targetId, text: rawText, thinking, reasoningContext } = acceptedAccusation;
     const speechText = finalizePublicSpeech(rawText, timed.provenance, houseAccusation);
     const targetName = gameState.getPlayerName(targetId);
+    accusations.set(targetId, {
+      accuserId: player.id,
+      accuserName: player.name,
+      text: speechText?.text ?? "",
+    });
+    if (!speechText) {
+      await assertCanAcceptCommit(ctx);
+      logger.emitAgentTurn({
+        phase: Phase.ACCUSATION,
+        action: "accusation-target",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          target: { id: targetId, name: targetName },
+          ...strategicDecisionResponse(acceptedAccusation),
+        },
+        scope: "system",
+        text: `${player.name} targets ${targetName} for accusation`,
+      });
+      continue;
+    }
     await assertCanAcceptCommit(ctx);
     const accepted = createAcceptedFormalSpeech({
       kind: "accusation",
@@ -187,24 +278,34 @@ export async function runTribunalAccusation(
         response: {
           target: { id: targetId, name: targetName },
           accusation: speechText.text,
+          ...strategicDecisionResponse(acceptedAccusation),
         },
         thinking,
         reasoningContext,
-        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext),
+        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext, acceptedAccusation),
+        commitStrategy: () => resolveActionStrategyCandidate(
+          agent,
+          acceptedAccusation,
+          speechText.provenance === "agent"
+            && timed.value.strategyGameplayAccepted !== false,
+        ),
       },
       {
         displayNames: { targetName },
         sourcePointers: [
-          agentTurnSourcePointer(player.id, "accusation", gameState.round, Phase.ACCUSATION),
+          agentTurnSourcePointer(
+            player.id,
+            "accusation",
+            gameState.round,
+            Phase.ACCUSATION,
+            undefined,
+            acceptedAccusation.engineFallback ? undefined : acceptedAccusation.decisionId,
+            acceptedAccusation.engineFallback,
+          ),
         ],
       },
     );
     // Stable commit order: last accuser in roster order wins for a given target.
-    accusations.set(targetId, {
-      accuserId: player.id,
-      accuserName: player.name,
-      text: speechText.text,
-    });
   }
 
   actor.send({ type: "PHASE_COMPLETE" });
@@ -235,15 +336,16 @@ export async function runTribunalDefense(
         Phase.DEFENSE,
         `${player.name} defense`,
         (signal) => agent.getDefense(phaseCtx, accusation.text, accusation.accuserName, { signal }),
-        () => fallbackMessage(houseDefense),
+        () => fallbackMessage(),
       );
       return { player, agent, timed, accusation };
     }),
   );
 
   for (const { player, agent, timed, accusation } of generated) {
-    const { message: defense, thinking, reasoningContext, decisionLog } = timed.value;
+    const { message: defense, thinking, reasoningContext } = timed.value;
     const speechText = finalizePublicSpeech(defense, timed.provenance, houseDefense);
+    if (!speechText) continue;
     await assertCanAcceptCommit(ctx);
     const accepted = createAcceptedFormalSpeech({
       kind: "defense",
@@ -264,11 +366,17 @@ export async function runTribunalDefense(
           message: speechText.text,
           accuser: { id: accusation.accuserId, name: accusation.accuserName },
           accusation: accusation.text,
-          ...strategicDecisionResponse({ decisionLog }),
+          ...strategicDecisionResponse(timed.value),
         },
         thinking,
         reasoningContext,
-        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext),
+        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext, timed.value),
+        commitStrategy: () => resolveActionStrategyCandidate(
+          agent,
+          timed.value,
+          speechText.provenance === "agent"
+            && timed.value.strategyGameplayAccepted !== false,
+        ),
       },
       {
         sourcePointers: [
@@ -317,15 +425,16 @@ export async function runJudgmentOpening(
         Phase.OPENING_STATEMENTS,
         `${player.name} opening statement`,
         (signal) => agent.getOpeningStatement(phaseCtx, { signal }),
-        () => fallbackMessage(houseOpening),
+        () => fallbackMessage(),
       );
       return { player, agent, timed };
     }),
   );
 
   for (const { player, agent, timed } of generated) {
-    const { message, thinking, reasoningContext, decisionLog } = timed.value;
+    const { message, thinking, reasoningContext } = timed.value;
     const speech = finalizePublicSpeech(message, timed.provenance, houseOpening);
+    if (!speech) continue;
     await assertCanAcceptCommit(ctx);
     const accepted = createAcceptedFormalSpeech({
       kind: "opening_statement",
@@ -341,10 +450,16 @@ export async function runJudgmentOpening(
       {
         action: "opening-statement",
         actor: { id: player.id, name: player.name, role: "player" },
-        response: { message: speech.text, ...strategicDecisionResponse({ decisionLog }) },
+        response: { message: speech.text, ...strategicDecisionResponse(timed.value) },
         thinking,
         reasoningContext,
-        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext),
+        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext, timed.value),
+        commitStrategy: () => resolveActionStrategyCandidate(
+          agent,
+          timed.value,
+          speech.provenance === "agent"
+            && timed.value.strategyGameplayAccepted !== false,
+        ),
       },
       {
         sourcePointers: [
@@ -377,16 +492,20 @@ export async function runJudgmentJuryQuestions(
     if (!jurorAgent) continue;
 
     const jurorCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_QUESTIONS, "ordinary_speech");
-    const houseQuestion = "Why should the jury trust your game?";
+    const houseQuestion = "";
     const questionTimed = await withEndgameActionTimeout<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>(
       ctx,
       Phase.JURY_QUESTIONS,
       `${juror.playerName} jury question`,
       (signal) => jurorAgent.getJuryQuestion(jurorCtx, finalistIds, { signal }),
       () => ({
-        targetFinalistId: finalist0.id,
-        question: houseQuestion,
-        thinking: "House fallback after unresolved endgame action.",
+        targetFinalistId: deterministicEngineFallback(
+          finalistIds,
+          jurorCtx,
+          juror.playerId,
+          "jury-question-target",
+        ),
+        question: "",
       }),
     );
     const {
@@ -396,6 +515,7 @@ export async function runJudgmentJuryQuestions(
       reasoningContext: questionReasoning,
     } = questionTimed.value;
     const questionSpeech = finalizePublicSpeech(rawQuestion, questionTimed.provenance, houseQuestion);
+    if (!questionSpeech) continue;
     const finalistName = gameState.getPlayerName(targetFinalistId);
     await assertCanAcceptCommit(ctx);
     const questionAccepted = createAcceptedFormalSpeech({
@@ -438,15 +558,15 @@ export async function runJudgmentJuryQuestions(
         Phase.JURY_QUESTIONS,
         `${finalistName} jury answer`,
         (signal) => finalistAgent.getJuryAnswer(finalistCtx, questionSpeech.text, juror.playerName, { signal }),
-        () => fallbackMessage(houseAnswer),
+        () => fallbackMessage(),
       );
       const {
         message: rawAnswer,
         thinking: answerThinking,
         reasoningContext: answerReasoning,
-        decisionLog: answerDecisionLog,
       } = answerTimed.value;
       const answerSpeech = finalizePublicSpeech(rawAnswer, answerTimed.provenance, houseAnswer);
+      if (!answerSpeech) continue;
       await assertCanAcceptCommit(ctx);
       const answerAccepted = createAcceptedFormalSpeech({
         kind: "jury_answer",
@@ -467,11 +587,17 @@ export async function runJudgmentJuryQuestions(
             message: answerSpeech.text,
             juror: { id: juror.playerId, name: juror.playerName },
             question: questionSpeech.text,
-            ...strategicDecisionResponse({ decisionLog: answerDecisionLog }),
+            ...strategicDecisionResponse(answerTimed.value),
           },
           thinking: answerThinking,
           reasoningContext: answerReasoning,
-          transcriptThinking: transcriptThinkingFor(finalistAgent, answerThinking, answerReasoning),
+          transcriptThinking: transcriptThinkingFor(finalistAgent, answerThinking, answerReasoning, answerTimed.value),
+          commitStrategy: () => resolveActionStrategyCandidate(
+            finalistAgent,
+            answerTimed.value,
+            answerSpeech.provenance === "agent"
+              && answerTimed.value.strategyGameplayAccepted !== false,
+          ),
         },
         {
           displayNames: { counterpartName: juror.playerName },
@@ -507,15 +633,16 @@ export async function runJudgmentClosing(
         Phase.CLOSING_ARGUMENTS,
         `${player.name} closing argument`,
         (signal) => agent.getClosingArgument(phaseCtx, { signal }),
-        () => fallbackMessage(houseClosing),
+        () => fallbackMessage(),
       );
       return { player, agent, timed };
     }),
   );
 
   for (const { player, agent, timed } of generated) {
-    const { message, thinking, reasoningContext, decisionLog } = timed.value;
+    const { message, thinking, reasoningContext } = timed.value;
     const speech = finalizePublicSpeech(message, timed.provenance, houseClosing);
+    if (!speech) continue;
     await assertCanAcceptCommit(ctx);
     const accepted = createAcceptedFormalSpeech({
       kind: "closing_argument",
@@ -531,10 +658,16 @@ export async function runJudgmentClosing(
       {
         action: "closing-argument",
         actor: { id: player.id, name: player.name, role: "player" },
-        response: { message: speech.text, ...strategicDecisionResponse({ decisionLog }) },
+        response: { message: speech.text, ...strategicDecisionResponse(timed.value) },
         thinking,
         reasoningContext,
-        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext),
+        transcriptThinking: transcriptThinkingFor(agent, thinking, reasoningContext, timed.value),
+        commitStrategy: () => resolveActionStrategyCandidate(
+          agent,
+          timed.value,
+          speech.provenance === "agent"
+            && timed.value.strategyGameplayAccepted !== false,
+        ),
       },
       {
         sourcePointers: [
@@ -569,16 +702,43 @@ export async function runJudgmentJuryVote(
     if (!jurorAgent) continue;
 
     const phaseCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_VOTE, "strategic_decision");
-    const { value: vote } = await withEndgameActionTimeout<TargetDecision>(
+    const timedVote = await withEndgameActionTimeout<TargetDecision>(
       ctx,
       Phase.JURY_VOTE,
       `${juror.playerName} jury vote`,
       (signal) => jurorAgent.getJuryVote(phaseCtx, finalistIds, { signal }),
-      () => ({
-        target: finalist0.id,
-        thinking: "House fallback after unresolved jury vote.",
+      (reason) => ({
+        target: deterministicEngineFallback(
+          finalistIds,
+          phaseCtx,
+          juror.playerId,
+          "jury-vote",
+        ),
+        ...engineFallbackMetadata(
+          phaseCtx,
+          juror.playerId,
+          "jury-vote",
+          reason,
+        ),
       }),
     );
+    let vote = timedVote.value;
+    if (!finalistIds.includes(vote.target)) {
+      vote = {
+        target: deterministicEngineFallback(
+          finalistIds,
+          phaseCtx,
+          juror.playerId,
+          "jury-vote",
+        ),
+        ...engineFallbackMetadata(
+          phaseCtx,
+          juror.playerId,
+          "jury-vote",
+          "invalid_model_output",
+        ),
+      };
+    }
     await assertCanAcceptCommit(ctx);
     gameState.recordJuryVote(juror.playerId, vote.target, [
       agentTurnSourcePointer(
@@ -587,11 +747,12 @@ export async function runJudgmentJuryVote(
         gameState.round,
         Phase.JURY_VOTE,
         undefined,
-        vote.decisionId,
+        vote.engineFallback ? undefined : vote.decisionId,
+        vote.engineFallback,
       ),
     ]);
     const targetName = gameState.getPlayerName(vote.target);
-    const voteTranscriptThinking = transcriptThinkingFor(jurorAgent, vote.thinking, vote.reasoningContext);
+    const voteTranscriptThinking = transcriptThinkingFor(jurorAgent, vote.thinking, vote.reasoningContext, vote);
     logger.logSystem(
       `${juror.playerName} (juror) votes for: ${targetName}`,
       Phase.JURY_VOTE,
@@ -616,7 +777,7 @@ export async function runJudgmentJuryVote(
   }
 
   await assertCanAcceptCommit(ctx);
-  const { winnerId, method, voteCounts } = gameState.tallyJuryVotes();
+  const { winnerId, method, voteCounts } = gameState.tallyJuryVotes(ctx.random);
   const winnerName = gameState.getPlayerName(winnerId);
 
   for (const vc of voteCounts) {

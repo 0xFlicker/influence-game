@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { stableJson } from "./stable-hash.js";
 
 export interface PrivateContentStoragePointer {
   provider: string;
@@ -10,6 +11,8 @@ export interface PrivateContentStoragePointer {
 }
 
 export interface CreateEvidenceManifestInput {
+  /** Deterministic id for retry-safe evidence writes. Omit for ordinary traces. */
+  manifestId?: string;
   gameId: string;
   ownerEpoch: string;
   eventSequence?: number;
@@ -83,7 +86,7 @@ export async function createEvidenceManifest(
 ): Promise<CreateEvidenceManifestResult> {
   try {
     validatePrivateContentStoragePointer(input.storage, input.gameId);
-    const manifestId = randomUUID();
+    const manifestId = input.manifestId ?? randomUUID();
 
     await db.transaction(async (tx) => {
       await tx.execute(sql`
@@ -127,23 +130,69 @@ export async function createEvidenceManifest(
         }
       }
 
-      await tx.insert(schema.gameEvidenceManifests)
+      const values = {
+        id: manifestId,
+        gameId: input.gameId,
+        ownerEpoch: input.ownerEpoch,
+        eventSequence: input.eventSequence,
+        decisionId: input.decisionId,
+        evidenceType: input.evidenceType,
+        retentionClass: input.retentionClass ?? "debug",
+        accessScope: input.accessScope ?? "producer_admin",
+        expiresAt: input.expiresAt,
+        storageProvider: input.storage?.provider,
+        storageBucket: input.storage?.bucket,
+        storageKey: input.storage?.key,
+        sourcePointers: input.sourcePointers,
+        metadata: input.metadata ?? {},
+      } as const;
+      const inserted = await tx.insert(schema.gameEvidenceManifests)
         .values({
-          id: manifestId,
-          gameId: input.gameId,
-          ownerEpoch: input.ownerEpoch,
-          eventSequence: input.eventSequence,
-          decisionId: input.decisionId,
-          evidenceType: input.evidenceType,
-          retentionClass: input.retentionClass ?? "debug",
-          accessScope: input.accessScope ?? "producer_admin",
-          expiresAt: input.expiresAt,
-          storageProvider: input.storage?.provider,
-          storageBucket: input.storage?.bucket,
-          storageKey: input.storage?.key,
-          sourcePointers: input.sourcePointers,
-          metadata: input.metadata ?? {},
-        });
+          ...values,
+        })
+        .onConflictDoNothing({ target: schema.gameEvidenceManifests.id })
+        .returning({ id: schema.gameEvidenceManifests.id });
+
+      if (inserted.length === 0) {
+        const existing = (await tx
+          .select()
+          .from(schema.gameEvidenceManifests)
+          .where(eq(schema.gameEvidenceManifests.id, manifestId)))[0];
+        if (!existing) throw new Error("Evidence manifest id conflict could not be resolved");
+        const immutableExisting = {
+          gameId: existing.gameId,
+          ownerEpoch: existing.ownerEpoch,
+          eventSequence: existing.eventSequence ?? undefined,
+          decisionId: existing.decisionId ?? undefined,
+          evidenceType: existing.evidenceType,
+          retentionClass: existing.retentionClass,
+          accessScope: existing.accessScope,
+          expiresAt: existing.expiresAt ?? undefined,
+          storageProvider: existing.storageProvider ?? undefined,
+          storageBucket: existing.storageBucket ?? undefined,
+          storageKey: existing.storageKey ?? undefined,
+          sourcePointers: existing.sourcePointers ?? undefined,
+          metadata: existing.metadata,
+        };
+        const immutableInput = {
+          gameId: values.gameId,
+          ownerEpoch: values.ownerEpoch,
+          eventSequence: values.eventSequence,
+          decisionId: values.decisionId,
+          evidenceType: values.evidenceType,
+          retentionClass: values.retentionClass,
+          accessScope: values.accessScope,
+          expiresAt: values.expiresAt,
+          storageProvider: values.storageProvider,
+          storageBucket: values.storageBucket,
+          storageKey: values.storageKey,
+          sourcePointers: values.sourcePointers,
+          metadata: values.metadata,
+        };
+        if (stableJson(immutableExisting) !== stableJson(immutableInput)) {
+          throw new Error("Evidence manifest id has conflicting immutable identity");
+        }
+      }
     });
 
     return { ok: true, manifestId };

@@ -41,25 +41,40 @@ import {
 
 function makeTextOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
-    chat: {
-      completions: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          return {
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  role: "assistant",
-                  content: JSON.stringify({
-                    thinking: "Stay with Mira; pressure Vera.",
-                    message: "I ask the jury to remember the pair.",
-                  }),
-                },
-              },
-            ],
-          };
-        },
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        requests.push(params);
+        const responseSchema = (
+          params.text as {
+            format?: { schema?: { properties?: Record<string, unknown> } };
+          } | undefined
+        )?.format?.schema;
+        const properties = responseSchema?.properties ?? {};
+        return {
+          id: "resp_recall_plan_measurement",
+          object: "response",
+          status: "completed",
+          output: [{
+            id: "msg_recall_plan_measurement",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{
+              type: "output_text",
+              text: JSON.stringify({
+                thinking: "Stay with Mira; pressure Vera.",
+                message: "I ask the jury to remember the pair.",
+                ...(Object.prototype.hasOwnProperty.call(properties, "strategy")
+                  ? { strategy: "Keep Mira close and make Vera the accountable endgame threat." }
+                  : {}),
+                ...(Object.prototype.hasOwnProperty.call(properties, "strategyDelta")
+                  ? { strategyDelta: null }
+                  : {}),
+              }),
+              annotations: [],
+            }],
+          }],
+        };
       },
     },
   } as unknown as OpenAI;
@@ -69,20 +84,17 @@ function seedAgentContinuity(agent: InfluenceAgent, entry: RecallBaselineCase): 
   const continuity = entry.continuity;
   agent.restoreContinuityCapsule(
     {
-      version: 1,
+      version: 2,
       playerId: agent.id,
       playerName: agent.name,
-      strategyPacket: continuity.strategyPacket,
-      reflectionSummary: continuity.reflectionSummary,
+      compactStrategy: continuity.compactStrategy,
       notes: [],
       relationships: {
-        allies: continuity.reflectionSummary?.allies ?? [],
-        threats: continuity.reflectionSummary?.threats ?? [],
+        allies: ["Mira"],
+        threats: ["Vera", "Nyx"],
       },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: continuity.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
-      strategyPacketRevisionCounter: continuity.strategyPacketRevisionCounter ?? 0,
     },
     {
       livingPlayerNames: entry.phaseContext.alivePlayers.map((player) => player.name),
@@ -145,8 +157,11 @@ async function measureCandidateUserContext(
     endgameStage: ctx.endgameStage ?? "reckoning",
   });
 
-  const messages = requests[0]?.messages as Array<{ role: string; content: string }> | undefined;
-  const userMessage = messages?.filter((message) => message.role === "user").at(-1)?.content ?? "";
+  const input = requests[0]?.input;
+  const userMessage = typeof input === "string"
+    ? input
+    : (input as Array<{ role?: string; content?: string }> | undefined)
+      ?.filter((message) => message.role === "user").at(-1)?.content ?? "";
   return {
     characterCount: userMessage.length,
     modelCallCount: requests.length,
@@ -213,7 +228,7 @@ describe("U5 structural Recall Plan receipt serialization", () => {
     expect(serialized).not.toContain("Coalition geometry");
     expect(serialized).not.toContain("Atlas");
     expect(serialized).not.toContain("Mira");
-    expect(serialized).not.toContain(entry.continuity.strategyPacket?.objective ?? "___objective___");
+    expect(serialized).not.toContain(entry.continuity.compactStrategy.baseline ?? "___baseline___");
 
     expect(structural.eventBoundary).toEqual(plan.receipt.eventBoundary);
     expect(structural.eventBoundary.maxAuthorizedEntrySequence).toBe(11);
@@ -227,7 +242,7 @@ describe("U5 structural Recall Plan receipt serialization", () => {
     const plan = compileCasePlan(entry);
     const aggregate = new RecallPlanReceiptAggregate();
     aggregate.add(plan.receipt);
-    aggregate.add(compileCasePlan(getRecallBaselineCase("strategic_reflection")).receipt);
+    aggregate.add(compileCasePlan(getRecallBaselineCase("post_eviction_diary_strategy")).receipt);
 
     const snapshot = aggregate.snapshot();
     const serialized = JSON.stringify(snapshot);
@@ -258,12 +273,18 @@ describe("U5 late-game promotion gate (frozen corpus)", () => {
       expect(measured.prompt).not.toContain("## Full Public Transcript");
       expect(measured.prompt).not.toContain("## Game Event Record");
       expect(measured.prompt).toContain("## Current Board Contract");
-      // Protected strategy thread + huddle evidence retained in rendered prompt.
-      expect(measured.prompt).toContain("Survive Reckoning and carry Mira into the final two");
+      // Compact strategy state + huddle evidence retained in rendered prompt.
+      expect(measured.prompt).toContain(
+        "Survive Reckoning with Mira as the closest partner while treating Vera as the public threat and Nyx as flexible.",
+      );
       expect(measured.prompt).toContain("Official Alliance Context");
-      // Compact huddle plan text from member-safe alliance context (protected lane source).
-      expect(measured.prompt).toContain("Publicly soft-talk Vera then ballot Mira empower");
-      expect(measured.prompt).toContain("Coordinate direct elimination heat toward Vera");
+      // Typed huddle fact rendered from the member-safe protected lane.
+      expect(measured.prompt).toContain(
+        "Atlas recorded a commitment to an empower vote for Mira",
+      );
+      expect(measured.prompt).toContain(
+        "Atlas recorded a commitment to an empower vote for Vera",
+      );
       // Plan-level protected records also cover closed-alliance outcomes.
       expect(plan.protected.huddleOutcomes.map((o) => o.id).sort()).toEqual(
         [
@@ -366,7 +387,13 @@ describe("U5 promotion failures", () => {
       ...plan,
       protected: {
         ...plan.protected,
-        strategyThread: null,
+        compactStrategy: {
+          lifecycle: "opening",
+          baseline: null,
+          deltas: [],
+          priorEpoch: null,
+          revision: 0,
+        },
         huddleOutcomes: [],
       },
       receipt: {
@@ -399,7 +426,7 @@ describe("U5 promotion failures", () => {
   });
 
   it("increased model-call count fails promotion", () => {
-    const entry = getRecallBaselineCase("strategic_reflection");
+    const entry = getRecallBaselineCase("post_eviction_diary_strategy");
     const plan = compileCasePlan(entry);
     const evaluation = evaluateRecallPromotionCase({
       caseId: entry.id,

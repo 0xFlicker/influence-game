@@ -1,5 +1,6 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
-import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceRecord } from "./types";
+import type { AllianceHuddleFactAtom, AllianceHuddleOutcome, AllianceProposalLineage, AllianceRecord } from "./types";
+import { decodeLegacyAllianceHuddleOutcomeV1, formatAllianceHuddleFacts } from "./alliance-huddle-outcome";
 import type {
   CompletedGameResultsElimination,
   CompletedGameResultsJury,
@@ -46,11 +47,11 @@ export type PostgameTurningPointType =
   | "format_chooser_eliminated"
   /** Format kernel: empowered tiebreak decided the elimination. */
   | "format_tiebreak"
-  /** Save-or-Eliminate: eliminated player still received 2+ saves. */
+  /** Save-or-Exit: exited player still received 2+ saves. */
   | "format_soe_elim_with_saves"
-  /** Vote Bomb: clear elimination with 2+ votes and no empowered tiebreak. */
+  /** The Short List: clear exit with 2+ votes and no empowered tiebreak. */
   | "format_vote_bomb_clear_stack"
-  /** Vote Bomb: all positive votes concentrated on one target. */
+  /** The Short List: all positive votes concentrated on one target. */
   | "format_vote_bomb_unanimous_target"
   /** Safety Bounce: non-final pointer made an alliance member vulnerable. */
   | "format_bounce_alliance_vulnerable";
@@ -122,10 +123,8 @@ export interface PostgameAllianceOutcomeSummary {
   allianceId: string;
   round: number;
   window: string;
-  plan: string;
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: AllianceHuddleFactAtom[];
+  factSummaries: string[];
 }
 
 export interface PostgameRoundAllianceActivity {
@@ -208,8 +207,11 @@ export interface PostgamePlayerFormatBallotByRound {
 
 export interface PostgamePlayerMajorityAlignment {
   round: number;
+  /** Null unless the canonical standard-vote ledger proves this player cast the scored empower decision. */
   empowerAligned: boolean | null;
+  /** Null unless the canonical Council ledger proves this player cast the scored elimination decision. */
   councilAligned: boolean | null;
+  /** True/false only for a proved participant; null means the round is not scored for this player. */
   aligned: boolean | null;
   basis: Array<"empower" | "council">;
 }
@@ -288,13 +290,7 @@ export interface PostgamePlayerAllianceArc {
     yourResponse: string | null;
   }>;
   huddlesAttended: number;
-  latestPlans: PostgameAllianceOutcomeSummary[];
-  betrayalOrLeakClaims: Array<{
-    allianceId: string;
-    allianceName: string;
-    round: number;
-    claim: string;
-  }>;
+  latestHuddleOutcomes: PostgameAllianceOutcomeSummary[];
 }
 
 export interface PostgameTurningPoint {
@@ -967,7 +963,7 @@ function buildPlayerSummary(input: {
         note: `${player.name} led expose pressure with ${exposureLeader.votes} votes.`,
       });
     }
-    majorityAlignmentByRound.push(alignmentForPlayer(roundSummary, player.id));
+    majorityAlignmentByRound.push(alignmentForPlayer(round, roundSummary, player.id));
     for (const endgame of round.endgameEliminations) {
       const cast = endgame.ledger.find((entry) => entry.voter.id === player.id);
       if (cast) endgameVotesCast.push({ round: endgame.round, target: cast.target });
@@ -1455,12 +1451,12 @@ function buildExecutiveSummary(input: {
           .find((round) => round.round === entry.round)
           ?.canonicalFacts.roundFacts.format.selectedFormatId;
         return formatId
-          ? `${entry.player.name} (${formatId.split("_").join(" ")})`
+          ? `${entry.player.name} (${displayNameForFormat(formatId)})`
           : entry.player.name;
       });
     if (formatBoots.length > 0) {
       lines.push({
-        text: `Format eliminations: ${formatBoots.join(", ")}.`,
+        text: `Format exits: ${formatBoots.join(", ")}.`,
         confidence: "high",
         derivationMethod: "executive_summary_format_boots",
       });
@@ -1589,9 +1585,10 @@ function buildTurningPoints(input: {
   }
 
   for (const elimination of inputSummaryMajorEliminations(input)) {
-    const formatLabel = elimination.source === "format"
-      ? formatIdLabel(formatIdForRound(input.completed, elimination.round))
+    const formatId = elimination.source === "format"
+      ? formatIdForRound(input.completed, elimination.round)
       : null;
+    const formatLabel = formatIdLabel(formatId);
     const eliminationDescription =
       elimination.source === "endgame"
         ? `${elimination.player.name} was eliminated during the endgame.`
@@ -1610,7 +1607,7 @@ function buildTurningPoints(input: {
       criteria: {
         source: elimination.source,
         round: elimination.round,
-        ...(formatLabel ? { formatId: formatLabel } : {}),
+        ...(formatId ? { formatId } : {}),
       },
       evidence: {
         factRefs: [`round:${elimination.round}:eliminated:${elimination.player.id}`],
@@ -1727,7 +1724,7 @@ function buildFormatKernelTurningPoints(input: {
 
     // Chooser survival is only special when a *small vulnerable pool* exists (Safety Bounce)
     // and the chooser was inside that pool but did not go home. Full-field formats
-    // (SoE / Vote Bomb / Majority Elimination) are ordinary rounds — not this beat.
+    // (Save-or-Exit / The Short List / Highest Count) are ordinary rounds — not this beat.
     if (
       empowered
       && empowered.id !== eliminated.id
@@ -1804,7 +1801,7 @@ function buildFormatKernelTurningPoints(input: {
       });
     }
 
-    // Save-or-Eliminate: eliminated with 2+ saves.
+    // Save-or-Exit: exited with 2+ saves.
     if (formatId === "save_or_eliminate" && format.saveOrEliminate) {
       const saves = format.saveOrEliminate.savesReceived.find((row) => row.player.id === eliminated.id)?.votes ?? 0;
       if (saves >= 2) {
@@ -1813,7 +1810,7 @@ function buildFormatKernelTurningPoints(input: {
           type: "format_soe_elim_with_saves",
           players: [eliminated],
           confidence: "high",
-          description: `${eliminated.name} left under Save-or-Eliminate despite ${saves} saves.`,
+          description: `${eliminated.name} left under ${formatLabel} despite ${saves} saves.`,
           derivationMethod: "format_soe_eliminated_with_saves",
           criteria: {
             formatId,
@@ -1833,7 +1830,7 @@ function buildFormatKernelTurningPoints(input: {
       }
     }
 
-    // Vote Bomb: clear 2+ vote elim without empowered tiebreak; unanimous target concentration.
+    // The Short List: clear 2+ vote exit without empowered tiebreak; unanimous target concentration.
     if (formatId === "vote_bomb" && format.voteBomb) {
       const elimVotes = format.voteBomb.totals.find((row) => row.player.id === eliminated.id)?.votes ?? 0;
       const positiveRows = format.voteBomb.totals.filter((row) => row.votes > 0);
@@ -1846,7 +1843,7 @@ function buildFormatKernelTurningPoints(input: {
           type: "format_vote_bomb_clear_stack",
           players: [eliminated],
           confidence: "medium",
-          description: `${eliminated.name} took a clear Vote Bomb hit (${elimVotes} votes) with no empowered tiebreak.`,
+          description: `${eliminated.name} took a clear ${formatLabel} result (${elimVotes} votes) with no empowered tiebreak.`,
           derivationMethod: "format_vote_bomb_clear_stack",
           criteria: {
             formatId,
@@ -1877,7 +1874,7 @@ function buildFormatKernelTurningPoints(input: {
           type: "format_vote_bomb_unanimous_target",
           players: [eliminated],
           confidence: "low",
-          description: `Vote Bomb locked onto ${eliminated.name} — every positive vote landed on one name.`,
+          description: `${formatLabel} locked onto ${eliminated.name} — every positive vote landed on one name.`,
           derivationMethod: "format_vote_bomb_unanimous_target",
           criteria: {
             formatId,
@@ -2043,9 +2040,16 @@ function buildPostgameAllianceIndex(
           alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
           addRoundAllianceName(activity, event.payload.alliance.name);
         }
-        const outcome = compactPostgameOutcome(event.payload.outcome);
-        const outcomes = outcomesByAllianceId.get(outcomeAllianceId(event.payload.outcome)) ?? [];
-        outcomesByAllianceId.set(outcomeAllianceId(event.payload.outcome), [...outcomes, outcome]);
+        const session = huddleSessions.find((candidate) =>
+          candidate.allianceId === event.payload.outcome.allianceId
+          && candidate.round === event.payload.outcome.round
+        );
+        const canonicalOutcome = event.payloadVersion === 1
+          ? decodeLegacyAllianceHuddleOutcomeV1(event.payload.outcome, session?.speakerIds)
+          : event.payload.outcome;
+        const outcome = compactPostgameOutcome(canonicalOutcome, playerRefs);
+        const outcomes = outcomesByAllianceId.get(outcomeAllianceId(canonicalOutcome)) ?? [];
+        outcomesByAllianceId.set(outcomeAllianceId(canonicalOutcome), [...outcomes, outcome]);
         activity.latestOutcome = latestPostgameOutcome([
           ...(activity.latestOutcome ? [activity.latestOutcome] : []),
           outcome,
@@ -2169,16 +2173,7 @@ function buildPlayerAllianceArc(
     joinedAlliances,
     involvedProposals,
     huddlesAttended: allianceIndex.huddleSessions.filter((session) => session.speakerIds.includes(player.id)).length,
-    latestPlans: outcomes.slice(0, 3),
-    betrayalOrLeakClaims: outcomes.flatMap((outcome) => {
-      const alliance = allianceIndex.alliances.find((entry) => entry.id === outcome.allianceId);
-      return outcome.leakOrBetrayalClaims.map((claim) => ({
-        allianceId: alliance?.id ?? "",
-        allianceName: alliance?.name ?? "Unknown alliance",
-        round: outcome.round,
-        claim,
-      }));
-    }).slice(0, 6),
+    latestHuddleOutcomes: outcomes.slice(0, 3),
   };
 }
 
@@ -2293,16 +2288,20 @@ function indexedAllianceRecord(
   };
 }
 
-function compactPostgameOutcome(outcome: AllianceHuddleOutcome): PostgameAllianceOutcomeSummary {
+function compactPostgameOutcome(
+  outcome: AllianceHuddleOutcome,
+  playerRefs: ReadonlyMap<string, RevealedPlayerRef>,
+): PostgameAllianceOutcomeSummary {
   return {
     id: outcome.id,
     allianceId: outcome.allianceId,
     round: outcome.round,
     window: outcome.window,
-    plan: outcome.plan,
-    confidence: outcome.confidence,
-    posture: outcome.posture,
-    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+    facts: structuredClone(outcome.facts),
+    factSummaries: formatAllianceHuddleFacts(
+      outcome.facts,
+      (playerId) => playerRefs.get(playerId)?.name ?? playerId,
+    ),
   };
 }
 
@@ -2591,22 +2590,33 @@ function didPlayerVoteToEliminate(
 }
 
 function alignmentForPlayer(
+  round: CompletedGameResultsRound,
   roundSummary: PostgameRoundSummary | undefined,
   playerId: UUID,
 ): PostgamePlayerMajorityAlignment {
   if (!roundSummary) {
-    return { round: 0, empowerAligned: null, councilAligned: null, aligned: null, basis: [] };
+    return { round: round.round, empowerAligned: null, councilAligned: null, aligned: null, basis: [] };
   }
   const basis: Array<"empower" | "council"> = [];
   let councilAligned: boolean | null = null;
   let empowerAligned: boolean | null = null;
   if (roundSummary.majorityCohort.basis === "council_vote") {
     basis.push("council");
-    councilAligned = roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId);
+    const participated = round.canonicalFacts.roundFacts.council?.ledger.some((entry) =>
+      entry.voter.id === playerId
+    ) ?? false;
+    councilAligned = participated
+      ? roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId)
+      : null;
   }
   if (roundSummary.majorityCohort.basis === "empower_vote") {
     basis.push("empower");
-    empowerAligned = roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId);
+    const participated = round.canonicalFacts.roundFacts.standardVote.ledger.some((entry) =>
+      entry.voter.id === playerId
+    );
+    empowerAligned = participated
+      ? roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId)
+      : null;
   }
   const alignedValues = [empowerAligned, councilAligned].filter((value): value is boolean => value !== null);
   return {

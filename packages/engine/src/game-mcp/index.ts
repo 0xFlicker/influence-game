@@ -16,6 +16,8 @@ export type {
   GameMcpSourceCitation,
   GameMcpSourceKind,
 } from "./read-model";
+export { MCP_FORMAT_FACT_TYPES, toGameMcpFormatSurface } from "./format-surface";
+export type { GameMcpFormatSurface } from "./format-surface";
 export {
   createGameMcpServer,
   GameMcpJsonRpcServer,

@@ -31,6 +31,12 @@ Stop and leave the game suspended if the canonical prefix cannot prove the requi
 
 This is a focused recovery hardening slice. Player Strategy Thread hydration (R12) and the optional House-continuity passport diagnostic (R16) remain separate high-priority work; successful format recovery must not claim either is fixed.
 
+## R15 Follow-up Outcome (2026-08-19)
+
+The reopened failure was not a format actor-walk or hydration defect. Durable `free-blue-wire` evidence showed one healthy owner continuing from event-62 `FORMAT_RESOLVE`, appending resolution/elimination through event 78, and sealing the next `LOBBY` checkpoint. A competing API process then ran startup orphan classification before `Bun.serve` reported listener contention, so it suspended the live owner as `startup_orphaned`. The new event-78 post-round lobby remained intentionally fail-closed for resume, while the older event-62 checkpoint was no longer at the event head.
+
+The repair is therefore at the API ownership lifecycle boundary: bind the listener before runtime activation can classify or recover games. The DB-backed regression resumes the same game at `format_resolve`, waits for the healthy owner to seal the later lobby, proves a competing bind cannot reach orphan classification, observes round-2 advancement, and verifies normal completion with exactly one first-round resolution and elimination. Event-only format hydration and corrupt-prerequisite admission are unchanged.
+
 ## Product Contract
 
 ### Summary

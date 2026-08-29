@@ -14,8 +14,9 @@ import {
   type OwnerLearningProjectedGameEvidence,
 } from "./owner-learning-evidence.js";
 import { stableJson } from "./stable-hash.js";
+import { OwnerLearningOutputValidationError } from "./owner-learning-failures.js";
 
-export const OWNER_LEARNING_PROVIDER_PROTOCOL = "owner-learning-harness-v2";
+export const OWNER_LEARNING_PROVIDER_PROTOCOL = "owner-learning-harness-v3";
 
 export const OWNER_LEARNING_PROVIDER_INSTRUCTIONS = [
   "You are reviewing an owned agent's play in a social strategy voting game.",
@@ -179,7 +180,11 @@ export function hydrateOwnerLearningProviderOutput(
   const record = recordValue(output);
   if (!record) return output;
   if (record.selectedMomentIds !== undefined) {
-    throw new Error("Owner learning provider returned the obsolete moment ID protocol");
+    throw new OwnerLearningOutputValidationError(
+      "obsolete_output_protocol",
+      "Owner learning provider returned the obsolete moment ID protocol",
+      "selectedMomentIds",
+    );
   }
 
   if (record.selectedMomentHandles !== undefined) {
@@ -196,7 +201,11 @@ export function hydrateOwnerLearningProviderOutput(
       const recommendation = recordValue(recommendationValue);
       if (!recommendation) continue;
       if (recommendation.evidenceRefs !== undefined) {
-        throw new Error("Owner learning provider returned the obsolete evidence-ref protocol");
+        throw new OwnerLearningOutputValidationError(
+          "obsolete_output_protocol",
+          "Owner learning provider returned the obsolete evidence-ref protocol",
+          "finalResult.recommendations[].evidenceRefs",
+        );
       }
       if (recommendation.evidenceHandles === undefined) continue;
       recommendation.evidenceRefs = hydrateEvidenceHandles(
@@ -852,7 +861,11 @@ function hydrateFindingList(
     const finding = recordValue(findingValue);
     if (!finding) continue;
     if (finding.evidenceRefs !== undefined) {
-      throw new Error("Owner learning provider returned the obsolete evidence-ref protocol");
+      throw new OwnerLearningOutputValidationError(
+        "obsolete_output_protocol",
+        "Owner learning provider returned the obsolete evidence-ref protocol",
+        "findings[].evidenceRefs",
+      );
     }
     if (finding.evidenceHandles === undefined) continue;
     finding.evidenceRefs = hydrateEvidenceHandles(finding.evidenceHandles, context);
@@ -864,13 +877,29 @@ function hydrateMomentHandles(
   value: unknown,
   context: Pick<OwnerLearningProviderContext, "catalog" | "visibleHandles">,
 ): string[] {
-  if (!Array.isArray(value)) throw new Error("selectedMomentHandles must be an array");
+  if (!Array.isArray(value)) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_handle_list",
+      "selectedMomentHandles must be an array",
+      "selectedMomentHandles",
+    );
+  }
   return value.map((entry) => {
     if (typeof entry !== "string" || !context.visibleHandles.has(entry)) {
-      throw new Error("Generated turn selected an unknown moment handle");
+      throw new OwnerLearningOutputValidationError(
+        "unknown_moment_handle",
+        "Generated turn selected an unknown moment handle",
+        "selectedMomentHandles[]",
+      );
     }
     const momentId = context.catalog.momentIdByHandle.get(entry);
-    if (!momentId) throw new Error("Generated turn selected a non-moment evidence handle");
+    if (!momentId) {
+      throw new OwnerLearningOutputValidationError(
+        "unknown_moment_handle",
+        "Generated turn selected a non-moment evidence handle",
+        "selectedMomentHandles[]",
+      );
+    }
     return momentId;
   });
 }
@@ -879,13 +908,29 @@ function hydrateEvidenceHandles(
   value: unknown,
   context: Pick<OwnerLearningProviderContext, "catalog" | "visibleHandles">,
 ): OwnerLearningEvidenceRef[] {
-  if (!Array.isArray(value)) throw new Error("evidenceHandles must be an array");
+  if (!Array.isArray(value)) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_handle_list",
+      "evidenceHandles must be an array",
+      "findings[].evidenceHandles",
+    );
+  }
   return value.map((entry) => {
     if (typeof entry !== "string" || !context.visibleHandles.has(entry)) {
-      throw new Error("Generated turn cited an unknown evidence handle");
+      throw new OwnerLearningOutputValidationError(
+        "unknown_evidence_handle",
+        "Generated turn cited an unknown evidence handle",
+        "findings[].evidenceHandles[]",
+      );
     }
     const ref = context.catalog.evidenceRefByHandle.get(entry);
-    if (!ref) throw new Error("Generated turn cited an unknown evidence handle");
+    if (!ref) {
+      throw new OwnerLearningOutputValidationError(
+        "unknown_evidence_handle",
+        "Generated turn cited an unknown evidence handle",
+        "findings[].evidenceHandles[]",
+      );
+    }
     return ref;
   });
 }

@@ -21,6 +21,9 @@ import type { GameWatchState } from "./game-watch-state.js";
 
 export interface WsConnectionData {
   gameId: string;
+  releaseProbe?: boolean;
+  /** Last publication the client has applied; used for durable reconnect catch-up. */
+  afterPublicationSequence?: number;
 }
 
 type PublicWsRoomMetadata = {
@@ -35,6 +38,8 @@ type PublicWsRoomMetadata = {
 
 /** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
 export interface PublicWsTranscriptEntry {
+  /** Durable game-local transcript identity. Present on current-capture dialogue. */
+  entrySequence?: number;
   round: TranscriptEntry["round"];
   phase: TranscriptEntry["phase"];
   from: TranscriptEntry["from"];
@@ -49,21 +54,39 @@ export interface PublicWsTranscriptEntry {
   timestamp: TranscriptEntry["timestamp"];
 }
 
-/** Event shape sent to WebSocket clients (matches WsGameEvent in web/lib/api.ts) */
-export type WsOutboundEvent =
-  | { type: "watch_state"; state: GameWatchState }
+/** Choreography payload carried inside one durable publication envelope. */
+export type WsPublicationPayload =
   | { type: "viewer_decision_event"; gameId: string; event: ViewerDecisionEvent }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
   | { type: "message"; entry: PublicWsTranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
-  | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string }
+  | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string };
+
+/** Sequenced durable frame. Catch-up and live delivery may overlap safely. */
+export interface WsPublicationEvent {
+  type: "publication";
+  gameId: string;
+  publicationSequence: number;
+  turnSequence: number;
+  payload: WsPublicationPayload;
+}
+
+/** Event shape sent to WebSocket clients (matches WsGameEvent in web/lib/api.ts). */
+export type WsOutboundEvent =
+  | {
+      type: "watch_state";
+      state: GameWatchState;
+      /** Highest due publication reflected by this point-in-time snapshot. */
+      throughPublicationSequence: number;
+    }
+  | WsPublicationEvent
   | { type: "error"; message: string };
 
-type WsRawOutboundEvent = Exclude<
-  WsOutboundEvent,
-  { type: "message" } | { type: "viewer_decision_event" }
->;
+/** Temporary lifecycle-only direct frames; removed when its emitters cut over. */
+type WsRawOutboundEvent =
+  | Exclude<WsPublicationPayload, { type: "message" } | { type: "viewer_decision_event" }>
+  | Exclude<WsOutboundEvent, WsPublicationEvent>;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -86,6 +109,19 @@ const gameObserverCount = new Map<string, number>();
 /** Bind the Bun Server instance so we can call server.publish(). */
 export function setServer(server: WsPublisher): void {
   _server = server;
+}
+
+/** Parse the optional reconnect cursor without accepting coercive number syntax. */
+export function parseAfterPublicationSequence(value: string | null): number {
+  const encoded = value ?? "0";
+  if (!/^(0|[1-9]\d*)$/.test(encoded)) {
+    throw new Error("afterPublicationSequence must be a non-negative safe integer");
+  }
+  const sequence = Number(encoded);
+  if (!Number.isSafeInteger(sequence)) {
+    throw new Error("afterPublicationSequence must be a non-negative safe integer");
+  }
+  return sequence;
 }
 
 /** Topic name for a game's WebSocket channel. */
@@ -111,6 +147,7 @@ function buildPublicRoomMetadata(
 
 function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptEntry {
   return {
+    ...(entry.entrySequence !== undefined && { entrySequence: entry.entrySequence }),
     round: entry.round,
     phase: entry.phase,
     timestamp: entry.timestamp,
@@ -124,6 +161,40 @@ function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptE
     anonymous: entry.anonymous,
     displayOrder: entry.displayOrder,
   };
+}
+
+/** Map a committed engine stream event into its viewer-safe choreography payload. */
+export function buildWsPublicationPayload(
+  event: GameStreamEvent,
+): WsPublicationPayload | null {
+  switch (event.type) {
+    case "agent_turn":
+      return null;
+    case "transcript_entry":
+      if (!shouldBroadcastTranscriptEntry(event.entry)) return null;
+      return { type: "message", entry: buildPublicTranscriptEntry(event.entry) };
+    case "phase_change":
+      return {
+        type: "phase_change",
+        phase: event.phase,
+        round: event.round,
+        alivePlayers: event.alivePlayers.map((player) => player.id),
+      };
+    case "player_eliminated":
+      return {
+        type: "player_eliminated",
+        playerId: event.playerId,
+        playerName: event.playerName,
+        round: event.round,
+      };
+    case "game_over":
+      return {
+        type: "game_over",
+        winner: event.winner,
+        winnerName: event.winnerName,
+        totalRounds: event.totalRounds,
+      };
+  }
 }
 
 function shouldBroadcastTranscriptEntry(entry: TranscriptEntry): boolean {
@@ -152,55 +223,42 @@ export function handleClose(ws: ServerWebSocket<WsConnectionData>): void {
 /** Broadcast a GameStreamEvent from the engine to all observers of a game. */
 export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void {
   if (!_server) return;
-
-  let outbound: WsOutboundEvent;
-  switch (event.type) {
-    case "agent_turn":
-      return;
-    case "transcript_entry":
-      if (!shouldBroadcastTranscriptEntry(event.entry)) return;
-      outbound = { type: "message", entry: buildPublicTranscriptEntry(event.entry) };
-      break;
-    case "phase_change":
-      outbound = {
-        type: "phase_change",
-        phase: event.phase,
-        round: event.round,
-        alivePlayers: event.alivePlayers.map((p) => p.id),
-      };
-      break;
-    case "player_eliminated":
-      outbound = {
-        type: "player_eliminated",
-        playerId: event.playerId,
-        playerName: event.playerName,
-        round: event.round,
-      };
-      break;
-    case "game_over":
-      outbound = {
-        type: "game_over",
-        winner: event.winner,
-        winnerName: event.winnerName,
-        totalRounds: event.totalRounds,
-      };
-      break;
-  }
-
+  const outbound = buildWsPublicationPayload(event);
+  if (!outbound) return;
   _server.publish(gameTopic(gameId), JSON.stringify(outbound));
+}
+
+/** Broadcast one already-materialized durable publication. */
+export function broadcastGamePublication(event: WsPublicationEvent): void {
+  if (!_server) return;
+  _server.publish(gameTopic(event.gameId), JSON.stringify(event));
+}
+
+/** Send one durable publication directly during reconnect catch-up. */
+export function sendGamePublication(
+  ws: ServerWebSocket<WsConnectionData>,
+  event: WsPublicationEvent,
+): void {
+  ws.send(JSON.stringify(event));
 }
 
 /** Broadcast a non-message WsOutboundEvent to all observers of a game. */
 export function broadcastRaw(gameId: string, event: WsRawOutboundEvent): void {
   if (!_server) return;
-  const outbound = event as WsOutboundEvent;
-  if (outbound.type === "message") return;
-  _server.publish(gameTopic(gameId), JSON.stringify(outbound));
+  _server.publish(gameTopic(gameId), JSON.stringify(event));
 }
 
 /** Broadcast viewer-safe watch state to all observers of a game. */
-export function broadcastWatchState(gameId: string, state: GameWatchState): void {
-  broadcastRaw(gameId, { type: "watch_state", state });
+export function broadcastWatchState(
+  gameId: string,
+  state: GameWatchState,
+  throughPublicationSequence = 0,
+): void {
+  broadcastRaw(gameId, {
+    type: "watch_state",
+    state,
+    throughPublicationSequence,
+  });
 }
 
 /**
@@ -217,15 +275,20 @@ export function broadcastViewerDecisionEvent(gameId: string, event: CanonicalGam
     type: "viewer_decision_event",
     gameId,
     event: viewerDecision,
-  } satisfies WsOutboundEvent));
+  } satisfies WsPublicationPayload));
 }
 
 /** Send viewer-safe watch state to a single client (for catch-up on connect). */
 export function sendWatchState(
   ws: ServerWebSocket<WsConnectionData>,
   state: GameWatchState,
+  throughPublicationSequence = 0,
 ): void {
-  const outbound: WsOutboundEvent = { type: "watch_state", state };
+  const outbound: WsOutboundEvent = {
+    type: "watch_state",
+    state,
+    throughPublicationSequence,
+  };
   ws.send(JSON.stringify(outbound));
 }
 

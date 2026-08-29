@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { createHash } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -15,14 +15,37 @@ import {
   PRIVATE_TRACE_STORAGE_PROVIDER,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
-import { PRIVATE_TRACE_EVIDENCE_TYPE } from "./private-trace-writer.js";
+import {
+  PRIVATE_TRACE_EVIDENCE_TYPE,
+  PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+} from "./private-trace-writer.js";
+import {
+  bindProducerIndexCursor,
+  decodeProducerIndexCursor,
+  issueProducerIndexCursor,
+  type ProducerIndexCursorClaims,
+  type ProducerIndexCursorPosition,
+  type ProducerIndexTraceLinkageSummary,
+} from "./producer-index-cursor.js";
+import { sha256StableJson } from "./stable-hash.js";
 
 const LOCAL_PRODUCER_ACCESSOR: EvidenceAccessor = {
   roles: ["producer"],
 };
 
+type PrivateTraceIndexDB = Pick<DrizzleDB, "select" | "execute">;
+
 const DEFAULT_TRACE_SEARCH_SCAN_BYTES = 8 * 1024 * 1024;
 export const MAX_TRACE_MANIFEST_LIMIT = 500;
+
+const PRIVATE_TRACE_CURSOR_FILTERS = {
+  artifactType: null,
+  actorPlayerId: null,
+} as const;
+const LOCAL_TRACE_CURSOR_BINDING = sha256StableJson({
+  domain: "influence.private_trace.index_binding.v1",
+  surface: "local_producer",
+});
 
 export interface PrivateTraceManifestIndexEntry {
   id: string;
@@ -47,25 +70,36 @@ export interface PrivateTraceManifestIndexEntry {
   recordCount?: unknown;
   sha256?: unknown;
   contentType?: unknown;
-  strategicDecision?: unknown;
-  strategyPacket?: unknown;
+  strategyCandidate?: unknown;
   boundary?: unknown;
 }
 
-export interface PrivateTraceLinkageSummary {
-  trustedCanonicalPrefixStatus: "empty" | "complete" | "invalid";
-  eligibleAcceptedDecisionCount: number;
-  linkedAcceptedDecisionCount: number;
-  degradedAcceptedDecisionCount: number;
-  intentionallyUnlinkedTraceCount: number;
-  unclassifiedTraceCount: number;
-}
+export type PrivateTraceLinkageSummary = ProducerIndexTraceLinkageSummary;
 
 export interface PrivateTraceManifestIndex {
+  ok: true;
   gameId: string;
   totalCount: number;
+  pageSize: number;
+  nextCursor: string | null;
   linkageSummary: PrivateTraceLinkageSummary;
   manifests: PrivateTraceManifestIndexEntry[];
+}
+
+export type PrivateTraceManifestIndexResult =
+  | PrivateTraceManifestIndex
+  | {
+    ok: false;
+    status: "cursor_invalid_or_stale";
+    error: string;
+  };
+
+export interface ListPrivateTraceManifestsOptions {
+  limit?: number;
+  cursor?: string;
+  evidenceType?: typeof PRIVATE_TRACE_EVIDENCE_TYPE | typeof PROVIDER_ATTEMPT_EVIDENCE_TYPE;
+  /** Authorization/surface fingerprint supplied by the producer transport. */
+  cursorBinding?: string;
 }
 
 export interface PrivateTraceContentRead {
@@ -75,8 +109,11 @@ export interface PrivateTraceContentRead {
   byteLength: number;
   returnedByteLength: number;
   totalByteLength?: number;
+  offsetBytes: number;
+  nextOffsetBytes?: number;
   truncated: boolean;
   sha256: string;
+  hashScope: "complete_object" | "chunk";
 }
 
 export type PrivateTraceContentReadResult =
@@ -128,7 +165,7 @@ export interface PrivateTraceSearchOptions {
   maxBytes?: number;
 }
 
-function sha256Text(body: string): string {
+function sha256Bytes(body: Uint8Array): string {
   return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
@@ -208,8 +245,7 @@ function manifestIndexEntry(row: typeof schema.gameEvidenceManifests.$inferSelec
     recordCount: metadata.recordCount,
     sha256: metadata.sha256,
     contentType: metadata.contentType,
-    strategicDecision: metadata.strategicDecision,
-    strategyPacket: metadata.strategyPacket,
+    strategyCandidate: metadata.strategyCandidate,
     boundary: metadata.boundary,
   };
 }
@@ -220,6 +256,7 @@ export class PrivateTraceReadModel {
   constructor(
     private readonly db: DrizzleDB,
     private readonly storageFactory: () => PrivateTraceStorageAdapter = createPrivateTraceStorageAdapter,
+    private readonly cursorSecret?: string,
   ) {}
 
   async resolveGameId(idOrSlug: string): Promise<string | null> {
@@ -255,7 +292,8 @@ export class PrivateTraceReadModel {
 
     const result = [];
     for (const game of games) {
-      const traceManifestCount = (await this.listManifests(game.id, 1)).totalCount;
+      const traceManifestIndex = await this.listManifests(game.id, { limit: 1 });
+      const traceManifestCount = traceManifestIndex.ok ? traceManifestIndex.totalCount : 0;
       result.push({
         id: game.id,
         slug: game.slug,
@@ -276,49 +314,168 @@ export class PrivateTraceReadModel {
 
   async listManifests(
     gameIdOrSlug: string,
-    limit = 50,
-  ): Promise<PrivateTraceManifestIndex> {
+    options: ListPrivateTraceManifestsOptions = {},
+  ): Promise<PrivateTraceManifestIndexResult> {
     const gameId = await this.resolveGameId(gameIdOrSlug);
     if (!gameId) {
+      if (options.cursor) return invalidManifestCursor();
       return {
+        ok: true,
         gameId: gameIdOrSlug,
         totalCount: 0,
+        pageSize: 0,
+        nextCursor: null,
         linkageSummary: emptyLinkageSummary(),
         manifests: [],
       };
     }
 
-    const conditions = and(
+    const decodedCursor = options.cursor
+      ? decodeProducerIndexCursor(options.cursor, {
+          expectedKind: "private_trace",
+          secretMaterial: this.cursorSecret,
+        })
+      : null;
+    if (decodedCursor?.status === "invalid") return invalidManifestCursor();
+
+    const evidenceType = options.evidenceType ?? PRIVATE_TRACE_EVIDENCE_TYPE;
+    const cursorBinding = sha256StableJson({
+      domain: "influence.private_trace.index_binding.v2",
+      binding: options.cursorBinding ?? LOCAL_TRACE_CURSOR_BINDING,
+      evidenceType,
+    });
+    if (decodedCursor?.status === "ok" && !bindProducerIndexCursor({
+      claims: decodedCursor.claims,
+      kind: "private_trace",
+      bindingFingerprint: cursorBinding,
+      gameId,
+      filters: PRIVATE_TRACE_CURSOR_FILTERS,
+    })) {
+      return invalidManifestCursor();
+    }
+
+    if (decodedCursor?.status === "ok") {
+      return this.listManifestPage(
+        this.db,
+        gameId,
+        options,
+        cursorBinding,
+        decodedCursor.claims,
+        decodedCursor.claims.databaseSnapshot,
+      );
+    }
+
+    return this.db.transaction(async (tx) => {
+      const databaseSnapshot = await readCurrentDatabaseSnapshot(tx);
+      return this.listManifestPage(
+        tx,
+        gameId,
+        options,
+        cursorBinding,
+        null,
+        databaseSnapshot,
+      );
+    }, {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+  }
+
+  private async listManifestPage(
+    db: PrivateTraceIndexDB,
+    gameId: string,
+    options: ListPrivateTraceManifestsOptions,
+    cursorBinding: string,
+    cursor: ProducerIndexCursorClaims | null,
+    databaseSnapshot: string,
+  ): Promise<PrivateTraceManifestIndexResult> {
+    const baseConditions: SQL[] = [
       eq(schema.gameEvidenceManifests.gameId, gameId),
-      eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
-    );
-    const [rows, identityRows, trustedPrefix] = await Promise.all([
-      this.db
-        .select()
-        .from(schema.gameEvidenceManifests)
-        .where(conditions)
-        .orderBy(desc(schema.gameEvidenceManifests.createdAt))
-        .limit(Math.max(1, Math.min(limit, MAX_TRACE_MANIFEST_LIMIT))),
-      this.db
+      eq(
+        schema.gameEvidenceManifests.evidenceType,
+        options.evidenceType ?? PRIVATE_TRACE_EVIDENCE_TYPE,
+      ),
+    ];
+    addTraceDatabaseSnapshotCondition(baseConditions, databaseSnapshot);
+    const pageConditions = [...baseConditions];
+    if (cursor) {
+      addTraceReadThroughCondition(pageConditions, cursor.readThrough);
+      addTraceKeysetCondition(pageConditions, cursor.keyset);
+    }
+    const limit = Math.max(1, Math.min(options.limit ?? 50, MAX_TRACE_MANIFEST_LIMIT));
+    const rows = await db
+      .select()
+      .from(schema.gameEvidenceManifests)
+      .where(and(...pageConditions))
+      .orderBy(
+        desc(schema.gameEvidenceManifests.createdAt),
+        desc(schema.gameEvidenceManifests.id),
+      )
+      .limit(limit + 1);
+
+    const readThrough = cursor
+      ? cursor.readThrough
+      : tracePositionFor(rows[0]);
+    const snapshot = cursor
+      ? {
+          totalCount: cursor.totalCount,
+          linkageSummary: cursor.traceLinkageSummary!,
+        }
+      : await this.readTraceSnapshotMetadata(db, gameId, baseConditions, readThrough);
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && last
+      ? issueProducerIndexCursor({
+          kind: "private_trace",
+          bindingFingerprint: cursorBinding,
+          gameId,
+          filters: PRIVATE_TRACE_CURSOR_FILTERS,
+          databaseSnapshot,
+          readThrough,
+          keyset: tracePositionFor(last),
+          totalCount: snapshot.totalCount,
+          traceLinkageSummary: snapshot.linkageSummary,
+        }, this.cursorSecret)
+      : null;
+
+    return {
+      ok: true,
+      gameId,
+      totalCount: snapshot.totalCount,
+      pageSize: pageRows.length,
+      nextCursor,
+      linkageSummary: snapshot.linkageSummary,
+      manifests: pageRows.map(manifestIndexEntry),
+    };
+  }
+
+  private async readTraceSnapshotMetadata(
+    db: PrivateTraceIndexDB,
+    gameId: string,
+    baseConditions: SQL[],
+    readThrough: ProducerIndexCursorPosition,
+  ): Promise<{ totalCount: number; linkageSummary: PrivateTraceLinkageSummary }> {
+    const snapshotConditions = [...baseConditions];
+    addTraceReadThroughCondition(snapshotConditions, readThrough);
+    const [identityRows, trustedPrefix] = await Promise.all([
+      db
         .select({
           ownerEpoch: schema.gameEvidenceManifests.ownerEpoch,
           decisionId: schema.gameEvidenceManifests.decisionId,
           eventSequence: schema.gameEvidenceManifests.eventSequence,
         })
         .from(schema.gameEvidenceManifests)
-        .where(conditions),
-      getTrustedCanonicalEventPrefix(this.db, gameId),
+        .where(and(...snapshotConditions)),
+      getTrustedCanonicalEventPrefix(db, gameId),
     ]);
-
     return {
-      gameId,
       totalCount: identityRows.length,
       linkageSummary: summarizePrivateTraceLinkage(
         identityRows,
         acceptedActionDecisionRefs(trustedPrefix.events),
         trustedPrefix.status,
       ),
-      manifests: rows.map(manifestIndexEntry),
     };
   }
 
@@ -329,9 +486,31 @@ export class PrivateTraceReadModel {
       purpose?: string;
       accessor?: EvidenceAccessor;
       maxBytes?: number;
+      offsetBytes?: number;
     } = {},
   ): Promise<PrivateTraceContentReadResult> {
     return this.readContentInternal(manifestId, params, false);
+  }
+
+  async readProviderAttemptContent(
+    manifestId: string,
+    params: {
+      gameId?: string;
+      purpose?: string;
+      accessor?: EvidenceAccessor;
+      maxBytes?: number;
+      offsetBytes?: number;
+    } = {},
+  ): Promise<PrivateTraceContentReadResult> {
+    return this.readContentInternal(
+      manifestId,
+      {
+        ...params,
+        purpose: params.purpose ?? "local_provider_attempt_mcp_read_content",
+      },
+      false,
+      PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+    );
   }
 
   /**
@@ -363,8 +542,10 @@ export class PrivateTraceReadModel {
       purpose?: string;
       accessor?: EvidenceAccessor;
       maxBytes?: number;
+      offsetBytes?: number;
     },
     experimentNoAudit: boolean,
+    expectedEvidenceType?: string,
   ): Promise<PrivateTraceContentReadResult> {
     const read = experimentNoAudit
       ? await readEvidenceManifestForExperiment(this.db, {
@@ -388,6 +569,9 @@ export class PrivateTraceReadModel {
     }
 
     const manifest = read.manifest;
+    if (expectedEvidenceType && manifest.evidenceType !== expectedEvidenceType) {
+      return { ok: false, status: "not_found", error: "Provider attempt evidence not found" };
+    }
     if (
       manifest.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER ||
       !manifest.storageBucket ||
@@ -408,24 +592,39 @@ export class PrivateTraceReadModel {
       }
 
       const maxBytes = normalizeMaxBytes(params.maxBytes);
+      const offsetBytes = normalizeOffsetBytes(params.offsetBytes);
       const object = await storage.getObject({
         bucket: manifest.storageBucket,
         key: manifest.storageKey,
-        maxBytes,
+        offsetBytes,
+        // Read up to three look-ahead bytes so a nominal byte limit that lands
+        // inside a UTF-8 code point can return that character losslessly.
+        maxBytes: maxBytes === undefined ? undefined : maxBytes + 3,
       });
-      const returnedByteLength = object.contentLength ?? Buffer.byteLength(object.body, "utf8");
+      const fetchedBytes = object.bodyBytes
+        ?? (object.body !== undefined ? new TextEncoder().encode(object.body) : undefined);
+      if (!fetchedBytes) {
+        throw new Error("private trace object body missing");
+      }
+      const chunkBytes = maxBytes === undefined
+        ? validateUtf8Chunk(fetchedBytes, offsetBytes)
+        : boundedUtf8Chunk(fetchedBytes, maxBytes, offsetBytes);
+      const content = new TextDecoder("utf-8", { fatal: true }).decode(chunkBytes);
+      const returnedByteLength = chunkBytes.byteLength;
       const totalByteLength = expectedBytes ?? head.contentLength;
-      const truncated = maxBytes !== undefined && (
+      const nextOffsetBytes = offsetBytes + returnedByteLength;
+      const truncated = (
         totalByteLength !== undefined
-          ? returnedByteLength < totalByteLength
-          : returnedByteLength >= maxBytes
+          ? nextOffsetBytes < totalByteLength
+          : maxBytes !== undefined && returnedByteLength >= maxBytes
       );
-      const sha256 = sha256Text(object.body);
-      if (!truncated && expectedBytes !== undefined && returnedByteLength !== expectedBytes) {
+      const sha256 = sha256Bytes(chunkBytes);
+      const completeObject = offsetBytes === 0 && !truncated;
+      if (completeObject && expectedBytes !== undefined && returnedByteLength !== expectedBytes) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content size does not match manifest metadata" };
       }
       const expectedHash = typeof manifest.metadata.sha256 === "string" ? manifest.metadata.sha256 : undefined;
-      if (!truncated && expectedHash && sha256 !== expectedHash) {
+      if (completeObject && expectedHash && sha256 !== expectedHash) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content hash does not match manifest metadata" };
       }
 
@@ -436,13 +635,16 @@ export class PrivateTraceReadModel {
             ...manifest,
             redactedAt: null,
           } as typeof schema.gameEvidenceManifests.$inferSelect),
-          content: object.body,
+          content,
           contentType: object.contentType ?? head.contentType,
           byteLength: totalByteLength ?? returnedByteLength,
           returnedByteLength,
           ...(totalByteLength !== undefined && { totalByteLength }),
+          offsetBytes,
+          ...(truncated && { nextOffsetBytes }),
           truncated,
           sha256,
+          hashScope: completeObject ? "complete_object" : "chunk",
         },
       };
     } catch (error) {
@@ -451,7 +653,10 @@ export class PrivateTraceReadModel {
   }
 
   async searchReasoningTraces(options: PrivateTraceSearchOptions): Promise<PrivateTraceSearchResult> {
-    const listed = await this.listManifests(options.gameIdOrSlug, MAX_TRACE_MANIFEST_LIMIT);
+    const listed = await this.listManifests(options.gameIdOrSlug, { limit: MAX_TRACE_MANIFEST_LIMIT });
+    if (!listed.ok) {
+      return { gameId: options.gameIdOrSlug, matches: [] };
+    }
     const query = options.query.trim().toLowerCase();
     if (!query) return { gameId: listed.gameId, matches: [] };
 
@@ -513,6 +718,46 @@ export class PrivateTraceReadModel {
   }
 }
 
+function validateUtf8Chunk(bytes: Uint8Array, offsetBytes: number): Uint8Array {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return bytes;
+  } catch {
+    throw new Error(`Private trace offset ${offsetBytes} is not aligned to UTF-8 content`);
+  }
+}
+
+function boundedUtf8Chunk(
+  bytes: Uint8Array,
+  requestedMaxBytes: number,
+  offsetBytes: number,
+): Uint8Array {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const preferredEnd = Math.min(requestedMaxBytes, bytes.byteLength);
+  for (let end = preferredEnd; end > 0; end -= 1) {
+    try {
+      decoder.decode(bytes.subarray(0, end));
+      return bytes.subarray(0, end);
+    } catch {
+      // Try the previous byte boundary.
+    }
+  }
+  for (let end = preferredEnd + 1; end <= bytes.byteLength; end += 1) {
+    try {
+      decoder.decode(bytes.subarray(0, end));
+      return bytes.subarray(0, end);
+    } catch {
+      // A single UTF-8 code point may exceed the caller's nominal byte cap.
+    }
+  }
+  throw new Error(`Private trace offset ${offsetBytes} is not aligned to UTF-8 content`);
+}
+
+function normalizeOffsetBytes(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
+}
+
 function emptyLinkageSummary(): PrivateTraceLinkageSummary {
   return {
     trustedCanonicalPrefixStatus: "empty",
@@ -522,6 +767,74 @@ function emptyLinkageSummary(): PrivateTraceLinkageSummary {
     intentionallyUnlinkedTraceCount: 0,
     unclassifiedTraceCount: 0,
   };
+}
+
+function invalidManifestCursor(): Extract<PrivateTraceManifestIndexResult, { ok: false }> {
+  return {
+    ok: false,
+    status: "cursor_invalid_or_stale",
+    error: "Private trace manifest cursor is invalid or stale",
+  };
+}
+
+function addTraceReadThroughCondition(
+  conditions: SQL[],
+  readThrough: ProducerIndexCursorPosition,
+): void {
+  if (readThrough.createdAt === null || readThrough.id === null) {
+    conditions.push(sql`false`);
+    return;
+  }
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.createdAt} < ${readThrough.createdAt}
+    OR (
+      ${schema.gameEvidenceManifests.createdAt} = ${readThrough.createdAt}
+      AND ${schema.gameEvidenceManifests.id} <= ${readThrough.id}
+    )
+  )`);
+}
+
+function addTraceDatabaseSnapshotCondition(
+  conditions: SQL[],
+  databaseSnapshot: string,
+): void {
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.indexInsertXid} IS NULL
+    OR pg_visible_in_snapshot(
+      ${schema.gameEvidenceManifests.indexInsertXid}::xid8,
+      ${databaseSnapshot}::pg_snapshot
+    )
+  )`);
+}
+
+async function readCurrentDatabaseSnapshot(db: PrivateTraceIndexDB): Promise<string> {
+  const [row] = await db.execute<{ snapshot: string }>(sql`
+    SELECT pg_current_snapshot()::text AS snapshot
+  `);
+  if (!row?.snapshot) throw new Error("Could not capture producer index database snapshot");
+  return row.snapshot;
+}
+
+function addTraceKeysetCondition(
+  conditions: SQL[],
+  keyset: ProducerIndexCursorPosition,
+): void {
+  if (keyset.createdAt === null || keyset.id === null) return;
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.createdAt} < ${keyset.createdAt}
+    OR (
+      ${schema.gameEvidenceManifests.createdAt} = ${keyset.createdAt}
+      AND ${schema.gameEvidenceManifests.id} < ${keyset.id}
+    )
+  )`);
+}
+
+function tracePositionFor(
+  row: Pick<typeof schema.gameEvidenceManifests.$inferSelect, "createdAt" | "id"> | undefined,
+): ProducerIndexCursorPosition {
+  return row
+    ? { createdAt: row.createdAt, id: row.id }
+    : { createdAt: null, id: null };
 }
 
 function summarizePrivateTraceLinkage(

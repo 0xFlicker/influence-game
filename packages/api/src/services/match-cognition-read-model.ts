@@ -76,13 +76,10 @@ export interface MatchCognitionThinkingProse {
 /** Allowlisted strategy prose fields — never raw payload dump. */
 export interface MatchCognitionStrategyProse {
   contentTrust: typeof UNTRUSTED_GAME_AUTHORED;
-  decisionLog?: string;
-  strategicLens?: string;
-  strategicLensRationale?: string;
-  strategyPacketRevision?: string;
-  strategyPacketUpdate?: string;
-  strategyPacketSummary?: string;
-  strategicReflectionSummary?: string;
+  stage?: "proposal";
+  operation?: "replace" | "delta";
+  submission?: "value" | "no_change" | "mechanically_invalid";
+  value?: string | null;
 }
 
 /**
@@ -736,24 +733,26 @@ function extractStrategyProse(payload: Record<string, unknown>): MatchCognitionS
   const prose: MatchCognitionStrategyProse = {
     contentTrust: UNTRUSTED_GAME_AUTHORED,
   };
-  assignOptionalString(prose, "decisionLog", payload.decisionLog);
-  assignOptionalString(prose, "strategicLens", payload.strategicLens);
-  assignOptionalString(prose, "strategicLensRationale", payload.strategicLensRationale);
-  assignOptionalString(prose, "strategyPacketRevision", payload.strategyPacketRevision);
-  assignOptionalString(prose, "strategyPacketUpdate", payload.strategyPacketUpdate);
-  assignOptionalString(prose, "strategyPacketSummary", payload.strategyPacketSummary);
-  assignOptionalString(prose, "strategicReflectionSummary", payload.strategicReflectionSummary);
+  if (payload.stage !== "proposal" || !isRecord(payload.strategyCandidate)) return prose;
+  const operation = payload.strategyCandidate.operation;
+  if (operation !== "replace" && operation !== "delta") return prose;
+  prose.stage = "proposal";
+  prose.operation = operation;
+  const submittedValue = payload.strategyCandidate.submittedValue;
+  if (typeof submittedValue === "string") {
+    prose.submission = "value";
+    prose.value = submittedValue;
+  } else if (submittedValue === null) {
+    prose.submission = "no_change";
+    prose.value = null;
+  } else {
+    prose.submission = "mechanically_invalid";
+  }
   return prose;
 }
 
-function assignOptionalString(
-  target: MatchCognitionStrategyProse,
-  key: Exclude<keyof MatchCognitionStrategyProse, "contentTrust">,
-  value: unknown,
-): void {
-  if (typeof value === "string" && value.length > 0) {
-    target[key] = value;
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ---------------------------------------------------------------------------

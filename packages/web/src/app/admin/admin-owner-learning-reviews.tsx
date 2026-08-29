@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  getAdminOwnerLearningFailureContent,
   getAdminOwnerLearningReview,
   listAdminOwnerLearningReviews,
   type AdminOwnerLearningAcceptance,
+  type AdminOwnerLearningFailureContent,
+  type AdminOwnerLearningFailureDiagnostic,
   type AdminOwnerLearningReviewDetail,
   type AdminOwnerLearningReviewFilters,
   type AdminOwnerLearningReviewList,
@@ -176,7 +179,7 @@ function ReviewFilters({
         <FilterLabel label="From"><input type="date" className={fieldClass} value={value.dateFrom ?? ""} onChange={(event) => onChange({ ...value, dateFrom: event.target.value || undefined })} /></FilterLabel>
         <FilterLabel label="To"><input type="date" className={fieldClass} value={value.dateTo ?? ""} onChange={(event) => onChange({ ...value, dateTo: event.target.value || undefined })} /></FilterLabel>
         <FilterLabel label="Track"><select className={fieldClass} value={value.track ?? ""} onChange={(event) => onChange({ ...value, track: optionalTrack(event.target.value) })}><option value="">All tracks</option><option value="evidence_rich">Evidence-rich</option><option value="strategy_health_check">Health check</option></select></FilterLabel>
-        <FilterLabel label="Status"><select className={fieldClass} value={value.status ?? ""} onChange={(event) => onChange({ ...value, status: optionalStatus(event.target.value) })}><option value="">All states</option><option value="queued">Queued</option><option value="running">Running</option><option value="ready">Ready</option><option value="no_change">No change</option><option value="failed">Failed</option></select></FilterLabel>
+        <FilterLabel label="Status"><select className={fieldClass} value={value.status ?? ""} onChange={(event) => onChange({ ...value, status: optionalStatus(event.target.value) })}><option value="">All states</option><option value="queued">Queued</option><option value="retry_queued">Recovery queued</option><option value="running">Running</option><option value="ready">Ready</option><option value="no_change">No change</option><option value="failed">Failed</option></select></FilterLabel>
         <FilterLabel label="Resolution"><select className={fieldClass} value={value.resolution ?? ""} onChange={(event) => onChange({ ...value, resolution: optionalResolution(event.target.value) })}><option value="">All outcomes</option><option value="open">Open</option><option value="applied">Applied</option><option value="manual_update">Manual update</option><option value="declined">Declined</option><option value="no_change">No change</option><option value="failed">Failed</option><option value="superseded">Superseded</option></select></FilterLabel>
         <FilterLabel label="Action"><select className={fieldClass} value={value.application ?? ""} onChange={(event) => onChange({ ...value, application: optionalAcceptance(event.target.value) })}><option value="">Any</option><option value="accepted">Applied</option><option value="not_accepted">Other / none</option><option value="not_applicable">No change</option><option value="pending">Pending</option></select></FilterLabel>
         <FilterLabel label="Model"><input type="search" maxLength={200} placeholder="exact model" className={fieldClass} value={value.model ?? ""} onChange={(event) => onChange({ ...value, model: event.target.value || undefined })} /></FilterLabel>
@@ -239,6 +242,7 @@ function ReviewLedgerRow({
             <span className="rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] text-text-muted">r{review.reviewedRevision.ordinal}</span>
           </div>
           <p className="mt-1 truncate text-xs text-text-muted">{review.owner.displayName ?? review.owner.handle ?? review.owner.userId}</p>
+          {review.failure && <p className="mt-1 truncate font-mono text-[9px] text-amber-100/70">{review.failure.safeFailureCode} · {review.failure.phase ?? "legacy"} · {review.failure.evidence.state}</p>}
           <p className="mt-2 line-clamp-1 text-xs leading-5 text-text-secondary lg:hidden">{humanize(review.resolution ?? review.status)}</p>
         </div>
         <LedgerCell label="Track"><TrackBadge track={review.track} /></LedgerCell>
@@ -275,12 +279,15 @@ function ReviewDetail({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
             <InlineFact label="Created" value={formatDateTime(detail.lifecycle.createdAt)} />
             <InlineFact label="Completed" value={detail.lifecycle.completedAt ? formatDateTime(detail.lifecycle.completedAt) : "not complete"} />
             <InlineFact label="Budget used" value={`${detail.lifecycle.logicalCallCount} calls · ${detail.lifecycle.diveCount} dives`} />
+            <InlineFact label="Execution phase" value={detail.lifecycle.executionPhase ?? "not active"} mono />
+            <InlineFact label="Owner recovery" value={`${detail.lifecycle.ownerRetryCount}/1 used · ${detail.lifecycle.ownerRetriesRemaining} remaining`} />
             {(detail.lifecycle.capacitySubstatus || detail.lifecycle.safeFailureCode) && (
               <InlineFact label="Diagnostic" value={detail.lifecycle.safeFailureCode ?? detail.lifecycle.capacitySubstatus ?? "none"} mono />
             )}
           </dl>
         </div>
       </div>
+      {detail.diagnostics.length > 0 && <FailureDiagnostics detail={detail} />}
       <CallLedger detail={detail} />
     </div>
   );
@@ -303,28 +310,246 @@ function ReceiptPanel({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
   );
 }
 
+function FailureDiagnostics({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
+  return (
+    <div>
+      <SectionHeading
+        eyebrow="Failure diagnostics"
+        title={`${detail.diagnostics.length} append-only diagnostic${detail.diagnostics.length === 1 ? "" : "s"}`}
+      />
+      <div className="mt-3 space-y-3">
+        {detail.diagnostics.map((diagnostic) => (
+          <FailureDiagnosticCard key={diagnostic.id} reviewId={detail.id} diagnostic={diagnostic} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FailureDiagnosticCard({
+  reviewId,
+  diagnostic,
+}: {
+  reviewId: string;
+  diagnostic: AdminOwnerLearningFailureDiagnostic;
+}) {
+  const [preview, setPreview] = useState<AdminOwnerLearningFailureContent | null>(null);
+  const [busy, setBusy] = useState<"preview" | "copy" | "download" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadPreview() {
+    setBusy("preview");
+    setError(null);
+    try {
+      setPreview(await getAdminOwnerLearningFailureContent(reviewId, diagnostic.id, { maxBytes: 64 * 1024 }));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load diagnostic evidence.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyComplete() {
+    setBusy("copy");
+    setError(null);
+    try {
+      const bytes = await loadCompleteFailureEvidenceBytes(reviewId, diagnostic.id);
+      await navigator.clipboard.writeText(new TextDecoder().decode(bytes));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not copy diagnostic evidence.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadComplete() {
+    setBusy("download");
+    setError(null);
+    try {
+      const content = await loadCompleteFailureEvidenceBytes(reviewId, diagnostic.id);
+      const downloadBuffer = new ArrayBuffer(content.byteLength);
+      new Uint8Array(downloadBuffer).set(content);
+      const url = URL.createObjectURL(new Blob([downloadBuffer], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `owner-review-${reviewId}-${diagnostic.id}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not download diagnostic evidence.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.035] p-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.65fr)]">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StateBadge value={diagnostic.safeFailureCode} />
+            <span className="font-mono text-[10px] text-text-muted">{diagnostic.phase ?? "legacy phase unavailable"}</span>
+            <span className="font-mono text-[10px] text-text-muted">evidence: {diagnostic.evidence.state}</span>
+          </div>
+          <p className="mt-3 text-sm text-text-primary">{diagnostic.message}</p>
+          {diagnostic.firstApplicationStackFrame && (
+            <pre className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg bg-black/20 p-3 font-mono text-[10px] text-text-secondary">{diagnostic.firstApplicationStackFrame}</pre>
+          )}
+        </div>
+        <dl className="space-y-2 text-xs">
+          <InlineFact label="Diagnostic" value={diagnostic.id} mono />
+          <InlineFact label="Fingerprint" value={diagnostic.fingerprint} mono />
+          <InlineFact label="Error" value={[diagnostic.errorClass, diagnostic.errorCode].filter(Boolean).join(" · ")} mono />
+          <InlineFact label="Attempt" value={diagnostic.callOrdinal == null ? "not reserved" : `${diagnostic.callOrdinal}.${diagnostic.attemptOrdinal}`} mono />
+          <InlineFact label="Provider request" value={diagnostic.providerRequestId ?? "not observed"} mono />
+          <InlineFact label="Provider response" value={diagnostic.providerResponseId ?? "not observed"} mono />
+          <InlineFact label="Manifest" value={diagnostic.evidence.manifestId} mono />
+        </dl>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" onClick={() => { void loadPreview(); }} disabled={busy != null} className="influence-button-secondary rounded-lg px-3 py-2 text-xs disabled:opacity-50">
+          {busy === "preview" ? "Loading…" : "Preview evidence"}
+        </button>
+        <button type="button" onClick={() => { void copyComplete(); }} disabled={busy != null || diagnostic.evidence.state !== "stored"} className="influence-button-secondary rounded-lg px-3 py-2 text-xs disabled:opacity-50">
+          {busy === "copy" ? "Copying…" : "Copy complete evidence"}
+        </button>
+        <button type="button" onClick={() => { void downloadComplete(); }} disabled={busy != null || diagnostic.evidence.state !== "stored"} className="influence-button-secondary rounded-lg px-3 py-2 text-xs disabled:opacity-50">
+          {busy === "download" ? "Downloading…" : "Download complete evidence"}
+        </button>
+      </div>
+      {error && <p role="alert" className="mt-3 text-xs text-red-200">{error}</p>}
+      {preview && "content" in preview && (
+        <div className="mt-4">
+          <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+            Escaped text preview · {preview.returnedByteLength.toLocaleString()} of {preview.totalByteLength.toLocaleString()} bytes · {preview.hashScope} {preview.sha256}
+          </p>
+          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-[10px] leading-5 text-text-secondary">{preview.content}</pre>
+        </div>
+      )}
+      {preview && !("content" in preview) && (
+        <p className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-xs text-text-secondary">
+          {preview.state}: {preview.error}
+        </p>
+      )}
+    </article>
+  );
+}
+
+export async function loadCompleteFailureEvidenceBytes(
+  reviewId: string,
+  diagnosticId: string,
+): Promise<Uint8Array> {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let offsetBytes = 0;
+  let expectedByteLength: number | null = null;
+  let expectedSha256: string | null = null;
+  for (;;) {
+    const chunk = await getAdminOwnerLearningFailureContent(reviewId, diagnosticId, {
+      offsetBytes,
+      maxBytes: 1024 * 1024,
+    });
+    if (!("content" in chunk)) throw new Error(chunk.error);
+    if (chunk.offsetBytes !== offsetBytes) {
+      throw new Error("Diagnostic evidence range did not start at the requested byte");
+    }
+    expectedByteLength ??= chunk.manifest.byteLength;
+    expectedSha256 ??= chunk.manifest.sha256;
+    if (
+      chunk.totalByteLength !== expectedByteLength
+      || chunk.manifest.byteLength !== expectedByteLength
+      || chunk.manifest.sha256 !== expectedSha256
+    ) {
+      throw new Error("Diagnostic evidence manifest changed during the download");
+    }
+    const bytes = decodeBase64Bytes(chunk.contentBase64);
+    if (bytes.byteLength !== chunk.returnedByteLength) {
+      throw new Error("Diagnostic evidence byte length did not match the response metadata");
+    }
+    if (bytes.byteLength === 0) {
+      throw new Error("Diagnostic evidence returned an empty chunk before the object was complete");
+    }
+    chunks.push(bytes);
+    totalBytes += bytes.byteLength;
+    if (!chunk.truncated) {
+      const complete = new Uint8Array(totalBytes);
+      let cursor = 0;
+      for (const part of chunks) {
+        complete.set(part, cursor);
+        cursor += part.byteLength;
+      }
+      if (complete.byteLength !== expectedByteLength) {
+        throw new Error("Diagnostic evidence total byte length did not match the manifest");
+      }
+      if (await sha256EvidenceBytes(complete) !== expectedSha256) {
+        throw new Error("Diagnostic evidence hash did not match the manifest");
+      }
+      return complete;
+    }
+    if (
+      chunk.nextOffsetBytes == null
+      || chunk.nextOffsetBytes !== offsetBytes + bytes.byteLength
+      || chunk.nextOffsetBytes <= offsetBytes
+    ) {
+      throw new Error("Diagnostic evidence range did not advance");
+    }
+    offsetBytes = chunk.nextOffsetBytes;
+  }
+}
+
+async function sha256EvidenceBytes(value: Uint8Array): Promise<string> {
+  const input = new Uint8Array(value.byteLength);
+  input.set(value);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", input.buffer));
+  return `sha256:${[...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function decodeBase64Bytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 function CallLedger({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
   return (
     <div>
-      <SectionHeading eyebrow="Immutable accounting" title={`${detail.calls.length} logical call${detail.calls.length === 1 ? "" : "s"}`} />
+      <SectionHeading eyebrow="Immutable accounting" title={`${detail.calls.length} invocation attempt${detail.calls.length === 1 ? "" : "s"}`} />
       <div className="mt-3 overflow-x-auto rounded-2xl border border-border-active/70">
         <table className="min-w-[760px] w-full text-xs">
           <thead className="bg-white/[0.025] font-mono text-[10px] uppercase tracking-[0.15em] text-text-muted">
             <tr><th className="px-4 py-3 text-left">Call</th><th className="px-4 py-3 text-left">Capacity</th><th className="px-4 py-3 text-right">Input / cached</th><th className="px-4 py-3 text-right">Output / reasoning</th><th className="px-4 py-3 text-right">Latency</th><th className="px-4 py-3 text-right">Cost</th></tr>
           </thead>
           <tbody>{detail.calls.map((call) => (
-            <tr key={call.ordinal} className="border-t border-border-active/50">
-              <td className="px-4 py-3"><span className="text-text-primary">#{call.ordinal}</span><span className="ml-2 text-text-muted">{call.state}</span></td>
+            <tr key={call.id} className="border-t border-border-active/50">
+              <td className="px-4 py-3">
+                <span className="text-text-primary">#{call.ordinal} · attempt {call.attemptOrdinal}</span>
+                <span className="ml-2 text-text-muted">{call.state}</span>
+                {call.executionKind === "local_recovery" && (
+                  <span className="block text-[10px] text-emerald-100/70">local recovery · no provider charge</span>
+                )}
+                {call.retryOfAttemptId && <span className="block font-mono text-[9px] text-text-muted">retry of {call.retryOfAttemptId}</span>}
+                <span className="block font-mono text-[9px] text-text-muted">{call.providerTurnProtocol}</span>
+              </td>
               <td className="px-4 py-3 text-text-secondary">
                 {call.requestedTier} → {call.effectiveTier ?? (call.terminalHttpStatus == null ? "unknown" : `HTTP ${call.terminalHttpStatus}`)}
                 <span className="block text-[10px] text-text-muted">{call.capacityPath ?? "not recorded"} · {call.flex429Count} Flex 429</span>
                 {call.providerRequestId && <span className="block font-mono text-[9px] text-text-muted">{call.providerRequestId}</span>}
+                {call.providerResponseId && <span className="block font-mono text-[9px] text-text-muted">response {call.providerResponseId}</span>}
+                {(call.requestEvidence.sha256 || call.responseEvidence.sha256) && (
+                  <span className="block font-mono text-[9px] text-text-muted">
+                    request {call.requestEvidence.byteLength?.toLocaleString() ?? "?"} B · response {call.responseEvidence.byteLength?.toLocaleString() ?? "pending"}{call.responseEvidence.byteLength == null ? "" : " B"}
+                  </span>
+                )}
                 {call.safeFailureCode && <span className="block text-[10px] text-amber-100/70">Diagnostic: {humanize(call.safeFailureCode)}</span>}
+                {call.failureDiagnosticId && <span className="block font-mono text-[9px] text-text-muted">{call.evidenceState} · {call.failureDiagnosticId}</span>}
               </td>
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.input)} / {formatOptionalInt(call.tokens.cachedInput)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.totalOutput)} / {formatOptionalInt(call.tokens.reasoning)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-muted">{call.latencyMs == null ? "unknown" : `${call.latencyMs.toLocaleString()} ms`}</td>
-              <td className="px-4 py-3 text-right"><span className="font-mono text-text-primary">{call.cost.microusd == null ? "N/A" : formatMicrousd(call.cost.microusd)}</span><span className="block text-[10px] text-text-muted">{call.cost.source === "unavailable" ? "no usage receipt" : call.cost.source}{call.cost.rateCardVersion ? ` · ${call.cost.rateCardVersion}` : ""}</span></td>
+              <td className="px-4 py-3 text-right"><span className="font-mono text-text-primary">{call.executionKind === "local_recovery" ? "$0.00" : call.cost.microusd == null ? "N/A" : formatMicrousd(call.cost.microusd)}</span><span className="block text-[10px] text-text-muted">{call.executionKind === "local_recovery" ? "no provider charge" : call.cost.source === "unavailable" ? "no usage receipt" : call.cost.source}{call.cost.rateCardVersion ? ` · ${call.cost.rateCardVersion}` : ""}</span></td>
             </tr>
           ))}</tbody>
         </table>
@@ -386,7 +611,7 @@ function optionalTrack(value: string): AdminOwnerLearningReviewFilters["track"] 
 }
 
 function optionalStatus(value: string): AdminOwnerLearningReviewFilters["status"] {
-  return ["queued", "running", "ready", "no_change", "failed"].includes(value)
+  return ["queued", "retry_queued", "running", "ready", "no_change", "failed"].includes(value)
     ? value as AdminOwnerLearningReviewFilters["status"]
     : undefined;
 }

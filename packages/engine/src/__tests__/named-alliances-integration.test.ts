@@ -1,8 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { GameRunner, type GameStreamEvent } from "../game-runner";
-import { TemplateHouseInterviewer } from "../house-interviewer";
 import { DEFAULT_CONFIG, Phase, type GameConfig } from "../types";
-import { MockAgent } from "./mock-agent";
+import { MockAgent, ScriptedHouseInterviewer } from "./mock-agent";
 
 const TEST_CONFIG: GameConfig = {
   ...DEFAULT_CONFIG,
@@ -36,18 +35,25 @@ function createAgents() {
     lineageId: "glass-table-lineage",
     versionId: "glass-table-v1",
     name: "Glass Table",
-    memberNames: ["Alice", "Bob"],
+    memberNames: ["Alice", "Bob", "Charlie"],
     purpose: "Coordinate the empower vote, then branch under the locked format.",
     timebox: null,
-    thinking: "mock: propose a two-person named alliance before Vote",
-    decisionLog: "mock: test named-alliance formation in a complete round",
+    thinking: "mock: propose a three-person named alliance before Vote",
+    strategyDelta: "mock: test named-alliance formation in a complete round",
   });
   bob.allianceActions.push({
     action: "accept",
     lineageId: "glass-table-lineage",
     versionId: "glass-table-v1",
     thinking: "mock: accept the exact Glass Table version",
-    decisionLog: "mock: consent to the same version",
+    strategyDelta: "mock: consent to the same version",
+  });
+  charlie.allianceActions.push({
+    action: "accept",
+    lineageId: "glass-table-lineage",
+    versionId: "glass-table-v1",
+    thinking: "mock: unselected invitee accepts the exact Glass Table version",
+    strategyDelta: "mock: consent to the same version without proposer access",
   });
 
   return [alice, bob, charlie, dana, echo];
@@ -55,10 +61,19 @@ function createAgents() {
 
 describe("named alliance complete-round integration", () => {
   it("preserves alliance artifacts through the complete format-kernel standard round", async () => {
+    const agents = createAgents();
+    const house = new ScriptedHouseInterviewer([{
+      selected: [
+        { playerId: "bob", rationale: "Bob is underrepresented." },
+        { playerId: "alice", rationale: "Alice can create a sharp opening." },
+      ],
+      rationale: "Use two scarce proposer opportunities for this five-player cast.",
+      thinking: "Private House rationale for Alice and Bob.",
+    }]);
     const runner = new GameRunner(
-      createAgents(),
+      agents,
       TEST_CONFIG,
-      new TemplateHouseInterviewer(),
+      house,
       { gameId: "named-alliance-integration" },
     );
     const events: GameStreamEvent[] = [];
@@ -99,6 +114,30 @@ describe("named alliance complete-round integration", () => {
     expect(canonicalTypes).toContain("alliance.huddle_scheduled");
     expect(canonicalTypes).toContain("alliance.huddle_completed");
     expect(canonicalTypes).toContain("alliance.huddle_outcome_recorded");
+    expect(house.allianceProposerSelectionContexts).toHaveLength(1);
+    expect(house.allianceProposerSelectionContexts[0]?.budget).toBe(2);
+    expect(agents[0]!.allianceOpportunities.map((opportunity) => opportunity.kind)).toEqual(["proposer"]);
+    expect(agents[1]!.allianceOpportunities.map((opportunity) => opportunity.kind)).toEqual([
+      "response",
+      "proposer",
+    ]);
+    expect(agents[2]!.allianceOpportunities.map((opportunity) => opportunity.kind)).toEqual(["response"]);
+    expect(agents[3]!.allianceOpportunities).toEqual([]);
+    expect(agents[4]!.allianceOpportunities).toEqual([]);
+
+    const proposerSelectionTurns = events.filter(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "alliance-proposer-selection",
+    );
+    expect(proposerSelectionTurns).toHaveLength(1);
+    expect(proposerSelectionTurns[0]).toMatchObject({
+      visibility: "private",
+      actor: { name: "The House", role: "house" },
+      response: {
+        budget: 2,
+        rationale: "Use two scarce proposer opportunities for this five-player cast.",
+      },
+    });
 
     const formatMingleRoomSpeechIndex = events.findIndex(
       (event) => event.type === "transcript_entry" && event.entry.phase === Phase.FORMAT_MINGLE && event.entry.scope === "mingle",

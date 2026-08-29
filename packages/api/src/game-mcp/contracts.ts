@@ -47,6 +47,7 @@ export const READ_MATCH_TRANSCRIPT_TOOL = "read_match_transcript" as const;
 export const READ_OWNED_MATCH_COGNITION_TOOL = "read_owned_match_cognition" as const;
 export const READ_OWNED_MATCH_NARRATIVE_TOOL = "read_owned_match_narrative" as const;
 export const READ_PRODUCER_MATCH_NARRATIVE_TOOL = "read_producer_match_narrative" as const;
+export const READ_PRODUCER_GAME_COST_DETAIL_TOOL = "read_producer_game_cost_detail" as const;
 
 export const MATCH_COMPLETENESS_TOOL_NAMES = [
   READ_MATCH_MANIFEST_TOOL,
@@ -466,6 +467,7 @@ const ownerLearningReviewSchema = closedObject(
     "proposalFingerprint",
     "safeFailureCode",
     "retryable",
+    "ownerRetriesRemaining",
     "logicalCallCount",
     "diveCount",
     "applyDisposition",
@@ -482,7 +484,7 @@ const ownerLearningReviewSchema = closedObject(
     reviewedRevisionId: { type: "string" },
     selectedGameIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
     analysisTrack: { type: "string", enum: ["awaiting_evidence", "evidence_rich", "strategy_health_check"] },
-    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    analysisStatus: { type: "string", enum: ["queued", "retry_queued", "running", "ready", "no_change", "failed"] },
     stage: {
       type: "string",
       enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],
@@ -509,9 +511,11 @@ const ownerLearningReviewSchema = closedObject(
         "logical_call_budget_exhausted",
         "evidence_unavailable",
         "worker_interrupted",
+        "internal_error",
       ],
     }),
     retryable: { type: "boolean" },
+    ownerRetriesRemaining: { type: "number", enum: [0, 1] },
     logicalCallCount: { type: "number" },
     diveCount: { type: "number" },
     applyDisposition: {
@@ -552,7 +556,7 @@ const ownerLearningOpenSummarySchema = closedObject(
   {
     id: { type: "string" },
     agentProfileId: { type: "string" },
-    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    analysisStatus: { type: "string", enum: ["queued", "retry_queued", "running", "ready", "no_change", "failed"] },
     stage: {
       type: "string",
       enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],
@@ -802,6 +806,9 @@ export const READ_MATCH_MANIFEST_INPUT_SCHEMA = closedObject(
     },
   },
 );
+
+export const READ_PRODUCER_GAME_COST_DETAIL_INPUT_SCHEMA =
+  READ_MATCH_MANIFEST_INPUT_SCHEMA;
 
 export const READ_MATCH_TRANSCRIPT_INPUT_SCHEMA = closedObject(
   ["gameIdOrSlug"],
@@ -1497,13 +1504,10 @@ const strategyProseSchema = closedObject(
   ["contentTrust"],
   {
     contentTrust: contentTrustSchema,
-    decisionLog: { type: "string" },
-    strategicLens: { type: "string" },
-    strategicLensRationale: { type: "string" },
-    strategyPacketRevision: { type: "string" },
-    strategyPacketUpdate: { type: "string" },
-    strategyPacketSummary: { type: "string" },
-    strategicReflectionSummary: { type: "string" },
+    stage: { type: "string", const: "proposal" },
+    operation: { type: "string", enum: ["replace", "delta"] },
+    submission: { type: "string", enum: ["value", "no_change", "mechanically_invalid"] },
+    value: nullableStringSchema,
   },
 );
 
@@ -1653,13 +1657,10 @@ const narrativeMemberFieldsSchema = closedObject(
     // Thinking allowlist
     thinking: { type: "string" },
     // Strategy allowlist
-    decisionLog: { type: "string" },
-    strategicLens: { type: "string" },
-    strategicLensRationale: { type: "string" },
-    strategyPacketRevision: { type: "string" },
-    strategyPacketUpdate: { type: "string" },
-    strategyPacketSummary: { type: "string" },
-    strategicReflectionSummary: { type: "string" },
+    strategyStage: { type: "string", const: "proposal" },
+    strategyOperation: { type: "string", enum: ["replace", "delta"] },
+    strategySubmission: { type: "string", enum: ["value", "no_change", "mechanically_invalid"] },
+    strategyValue: { type: "string" },
   },
 );
 
@@ -2047,6 +2048,13 @@ export const READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION = [
   "No ownership required. Does not return private-trace bodies, reasoning dumps, payloads, or source pointers.",
   "Not board-fact authority. games:read alone does not grant this tool; requires producer scope and current producer role.",
   "Read-only. Prefer this over client-side merges of producer analysis + traces for token-efficient story reconstruction.",
+].join(" ");
+
+export const READ_PRODUCER_GAME_COST_DETAIL_DESCRIPTION = [
+  "Read the existing Admin Cost Detail payload for one game by ID or slug.",
+  "Returns the same provider-cost totals, actual/estimated/unavailable state, token buckets, prompt-reuse aggregates, breakdowns, owner epochs, expensive calls, backfill, pricing, retry/failure spend, and reconciliation fields as GET /api/admin/games/:idOrSlug/costs.",
+  "Producer scope and current producer role only; games:read and subject ownership never grant this tool.",
+  "Read-only. It does not create accounting rows, run a backfill, reconcile costs, or mutate the game.",
 ].join(" ");
 
 // ---------------------------------------------------------------------------

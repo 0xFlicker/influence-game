@@ -3,7 +3,10 @@ import type {
   FormatPresentationRosterPlayer,
   FormatResolutionPresentation,
 } from "./types";
-import { getFormatRegistration } from "@influence/engine/format-rules";
+import {
+  displayNameForFormat,
+  getFormatRegistration,
+} from "@influence/engine/format-rules";
 
 export function FormatResolutionStage({
   cue,
@@ -57,14 +60,14 @@ function SaveOrEliminateAggregate({
   const ids = orderedIds(facts.nets, roster);
   return (
     <AggregateTable
-      caption="Save-or-Eliminate aggregate"
-      columns={["Agent", "Saves", "Eliminates", "Net", "Status"]}
+      caption="Save-or-Exit aggregate"
+      columns={["Agent", "Saves", "Exits", "Net", "Status"]}
       rows={ids.map((playerId) => [
         playerName(playerId, roster),
         String(facts.savesReceived[playerId] ?? 0),
         String(facts.eliminateReceived[playerId] ?? 0),
         signed(facts.nets[playerId] ?? 0),
-        facts.nets[playerId] === lowestNet ? "Elimination eligible" : "Above the line",
+        facts.nets[playerId] === lowestNet ? "Exit eligible" : "Above the line",
       ])}
       rowIds={ids}
       rowState={(playerId) =>
@@ -81,27 +84,40 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
   if (registration.capability !== "sealed_elim") return null;
   const eligible = new Set(facts.eligiblePlayerIds);
   const eligibleTotals = facts.eligiblePlayerIds.map((id) => facts.totals[id] ?? 0);
-  const dangerTotal = registration.presentation.scoring === "highest_total"
+  const highestWins = registration.presentation.scoring !== "fewest_positive";
+  const allOdd = registration.presentation.scoring === "highest_even"
+    && Object.values(facts.totals).every((total) => total % 2 !== 0);
+  const dangerTotal = highestWins
     ? Math.max(...eligibleTotals)
     : Math.min(...eligibleTotals);
   const ids = orderedIds(facts.totals, roster);
   const isDanger = (playerId: string) => (
-    eligible.has(playerId) && facts.totals[playerId] === dangerTotal
+    eligible.has(playerId)
+    && (allOdd || facts.totals[playerId] === dangerTotal)
   );
   const status = (playerId: string) => {
-    if (!eligible.has(playerId)) return "Zero votes · safe";
-    if (isDanger(playerId)) {
-      return registration.presentation.scoring === "highest_total"
-        ? "Highest total · elimination eligible"
-        : "Fewest positive · eligible";
+    if (allOdd) return "Odd total · empowered choice";
+    if (!eligible.has(playerId)) {
+      return registration.presentation.scoring === "highest_even"
+        ? "Odd total · safe"
+        : "Zero votes · safe";
     }
-    return registration.presentation.scoring === "highest_total"
-      ? "Below the high vote"
-      : "Above the line";
+    if (isDanger(playerId)) {
+      if (registration.presentation.scoring === "highest_total") {
+        return "Highest total · exit eligible";
+      }
+      if (registration.presentation.scoring === "highest_even") {
+        return "Highest even total · exit eligible";
+      }
+      return "Fewest positive · eligible";
+    }
+    if (registration.presentation.scoring === "highest_total") return "Below the high vote";
+    if (registration.presentation.scoring === "highest_even") return "Even total · below danger";
+    return "Above the line";
   };
   return (
     <AggregateTable
-      caption={`${registration.decision.publicName} aggregate`}
+      caption={`${displayNameForFormat(resolution.formatId)} aggregate`}
       columns={["Agent", "Votes", "Status"]}
       rows={ids.map((playerId) => [
         playerName(playerId, roster),

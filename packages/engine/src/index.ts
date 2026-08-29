@@ -6,6 +6,30 @@
 
 // Core types
 export * from "./types";
+export {
+  costHouseProviderUsage,
+  costHouseSummaryGame,
+} from "./house-summary-accounting";
+export type {
+  HouseSummaryBoundaryCost,
+  HouseSummaryCostLine,
+  HouseSummaryCostResult,
+  HouseSummaryGameCost,
+} from "./house-summary-accounting";
+export { AGENT_PROFILE_LIMITS } from "./agent-profile-contract";
+export {
+  HOUSE_SUMMARY_ACTOR_COORDINATES,
+  isHouseSummaryActorCoordinate,
+} from "./house-summary-frontier";
+export type { HouseSummaryActorCoordinate } from "./house-summary-frontier";
+export {
+  COMPACT_STRATEGY_LIMITS,
+  applyStrategyCandidate,
+  cloneCompactStrategyState,
+  compactStrategyAggregateCharacters,
+  createOpeningStrategyState,
+  markStrategyReconciliationRequired,
+} from "./strategy-state";
 
 // Game state
 export { GameState, createUUID } from "./game-state";
@@ -15,10 +39,17 @@ export type { GameStateOptions } from "./game-state";
 export {
   actorAuthorizedForHuddleOutcome,
   authorizedCompactHuddleOutcomesForActor,
+  decodeLegacyAllianceHuddleOutcomeV1,
+  formatAllianceHuddleFact,
+  formatAllianceHuddleFacts,
   hasRecallParticipantSnapshot,
   normalizeAllianceHuddleOutcome,
   toCompactAllianceHuddleOutcome,
   withParticipantSnapshotFromSession,
+} from "./alliance-huddle-outcome";
+export type {
+  AllianceHuddlePlayerName,
+  LegacyAllianceHuddleOutcomeV1Metadata,
 } from "./alliance-huddle-outcome";
 
 // Selective context recall (pure compiler)
@@ -322,7 +353,9 @@ export {
   createGameMcpServer,
   GameMcpJsonRpcServer,
   GameMcpReadModel,
+  MCP_FORMAT_FACT_TYPES,
   runStdioGameMcpServer,
+  toGameMcpFormatSurface,
 } from "./game-mcp";
 export type {
   GameMcpEventFilter,
@@ -338,6 +371,7 @@ export type {
   GameMcpSessionSummary,
   GameMcpSourceCitation,
   GameMcpSourceKind,
+  GameMcpFormatSurface,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./game-mcp";
@@ -363,14 +397,123 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, HouseContinuityRequirement, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type {
+  DurableGameTurnCommittedV1,
+  DurableGameTurnInitializationV1,
+  DurableGameTurnPlanV1,
+  DurableGameTurnSnapshotV1,
+  DurableGameTurnStore,
+  DurableProviderTurnBinding,
+  HouseGameplaySummaryContext,
+  HouseGameplaySummaryResult,
+  HouseNarrativeTurnContext,
+  HouseSummaryAttemptResult,
+  HouseSummaryEmittedResult,
+  HouseSummaryFailedResult,
+  HouseSummaryModelSkippedResult,
+} from "./game-runner.types";
+export {
+  HOUSE_NARRATIVE_CONTINUITY_VERSION,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
+  createEmptyHouseNarrativeContinuity,
+  parseHouseNarrativeContinuity,
+} from "./house-summary-frontier";
+export type {
+  HouseBeatClass,
+  HouseBeatStatus,
+  HouseNarrationCanonicalEvent,
+  HouseNarrationContext,
+  HouseNarrationDiaryEntry,
+  HouseNarrationDialogue,
+  HouseNarrationProjection,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
+  HouseProviderUsage,
+  HouseSummaryBoundary,
+  HouseSummaryPhaseTelemetry,
+} from "./house-summary-frontier";
+export {
+  HOUSE_LONG_FORM_SUMMARY_MAX_CHARACTERS,
+  HOUSE_LONG_FORM_SUMMARY_SCHEMA,
+  decodeAcceptedHouseLongForm,
+  decodeHouseLongFormProvider,
+} from "./house-long-form";
+export type {
+  CompactStrategyAccepted,
+  CompactStrategyApplicationResult,
+  CompactStrategyCandidate,
+  CompactStrategyDecisionBoundary,
+  CompactStrategyLifecycle,
+  CompactStrategyNoChange,
+  CompactStrategyOperation,
+  CompactStrategyPriorEpoch,
+  CompactStrategyRejected,
+  CompactStrategyRejectionReason,
+  CompactStrategyState,
+} from "./game-runner.types";
+export {
+  DURABLE_GAME_TURN_CONTRACT_VERSION,
+  HOUSE_OPERATIONS_V1,
+  PARALLEL_BATCH_KINDS,
+  RULES_OPERATIONS_V1,
+  RUNTIME_ACTOR_COORDINATES,
+  SERIAL_ACTOR_LANES,
+  assertGameExecutionStateV1,
+  assertGameTurnCommitDraftV1,
+  assertGameTurnIntentV1,
+  validateGameExecutionStateV1,
+  validateGameTurnCommitDraftV1,
+  validateGameTurnIntentV1,
+} from "./durable-game-turn";
+export type {
+  CommittedCanonicalEventV1,
+  DurableContractValidationResult,
+  DurableJsonObject,
+  DurableJsonPrimitive,
+  DurableJsonValue,
+  AllianceProgressV1,
+  DiaryExchangeV1,
+  DiaryInterviewProgressV1,
+  DiaryInterviewRoleV1,
+  DiaryInterviewStatusV1,
+  DiaryProgressV1,
+  FormatProgressStageV1,
+  FormatProgressV1,
+  GameExecutionCursorV1,
+  GameExecutionRetryV1,
+  GameExecutionStateV1,
+  GameExecutionStatusV1,
+  GamePublicationDraftV1,
+  GamePublicationPayloadV1,
+  GamePublicationV1,
+  GameTurnBranchKindV1,
+  GameTurnBranchV1,
+  GameTurnCanonicalEventDraftV1,
+  GameTurnCommitDraftV1,
+  GameTurnCommitResultV1,
+  GameTurnHeadsV1,
+  GameTurnIntentV1,
+  GameTurnNextExecutionV1,
+  GameTurnProviderSubcallV1,
+  GameTurnTranscriptDraftV1,
+  HouseOperationV1,
+  HuddleProgressV1,
+  MingleBeatAllocationV1,
+  MingleMovementRequestV1,
+  MingleProgressV1,
+  MingleRoomProgressV1,
+  ParallelBatchKind,
+  RulesOperationV1,
+  RuntimeActorCoordinate,
+  SafetyBounceProgressV1,
+  SerialActorLane,
+} from "./durable-game-turn";
 export {
   PLAYER_CONTINUITY_CAPSULE_VERSION,
-  admitHouseContinuityForRecovery,
-  isHouseContinuityCapsuleShape,
-  isHouseContinuityRequirement,
   parsePlayerContinuityCapsule,
-  sealHouseContinuityRequirement,
   validatePlayerContinuitySetForRecovery,
 } from "./game-runner";
 export { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
@@ -397,6 +540,12 @@ export {
   formatPresentationMetadata,
 } from "./format-presentation-metadata";
 export type { LaunchFormatPresentationMetadata } from "./format-presentation-metadata";
+export {
+  FORMAT_SURFACE_IDS,
+  canonicalFormatIdForSurface,
+  formatSurfaceId,
+} from "./format-vocabulary";
+export type { FormatSurfaceId } from "./format-vocabulary";
 export {
   buildMingleInboxReplayFromTranscript,
   hydrateMingleInboxFromReplay,
@@ -431,22 +580,31 @@ export type { InfluenceAgentOptions, Personality } from "./agent";
 
 // House interviewer
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
-export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult, LLMHouseInterviewerOptions } from "./house-interviewer";
+export type {
+  IHouseInterviewer,
+  DiaryRoomContext,
+  FollowUpResult,
+  HouseAllianceProposerCandidate,
+  HouseAllianceProposerSelectionContext,
+  HouseAllianceProposerSelectionItem,
+  HouseAllianceProposerSelectionResult,
+  LLMHouseInterviewerOptions,
+} from "./house-interviewer";
 
-// Persona generator
+// House personas
 export {
   HOUSE_AGENT_NAMES,
-  generatePersona,
+  getHousePersonaDetails,
   isReservedHouseAgentName,
   pickAgentNames,
   pickArchetypes,
-} from "./persona-generator";
-export type { GeneratedPersona } from "./persona-generator";
+} from "./house-personas";
 
 // LLM provider configuration
 export {
   createFlexProcessingFetch,
   createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
@@ -458,16 +616,84 @@ export type {
   FlexTransportDispatchIntent,
   FlexTransportTerminalOutcome,
   LlmClientConfig,
+  LlmProviderRuntime,
   LlmToolChoiceMode,
   OpenAIReasoningSummaryMode,
   OpenAIRequestServiceTier,
 } from "./llm-client";
+export {
+  PROVIDER_ATTEMPT_HEADER,
+  ProviderAcceptedValueIntegrityError,
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+  ProviderUnavailableError,
+  ProviderExecutionCoordinator,
+  createProviderEvidenceFetch,
+  providerAcceptedDecisionId,
+  sanitizeProviderEvidence,
+} from "./provider-execution";
+export {
+  createProviderAdapter,
+  executeModelInvocation,
+} from "./provider-adapters";
+export {
+  ExactStructuredOutputRegistry,
+  createExactStructuredOutputArtifact,
+  exactStructuredOutputRegistry,
+  validateExactStructuredValue,
+} from "./structured-output";
+export type {
+  ExactStructuredOutputArtifact,
+  ExactStructuredOutputArtifactInput,
+  ExactStructuredOutputResult,
+  StructuredDomainDecodeResult,
+  StructuredOutputValidationIssue,
+} from "./structured-output";
+export type {
+  LlmProviderAdapter,
+  ModelInvocation,
+  ModelInvocationMessage,
+  ModelInvocationResult,
+  ProviderModelOutcome,
+  ProviderNativeRequest,
+  ProviderRuntimeDescriptor,
+} from "./model-invocation";
+export type {
+  ExecuteProviderCallOptions,
+  ExecuteProviderManifestCallOptions,
+  ProviderManifestCallEntry,
+  ProviderManifestCallResult,
+  ProviderAttemptFailureKind,
+  ProviderAttemptFailureOutcome,
+  ProviderAttemptAccountingFacts,
+  ProviderAttemptDisposition,
+  ProviderAttemptIntent,
+  ProviderAttemptOutcome,
+  ProviderAttemptRecord,
+  ProviderAttemptUsageFacts,
+  ProviderAcceptedResult,
+  ProviderAcceptedValueValidation,
+  ProviderCandidateValidation,
+  ProviderDispatchRequestOptions,
+  ProviderExecutionCoordinatorOptions,
+  ProviderExecutionHooks,
+  ProviderTerminalReceipt,
+  ProviderLogicalCallCoordinate,
+  ProviderPreparedRequest,
+  ProviderUnavailableKind,
+  SanitizedProviderRequestEvidence,
+  SanitizedProviderResponseEvidence,
+} from "./provider-execution";
 export {
   MODEL_CATALOG,
   DEFAULT_MODEL_CATALOG_ID,
   DEFAULT_MODEL_ID,
   MODEL_REASONING_EFFORTS,
   MODEL_REASONING_POLICIES,
+  MAX_PROVIDER_ENTRY_CALLS_PER_GAME,
+  MAX_PROVIDER_MANIFEST_CALLS_PER_GAME,
+  MAX_PROVIDER_MANIFEST_ENTRIES,
   PROVIDER_PROFILES,
   gameReadyCatalogEntries,
   formatGameModelSelectionLabel,
@@ -476,13 +702,19 @@ export {
   inferModelCapabilities,
   modelCatalogEntryById,
   normalizeGameModelSelection,
+  normalizeProviderManifest,
+  parseProviderManifestEntry,
   normalizeReasoningPolicy,
   providerProfileById,
   resolveCatalogIdForModel,
   resolveModelSelection,
+  resolveProviderManifest,
+  resolveProviderManifestFromGameConfig,
 } from "./model-catalog";
 export type {
   GameModelSelection,
+  GameProviderManifest,
+  GameProviderManifestEntry,
   ModelCatalogEntry,
   ModelEvaluationStatus,
   ModelReasoningEffort,
@@ -491,6 +723,7 @@ export type {
   ProviderProfile,
   ProviderProfileId,
   ResolvedModelSelection,
+  ResolvedProviderManifestEntry,
 } from "./model-catalog";
 
 // Memory store

@@ -154,13 +154,15 @@ function alliances(): PublicGameAlliancesResponse {
             id: "o1",
             round: 2,
             window: "pre_vote",
-            ask: "Keep pressure off Marnie.",
-            plan: "Vote together unless Echo flips.",
-            promises: ["Jace shields Marnie publicly."],
-            dissent: [],
-            confidence: "medium",
-            posture: "coordinated",
-            leakOrBetrayalClaims: [],
+            facts: [{
+              kind: "commitment",
+              factId: "fact-o1",
+              sessionId: "session-o1",
+              actorPlayerId: "p2",
+              actionKind: "empower_vote",
+              targetPlayerId: "p1",
+              confidence: "medium",
+            }],
           },
         },
         {
@@ -199,13 +201,15 @@ function alliances(): PublicGameAlliancesResponse {
             id: "o1",
             round: 2,
             window: "pre_vote",
-            ask: "Keep pressure off Marnie.",
-            plan: "Vote together unless Echo flips.",
-            promises: ["Jace shields Marnie publicly."],
-            dissent: [],
-            confidence: "medium",
-            posture: "coordinated",
-            leakOrBetrayalClaims: [],
+            facts: [{
+              kind: "commitment",
+              factId: "fact-o1",
+              sessionId: "session-o1",
+              actorPlayerId: "p2",
+              actionKind: "empower_vote",
+              targetPlayerId: "p1",
+              confidence: "medium",
+            }],
           },
         },
         {
@@ -300,7 +304,9 @@ describe("match watch alliance model", () => {
     expect(model.cards.map((card) => card.name)).toEqual(["Mirror Knives", "Back Row Pact"]);
     expect(model.cards[0]?.memberNames).toEqual(["Marnie", "Jace"]);
     expect(model.cards[1]?.memberNames).toEqual(["Marnie", "Jace", "Echo"]);
-    expect(model.cards[0]?.latestOutcomeSummary).toContain("Vote together unless Echo flips.");
+    expect(model.cards[0]?.latestOutcomeSummary).toContain(
+      "Jace recorded a commitment to an empower vote for Marnie",
+    );
     expect(model.cards[0]?.consequences).toEqual([]);
     expect(model.cards[0]?.huddles[0]?.messages.map((message) => message.text)).toEqual([
       "Jace, keep the heat on Echo.",
@@ -355,13 +361,7 @@ describe("match watch alliance model", () => {
         id: "o4",
         round: 6,
         window: "pre_vote",
-        ask: "Hide the final-two promise.",
-        plan: "Split public pressure before tribunal.",
-        promises: [],
-        dissent: [],
-        confidence: "medium",
-        posture: "coordinated",
-        leakOrBetrayalClaims: [],
+        facts: [],
       },
     });
     facts.allianceFacts.huddles.push({

@@ -127,9 +127,23 @@ describe("postgame analysis service", () => {
       joinedAlliances: [],
       involvedProposals: [],
       huddlesAttended: 0,
-      latestPlans: [],
-      betrayalOrLeakClaims: [],
+      latestHuddleOutcomes: [],
     });
+
+    const eliminatedPlayer = await getPostgamePlayerSummary(
+      db,
+      EDGE_SMOKE_DUSK_GAME_ID,
+      EDGE_SMOKE_DUSK_PLAYERS.ash.name,
+    );
+    expect(eliminatedPlayer.ok).toBe(true);
+    if (!eliminatedPlayer.ok) return;
+    const serializedAlignment = JSON.parse(JSON.stringify(
+      eliminatedPlayer.player.majorityAlignmentByRound,
+    )) as Array<{ round: number; aligned: boolean | null }>;
+    expect(serializedAlignment.slice(0, 2)).toEqual([
+      expect.objectContaining({ round: 1, aligned: false }),
+      expect.objectContaining({ round: 2, aligned: null }),
+    ]);
 
     const turningPoints = await getPostgameTurningPoints(db, EDGE_SMOKE_DUSK_GAME_ID, {
       includeEvidence: true,

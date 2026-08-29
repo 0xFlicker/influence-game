@@ -22,49 +22,25 @@ import { TranscriptLogger } from "../transcript-logger";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
-  StrategyPacketSummary,
   TranscriptEntry,
 } from "../game-runner.types";
 import { Phase } from "../types";
 import type { UUID } from "../types";
+import type { CanonicalGameEvent } from "../canonical-events";
 
 const ALICE = "alice" as UUID;
 const BOB = "bob" as UUID;
 const CHARLIE = "charlie" as UUID;
 
-function strategyPacket(): StrategyPacketSummary {
-  return {
-    revisionId: "rev-replay-1",
-    previousRevisionId: null,
-    updatedAtRound: 2,
-    updatedAtPhase: Phase.VOTE,
-    objective: "Hold the Alice-Bob pair through the next vote",
-    targetPosture: "Pressure Charlie if he drifts",
-    coalitionPosture: "Locked pair",
-    nextSocialProbe: "Confirm Bob still commits",
-    strategicLens: "coalition_geometry",
-    strategicLensRationale: "Pair integrity",
-    uncertainty: "Whether Charlie has a side deal",
-    reviseTrigger: "If Bob flips publicly",
-    changedSincePrevious: "initial",
-  };
-}
-
 function continuity(): RecallContinuitySnapshot {
   return {
-    strategyPacket: strategyPacket(),
-    reflectionSummary: null,
-    recentStrategicDecisions: [
-      {
-        round: 2,
-        phase: Phase.VOTE,
-        action: "empower",
-        label: "Empower ballot",
-        decisionLog: "Empowered Bob to keep the pair chooser seat",
-      },
-    ],
-    strategicEvidenceVersion: 1,
-    strategyPacketRevisionCounter: 1,
+    compactStrategy: {
+      lifecycle: "active",
+      baseline: "Hold the Alice-Bob pair through the next vote; pressure Charlie only if current evidence warrants it.",
+      deltas: ["Confirm whether Bob still honors the commitment."],
+      priorEpoch: null,
+      revision: 2,
+    },
   };
 }
 
@@ -163,14 +139,16 @@ function seedAllianceWithOutcome(params: {
     allianceId: "alliance-replay-ab",
     window: "pre_vote",
     round: gameState.round,
-    ask: "Hold the line.",
-    plan: "Vote Charlie at the next public vote.",
-    promises: ["Alice covers Bob."],
-    dissent: [],
-    confidence: "high",
-    posture: "coordinating",
-    leakOrBetrayalClaims: [],
-    ...(includeParticipantSnapshot ? { participantPlayerIds: [ALICE, BOB] } : {}),
+    facts: [{
+      kind: "commitment",
+      factId: "fact-replay-ab",
+      sessionId,
+      actorPlayerId: ALICE,
+      actionKind: "empower_vote",
+      targetPlayerId: BOB,
+      confidence: "high",
+    }],
+    participantPlayerIds: includeParticipantSnapshot ? [ALICE, BOB] : [],
     createdAt: "2026-07-26T00:00:01.000Z",
   });
 }
@@ -400,12 +378,13 @@ describe("U6 huddle outcome snapshot recovery on hydrate", () => {
     // Strip snapshot from the event body to simulate older stored events, then rehydrate.
     const stripped = gameState.getCanonicalEvents().map((event) => {
       if (event.type !== "alliance.huddle_outcome_recorded") return event;
-      const { participantPlayerIds: _drop, ...outcomeWithoutSnapshot } = event.payload.outcome;
+      const { id, sessionId, allianceId, window, round, createdAt } = event.payload.outcome;
       return {
         ...event,
+        payloadVersion: 1 as const,
         payload: {
-          ...event.payload,
-          outcome: outcomeWithoutSnapshot,
+          outcome: { id, sessionId, allianceId, window, round, createdAt },
+          ...(event.payload.alliance ? { alliance: event.payload.alliance } : {}),
         },
       };
     });
@@ -415,6 +394,7 @@ describe("U6 huddle outcome snapshot recovery on hydrate", () => {
     });
 
     expect(resumed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toEqual([ALICE, BOB]);
+    expect(resumed.getAllianceHuddleOutcomes()[0]?.facts).toEqual([]);
 
     const logger = new TranscriptLogger(resumed);
     const aliceCtx = phaseContextFromBuilder(ALICE, resumed, logger);
@@ -450,20 +430,43 @@ describe("U6 huddle outcome snapshot recovery on hydrate", () => {
       { gameId: "game-huddle-orphan", now: () => 1_700_000_000_000 },
     );
     gameState.startRound();
-    seedAllianceWithOutcome({
+    expect(() => seedAllianceWithOutcome({
       gameState,
       includeParticipantSnapshot: false,
       completeSession: false,
       sessionId: "session-missing",
-    });
+    })).toThrow("without completed session");
 
-    expect(gameState.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toBeUndefined();
+    const events = gameState.getCanonicalEvents();
+    const legacyOutcomeEvent: CanonicalGameEvent = {
+      sequence: events.length + 1,
+      gameId: gameState.gameId,
+      round: gameState.round,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      timestamp: "2026-07-26T00:00:01.000Z",
+      source: "engine",
+      visibility: "producer",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        outcome: {
+          id: "outcome-replay-ab",
+          sessionId: "session-missing",
+          allianceId: "alliance-replay-ab",
+          window: "pre_vote",
+          round: gameState.round,
+          createdAt: "2026-07-26T00:00:01.000Z",
+        },
+      },
+    };
 
     const resumed = GameState.fromCanonicalEvents(
-      JSON.parse(JSON.stringify(gameState.getCanonicalEvents())),
+      JSON.parse(JSON.stringify([...events, legacyOutcomeEvent])),
       { now: () => 1_700_000_000_000 },
     );
-    expect(resumed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toBeUndefined();
+    expect(resumed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toEqual([]);
+    expect(resumed.getAllianceHuddleOutcomes()[0]?.facts).toEqual([]);
 
     const logger = new TranscriptLogger(resumed);
     const aliceCtx = phaseContextFromBuilder(ALICE, resumed, logger);

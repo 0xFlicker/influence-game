@@ -1,12 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import {
   createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
   createFlexProcessingFetch,
   describeLlmProvider,
+  NO_FLEX_TRANSPORT_RETRY_HEADER,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveToolChoiceMode,
 } from "../llm-client";
+import { resolveProviderManifest } from "../model-catalog";
 
 describe("LLM client env config", () => {
   it("returns null when no provider is configured", () => {
@@ -24,6 +27,16 @@ describe("LLM client env config", () => {
     expect(config?.openAIReasoningSummary).toBe("auto");
     expect(config?.openAIServiceTier).toBe("flex");
     expect(config?.flexProcessingEnabled).toBe(true);
+    expect(config?.client.maxRetries).toBe(2);
+  });
+
+  it("preserves explicit client retry configuration for non-coordinated consumers", () => {
+    const config = createLlmClientFromEnv(
+      { OPENAI_API_KEY: "sk-test" },
+      { maxRetries: 0 },
+    );
+
+    expect(config?.client.maxRetries).toBe(0);
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {
@@ -117,6 +130,64 @@ describe("LLM client env config", () => {
     expect(config).toBeNull();
   });
 
+  it("binds an ordered sealed manifest to one zero-retry client per provider profile", () => {
+    const runtimes = createLlmProviderRuntimesFromEnv(
+      resolveProviderManifest([
+        {
+          catalogId: "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
+        {
+          catalogId: "katana:grok-4-5",
+          reasoningPolicy: "high",
+          maxCallsPerGame: 3,
+        },
+        {
+          catalogId: "katana:glm-5-2",
+          reasoningPolicy: "action-policy",
+          maxCallsPerGame: 5,
+        },
+      ]),
+      {
+        OPENAI_API_KEY: "openai-key",
+        API_KAT_IMGNAI_KEY: "kat-key",
+        API_KAT_IMGNAI_SECRET: "kat-secret",
+      },
+    );
+
+    expect(runtimes?.map((runtime) => ({
+      catalogId: runtime.catalogId,
+      providerProfileId: runtime.providerProfileId,
+      modelId: runtime.modelId,
+      role: runtime.role,
+      maxCallsPerGame: runtime.maxCallsPerGame,
+    }))).toEqual([
+      {
+        catalogId: "openai:gpt-5.6-luna",
+        providerProfileId: "openai",
+        modelId: "gpt-5.6-luna",
+        role: "primary",
+        maxCallsPerGame: undefined,
+      },
+      {
+        catalogId: "katana:grok-4-5",
+        providerProfileId: "katana",
+        modelId: "grok-4-5",
+        role: "fallback",
+        maxCallsPerGame: 3,
+      },
+      {
+        catalogId: "katana:glm-5-2",
+        providerProfileId: "katana",
+        modelId: "glm-5-2",
+        role: "fallback",
+        maxCallsPerGame: 5,
+      },
+    ]);
+    expect(runtimes?.[1]?.adapter).toBe(runtimes?.[2]?.adapter);
+    expect(runtimes?.[0]?.adapter).not.toBe(runtimes?.[1]?.adapter);
+  });
+
   it("normalizes standard aliases and rejects invalid request tiers", () => {
     expect(normalizeOpenAIRequestServiceTier("standard")).toBe("auto");
     expect(normalizeOpenAIRequestServiceTier("default")).toBe("auto");
@@ -125,6 +196,25 @@ describe("LLM client env config", () => {
 });
 
 describe("OpenAI Flex processing", () => {
+  it("honors an explicit one-transport-attempt budget and strips the internal header", async () => {
+    const requests: Request[] = [];
+    const flexFetch = createFlexProcessingFetch(async (request) => {
+      requests.push(request as Request);
+      return new Response(null, { status: 429 });
+    });
+
+    const response = await flexFetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { [NO_FLEX_TRANSPORT_RETRY_HEADER]: "1" },
+      body: JSON.stringify({ model: "gpt-5.6-luna", messages: [] }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers.has(NO_FLEX_TRANSPORT_RETRY_HEADER)).toBe(false);
+    expect((await requests[0]?.clone().json() as { service_tier?: string }).service_tier).toBe("flex");
+  });
+
   it("retries three Flex 429s with exponential backoff before using auto tier", async () => {
     const tiers: string[] = [];
     const delays: number[] = [];

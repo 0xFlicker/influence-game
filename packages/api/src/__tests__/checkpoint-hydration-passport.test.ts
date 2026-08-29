@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
+  createOpeningStrategyState,
   GameRunner,
   Phase,
   TemplateHouseInterviewer,
@@ -11,7 +12,6 @@ import {
   type PhaseContext,
   type PlayerContinuityCapsule,
   type PowerAction,
-  type StrategicReflectionAction,
   type TargetDecision,
   type UUID,
 } from "@influence/engine";
@@ -63,15 +63,12 @@ class PassportProofAgent implements IAgent {
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
     if (!this.started) return null;
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: createOpeningStrategyState(),
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
 
@@ -169,18 +166,6 @@ class PassportProofAgent implements IAgent {
     return { target: finalistIds[0], thinking: "passport proof jury vote" };
   }
 
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "passport proof plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "passport proof broad reflection",
-      thinking: "passport proof strategic reflection",
-    };
-  }
 
   updateAlly(_playerName: string): void {}
   updateThreat(_playerName: string): void {}
@@ -258,7 +243,7 @@ describe("checkpoint hydration passport validator", () => {
       boundaryCertificate: positive.boundaryCertificate,
       runtimeSnapshot: positive.runtimeSnapshot,
       playerContinuityCapsules: positive.playerContinuityCapsules,
-      houseContinuityCapsule: positive.houseContinuityCapsule,
+      houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
       expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
     };
 
@@ -295,7 +280,7 @@ describe("checkpoint hydration passport validator", () => {
         boundaryCertificate: positive.boundaryCertificate,
         projectionSummary: base.projectionSummary,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
       },
       transcriptCursor: positive.transcriptCursor,
     }));
@@ -324,7 +309,7 @@ describe("checkpoint hydration passport validator", () => {
         },
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -352,7 +337,7 @@ describe("checkpoint hydration passport validator", () => {
           projectionSummary: base.projectionSummary,
           state: base.state,
           playerContinuityCapsules: positive.playerContinuityCapsules,
-          houseContinuityCapsule: positive.houseContinuityCapsule,
+          houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
           expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
         },
         transcriptCursor: positive.transcriptCursor,
@@ -391,7 +376,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -464,7 +449,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -517,7 +502,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -571,7 +556,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -618,7 +603,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -656,7 +641,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -686,7 +671,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -712,7 +697,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
       },
       transcriptCursor: positive.transcriptCursor,
       tokenCostCursor: positive.tokenCostCursor,
@@ -737,7 +722,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -777,7 +762,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor,
@@ -814,7 +799,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor,
@@ -840,7 +825,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -857,7 +842,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -885,7 +870,7 @@ describe("checkpoint hydration passport validator", () => {
       projectionSummary: base.projectionSummary,
       state: base.state,
       playerContinuityCapsules: positive.playerContinuityCapsules,
-      houseContinuityCapsule: positive.houseContinuityCapsule,
+      houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
       expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
     };
 
@@ -958,7 +943,6 @@ describe("checkpoint hydration passport validator", () => {
       {
         ...DEFAULT_CONFIG,
         maxRounds: 1,
-        enableHouseStrategyBible: true,
         enableHouseRoundSummaries: true,
       },
       new TemplateHouseInterviewer(),
@@ -973,7 +957,7 @@ describe("checkpoint hydration passport validator", () => {
           expect(result.ok).toBeTrue();
           if (checkpoint.checkpointKind === "phase_boundary" &&
               checkpoint.runtimeSnapshot &&
-              checkpoint.houseContinuityCapsule &&
+              checkpoint.houseNarrativeContinuityCapsule &&
               checkpoint.tokenCostCursor?.boundary) {
             const transcriptEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.find((entry) => entry.id === "transcriptStreamBuffer");
             expect(transcriptEntry?.status).toBe("drained");
@@ -1001,68 +985,10 @@ describe("checkpoint hydration passport validator", () => {
     expect(JSON.stringify(inspection.response)).not.toContain("strategyPacket");
   });
 
-  test("House continuity stamp treats disabled bible as intentional non-blocking absence", () => {
-    const base = createCheckpointCapsule(createCanonicalEventFixture("house-disabled"));
-    const ownerEpoch = "owner-house-disabled";
-    const eventHeadHash = "sha256:house-disabled";
-    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
-
-    const res = deriveHydrationPassport(deriveInput(base, {
-      ownerEpoch,
-      eventHeadHash,
-      snapshot: {
-        runtimeSnapshot: positive.runtimeSnapshot,
-        boundaryCertificate: positive.boundaryCertificate,
-        projectionSummary: base.projectionSummary,
-        state: base.state,
-        playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: null,
-        houseContinuityRequirement: "disabled",
-        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
-      },
-      transcriptCursor: positive.transcriptCursor,
-      tokenCostCursor: positive.tokenCostCursor,
-    }));
-
-    const houseStamp = res.passport.stamps.find((stamp) => stamp.id === "houseContinuity");
-    expect(houseStamp?.status).toBe("passed");
-    expect(houseStamp?.reason).toMatch(/disabled/i);
-    expect(res.passport.verdict).toBe("hydration_candidate");
-  });
-
-  test("House continuity stamp treats awaiting first valid update as intentional non-blocking absence", () => {
-    const base = createCheckpointCapsule(createCanonicalEventFixture("house-awaiting"));
-    const ownerEpoch = "owner-house-awaiting";
-    const eventHeadHash = "sha256:house-awaiting";
-    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
-
-    const res = deriveHydrationPassport(deriveInput(base, {
-      ownerEpoch,
-      eventHeadHash,
-      snapshot: {
-        runtimeSnapshot: positive.runtimeSnapshot,
-        boundaryCertificate: positive.boundaryCertificate,
-        projectionSummary: base.projectionSummary,
-        state: base.state,
-        playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: null,
-        houseContinuityRequirement: "awaiting_first_valid_update",
-        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
-      },
-      transcriptCursor: positive.transcriptCursor,
-      tokenCostCursor: positive.tokenCostCursor,
-    }));
-
-    const houseStamp = res.passport.stamps.find((stamp) => stamp.id === "houseContinuity");
-    expect(houseStamp?.status).toBe("passed");
-    expect(houseStamp?.reason).toMatch(/awaiting first valid update/i);
-    expect(res.passport.verdict).toBe("hydration_candidate");
-  });
-
-  test("required House continuity blocks on missing or malformed packets", () => {
-    const base = createCheckpointCapsule(createCanonicalEventFixture("house-required"));
-    const ownerEpoch = "owner-house-required";
-    const eventHeadHash = "sha256:house-required";
+  test("House continuity stamp requires the exact narrative continuity v2 capsule", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("house-narrative-v2"));
+    const ownerEpoch = "owner-house-narrative-v2";
+    const eventHeadHash = "sha256:house-narrative-v2";
     const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
 
     const missing = deriveHydrationPassport(deriveInput(base, {
@@ -1074,8 +1000,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: null,
-        houseContinuityRequirement: "required",
+        houseNarrativeContinuityCapsule: null,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -1093,8 +1018,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: { revisionId: "" },
-        houseContinuityRequirement: "disabled",
+        houseNarrativeContinuityCapsule: { version: 1 },
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,
@@ -1120,7 +1044,7 @@ describe("checkpoint hydration passport validator", () => {
         boundaryCertificate: positive.boundaryCertificate,
         projectionSummary: base.projectionSummary,
         playerContinuityCapsules: capsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
       },
       transcriptCursor: positive.transcriptCursor,
     }));
@@ -1149,7 +1073,7 @@ describe("checkpoint hydration passport validator", () => {
         projectionSummary: base.projectionSummary,
         state: base.state,
         playerContinuityCapsules: positive.playerContinuityCapsules,
-        houseContinuityCapsule: positive.houseContinuityCapsule,
+        houseNarrativeContinuityCapsule: positive.houseNarrativeContinuityCapsule,
         expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
       },
       transcriptCursor: positive.transcriptCursor,

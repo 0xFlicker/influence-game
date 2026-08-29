@@ -9,6 +9,10 @@ import {
 } from "../canonical-events";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "../game-projection";
 import type { Phase, UUID } from "../types";
+import {
+  toGameMcpFormatSurface,
+  type GameMcpFormatSurface,
+} from "./format-surface";
 
 export type GameMcpSessionStatus = "running" | "completed" | "failed" | "stale_running" | "unknown";
 
@@ -87,7 +91,20 @@ export interface GameMcpEventFilter {
 
 export interface GameMcpEventResult {
   citation: GameMcpSourceCitation;
+  event: GameMcpFormatSurface<CanonicalGameEvent>;
+}
+
+type CanonicalGameMcpEventResult = Omit<GameMcpEventResult, "event"> & {
   event: CanonicalGameEvent;
+};
+
+function toSurfaceEventRecord(
+  record: CanonicalGameMcpEventResult,
+): GameMcpEventResult {
+  return {
+    ...record,
+    event: toGameMcpFormatSurface(record.event),
+  };
 }
 
 export interface GameMcpLogRecord {
@@ -107,13 +124,14 @@ export interface GameMcpSearchOptions {
 export interface GameMcpSearchResult {
   citation: GameMcpSourceCitation;
   text: string;
+  /** Raw canonical event when the searched source is the events artifact. */
   event?: CanonicalGameEvent;
   record?: Record<string, unknown>;
 }
 
 export interface GameMcpProjectionResult {
   citation: GameMcpSourceCitation;
-  projection: CanonicalGameProjection;
+  projection: GameMcpFormatSurface<CanonicalGameProjection>;
 }
 
 export interface GameMcpLinkedRecords {
@@ -417,11 +435,23 @@ export class GameMcpReadModel {
       .sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.gameNumber - b.gameNumber);
   }
 
+  /** Read the canonical event artifact without rewriting persisted evidence. */
   readEvents(sessionId: string, gameNumber: number): CanonicalGameEvent[] {
-    return this.readEventRecords(sessionId, gameNumber).map((entry) => entry.event);
+    return this.readCanonicalEventRecords(sessionId, gameNumber).map(
+      (entry) => entry.event,
+    );
   }
 
   readEventRecords(sessionId: string, gameNumber: number): GameMcpEventResult[] {
+    return this.readCanonicalEventRecords(sessionId, gameNumber).map(
+      toSurfaceEventRecord,
+    );
+  }
+
+  private readCanonicalEventRecords(
+    sessionId: string,
+    gameNumber: number,
+  ): CanonicalGameMcpEventResult[] {
     const session = this.requireSession(sessionId);
     const eventsPath = this.gamePaths(session.sessionPath, gameNumber).eventsPath;
     if (!eventsPath) throw new Error(`No canonical event log for session ${sessionId} game ${gameNumber}`);
@@ -470,15 +500,18 @@ export class GameMcpReadModel {
     return this.readText(jsonPath);
   }
 
-  readProjection(sessionId: string, gameNumber: number): CanonicalGameProjection {
+  readProjection(
+    sessionId: string,
+    gameNumber: number,
+  ): GameMcpFormatSurface<CanonicalGameProjection> {
     return this.readProjectionRecord(sessionId, gameNumber).projection;
   }
 
   readProjectionRecord(sessionId: string, gameNumber: number): GameMcpProjectionResult {
-    const events = this.readEventRecords(sessionId, gameNumber);
-    const first = events[0];
-    if (!first) throw new Error(`No canonical events for session ${sessionId} game ${gameNumber}`);
-    const projection = replayCanonicalEvents(events.map(({ event }) => event));
+    const { first, projection } = this.replayCanonicalProjection(
+      sessionId,
+      gameNumber,
+    );
     return {
       citation: {
         sessionId,
@@ -488,7 +521,7 @@ export class GameMcpReadModel {
         sourcePath: first.citation.sourcePath,
         eventSequence: projection.lastSequence,
       },
-      projection,
+      projection: toGameMcpFormatSurface(projection),
     };
   }
 
@@ -498,9 +531,9 @@ export class GameMcpReadModel {
     const results: GameMcpEventResult[] = [];
     const rethrowReadErrors = filter.sessionId !== undefined && filter.gameNumber !== undefined;
     for (const game of games) {
-      let records: GameMcpEventResult[];
+      let records: CanonicalGameMcpEventResult[];
       try {
-        records = this.readEventRecords(game.sessionId, game.gameNumber);
+        records = this.readCanonicalEventRecords(game.sessionId, game.gameNumber);
       } catch (error) {
         if (rethrowReadErrors) throw error;
         continue;
@@ -512,7 +545,7 @@ export class GameMcpReadModel {
         if (filter.phase && event.phase !== filter.phase) continue;
         if (filter.actorId && !eventMentionsActor(event, filter.actorId)) continue;
         if (typeof filter.sinceSequence === "number" && event.sequence <= filter.sinceSequence) continue;
-        results.push(record);
+        results.push(toSurfaceEventRecord(record));
         if (typeof filter.limit === "number" && filter.limit > 0 && results.length >= filter.limit) {
           return results;
         }
@@ -528,7 +561,7 @@ export class GameMcpReadModel {
     visibilityMode: CanonicalEventQueryMode = "producer",
     limit?: number,
   ): GameMcpEventResult[] {
-    const projection = this.readProjection(sessionId, gameNumber);
+    const projection = this.readCanonicalProjection(sessionId, gameNumber);
     const matchingPlayerId = projection.players[playerIdOrName]
       ? playerIdOrName
       : Object.values(projection.players).find((player) => player.name.toLowerCase() === playerIdOrName.toLowerCase())?.id;
@@ -588,12 +621,13 @@ export class GameMcpReadModel {
   }
 
   readLinkedRecords(sessionId: string, gameNumber: number, eventSequence: number): GameMcpLinkedRecords {
-    const event = this.readEventRecords(sessionId, gameNumber).find((candidate) => candidate.event.sequence === eventSequence);
-    if (!event) throw new Error(`No canonical event ${eventSequence} in session ${sessionId} game ${gameNumber}`);
+    const canonicalEvent = this.readCanonicalEventRecords(sessionId, gameNumber)
+      .find((candidate) => candidate.event.sequence === eventSequence);
+    if (!canonicalEvent) throw new Error(`No canonical event ${eventSequence} in session ${sessionId} game ${gameNumber}`);
 
     const game = this.readGame(sessionId, gameNumber);
     const turnRecords = game.turnsPath ? this.readJsonlLogRecords(sessionId, gameNumber, "turns", game.turnsPath) : [];
-    const linked = event.event.sourcePointers
+    const linked = canonicalEvent.event.sourcePointers
       .filter((pointer) => pointer.kind === "agent_turn")
       .flatMap((pointer) =>
         turnRecords.filter(({ citation, record }) => record && turnRecordMatchesPointer(record, citation.line, pointer)),
@@ -606,7 +640,10 @@ export class GameMcpReadModel {
       return true;
     });
 
-    return { event, turns };
+    return {
+      event: toSurfaceEventRecord(canonicalEvent),
+      turns,
+    };
   }
 
   private discoverSessions(): SessionEntry[] {
@@ -792,9 +829,34 @@ export class GameMcpReadModel {
   }
 
   private searchEvents(game: GameMcpGameSummary, query: string): GameMcpSearchResult[] {
-    return this.readEventRecords(game.sessionId, game.gameNumber)
+    return this.readCanonicalEventRecords(game.sessionId, game.gameNumber)
       .map(({ citation, event }) => ({ citation, event, text: JSON.stringify(event) }))
       .filter((result) => result.text.toLowerCase().includes(query));
+  }
+
+  private readCanonicalProjection(
+    sessionId: string,
+    gameNumber: number,
+  ): CanonicalGameProjection {
+    return this.replayCanonicalProjection(sessionId, gameNumber).projection;
+  }
+
+  private replayCanonicalProjection(
+    sessionId: string,
+    gameNumber: number,
+  ): {
+    first: CanonicalGameMcpEventResult;
+    projection: CanonicalGameProjection;
+  } {
+    const events = this.readCanonicalEventRecords(sessionId, gameNumber);
+    const first = events[0];
+    if (!first) {
+      throw new Error(`No canonical events for session ${sessionId} game ${gameNumber}`);
+    }
+    return {
+      first,
+      projection: replayCanonicalEvents(events.map(({ event }) => event)),
+    };
   }
 
   private searchJsonlLog(

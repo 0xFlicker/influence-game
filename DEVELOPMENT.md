@@ -84,15 +84,20 @@ If `types.ts` needs new fields, the FE makes those changes. LGD should never edi
 
 ## Testing
 
-### Test Tiers
+### Test lanes
 
-Tests are organized into three tiers with different requirements:
+The file location and suffix own each test. `bun run test:classification` fails when a new test has no lane.
 
-| Tier | Command | Needs DB? | Needs LLM provider? | When to run |
-|------|---------|-----------|---------------------|-------------|
-| **Unit (mock)** | `bun run test` | No | No | Every commit (pre-commit check) |
-| **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No for most tests; configured provider for optional LLM generation tests | Before merging API changes |
-| **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` via Doppler or `INFLUENCE_LLM_BASE_URL` for LM Studio) | Before releasing engine changes |
+| Lane | Ownership | Command | Automatic CI? |
+|------|-----------|---------|---------------|
+| Provider-free | ordinary engine, web, protocol, and root-script tests | `bun run test` | Required |
+| API / PostgreSQL | every ordinary non-E2E API test | `bun run test:postgres` | Required |
+| Browser Coverage | `packages/api/src/e2e/*.e2e.test.ts` plus explicitly classified deterministic Playwright specs | commands below | Visible, non-required |
+| Live provider | `*.live-provider.test.ts` | `doppler run -- bun run test:live-provider` or explicitly configured local provider | Never automatic |
+| External smoke | `*.external-smoke.test.ts` | `bun run test:external-smoke` with explicit service configuration | Never automatic |
+| Real Clerk / staging | explicitly selected Playwright project or staging workflow | commands below | Opt-in / release-only |
+
+Required jobs do not receive provider, Clerk, staging, or external-service credentials. A missing credential is not a passing live-provider test: opt-in suites fail closed when invoked without their configuration.
 
 ### Context evaluation levels
 
@@ -109,32 +114,26 @@ The evaluator's `strategic-probe` also makes zero provider calls. It compares se
 ### Running Tests
 
 ```bash
-# From repo root — runs ALL unit tests across all packages (engine + api + web)
+# Classification plus all automatically discovered provider-free tests
 bun run test
 
-# API integration tests (requires PostgreSQL on port 54320)
+# All automatically discovered API tests (requires PostgreSQL on port 54320)
 bun run db:bootstrap
-bun run test:db
+bun run test:postgres
 
-# Engine unit tests only
-bun run test:engine
+# Deterministic Browser Coverage lanes (isolated databases and child processes)
+bun run test:e2e:identity
+bun run test:e2e:layered-auth
+bun run test:e2e:format-viewer
+bun run test:browser:api
 
-# Engine full tests with real LLM calls (requires OpenAI-compatible provider)
-bun run test:engine:full
-
-# E2E smoke tests (requires running API server)
-cd packages/api && bun run test:e2e
+# Manual suites; configure the named dependency before invoking
+doppler run -- bun run test:live-provider
+bun run test:external-smoke
+bun run test:e2e:layered-auth:clerk
 ```
 
-**Important:** Always use `bun run test` (the script), not `bun test` (the raw runner). Running `bun test` from the repo root bypasses the workspace filter and picks up all test files, including integration tests that require PostgreSQL.
-
-### What each package's `test:mock` runs
-
-- **engine**: core game mechanics, canonical event replay, stream events, goodbye/tool fallback behavior, simulation instrumentation/config, structured-output mode, and LLM provider config
-- **api**: `websocket.test.ts` (10 tests — WS manager), `viewer-event-pacer.test.ts` (12 tests — event pacing)
-- **web**: `api-utils.test.ts` (7 tests), `constants.test.ts` (17 tests), `message-parsing.test.ts` (30 tests) — frontend utilities
-
-The remaining API tests (`db.test.ts`, `auth.test.ts`, `games-api.test.ts`, `agent-profiles.test.ts`, `game-lifecycle.test.ts`) are integration tests that require a running PostgreSQL instance. Run them with `bun run test:db`.
+**Important:** use the repository scripts, not raw root `bun test`. The scripts select the correct Bun config and ensure paid/external suites cannot be discovered by a required lane.
 
 ### E2E Tests
 
@@ -142,13 +141,21 @@ E2E tests live in two places and require more infrastructure:
 
 | Test | Runner | Dependencies | Command |
 |------|--------|--------------|---------|
-| `e2e/smoke.spec.ts` | Playwright | Running staging server | `bun run test:e2e` |
+| `e2e/smoke.spec.ts` | Playwright | Qualified staging candidate | `bun run test:e2e:staging` (workflow only) |
 | `e2e/layered-authentication.spec.ts` (deterministic) | Playwright | Docker PostgreSQL; starts isolated API/web; injected provider adapters | `bun run test:e2e:layered-auth` |
 | `e2e/layered-authentication.spec.ts` (real Clerk) | Playwright + `@clerk/testing` | Disposable DB, Clerk development instance credentials, configured development web/API | `bun run test:e2e:layered-auth:clerk` |
-| `packages/api/src/e2e/e2e-smoke.test.ts` | Bun + Puppeteer | PostgreSQL | `cd packages/api && bun test src/e2e/e2e-smoke.test.ts` |
-| `packages/api/src/e2e/game-flow.e2e.test.ts` | Bun + Puppeteer | PostgreSQL + Doppler | `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts` |
+| `e2e/public-player-identity.spec.ts` | Playwright | PostgreSQL; isolated API/web | `bun run test:e2e:identity` |
+| `e2e/format-aware-game-viewer.spec.ts` | Playwright | PostgreSQL; seeded canonical fixtures; isolated API/web | `bun run test:e2e:format-viewer` |
+| `packages/api/src/e2e/*.e2e.test.ts` | Bun + Puppeteer | PostgreSQL; one isolated DB per file | `bun run test:browser:api` |
+| `packages/api/src/e2e/game-flow.live-provider.test.ts` | Bun + Puppeteer | PostgreSQL + configured provider | `doppler run -- bun run test:live-provider` |
 
-The full game-flow E2E test spins up an API server, creates a real 6-player LLM game, and watches it via Puppeteer (up to 11 minute timeout). Run it sparingly.
+Browser Coverage runs with zero retries. API/web output is drained into bounded logs and CI uploads Playwright/Puppeteer evidence only on failure. Every harness owns a uniquely named database, terminates its child processes, and drops that database in cleanup.
+
+### Staging release E2E contract
+
+The `E2E Staging Tests` workflow receives the immutable deployed image tag, resolves it to the exact source commit while keeping the release-gate test code on current `main`, and requires `/api/health` to report that same full commit SHA before and after every serial smoke test. It navigates the homepage at `https://influence-staging.tail8a79ed.ts.net` with normal browser headers, keeps the title assertion, and fails closed on an identity mismatch, non-HTML response, or blank/missing title.
+
+On failure, the workflow uploads Playwright traces, screenshots, and a bounded `homepage-failure-evidence.json` file containing final URL, status, redacted response headers, title, and a SHA-256 body fingerprint. Staging traces exclude DOM snapshots and source files, and the workflow never uploads the raw page body. A passing staging deploy is not a release certificate until the deployment workflow has separately adopted the E2E result after the required stability proof.
 
 The deterministic layered-auth project drives the visible unified wrapper plus
 the real Influence API/session coordinator, but its Clerk and Privy assertions
@@ -160,7 +167,7 @@ unverified, not green. The complete cutover and hosted reviewer gates live in
 
 ### Full Test Audit
 
-See `docs/test-audit.md` for a comprehensive inventory of all 280 tests: what they cover, their dependencies, timing, and cost.
+See `docs/test-audit.md` for the current ownership and CI matrix.
 
 ### Testing Contract
 
@@ -168,7 +175,7 @@ Rules:
 - New game mechanics require new unit tests in `game-engine.test.ts`.
 - New personas require a mock-game smoke test or a note in the PR explaining why one wasn't added.
 - Never merge code that breaks `bun run test`.
-- Integration tests (`full-game.test.ts`) are allowed to be flaky due to LLM non-determinism, but should not systematically fail.
+- Provider-free integration tests such as `full-game.test.ts` are deterministic and must not be treated as flaky. Only manual `*.live-provider.test.ts` outcomes may vary with provider behavior, and those suites are never required CI.
 
 ## Adding a New Persona
 
@@ -260,6 +267,7 @@ Required delivery sequence:
    - `bun run typecheck`
    - `bun run lint`
    - `bun run test`
+   - `bun run test:postgres`
 2. Fix failures before moving on.
 3. Commit the change.
 4. Push the branch.
@@ -278,6 +286,7 @@ Use this closeout format in the PR description or final task summary:
   - `bun run typecheck` — passed / failed / not run
   - `bun run lint` — passed / failed / not run
   - `bun run test` — passed / failed / not run
+  - `bun run test:postgres` — passed / failed / not run
 - Not run: none / <why>
 - Remaining risk: none / <details>
 ```
@@ -361,9 +370,10 @@ To test a specific release:
    ```bash
    cd ../influence-game-test && bun install
    ```
-3. Run simulations:
+3. Run the deterministic suites:
    ```bash
-   bun run test:engine:full
+   bun run test
+   bun run test:postgres
    ```
 4. Write analysis referencing the version in the filename:
    ```
@@ -443,7 +453,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --model <lm-studio-model-id> --llm-timeout-sec 300
 ```
 
-Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. New games omit the optional manifest by default and freeze all four formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE` on two-card rounds; no standard-round Power/Council elimination; exercised `format-pick`, `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; each eliminated player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. Vote Bomb must preserve zero-safe/fewest-positive reasoning; Majority Elimination must use highest-total reasoning. For Safety Bounce, explicitly confirm that every SAFE actor understands its target becomes VULNERABLE and every VULNERABLE actor understands its target becomes SAFE; contradictory reasoning fails the check even when `response.classification` is canonically correct. Random two-card rounds do not prove catalog coverage: append `--formats <id>` for a separate bounded one-format run when a specific card needs proof. That run must emit `format.selected` without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Two or more supplied ids retain the normal two-card menu. Do not add a production round-count gate. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default.
+Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. New games omit the optional manifest by default and freeze all six formats: Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE` on two-card rounds; no standard-round Power/Council elimination; exercised `format-pick`, `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; each exited player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. The Short List must preserve zero-safe/fewest-positive reasoning; Highest Count must use highest-total reasoning; Even Votes must reason about parity, zero-as-even, and the all-odd empowered fallback; Restricted History must exclude prior EXIT targets, preserve prior SAVE targets, and remain unavailable in rounds 1–2. For Safety Bounce, explicitly confirm that every SAFE actor understands its target becomes VULNERABLE and every VULNERABLE actor understands its target becomes SAFE; contradictory reasoning fails the check even when `response.classification` is canonically correct. Random two-card rounds do not prove catalog coverage: append `--formats <canonical-id>` for a separate bounded one-format run when a round-1-eligible card needs proof. That run must emit `format.selected` without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Restricted History requires a round-3 bounded run with at least one round-1-eligible companion format; a Restricted-History-only manifest is invalid. Two or more currently available ids retain the normal two-card menu. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default. Summary `endgameType`, stage-event counts, accepted jury-question counts, and accepted jury-ballot counts come from `game-1-events.jsonl`; transcript/House banner copy cannot change them. Canonical simulation IDs remain `save_or_eliminate`, `vote_bomb`, and `majority_elimination`; provider and MCP surfaces use `save_or_exit`, `short_list`, and `highest_count`.
 
 The fuller checklist and triage live in `docs/local-model-evaluation.md`.
 
@@ -459,6 +469,12 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
 # Defaults to a short player-scaled smoke cap (6 players -> 7 rounds); pass --max-rounds to override.
+# Each alliance window makes one House proposer-selection call for ceil(alive / 4) access seats,
+# preferring players underrepresented in active alliances. Only the engine-finalized seats receive
+# proposer calls; invitee response/counter calls remain demand-driven. Agents choose only legal actions
+# for their opportunity, while the engine owns proposal/version IDs and maps amendment handles.
+# Ordinary strategyDelta is exceptional: use it only for a material actionable carry-forward change.
+# Strict schemas use JSON null, never the string "null"; the engine normalizes that exact string to null if returned.
 
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, format picks/ballots/pointers/tiebreaks, legacy classic actions, and endgame decisions):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -471,26 +487,29 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --game-timeout-sec 7200 --llm-timeout-sec 300
     # (operator action feed + House MC are on by default; add --chatty for thinking/reasoning)
 
-# Strategy-observability validation adds hidden strategic-reflection and Strategy Thread records:
+# Strategy-observability validation uses the paid diary calls for replacement/refinement:
+# Simulations consume only the final persisted Agent Profile Strategy. Unsaved editor drafts and
+# Owner Learning diff presentation do not enter model context.
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-    --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
+    --variant mingle --chatty --diary --game-timeout-sec 7200 --llm-timeout-sec 300
 
-# Rich producer validation adds House Strategy Bible packets, long-form summaries,
-# diary producer briefs, format-resolution diaries, legacy Council compatibility,
-# and strategic reflections:
+# Rich producer validation adds private House long-form narration over the same
+# narrative notebook plus diary and legacy Council compatibility:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle (producer artifact; not a safe Recall Plan promotion input), `game-N.txt` for human-readable transcript review, `game-N-prompt-reuse.json` for structural prompt-prefix reuse (hashes/counts only), and `game-N-recall-plan.json` for the **safe structural Recall Plan receipt aggregate** used to evaluate selective context recall (prompt-class counts, protected/hot/history token estimates, lane/source-class counts, actor-authorized event boundary — never dialogue, names, entry IDs, prompts, thinking, or reasoning). Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Hidden `mingle-intent` records are always in turns JSONL with live-player target repair metadata when needed; decision-relevant Mingle rooms with a trusted or official ally carry a proposal/commitment receipt or a concrete no-proposal reason. Named huddle turns persist member target/action/commitment/contingency/confidence/dissent facts, and the later outcome preserves those facts beside House summary prose. House prose is not canonical plan evidence. Format decisions carry `decisionSource` and nullable `fallbackReason`; reasoning is diagnostic evidence, never canonical fact. Legacy/classic `candidate-selection`, `power-action`, and Council records remain readable when that historical lane is deliberately exercised, but are not expected standard-round actions. Hidden strategic and producer records remain gated by their existing flags.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle (producer artifact; not a safe Recall Plan promotion input), `game-N.txt` for human-readable transcript review, `game-N-prompt-reuse.json` for structural prompt-prefix reuse (hashes/counts only), and `game-N-recall-plan.json` for the **safe structural Recall Plan receipt aggregate** used to evaluate selective context recall (prompt-class counts, protected/hot/history token estimates, lane/source-class counts, actor-authorized event boundary — never dialogue, names, entry IDs, prompts, thinking, or reasoning). Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but pure CLI simulations remain local artifacts and do not write API database rows. Live standard rounds use one House room-assignment call, one private `alliance-proposer-selection` House call/turn per alliance window, and no per-player Mingle-intent calls. The proposer-selection artifact records the exact `ceil(alive / 4)` access set, underrepresentation preference, rationale, and deterministic repair notes; it is producer evidence, not a canonical alliance event. Only finalized players receive proposer calls, while invited responses and counters are created on demand through the unchanged consent/activation transaction. Decision-relevant Mingle rooms with a trusted or official ally carry a proposal/commitment receipt or a concrete no-proposal reason. Named huddle turns persist member target/action/commitment/contingency/confidence/dissent facts; the later outcome carries those typed atoms while optional House interpretation remains private presentation. Eligible decision turns carry compact strategy candidate/result metadata; format decisions also carry `decisionSource` and nullable `fallbackReason`. Ordinary `strategyDelta` values should be exceptional actionable changes; null, the exact string `"null"`, and omitted candidates leave state unchanged. For a validation run, report non-null, accepted, rejected, and no-change counts plus output tokens by action family, then review usefulness without treating alliance prose as obligation. Reasoning and strategy prose are diagnostic evidence, never canonical fact. Legacy/classic `candidate-selection`, `power-action`, and Council records remain readable when that historical lane is deliberately exercised, but are not expected standard-round actions. Rich producer mode adds House-authored long-form copy over the same private narrative notebook. Diary questions and Judgment turns remain actor-scoped and never receive that notebook or House summaries.
+
+House MC summaries run at meaningful actor-coordinate phase cadence. One exact-schema provider call returns nullable House-authored public copy and a nullable whole-snapshot notebook replacement. Accepted public bytes are shown unchanged; reducers, projections, results, replay, Recall Plans, and AI contestant prompts never inspect that prose for facts. The summary and matching notebook are checkpointed before viewer delivery. Simulation `houseSummaryCadence` instrumentation reports boundary outcomes, provider calls/usage, per-coordinate totals, pending-delta disposition, and call/token reconciliation. `--no-house-summaries` disables the whole cadence. See [House narrative evaluation](docs/local-model-evaluation.md#house-narrative-evaluation).
 
 Format ballot visibility has three deliberately separate lanes. Sanitized operator transports (`filter_events` and `read_round_facts.format.acceptedBallots`) expose accepted voter-to-target mappings immediately after durable record. Participating-agent prompt context remains restricted to the knowledge allowed by the active format rules and must not ingest that operator ledger. The browser may buffer the same sanitized mappings until resolution, then present `ballotPresentation.rollCall` through Tally → Roll Call choreography; this is presentation pacing, not a second authority or confidentiality boundary.
 
-Agent prompts are compiled from a server-owned **Recall Plan** (protected Board Contract + Strategy Thread + authorized compact huddle outcomes; hot active-room speech; historical public/actor-owned Mingle only for strategic decision/reflection classes). Ordinary speech has no historical archive lane. A protected overflow retains a small, bounded strategic archive reserve (1,200 characters for decisions, 1,600 for reflections) without truncating protected truth. Ranking rejects zero-overlap dialogue, then applies bounded preference for the current round and the living speaker explicitly named by Strategy Thread `targetPosture`; the latest current-round statement from that target wins. Historical Mingle eligibility is fail-closed on modern `speakerPlayerId`/`audiencePlayerIds` (legacy display-name-only rows do not upgrade into private recall). Official huddle outcomes authorize via immutable `participantPlayerIds` (recoverable on hydrate only from matching completed-session speakers). The ≥50% late-game input-context reduction gate, including relevant-history survival under protected overflow, is proven offline by `packages/engine/src/__tests__/context-recall-evaluation.test.ts` and `packages/engine/src/__tests__/context-recall-plan.test.ts` against a frozen corpus — no paid LLM simulation is required. Responses calls use a stable hashed game-and-actor cache key; GPT-5.6+ uses the current 30-minute cache policy and older models keep their provider default. Provider cache rates are optimization telemetry, not recall proof. See `docs/reasoning-transcript-observability.md` § Selective Context Recall and `CONCEPTS.md` (Recall Plan).
+Agent prompts are compiled from a server-owned **Recall Plan** (protected Board Contract + compact strategy + authorized typed huddle fact atoms; hot active-room speech; historical public/actor-owned Mingle only for `strategic_decision`). Ordinary speech has no historical archive lane. A protected overflow retains a bounded 1,200-character strategic archive reserve without truncating protected truth. Ranking rejects zero-overlap dialogue, then applies bounded preference for the current round and living speakers named by compact strategy; the latest current-round statement from that speaker wins. Historical Mingle eligibility is fail-closed on modern `speakerPlayerId`/`audiencePlayerIds` (legacy display-name-only rows do not upgrade into private recall). Official huddle outcomes authorize via immutable `participantPlayerIds` (recoverable on hydrate only from matching completed-session speakers); payload-v1 summary prose is discarded as factual continuity and projects `facts: []`. The ≥50% late-game input-context reduction gate, including relevant-history survival under protected overflow, is proven offline by `packages/engine/src/__tests__/context-recall-evaluation.test.ts` and `packages/engine/src/__tests__/context-recall-plan.test.ts` against a frozen corpus — no paid LLM simulation is required. Responses calls use a stable hashed game-and-actor cache key; GPT-5.6+ uses the current 30-minute cache policy and older models keep their provider default. Provider cache rates are optimization telemetry, not recall proof. See `docs/reasoning-transcript-observability.md` § Selective Context Recall and `CONCEPTS.md` (Recall Plan).
 
-For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Tool results include MCP `resourceUri` values for full artifacts; use `resources/read` with those URIs for events, turns, progress, transcript, or game JSON instead of treating `sourcePath` as repo-root-relative. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `mingle-turn`, alliance records, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, `fallbackReason`, strategic records, or movement receipts. Search `candidate-selection`, `power-action`, and `shieldPullUp` only for legacy/classic batches. Use canonical events rather than reasoning prose for accepted game facts.
+For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Tool results include MCP `resourceUri` values for full artifacts; use `resources/read` with those URIs for events, turns, progress, transcript, or game JSON instead of treating `sourcePath` as repo-root-relative. Use `search_logs` over `sources: ["turns"]` for `mingle-room-assignment`, `mingle-turn`, `alliance-proposer-selection`, alliance records, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, `fallbackReason`, `strategyCandidate`, `strategyResult`, or movement receipts. Search `mingle-intent`, `candidate-selection`, `power-action`, and `shieldPullUp` only for isolated, legacy, or classic batches. Use canonical events rather than reasoning prose for accepted game facts.
 
 For OAuth-gated local simulation MCP validation, first give the signed-in wallet the `mcp` role and set the same high-entropy `INFLUENCE_MCP_INTROSPECTION_SECRET` for the API and local bridge. With the API on `http://127.0.0.1:3000` and web on `http://localhost:3001`, run `cd packages/engine && bun run mcp:game:login`, approve `scope=mcp` in the browser, then launch the bridge with `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json` with user-only file permissions; override with `INFLUENCE_MCP_TOKEN_FILE` for connected MCP clients. The bridge reads `INFLUENCE_MCP_TOKEN` first and then the saved token file. The token has no refresh token; rerun the helper and restart the MCP client/bridge after expiry. `scope=mcp` is global access to wired MCP surfaces. Do not describe it as per-user private-trace, per-agent, or per-game authorization.
 
@@ -509,17 +528,38 @@ To stop new games from entering a season, close admission. Season scoring remain
 
 For completed API-backed games, `read_game_brief` is the first MCP call to try. Its v2 postgame payload starts with a deterministic `executiveSummary`, includes round `headline` values, rule-based `highlightedEliminations`, enriched `derivedVoteCohorts`, sparse `gameMomentum`, jury narrative/supporter splits, and player `overallGameShape`. These fields are deterministic projections over canonical events and completed result rows; do not backfill them from transcript prose, cognitive artifacts, private traces, or hidden reasoning. If the canonical facts are missing or ambiguous, return an empty list, `null`, low confidence, or diagnostics instead of inferring a story.
 
-For API-backed durable runs, use `./scripts/run-trace-mcp-local.sh` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private trace manifests, then opens raw trace content only through the explicit `read_content` tool. The wrapper bootstraps local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, `LINODE_PRIVATE_CONTENT_BUCKET`) and is deliberately not a production/admin MCP surface. Use `bun run trace:local:smoke` for a one-command local Postgres + private content S3 writer/read/search validation. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
+For API-backed durable runs, use `./scripts/run-trace-mcp-local.sh` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private trace manifests, then opens raw trace content only through the explicit `read_content` tool. The wrapper bootstraps local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, `LINODE_PRIVATE_CONTENT_BUCKET`) and persists a dedicated `INFLUENCE_TRACE_MCP_CURSOR_SECRET` in the ignored local env file so an unexpired manifest cursor survives a server reconnect. The cursor secret is local tooling state, not a production JWT secret. The Trace MCP is deliberately not a production/admin MCP surface. Use `bun run trace:local:smoke` for a one-command local Postgres + private content S3 writer/read/search validation. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
 
 Accepted-action correlation is forward-only for API-backed runs. Direct model-authored alliance, vote/revote, format, Safety Bounce, Power, Council, endgame, and jury actions may carry the fresh receipt returned by that exact call; accepted writers do not use `getLastPrivateDecisionId()`. Speech, reflection, intent, pass, rejection, timeout, unavailable-method, House fallback, materially repaired, derived, and legacy records remain intentionally unlinked. The API stamps relational trace/cognition/prompt-reuse sidecars only after durable append assigns the final sequence, never rewrites raw trace objects, and never rolls back a valid game action because observability degraded.
 
 For production-style diagnosis, use `inspect_durable_run` first, then `list_trace_manifests`, `read_producer_match_narrative`, and producer `filter_events` to reconcile the trusted sequence and minimal citation. Read bounded raw content last with `read_trace_content({ manifestId, gameId, maxBytes })`. Prompt-reuse totals and first-break math are unchanged: the watermark advances through linked accepted sequences, while `coverage: "partial"` remains honest when expected unlinked calls exist. Canonical events remain board authority; private traces explain decisions, owner citations are cognition-gated `{seq,type}`, and public/player/watch/transcript/results responses never expose decision IDs or source pointers. See `docs/reasoning-transcript-observability.md` for the full action inventory and linkage-count semantics.
 
-`InfluenceAgent` uses provider profiles selected from the per-game model catalog. Hosted OpenAI uses `OPENAI_API_KEY`; local OpenAI-compatible servers use `INFLUENCE_LLM_BASE_URL` with LM Studio; Katana / IMGNAI uses `API_KAT_IMGNAI_KEY` plus `API_KAT_IMGNAI_SECRET` only when a game or simulator run explicitly selects a Katana catalog entry. API game start preflights the selected provider/model before claiming the durable run owner; set `INFLUENCE_LLM_PREFLIGHT=off` only for local OpenAI-compatible servers that can generate normally but do not implement model metadata retrieval. Hosted OpenAI agent prompts request Responses API reasoning summaries by default with `INFLUENCE_OPENAI_REASONING_SUMMARY=auto`; accepted values are `auto`, `concise`, `detailed`, and `off`, with `INFLUENCE_LLM_REASONING_SUMMARY` accepted as an alias. Local base URLs stay on Chat Completions compatibility paths and do not request hosted OpenAI reasoning summaries.
+Provider failures use a separate private evidence type. Admin and sysop can open **Provider failures** from the affected game in Admin history; the panel distinguishes recovered, terminal, degraded, and aggregate rate-limit states and lazy-loads exact sanitized non-429 evidence in bounded chunks. Producer MCP callers use `list_trace_manifests({ gameIdOrSlug, evidenceType: "provider_attempt_failure" })`, then `read_trace_content({ manifestId, gameId, evidenceType: "provider_attempt_failure", offsetBytes, maxBytes })`. Both reads require producer OAuth scope plus current producer role; raw responses are untrusted data, audited, no-store, and unavailable to public/player/owner-only surfaces. Provider Health is a separate Admin control: a successful **Test provider and resume** probe may close a current breaker; MCP exposes health read-only and has no mutation tool.
 
-New games should choose explicit `modelSelection.catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`). GPT-5.6 Luna (`openai:gpt-5.6-luna`) is the product baseline: it is the default for the legacy budget path, character generation/refinement, and the public-game creation form. Current game-ready catalog entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, and `katana:grok-4-3`. Back-burner Katana records exist for `katana:grok-4-20-multi-agent` and `katana:glm-5-2` but are not active-game selectable. `katana:q-naifu-a3b` is explicitly disabled after local API-backed evaluation showed repeated semantic decision failures despite JSON Schema transport working. Legacy standard/premium tiers remain fixed catalog mappings; existing explicit model selections are preserved.
+`InfluenceAgent` and the House build provider-neutral model invocations selected from the per-game model catalog. The retry/budget coordinator selects one sealed manifest entry, then that entry's native adapter compiles and dispatches the invocation. Hosted OpenAI models that support Responses always use the Responses API, including when Katana fallbacks are present; Katana uses its native `/v1/chat/completions` contract. Adding, removing, or reordering fallbacks cannot change another entry's endpoint, reasoning, tools, structured-output format, token limit, service tier, or response decoding. Unsupported essential capabilities skip only the incompatible entry without downgrading the invocation. Hosted OpenAI uses `OPENAI_API_KEY`; local OpenAI-compatible servers use `INFLUENCE_LLM_BASE_URL` with LM Studio; Katana / IMGNAI uses `API_KAT_IMGNAI_KEY` plus `API_KAT_IMGNAI_SECRET` only when a game or simulator run explicitly selects a Katana catalog entry. API game start preflights the selected provider/model before claiming the durable run owner; set `INFLUENCE_LLM_PREFLIGHT=off` only for local OpenAI-compatible servers that can generate normally but do not implement model metadata retrieval. Hosted OpenAI agent prompts request Responses API reasoning summaries by default with `INFLUENCE_OPENAI_REASONING_SUMMARY=auto`; accepted values are `auto`, `concise`, `detailed`, and `off`, with `INFLUENCE_LLM_REASONING_SUMMARY` accepted as an alias. Local base URLs stay on Chat Completions compatibility paths and do not request hosted OpenAI reasoning summaries.
 
-Structured decision calls use Responses API JSON Schema output for hosted OpenAI when reasoning summaries are enabled; otherwise hosted OpenAI defaults to named tool forcing. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice` and keeps emitted `thinking` in decision schemas. Structured decisions use a global 8192-token completion floor so reasoning models have enough room to produce tool arguments. House Mingle room assignment also uses strict JSON Schema output with that structured token floor before deterministic intent-aware placement fallback. Public messages use a global 4096-token completion floor and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
+New games seal an ordered `providerManifest`. Each entry uses `catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`, labeled **Adaptive** in the UI); fallback entries also require a bounded `maxCallsPerGame`. GPT-5.6 Luna (`openai:gpt-5.6-luna`) remains the primary product baseline. Current game-ready entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, `katana:grok-4-3`, `katana:grok-4-5`, and `katana:glm-5-2`. The unattended Daily default is Luna → Grok 4.5 (12 calls) → GLM 5.2 (24 calls); live Katana qualification for both fallbacks is recorded in `docs/local-model-evaluation.md`. `katana:grok-4-20-multi-agent` remains an evaluation candidate, and `katana:q-naifu-a3b` remains disabled after repeated semantic decision failures. Existing OpenAI and Katana catalog access remains available for explicit manual/test manifests.
+
+Create an API-backed simulation with the same ordered fallback shape using data-only CLI arguments:
+
+```bash
+bun run simulate:api -- \
+  --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+  --provider-entry katana:grok-4-5,reasoning=action-policy,max-calls=12 \
+  --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
+```
+
+The manifest is frozen at creation and checkpoint recovery uses that exact order. A request-specific refusal may advance to the next entry; the next logical call begins at primary again unless its durable health state or remaining budget disallows it.
+
+The operational outcomes are intentionally distinct:
+
+- An `invalid_prompt` response keeps its exact sanitized request/response evidence, advances to the next permitted manifest entry for that call, and starts the following logical call at primary again.
+- If every permitted entry is exhausted or disallowed, optional speech is omitted and required actions use the phase's deterministic legal fallback. The engine never emits synthetic `[No response]` dialogue.
+- A systemic authentication/configuration failure, or a threshold of service/transport failures, opens durable provider health and pauses new Daily claims; running games continue through their permitted manifest or engine behavior. Rate limits do not open the V1 breaker.
+- After correcting the provider, an admin or sysop uses **Test provider and resume**. One fenced live probe runs; success closes the current breaker revision and resumes eligible Daily admission, while failure leaves it open with new private evidence. Producer MCP can inspect this state but cannot mutate it.
+- If the process crashes after a remote dispatch whose result was not durably accepted, recovery retries with a new attempt ordinal. This can repeat a billable inference; owner, budget, accepted-result, and canonical-event fences still allow only one gameplay effect. The system does not claim exactly-once remote inference.
+
+Structured decision calls use each selected entry's native adapter. OpenAI Responses uses function tools or strict `text.format` JSON Schema while retaining reasoning effort and summaries. Katana Chat Completions uses each model's supported tools, `tool_choice`, `response_format`, reasoning effort, temperature, and token-limit fields; capability metadata omits only options unsupported by that Katana model. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice` and keeps emitted `thinking` in decision schemas. Native tools and `json_schema` compatibility validate the same exact complete tool-argument envelope: native mode requires exactly one selected tool call, while compatibility mode requires the whole response text to match that tool schema. Fences, surrounding prose, embedded JSON, wrapper objects, wrong tools, and missing or extra fields are typed failures rather than compatibility inputs. Structured decisions use a global 8192-token completion floor so reasoning models have enough room to produce tool arguments. House Mingle room assignment, alliance proposer selection, huddle scheduling/outcome, and diary follow-up decisions use the same exact schema-plus-domain boundary: coverage, budgets, partitions, identities, and session limits are checked before acceptance. Only typed provider exhaustion reaches their declared deterministic phase repair; invalid engine context and schema/validator defects propagate. Public messages use a global 4096-token completion floor and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
 
 ### Environment Strategy
 
@@ -533,7 +573,7 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 
 **Agents use the `dev` config** for local hosted-provider development. Staging receives updates from `main`; production requires manual approval. Do not run experiments directly against staging unless the task explicitly asks for staging QA.
 
-The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Run hosted simulator batches from the repo root with:
+The root `simulate` script passes `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Hosted-provider tests are excluded from every required test command; when a task explicitly requires paid validation, run `doppler run -- bun run test:live-provider` from a trusted environment. Run hosted simulator batches from the repo root with:
 
 ```bash
 bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5.6-luna
@@ -621,7 +661,7 @@ To manually trigger a staging deploy, use the `deploy-staging` skill or trigger 
 
 House Highlights postgame media adds a third, single-concurrency service. The API owns jobs, leases, storage credentials, and publication state; the render worker owns Remotion/Chromium/ffmpeg work only. Build, local smoke, health, temp-space, object-delivery, admin backfill, and concrete Compose handoff instructions are in `docs/deployment/house-highlights-render-worker.md`. Do not place `LINODE_OBJ_*` credentials in the worker container.
 
-**Board access URL:** `https://influencer-staging.tail8a79ed.ts.net/`
+**Board access URL:** `https://influence-staging.tail8a79ed.ts.net/`
 
 ### Port Allocation
 
@@ -656,9 +696,9 @@ Use `--force` at the end of the same command only for a full repair refresh.
 
 ### Statefulness Risk
 
-Active game execution is partially crash-recoverable, not generally crash-safe. If the API server restarts while a game is in progress, the replacement process has no in-memory runner, so startup marks old `in_progress` rows as suspended and attempts supported phase-boundary recovery. A suspended game can resume only when the newest event-head checkpoint has implemented runner hydration, complete resume inputs (including versioned private player continuity capsules and the sealed House-continuity requirement), and a supported actor coordinate. Treat `docs/statefulness-plan.md` as the reference for the exact supported boundaries and do not claim mid-phase, arbitrary endgame, or multi-worker resume support.
+Current API games execute as atomic durable logical turns. A normal local API reload adopts each unfinished `in_progress` game under a fresh owner epoch and continues from its committed XState snapshot and typed cursor. Scratch canonical events, transcript rows, player continuity, House summary/notebook state, and viewer publications commit together; accepted provider values can replay without repeating an accepted game effect. Do not cancel, rewind, or drain an active game for an ordinary reload. A supported pre-logical-turn game is cut over once from its exact validated checkpoint without changing its canonical event log.
 
-The admin durable-run read model reports a hydration passport for checkpoint summaries. The passport is status-only readiness metadata: it can say whether event/projection replay, boundary certificate, Runtime Snapshot v1 evidence, transcript/token cursors, private player/House continuity, owner epoch proof, and privacy validation pass, but it must not expose raw continuity capsules, prompts/responses, storage pointers, `thinking`, or `reasoningContext`. Runtime Snapshot v1 validators fail closed: missing expected active-player evidence, boundaryless token cursors, malformed runtime subobjects, or non-empty accumulators without a v1 capture contract block candidacy. A `hydration_candidate` verdict is not by itself a resume API; `resumeAvailable` is true only when the implemented startup recovery selector can actually run that checkpoint.
+Checkpoint capsules and hydration passports remain forensic data for historical runs. They are not selected by current runtime startup. Historical gameplay without logical-turn authority and corrupt/contradictory durable rows are not automatically repaired. Multi-worker execution also remains out of scope even though owner epochs fence stale writers. Treat `docs/statefulness-plan.md` as the exact operating contract.
 
 ## Pre-Commit Checklist
 
@@ -680,7 +720,7 @@ If any check fails, fix it before committing. No exceptions.
 Before creating a version tag:
 
 1. All pre-commit checks pass
-2. Full test suite passes: `bun run test:engine:full`
+2. Both required test lanes pass: `bun run test` and `bun run test:postgres`
 3. All package.json `version` fields are synced to the new version
 4. Commit message: `release: vX.Y.Z`
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`

@@ -17,6 +17,7 @@ import {
   getMe,
   loginWithFarcasterToken,
   loginWithPrivyToken,
+  type PrivyAuthenticationRequest,
   storeAuthToken,
   type AuthMe,
 } from "@/lib/api";
@@ -55,7 +56,21 @@ export interface InfluenceSessionResponse {
 export type PrivyAuthenticationOutcome =
   | { kind: "completed" }
   | { kind: "cancelled" }
+  | { kind: "provider_error"; message: string }
+  | { kind: "account_creation_required" }
+  | { kind: "account_already_exists" }
   | { kind: "link_required"; token: string };
+
+export function classifyPrivyLoginError(
+  error: string,
+): PrivyAuthenticationOutcome {
+  return error === "exited_auth_flow"
+    ? { kind: "cancelled" }
+    : {
+      kind: "provider_error",
+      message: "Could not continue with Privy. Try again.",
+    };
+}
 
 export interface InfluenceAuthState {
   ready: boolean;
@@ -66,9 +81,14 @@ export interface InfluenceAuthState {
   openCreateAccount: () => void;
   openPrivySignIn: (
     onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
+    request?: PrivyAuthenticationRequest,
   ) => void;
+  resetPrivyIdentity: () => Promise<void>;
   requestPrivyProof: () => Promise<string | null>;
   beginAuthenticationAttempt: () => ProviderAuthenticationAttempt;
+  isAuthenticationAttemptCurrent: (
+    attempt: ProviderAuthenticationAttempt,
+  ) => boolean;
   cancelAuthenticationAttempt: () => void;
   completeAuthenticationAttempt: (
     attempt: ProviderAuthenticationAttempt,
@@ -229,6 +249,7 @@ export function InfluenceAuthProvider({
   const [snapshot, setSnapshot] = useState(coordinator.getSnapshot);
   const pendingPrivyAttempt = useRef<ProviderAuthenticationAttempt | null>(null);
   const pendingPrivyToken = useRef<string | null>(null);
+  const pendingPrivyRequest = useRef<PrivyAuthenticationRequest | null>(null);
   const pendingPrivyPurpose = useRef<"authentication" | "proof" | null>(null);
   const pendingPrivyProofResolution = useRef<
     ((token: string | null) => void) | null
@@ -237,6 +258,7 @@ export function InfluenceAuthProvider({
     null,
   );
   const pendingFarcasterToken = useRef<string | null>(null);
+  const privyResetPromise = useRef<Promise<void> | null>(null);
   const [privyAuthenticationSettlement] = useState(
     () => new ProviderAuthenticationSettlement<PrivyAuthenticationOutcome>({
       kind: "cancelled",
@@ -262,16 +284,17 @@ export function InfluenceAuthProvider({
     onComplete: () => {
       void completePrivyLoginRef.current();
     },
-    onError: () => {
+    onError: (error) => {
       const wasProofRequest = pendingPrivyPurpose.current === "proof";
       pendingPrivyProofResolution.current?.(null);
       pendingPrivyProofResolution.current = null;
       pendingPrivyPurpose.current = null;
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
+      pendingPrivyRequest.current = null;
       if (!wasProofRequest) {
         coordinator.cancelProviderAttempt();
-        privyAuthenticationSettlement.settle({ kind: "cancelled" });
+        privyAuthenticationSettlement.settle(classifyPrivyLoginError(error));
       }
     },
   });
@@ -299,24 +322,30 @@ export function InfluenceAuthProvider({
       return;
     }
     const attempt = pendingPrivyAttempt.current;
-    if (!attempt) return;
-    const providerToken = existingProviderToken ?? await getAccessToken();
+    const request = pendingPrivyRequest.current;
+    if (!attempt || !request) return;
+    let providerToken = existingProviderToken ?? null;
+    let verifiedProviderToken: string | null = null;
     const isCurrentAuthenticationAttempt = () => (
       pendingPrivyAttempt.current === attempt
       && pendingPrivyPurpose.current === "authentication"
     );
-    if (!isCurrentAuthenticationAttempt()) return;
-    if (!providerToken) {
-      pendingPrivyAttempt.current = null;
-      pendingPrivyPurpose.current = null;
-      coordinator.cancelProviderAttempt();
-      privyAuthenticationSettlement.settle({ kind: "cancelled" });
-      return;
-    }
     try {
+      providerToken ??= await getAccessToken();
+      if (!isCurrentAuthenticationAttempt()) return;
+      if (!providerToken) {
+        pendingPrivyAttempt.current = null;
+        pendingPrivyPurpose.current = null;
+        pendingPrivyRequest.current = null;
+        coordinator.cancelProviderAttempt();
+        privyAuthenticationSettlement.settle({ kind: "cancelled" });
+        return;
+      }
+      verifiedProviderToken = providerToken;
+      const token = verifiedProviderToken;
       const completed = await completeAuthenticationAttempt(
         attempt,
-        () => loginWithPrivyToken(providerToken),
+        () => loginWithPrivyToken(token, request),
       );
       if (!isCurrentAuthenticationAttempt()) return;
       if (completed) {
@@ -325,33 +354,78 @@ export function InfluenceAuthProvider({
       }
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
+      pendingPrivyRequest.current = null;
       pendingPrivyPurpose.current = null;
       privyAuthenticationSettlement.settle({
         kind: completed ? "completed" : "cancelled",
       });
     } catch (error) {
       if (!isCurrentAuthenticationAttempt()) return;
-      if (error instanceof ApiError && error.code === "INVITE_REQUIRED") {
-        pendingPrivyToken.current = providerToken;
+      if (
+        error instanceof ApiError
+        && error.code === "INVITE_REQUIRED"
+        && verifiedProviderToken
+      ) {
+        pendingPrivyToken.current = verifiedProviderToken;
         setNeedsInvite(true);
         return;
       }
-      if (error instanceof ApiError && error.code === "ACCOUNT_LINK_REQUIRED") {
+      if (
+        error instanceof ApiError
+        && error.code === "ACCOUNT_CREATION_REQUIRED"
+      ) {
         pendingPrivyAttempt.current = null;
         pendingPrivyToken.current = null;
+        pendingPrivyRequest.current = null;
+        pendingPrivyPurpose.current = null;
+        coordinator.cancelProviderAttempt();
+        privyAuthenticationSettlement.settle({
+          kind: "account_creation_required",
+        });
+        return;
+      }
+      if (
+        error instanceof ApiError
+        && error.code === "ACCOUNT_ALREADY_EXISTS"
+      ) {
+        pendingPrivyAttempt.current = null;
+        pendingPrivyToken.current = null;
+        pendingPrivyRequest.current = null;
+        pendingPrivyPurpose.current = null;
+        coordinator.cancelProviderAttempt();
+        privyAuthenticationSettlement.settle({
+          kind: "account_already_exists",
+        });
+        return;
+      }
+      if (
+        error instanceof ApiError
+        && error.code === "ACCOUNT_LINK_REQUIRED"
+        && verifiedProviderToken
+      ) {
+        pendingPrivyAttempt.current = null;
+        pendingPrivyToken.current = null;
+        pendingPrivyRequest.current = null;
         pendingPrivyPurpose.current = null;
         coordinator.cancelProviderAttempt();
         privyAuthenticationSettlement.settle({
           kind: "link_required",
-          token: providerToken,
+          token: verifiedProviderToken,
         });
         return;
       }
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
+      pendingPrivyRequest.current = null;
       pendingPrivyPurpose.current = null;
       coordinator.cancelProviderAttempt();
-      privyAuthenticationSettlement.settle({ kind: "cancelled" });
+      privyAuthenticationSettlement.settle({
+        kind: "provider_error",
+        message: error instanceof ApiError
+          && error.code === "AUTH_PROVIDER_UNAVAILABLE"
+          ? "Privy is temporarily unavailable. Try again."
+          : "Could not continue with Privy. Try again.",
+      });
       console.error("[InfluenceAuth] Privy exchange failed:", error);
     }
   }, [
@@ -394,6 +468,12 @@ export function InfluenceAuthProvider({
 
   const beginAuthenticationAttempt = useCallback(
     () => coordinator.beginProviderAttempt(),
+    [coordinator],
+  );
+  const isAuthenticationAttemptCurrent = useCallback(
+    (attempt: ProviderAuthenticationAttempt) => (
+      coordinator.isProviderAttemptCurrent(attempt)
+    ),
     [coordinator],
   );
 
@@ -446,19 +526,29 @@ export function InfluenceAuthProvider({
     pendingPrivyToken.current = null;
     pendingFarcasterAttempt.current = null;
     pendingFarcasterToken.current = null;
+    pendingPrivyRequest.current = null;
     coordinator.cancelProviderAttempt();
     privyAuthenticationSettlement.settle({ kind: "cancelled" });
   }, [coordinator, privyAuthenticationSettlement]);
 
   const openPrivySignIn = useCallback((
     onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
+    request: PrivyAuthenticationRequest = { intent: "sign_in" },
   ) => {
     privyAuthenticationSettlement.begin(onSettled);
+    if (privyResetPromise.current) {
+      privyAuthenticationSettlement.settle({
+        kind: "provider_error",
+        message: "Privy is still signing out. Try again in a moment.",
+      });
+      return;
+    }
     pendingPrivyProofResolution.current?.(null);
     pendingPrivyProofResolution.current = null;
     pendingPrivyPurpose.current = "authentication";
     pendingPrivyAttempt.current = coordinator.beginProviderAttempt();
     pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = request;
     setNeedsInvite(false);
     setInviteError(null);
     const attempt = pendingPrivyAttempt.current;
@@ -474,48 +564,18 @@ export function InfluenceAuthProvider({
           }
           pendingPrivyAttempt.current = null;
           pendingPrivyPurpose.current = null;
+          pendingPrivyRequest.current = null;
           coordinator.cancelProviderAttempt();
           privyAuthenticationSettlement.settle({ kind: "cancelled" });
           return;
         }
-        try {
-          const completed = await completeAuthenticationAttempt(
-            attempt,
-            () => loginWithPrivyToken(providerToken),
-          );
-          if (
-            pendingPrivyAttempt.current !== attempt
-            || pendingPrivyPurpose.current !== "authentication"
-          ) {
-            return;
-          }
-          pendingPrivyAttempt.current = null;
-          pendingPrivyPurpose.current = null;
-          privyAuthenticationSettlement.settle({
-            kind: completed ? "completed" : "cancelled",
-          });
-        } catch (error) {
-          if (
-            pendingPrivyAttempt.current !== attempt
-            || pendingPrivyPurpose.current !== "authentication"
-          ) {
-            return;
-          }
-          pendingPrivyAttempt.current = null;
-          pendingPrivyPurpose.current = null;
-          coordinator.cancelProviderAttempt();
-          if (
-            error instanceof ApiError
-            && error.code === "ACCOUNT_LINK_REQUIRED"
-          ) {
-            privyAuthenticationSettlement.settle({
-              kind: "link_required",
-              token: providerToken,
-            });
-            return;
-          }
-          privyAuthenticationSettlement.settle({ kind: "cancelled" });
+        if (
+          pendingPrivyAttempt.current !== attempt
+          || pendingPrivyPurpose.current !== "authentication"
+        ) {
+          return;
         }
+        await completePrivyAttempt(providerToken);
       });
       return;
     }
@@ -533,13 +593,55 @@ export function InfluenceAuthProvider({
       openPrivyLogin();
     });
   }, [
-    completeAuthenticationAttempt,
     completePrivyAttempt,
     coordinator,
     getAccessToken,
     openPrivyLogin,
     privyAuthenticationSettlement,
   ]);
+
+  const resetPrivyIdentity = useCallback(async () => {
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyProofResolution.current = null;
+    pendingPrivyPurpose.current = null;
+    pendingPrivyAttempt.current = null;
+    pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = null;
+    coordinator.cancelProviderAttempt();
+    privyAuthenticationSettlement.settle({ kind: "cancelled" });
+    setNeedsInvite(false);
+    setInviteError(null);
+    setSubmittingInvite(false);
+    if (isLayeredAuthE2EAdapterEnabled()) {
+      if (window.__INFLUENCE_E2E_AUTH__) {
+        window.__INFLUENCE_E2E_AUTH__.privyToken = null;
+      }
+      return;
+    }
+    const reset = privyResetPromise.current ?? privyLogoutRef.current();
+    if (!privyResetPromise.current) {
+      privyResetPromise.current = reset;
+      void reset.finally(() => {
+        if (privyResetPromise.current === reset) {
+          privyResetPromise.current = null;
+        }
+      }).catch(() => {});
+    }
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        reset,
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
+            () => reject(new Error("Privy sign-out is taking longer than expected.")),
+            5_000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, [coordinator, privyAuthenticationSettlement]);
 
   const requestPrivyProof = useCallback(() => {
     if (isLayeredAuthE2EAdapterEnabled()) {
@@ -551,6 +653,7 @@ export function InfluenceAuthProvider({
     pendingPrivyPurpose.current = "proof";
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = null;
     return new Promise<string | null>((resolve) => {
       pendingPrivyProofResolution.current = resolve;
       void currentPrivyProof(getAccessToken).then((providerToken) => {
@@ -597,6 +700,7 @@ export function InfluenceAuthProvider({
     pendingPrivyPurpose.current = null;
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = null;
     privyAuthenticationSettlement.settle({ kind: "cancelled" });
     setNeedsInvite(false);
     setInviteError(null);
@@ -607,6 +711,7 @@ export function InfluenceAuthProvider({
   const dismissInvite = useCallback(() => {
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
+    pendingPrivyRequest.current = null;
     pendingPrivyPurpose.current = null;
     pendingFarcasterAttempt.current = null;
     pendingFarcasterToken.current = null;
@@ -653,10 +758,12 @@ export function InfluenceAuthProvider({
 
     const attempt = pendingPrivyAttempt.current;
     const providerToken = pendingPrivyToken.current;
-    if (!attempt || !providerToken) return;
+    const request = pendingPrivyRequest.current;
+    if (!attempt || !providerToken || request?.intent !== "create_account") return;
     const isCurrentInviteAttempt = () => (
       pendingPrivyAttempt.current === attempt
       && pendingPrivyToken.current === providerToken
+      && pendingPrivyRequest.current === request
       && pendingPrivyPurpose.current === "authentication"
     );
     setSubmittingInvite(true);
@@ -664,13 +771,17 @@ export function InfluenceAuthProvider({
     try {
       const completed = await completeAuthenticationAttempt(
         attempt,
-        () => loginWithPrivyToken(providerToken, code),
+        () => loginWithPrivyToken(
+          providerToken,
+          { ...request, inviteCode: code },
+        ),
       );
       if (!isCurrentInviteAttempt()) return;
       if (completed) {
         setNeedsInvite(false);
         pendingPrivyAttempt.current = null;
         pendingPrivyToken.current = null;
+        pendingPrivyRequest.current = null;
         pendingPrivyPurpose.current = null;
         privyAuthenticationSettlement.settle({ kind: "completed" });
       }
@@ -684,6 +795,7 @@ export function InfluenceAuthProvider({
         setNeedsInvite(false);
         pendingPrivyAttempt.current = null;
         pendingPrivyToken.current = null;
+        pendingPrivyRequest.current = null;
         pendingPrivyPurpose.current = null;
         coordinator.cancelProviderAttempt();
         privyAuthenticationSettlement.settle({
@@ -714,8 +826,10 @@ export function InfluenceAuthProvider({
         openSignIn,
         openCreateAccount,
         openPrivySignIn,
+        resetPrivyIdentity,
         requestPrivyProof,
         beginAuthenticationAttempt,
+        isAuthenticationAttemptCurrent,
         cancelAuthenticationAttempt,
         completeAuthenticationAttempt,
         runFarcasterMiniAppLogin,

@@ -10,8 +10,7 @@
     "./schemas": "./src/schemas.ts"
   },
   "scripts": {
-    "test": "bun test src/protocol.test.ts",
-    "test:mock": "bun test src/protocol.test.ts",
+    "test": "bun test --config=../../bunfig.toml ./src --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",
     "typecheck": "tsc --noEmit --target ESNext --module ESNext --moduleResolution bundler --strict --types bun-types"
   },
   "devDependencies": {

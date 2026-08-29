@@ -59,7 +59,10 @@ export class CanonicalEventLog {
     TType extends CanonicalGameEventType,
     TPayload extends object,
   >(draft: CanonicalEventDraft<TType, TPayload>): CanonicalGameEvent {
-    const payloadVersion = draft.type === "format.resolved" ? 2 : 1;
+    const payloadVersion = draft.type === "format.resolved"
+      || draft.type === "alliance.huddle_outcome_recorded"
+      ? 2
+      : 1;
     const event = {
       sequence: this.nextSequence,
       gameId: draft.gameId,
@@ -91,6 +94,11 @@ export class CanonicalEventLog {
 
   list(): readonly CanonicalGameEvent[] {
     return this.events.map(cloneCanonicalEvent);
+  }
+
+  listAfter(sequence: number): readonly CanonicalGameEvent[] {
+    const startIndex = Math.max(0, Math.trunc(sequence));
+    return this.events.slice(startIndex).map(cloneCanonicalEvent);
   }
 
   replaceAll(events: readonly CanonicalGameEvent[]): void {

@@ -11,6 +11,12 @@ import { createMiddleware } from "hono/factory";
 import { PrivyClient } from "@privy-io/server-auth";
 import { SignJWT, jwtVerify } from "jose";
 import type { DrizzleDB } from "../db/index.js";
+import {
+  currentLegalAcceptanceVersions,
+  hasCurrentLegalAcceptanceVersions,
+  projectCurrentLegalAcceptance,
+  type LegalAcceptanceVersions,
+} from "../services/legal-acceptance.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -60,6 +66,23 @@ export type AuthEnv = {
   };
 };
 
+export const DEPLOYMENT_CONTROL_AUDIENCE = "influence-deployment-control";
+export const DEPLOYMENT_CONTROL_SUBJECT = "influence-release-controller";
+export const DEPLOYMENT_CONTROL_PERMISSION = "manage_deployment_admission";
+export const MIN_DEPLOYMENT_CONTROL_LEASE_TOKEN_SECONDS = 5 * 60 * 60;
+const DEPLOYMENT_CONTROL_TOKEN_TYPE = "service";
+
+export type DeploymentControlAuthEnv = {
+  Variables: {
+    deploymentController: {
+      subject: typeof DEPLOYMENT_CONTROL_SUBJECT;
+      audience: typeof DEPLOYMENT_CONTROL_AUDIENCE;
+      permission: typeof DEPLOYMENT_CONTROL_PERMISSION;
+      expiresAt: number;
+    };
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Privy client (singleton)
 // ---------------------------------------------------------------------------
@@ -93,6 +116,7 @@ function getJwtSecret(): Uint8Array {
 export interface SessionTokenOptions {
   roles?: string[];
   permissions?: string[];
+  legalAcceptance?: LegalAcceptanceVersions | null;
 }
 
 /** Create a signed JWT session token for a user. */
@@ -100,10 +124,16 @@ export async function createSessionToken(
   userId: string,
   options?: SessionTokenOptions,
 ): Promise<string> {
+  // Direct callers are predominantly tests and local utilities. Production
+  // issuance always supplies an explicit accepted or pending legal claim.
+  const legalAcceptance = options?.legalAcceptance === undefined
+    ? currentLegalAcceptanceVersions()
+    : options.legalAcceptance;
   return new SignJWT({
     sub: userId,
     roles: options?.roles ?? [],
     perms: options?.permissions ?? [],
+    legal: legalAcceptance,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -116,6 +146,7 @@ export interface SessionPayload {
   userId: string;
   roles: string[];
   permissions: string[];
+  legalAcceptance: LegalAcceptanceVersions | null;
 }
 
 /** Verify and decode a session JWT. Returns user ID, roles, and permissions or null. */
@@ -126,16 +157,97 @@ export async function verifySessionToken(
     const { payload } = await jwtVerify(token, getJwtSecret(), {
       issuer: "influence-api",
     });
+    if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE) return null;
     const userId = payload.sub as string | undefined;
     if (!userId) return null;
+    const legal = payload.legal;
+    const legalRecord = legal && typeof legal === "object"
+      ? legal as Record<string, unknown>
+      : null;
+    const legalAcceptance = legalRecord
+      && typeof legalRecord.termsVersion === "string"
+      && typeof legalRecord.privacyVersion === "string"
+      ? {
+        termsVersion: legalRecord.termsVersion,
+        privacyVersion: legalRecord.privacyVersion,
+      }
+      : null;
     return {
       userId,
       roles: (payload.roles as string[] | undefined) ?? [],
       permissions: (payload.perms as string[] | undefined) ?? [],
+      legalAcceptance,
     };
   } catch {
     return null;
   }
+}
+
+/** Mint a scoped non-human release-controller token for Doppler delivery. */
+export async function createDeploymentControlToken(
+  expiresIn: string | number = "90d",
+): Promise<string> {
+  return new SignJWT({
+    token_type: DEPLOYMENT_CONTROL_TOKEN_TYPE,
+    perms: [DEPLOYMENT_CONTROL_PERMISSION],
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime(expiresIn)
+    .setIssuer("influence-api")
+    .setAudience(DEPLOYMENT_CONTROL_AUDIENCE)
+    .setSubject(DEPLOYMENT_CONTROL_SUBJECT)
+    .sign(getJwtSecret());
+}
+
+export async function verifyDeploymentControlToken(token: string): Promise<{
+  subject: typeof DEPLOYMENT_CONTROL_SUBJECT;
+  audience: typeof DEPLOYMENT_CONTROL_AUDIENCE;
+  permission: typeof DEPLOYMENT_CONTROL_PERMISSION;
+  expiresAt: number;
+} | null> {
+  try {
+    const { payload, protectedHeader } = await jwtVerify(token, getJwtSecret(), {
+      issuer: "influence-api",
+      audience: DEPLOYMENT_CONTROL_AUDIENCE,
+    });
+    const permissions = payload.perms;
+    if (
+      protectedHeader.typ !== "JWT"
+      || payload.token_type !== DEPLOYMENT_CONTROL_TOKEN_TYPE
+      || payload.sub !== DEPLOYMENT_CONTROL_SUBJECT
+      || typeof payload.exp !== "number"
+      || !Array.isArray(permissions)
+      || permissions.length !== 1
+      || permissions[0] !== DEPLOYMENT_CONTROL_PERMISSION
+    ) {
+      return null;
+    }
+    return {
+      subject: DEPLOYMENT_CONTROL_SUBJECT,
+      audience: DEPLOYMENT_CONTROL_AUDIENCE,
+      permission: DEPLOYMENT_CONTROL_PERMISSION,
+      expiresAt: payload.exp,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Authenticate only the audience-scoped non-human production controller. */
+export function requireDeploymentControlAuth() {
+  return createMiddleware<DeploymentControlAuthEnv>(async (c, next) => {
+    const authHeader = c.req.header("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ error: "Deployment controller authentication required" }, 401);
+    }
+    const principal = await verifyDeploymentControlToken(authHeader.slice(7));
+    if (!principal) {
+      return c.json({ error: "Invalid deployment controller token" }, 401);
+    }
+    c.set("deploymentController", principal);
+    await next();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +283,10 @@ export async function getPrivyUser(privyUserId: string) {
  * Sets `c.get("user")` with the authenticated user record,
  * plus `c.get("userRoles")` and `c.get("userPermissions")` from JWT.
  */
-export function requireAuth(db: DrizzleDB) {
+export function requireAuth(
+  db: DrizzleDB,
+  options: { allowPendingLegalAcceptance?: boolean } = {},
+) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const authHeader = c.req.header("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -197,6 +312,19 @@ export function requireAuth(db: DrizzleDB) {
       return c.json({ error: "User not found" }, 401);
     }
 
+    if (
+      !options.allowPendingLegalAcceptance
+      && !hasCurrentLegalAcceptanceVersions(session.legalAcceptance)
+    ) {
+      const legal = await projectCurrentLegalAcceptance(db, user.id);
+      if (!legal.accepted) {
+        return c.json({
+          error: "Current Terms and Privacy Policy acceptance is required",
+          code: "LEGAL_ACCEPTANCE_REQUIRED",
+        }, 403);
+      }
+    }
+
     c.set("user", projectAuthUser(user));
     c.set("authContextUser", projectAuthContextUser(user));
     c.set("userRoles", session.roles);
@@ -204,6 +332,15 @@ export function requireAuth(db: DrizzleDB) {
 
     await next();
   });
+}
+
+/**
+ * Authenticate an operational service account without applying the human
+ * Terms/Privacy acceptance policy. Service routes must chain an explicit,
+ * narrowly scoped permission middleware after this middleware.
+ */
+export function requireServiceAuth(db: DrizzleDB) {
+  return requireAuth(db, { allowPendingLegalAcceptance: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -300,10 +437,13 @@ export function optionalAuth(db: DrizzleDB) {
         const { schema } = await import("../db/index.js");
         const { eq } = await import("drizzle-orm");
 
-        const user = (await db
+        const legalAccepted = hasCurrentLegalAcceptanceVersions(
+          session.legalAcceptance,
+        ) || (await projectCurrentLegalAcceptance(db, session.userId)).accepted;
+        const user = legalAccepted ? (await db
           .select()
           .from(schema.users)
-          .where(eq(schema.users.id, session.userId)))[0];
+          .where(eq(schema.users.id, session.userId)))[0] : null;
 
         if (user) {
           c.set("user", projectAuthUser(user));

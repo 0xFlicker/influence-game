@@ -15,7 +15,11 @@ import {
   type ProductionGameMcpPostgameOptions,
   type ProductionGameMcpRoundFactsOptions,
 } from "./read-model.js";
-import type { CanonicalEventQueryMode } from "@influence/engine";
+import {
+  AGENT_PROFILE_LIMITS,
+  MCP_FORMAT_FACT_TYPES,
+  type CanonicalEventQueryMode,
+} from "@influence/engine";
 import type {
   CognitiveArtifactActorRole,
   CognitiveArtifactType,
@@ -48,6 +52,10 @@ import {
   leaveQueue,
   listOpenGames,
 } from "../services/queue-enrollment.js";
+import {
+  PRIVATE_TRACE_EVIDENCE_TYPE,
+  PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+} from "../services/private-trace-writer.js";
 import {
   agentCommandOutputSchema,
 } from "./agent-tool-schemas.js";
@@ -99,6 +107,9 @@ import {
   READ_OWNED_MATCH_NARRATIVE_INPUT_SCHEMA,
   READ_OWNED_MATCH_NARRATIVE_OUTPUT_SCHEMA,
   READ_OWNED_MATCH_NARRATIVE_TOOL,
+  READ_PRODUCER_GAME_COST_DETAIL_DESCRIPTION,
+  READ_PRODUCER_GAME_COST_DETAIL_INPUT_SCHEMA,
+  READ_PRODUCER_GAME_COST_DETAIL_TOOL,
   READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION,
   READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA,
   READ_PRODUCER_MATCH_NARRATIVE_OUTPUT_SCHEMA,
@@ -123,6 +134,7 @@ import {
   type OwnerLearningMcpDependencies,
 } from "./owner-learning.js";
 import { ownerLearningGenerationEnabled } from "../services/owner-learning-public.js";
+import { OwnerLearningRetryError } from "../services/owner-learning-retry.js";
 import {
   OWNER_LEARNING_MCP_READ_SCOPES,
   OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -574,9 +586,20 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["producer"]);
         return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug"), auth));
       }
+      if (name === "read_provider_health") {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProviderHealth(auth));
+      }
       if (name === "read_producer_game_analysis") {
         requireScopes(auth, ["producer"]);
         return postgameContent(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
+      }
+      if (name === READ_PRODUCER_GAME_COST_DETAIL_TOOL) {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProducerGameCostDetail(
+          requiredString(args, "gameIdOrSlug"),
+          auth,
+        ));
       }
       if (name === "read_producer_season_diagnostics") {
         requireScopes(auth, ["producer"]);
@@ -590,6 +613,8 @@ export class ProductionGameMcpJsonRpcServer {
           requiredString(args, "gameIdOrSlug"),
           auth,
           optionalNumber(args, "limit"),
+          optionalString(args, "cursor"),
+          providerEvidenceType(args, "evidenceType"),
         ));
       }
       if (name === "read_trace_content") {
@@ -599,6 +624,8 @@ export class ProductionGameMcpJsonRpcServer {
           gameId: optionalString(args, "gameId"),
           purpose: optionalString(args, "purpose"),
           maxBytes: optionalNumber(args, "maxBytes"),
+          offsetBytes: optionalNumber(args, "offsetBytes"),
+          evidenceType: providerEvidenceType(args, "evidenceType"),
         }, auth));
       }
       if (name === "search_reasoning_traces") {
@@ -837,7 +864,7 @@ function productionGameMcpTools(
     }),
     tool({
       name: "read_projection",
-      description: "Replay persisted canonical events into the projection summary for one accessible game ID or slug.",
+      description: "Replay persisted canonical events into the projection summary for one accessible game ID or slug. Format identifiers use the current MCP vocabulary.",
       properties: {
         gameIdOrSlug: { type: "string" },
       },
@@ -878,8 +905,8 @@ function productionGameMcpTools(
     tool({
       name: "filter_events",
       description: includeProducerVariant
-        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast mappings immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance."
-        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast mappings immediately after durable record.",
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance. Format identifiers use the current MCP vocabulary."
+        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record.",
       properties: {
         gameIdOrSlug: { type: "string" },
         eventType: { type: "string" },
@@ -900,7 +927,7 @@ function productionGameMcpTools(
     tool({
       name: "player_timeline",
       description: includeProducerVariant
-        ? "Return canonical events that mention a player ID or name."
+        ? "Return canonical event shapes that mention a player ID or name, using current MCP format identifiers."
         : "Return player-visible canonical events that mention a player ID or name in an accessible game.",
       properties: {
         gameIdOrSlug: { type: "string" },
@@ -918,17 +945,22 @@ function productionGameMcpTools(
     tool({
       name: "list_cognitive_artifacts",
       description: includeProducerVariant
-        ? "List split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies."
-        : "List authorized reasoning, thinking, and strategy artifact metadata for one game you participated in.",
+        ? "List a stable cursor page of split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies. Keep the game and filters fixed, and pass nextCursor back as cursor until it is null."
+        : "List a stable cursor page of authorized reasoning, thinking, and strategy artifact metadata for one game you participated in. Keep the game and filters fixed, and pass nextCursor back as cursor until it is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         artifactType: { type: "string", enum: ["reasoning", "thinking", "strategy"] },
         actorPlayerId: { type: "string" },
         limit: { type: "number" },
+        cursor: {
+          type: "string",
+          description: "Opaque nextCursor from the preceding list_cognitive_artifacts page for the same game and filters.",
+        },
       },
       required: ["gameIdOrSlug"],
       scopes: gameReadScopes,
       readOnlyHint: true,
+      outputSchema: cognitiveArtifactListOutputSchema(),
     }),
     tool({
       name: "read_cognitive_artifact",
@@ -978,8 +1010,16 @@ function productionGameMcpTools(
       readOnlyHint: true,
     }),
     tool({
+      name: "read_provider_health",
+      description: "Read durable provider circuit state, reasons, cooldown and probe status. Raw provider evidence remains available only through the existing producer trace manifest/content tools.",
+      properties: {},
+      required: [],
+      scopes: ["producer"],
+      readOnlyHint: true,
+    }),
+    tool({
       name: "read_producer_game_analysis",
-      description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, private artifact indexes, trace-manifest indexes, and tuning diagnostics.",
+      description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, honest first-page metadata and continuation cursors for private indexes, and tuning diagnostics. Continue developerEvidence.cognitiveArtifacts.nextCursor with list_cognitive_artifacts and developerEvidence.traceManifests.nextCursor with list_trace_manifests, keeping the same game and filters until each cursor is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -991,6 +1031,13 @@ function productionGameMcpTools(
       outputSchema: postgameOutputSchema("producerAnalysis"),
     }),
     tool({
+      name: READ_PRODUCER_GAME_COST_DETAIL_TOOL,
+      description: READ_PRODUCER_GAME_COST_DETAIL_DESCRIPTION,
+      inputSchema: READ_PRODUCER_GAME_COST_DETAIL_INPUT_SCHEMA,
+      scopes: ["producer"],
+      readOnlyHint: true,
+    }),
+    tool({
       name: READ_PRODUCER_MATCH_NARRATIVE_TOOL,
       description: READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION,
       inputSchema: READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA,
@@ -1000,14 +1047,24 @@ function productionGameMcpTools(
     }),
     tool({
       name: "list_trace_manifests",
-      description: "List private trace manifests for one game without returning raw trace content.",
+      description: "List a stable cursor page of private trace manifests for one game without returning raw trace content. Keep the game fixed and pass nextCursor back as cursor until it is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         limit: { type: "number" },
+        cursor: {
+          type: "string",
+          description: "Opaque nextCursor from the preceding list_trace_manifests page for the same game.",
+        },
+        evidenceType: {
+          type: "string",
+          enum: [PRIVATE_TRACE_EVIDENCE_TYPE, PROVIDER_ATTEMPT_EVIDENCE_TYPE],
+          description: "Filter to ordinary private reasoning traces or exact provider-attempt failure evidence.",
+        },
       },
       required: ["gameIdOrSlug"],
       scopes: ["producer"],
       readOnlyHint: true,
+      outputSchema: traceManifestListOutputSchema(),
     }),
     tool({
       name: "read_trace_content",
@@ -1017,6 +1074,12 @@ function productionGameMcpTools(
         gameId: { type: "string" },
         purpose: { type: "string" },
         maxBytes: { type: "number" },
+        offsetBytes: { type: "number", description: "Byte offset for bounded continuation reads." },
+        evidenceType: {
+          type: "string",
+          enum: [PRIVATE_TRACE_EVIDENCE_TYPE, PROVIDER_ATTEMPT_EVIDENCE_TYPE],
+          description: "Require the manifest to have this evidence type before reading raw content.",
+        },
       },
       required: ["manifestId"],
       scopes: ["producer"],
@@ -1296,7 +1359,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: RETRY_LEARNING_REVIEW_TOOL,
-      description: "Retry the same owned failed learning review by reviewId when it is retryable and its lifetime logical-call budget remains. Replays for already queued/running work return the same review and never reset counters. Requires agents:read, games:read, and agents:write.",
+      description: "Use the owner's single recovery allowance to retry the same failed learning review from its saved checkpoint without consuming another review credit. Replays for already queued/running work return the same review and never reset logical-call counters. Requires agents:read, games:read, and agents:write.",
       inputSchema: RETRY_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: RETRY_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -1332,17 +1395,18 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Display names are globally unique after trim/case normalization, and House-agent names are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
-        displayName: { type: "string" },
+        creationRequestId: { type: "string", format: "uuid" },
+        displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },
-        personalityPrompt: { type: "string" },
-        publicBiography: nullableStringSchema(),
-        strategyStyle: nullableStringSchema(),
+        personalityPrompt: { type: "string", maxLength: AGENT_PROFILE_LIMITS.personality },
+        publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
+        strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
       },
-      required: ["displayName", "archetype", "personalityPrompt"],
+      required: ["creationRequestId", "displayName", "archetype", "personalityPrompt"],
       scopes: writeScopes,
       readOnlyHint: false,
       outputSchema: agentCommandOutputSchema(),
@@ -1352,11 +1416,11 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
       description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied or reserved House-agent name returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
-        displayName: { type: "string" },
+        displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
         archetype: { anyOf: [{ type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS }, { type: "null" }] },
-        personalityPrompt: { type: "string" },
-        publicBiography: nullableStringSchema(),
-        strategyStyle: nullableStringSchema(),
+        personalityPrompt: { type: "string", maxLength: AGENT_PROFILE_LIMITS.personality },
+        publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
+        strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
         sourceReviewId: { type: "string", minLength: 1, maxLength: 200 },
@@ -1474,7 +1538,7 @@ function roundFactsOutputSchema(): Record<string, unknown> {
       target: playerRefOutputSchema,
       polarity: nullableSchema({
         type: "string",
-        enum: ["save", "eliminate"],
+        enum: ["save", "exit"],
       }),
     },
     additionalProperties: true,
@@ -1484,7 +1548,7 @@ function roundFactsOutputSchema(): Record<string, unknown> {
     type: "object",
     required: ["schemaVersion", "game", "canonicalGameFacts"],
     properties: {
-      schemaVersion: { type: "number", const: 2 },
+      schemaVersion: { type: "number", const: 3 },
       game: {
         type: "object",
         required: ["gameKernel", "gameKernelSource", "gameKernelDiagnostics"],
@@ -1549,6 +1613,112 @@ function roundFactsOutputSchema(): Record<string, unknown> {
         },
         additionalProperties: true,
       },
+    },
+    additionalProperties: true,
+  };
+}
+
+function indexErrorOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["ok", "status", "error"],
+    properties: {
+      ok: { type: "boolean", const: false },
+      status: { type: "string" },
+      error: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+}
+
+function cognitiveArtifactIndexResultOutputSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        required: ["ok", "game", "artifacts", "pageSize", "totalCount", "nextCursor"],
+        properties: {
+          ok: { type: "boolean", const: true },
+          game: { type: "object", additionalProperties: true },
+          artifacts: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+          pageSize: { type: "number" },
+          totalCount: { type: "number" },
+          nextCursor: nullableStringSchema(),
+        },
+        additionalProperties: true,
+      },
+      indexErrorOutputSchema(),
+    ],
+  };
+}
+
+function traceManifestIndexResultOutputSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        required: [
+          "ok",
+          "gameId",
+          "linkageSummary",
+          "manifests",
+          "pageSize",
+          "totalCount",
+          "nextCursor",
+        ],
+        properties: {
+          ok: { type: "boolean", const: true },
+          gameId: { type: "string" },
+          linkageSummary: { type: "object", additionalProperties: true },
+          manifests: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+          pageSize: { type: "number" },
+          totalCount: { type: "number" },
+          nextCursor: nullableStringSchema(),
+        },
+        additionalProperties: true,
+      },
+      indexErrorOutputSchema(),
+    ],
+  };
+}
+
+function cognitiveArtifactListOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["schemaVersion", "cognitiveArtifacts"],
+    properties: {
+      schemaVersion: { type: "number", const: 2 },
+      cognitiveArtifacts: cognitiveArtifactIndexResultOutputSchema(),
+    },
+    additionalProperties: true,
+  };
+}
+
+function traceManifestListOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["schemaVersion", "developerEvidence"],
+    properties: {
+      schemaVersion: { type: "number", const: 2 },
+      developerEvidence: traceManifestIndexResultOutputSchema(),
+    },
+    additionalProperties: true,
+  };
+}
+
+function producerDeveloperEvidenceOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["cognitiveArtifacts", "traceManifests"],
+    properties: {
+      cognitiveArtifacts: cognitiveArtifactIndexResultOutputSchema(),
+      traceManifests: traceManifestIndexResultOutputSchema(),
     },
     additionalProperties: true,
   };
@@ -1670,6 +1840,30 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     },
     additionalProperties: true,
   };
+  const majorityAlignmentSchema = {
+    type: "object",
+    required: ["round", "empowerAligned", "councilAligned", "aligned", "basis"],
+    properties: {
+      round: { type: "number" },
+      empowerAligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in the scored empower decision.",
+      },
+      councilAligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in the scored Council decision.",
+      },
+      aligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in that scored decision.",
+      },
+      basis: {
+        type: "array",
+        items: { type: "string", enum: ["empower", "council"] },
+      },
+    },
+    additionalProperties: true,
+  };
   const playerSummarySchema = {
     type: "object",
     required: [
@@ -1698,7 +1892,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       exposeVotesReceivedByRound: { type: "array", items: { type: "object", additionalProperties: true } },
       councilVotesCast: { type: "array", items: { type: "object", additionalProperties: true } },
       councilVotesReceived: { type: "array", items: { type: "object", additionalProperties: true } },
-      majorityAlignmentByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      majorityAlignmentByRound: { type: "array", items: majorityAlignmentSchema },
       endgame: { type: "object", additionalProperties: true },
       jury: { type: "object", additionalProperties: true },
       overallGameShape: { type: "object", additionalProperties: true },
@@ -1725,9 +1919,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
           "format_chooser_survived",
           "format_chooser_eliminated",
           "format_tiebreak",
-          "format_soe_elim_with_saves",
-          "format_vote_bomb_clear_stack",
-          "format_vote_bomb_unanimous_target",
+          ...Object.values(MCP_FORMAT_FACT_TYPES),
           "format_bounce_alliance_vulnerable",
         ],
       },
@@ -1812,6 +2004,27 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     },
     additionalProperties: true,
   };
+  const strategicGradeSchema = {
+    type: "object",
+    properties: {
+      signals: {
+        type: "object",
+        required: ["majorityAlignmentRoundsScored", "majorityAlignmentRate"],
+        properties: {
+          majorityAlignmentRoundsScored: {
+            type: "number",
+            description: "Rounds where canonical evidence proved participation in the scored majority decision.",
+          },
+          majorityAlignmentRate: {
+            type: "number",
+            description: "Majority-aligned rounds divided by majorityAlignmentRoundsScored; null non-participation is excluded.",
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+    additionalProperties: true,
+  };
   const kindSchemas: Record<string, { required: string[]; properties: Record<string, unknown> }> = {
     agentGames: {
       required: ["schemaVersion", "ok", "agent", "games", "diagnostics"],
@@ -1883,6 +2096,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     producerAnalysis: {
       required: ["schemaVersion", "ok", "game", "producerAnalysis", "developerEvidence"],
       properties: {
+        schemaVersion: { type: "number", const: 3 },
         producerAnalysis: {
           type: "object",
           required: ["executiveSummary", "gameMomentum", "derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
@@ -1892,11 +2106,11 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
             derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
             inferredAlliances: { type: "object", additionalProperties: true },
             juryManagementAnalysis: { type: "object", additionalProperties: true },
-            playerByPlayerStrategicGrades: { type: "array", items: { type: "object", additionalProperties: true } },
+            playerByPlayerStrategicGrades: { type: "array", items: strategicGradeSchema },
           },
           additionalProperties: true,
         },
-        developerEvidence: { type: "object", additionalProperties: true },
+        developerEvidence: producerDeveloperEvidenceOutputSchema(),
       },
     },
   };
@@ -1980,7 +2194,7 @@ function summarizePostgameContent(value: unknown): string {
     return `Returned ${root.turningPoints.length} deterministic turning point(s). See structuredContent.turningPoints for typed evidence.`;
   }
   if (root.producerAnalysis) {
-    return "Returned producer-only postgame analysis with public executive summary, momentum, and private evidence indexes. See structuredContent.producerAnalysis and structuredContent.developerEvidence.";
+    return "Returned producer-only postgame analysis with public executive summary, momentum, and private evidence index first pages. Continue structuredContent.developerEvidence.cognitiveArtifacts.nextCursor with list_cognitive_artifacts and traceManifests.nextCursor with list_trace_manifests, keeping the same game and filters until each cursor is null.";
   }
   return "Returned structured postgame result. See structuredContent for fields.";
 }
@@ -2035,6 +2249,15 @@ function publicPlayerProfileContent(value: unknown): {
 }
 
 function jsonRpcErrorData(error: unknown): { data?: unknown } {
+  if (error instanceof OwnerLearningRetryError) {
+    return {
+      data: {
+        code: error.code,
+        statusCode: error.code === "review_unavailable" ? 404 : 409,
+        retryable: false,
+      },
+    };
+  }
   if (error instanceof AgentProfileManagementError || error instanceof QueueEnrollmentError) {
     return {
       data: {
@@ -2066,10 +2289,10 @@ function resourceOrigin(resource: string): string | undefined {
   }
 }
 
-function nullableStringSchema(): unknown {
+function nullableStringSchema(maxLength?: number): unknown {
   return {
     anyOf: [
-      { type: "string" },
+      { type: "string", ...(maxLength === undefined ? {} : { maxLength }) },
       { type: "null" },
     ],
   };
@@ -2095,6 +2318,18 @@ function requiredString(args: Record<string, unknown>, key: string): string {
 function optionalNumber(args: Record<string, unknown>, key: string): number | undefined {
   const value = args[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function providerEvidenceType(
+  args: Record<string, unknown>,
+  key: string,
+): typeof PRIVATE_TRACE_EVIDENCE_TYPE | typeof PROVIDER_ATTEMPT_EVIDENCE_TYPE | undefined {
+  const value = optionalString(args, key);
+  if (value === undefined) return undefined;
+  if (value === PRIVATE_TRACE_EVIDENCE_TYPE || value === PROVIDER_ATTEMPT_EVIDENCE_TYPE) {
+    return value;
+  }
+  throw new Error(`${key} must identify a supported private evidence type`);
 }
 
 function optionalBoolean(args: Record<string, unknown>, key: string): boolean | undefined {
@@ -2220,6 +2455,7 @@ function cognitiveArtifactListArgs(args: Record<string, unknown>) {
     artifactType: optionalCognitiveArtifactType(args),
     actorPlayerId: optionalString(args, "actorPlayerId"),
     limit: optionalNumber(args, "limit"),
+    cursor: optionalString(args, "cursor"),
   };
 }
 

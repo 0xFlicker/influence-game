@@ -6,7 +6,6 @@ import { Phase } from "../types";
 import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
 import {
-  buildHouseFormatResolutionFacts,
   LAUNCH_FORMAT_IDS,
   type LaunchFormatId,
 } from "../formats";
@@ -15,6 +14,7 @@ import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 import { ContextBuilder } from "../context-builder";
 import { TranscriptLogger } from "../transcript-logger";
+import { ProviderAttemptError } from "../provider-execution";
 
 const TEST_CONFIG: GameConfig = {
   timers: {
@@ -184,6 +184,69 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(resolution.payload.tiedPlayerIds).toContain(resolution.payload.eliminatedId);
   });
 
+  it("runs Even Votes through the shared sealed path with exact parity eligibility", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const [a, b, c, d, e] = agents;
+    if (!a || !b || !c || !d || !e) throw new Error("expected five agents");
+    const targets = new Map([
+      [a.id, b.id],
+      [b.id, a.id],
+      [c.id, a.id],
+      [d.id, a.id],
+      [e.id, a.id],
+    ]);
+    for (const agent of agents) {
+      agent.getEvenVotesBallot = async () => ({
+        targetId: targets.get(agent.id)!,
+        thinking: "force a sole highest-even target",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+    }
+
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1, formatManifest: ["even_votes"] },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    if (!resolution || resolution.type !== "format.resolved") {
+      throw new Error("expected Even Votes resolution");
+    }
+    expect(canonical.filter((event) => event.type === "format.menu_offered")).toHaveLength(0);
+    expect(resolution.payloadVersion).toBe(2);
+    expect(resolution.payload).toMatchObject({
+      formatId: "even_votes",
+      eliminatedId: a.id,
+      resolutionKind: "auto",
+      tiedPlayerIds: [a.id],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: {
+          [a.id]: 4,
+          [b.id]: 1,
+          [c.id]: 0,
+          [d.id]: 0,
+          [e.id]: 0,
+        },
+        eligiblePlayerIds: [a.id, c.id, d.id, e.id],
+      },
+    });
+    expect(canonical.filter((event) => event.type === "format.ballot_cast")).toHaveLength(5);
+    expect(canonical.filter((event) => event.type === "player.eliminated")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ playerId: a.id }),
+      }),
+    ]);
+  });
+
   it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
     const state = new GameState(
       [
@@ -215,7 +278,7 @@ describe("Format kernel integration (MockAgent)", () => {
     ) ?? [];
 
     expect(aliceBallotLines).toEqual([
-      "R1/FORMAT_RESOLVE: Your format ballot: eliminate → Bob (sealed).",
+      "R1/FORMAT_RESOLVE: Your format ballot: EXIT → Bob (sealed).",
     ]);
     expect(charlieBallotLines).toEqual([]);
 
@@ -244,9 +307,9 @@ describe("Format kernel integration (MockAgent)", () => {
       .gameEventRecord
       ?.filter((line) => line.includes("format ballot")) ?? [];
     expect(resolvedLines).toEqual([
-      "R1/FORMAT_RESOLVE: Alice format ballot: eliminate → Bob.",
-      "R1/FORMAT_RESOLVE: Bob format ballot: eliminate → Charlie.",
-      "R1/FORMAT_RESOLVE: Charlie format ballot: eliminate → Bob.",
+      "R1/FORMAT_RESOLVE: Alice format ballot: EXIT → Bob.",
+      "R1/FORMAT_RESOLVE: Bob format ballot: EXIT → Charlie.",
+      "R1/FORMAT_RESOLVE: Charlie format ballot: EXIT → Bob.",
     ]);
   });
 
@@ -316,6 +379,56 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(fallbackSelected?.sourcePointers[0]).not.toHaveProperty("decisionId");
   });
 
+  it("commits the seeded second format when provider exhaustion falls back", async () => {
+    const agents = [
+      new MockAgent("empowered-a", "A"),
+      new MockAgent("voter-b", "B"),
+      new MockAgent("voter-c", "C"),
+      new MockAgent("voter-d", "D"),
+      new MockAgent("voter-e", "E"),
+    ];
+    for (const agent of agents) {
+      agent.pickRoundFormat = async () => {
+        throw Object.setPrototypeOf(
+          new Error("provider exhausted"),
+          ProviderAttemptError.prototype,
+        );
+      };
+    }
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
+      undefined,
+      { gameId: "format-seed-1", maxRoundsMode: "exact" },
+    );
+
+    await runner.run();
+
+    const menu = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.menu_offered",
+    );
+    const selected = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.selected",
+    );
+    expect(menu?.payload.offeredFormatIds).toHaveLength(2);
+    expect(selected?.payload.formatId).toBe(menu?.payload.offeredFormatIds[1]);
+    expect(selected?.sourcePointers).toEqual([
+      expect.objectContaining({
+        actorId: "empowered-a",
+        action: "format-pick",
+        engineFallback: {
+          source: "engine",
+          reason: "provider_exhausted",
+          seed: "format-seed-1:1:FORMAT_PICK:empowered-a:format-pick",
+        },
+      }),
+    ]);
+  });
+
   it("honors an exact two-round cap before an 8-player game reaches endgame", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"].map(
       (name) => new MockAgent(createUUID(), name),
@@ -351,7 +464,7 @@ describe("Format kernel integration (MockAgent)", () => {
   });
 
   it("completes every registered format through an explicit one-format manifest", async () => {
-    for (const formatId of LAUNCH_FORMAT_IDS) {
+    for (const formatId of LAUNCH_FORMAT_IDS.filter((id) => id !== "restricted_history")) {
       const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
         (name) => new MockAgent(createUUID(), `${formatId}-${name}`),
       );
@@ -392,6 +505,88 @@ describe("Format kernel integration (MockAgent)", () => {
       );
       expect(ballots.length, formatId).toBeGreaterThan(0);
       expect(ballots.every((ballot) => ballot.visibility === "private"), formatId).toBe(true);
+    }
+  });
+
+  it("admits Restricted History only in round 3 and resolves it through the sealed path", async () => {
+    const agents = ["A", "B", "C", "D", "E", "F", "G"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    let restrictedCalls = 0;
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (context, offered) => ({
+        formatId: context.round >= 3 && offered.includes("restricted_history")
+          ? "restricted_history"
+          : offered[0]!,
+        thinking: "exercise the round-gated format",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getRestrictedHistoryBallot = async (_context, legalTargetIds) => {
+        restrictedCalls += 1;
+        return {
+          targetId: legalTargetIds[0]!,
+          thinking: "choose from the canonical Restricted History target set",
+          decisionSource: "llm",
+          fallbackReason: null,
+        };
+      };
+    }
+
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 3,
+        formatManifest: ["majority_elimination", "restricted_history"],
+      },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const selections = runner.getCanonicalEvents().filter(
+      (event) => event.type === "format.selected",
+    );
+    expect(selections.filter((event) => event.round < 3).every(
+      (event) => event.payload.formatId !== "restricted_history",
+    )).toBe(true);
+    expect(selections.find((event) => event.round === 3)?.payload.formatId)
+      .toBe("restricted_history");
+    const resolution = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.resolved" && event.round === 3,
+    );
+    expect(resolution).toMatchObject({
+      payloadVersion: 2,
+      payload: {
+        formatId: "restricted_history",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: expect.any(Object),
+          eligiblePlayerIds: expect.any(Array),
+        },
+      },
+    });
+    const restrictedBallots = runner.getCanonicalEvents().filter(
+      (event): event is Extract<
+        (typeof event),
+        { type: "format.ballot_cast" }
+      > => event.type === "format.ballot_cast"
+        && event.round === 3
+        && event.payload.formatId === "restricted_history",
+    );
+    expect(restrictedBallots.length).toBeGreaterThan(0);
+    expect(restrictedCalls).toBe(restrictedBallots.length);
+    for (const ballot of restrictedBallots) {
+      const priorTargets = runner.getCanonicalEvents().flatMap((event) =>
+        event.type === "format.ballot_cast"
+          && event.round < 3
+          && event.payload.voterId === ballot.payload.voterId
+          && event.payload.polarity !== "save"
+          ? [event.payload.targetId]
+          : []
+      );
+      expect(priorTargets).not.toContain(ballot.payload.targetId);
     }
   });
 
@@ -440,7 +635,7 @@ describe("Format kernel integration (MockAgent)", () => {
     ]);
   });
 
-  it("feeds House MC omniscient sealed format ballots via roundFacts.formatResolution", async () => {
+  it("keeps House phase telemetry content-free while canonical sealed decisions remain engine-owned", async () => {
     const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
     for (const agent of agents) {
       agent.pickRoundFormat = async (_ctx, offered) => ({
@@ -469,56 +664,62 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     expect(houseMc).toBeDefined();
     if (!houseMc || houseMc.type !== "agent_turn") throw new Error("expected house-mc-summary");
-    const roundFacts = houseMc.response.roundFacts as {
-      eliminationPath?: string;
-      formatResolution?: {
-        formatId: string;
-        ballots: Array<{ voterName: string; targetName: string }>;
-        bouncePointers?: Array<{ actorName: string; targetName: string }>;
-        scores: Array<{ playerName: string; value: number }>;
-        eliminatedName: string;
-      } | null;
-    };
-    expect(roundFacts.eliminationPath).toBe("format");
-    const resolution = roundFacts.formatResolution;
-    expect(resolution).toBeTruthy();
-    if (!resolution) throw new Error("expected formatResolution");
-    expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(resolution.formatId);
-    // House omniscient: sealed ballots (or bounce chain) fully present for MC.
-    const ballotCount = resolution.ballots.length;
-    const bounceCount = resolution.bouncePointers?.length ?? 0;
-    expect(ballotCount + bounceCount).toBeGreaterThan(0);
-    expect(resolution.eliminatedName.length).toBeGreaterThan(0);
-    if (ballotCount > 0) {
-      expect(ballotCount).toBe(5);
-      const voters = new Set(resolution.ballots.map((b) => b.voterName));
-      expect(voters.size).toBe(5);
+    expect(houseMc.visibility).toBe("system");
+    expect(houseMc.response).toEqual({ summary: expect.any(String) });
+    expect(houseMc.response).not.toHaveProperty("roundFacts");
+    const resolutionTelemetry = events.find(
+      (event) => event.type === "agent_turn"
+        && event.action === "house-summary-phase-telemetry"
+        && (event.response.telemetry as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
+    );
+    expect(resolutionTelemetry).toBeDefined();
+    if (!resolutionTelemetry || resolutionTelemetry.type !== "agent_turn") {
+      throw new Error("expected format_resolve telemetry");
     }
+    expect(resolutionTelemetry.visibility).toBe("private");
+    expect(resolutionTelemetry.response.telemetry).toMatchObject({
+      status: "emitted",
+      providerCalls: expect.any(Number),
+      usage: expect.any(Array),
+    });
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("sources");
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("claims");
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("selectedSourceCount");
 
-    // R14 option A: House facts rebuild from durable events with no in-memory bag.
-    const rebuilt = buildHouseFormatResolutionFacts(
-      runner.getCanonicalEvents(),
-      1,
-      (playerId) => {
-        const player = runner.getDomainProjection().players[playerId];
-        return player?.name ?? playerId;
-      },
+    const canonical = runner.getCanonicalEvents();
+    const resolution = canonical.find(
+      (event) => event.type === "format.resolved" && event.round === 1,
     );
-    expect(rebuilt).not.toBeNull();
-    if (!rebuilt) throw new Error("expected rebuilt formatResolution");
-    expect(rebuilt.formatId).toBe(resolution.formatId);
-    expect(rebuilt.eliminatedName).toBe(resolution.eliminatedName);
-    expect(rebuilt.ballots.length).toBe(resolution.ballots.length);
-    expect(rebuilt.scores.length).toBe(resolution.scores.length);
+    expect(resolution).toBeDefined();
+    if (!resolution || resolution.type !== "format.resolved") {
+      throw new Error("expected canonical format resolution");
+    }
+    expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(
+      resolution.payload.formatId,
+    );
+    expect(resolution.payload.eliminatedId).toBeTruthy();
 
-    // Resume-shaped hydration: only the event log, no lastFormatResolution bag.
-    const resumed = GameState.fromCanonicalEvents(runner.getCanonicalEvents());
-    const afterResume = buildHouseFormatResolutionFacts(
-      resumed.getCanonicalEvents(),
-      1,
-      (playerId) => resumed.getPlayerName(playerId),
+    // Canonical events retain every sealed decision independently of whatever
+    // the House chooses to say to viewers.
+    const sealedDecisions = canonical.filter((event) =>
+      event.round === 1
+      && (event.type === "format.ballot_cast" || event.type === "format.safety_bounce_pointer")
     );
-    expect(afterResume).toEqual(rebuilt);
+    expect(sealedDecisions.length).toBeGreaterThan(0);
+    const voters = new Set(sealedDecisions.flatMap((event) => {
+      if (event.type === "format.ballot_cast") return [event.payload.voterId];
+      if (event.type === "format.safety_bounce_pointer") return [event.payload.actorId];
+      return [];
+    }));
+    expect(voters.size).toBe(5);
+
+    // Resume-shaped hydration rebuilds the same authoritative projection from
+    // the event log; no House-specific facts or in-memory bag participates.
+    const resumed = GameState.fromCanonicalEvents(canonical);
+    expect(resumed.getCanonicalEvents()).toEqual(canonical);
+    expect(replayCanonicalEvents(resumed.getCanonicalEvents())).toEqual(
+      replayCanonicalEvents(canonical),
+    );
   });
 
   it("completes a short game using format menu/pick/mingle/resolve without Power or Council", async () => {
@@ -606,10 +807,17 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     expect(formatLocks.length).toBeGreaterThan(0);
 
-    const formatElines = result.transcript.filter(
-      (e) => e.scope === "system" && typeof e.text === "string" && e.text.includes("Format ") && e.text.includes("eliminated"),
+    const formatExitLines = result.transcript.filter(
+      (e) => e.scope === "system" && typeof e.text === "string" && e.text.includes("exited under"),
     );
-    expect(formatElines.length).toBeGreaterThan(0);
+    expect(formatExitLines.length).toBeGreaterThan(0);
+    const systemTranscript = result.transcript
+      .filter((entry) => entry.scope === "system")
+      .map((entry) => entry.text)
+      .join("\n");
+    expect(systemTranscript).not.toMatch(
+      /Save-or-Eliminate|Vote Bomb|Majority Elimination/,
+    );
 
     const formatMinglePressure = formatMingleContexts[0]?.formatPressure;
     expect(formatMinglePressure?.offeredFormats).toHaveLength(2);

@@ -16,10 +16,10 @@ import {
   isLegalSaveOrEliminateBallot,
   pickFormatFromMenu,
   resolveSealedElimRound,
+  restrictedHistoryLegalTargets,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   type FormatEliminationResolution,
-  type LaunchFormatId,
   type SaveOrEliminateBallot,
   type SealedElimRegistration,
 } from "../formats";
@@ -31,15 +31,20 @@ import {
 } from "../format-pressure";
 import type {
   EliminationVoteDisclosure,
+  EngineFallbackReason,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
+  StrategicDecisionMetadata,
 } from "../game-runner.types";
+import { deterministicEngineFallback, engineFallbackMetadata } from "../engine-fallback";
+import { ProviderUnavailableError } from "../provider-execution";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
 import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
@@ -95,10 +100,17 @@ async function withFormatAgentTimeout<T>(
   phase: Phase,
   label: string,
   operation: () => Promise<T>,
-  fallback: () => T,
+  fallback: (reason: EngineFallbackReason) => T,
 ): Promise<T> {
   const timeoutMs = ctx.config.agentActionTimeoutMs;
-  if (!timeoutMs || timeoutMs < 1) return operation();
+  if (!timeoutMs || timeoutMs < 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return fallback("provider_exhausted");
+    }
+  }
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((resolve) => {
@@ -107,11 +119,14 @@ async function withFormatAgentTimeout<T>(
         `${label} timed out after ${timeoutMs}ms; using House fallback.`,
         phase,
       );
-      resolve(fallback());
+      resolve(fallback("action_timed_out"));
     }, timeoutMs);
   });
 
-  return Promise.race([operation(), timeoutPromise]).finally(() => {
+  return Promise.race([operation().catch((error) => {
+    if (!(error instanceof ProviderUnavailableError)) throw error;
+    return fallback("provider_exhausted");
+  }), timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
 }
@@ -138,6 +153,7 @@ export async function runFormatMenuPhase(
   const menu = buildFormatMenu({
     formatManifest: gameState.formatManifest,
     lastFormatId: state.lastSelectedFormat,
+    round: gameState.round,
     random: ctx.random,
   });
   state.offeredFormats = menu.offered;
@@ -215,10 +231,20 @@ export async function runFormatPickPhase(
     { empoweredId },
   );
 
-  let chosen: LaunchFormatId = offeredFormats[0]!;
-  let thinking = "House fallback: first offered format";
+  let chosen = deterministicEngineFallback(
+    offeredFormats,
+    phaseCtx,
+    empoweredId,
+    "format-pick",
+  );
+  let thinking: string | undefined;
   let reasoningContext: string | undefined;
-  let decisionLog: string | null | undefined;
+  let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+    phaseCtx,
+    empoweredId,
+    "format-pick",
+    "agent_method_unavailable",
+  );
   let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -229,19 +255,20 @@ export async function runFormatPickPhase(
       Phase.FORMAT_PICK,
       `Format pick (${gameState.getPlayerName(empoweredId)})`,
       () => pickFn(phaseCtx, offeredFormats),
-      () => ({
-        formatId: offeredFormats[0]!,
-        thinking: "House fallback after format-pick timeout",
+      (reason) => ({
+        formatId: chosen,
         decisionSource: "fallback" as const,
         fallbackReason: "tool_call_failed" as const,
+        ...engineFallbackMetadata(phaseCtx, empoweredId, "format-pick", reason),
       }),
     );
-    const timedOut = result.thinking === "House fallback after format-pick timeout"
+    const timedOut = result.decisionSource === "fallback"
       && result.fallbackReason === "tool_call_failed";
     if (timedOut) {
-      chosen = offeredFormats[0]!;
       provenance = fallbackFormatProvenance("tool_call_failed");
-      thinking = result.thinking ?? thinking;
+      thinking = undefined;
+      reasoningContext = undefined;
+      strategyMetadata = result;
     } else {
       const picked = pickFormatFromMenu(offeredFormats, result.formatId);
       if (picked) {
@@ -249,11 +276,27 @@ export async function runFormatPickPhase(
         provenance = normalizedFormatProvenance(result);
         if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       } else {
+        chosen = deterministicEngineFallback(
+          offeredFormats,
+          phaseCtx,
+          empoweredId,
+          "format-pick",
+        );
         provenance = fallbackFormatProvenance("invalid_format_choice");
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = engineFallbackMetadata(
+          phaseCtx,
+          empoweredId,
+          "format-pick",
+          "invalid_model_output",
+        );
       }
-      thinking = result.thinking ?? thinking;
-      reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      if (picked) {
+        thinking = result.thinking ?? thinking;
+        reasoningContext = result.reasoningContext;
+        strategyMetadata = result;
+      }
     }
   }
 
@@ -276,9 +319,15 @@ export async function runFormatPickPhase(
       gameState.round,
       Phase.FORMAT_PICK,
       undefined,
-      decisionId,
+      strategyMetadata.engineFallback ? undefined : decisionId,
+      strategyMetadata.engineFallback,
     ),
   ]);
+  resolveActionStrategyCandidate(
+    empoweredAgent,
+    strategyMetadata,
+    provenance.decisionSource === "llm",
+  );
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
@@ -295,7 +344,7 @@ export async function runFormatPickPhase(
       offeredFormats,
       selectedFormat: chosen,
       ...provenance,
-      ...strategicDecisionResponse({ decisionLog }),
+      ...strategicDecisionResponse(strategyMetadata),
     },
     thinking,
     reasoningContext,
@@ -386,7 +435,7 @@ export async function runFormatResolvePhase(
   );
 
   logger.logSystem(
-    `Format ${displayNameForFormat(formatId)} eliminated ${gameState.getPlayerName(eliminatedId)}`,
+    `${gameState.getPlayerName(eliminatedId)} exited under ${displayNameForFormat(formatId)}`,
     Phase.FORMAT_RESOLVE,
   );
 
@@ -413,7 +462,7 @@ async function resolveSaveOrEliminateRound(
   const ballots: SaveOrEliminateBallot[] = [];
 
   for (const player of alive) {
-    const agent = requireAgent(ctx, player.id, "save-or-eliminate ballot");
+    const agent = requireAgent(ctx, player.id, "Save-or-Exit ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
       agent,
@@ -424,10 +473,20 @@ async function resolveSaveOrEliminateRound(
     );
     const others = aliveIds.filter((id) => id !== player.id);
     let polarity: "save" | "eliminate" = "eliminate";
-    let targetId = others[others.length - 1] ?? others[0] ?? player.id;
-    let thinking = "fallback eliminate first other";
+    let targetId = deterministicEngineFallback(
+      others,
+      phaseCtx,
+      player.id,
+      "format-save-or-eliminate-ballot",
+    );
+    let thinking: string | undefined;
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+      phaseCtx,
+      player.id,
+      "format-save-or-eliminate-ballot",
+      "agent_method_unavailable",
+    );
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -436,20 +495,27 @@ async function resolveSaveOrEliminateRound(
       const result = await withFormatAgentTimeout(
         ctx,
         Phase.FORMAT_RESOLVE,
-        `Save-or-eliminate ballot (${player.name})`,
+        `Save-or-Exit ballot (${player.name})`,
         () => ballotFn(phaseCtx, aliveIds),
-        () => ({
+        (reason) => ({
           polarity: "eliminate" as const,
           targetId,
-          thinking: "House fallback after save-or-eliminate ballot timeout",
           decisionSource: "fallback" as const,
           fallbackReason: "tool_call_failed" as const,
+          ...engineFallbackMetadata(
+            phaseCtx,
+            player.id,
+            "format-save-or-eliminate-ballot",
+            reason,
+          ),
         }),
       );
-      if (result.fallbackReason === "tool_call_failed"
-        && result.thinking === "House fallback after save-or-eliminate ballot timeout") {
+      if (result.decisionSource === "fallback"
+        && result.fallbackReason === "tool_call_failed") {
         provenance = fallbackFormatProvenance("tool_call_failed");
-        thinking = result.thinking;
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = result;
       } else if (isLegalSaveOrEliminateBallot(player.id, result.targetId, result.polarity, aliveIds)) {
         polarity = result.polarity;
         targetId = result.targetId;
@@ -457,12 +523,24 @@ async function resolveSaveOrEliminateRound(
         if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       } else {
+        polarity = "eliminate";
+        targetId = deterministicEngineFallback(
+          others,
+          phaseCtx,
+          player.id,
+          "format-save-or-eliminate-ballot",
+        );
         provenance = fallbackFormatProvenance("invalid_save_or_eliminate_ballot");
-        thinking = result.thinking ?? thinking;
-        reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          "format-save-or-eliminate-ballot",
+          "invalid_model_output",
+        );
       }
     }
 
@@ -481,9 +559,15 @@ async function resolveSaveOrEliminateRound(
         gameState.round,
         Phase.FORMAT_RESOLVE,
         undefined,
-        decisionId,
+        strategyMetadata.engineFallback ? undefined : decisionId,
+        strategyMetadata.engineFallback,
       ),
     ]);
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
+    );
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -496,18 +580,18 @@ async function resolveSaveOrEliminateRound(
         targetName,
         sealed: true,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
       scope: "system",
       // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: ${polarity.toUpperCase()} → ${targetName}`,
+      text: `${player.name} sealed ballot: ${polarity === "save" ? "SAVE" : "EXIT"} → ${targetName}`,
     });
   }
 
   if (ballots.length !== aliveIds.length) {
-    throw new Error(`Save-or-eliminate incomplete ballots: ${ballots.length}/${aliveIds.length}`);
+    throw new Error(`Save-or-Exit incomplete ballots: ${ballots.length}/${aliveIds.length}`);
   }
 
   await assertCanAcceptCommit(ctx);
@@ -521,10 +605,10 @@ async function resolveSaveOrEliminateRound(
   }
 
   logger.logSystem(
-    `Save-or-eliminate ballots: ${ballots
+    `Save-or-Exit ballots: ${ballots
       .map(
         (b) =>
-          `${gameState.getPlayerName(b.voterId)}→${b.polarity}:${gameState.getPlayerName(b.targetId)}`,
+          `${gameState.getPlayerName(b.voterId)}→${b.polarity === "save" ? "SAVE" : "EXIT"}:${gameState.getPlayerName(b.targetId)}`,
       )
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
@@ -532,12 +616,12 @@ async function resolveSaveOrEliminateRound(
   const netSummary = aliveIds
     .map((id) => `${gameState.getPlayerName(id)}=${nets.nets[id] ?? 0}`)
     .join(", ");
-  logger.logSystem(`Save-or-eliminate nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "lowest net");
+  logger.logSystem(`Save-or-Exit nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
+  const resolutionSummary = formatExitReason(gameState, resolution, "lowest net");
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error("Save-or-eliminate failed to resolve elimination");
+    throw new Error("Save-or-Exit failed to resolve a player exit");
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -570,10 +654,10 @@ async function resolveSaveOrEliminateRound(
 }
 
 interface SealedElimDecisionRecord {
-  thinking: string;
+  thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
   decisionId?: UUID;
+  strategyMetadata: StrategicDecisionMetadata;
   provenance: FormatDecisionProvenance;
 }
 
@@ -583,8 +667,19 @@ async function resolveSealedElimFormatRound(
   registration: SealedElimRegistration,
 ): Promise<FormatRoundElimination> {
   const { gameState, logger } = ctx;
+  const publicName = displayNameForFormat(registration.id);
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
+  const historicalBallots = gameState.getCanonicalEvents().flatMap((event) =>
+    event.type === "format.ballot_cast"
+      ? [{
+          round: event.round,
+          voterId: event.payload.voterId,
+          targetId: event.payload.targetId,
+          polarity: event.payload.polarity,
+        }]
+      : []
+  );
   const resolved = await resolveSealedElimRound<
     SealedElimDecisionRecord,
     CanonicalSourcePointer[]
@@ -592,11 +687,19 @@ async function resolveSealedElimFormatRound(
     registration,
     participants: alive,
     traceAction: registration.decision.traceAction,
-    collectDecision: async (player, fallbackTargetId) => {
+    legalTargetIdsFor: registration.decision.targetPolicy === "restricted_history"
+      ? (player) => restrictedHistoryLegalTargets(
+          player.id,
+          aliveIds,
+          gameState.round,
+          historicalBallots,
+        )
+      : undefined,
+    collectDecision: async (player, fallbackTargetId, legalTargetIds) => {
       const agent = requireAgent(
         ctx,
         player.id,
-        `${registration.decision.publicName} ballot`,
+        `${publicName} ballot`,
       );
       const phaseCtx = prepareAgentPhaseContext(
         ctx,
@@ -606,40 +709,73 @@ async function resolveSealedElimFormatRound(
         "strategic_decision",
         { empoweredId },
       );
-      let targetId = fallbackTargetId;
+      let targetId = deterministicEngineFallback(
+        legalTargetIds,
+        phaseCtx,
+        player.id,
+        registration.decision.traceAction,
+      );
       let decision: SealedElimDecisionRecord = {
-        thinking: registration.decision.fallbackThinking,
+        strategyMetadata: engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          registration.decision.traceAction,
+          "agent_method_unavailable",
+        ),
         provenance: fallbackFormatProvenance("agent_method_unavailable"),
       };
 
       const ballotMethod = agent[registration.decision.agentMethod];
       if (ballotMethod) {
         const ballotFn = ballotMethod.bind(agent);
-        const timeoutThinking =
-          `House fallback after ${registration.decision.publicName} ballot timeout`;
         const result = await withFormatAgentTimeout(
           ctx,
           Phase.FORMAT_RESOLVE,
-          `${registration.decision.publicName} ballot (${player.name})`,
-          () => ballotFn(phaseCtx, aliveIds),
-          () => ({
-            targetId: fallbackTargetId,
-            thinking: timeoutThinking,
+          `${publicName} ballot (${player.name})`,
+          () => ballotFn(phaseCtx, [...legalTargetIds]),
+          (reason) => ({
+            targetId,
             decisionSource: "fallback" as const,
             fallbackReason: "tool_call_failed" as const,
+            ...engineFallbackMetadata(
+              phaseCtx,
+              player.id,
+              registration.decision.traceAction,
+              reason,
+            ),
           }),
         );
-        targetId = result.targetId;
-        const timedOut = result.fallbackReason === "tool_call_failed"
-          && result.thinking === timeoutThinking;
+        const legalResult = legalTargetIds.includes(result.targetId);
+        targetId = legalResult
+          ? result.targetId
+          : deterministicEngineFallback(
+              legalTargetIds,
+              phaseCtx,
+              player.id,
+              registration.decision.traceAction,
+            );
+        const timedOut = result.decisionSource === "fallback"
+          && result.fallbackReason === "tool_call_failed";
         const provenance = timedOut
           ? fallbackFormatProvenance("tool_call_failed")
-          : normalizedFormatProvenance(result);
+          : legalResult
+            ? normalizedFormatProvenance(result)
+            : fallbackFormatProvenance(registration.decision.invalidTargetReason);
+        const strategyMetadata = timedOut
+          ? result
+          : legalResult
+            ? result
+            : engineFallbackMetadata(
+                phaseCtx,
+                player.id,
+                registration.decision.traceAction,
+                "invalid_model_output",
+              );
         decision = {
-          thinking: result.thinking ?? decision.thinking,
-          reasoningContext: result.reasoningContext,
-          decisionLog: result.decisionLog,
+          thinking: provenance.decisionSource === "llm" ? result.thinking : undefined,
+          reasoningContext: provenance.decisionSource === "llm" ? result.reasoningContext : undefined,
           decisionId: provenance.decisionSource === "llm" ? result.decisionId : undefined,
+          strategyMetadata,
           provenance,
         };
       }
@@ -659,6 +795,18 @@ async function resolveSealedElimFormatRound(
         ? fallbackFormatProvenance(registration.decision.invalidTargetReason)
         : decision.provenance;
       const decisionId = repairedInvalidTarget ? undefined : decision.decisionId;
+      const fallbackMetadata = repairedInvalidTarget
+        ? engineFallbackMetadata(
+            {
+              gameId: gameState.gameId,
+              round: gameState.round,
+              phase: Phase.FORMAT_RESOLVE,
+            },
+            ballot.voterId,
+            traceAction,
+            "invalid_model_output",
+          )
+        : decision.strategyMetadata;
 
       await assertCanAcceptCommit(ctx);
       gameState.recordFormatBallot({
@@ -672,9 +820,15 @@ async function resolveSealedElimFormatRound(
           gameState.round,
           Phase.FORMAT_RESOLVE,
           undefined,
-          decisionId,
+          fallbackMetadata.engineFallback ? undefined : decisionId,
+          fallbackMetadata.engineFallback,
         ),
       ]);
+      resolveActionStrategyCandidate(
+        ctx.agents.get(ballot.voterId)!,
+        fallbackMetadata,
+        provenance.decisionSource === "llm",
+      );
       logger.emitAgentTurn({
         phase: Phase.FORMAT_RESOLVE,
         action: "format-ballot",
@@ -686,13 +840,21 @@ async function resolveSealedElimFormatRound(
           targetName,
           sealed: true,
           ...provenance,
-          ...strategicDecisionResponse({ decisionLog: decision.decisionLog }),
+          ...strategicDecisionResponse(decision.strategyMetadata),
         },
         thinking: decision.thinking,
         reasoningContext: decision.reasoningContext,
         scope: "system",
-        text: `${player.name} sealed ballot: eliminate → ${targetName}`,
+        text: `${player.name} sealed ballot: EXIT → ${targetName}`,
       });
+    },
+    recordForfeitedBallot: async (player) => {
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallotForfeited(player.id);
+      logger.logSystem(
+        `${player.name} has already targeted every legal opponent and forfeits their Restricted History ballot.`,
+        Phase.FORMAT_RESOLVE,
+      );
     },
     beforeScore: () => assertCanAcceptCommit(ctx),
     breakTie: async (tiedPlayerIds) => {
@@ -709,8 +871,9 @@ async function resolveSealedElimFormatRound(
   const resolutionSourcePointers = resolved.tieEvidence ?? [];
 
   logger.logSystem(
-    `${registration.decision.publicName} ballots: ${resolved.ballots
+    `${publicName} ballots: ${resolved.ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
+      .concat(resolved.forfeitedVoterIds.map((id) => `${gameState.getPlayerName(id)}→FORFEIT`))
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
   );
@@ -720,27 +883,41 @@ async function resolveSealedElimFormatRound(
     .join(", ");
   const criterion = registration.presentation.scoring === "fewest_positive"
     ? "fewest positive votes"
-    : "highest total";
+    : registration.presentation.scoring === "highest_even"
+      ? "highest even total"
+      : "highest total";
   if (registration.presentation.zeroVoteTreatment === "safe") {
     const eligibleIds = new Set(tallies.eligibleIds);
     const zeroSafe = aliveIds
       .filter((id) => !eligibleIds.has(id))
       .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
     logger.logSystem(
-      `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      `${publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} exits)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  } else if (registration.presentation.scoring === "highest_even") {
+    const eligibleIds = new Set(tallies.eligibleIds);
+    const allOdd = aliveIds.every((id) => (tallies.totals[id] ?? 0) % 2 !== 0);
+    const oddSafe = aliveIds
+      .filter((id) => !eligibleIds.has(id))
+      .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+    logger.logSystem(
+      allOdd
+        ? `${publicName} tally: every total is odd; the entire remaining field goes to the empowered tiebreak`
+        : `${publicName} tally: SAFE(odd)=[${oddSafe}]; even totals: ${scoreSummary || "none"} (${criterion} exits)`,
       Phase.FORMAT_RESOLVE,
     );
   } else {
     logger.logSystem(
-      `${registration.decision.publicName} tally: totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      `${publicName} tally: totals: ${scoreSummary || "none"} (${criterion} exits)`,
       Phase.FORMAT_RESOLVE,
     );
   }
-  const resolutionSummary = formatEliminationReason(gameState, resolution, criterion);
+  const resolutionSummary = formatExitReason(gameState, resolution, criterion);
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error(`${registration.decision.publicName} failed to resolve elimination`);
+    throw new Error(`${publicName} failed to resolve a player exit`);
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -773,7 +950,7 @@ async function resolveSafetyBounceRound(
   const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
-  const starterId = aliveIds[Math.floor(Math.random() * aliveIds.length)]!;
+  const starterId = aliveIds[Math.floor((ctx.random ?? Math.random)() * aliveIds.length)]!;
   let board = createBounceBoard(aliveIds, starterId);
   updateBounceBoardPressure(ctx, board);
   await assertCanAcceptCommit(ctx);
@@ -795,10 +972,20 @@ async function resolveSafetyBounceRound(
       "strategic_decision",
       { empoweredId },
     );
-    let targetId = board.unclassified[0]!;
-    let thinking = "fallback first unclassified";
+    let targetId = deterministicEngineFallback(
+      board.unclassified,
+      phaseCtx,
+      actorId,
+      "bounce-pointer",
+    );
+    let thinking: string | undefined;
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+      phaseCtx,
+      actorId,
+      "bounce-pointer",
+      "agent_method_unavailable",
+    );
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -815,17 +1002,19 @@ async function resolveSafetyBounceRound(
         Phase.FORMAT_RESOLVE,
         `Safety Bounce pointer (${gameState.getPlayerName(actorId)})`,
         () => pointerFn(phaseCtx, boardSnapshot),
-        () => ({
+        (reason) => ({
           targetId,
-          thinking: "House fallback after bounce-pointer timeout",
           decisionSource: "fallback" as const,
           fallbackReason: "tool_call_failed" as const,
+          ...engineFallbackMetadata(phaseCtx, actorId, "bounce-pointer", reason),
         }),
       );
-      if (result.fallbackReason === "tool_call_failed"
-        && result.thinking === "House fallback after bounce-pointer timeout") {
+      if (result.decisionSource === "fallback"
+        && result.fallbackReason === "tool_call_failed") {
         provenance = fallbackFormatProvenance("tool_call_failed");
-        thinking = result.thinking;
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = result;
       } else {
         const pointer = { actorId, targetId: result.targetId };
         if (isLegalBouncePointer(board, pointer)) {
@@ -833,11 +1022,28 @@ async function resolveSafetyBounceRound(
           provenance = normalizedFormatProvenance(result);
           if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         } else {
+          targetId = deterministicEngineFallback(
+            board.unclassified,
+            phaseCtx,
+            actorId,
+            "bounce-pointer",
+          );
           provenance = fallbackFormatProvenance("invalid_bounce_pointer");
+          strategyMetadata = engineFallbackMetadata(
+            phaseCtx,
+            actorId,
+            "bounce-pointer",
+            "invalid_model_output",
+          );
         }
-        thinking = result.thinking ?? thinking;
-        reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        if (provenance.decisionSource === "llm") {
+          thinking = result.thinking ?? thinking;
+          reasoningContext = result.reasoningContext;
+          strategyMetadata = result;
+        } else {
+          thinking = undefined;
+          reasoningContext = undefined;
+        }
       }
     }
 
@@ -856,9 +1062,15 @@ async function resolveSafetyBounceRound(
           gameState.round,
           Phase.FORMAT_RESOLVE,
           undefined,
-          decisionId,
+          strategyMetadata.engineFallback ? undefined : decisionId,
+          strategyMetadata.engineFallback,
         ),
       ],
+    );
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
     );
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
@@ -873,7 +1085,7 @@ async function resolveSafetyBounceRound(
         targetId,
         classification,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
@@ -928,10 +1140,20 @@ async function resolveSafetyBounceRound(
       "strategic_decision",
       { empoweredId },
     );
-    let targetId = board.vulnerable[board.vulnerable.length - 1] ?? board.vulnerable[0]!;
-    let thinking = "fallback first vulnerable";
+    let targetId = deterministicEngineFallback(
+      board.vulnerable,
+      phaseCtx,
+      player.id,
+      "format-safety-bounce-vote",
+    );
+    let thinking: string | undefined;
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+      phaseCtx,
+      player.id,
+      "format-safety-bounce-vote",
+      "agent_method_unavailable",
+    );
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -942,29 +1164,47 @@ async function resolveSafetyBounceRound(
         Phase.FORMAT_RESOLVE,
         `Safety Bounce vote (${player.name})`,
         () => voteFn(phaseCtx, board.vulnerable),
-        () => ({
+        (reason) => ({
           targetId,
-          thinking: "House fallback after safety-bounce vote timeout",
           decisionSource: "fallback" as const,
           fallbackReason: "tool_call_failed" as const,
+          ...engineFallbackMetadata(
+            phaseCtx,
+            player.id,
+            "format-safety-bounce-vote",
+            reason,
+          ),
         }),
       );
-      if (result.fallbackReason === "tool_call_failed"
-        && result.thinking === "House fallback after safety-bounce vote timeout") {
+      if (result.decisionSource === "fallback"
+        && result.fallbackReason === "tool_call_failed") {
         provenance = fallbackFormatProvenance("tool_call_failed");
-        thinking = result.thinking;
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = result;
       } else if (isLegalSafetyBounceVote(result.targetId, board.vulnerable)) {
         targetId = result.targetId;
         provenance = normalizedFormatProvenance(result);
         if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       } else {
+        targetId = deterministicEngineFallback(
+          board.vulnerable,
+          phaseCtx,
+          player.id,
+          "format-safety-bounce-vote",
+        );
         provenance = fallbackFormatProvenance("invalid_safety_bounce_target");
-        thinking = result.thinking ?? thinking;
-        reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        thinking = undefined;
+        reasoningContext = undefined;
+        strategyMetadata = engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          "format-safety-bounce-vote",
+          "invalid_model_output",
+        );
       }
     }
 
@@ -983,9 +1223,15 @@ async function resolveSafetyBounceRound(
         gameState.round,
         Phase.FORMAT_RESOLVE,
         undefined,
-        decisionId,
+        strategyMetadata.engineFallback ? undefined : decisionId,
+        strategyMetadata.engineFallback,
       ),
     ]);
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
+    );
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -997,13 +1243,13 @@ async function resolveSafetyBounceRound(
         targetName,
         sealed: true,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
       scope: "system",
       // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: eliminate → ${targetName}`,
+      text: `${player.name} sealed ballot: EXIT → ${targetName}`,
     });
   }
 
@@ -1029,10 +1275,10 @@ async function resolveSafetyBounceRound(
   logger.logSystem(
     `Safety Bounce vote reveal: ${Object.entries(voteTotals)
       .map(([id, n]) => `${gameState.getPlayerName(id as UUID)}=${n}`)
-      .join(", ")} (most votes among vulnerable is eliminated)`,
+      .join(", ")} (highest total among vulnerable exits)`,
     Phase.FORMAT_RESOLVE,
   );
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "most votes in vulnerable pool");
+  const resolutionSummary = formatExitReason(gameState, resolution, "highest total in vulnerable pool");
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
@@ -1064,24 +1310,24 @@ async function resolveSafetyBounceRound(
   };
 }
 
-/** Human-readable elimination outcome for chatty/transcript (includes sole vs tiebreak). */
-function formatEliminationReason(
+/** Human-readable exit outcome for chatty/transcript (includes sole vs tiebreak). */
+function formatExitReason(
   gameState: PhaseRunnerContext["gameState"],
   resolution: FormatEliminationResolution,
   criterion: string,
 ): string {
   if (!resolution.eliminatedId) {
-    return `Format elimination unresolved under ${criterion}.`;
+    return `Format exit unresolved under ${criterion}.`;
   }
   const name = gameState.getPlayerName(resolution.eliminatedId);
   if (resolution.kind === "auto") {
-    return `Elimination: ${name} alone had ${criterion} (${resolution.reason}) — no empowered tiebreak.`;
+    return `Exit: ${name} alone had ${criterion} (${resolution.reason}) — no empowered tiebreak.`;
   }
   if (resolution.kind === "clear" && resolution.tiedSet.length > 1) {
     const tied = resolution.tiedSet.map((id) => gameState.getPlayerName(id)).join(", ");
-    return `Elimination: ${name} chosen by empowered tiebreak among tied set [${tied}] on ${criterion}.`;
+    return `Exit: ${name} chosen by empowered tiebreak among tied set [${tied}] on ${criterion}.`;
   }
-  return `Elimination: ${name} under ${criterion}.`;
+  return `Exit: ${name} under ${criterion}.`;
 }
 
 function updateBounceBoardPressure(
@@ -1123,10 +1369,20 @@ async function breakFormatTie(
     { empoweredId },
   );
 
-  let choiceId = tiedSet[0]!;
-  let thinking = "fallback first tied";
+  let choiceId = deterministicEngineFallback(
+    tiedSet,
+    phaseCtx,
+    empoweredId,
+    "format-tiebreak",
+  );
+  let thinking: string | undefined;
   let reasoningContext: string | undefined;
-  let decisionLog: string | null | undefined;
+  let strategyMetadata: StrategicDecisionMetadata = engineFallbackMetadata(
+    phaseCtx,
+    empoweredId,
+    "format-tiebreak",
+    "agent_method_unavailable",
+  );
   let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -1137,36 +1393,55 @@ async function breakFormatTie(
       Phase.FORMAT_RESOLVE,
       `Format tiebreak (${gameState.getPlayerName(empoweredId)})`,
       () => tieFn(phaseCtx, [...tiedSet]),
-      () => ({
+      (reason) => ({
         targetId: choiceId,
-        thinking: "House fallback after format-tiebreak timeout",
         decisionSource: "fallback" as const,
         fallbackReason: "tool_call_failed" as const,
+        ...engineFallbackMetadata(phaseCtx, empoweredId, "format-tiebreak", reason),
       }),
     );
-    if (result.fallbackReason === "tool_call_failed"
-      && result.thinking === "House fallback after format-tiebreak timeout") {
+    if (result.decisionSource === "fallback"
+      && result.fallbackReason === "tool_call_failed") {
       provenance = fallbackFormatProvenance("tool_call_failed");
-      thinking = result.thinking;
+      thinking = undefined;
+      reasoningContext = undefined;
+      strategyMetadata = result;
     } else if (tiedSet.includes(result.targetId)) {
       choiceId = result.targetId;
       provenance = normalizedFormatProvenance(result);
       if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      strategyMetadata = result;
     } else {
+      choiceId = deterministicEngineFallback(
+        tiedSet,
+        phaseCtx,
+        empoweredId,
+        "format-tiebreak",
+      );
       provenance = fallbackFormatProvenance("invalid_format_tiebreak_target");
-      thinking = result.thinking ?? thinking;
-      reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      thinking = undefined;
+      reasoningContext = undefined;
+      strategyMetadata = engineFallbackMetadata(
+        phaseCtx,
+        empoweredId,
+        "format-tiebreak",
+        "invalid_model_output",
+      );
     }
   }
 
+  await assertCanAcceptCommit(ctx);
   const broken = applyFormatTiebreak(tiedSet, choiceId);
   if (!broken || broken.kind !== "clear" || !broken.eliminatedId) {
     throw new Error("Format tiebreak failed");
   }
+  resolveActionStrategyCandidate(
+    agent,
+    strategyMetadata,
+    provenance.decisionSource === "llm",
+  );
 
   logger.logSystem(
     `Empowered tiebreak: ${gameState.getPlayerName(empoweredId)} eliminates ${gameState.getPlayerName(broken.eliminatedId)} among ${tiedSet.map((id) => gameState.getPlayerName(id)).join(", ")}`,
@@ -1181,7 +1456,7 @@ async function breakFormatTie(
       tiedSet: [...tiedSet],
       eliminatedId: broken.eliminatedId,
       ...provenance,
-      ...strategicDecisionResponse({ decisionLog }),
+      ...strategicDecisionResponse(strategyMetadata),
     },
     thinking,
     reasoningContext,
@@ -1198,7 +1473,8 @@ async function breakFormatTie(
         gameState.round,
         Phase.FORMAT_RESOLVE,
         undefined,
-        decisionId,
+        strategyMetadata.engineFallback ? undefined : decisionId,
+        strategyMetadata.engineFallback,
       ),
     ],
   };

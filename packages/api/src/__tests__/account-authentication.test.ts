@@ -666,8 +666,10 @@ describe("account authentication resolver", () => {
     await expect(createManagedAccountAuthentication(
       db,
       evidence,
-      async () => {
-        throw new Error("injected database failure");
+      {
+        beforeCommit: async () => {
+          throw new Error("injected database failure");
+        },
       },
     )).rejects.toThrow("injected database failure");
     expect(await db.select().from(schema.users)).toHaveLength(0);

@@ -9,6 +9,7 @@ import {
 } from "../canonical-events";
 import {
   projectViewerDecisionEvent,
+  projectFormatBallotPresentation,
   reconstructSafetyBouncePrefix,
 } from "../viewer-decision-events";
 import { GameState } from "../game-state";
@@ -82,6 +83,76 @@ describe("canonical event envelope", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("type is unsupported: future.event");
+  });
+
+  it("accepts exact huddle outcome v2 atoms and rejects prose or invalid atom authority", () => {
+    const valid = {
+      ...sampleEvent(),
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      visibility: "producer",
+      payloadVersion: 2,
+      payload: {
+        outcome: {
+          id: "outcome-ab",
+          sessionId: "session-ab",
+          allianceId: "alliance-ab",
+          window: "pre_vote",
+          round: 1,
+          facts: [{
+            kind: "commitment",
+            factId: "fact-ab",
+            sessionId: "session-ab",
+            actorPlayerId: "alice",
+            actionKind: "empower_vote",
+            targetPlayerId: "bob",
+            confidence: "high",
+          }],
+          participantPlayerIds: ["alice", "bob"],
+          createdAt: "2026-08-27T00:00:00.000Z",
+        },
+      },
+    };
+
+    expect(validateCanonicalGameEvent(valid)).toEqual({ ok: true, errors: [] });
+
+    const withHousePlan = structuredClone(valid);
+    (withHousePlan.payload.outcome as Record<string, unknown>).plan = "House claims everyone agreed.";
+    expect(validateCanonicalGameEvent(withHousePlan)).toMatchObject({ ok: false });
+
+    const foreignActor = structuredClone(valid);
+    foreignActor.payload.outcome.facts[0]!.actorPlayerId = "charlie";
+    expect(validateCanonicalGameEvent(foreignActor).errors).toContain(
+      "alliance huddle fact actorPlayerId must be a session participant",
+    );
+  });
+
+  it("accepts historical huddle outcome v1 metadata without treating its prose as a v2 contract", () => {
+    const legacy = {
+      ...sampleEvent(),
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      visibility: "producer",
+      payloadVersion: 1,
+      payload: {
+        outcome: {
+          id: "outcome-legacy",
+          sessionId: "session-legacy",
+          allianceId: "alliance-legacy",
+          window: "pre_vote",
+          round: 1,
+          ask: "Unsupported ask",
+          plan: "Unsupported shared plan",
+          promises: ["Unsupported promise"],
+          posture: "unsupported_consensus",
+          createdAt: "2026-08-27T00:00:00.000Z",
+        },
+      },
+    };
+
+    expect(validateCanonicalGameEvent(legacy)).toEqual({ ok: true, errors: [] });
   });
 
   it("accepts v2 only for aggregate-shaped format resolutions", () => {
@@ -459,6 +530,38 @@ describe("accepted action registry", () => {
 });
 
 describe("canonical event log", () => {
+  it("clones only events after a trusted sequence cursor", () => {
+    const log = new CanonicalEventLog();
+    log.append({
+      gameId: "game-fixed",
+      round: 0,
+      phase: Phase.INIT,
+      type: "game.roster_initialized",
+      timestamp: "2026-06-11T00:00:00.000Z",
+      visibility: "system",
+      payload: {
+        players: [
+          { id: "atlas", name: "Atlas", status: PlayerStatus.ALIVE, shielded: false },
+        ],
+      },
+    });
+    log.append({
+      gameId: "game-fixed",
+      round: 1,
+      phase: Phase.LOBBY,
+      type: "round.started",
+      timestamp: "2026-06-11T00:00:01.000Z",
+      visibility: "system",
+      payload: { round: 1 },
+    });
+
+    const tail = log.listAfter(1);
+
+    expect(tail.map((event) => event.sequence)).toEqual([2]);
+    expect(log.listAfter(2)).toEqual([]);
+    expect(log.listAfter(-1)).toHaveLength(2);
+  });
+
   it("replays existing events to new subscribers and then streams new events", () => {
     const log = new CanonicalEventLog();
     log.append({
@@ -806,6 +909,95 @@ describe("format.menu_offered", () => {
         targetId: "charlie",
         polarity: null,
       },
+    });
+  });
+
+  it("projects an exhausted Restricted History voter as a canonical forfeiture", () => {
+    const gs = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "lyra", name: "Lyra" },
+        { id: "echo", name: "Echo" },
+      ],
+      {
+        gameId: "restricted-history-forfeit",
+        now: () => 1_700_000_000_000,
+        formatManifest: ["majority_elimination", "restricted_history"],
+      },
+    );
+    const recordMajorityRound = (atlasTarget: "lyra" | "echo") => {
+      gs.startRound();
+      gs.recordFormatSelected("atlas", "majority_elimination");
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "atlas", targetId: atlasTarget });
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "lyra", targetId: "echo" });
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "echo", targetId: "lyra" });
+      gs.recordFormatResolution({
+        formatId: "majority_elimination",
+        empoweredId: "atlas",
+        eliminatedId: "lyra",
+        resolutionKind: "clear",
+        tiedPlayerIds: ["lyra", "echo"],
+        tiebreakerId: "atlas",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: {
+            atlas: 0,
+            lyra: atlasTarget === "lyra" ? 2 : 1,
+            echo: atlasTarget === "echo" ? 2 : 1,
+          },
+          eligiblePlayerIds: ["atlas", "lyra", "echo"],
+        },
+      });
+    };
+    recordMajorityRound("lyra");
+    recordMajorityRound("echo");
+
+    gs.startRound();
+    gs.recordFormatMenu("atlas", ["majority_elimination", "restricted_history"]);
+    gs.recordFormatSelected("atlas", "restricted_history");
+    gs.recordFormatBallotForfeited("atlas");
+    gs.recordFormatBallot({ formatId: "restricted_history", voterId: "lyra", targetId: "atlas" });
+    gs.recordFormatBallot({ formatId: "restricted_history", voterId: "echo", targetId: "atlas" });
+    gs.recordFormatResolution({
+      formatId: "restricted_history",
+      empoweredId: "atlas",
+      eliminatedId: "atlas",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["atlas"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { atlas: 2, lyra: 0, echo: 0 },
+        eligiblePlayerIds: ["atlas", "lyra", "echo"],
+      },
+    });
+
+    const forfeiture = gs.getCanonicalEvents().find(
+      (event) => event.type === "format.ballot_forfeited",
+    );
+    expect(forfeiture).toMatchObject({
+      visibility: "producer",
+      payload: {
+        formatId: "restricted_history",
+        voterId: "atlas",
+        reason: "history_exhausted",
+      },
+    });
+    expect(forfeiture && projectViewerDecisionEvent(forfeiture)).toMatchObject({
+      type: "format.ballot_forfeited",
+      payload: { voterId: "atlas", reason: "history_exhausted" },
+    });
+    expect(projectFormatBallotPresentation({
+      events: gs.getCanonicalEvents(),
+      round: 3,
+      eligibleVoterIds: ["atlas", "lyra", "echo"],
+    })).toEqual({
+      status: "revealed",
+      rollCall: [
+        { voterId: "atlas", targetId: null, polarity: null, forfeited: true },
+        { voterId: "lyra", targetId: "atlas", polarity: null },
+        { voterId: "echo", targetId: "atlas", polarity: null },
+      ],
     });
   });
 

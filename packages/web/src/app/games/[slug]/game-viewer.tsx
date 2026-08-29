@@ -11,7 +11,7 @@ import {
   type GameStatus,
   type GameWatchReplayFrame,
   type TranscriptEntry,
-  type WsGameEvent,
+  type WsViewerEvent,
   type PhaseKey,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
@@ -620,7 +620,7 @@ export function GameViewer({
   }, [game, isReplay]);
 
   const handleWsEvent = useCallback(
-    (ev: WsGameEvent) => {
+    (ev: WsViewerEvent) => {
       switch (ev.type) {
         case "watch_state": {
           const { state } = ev;
@@ -845,6 +845,7 @@ export function GameViewer({
 
   const wsStatus = useGameWebSocket(
     gameId,
+    game?.id ?? gameId,
     !!gameId && game?.status === "in_progress",
     handleWsEvent,
   );

@@ -426,13 +426,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function formatResultPattern(formatName: string): RegExp {
-  const resultLabel = formatName === "Save-or-Eliminate"
-    ? "Save Or Eliminate"
-    : formatName;
-  return new RegExp(`${escapeRegExp(resultLabel)} (Clear|Tie|Auto)`, "i");
-}
-
 async function fulfillJson(
   route: Parameters<Parameters<Page["route"]>[1]>[0],
   value: unknown,

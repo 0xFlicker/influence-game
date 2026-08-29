@@ -1,7 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type { TranscriptEntry } from "../game-runner.types";
-import { aggregateInstrumentation, instrumentGame } from "../simulation-instrumentation";
+import type { HouseSummaryPhaseTelemetry } from "../house-summary-frontier";
+import {
+  aggregateInstrumentation,
+  classifyCanonicalEndgame,
+  instrumentGame,
+} from "../simulation-instrumentation";
 import type { TokenUsage } from "../token-tracker";
+import { GameState } from "../game-state";
 import { Phase } from "../types";
 
 function usage(overrides: Partial<TokenUsage>): TokenUsage {
@@ -33,6 +39,101 @@ function room(roomId: number, playerIds: string[], round: number, beat = 1) {
 }
 
 describe("simulation instrumentation", () => {
+  it("classifies endgame from the latest canonical stage while ignoring House copy", () => {
+    const state = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "vera", name: "Vera" },
+      ],
+      { gameId: "canonical-endgame", now: () => 1_700_000_000_000 },
+    );
+    state.setEndgameStage("reckoning");
+    state.setEndgameStage("tribunal");
+    const events = state.getCanonicalEvents();
+    const transcriptVariants: TranscriptEntry[][] = [
+      [systemEntry(1, Phase.ACCUSATION, "=== THE TRIBUNAL ===")],
+      [systemEntry(1, Phase.ACCUSATION, "=== THE JUDGMENT ===")],
+      [systemEntry(1, Phase.ACCUSATION, "Le tribunal commence maintenant.")],
+      [
+        systemEntry(1, Phase.ACCUSATION, "=== THE RECKONING ==="),
+        systemEntry(1, Phase.ACCUSATION, "=== THE JUDGMENT ==="),
+        systemEntry(1, Phase.ACCUSATION, "=== THE JUDGMENT ==="),
+      ],
+      [],
+    ];
+
+    expect(classifyCanonicalEndgame(events)).toBe("tribunal");
+    for (const transcript of transcriptVariants) {
+      const instrumentation = instrumentGame(transcript, {}, {}, [], events);
+      expect(instrumentation.endgame).toMatchObject({
+        reckoning: 1,
+        tribunal: 1,
+        judgment: 0,
+      });
+    }
+  });
+
+  it("uses canonical sequence for the latest stage and defaults to normal without a stage", () => {
+    const state = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "vera", name: "Vera" },
+      ],
+      { gameId: "canonical-stage-order", now: () => 1_700_000_000_000 },
+    );
+    state.setEndgameStage("reckoning");
+    state.setEndgameStage("tribunal");
+    state.setEndgameStage("judgment");
+    const events = [...state.getCanonicalEvents()].reverse();
+
+    expect(classifyCanonicalEndgame(events)).toBe("judgment");
+    expect(classifyCanonicalEndgame(events.filter((event) => event.type !== "endgame.stage_set")))
+      .toBe("normal");
+  });
+
+  it("counts accepted jury questions and votes from canonical events, not transcript banners", () => {
+    const state = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "vera", name: "Vera" },
+        { id: "finn", name: "Finn" },
+      ],
+      { gameId: "canonical-jury-instrumentation", now: () => 1_700_000_000_000 },
+    );
+    state.setEndgameStage("judgment");
+    state.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: "finn",
+      text: "Which move was yours alone?",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+    });
+    state.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: "atlas",
+      addresseeId: "finn",
+      text: "The round-three reversal.",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+    });
+    state.recordJuryVote("finn", "atlas");
+    const events = state.getCanonicalEvents();
+    const transcript = [
+      systemEntry(1, Phase.JURY_QUESTIONS, "No banner is required for this localized copy."),
+      systemEntry(1, Phase.JURY_QUESTIONS, "=== JUDGMENT: JURY QUESTIONS ==="),
+      systemEntry(1, Phase.JURY_QUESTIONS, "=== JUDGMENT: JURY QUESTIONS ==="),
+      systemEntry(1, Phase.JURY_VOTE, "This copy deliberately omits the old jury-vote banner."),
+    ];
+
+    const instrumentation = instrumentGame(transcript, {}, {}, [], events);
+
+    expect(instrumentation.endgame.judgment).toBe(1);
+    expect(instrumentation.endgame.juryQuestions).toBe(1);
+    expect(instrumentation.endgame.juryVotes).toBe(1);
+    expect(instrumentation.endgame.byPhase[Phase.JURY_QUESTIONS]).toBe(2);
+    expect(instrumentation.endgame.byPhase[Phase.JURY_VOTE]).toBe(1);
+  });
+
   it("extracts experiment counts from transcript metadata and token usage", () => {
     const transcript: TranscriptEntry[] = [
       systemEntry(1, Phase.POWER, "Vera power action: eliminate -> Finn"),
@@ -76,11 +177,11 @@ describe("simulation instrumentation", () => {
     expect(instrumentation.council.revealPhases).toBe(1);
     expect(instrumentation.council.councilPhases).toBe(1);
     expect(instrumentation.council.councilVotes).toBe(1);
-    expect(instrumentation.endgame.reckoning).toBe(1);
-    expect(instrumentation.endgame.tribunal).toBe(1);
-    expect(instrumentation.endgame.judgment).toBe(3);
-    expect(instrumentation.endgame.juryQuestions).toBe(1);
-    expect(instrumentation.endgame.juryVotes).toBe(1);
+    expect(instrumentation.endgame.reckoning).toBe(0);
+    expect(instrumentation.endgame.tribunal).toBe(0);
+    expect(instrumentation.endgame.judgment).toBe(0);
+    expect(instrumentation.endgame.juryQuestions).toBe(0);
+    expect(instrumentation.endgame.juryVotes).toBe(0);
     expect(instrumentation.rooms.participationByPlayer.Atlas).toBe(2);
     expect(instrumentation.rooms.participationByPlayer.Vera).toBe(2);
     expect(instrumentation.rooms.exclusionsByPlayer.Finn).toBe(1);
@@ -122,7 +223,7 @@ describe("simulation instrumentation", () => {
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
   });
 
-  it("counts House producer calls and MC transcript entries", () => {
+  it("counts House narrative calls and MC transcript entries", () => {
     const game = instrumentGame(
       [
         systemEntry(1, Phase.COUNCIL, "[House MC] The Threaded Vote Bloc is forming around Atlas."),
@@ -130,32 +231,93 @@ describe("simulation instrumentation", () => {
         systemEntry(1, Phase.COUNCIL, "A normal system line."),
       ],
       {
-        "House/strategy-bible": usage({ callCount: 1, totalTokens: 400 }),
         "House/mc-summary": usage({ callCount: 1, totalTokens: 120 }),
         "House/long-form-summary": usage({ callCount: 1, totalTokens: 500 }),
-        "House/producer-brief": usage({ callCount: 3, totalTokens: 300 }),
       },
       {},
     );
 
     expect(game.houseProducer).toEqual({
-      strategyBibleCalls: 1,
       mcSummaryCalls: 1,
       longFormSummaryCalls: 1,
-      producerBriefCalls: 3,
       mcSummaryTranscriptEntries: 2,
-      totalHouseProducerCalls: 6,
+      totalHouseProducerCalls: 2,
     });
-    expect(game.actionUsage.byAction["strategy-bible"]?.callCount).toBe(1);
-    expect(game.actionUsage.byAction["producer-brief"]?.totalTokens).toBe(300);
 
     const aggregate = aggregateInstrumentation([game, game]);
-    expect(aggregate.houseProducer.strategyBibleCalls).toBe(2);
     expect(aggregate.houseProducer.mcSummaryCalls).toBe(2);
     expect(aggregate.houseProducer.longFormSummaryCalls).toBe(2);
-    expect(aggregate.houseProducer.producerBriefCalls).toBe(6);
     expect(aggregate.houseProducer.mcSummaryTranscriptEntries).toBe(4);
-    expect(aggregate.houseProducer.totalHouseProducerCalls).toBe(12);
+    expect(aggregate.houseProducer.totalHouseProducerCalls).toBe(4);
+  });
+
+  it("reconciles House cadence telemetry to TokenTracker usage", () => {
+    const telemetry: HouseSummaryPhaseTelemetry[] = [
+      {
+        version: 2,
+        boundaryId: "house-beat/v2:1:format_pick:8:12",
+        actorCoordinate: "format_pick",
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        beatClass: "ordinary",
+        status: "emitted",
+        providerCalls: 1,
+        usageAvailable: true,
+        usage: [{
+          callId: "call-1",
+          responseId: "response-1",
+          serviceTier: "flex",
+          promptTokens: 80,
+          cachedTokens: 0,
+          cacheWriteTokens: 0,
+          completionTokens: 20,
+          reasoningTokens: 0,
+          totalTokens: 100,
+        }],
+        pendingDelta: "none",
+      },
+      {
+        version: 2,
+        boundaryId: "house-beat/v2:1:format_mingle:8:12",
+        actorCoordinate: "format_mingle",
+        round: 1,
+        phase: Phase.FORMAT_MINGLE,
+        beatClass: "ordinary",
+        status: "preflight_skipped",
+        providerCalls: 0,
+        usageAvailable: true,
+        usage: [],
+        pendingDelta: "none",
+      },
+    ];
+    const game = instrumentGame(
+      [{
+        ...systemEntry(1, Phase.FORMAT_PICK, "Ada locked Vote Bomb."),
+        dialogueKind: "house_summary",
+      }],
+      { "House/mc-summary": usage({ callCount: 1, promptTokens: 80, completionTokens: 20, totalTokens: 100 }) },
+      {},
+      telemetry,
+    );
+
+    expect(game.houseSummaryCadence).toMatchObject({
+      boundaries: 2,
+      materiallyEligibleBoundaries: 1,
+      emitted: 1,
+      preflightSkipped: 1,
+      eligibleEmissionRate: 1,
+      providerCalls: 1,
+      uniqueProviderCallIds: 1,
+      knownTokenSubtotal: 100,
+      trackerCallCount: 1,
+      trackerTokenSubtotal: 100,
+      usageAvailable: true,
+      callIdentitiesReconciled: true,
+      tokenSubtotalReconciled: true,
+      accountingReconciled: true,
+    });
+    expect(game.houseProducer.mcSummaryTranscriptEntries).toBe(1);
+    expect(aggregateInstrumentation([game]).houseSummaryCadence.accountingReconciled).toBe(true);
   });
 
   it("preserves Mingle request diagnostics and aggregates audit flags", () => {

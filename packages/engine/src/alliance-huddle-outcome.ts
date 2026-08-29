@@ -1,121 +1,93 @@
 /**
- * Official alliance huddle outcome normalization and member-safe projection.
- *
- * Compact limits are applied at creation (and legacy hydration). Participant
- * snapshots authorize protected recall; they never leave server-private surfaces.
+ * Canonical alliance-huddle outcomes contain only engine/session metadata and
+ * accepted member-authored fact atoms. House interpretation and dialogue are
+ * presentation artifacts and never enter this module's factual projection.
  */
 
-import {
-  ALLIANCE_HUDDLE_OUTCOME_LIMITS as LIMITS,
-  type AllianceHuddleCommitmentFact,
-  type AllianceHuddleOutcome,
-  type CompactAllianceHuddleOutcome,
-  type UUID,
+import type {
+  AllianceHuddleFactAtom,
+  AllianceHuddleOutcome,
+  AllianceHuddleWindow,
+  CompactAllianceHuddleOutcome,
+  UUID,
 } from "./types";
 
-function clipText(value: string, maxChars: number): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxChars) return trimmed;
-  return trimmed.slice(0, maxChars).trimEnd();
+/** Safe metadata retained when replaying a historical prose-backed v1 event. */
+export interface LegacyAllianceHuddleOutcomeV1Metadata {
+  id: UUID;
+  sessionId: UUID;
+  allianceId: UUID;
+  window: AllianceHuddleWindow;
+  round: number;
+  participantPlayerIds?: UUID[];
+  createdAt: string;
 }
 
-function clipStringList(values: readonly string[], maxItems: number, maxChars: number): string[] {
-  return values
-    .slice(0, maxItems)
-    .map((item) => clipText(item, maxChars))
-    .filter(Boolean);
+function uniqueIds(ids: readonly UUID[] | null | undefined): UUID[] {
+  return Array.from(new Set((ids ?? []).filter(Boolean)));
 }
 
-function normalizeCommitment(fact: AllianceHuddleCommitmentFact): AllianceHuddleCommitmentFact {
-  return {
-    speakerId: fact.speakerId,
-    speakerName: clipText(fact.speakerName, LIMITS.commitmentFieldChars),
-    proposedTargetName: fact.proposedTargetName
-      ? clipText(fact.proposedTargetName, LIMITS.commitmentFieldChars)
-      : null,
-    noTargetReason: fact.noTargetReason
-      ? clipText(fact.noTargetReason, LIMITS.commitmentFieldChars)
-      : null,
-    proposedAction: clipText(fact.proposedAction, LIMITS.commitmentActionChars),
-    memberCommitments: fact.memberCommitments
-      .slice(0, LIMITS.memberCommitmentItems)
-      .map((item) => ({
-        memberName: clipText(item.memberName, LIMITS.commitmentFieldChars),
-        commitment: clipText(item.commitment, LIMITS.commitmentFieldChars),
-      })),
-    contingency: clipText(fact.contingency, LIMITS.commitmentFieldChars),
-    confidence: fact.confidence,
-    dissent: clipStringList(fact.dissent, LIMITS.dissentItems, LIMITS.commitmentFieldChars),
-    alternativePlan: fact.alternativePlan
-      ? clipText(fact.alternativePlan, LIMITS.commitmentActionChars)
-      : null,
-  };
-}
-
-/**
- * Normalize House summary fields to the fixed compact contract before canonical recording.
- * Does not invent or drop participant authorization.
- */
+/** Clone the exact v2 contract without inspecting any presentation prose. */
 export function normalizeAllianceHuddleOutcome(
   outcome: AllianceHuddleOutcome,
 ): AllianceHuddleOutcome {
-  const participantPlayerIds = outcome.participantPlayerIds
-    ? Array.from(new Set(outcome.participantPlayerIds.filter(Boolean)))
-    : undefined;
   return {
     id: outcome.id,
     sessionId: outcome.sessionId,
     allianceId: outcome.allianceId,
     window: outcome.window,
     round: outcome.round,
-    ask: clipText(outcome.ask, LIMITS.askChars),
-    plan: clipText(outcome.plan, LIMITS.planChars),
-    promises: clipStringList(outcome.promises, LIMITS.listItems, LIMITS.listItemChars),
-    dissent: clipStringList(outcome.dissent, LIMITS.listItems, LIMITS.listItemChars),
-    confidence: outcome.confidence,
-    posture: clipText(outcome.posture, LIMITS.postureChars),
-    leakOrBetrayalClaims: clipStringList(
-      outcome.leakOrBetrayalClaims,
-      LIMITS.listItems,
-      LIMITS.listItemChars,
-    ),
-    ...(outcome.commitments
-      ? {
-          commitments: outcome.commitments
-            .slice(0, LIMITS.commitmentItems)
-            .map(normalizeCommitment),
-        }
-      : {}),
-    ...(participantPlayerIds && participantPlayerIds.length > 0
-      ? { participantPlayerIds }
-      : {}),
+    facts: structuredClone(outcome.facts),
+    participantPlayerIds: uniqueIds(outcome.participantPlayerIds),
     createdAt: outcome.createdAt,
   };
 }
 
 /**
- * Backfill a legacy outcome's participant snapshot only from the matching
- * completed-session speakerIds. No current-membership fallback.
+ * Historical v1 is fail-closed: preserve only safe session metadata and the
+ * private participant snapshot, and expose no factual claims from old prose.
+ */
+export function decodeLegacyAllianceHuddleOutcomeV1(
+  outcome: LegacyAllianceHuddleOutcomeV1Metadata,
+  sessionSpeakerIds: readonly UUID[] | null | undefined,
+): AllianceHuddleOutcome {
+  const participantPlayerIds = uniqueIds(
+    outcome.participantPlayerIds && outcome.participantPlayerIds.length > 0
+      ? outcome.participantPlayerIds
+      : sessionSpeakerIds,
+  );
+  return {
+    id: outcome.id,
+    sessionId: outcome.sessionId,
+    allianceId: outcome.allianceId,
+    window: outcome.window,
+    round: outcome.round,
+    facts: [],
+    participantPlayerIds,
+    createdAt: outcome.createdAt,
+  };
+}
+
+/**
+ * Backfill a missing/empty participant snapshot only from the matching
+ * completed-session speaker IDs. No current-membership fallback is legal.
  */
 export function withParticipantSnapshotFromSession(
   outcome: AllianceHuddleOutcome,
   sessionSpeakerIds: readonly UUID[] | null | undefined,
 ): AllianceHuddleOutcome {
-  if (outcome.participantPlayerIds && outcome.participantPlayerIds.length > 0) {
-    return normalizeAllianceHuddleOutcome(outcome);
-  }
-  if (!sessionSpeakerIds || sessionSpeakerIds.length === 0) {
+  if (outcome.participantPlayerIds.length > 0) {
     return normalizeAllianceHuddleOutcome(outcome);
   }
   return normalizeAllianceHuddleOutcome({
     ...outcome,
-    participantPlayerIds: [...sessionSpeakerIds],
+    participantPlayerIds: uniqueIds(sessionSpeakerIds),
   });
 }
 
 /** True when the outcome has an immutable participant snapshot usable for recall authorization. */
 export function hasRecallParticipantSnapshot(outcome: AllianceHuddleOutcome): boolean {
-  return Array.isArray(outcome.participantPlayerIds) && outcome.participantPlayerIds.length > 0;
+  return outcome.participantPlayerIds.length > 0;
 }
 
 /** True when the actor is an authorized session participant on the outcome snapshot. */
@@ -123,14 +95,10 @@ export function actorAuthorizedForHuddleOutcome(
   outcome: AllianceHuddleOutcome,
   actorId: UUID,
 ): boolean {
-  return hasRecallParticipantSnapshot(outcome)
-    && Boolean(outcome.participantPlayerIds?.includes(actorId));
+  return outcome.participantPlayerIds.includes(actorId);
 }
 
-/**
- * Member-safe compact projection: typed summary fields only.
- * Never includes participantPlayerIds.
- */
+/** Member-safe official projection. Participant authorization IDs never leave the server-private outcome. */
 export function toCompactAllianceHuddleOutcome(
   outcome: AllianceHuddleOutcome,
 ): CompactAllianceHuddleOutcome {
@@ -141,16 +109,7 @@ export function toCompactAllianceHuddleOutcome(
     allianceId: normalized.allianceId,
     window: normalized.window,
     round: normalized.round,
-    ask: normalized.ask,
-    plan: normalized.plan,
-    promises: [...normalized.promises],
-    dissent: [...normalized.dissent],
-    confidence: normalized.confidence,
-    posture: normalized.posture,
-    leakOrBetrayalClaims: [...normalized.leakOrBetrayalClaims],
-    ...(normalized.commitments
-      ? { commitments: normalized.commitments.map((item) => ({ ...item })) }
-      : {}),
+    facts: structuredClone(normalized.facts),
     createdAt: normalized.createdAt,
   };
 }
@@ -163,4 +122,80 @@ export function authorizedCompactHuddleOutcomesForActor(
   return outcomes
     .filter((outcome) => actorAuthorizedForHuddleOutcome(outcome, actorId))
     .map(toCompactAllianceHuddleOutcome);
+}
+
+export type AllianceHuddlePlayerName = (playerId: UUID) => string;
+
+function tacticalActionLabel(
+  actionKind: "empower_vote" | "council_vote" | "format_ballot" | "format_pointer",
+): string {
+  switch (actionKind) {
+    case "empower_vote": return "empower vote";
+    case "council_vote": return "Council vote";
+    case "format_ballot": return "format ballot";
+    case "format_pointer": return "format pointer";
+  }
+}
+
+function tacticalActionWithArticle(
+  actionKind: "empower_vote" | "council_vote" | "format_ballot" | "format_pointer",
+): string {
+  const label = tacticalActionLabel(actionKind);
+  return `${actionKind === "empower_vote" ? "an" : "a"} ${label}`;
+}
+
+function conditionLabel(
+  fact: Extract<AllianceHuddleFactAtom, { kind: "contingency" }>,
+  playerName: AllianceHuddlePlayerName,
+): string {
+  switch (fact.conditionKind) {
+    case "target_ineligible":
+      return fact.conditionPlayerId
+        ? `${playerName(fact.conditionPlayerId)} becomes ineligible`
+        : "the target becomes ineligible";
+    case "vote_count_changed":
+      return "the vote count changes";
+    case "format_action_changed":
+      return "the format action changes";
+    case "ally_response_changed":
+      return fact.conditionPlayerId
+        ? `${playerName(fact.conditionPlayerId)} changes response`
+        : "an ally changes response";
+  }
+}
+
+/** Deterministic viewer/prompt text rendered exclusively from typed atoms and canonical player IDs. */
+export function formatAllianceHuddleFact(
+  fact: AllianceHuddleFactAtom,
+  playerName: AllianceHuddlePlayerName,
+): string {
+  const actor = playerName(fact.actorPlayerId);
+  switch (fact.kind) {
+    case "proposal":
+      return `${actor} proposed ${tacticalActionWithArticle(fact.actionKind)} for ${playerName(fact.targetPlayerId)} (${fact.confidence} confidence).`;
+    case "commitment":
+      return `${actor} recorded a commitment to ${tacticalActionWithArticle(fact.actionKind)} for ${playerName(fact.targetPlayerId)} (${fact.confidence} confidence).`;
+    case "response": {
+      const replacement = fact.stance === "counter"
+        ? ` with ${tacticalActionLabel(fact.replacementActionKind!)} for ${playerName(fact.replacementTargetPlayerId!)}`
+        : "";
+      const responseVerb = fact.stance === "endorse"
+        ? "endorsed"
+        : fact.stance === "reject"
+          ? "rejected"
+          : "countered";
+      return `${actor} ${responseVerb} fact ${fact.counterpartFactId}${replacement} (${fact.confidence} confidence).`;
+    }
+    case "contingency":
+      return `${actor} recorded a contingency: if ${conditionLabel(fact, playerName)}, use ${tacticalActionWithArticle(fact.effectActionKind)} for ${playerName(fact.effectTargetPlayerId)} (${fact.confidence} confidence).`;
+  }
+}
+
+/** Honest deterministic state for modern empty outcomes and fail-closed v1 replay. */
+export function formatAllianceHuddleFacts(
+  facts: readonly AllianceHuddleFactAtom[],
+  playerName: AllianceHuddlePlayerName,
+): string[] {
+  if (facts.length === 0) return ["No structured huddle facts were recorded."];
+  return facts.map((fact) => formatAllianceHuddleFact(fact, playerName));
 }

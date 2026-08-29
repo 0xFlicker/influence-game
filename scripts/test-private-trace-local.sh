@@ -26,4 +26,4 @@ done
 export INFLUENCE_PRIVATE_TRACE_S3_SMOKE=1
 
 cd "$ROOT_DIR"
-bun test packages/api/src/__tests__/private-trace-local-s3-smoke.test.ts
+bun test packages/api/src/__tests__/private-trace-local-s3.external-smoke.test.ts

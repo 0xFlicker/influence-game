@@ -4,6 +4,7 @@ import type {
   ViewerDecisionEvent,
 } from "@/lib/api";
 import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
+import { formatsAvailableInRound } from "@influence/engine/format-rules";
 import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 import type {
   FormatPresentationBallot,
@@ -124,6 +125,7 @@ export function compileFormatPresentationPrefix({
   const cues: FormatPresentationCue[] = [];
   const rosterIds = roster.map((player) => player.id);
   const ballots = new Map<string, FormatPresentationBallot>();
+  const eliminationTargetHistory = new Map<string, Set<string>>();
   const empower: EmpowerPresentationAccumulator = {
     initialVotes: new Map(),
     activeVotes: new Map(),
@@ -175,6 +177,7 @@ export function compileFormatPresentationPrefix({
       eligiblePlayerIds,
       eligiblePlayerSet: new Set(eligiblePlayerIds),
       ballots,
+      eliminationTargetHistory,
       empower,
       snapshot,
       cues,
@@ -198,6 +201,7 @@ function applyDecision(input: {
   eligiblePlayerIds: readonly string[];
   eligiblePlayerSet: ReadonlySet<string>;
   ballots: Map<string, FormatPresentationBallot>;
+  eliminationTargetHistory: Map<string, Set<string>>;
   empower: EmpowerPresentationAccumulator;
   snapshot: FormatPresentationSnapshot;
   cues: FormatPresentationCue[];
@@ -209,6 +213,7 @@ function applyDecision(input: {
     eligiblePlayerIds,
     eligiblePlayerSet,
     ballots,
+    eliminationTargetHistory,
     empower,
     cues,
   } = input;
@@ -412,6 +417,20 @@ function applyDecision(input: {
         );
       }
       if (
+        formatManifest
+        && !decision.payload.offeredFormatIds.every((formatId) =>
+          formatsAvailableInRound(formatManifest, decision.round).includes(formatId)
+        )
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "invalid_menu",
+          decision.sequence,
+          "Format menu contains a card unavailable in this round.",
+        );
+      }
+      if (
         snapshot.empoweredId
         && snapshot.empoweredId !== decision.payload.empoweredId
       ) {
@@ -442,9 +461,12 @@ function applyDecision(input: {
       break;
     }
     case "format.selected": {
+      const availableFormats = formatManifest
+        ? formatsAvailableInRound(formatManifest, decision.round)
+        : [];
       const automaticSelection = !snapshot.offeredFormatIds
-        && formatManifest?.length === 1
-        && formatManifest[0] === decision.payload.formatId;
+        && availableFormats.length === 1
+        && availableFormats[0] === decision.payload.formatId;
       if (!snapshot.offeredFormatIds && !automaticSelection) {
         return incomplete(
           cues,
@@ -578,16 +600,72 @@ function applyDecision(input: {
           `Agent ${decision.payload.voterId} has more than one accepted format ballot.`,
         );
       }
+      if (
+        decision.payload.formatId === "restricted_history"
+        && (eliminationTargetHistory.get(decision.payload.voterId)?.has(
+          decision.payload.targetId,
+        ) ?? false)
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "format_mismatch",
+          decision.sequence,
+          "Restricted History ballot repeats a prior elimination target.",
+        );
+      }
       ballots.set(decision.payload.voterId, {
         voterId: decision.payload.voterId,
         targetId: decision.payload.targetId,
         polarity: decision.payload.polarity,
       });
+      if (decision.payload.polarity !== "save") {
+        const prior = eliminationTargetHistory.get(decision.payload.voterId) ?? new Set<string>();
+        prior.add(decision.payload.targetId);
+        eliminationTargetHistory.set(decision.payload.voterId, prior);
+      }
       snapshot = {
         ...snapshot,
         phase,
         canonicalSequence: decision.sequence,
       };
+      break;
+    }
+    case "format.ballot_forfeited": {
+      const voterId = decision.payload.voterId;
+      if (
+        snapshot.activeFormatId !== "restricted_history"
+        || !eligiblePlayerSet.has(voterId)
+        || ballots.has(voterId)
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "format_mismatch",
+          decision.sequence,
+          "Restricted History ballot forfeiture does not match the active voter state.",
+        );
+      }
+      const prior = eliminationTargetHistory.get(voterId) ?? new Set<string>();
+      const legalTargets = eligiblePlayerIds.filter(
+        (targetId) => targetId !== voterId && !prior.has(targetId),
+      );
+      if (legalTargets.length > 0) {
+        return incomplete(
+          cues,
+          snapshot,
+          "format_mismatch",
+          decision.sequence,
+          "Restricted History ballot was forfeited while a legal target remained.",
+        );
+      }
+      ballots.set(voterId, {
+        voterId,
+        targetId: null,
+        polarity: null,
+        forfeited: true,
+      });
+      snapshot = { ...snapshot, phase, canonicalSequence: decision.sequence };
       break;
     }
     case "format.safety_bounce_started": {

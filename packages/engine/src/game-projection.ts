@@ -1,5 +1,8 @@
-import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
-import { isSupportedCanonicalPayloadVersion, type CanonicalGameEvent } from "./canonical-events";
+import {
+  decodeLegacyAllianceHuddleOutcomeV1,
+  withParticipantSnapshotFromSession,
+} from "./alliance-huddle-outcome";
+import { assertCanonicalGameEvent, isSupportedCanonicalPayloadVersion, type CanonicalGameEvent } from "./canonical-events";
 import {
   LEGACY_FORMAT_MANIFEST,
   resolveFormatManifest,
@@ -210,6 +213,7 @@ export function applyCanonicalEvent(
   if (!isSupportedCanonicalPayloadVersion(event.type, event.payloadVersion)) {
     throw new Error(`Unsupported canonical event payload version ${event.payloadVersion} for ${event.type}`);
   }
+  assertCanonicalGameEvent(event);
   if (projection.gameId !== event.gameId) {
     throw new Error(`Cannot apply event for game ${event.gameId} to projection ${projection.gameId}`);
   }
@@ -222,6 +226,9 @@ export function applyCanonicalEvent(
   projection.phase = event.phase;
 
   switch (event.type) {
+    case "game.phase_entered": {
+      break;
+    }
     case "game.roster_initialized": {
       projection.formatManifest = event.payload.formatManifest === undefined
         ? [...LEGACY_FORMAT_MANIFEST]
@@ -302,6 +309,7 @@ export function applyCanonicalEvent(
       break;
     }
     case "format.ballot_cast":
+    case "format.ballot_forfeited":
     case "format.safety_bounce_started":
     case "format.safety_bounce_pointer":
     case "format.resolved": {
@@ -362,12 +370,10 @@ export function applyCanonicalEvent(
     }
     case "alliance.huddle_outcome_recorded": {
       const session = projection.allianceHuddleSessions[event.payload.outcome.sessionId];
-      projection.allianceHuddleOutcomes[event.payload.outcome.id] = cloneAllianceHuddleOutcome(
-        withParticipantSnapshotFromSession(
-          event.payload.outcome,
-          event.payload.outcome.participantPlayerIds ?? session?.speakerIds,
-        ),
-      );
+      const outcome = event.payloadVersion === 1
+        ? decodeLegacyAllianceHuddleOutcomeV1(event.payload.outcome, session?.speakerIds)
+        : withParticipantSnapshotFromSession(event.payload.outcome, session?.speakerIds);
+      projection.allianceHuddleOutcomes[outcome.id] = cloneAllianceHuddleOutcome(outcome);
       if (event.payload.alliance) {
         upsertAllianceProjection(projection, event.payload.alliance);
       }

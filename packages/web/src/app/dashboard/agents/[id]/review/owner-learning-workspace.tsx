@@ -328,7 +328,7 @@ export function OwnerLearningReviewWorkspace({
     if (
       !review
       || offeredReviewId.current === review.id
-      || !["queued", "running", "ready"].includes(review.analysisStatus)
+      || !["queued", "retry_queued", "running", "ready"].includes(review.analysisStatus)
       || review.resolution != null
     ) return;
     offeredReviewId.current = review.id;

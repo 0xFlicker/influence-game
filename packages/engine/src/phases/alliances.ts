@@ -1,7 +1,12 @@
+import { createHash } from "node:crypto";
 import { Phase } from "../types";
-import type { AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
+import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
-import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
+import type {
+  HouseAllianceProposerCandidate,
+  HouseAllianceProposerSelectionResult,
+} from "../house-interviewer";
+import type { AllianceHuddleFactAtom, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
   formatAllianceActionOperatorText,
   formatAllianceHuddleOutcomeOperatorText,
@@ -9,25 +14,34 @@ import {
   formatAllianceHuddleTurnOperatorText,
   type AllianceActionOperatorContext,
 } from "../operator-turn-text";
+import { formatAllianceHuddleFacts } from "../alliance-huddle-outcome";
 import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
+import { engineFallbackMetadata } from "../engine-fallback";
+import { isProviderFallbackEligible, ProviderUnavailableError } from "../provider-execution";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
+
+function deterministicHuddleId(coordinate: readonly unknown[]): UUID {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(coordinate))
+    .digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
 
 function nameKey(value: string): string {
   return value.trim().toLowerCase();
 }
 
 function actionDecision(action: AllianceAction): Record<string, unknown> {
-  return {
-    ...(action.decisionLog ? strategicDecisionResponse(action) : {}),
-  };
+  return { ...strategicDecisionResponse(action) };
 }
 
 function resolvePlayerRefs(
@@ -75,25 +89,66 @@ async function collectAllianceAction(
   ctx: PhaseRunnerContext,
   playerId: UUID,
   phase: Phase.FORMAT_MINGLE,
+  opportunity: AllianceActionOpportunity,
 ): Promise<AllianceAction> {
   const agent = ctx.agents.get(playerId)!;
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   if (!agent.getAllianceAction) {
     return {
       action: "pass",
-      thinking: "No alliance action method is available.",
-      decisionLog: "fallback: pass alliance action",
+      ...engineFallbackMetadata(
+        phaseCtx,
+        playerId,
+        "alliance-action",
+        "agent_method_unavailable",
+      ),
     };
   }
 
-  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   try {
-    return await agent.getAllianceAction(phaseCtx);
+    let action = await agent.getAllianceAction(phaseCtx, opportunity);
+    if (action.action === "pass" && action.strategyGameplayAccepted === false) {
+      action = {
+        action: "pass",
+        ...engineFallbackMetadata(
+          phaseCtx,
+          playerId,
+          "alliance-action",
+          "invalid_model_output",
+        ),
+      };
+    }
+    if (opportunity.kind !== "response") return action;
+    if (
+      action.action === "accept"
+      || action.action === "decline"
+      || action.action === "defer"
+      || action.action === "trial"
+    ) {
+      return {
+        ...action,
+        lineageId: opportunity.lineageId,
+        versionId: opportunity.versionId,
+      };
+    }
+    if (action.action === "counter") {
+      const { versionId: _providerVersionId, ...counter } = action;
+      return {
+        ...counter,
+        lineageId: opportunity.lineageId,
+      };
+    }
+    return action;
   } catch (error) {
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     return {
       action: "pass",
-      thinking: "Alliance action generation failed; passing.",
-      reasoningContext: error instanceof Error ? error.message : String(error),
-      decisionLog: "fallback: alliance action error",
+      ...engineFallbackMetadata(
+        phaseCtx,
+        playerId,
+        "alliance-action",
+        "provider_exhausted",
+      ),
     };
   }
 }
@@ -114,7 +169,8 @@ async function applyAllianceAction(
       ctx.gameState.round,
       phase,
       pass,
-      decisionId,
+      action.engineFallback ? undefined : decisionId,
+      action.engineFallback,
     ),
   ];
 
@@ -204,13 +260,17 @@ async function applyAllianceAction(
           repairNotes.push("Alliance amendment rejected because fewer than two live members were resolved.");
           break;
         }
-        const alliance = ctx.gameState.getAlliance(action.lineageId);
+        const alliance = ctx.gameState.getAlliance(action.allianceId);
         if (!alliance || alliance.status !== "active") {
-          repairNotes.push(`Alliance amendment rejected because active alliance was not found: ${action.lineageId}`);
+          repairNotes.push(`Alliance amendment rejected because active alliance was not found: ${action.allianceId}`);
+          break;
+        }
+        if (!alliance.memberIds.includes(playerId)) {
+          repairNotes.push(`Alliance amendment rejected because proposer is not an active member: ${playerId}`);
           break;
         }
         ctx.gameState.recordAllianceAmendment({
-          allianceId: action.lineageId,
+          allianceId: action.allianceId,
           versionId: action.versionId,
           proposerId: playerId,
           name: action.name,
@@ -235,6 +295,12 @@ async function applyAllianceAction(
   }
 
   const changed = ctx.gameState.getCanonicalEvents().length > beforeCount;
+  resolveActionStrategyCandidate(
+    ctx.agents.get(playerId)!,
+    action,
+    (changed || action.action === "pass")
+      && action.strategyGameplayAccepted !== false,
+  );
   return {
     result: changed ? "recorded" : action.action === "pass" ? "passed" : "rejected",
     repairNotes,
@@ -250,11 +316,12 @@ function resolveAllianceActionOperatorContext(
     "lineageId" in action && typeof action.lineageId === "string" && action.lineageId.length > 0
       ? action.lineageId
       : null;
+  const allianceId = action.action === "amend" ? action.allianceId : null;
 
   // After a successful propose, lineage may only exist under a generated id.
-  // Prefer action.lineageId; otherwise scan open lineages that match proposal name.
+  // Prefer an action lineage; otherwise scan generated proposal/amendment lineages by name.
   let lineage = lineageId ? ctx.gameState.getAllianceProposalLineage(lineageId) : undefined;
-  if (!lineage && action.action === "propose") {
+  if (!lineage && (action.action === "propose" || action.action === "amend")) {
     const open = ctx.gameState.getAllianceProposalLineages()
       .filter((candidate) => candidate.status === "open")
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -269,7 +336,7 @@ function resolveAllianceActionOperatorContext(
       return {
         allianceName: action.name,
         memberNames: action.memberNames,
-        shortId: lineageId ? lineageId.slice(0, 8) : null,
+        shortId: (lineageId ?? allianceId)?.slice(0, 8) ?? null,
       };
     }
     return { shortId: lineageId ? lineageId.slice(0, 8) : null };
@@ -301,6 +368,12 @@ function emitAllianceActionTurn(
   const player = ctx.gameState.getPlayer(playerId);
   const playerName = player?.name ?? playerId;
   const operatorContext = resolveAllianceActionOperatorContext(ctx, action);
+  const {
+    strategy: _strategy,
+    strategyDelta: _strategyDelta,
+    strategyCandidateProposed: _strategyCandidateProposed,
+    ...normalizedAction
+  } = action;
   ctx.logger.emitAgentTurn({
     phase,
     action: "alliance-action",
@@ -309,7 +382,7 @@ function emitAllianceActionTurn(
     response: {
       pass,
       requestedAction: action.action,
-      normalizedAction: action,
+      normalizedAction,
       result,
       repairNotes,
       // Operator-facing identity (also useful in turns JSONL / MCP).
@@ -342,11 +415,15 @@ function currentRequiredMemberIds(
 }
 
 function validateProposerAction(action: AllianceAction): string | null {
-  if (action.action === "propose" || action.action === "pass") return null;
-  return "Only propose or pass is legal during a proposer opportunity.";
+  if (action.action === "propose" || action.action === "amend" || action.action === "pass") return null;
+  return "Only propose, amend, or pass is legal during a proposer opportunity.";
 }
 
-function validateProposalResponseAction(action: AllianceAction, lineageId: UUID): string | null {
+function validateProposalResponseAction(
+  action: AllianceAction,
+  lineageId: UUID,
+  counterAllowed: boolean,
+): string | null {
   if (action.action === "pass") return null;
   if (
     action.action === "accept"
@@ -355,6 +432,9 @@ function validateProposalResponseAction(action: AllianceAction, lineageId: UUID)
     || action.action === "trial"
     || action.action === "counter"
   ) {
+    if (action.action === "counter" && !counterAllowed) {
+      return "Alliance counter rejected because the counter cap was reached.";
+    }
     return action.lineageId === lineageId
       ? null
       : `Alliance response rejected because it targeted ${action.lineageId} instead of active proposal ${lineageId}.`;
@@ -405,10 +485,24 @@ async function resolveAllianceProposalTransaction(
       return;
     }
 
-    const action = await collectAllianceAction(ctx, responder.id, phase);
+    const counterAllowed = ctx.gameState.canCounterAllianceProposal(lineageId);
+    const action = await collectAllianceAction(ctx, responder.id, phase, {
+      kind: "response",
+      lineageId,
+      versionId: version.versionId,
+      counterAllowed,
+      terms: {
+        name: version.terms.name,
+        memberNames: version.terms.memberIds.map((memberId) => ctx.gameState.getPlayerName(memberId)),
+        purpose: version.terms.purpose,
+        timebox: version.terms.timebox,
+      },
+    });
     askedIds.add(responder.id);
-    const modeError = validateProposalResponseAction(action, lineageId);
+    const modeError = validateProposalResponseAction(action, lineageId, counterAllowed);
     if (modeError) {
+      await assertCanAcceptCommit(ctx);
+      resolveActionStrategyCandidate(ctx.agents.get(responder.id)!, action, false);
       emitAllianceActionTurn(ctx, responder.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;
@@ -511,15 +605,10 @@ async function collectAllianceHuddleTurn(
   speakerId: UUID,
   huddle: AllianceHuddlePromptContext,
   conversationHistory: Array<{ from: string; text: string }>,
-): Promise<AllianceHuddleTurnAction> {
+): Promise<AllianceHuddleTurnAction | null> {
   const agent = ctx.agents.get(speakerId)!;
   if (!agent.getAllianceHuddleTurn) {
-    return {
-      thinking: "No alliance huddle method is available.",
-      message: null,
-      noReply: true,
-      decisionLog: "fallback: pass alliance huddle turn",
-    };
+    return null;
   }
 
   const phase = huddle.window === "format"
@@ -527,16 +616,29 @@ async function collectAllianceHuddleTurn(
     : huddle.window === "pre_vote"
       ? Phase.PRE_VOTE_HUDDLE
       : Phase.PRE_COUNCIL_HUDDLE;
-  const phaseCtx = prepareAgentPhaseContext(ctx, agent, speakerId, phase, "ordinary_speech");
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    agent,
+    speakerId,
+    phase,
+    "ordinary_speech",
+    {
+      empoweredId: ctx.gameState.empoweredId ?? undefined,
+      councilCandidates: ctx.gameState.councilCandidates ?? undefined,
+    },
+  );
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
   } catch (error) {
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     return {
-      thinking: "Alliance huddle turn failed; no reply.",
-      reasoningContext: error instanceof Error ? error.message : String(error),
       message: null,
       noReply: true,
-      decisionLog: "fallback: alliance huddle turn error",
+      factAtoms: [],
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: error.outcome.kind,
+      },
     };
   }
 }
@@ -546,22 +648,33 @@ async function completeHuddleSession(
   phase: AllianceHuddlePhase,
   alliance: AllianceRecord,
   schedule: AllianceHuddleScheduleRecord,
+  providerLogicalCallOrdinal: number,
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
-  const commitments: AllianceHuddleCommitmentFact[] = [];
+  const facts: AllianceHuddleFactAtom[] = [];
   // Canonical session identity is created before any message so modern huddle
   // rows carry alliance/schedule/session IDs plus exact session-time audience.
-  const sessionId = createUUID();
+  const sessionId = deterministicHuddleId([
+    "alliance-huddle-session-v1",
+    ctx.gameState.gameId,
+    schedule.round,
+    schedule.window,
+    alliance.id,
+    schedule.pass,
+  ]);
   const huddle: AllianceHuddlePromptContext = {
+    sessionId,
     allianceId: alliance.id,
     allianceName: alliance.name,
+    memberIds: [...speakerIds],
     memberNames: allianceMemberNames(ctx, speakerIds),
     purpose: alliance.purpose,
     timebox: alliance.timebox,
     window: schedule.window,
     scheduleId: schedule.id,
     pass: schedule.pass,
+    priorFacts: facts,
   };
   const huddleMessageContext = {
     allianceId: alliance.id,
@@ -570,17 +683,25 @@ async function completeHuddleSession(
     window: schedule.window,
     sessionAudiencePlayerIds: speakerIds,
   };
-  for (const speakerId of speakerIds) {
-    await assertCanAcceptCommit(ctx);
+  for (const [speakerOrdinal, speakerId] of speakerIds.entries()) {
     const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
+    if (!turn || turn.providerAbsence) continue;
+    await assertCanAcceptCommit(ctx);
     const message = turn.noReply ? null : (turn.message?.trim() || null);
-    if (turn.commitment) {
-      commitments.push({
+    facts.push(...turn.factAtoms.map((fact, factOrdinal) => ({
+      ...fact,
+      factId: deterministicHuddleId([
+        "alliance-huddle-fact-v1",
+        sessionId,
         speakerId,
-        speakerName: ctx.gameState.getPlayerName(speakerId),
-        ...turn.commitment,
-      });
-    }
+        speakerOrdinal,
+        factOrdinal,
+        fact.kind,
+        "actionKind" in fact ? fact.actionKind : null,
+        "targetPlayerId" in fact ? fact.targetPlayerId : null,
+      ]),
+      sessionId,
+    })));
     if (message) {
       ctx.logger.logHuddleMessage(
         speakerId,
@@ -593,6 +714,11 @@ async function completeHuddleSession(
       );
       conversationHistory.push({ from: ctx.gameState.getPlayerName(speakerId), text: message });
     }
+    resolveActionStrategyCandidate(
+      ctx.agents.get(speakerId)!,
+      turn,
+      turn.strategyGameplayAccepted !== false,
+    );
     const speakerName = ctx.gameState.getPlayerName(speakerId);
     ctx.logger.emitAgentTurn({
       phase,
@@ -637,6 +763,7 @@ async function completeHuddleSession(
     round: schedule.round,
     phase,
     window: schedule.window,
+    providerLogicalCallOrdinal,
     alliance: {
       id: alliance.id,
       name: alliance.name,
@@ -645,22 +772,16 @@ async function completeHuddleSession(
       timebox: alliance.timebox,
     },
     transcript: conversationHistory,
-    commitments,
+    facts,
   });
+  await assertCanAcceptCommit(ctx);
   const outcome: AllianceHuddleOutcome = {
-    id: createUUID(),
+    id: deterministicHuddleId(["alliance-huddle-outcome-v1", sessionId]),
     sessionId: session.id,
     allianceId: alliance.id,
     window: schedule.window,
     round: schedule.round,
-    ask: summary.ask,
-    plan: summary.plan,
-    promises: summary.promises,
-    dissent: summary.dissent,
-    confidence: summary.confidence,
-    posture: summary.posture,
-    leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
-    commitments,
+    facts,
     // Immutable session participant snapshot — not current alliance membership.
     participantPlayerIds: [...speakerIds],
     createdAt: completedAt,
@@ -676,16 +797,25 @@ async function completeHuddleSession(
       sessionId: session.id,
       allianceId: alliance.id,
       outcome,
+      interpretation: {
+        ask: summary.ask,
+        plan: summary.plan,
+        promises: summary.promises,
+        dissent: summary.dissent,
+        confidence: summary.confidence,
+        posture: summary.posture,
+        leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
+      },
     },
     thinking: summary.thinking,
     reasoningContext: summary.reasoningContext,
     scope: "huddle",
     text: formatAllianceHuddleOutcomeOperatorText({
       allianceName: alliance.name,
-      ask: outcome.ask,
-      plan: outcome.plan,
-      posture: outcome.posture,
-      confidence: outcome.confidence,
+      factSummaries: formatAllianceHuddleFacts(
+        outcome.facts,
+        (playerId) => ctx.gameState.getPlayerName(playerId),
+      ),
     }),
   });
 }
@@ -701,11 +831,103 @@ export async function runAllianceFormationPhase(
   await assertCanAcceptCommit(ctx);
   gameState.closeUniversalAlliancesBeforeMingle(phase);
 
+  const livingPlayers = gameState.getAlivePlayers();
+  const proposerBudget = Math.ceil(livingPlayers.length / 4);
+  const activeAlliances = gameState.getAllianceRecords().filter((alliance) => alliance.status === "active");
+  const candidates: HouseAllianceProposerCandidate[] = livingPlayers.map((player) => ({
+    playerId: player.id,
+    playerName: player.name,
+    activeAllianceCount: activeAlliances.filter((alliance) => alliance.memberIds.includes(player.id)).length,
+  }));
+  const candidateById = new Map(candidates.map((candidate) => [candidate.playerId, candidate]));
+  let housePlan: HouseAllianceProposerSelectionResult;
+  try {
+    housePlan = await ctx.houseInterviewer.selectAllianceProposers({
+      round: gameState.round,
+      phase,
+      budget: proposerBudget,
+      candidates,
+    });
+  } catch (error) {
+    if (!isProviderFallbackEligible(error)) throw error;
+    housePlan = {
+      selected: [],
+      rationale: `House proposer selection failed; deterministic repair applied (${error instanceof Error ? error.message : String(error)}).`,
+    };
+  }
+
+  const repairNotes: string[] = [];
+  const finalizedRationaleById = new Map<UUID, string>();
+  for (const item of housePlan.selected) {
+    const candidate = candidateById.get(item.playerId);
+    if (!candidate) {
+      const knownPlayer = gameState.getPlayer(item.playerId);
+      repairNotes.push(knownPlayer
+        ? `Eliminated or otherwise ineligible House selection dropped: ${item.playerId}.`
+        : `Unknown House selection dropped: ${item.playerId}.`);
+      continue;
+    }
+    if (finalizedRationaleById.has(item.playerId)) {
+      repairNotes.push(`Duplicate House selection dropped: ${item.playerId}.`);
+      continue;
+    }
+    if (finalizedRationaleById.size >= proposerBudget) {
+      repairNotes.push(`Excess House selection dropped after the ${proposerBudget}-player budget was filled: ${item.playerId}.`);
+      continue;
+    }
+    finalizedRationaleById.set(item.playerId, item.rationale);
+  }
+
+  if (finalizedRationaleById.size < proposerBudget) {
+    const repairCandidates = candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => !finalizedRationaleById.has(candidate.playerId))
+      .sort((left, right) =>
+        left.candidate.activeAllianceCount - right.candidate.activeAllianceCount || left.index - right.index,
+      );
+    for (const { candidate } of repairCandidates) {
+      if (finalizedRationaleById.size >= proposerBudget) break;
+      finalizedRationaleById.set(
+        candidate.playerId,
+        `Deterministic repair selected ${candidate.playerName} with ${candidate.activeAllianceCount} active alliance${candidate.activeAllianceCount === 1 ? "" : "s"}.`,
+      );
+      repairNotes.push(`Underrepresentation-first repair added ${candidate.playerId}.`);
+    }
+  }
+
+  const finalizedPlayers = livingPlayers.filter((player) => finalizedRationaleById.has(player.id));
+  await assertCanAcceptCommit(ctx);
+  logger.emitAgentTurn({
+    phase,
+    action: "alliance-proposer-selection",
+    actor: { name: "The House", role: "house" },
+    visibility: "private",
+    response: {
+      budget: proposerBudget,
+      selected: finalizedPlayers.map((player) => {
+        const candidate = candidateById.get(player.id)!;
+        return {
+          playerId: player.id,
+          playerName: player.name,
+          activeAllianceCount: candidate.activeAllianceCount,
+          rationale: finalizedRationaleById.get(player.id)!,
+        };
+      }),
+      rationale: housePlan.rationale ?? "The House selected scarce proposer access for this alliance-action window.",
+      repairNotes,
+    },
+    thinking: housePlan.thinking,
+    reasoningContext: housePlan.reasoningContext,
+    text: `The House selected ${finalizedPlayers.map((player) => player.name).join(", ") || "no players"} for ${proposerBudget} proposer opportunit${proposerBudget === 1 ? "y" : "ies"}.`,
+  });
+
   const step = { value: 1 };
-  for (const player of gameState.getAlivePlayers()) {
-    const action = await collectAllianceAction(ctx, player.id, phase);
+  for (const player of finalizedPlayers) {
+    const action = await collectAllianceAction(ctx, player.id, phase, { kind: "proposer" });
     const modeError = validateProposerAction(action);
     if (modeError) {
+      await assertCanAcceptCommit(ctx);
+      resolveActionStrategyCandidate(ctx.agents.get(player.id)!, action, false);
       emitAllianceActionTurn(ctx, player.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;
@@ -716,9 +938,10 @@ export async function runAllianceFormationPhase(
     emitAllianceActionTurn(ctx, player.id, action, step.value, result.result, result.repairNotes, phase);
     step.value += 1;
 
-    if (action.action !== "propose" || !result.changed) continue;
-    const lineageId = action.lineageId
-      ?? newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages());
+    if ((action.action !== "propose" && action.action !== "amend") || !result.changed) continue;
+    const lineageId = action.action === "propose"
+      ? action.lineageId ?? newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages())
+      : newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages());
     if (lineageId) await resolveAllianceProposalTransaction(ctx, lineageId, step, phase);
   }
 
@@ -810,7 +1033,7 @@ export async function runAllianceHuddleWindow(
         ?? "The House did not grant this alliance huddle time in the current scarce window.",
     }));
 
-  for (const { alliance, rationale, pass } of scheduled) {
+  for (const [scheduledIndex, { alliance, rationale, pass }] of scheduled.entries()) {
     const schedule = huddleScheduleRecord({
       alliance,
       window,
@@ -823,7 +1046,7 @@ export async function runAllianceHuddleWindow(
     await assertCanAcceptCommit(ctx);
     ctx.gameState.recordAllianceHuddleSchedule(schedule);
     emitHuddleScheduleTurn(ctx, phase, schedule);
-    await completeHuddleSession(ctx, phase, alliance, schedule);
+    await completeHuddleSession(ctx, phase, alliance, schedule, scheduledIndex + 1);
   }
 
   for (const { alliance, rationale } of skipped) {

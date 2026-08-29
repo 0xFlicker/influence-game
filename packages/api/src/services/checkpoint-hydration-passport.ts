@@ -12,7 +12,7 @@
  */
 
 import {
-  isHouseContinuityRequirement,
+  parseHouseNarrativeContinuity,
   parsePlayerContinuityCapsule,
   PHASE_BOUNDARY_ACCUMULATOR_IDS,
   PLAYER_CONTINUITY_CAPSULE_VERSION,
@@ -446,93 +446,9 @@ function isTranscriptCursorFromWatermark(
 }
 
 function isPlayerContinuityCapsule(value: unknown): boolean {
-  // Versioned capsules use the shared fail-closed parser.
-  if (isRecord(value) && value.version === PLAYER_CONTINUITY_CAPSULE_VERSION) {
-    return parsePlayerContinuityCapsule(value) != null;
-  }
-  // Legacy unversioned capsules remain inspectable for passport diagnostics but
-  // are not recovery-admissible (recovery requires versioned capsules).
-  if (!isRecord(value) || value.version != null) return false;
-  const relationships = value.relationships;
-  return typeof value.playerId === "string" &&
-    value.playerId.length > 0 &&
-    typeof value.playerName === "string" &&
-    value.playerName.length > 0 &&
-    Array.isArray(value.notes) &&
-    isRecord(relationships) &&
-    Array.isArray(relationships.allies) &&
-    Array.isArray(relationships.threats) &&
-    Array.isArray(value.roundHistory) &&
-    (value.strategyPacket === null || isRecord(value.strategyPacket)) &&
-    (value.reflectionSummary === null || isRecord(value.reflectionSummary));
-}
-
-function isHouseContinuityCapsule(value: unknown): boolean {
-  return isRecord(value) &&
-    typeof value.revisionId === "string" &&
-    value.revisionId.length > 0 &&
-    (value.previousRevisionId === null || typeof value.previousRevisionId === "string") &&
-    typeof value.updatedAtRound === "number" &&
-    typeof value.updatedAtPhase === "string" &&
-    typeof value.summary === "string" &&
-    Array.isArray(value.alliances) &&
-    Array.isArray(value.tensions) &&
-    Array.isArray(value.promises) &&
-    Array.isArray(value.voteBlocs) &&
-    Array.isArray(value.mingleDiscoveries) &&
-    Array.isArray(value.playerTrajectories) &&
-    Array.isArray(value.storyArcs) &&
-    Array.isArray(value.droppedThreads) &&
-    Array.isArray(value.openQuestions) &&
-    typeof value.changedSincePrevious === "string";
-}
-
-function classifyHouseContinuityStamp(params: {
-  requirement: unknown;
-  capsule: unknown;
-}): { status: PassportStampStatus; reason?: string } {
-  const requirement = isHouseContinuityRequirement(params.requirement)
-    ? params.requirement
-    : null;
-  const hasCapsule = params.capsule != null;
-  const valid = hasCapsule && isHouseContinuityCapsule(params.capsule);
-
-  if (hasCapsule && !valid) {
-    return { status: "malformed", reason: "House continuity capsule is malformed" };
-  }
-
-  if (requirement === "disabled") {
-    if (!hasCapsule) {
-      return {
-        status: "passed",
-        reason: "House Strategy Bible disabled; continuity intentionally absent",
-      };
-    }
-    return { status: "passed" };
-  }
-
-  if (requirement === "awaiting_first_valid_update") {
-    if (!hasCapsule) {
-      return {
-        status: "passed",
-        reason: "House Strategy Bible awaiting first valid update; continuity intentionally absent",
-      };
-    }
-    return { status: "passed" };
-  }
-
-  if (requirement === "required") {
-    if (!hasCapsule) {
-      return { status: "missing", reason: "required House continuity capsule is absent" };
-    }
-    return { status: "passed" };
-  }
-
-  // Legacy checkpoints without a sealed requirement marker keep historical strictness:
-  // a valid capsule passes; absence blocks readiness.
-  if (valid) return { status: "passed" };
-  if (hasCapsule) return { status: "malformed", reason: "House continuity capsule is malformed" };
-  return { status: "missing", reason: "no structured House continuity capsule present" };
+  return isRecord(value)
+    && value.version === PLAYER_CONTINUITY_CAPSULE_VERSION
+    && parsePlayerContinuityCapsule(value) != null;
 }
 
 function expectedActivePlayerIds(snapshot: Record<string, unknown> | null): {
@@ -694,7 +610,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   }
 
   const pcs = Array.isArray(snap?.playerContinuityCapsules) ? (snap!.playerContinuityCapsules as unknown[]) : [];
-  const hcc = snap?.houseContinuityCapsule ?? null;
   const capsulePlayerIds = new Set(
     pcs.map((capsule) => isRecord(capsule) ? capsule.playerId : null).filter((id): id is string => typeof id === "string"),
   );
@@ -720,11 +635,17 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("playerContinuity", "missing", "no structured player continuity capsules present");
   }
 
-  const houseStamp = classifyHouseContinuityStamp({
-    requirement: snap?.houseContinuityRequirement,
-    capsule: hcc,
-  });
-  addStamp("houseContinuity", houseStamp.status, houseStamp.reason);
+  const houseNarrative = snap?.houseNarrativeContinuityCapsule ?? null;
+  const houseNarrativeResult = houseNarrative == null
+    ? null
+    : parseHouseNarrativeContinuity(houseNarrative);
+  if (houseNarrative == null) {
+    addStamp("houseContinuity", "missing", "House narrative continuity v2 capsule is absent");
+  } else if (houseNarrativeResult?.status === "invalid") {
+    addStamp("houseContinuity", "malformed", "House narrative continuity capsule is malformed");
+  } else {
+    addStamp("houseContinuity", "passed");
+  }
 
   const ownerEpochStatus = hasBoundaryEvidence ? "passed" : "missing";
   addStamp(
@@ -735,7 +656,7 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
 
   const privacyViolation =
     containsForbiddenPrivacyKey(pcs) ||
-    containsForbiddenPrivacyKey(hcc) ||
+    containsForbiddenPrivacyKey(houseNarrative) ||
     containsForbiddenPrivacyKey(runtimeSnapshot) ||
     containsForbiddenPrivacyKey(input.transcriptCursor) ||
     containsForbiddenPrivacyKey(input.tokenCostCursor);

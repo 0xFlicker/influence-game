@@ -1,17 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AccountLegalConsent } from "@/components/account-legal-consent";
 import { ClerkPasswordFlow, type ManagedAuthMode, type PasswordFlowIntent } from "@/components/clerk-password-flow";
 import { E2ELayeredPasswordFlow } from "@/components/e2e-layered-password-flow";
 import { useAuth } from "@/hooks/use-auth";
 import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 import type { ProviderAuthenticationAttempt } from "@/lib/auth-session-coordinator";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
+import {
+  PRESENTED_LEGAL_ACCEPTANCE,
+  type PrivyAuthenticationRequest,
+} from "@/lib/api";
 
 type AuthenticationRequestDetail = {
   intent?: PasswordFlowIntent;
   email?: string;
 };
+
+type PrivyAccountHandoffState = "creation_required" | "account_exists";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -29,7 +36,7 @@ export function AuthenticationWrapper({
   initialEmail = "",
   onInlineComplete,
 }: {
-  managedAuthMode: ManagedAuthMode;
+  managedAuthMode: ManagedAuthMode | "disabled";
   presentation?: "modal" | "inline";
   initialIntent?: PasswordFlowIntent;
   initialEmail?: string;
@@ -39,6 +46,7 @@ export function AuthenticationWrapper({
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
     openPrivySignIn,
+    resetPrivyIdentity,
   } = useAuth();
   const { suppressWebsiteAuthChrome } = useMiniApp();
   const [open, setOpen] = useState(presentation === "inline");
@@ -47,8 +55,15 @@ export function AuthenticationWrapper({
   const [attempt, setAttempt] =
     useState<ProviderAuthenticationAttempt | null>(null);
   const [reversePrivyToken, setReversePrivyToken] = useState<string | null>(null);
+  const [privyAccountHandoff, setPrivyAccountHandoff] =
+    useState<PrivyAccountHandoffState | null>(null);
+  const [acceptedPrivyLegalTerms, setAcceptedPrivyLegalTerms] = useState(false);
+  const [switchingPrivyAccount, setSwitchingPrivyAccount] = useState(false);
+  const [privySwitchError, setPrivySwitchError] = useState<string | null>(null);
+  const [privyAttemptError, setPrivyAttemptError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const invokingControlRef = useRef<HTMLElement | null>(null);
+  const privySwitchGenerationRef = useRef(0);
   const isModalVisible = presentation === "modal"
     && open
     && (attempt !== null || Boolean(reversePrivyToken));
@@ -60,8 +75,14 @@ export function AuthenticationWrapper({
   }, []);
 
   const close = useCallback((cancelAttempt: boolean) => {
+    privySwitchGenerationRef.current += 1;
     if (cancelAttempt) cancelAuthenticationAttempt();
     setReversePrivyToken(null);
+    setPrivyAccountHandoff(null);
+    setAcceptedPrivyLegalTerms(false);
+    setSwitchingPrivyAccount(false);
+    setPrivySwitchError(null);
+    setPrivyAttemptError(null);
     setAttempt(null);
     if (presentation === "inline") {
       setIntent("sign_in");
@@ -81,6 +102,7 @@ export function AuthenticationWrapper({
   const start = useCallback((request: AuthenticationRequestDetail) => {
     // Mini App uses Farcaster Quick Auth only — never open Privy/Clerk chrome.
     if (suppressWebsiteAuthChrome) return;
+    privySwitchGenerationRef.current += 1;
     cancelAuthenticationAttempt();
     invokingControlRef.current =
       document.activeElement instanceof HTMLElement
@@ -89,6 +111,11 @@ export function AuthenticationWrapper({
     setIntent(request.intent ?? "sign_in");
     setEmail(request.email ?? "");
     setReversePrivyToken(null);
+    setPrivyAccountHandoff(null);
+    setAcceptedPrivyLegalTerms(false);
+    setSwitchingPrivyAccount(false);
+    setPrivySwitchError(null);
+    setPrivyAttemptError(null);
     setAttempt(beginAuthenticationAttempt());
     setOpen(true);
   }, [
@@ -101,16 +128,87 @@ export function AuthenticationWrapper({
     nextIntent: "sign_in" | "create_account",
   ) => {
     if (nextIntent === intent) return;
+    privySwitchGenerationRef.current += 1;
     cancelAuthenticationAttempt();
     setIntent(nextIntent);
     setEmail("");
     setReversePrivyToken(null);
+    setPrivyAccountHandoff(null);
+    setAcceptedPrivyLegalTerms(false);
+    setSwitchingPrivyAccount(false);
+    setPrivySwitchError(null);
+    setPrivyAttemptError(null);
     setAttempt(beginAuthenticationAttempt());
   }, [
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
     intent,
   ]);
+
+  const beginPrivyAuthentication = useCallback((
+    request: PrivyAuthenticationRequest,
+  ) => {
+    privySwitchGenerationRef.current += 1;
+    setSwitchingPrivyAccount(false);
+    setPrivySwitchError(null);
+    setPrivyAttemptError(null);
+    setAttempt(null);
+    setPrivyAccountHandoff(null);
+    openPrivySignIn((outcome) => {
+      if (outcome.kind === "link_required") {
+        setReversePrivyToken(outcome.token);
+        return;
+      }
+      if (outcome.kind === "account_creation_required") {
+        setAcceptedPrivyLegalTerms(false);
+        setPrivyAccountHandoff("creation_required");
+        setAttempt(beginAuthenticationAttempt());
+        return;
+      }
+      if (outcome.kind === "account_already_exists") {
+        setAcceptedPrivyLegalTerms(false);
+        setPrivyAccountHandoff("account_exists");
+        setAttempt(beginAuthenticationAttempt());
+        return;
+      }
+      if (outcome.kind === "cancelled") {
+        setAttempt(beginAuthenticationAttempt());
+        return;
+      }
+      if (outcome.kind === "provider_error") {
+        setPrivyAttemptError(outcome.message);
+        setAttempt(beginAuthenticationAttempt());
+      }
+    }, request);
+  }, [beginAuthenticationAttempt, openPrivySignIn]);
+
+  const useDifferentPrivyAccount = useCallback(() => {
+    const generation = ++privySwitchGenerationRef.current;
+    setSwitchingPrivyAccount(true);
+    setPrivySwitchError(null);
+    void resetPrivyIdentity().then(() => {
+      if (privySwitchGenerationRef.current !== generation) return;
+      setIntent("sign_in");
+      setReversePrivyToken(null);
+      setPrivyAccountHandoff(null);
+      setAcceptedPrivyLegalTerms(false);
+      setSwitchingPrivyAccount(false);
+      setAttempt(beginAuthenticationAttempt());
+    }).catch((error: unknown) => {
+      if (privySwitchGenerationRef.current !== generation) return;
+      console.error("[InfluenceAuth] Privy sign-out failed:", error);
+      setSwitchingPrivyAccount(false);
+      setPrivySwitchError(
+        error instanceof Error && error.message.includes("taking longer")
+          ? "Privy sign-out is taking too long. Reload this page before trying another Privy account."
+          : "We couldn't sign out of Privy. Reload this page before trying another Privy account.",
+      );
+    });
+  }, [beginAuthenticationAttempt, resetPrivyIdentity]);
+
+  useEffect(() => () => {
+    privySwitchGenerationRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (suppressWebsiteAuthChrome) return;
@@ -203,25 +301,54 @@ export function AuthenticationWrapper({
   const PasswordFlow = isLayeredAuthE2EAdapterEnabled()
     ? E2ELayeredPasswordFlow
     : ClerkPasswordFlow;
-  const flow = reversePrivyToken && !attempt ? (
+  const passwordMode: ManagedAuthMode = managedAuthMode === "disabled"
+    ? "existing-only"
+    : managedAuthMode;
+  const flow = privyAccountHandoff && attempt ? (
+    <PrivyAccountHandoff
+      state={privyAccountHandoff}
+      acceptedLegalTerms={acceptedPrivyLegalTerms}
+      onAcceptedLegalTermsChange={setAcceptedPrivyLegalTerms}
+      onContinue={() => {
+        beginPrivyAuthentication(
+          privyAccountHandoff === "creation_required"
+            ? {
+              intent: "create_account",
+              legalAcceptance: PRESENTED_LEGAL_ACCEPTANCE,
+            }
+            : { intent: "sign_in" },
+        );
+      }}
+      onUseDifferent={useDifferentPrivyAccount}
+      switchingAccount={switchingPrivyAccount}
+      switchError={privySwitchError}
+    />
+  ) : reversePrivyToken && !attempt ? (
     <ReversePrivyLinkConfirmation
-      mode={managedAuthMode}
+      mode={passwordMode}
       onContinue={() => {
         setIntent("sign_in");
         setAttempt(beginAuthenticationAttempt());
       }}
       onCancel={() => close(true)}
     />
+  ) : attempt && managedAuthMode === "disabled" ? (
+    <PrivyOnlyEntry
+      onContinue={() => beginPrivyAuthentication({ intent: "sign_in" })}
+    />
   ) : attempt ? (
     <PasswordFlow
       key={`${intent}:${attempt.generation}`}
       intent={intent}
-      mode={managedAuthMode}
+      mode={passwordMode}
       attempt={attempt}
       initialEmail={email}
       presentation={presentation}
       reversePrivyToken={reversePrivyToken ?? undefined}
-      onIntentChange={setIntent}
+      onIntentChange={(nextIntent, nextEmail) => {
+        setEmail(nextEmail ?? "");
+        setIntent(nextIntent);
+      }}
       onComplete={() => {
         if (presentation === "inline") {
           onInlineComplete?.();
@@ -230,21 +357,21 @@ export function AuthenticationWrapper({
         }
       }}
       onCancel={() => close(true)}
-      onContinueWithPrivy={() => {
-        setAttempt(null);
-        openPrivySignIn((outcome) => {
-          if (outcome.kind === "link_required") {
-            setReversePrivyToken(outcome.token);
-            return;
-          }
-          if (outcome.kind === "cancelled") {
-            setAttempt(beginAuthenticationAttempt());
-          }
-        });
+      onContinueWithPrivy={(acceptedLegalTerms) => {
+        if (intent === "create_account" && !acceptedLegalTerms) return;
+        beginPrivyAuthentication(
+          intent === "create_account" && acceptedLegalTerms
+            ? {
+              intent: "create_account",
+              legalAcceptance: PRESENTED_LEGAL_ACCEPTANCE,
+            }
+            : { intent: "sign_in" },
+        );
       }}
     />
   ) : null;
   const primaryTabs = managedAuthMode === "full"
+    && !privyAccountHandoff
     && (intent === "sign_in" || intent === "create_account")
     ? (
       <PrimaryIntentTabs
@@ -258,6 +385,7 @@ export function AuthenticationWrapper({
     return (
       <section aria-label="Authentication" className="influence-panel rounded-xl p-6">
         {primaryTabs}
+        {privyAttemptError ? <p role="alert" className="mb-4 text-sm text-red-300">{privyAttemptError}</p> : null}
         {flow}
       </section>
     );
@@ -290,8 +418,113 @@ export function AuthenticationWrapper({
             Close
           </button>
         </div>
+        {privyAttemptError ? <p role="alert" className="mb-4 text-sm text-red-300">{privyAttemptError}</p> : null}
         <div>{flow}</div>
       </div>
+    </div>
+  );
+}
+
+function PrivyAccountHandoff({
+  state,
+  acceptedLegalTerms,
+  onAcceptedLegalTermsChange,
+  onContinue,
+  onUseDifferent,
+  switchingAccount,
+  switchError,
+}: {
+  state: PrivyAccountHandoffState;
+  acceptedLegalTerms: boolean;
+  onAcceptedLegalTermsChange: (accepted: boolean) => void;
+  onContinue: () => void;
+  onUseDifferent: () => void;
+  switchingAccount: boolean;
+  switchError: string | null;
+}) {
+  if (state === "account_exists") {
+    return (
+      <div className="space-y-5">
+        <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
+          Account already exists
+        </h2>
+        <p className="influence-copy text-sm">
+          This Privy account is already connected to The House. Continue to
+          sign in.
+        </p>
+        <button type="button" disabled={switchingAccount} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" onClick={onContinue}>
+          Continue with Privy
+        </button>
+        <button type="button" disabled={switchingAccount} className="influence-link text-sm" onClick={onUseDifferent}>
+          {switchingAccount ? "Signing out…" : "Use a different Privy account"}
+        </button>
+        {switchError ? <PrivySwitchError message={switchError} /> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
+        Create your account
+      </h2>
+      <p className="influence-copy text-sm">
+        This Privy sign-in isn&apos;t connected to a House account yet. Create
+        one to continue.
+      </p>
+      <AccountLegalConsent
+        checked={acceptedLegalTerms}
+        disabled={switchingAccount}
+        onChange={onAcceptedLegalTermsChange}
+      />
+      <button
+        type="button"
+        disabled={switchingAccount || !acceptedLegalTerms}
+        className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+        onClick={onContinue}
+      >
+        Continue with Privy
+      </button>
+      <button type="button" disabled={switchingAccount} className="influence-link text-sm" onClick={onUseDifferent}>
+        {switchingAccount ? "Signing out…" : "Use a different Privy account"}
+      </button>
+      {switchError ? <PrivySwitchError message={switchError} /> : null}
+    </div>
+  );
+}
+
+function PrivySwitchError({ message }: { message: string }) {
+  return (
+    <div className="space-y-3">
+      <p role="alert" className="text-sm text-red-300">{message}</p>
+      <button
+        type="button"
+        className="influence-button-secondary min-h-11 rounded-lg px-4 py-2 text-sm"
+        onClick={() => window.location.reload()}
+      >
+        Reload page
+      </button>
+    </div>
+  );
+}
+
+function PrivyOnlyEntry({
+  onContinue,
+}: {
+  onContinue: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
+        Sign in
+      </h2>
+      <button
+        type="button"
+        className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+        onClick={onContinue}
+      >
+        Continue with Privy
+      </button>
     </div>
   );
 }

@@ -14,6 +14,9 @@ import type {
   ClerkAuthenticationProviderVerifier,
   ProviderVerificationResult,
 } from "../services/authentication-providers.js";
+import { observeHarnessSignals } from "./harness-signals.js";
+import { cleanupE2eResources } from "./cleanup.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../../..");
 const JWT_SECRET = "layered-authentication-e2e-jwt-secret";
@@ -35,6 +38,10 @@ interface LayeredAuthHarness {
     walletPrivyFresh: string;
     walletPrivyExpired: string;
     uiExistingPrivy: string;
+    uiNewPrivy: string;
+    uiExistingOnlyPrivy: string;
+    uiDisabledPrivy: string;
+    uiOutagePrivy: string;
     uiReversePrivy: string;
     uiWalletPrivyFresh: string;
     uiWalletPrivyExpired: string;
@@ -58,13 +65,19 @@ let isolatedDatabaseUrl: string | null = null;
 let stopping = false;
 
 async function main(): Promise<void> {
+  const signals = observeHarnessSignals();
+  let requestedShutdown: Promise<void> | null = null;
+  try {
   process.env.JWT_SECRET = JWT_SECRET;
   process.env.MANAGED_AUTH_MODE = "full";
   process.env.PRIVY_COMPATIBILITY_BRIDGE_ENABLED = "false";
 
-  const { db, databaseUrl } = await createIsolatedTestDb();
+  const { db, databaseUrl } = await createIsolatedTestDb({ signal: signals.signal });
   isolatedDatabaseUrl = databaseUrl;
+  signals.onRequest(() => { requestedShutdown ??= shutdown(); });
+  if (signals.requested()) return;
   const fixture = await seedFixture(db);
+  if (signals.requested()) return;
   const webPort = randomPort();
   const apiPort = randomPort();
   const apiUrl = `http://127.0.0.1:${apiPort}`;
@@ -135,7 +148,8 @@ async function main(): Promise<void> {
       stderr: "inherit",
     },
   );
-  await waitForHealth(webUrl, 60_000);
+  await waitForHealth(webUrl, 60_000, signals.signal);
+  if (signals.requested()) return;
 
   const harness: LayeredAuthHarness = {
     apiUrl,
@@ -151,6 +165,10 @@ async function main(): Promise<void> {
       walletPrivyFresh: "privy:wallet:fresh",
       walletPrivyExpired: "privy:wallet:expired",
       uiExistingPrivy: "privy:ui-existing",
+      uiNewPrivy: "privy:ui-new",
+      uiExistingOnlyPrivy: "privy:ui-existing-only",
+      uiDisabledPrivy: "privy:ui-disabled",
+      uiOutagePrivy: "privy:ui-outage",
       uiReversePrivy: "privy:ui-reverse",
       uiWalletPrivyFresh: "privy:ui-wallet:fresh",
       uiWalletPrivyExpired: "privy:ui-wallet:expired",
@@ -160,11 +178,11 @@ async function main(): Promise<void> {
   };
   console.log(`E2E_LAYERED_AUTH_READY ${JSON.stringify(harness)}`);
 
-  await new Promise<void>((resolve) => {
-    process.once("SIGINT", resolve);
-    process.once("SIGTERM", resolve);
-  });
-  await shutdown();
+  await signals.received;
+  } finally {
+    signals.dispose();
+    await (requestedShutdown ?? shutdown());
+  }
 }
 
 async function seedFixture(db: DrizzleDB): Promise<{
@@ -284,6 +302,12 @@ async function seedFixture(db: DrizzleDB): Promise<{
       state: "active",
     },
   ]);
+  await recordCurrentLegalAcceptance(
+    db,
+    uiWalletOwner,
+    "existing_account",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
 
   return {
     users: { existingEmail, walletOwner, reverseOwner },
@@ -313,6 +337,11 @@ function createInjectedClerkVerifier(): ClerkAuthenticationProviderVerifier {
           return { status: "profile_unavailable" };
         case "clerk:ui-new":
           return verifiedClerk("clerk-ui-new", "ui-new+e2e@example.test");
+        case "clerk:ui-signin-new":
+          return verifiedClerk(
+            "clerk-ui-signin-new",
+            "ui-signin-new+e2e@example.test",
+          );
         case "clerk:ui-existing":
           return verifiedClerk(
             "clerk-ui-existing",
@@ -356,6 +385,14 @@ async function verifyInjectedPrivyToken(token: string): Promise<string | null> {
       return "did:privy:wallet";
     case "privy:ui-existing":
       return "did:privy:ui-existing";
+    case "privy:ui-new":
+      return "did:privy:ui-new";
+    case "privy:ui-existing-only":
+      return "did:privy:ui-existing-only";
+    case "privy:ui-disabled":
+      return "did:privy:ui-disabled";
+    case "privy:ui-outage":
+      return "did:privy:ui-outage";
     case "privy:ui-reverse":
       return "did:privy:ui-reverse";
     case "privy:ui-wallet:fresh":
@@ -382,6 +419,18 @@ const linkedAccountsBySubject: Record<
     emailAccount("ui-existing@example.test"),
     embeddedWallet(UI_EMBEDDED_WALLET),
   ],
+  "did:privy:ui-new": () => [
+    emailAccount("ui-privy-new+e2e@example.test"),
+    embeddedWallet("0x6666666666666666666666666666666666666666"),
+  ],
+  "did:privy:ui-existing-only": () => [
+    emailAccount("ui-privy-existing-only+e2e@example.test"),
+    embeddedWallet("0x8888888888888888888888888888888888888888"),
+  ],
+  "did:privy:ui-disabled": () => [
+    emailAccount("ui-privy-disabled+e2e@example.test"),
+    embeddedWallet("0x7777777777777777777777777777777777777777"),
+  ],
   "did:privy:reverse": () => [emailAccount("reverse@example.test")],
   "did:privy:ui-reverse": () => [emailAccount("ui-reverse@example.test")],
   "did:privy:ui-wallet": () => [
@@ -395,6 +444,9 @@ const linkedAccountsBySubject: Record<
 };
 
 async function loadInjectedPrivyUser(subject: string) {
+  if (subject === "did:privy:ui-outage") {
+    throw new Error("Injected Privy profile outage");
+  }
   const linkedAccounts = (
     linkedAccountsBySubject[subject]
     ?? linkedAccountsBySubject["did:privy:wallet"]!
@@ -446,13 +498,23 @@ function randomPort(): number {
   return 10_000 + Math.floor(Math.random() * 50_000);
 }
 
-async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
+async function waitForHealth(
+  url: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url);
+      if (signal?.aborted) throw new Error(`Startup aborted while waiting for ${url}`);
+      const remainingMs = timeoutMs - (Date.now() - startedAt);
+      const requestTimeout = AbortSignal.timeout(Math.max(1, Math.min(1_000, remainingMs)));
+      const response = await fetch(url, {
+        signal: signal ? AbortSignal.any([signal, requestTimeout]) : requestTimeout,
+      });
       if (response.ok) return;
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error;
       // Process is still starting.
     }
     await Bun.sleep(250);
@@ -463,18 +525,28 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
-  if (webProcess) {
-    webProcess.kill("SIGTERM");
-    await Promise.race([webProcess.exited, Bun.sleep(5_000)]);
-    if (webProcess.exitCode === null) webProcess.kill("SIGKILL");
-    webProcess = null;
-  }
-  apiServer?.stop(true);
-  apiServer = null;
-  if (isolatedDatabaseUrl) {
-    await destroyIsolatedTestDb(isolatedDatabaseUrl);
-    isolatedDatabaseUrl = null;
-  }
+  await cleanupE2eResources([
+    ["web", async () => {
+      if (!webProcess) return;
+      const processToStop = webProcess;
+      processToStop.kill("SIGTERM");
+      await Promise.race([processToStop.exited, Bun.sleep(5_000)]);
+      if (processToStop.exitCode === null) {
+        processToStop.kill("SIGKILL");
+        await processToStop.exited;
+      }
+      webProcess = null;
+    }],
+    ["api", () => {
+      apiServer?.stop(true);
+      apiServer = null;
+    }],
+    ["database", async () => {
+      if (!isolatedDatabaseUrl) return;
+      await destroyIsolatedTestDb(isolatedDatabaseUrl);
+      isolatedDatabaseUrl = null;
+    }],
+  ]);
 }
 
 void main().catch(async (error) => {

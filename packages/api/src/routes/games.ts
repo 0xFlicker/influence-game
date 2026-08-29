@@ -5,7 +5,7 @@
  *   POST   /api/games           — create a new game
  *   GET    /api/games           — list games (with status filter)
  *   GET    /api/games/:id       — get game details
- *   POST   /api/games/:id/join  — join a game with agent config
+ *   POST   /api/games/:id/join  — join a game with an owned saved agent
  *   POST   /api/games/:id/start — start a game (min players met)
  *   POST   /api/games/:id/stop  — stop / cancel a running game
  *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
@@ -26,10 +26,14 @@ import {
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
-import { abortGame, startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
+import {
+  abortGame,
+  startGame,
+  tryReturnZeroEventOwnerFailureToWaiting,
+  validateGameStartReadiness,
+} from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
-  markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -63,10 +67,8 @@ import {
 import { broadcastRaw } from "../services/ws-manager.js";
 import {
   admitOwnedSeatInTransaction,
-  assertUnownedSeatAdmissionInTransaction,
   lockWaitingGameForRosterWrite,
   OwnedSeatProjectionError,
-  updateWaitingHouseSeatPersonaInTransaction,
 } from "../services/owned-seat-projection.js";
 import { getPublicGameCompetitionReceipts } from "../services/season-read-model.js";
 import { generateUniqueSlug } from "../lib/slug.js";
@@ -82,16 +84,17 @@ import {
   LEGACY_FORMAT_MANIFEST,
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
-  generatePersona,
+  getHousePersonaDetails,
   normalizeGameModelSelection,
+  normalizeProviderManifest,
   normalizeOpenAIRequestServiceTier,
   pickAgentNames,
   pickArchetypes,
   resolveFormatManifest,
   resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
-import { resolveOpenAIBudgetGenerationLlm } from "../lib/openai-budget-generation-llm.js";
 
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
@@ -131,13 +134,13 @@ export function createGameRoutes(
 
     const {
       playerCount,
+      providerManifest,
       modelSelection,
       personaPool,
       fillStrategy,
       timingPreset,
       maxRounds,
       visibility,
-      slotType,
       viewerMode,
       serviceTier,
       formatManifest,
@@ -208,19 +211,29 @@ export function createGameRoutes(
     if (!normalizedServiceTier) {
       return c.json({ error: "Invalid service tier" }, 400);
     }
-    const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
-    if (!normalizedModelSelection) {
-      return c.json({ error: "Invalid model selection" }, 400);
-    }
-    let resolvedModelSelection;
+    let frozenProviderManifest;
     try {
-      resolvedModelSelection = resolveModelSelection(normalizedModelSelection);
-    } catch {
-      return c.json({ error: "Unknown model selection" }, 400);
+      if (providerManifest !== undefined) {
+        frozenProviderManifest = normalizeProviderManifest(providerManifest);
+      } else {
+        const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
+        if (!normalizedModelSelection) {
+          return c.json({ error: "Invalid model selection" }, 400);
+        }
+        // Preserve the established single-selection error contract while old
+        // clients remain in the bounded blue/green restoration window.
+        const legacyResolvedSelection = resolveModelSelection(normalizedModelSelection);
+        if (legacyResolvedSelection.model.evaluationStatus !== "game-ready") {
+          return c.json({ error: "Model is not game-ready" }, 400);
+        }
+        frozenProviderManifest = normalizeProviderManifest([normalizedModelSelection]);
+      }
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : "Invalid provider manifest",
+      }, 400);
     }
-    if (resolvedModelSelection.model.evaluationStatus !== "game-ready") {
-      return c.json({ error: "Model is not game-ready" }, 400);
-    }
+    const resolvedModelSelection = resolveModelSelection(frozenProviderManifest[0]);
 
     let frozenFormatManifest;
     try {
@@ -240,13 +253,16 @@ export function createGameRoutes(
         catalogId: resolvedModelSelection.catalogId,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
-      ...(resolvedModelSelection.model.providerProfileId === "openai" && {
+      providerManifest: frozenProviderManifest,
+      ...(frozenProviderManifest.some((entry) => (
+        resolveModelSelection(entry).model.providerProfileId === "openai"
+      )) && {
         serviceTier: normalizedServiceTier,
       }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
-      slotType: slotType ?? "all_ai",
+      slotType: "all_ai",
       viewerMode: resolvedViewerMode,
       formatManifest: frozenFormatManifest,
     };
@@ -440,7 +456,7 @@ export function createGameRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // POST /api/games/:id/join — join a game with agent config
+  // POST /api/games/:id/join — join a game with an owned saved agent
   // -------------------------------------------------------------------------
 
   app.post("/api/games/:id/join", requireAuth(db), async (c) => {
@@ -455,74 +471,53 @@ export function createGameRoutes(
       return c.json({ error: "Game not found" }, 404);
     }
 
-    if (game.status !== "waiting") {
-      return c.json({ error: "Game is not accepting players" }, 400);
-    }
-
     const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, gameId));
-
-    if (currentPlayers.length >= game.maxPlayers) {
-      return c.json({ error: "Game is full" }, 400);
-    }
 
     const body = await parseJsonBody(c, "POST /api/games/:id/join");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { agentName, personality, strategyHints, personaKey, agentProfileId } = body;
+    const { agentProfileId } = body;
+    if (typeof agentProfileId !== "string" || !agentProfileId.trim()) {
+      return c.json({ error: "agentProfileId is required" }, 400);
+    }
 
     const joinUser = c.get("user");
 
-    // -----------------------------------------------------------------------
-    // Resolve agent identity
-    // -----------------------------------------------------------------------
-    let resolvedName: string;
-    let resolvedPersonality: string;
-    let resolvedBackstory: string | null = null;
-    let resolvedStrategyHints: string | null = strategyHints ?? null;
-    let resolvedPersonaKey: string | null = personaKey ?? null;
-    let resolvedProfile: typeof schema.agentProfiles.$inferSelect | null = null;
+    const existingSeat = currentPlayers.find((player) => (
+      player.userId === joinUser.id && player.agentProfileId === agentProfileId
+    ));
+    if (existingSeat) return c.json({ playerId: existingSeat.id }, 200);
 
-    if (agentProfileId) {
-      const profile = (await db
-        .select()
-        .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
-
-      if (!profile) {
-        return c.json({ error: "Agent profile not found" }, 404);
-      }
-
-      if (profile.userId !== joinUser?.id) {
-        return c.json({ error: "Agent profile does not belong to you" }, 403);
-      }
-
-      resolvedName = profile.name;
-      resolvedPersonality = profile.personality;
-      resolvedBackstory = profile.backstory;
-      resolvedStrategyHints = profile.strategyStyle;
-      resolvedPersonaKey = profile.personaKey;
-      resolvedProfile = profile;
-    } else {
-      if (!agentName || !personality) {
-        return c.json({ error: "agentName and personality are required (or provide agentProfileId)" }, 400);
-      }
-      resolvedName = agentName;
-      resolvedPersonality = personality;
+    if (game.status !== "waiting") {
+      return c.json({ error: "Game is not accepting players" }, 400);
     }
 
-    if (game.seasonId && !resolvedProfile) {
-      return c.json({ error: "Rated games require an owned saved agent." }, 400);
+    const profile = (await db
+      .select()
+      .from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
+
+    if (!profile) {
+      return c.json({ error: "Agent profile not found" }, 404);
+    }
+
+    if (profile.userId !== joinUser?.id) {
+      return c.json({ error: "Agent profile does not belong to you" }, 403);
+    }
+
+    if (currentPlayers.length >= game.maxPlayers) {
+      return c.json({ error: "Game is full" }, 400);
     }
 
     // -----------------------------------------------------------------------
     // Reject if name collides with an existing player in this game
     // -----------------------------------------------------------------------
-    const normalizedJoinName = resolvedName.trim().toLowerCase();
+    const normalizedJoinName = profile.name.trim().toLowerCase();
     const nameCollision = currentPlayers.some((p) => {
       const persona = JSON.parse(p.persona) as { name: string };
       return persona.name.trim().toLowerCase() === normalizedJoinName;
@@ -531,50 +526,17 @@ export function createGameRoutes(
       return c.json({ error: "A player with that name already exists in this game" }, 409);
     }
 
-    // -----------------------------------------------------------------------
-    // Resolve model from game config
-    // -----------------------------------------------------------------------
-    const gameConfig = JSON.parse(game.config);
-    const resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(gameConfig.modelSelection),
-    );
-    const agentModel = resolvedModelSelection.modelId;
-
     const playerId = randomUUID();
-    const persona = {
-      name: resolvedName,
-      personality: resolvedPersonality,
-      backstory: resolvedBackstory,
-      strategyHints: resolvedStrategyHints,
-      personaKey: resolvedPersonaKey,
-    };
 
-    const agentConfig = {
-      model: agentModel,
-      temperature: 0.9,
-    };
-
+    let admitted;
     try {
-      await db.transaction(async (tx) => {
-        if (resolvedProfile && joinUser) {
-          await admitOwnedSeatInTransaction(tx, {
-            gameId,
-            userId: joinUser.id,
-            agentProfileId: resolvedProfile.id,
-            playerId,
-            overrides: { temperature: agentConfig.temperature },
-          });
-          return;
-        }
-        await assertUnownedSeatAdmissionInTransaction(tx, { gameId, name: resolvedName });
-        await tx.insert(schema.gamePlayers).values({
-          id: playerId,
+      admitted = await db.transaction(async (tx) => {
+        return admitOwnedSeatInTransaction(tx, {
           gameId,
-          userId: joinUser?.id ?? null,
-          agentProfileId: null,
-          agentRevisionId: null,
-          persona: JSON.stringify(persona),
-          agentConfig: JSON.stringify(agentConfig),
+          userId: joinUser!.id,
+          agentProfileId: profile.id,
+          playerId,
+          overrides: { temperature: 0.9 },
         });
       });
     } catch (error) {
@@ -583,9 +545,9 @@ export function createGameRoutes(
       }
       throw error;
     }
-    await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
+    if (!admitted.replayed) await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
 
-    return c.json({ playerId }, 201);
+    return c.json({ playerId: admitted.seat.id }, admitted.replayed ? 200 : 201);
   });
 
   // -------------------------------------------------------------------------
@@ -619,12 +581,10 @@ export function createGameRoutes(
     }
 
     const config = JSON.parse(game.config);
-    const resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(config.modelSelection),
-    );
+    const resolvedModelSelection = resolveProviderManifestFromGameConfig(config)[0]!;
     const agentModel = resolvedModelSelection.modelId;
 
-    // Step 1: Create placeholder players immediately (no LLM needed)
+    // Create final House players synchronously from deterministic archetypes.
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
     let totalPlayers = existingPlayers.length;
 
@@ -653,14 +613,15 @@ export function createGameRoutes(
         for (let i = 0; i < actualSlots; i++) {
           const name = names[i] ?? `Agent-${i + 1}`;
           const archetype = archetypes[i] ?? "strategic";
+          const defaults = getHousePersonaDetails(archetype);
 
           const playerId = randomUUID();
           const persona = {
             name,
             personality: archetype,
-            strategyHints: null,
+            strategyHints: defaults.strategyHints,
             personaKey: archetype,
-            personalityBlurb: null,
+            personalityBlurb: defaults.personalityBlurb,
           };
 
           const agentCfg = {
@@ -694,61 +655,12 @@ export function createGameRoutes(
 
     await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
-    // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
-    // House-fill blurbs always use catalog-paired GPT-5.6 Luna — never env local base URL.
-    // Game-runtime models still come from the game's modelSelection at start.
-    const generationLlm = resolveOpenAIBudgetGenerationLlm();
-
-    if (generationLlm) {
-      void (async () => {
-        const updatedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
-
-        for (const player of addedPlayers) {
-          try {
-            const generated = await generatePersona(
-              generationLlm.client,
-              player.name,
-              player.archetype as Personality,
-              generationLlm.modelId,
-            );
-
-            const existing = (await db
-              .select()
-              .from(schema.gamePlayers)
-              .where(eq(schema.gamePlayers.id, player.id)))[0];
-
-            if (existing) {
-              const persona = JSON.parse(existing.persona);
-              persona.strategyHints = generated.strategyHints || null;
-              persona.personalityBlurb = generated.personality || null;
-
-              const updated = await db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
-                gameId,
-                playerId: player.id,
-                persona: JSON.stringify(persona),
-              }));
-              if (updated) updatedPlayers.push(player);
-            }
-          } catch (err) {
-            console.warn(`[games] Persona generation failed for ${player.name}:`, err instanceof Error ? err.message : err);
-          }
-        }
-
-        if (updatedPlayers.length > 0) {
-          console.log(`[games] Generated personas for ${updatedPlayers.length} filled player(s) in ${gameId}`);
-        }
-      })();
-    }
-
-    // Step 4: Return 202 Accepted immediately
     return c.json({
-      filling: true,
-      slotsToFill: addedPlayers.length,
       filled: addedPlayers.length,
       totalPlayers,
       maxPlayers: game.maxPlayers,
       players: addedPlayers,
-    }, 202);
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -787,7 +699,17 @@ export function createGameRoutes(
 
     const readiness = await validateGameStartReadiness(db, gameId);
     if (readiness.error) {
-      return c.json({ error: readiness.error }, 500);
+      return c.json({
+        error: readiness.error,
+        ...(readiness.code && { code: readiness.code }),
+        ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
+      }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
+        ? 409
+        : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
+          ? 503
+          : 500);
     }
 
     const owner = await acquireGameRunOwner(db, gameId);
@@ -807,11 +729,16 @@ export function createGameRoutes(
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      const cleanup = await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, startupError);
-      if (cleanup.rosterDisposition === "repair_required") {
+      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
+        db,
+        gameId,
+        owner.claim.ownerEpoch,
+        startupError,
+      );
+      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
         console.warn("[games] Startup failure roster requires repair", {
           gameId,
-          ...cleanup.reconciliationError,
+          ...cleanup.cleanup.reconciliationError,
         });
       }
       await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");

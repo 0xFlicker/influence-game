@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -7,6 +8,7 @@ import type { PrivateTracePutObjectInput, PrivateTraceStorageAdapter } from "../
 import { PRIVATE_TRACE_CONTENT_TYPE, PRIVATE_TRACE_STORAGE_PROVIDER } from "../services/private-trace-storage.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE, writePrivateDecisionTrace } from "../services/private-trace-writer.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import { createEvidenceManifest } from "../services/game-evidence.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -32,16 +34,20 @@ class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
   async getObject(input: {
     bucket: string;
     key: string;
+    offsetBytes?: number;
     maxBytes?: number;
-  }): Promise<{ body: string; contentLength?: number; contentType?: string }> {
+  }): Promise<{ bodyBytes: Uint8Array; contentLength?: number; contentType?: string }> {
     const found = this.puts.find((put) => put.bucket === input.bucket && put.key === input.key);
     if (!found) throw new Error("object not found");
-    const body = input.maxBytes === undefined
-      ? found.body
-      : Buffer.from(found.body, "utf8").subarray(0, Math.max(1, Math.floor(input.maxBytes))).toString("utf8");
+    const bytes = Buffer.from(found.body, "utf8");
+    const offsetBytes = Math.max(0, Math.floor(input.offsetBytes ?? 0));
+    const bodyBytes = bytes.subarray(
+      offsetBytes,
+      input.maxBytes === undefined ? undefined : offsetBytes + Math.max(1, Math.floor(input.maxBytes)),
+    );
     return {
-      body,
-      contentLength: Buffer.byteLength(body, "utf8"),
+      bodyBytes,
+      contentLength: bodyBytes.byteLength,
       contentType: found.contentType,
     };
   }
@@ -150,8 +156,10 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
       expose: "Vera",
       reasoningContext: "native reasoning secret",
     },
-    strategyPacketRevision: "r1-vote-1",
-    decisionLog: "The vote followed the packet by rewarding Mira and pressuring Vera.",
+    strategyCandidate: {
+      operation: "delta",
+      submittedValue: "Reward Mira and pressure Vera.",
+    },
     boundary: {
       currentEventSequence: 7,
       currentEventHash: "sha256:event-head",
@@ -270,11 +278,9 @@ describe("private trace writer", () => {
       },
       toolName: "cast_votes",
       providerReasoningSummaryByteLength: expect.any(Number),
-      strategicDecision: {
-        decisionLogBytes: expect.any(Number),
-      },
-      strategyPacket: {
-        revision: "r1-vote-1",
+      strategyCandidate: {
+        operation: "delta",
+        submittedValueByteLength: expect.any(Number),
       },
     });
     expect(metadata.byteLength).toBeGreaterThan(0);
@@ -289,6 +295,8 @@ describe("private trace writer", () => {
 
     const readModel = new PrivateTraceReadModel(db, () => storage);
     const index = await readModel.listManifests(gameId);
+    expect(index.ok).toBe(true);
+    if (!index.ok) throw new Error(index.error);
     expect(index.manifests[0]).toMatchObject({
       id: result.manifestId,
       decisionId,
@@ -305,14 +313,12 @@ describe("private trace writer", () => {
           credits: 17,
         },
       },
-      strategicDecision: {
-        decisionLogBytes: expect.any(Number),
-      },
-      strategyPacket: {
-        revision: "r1-vote-1",
+      strategyCandidate: {
+        operation: "delta",
+        submittedValueByteLength: expect.any(Number),
       },
     });
-    expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
+    expect(JSON.stringify(index.manifests[0])).not.toContain("Reward Mira and pressure Vera");
   });
 
   test("persists effective OpenAI tier and cache-write usage for cost backfill", async () => {
@@ -402,6 +408,67 @@ describe("private trace writer", () => {
     expect(cappedRead.response.byteLength).toBe(result.metadata.byteLength);
     expect(cappedRead.response.content.length).toBeGreaterThan(0);
     expect(cappedRead.response.manifest.decisionId).toBeUndefined();
+    expect(cappedRead.response.offsetBytes).toBe(0);
+    expect(cappedRead.response.nextOffsetBytes).toBe(64);
+    expect(cappedRead.response.hashScope).toBe("chunk");
+
+    const finalRead = await readModel.readContent(result.manifestId, {
+      gameId,
+      offsetBytes: cappedRead.response.nextOffsetBytes,
+      maxBytes: result.metadata.byteLength,
+    });
+    expect(finalRead.ok).toBeTrue();
+    if (!finalRead.ok) throw new Error(finalRead.error);
+    expect(finalRead.response.offsetBytes).toBe(64);
+    expect(finalRead.response.truncated).toBeFalse();
+    expect(finalRead.response.nextOffsetBytes).toBeUndefined();
+    expect(finalRead.response.hashScope).toBe("chunk");
+    expect(`${cappedRead.response.content}${finalRead.response.content}`).toBe(storage.puts[0]!.body);
+  });
+
+  test("pages multibyte evidence only on lossless UTF-8 boundaries", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakePrivateTraceStorage();
+    const result = await writePrivateDecisionTrace(
+      db,
+      {
+        gameId,
+        ownerEpoch,
+        trace: makeTrace({
+          gameId,
+          ownerEpoch,
+          prompt: { messages: [{ role: "user", content: "Vote for Maya 🌌 — 开始" }] },
+        }),
+      },
+      { storage },
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+
+    const readModel = new PrivateTraceReadModel(db, () => storage);
+    let offsetBytes = 0;
+    let reconstructed = "";
+    for (let page = 0; page < result.metadata.byteLength + 10; page += 1) {
+      const read = await readModel.readContent(result.manifestId, {
+        gameId,
+        offsetBytes,
+        maxBytes: 1,
+      });
+      expect(read.ok).toBeTrue();
+      if (!read.ok) throw new Error(read.error);
+      reconstructed += read.response.content;
+      offsetBytes += read.response.returnedByteLength;
+      expect(read.response.offsetBytes).toBe(offsetBytes - read.response.returnedByteLength);
+      if (!read.response.truncated) break;
+      expect(read.response.nextOffsetBytes).toBe(offsetBytes);
+    }
+
+    const stored = storage.puts[0]!.body;
+    expect(reconstructed).toBe(stored);
+    expect(offsetBytes).toBe(Buffer.byteLength(stored, "utf8"));
+    expect(`sha256:${createHash("sha256").update(reconstructed).digest("hex")}`)
+      .toBe(result.metadata.sha256);
   });
 
   test("searches within capped trace prefixes without treating larger objects as errors", async () => {
@@ -508,5 +575,59 @@ describe("private trace writer", () => {
     expect(storage.puts).toHaveLength(1);
     expect(storage.puts[0]!.body).toContain("large prompt survives");
     expect(result.metadata.byteLength).toBeGreaterThan(100_000);
+  });
+
+  test("reuses an explicitly deterministic evidence manifest id only for identical immutable content", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const manifestId = "provider-attempt-manifest-deterministic";
+    const input = {
+      manifestId,
+      gameId,
+      ownerEpoch,
+      evidenceType: "provider_attempt_failure",
+      storage: {
+        provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+        bucket: "private-content-bucket",
+        key: `content/${gameId}/provider-attempts/call/attempt-1.json`,
+      },
+      sourcePointers: [{ kind: "provider_attempt", attemptOrdinal: 1 }],
+      metadata: {
+        formatVersion: 1,
+        byteLength: 42,
+        sha256: `sha256:${"a".repeat(64)}`,
+      },
+    } as const;
+
+    expect(await createEvidenceManifest(db, input)).toEqual({
+      ok: true,
+      manifestId,
+    });
+    expect(await createEvidenceManifest(db, input)).toEqual({
+      ok: true,
+      manifestId,
+    });
+    expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
+    const providerIndex = await new PrivateTraceReadModel(db).listManifests(gameId, {
+      evidenceType: "provider_attempt_failure",
+    });
+    expect(providerIndex.ok).toBeTrue();
+    if (!providerIndex.ok) throw new Error(providerIndex.error);
+    expect(providerIndex.manifests.map((manifest) => manifest.id)).toEqual([manifestId]);
+    const ordinaryIndex = await new PrivateTraceReadModel(db).listManifests(gameId);
+    expect(ordinaryIndex.ok).toBeTrue();
+    if (!ordinaryIndex.ok) throw new Error(ordinaryIndex.error);
+    expect(ordinaryIndex.manifests).toEqual([]);
+
+    const conflict = await createEvidenceManifest(db, {
+      ...input,
+      metadata: {
+        ...input.metadata,
+        sha256: `sha256:${"b".repeat(64)}`,
+      },
+    });
+    expect(conflict.ok).toBeFalse();
+    if (conflict.ok) throw new Error("expected deterministic manifest conflict");
+    expect(conflict.error).toContain("conflicting immutable identity");
   });
 });

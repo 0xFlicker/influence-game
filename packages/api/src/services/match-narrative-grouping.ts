@@ -342,11 +342,10 @@ function applyDetail(
     const prose = member.prose;
     const compact: Record<string, unknown> = {};
     for (const key of [
-      "decisionLog",
-      "strategicLens",
-      "strategicLensRationale",
-      "strategyPacketSummary",
-      "strategicReflectionSummary",
+      "strategyStage",
+      "strategyOperation",
+      "strategySubmission",
+      "strategyValue",
     ] as const) {
       if (prose[key] !== undefined) compact[key] = prose[key];
     }

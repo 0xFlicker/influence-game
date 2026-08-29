@@ -72,6 +72,7 @@ The agent-management inventory requires both `agents:read` and `agents:write`:
 The producer inventory requires `producer`:
 
 - Shared game reads and cognitive artifact reads with producer visibility.
+- `read_producer_game_cost_detail`, which returns the same Admin Cost Detail contract as the admin endpoint without adding accounting, backfill, reconciliation, or mutation behavior.
 - `inspect_durable_run`, `list_trace_manifests`, `read_trace_content`, `search_reasoning_traces`.
 
 Never expose active-match actions on the user-facing MCP. Their absence is the product contract, not an implementation gap. Tool descriptions should say when not to call a tool and whether it has side effects. Every descriptor must publish its exact top-level `securitySchemes` and an identical `_meta.securitySchemes` mirror, plus explicit non-null `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. Reads are read-only, bounded, and non-destructive. `create_agent` is non-read-only and non-destructive; `update_agent`, `join_queue`, and `leave_queue` are non-read-only and destructive. These declarations help the host frame consent and confirmation UX; they are never authorization evidence.

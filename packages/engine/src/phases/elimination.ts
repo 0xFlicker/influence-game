@@ -4,6 +4,7 @@ import type {
   IAgent,
   PhaseContext,
 } from "../game-runner.types";
+import { isProviderFallbackEligible } from "../provider-execution";
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
@@ -52,16 +53,17 @@ export function getEndgameEliminationVoterNames(
   );
 }
 
-const HOUSE_ELIMINATION_MESSAGE_FALLBACK: AgentResponse = {
-  thinking: "House fallback after unavailable elimination message.",
-  message: "I have no final words.",
+const ABSENT_ELIMINATION_MESSAGE: AgentResponse = {
+  thinking: "",
+  message: "",
+  providerAbsence: { kind: "provider_exhausted", outcome: "empty_output" },
 };
 
 function normalizedEliminationMessage(response: AgentResponse): AgentResponse {
   const message = response.message.trim();
   return message
     ? { ...response, message }
-    : { ...HOUSE_ELIMINATION_MESSAGE_FALLBACK };
+    : { ...ABSENT_ELIMINATION_MESSAGE };
 }
 
 function requestEliminationMessage(
@@ -75,9 +77,7 @@ function requestEliminationMessage(
   if (agent.getLastMessage) {
     return agent.getLastMessage(context);
   }
-  throw new Error(
-    `Agent ${agent.name} implements neither getEliminationMessage nor deprecated getLastMessage`,
-  );
+  return Promise.resolve({ ...ABSENT_ELIMINATION_MESSAGE });
 }
 
 async function withEliminationMessageTimeout(
@@ -90,35 +90,55 @@ async function withEliminationMessageTimeout(
     requestEliminationMessage(agent, context, signal);
   const timeoutMs = ctx.config.agentActionTimeoutMs;
   if (!timeoutMs || timeoutMs < 1) {
-    return normalizedEliminationMessage(
-      await operation(new AbortController().signal),
-    );
+    try {
+      return normalizedEliminationMessage(
+        await operation(new AbortController().signal),
+      );
+    } catch (error) {
+      if (!isProviderFallbackEligible(error)) throw error;
+      return { ...ABSENT_ELIMINATION_MESSAGE };
+    }
   }
 
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const operationTagged = operation(controller.signal).then((value) => ({
-    source: "agent" as const,
-    value,
-  }));
+  const operationTagged = operation(controller.signal)
+    .then((value) => ({
+      source: "agent" as const,
+      value,
+    }))
+    .catch((error) => {
+      if (!isProviderFallbackEligible(error)) throw error;
+      return {
+        source: "agent" as const,
+        value: { ...ABSENT_ELIMINATION_MESSAGE },
+      };
+    });
   const timeoutTagged = new Promise<{
     source: "timeout";
     value: AgentResponse;
   }>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(
-        `${agent.name} elimination message timed out after ${timeoutMs}ms; using House fallback.`,
+        `${agent.name} elimination message timed out after ${timeoutMs}ms; omitting optional speech.`,
         phase,
       );
       resolve({
         source: "timeout",
-        value: { ...HOUSE_ELIMINATION_MESSAGE_FALLBACK },
+        value: {
+          thinking: "",
+          message: "",
+          providerAbsence: { kind: "provider_exhausted", outcome: "transport_timeout" },
+        },
       });
       controller.abort();
     }, timeoutMs);
   });
 
-  const result = await Promise.race([operationTagged, timeoutTagged]).finally(
+  const result = await Promise.race([
+    operationTagged,
+    timeoutTagged,
+  ]).finally(
     () => {
       if (timeout) clearTimeout(timeout);
     },
@@ -145,6 +165,9 @@ export async function handleElimination(
 
   await assertCanAcceptCommit(ctx);
   gameState.eliminatePlayer(eliminatedId);
+  for (const survivor of gameState.getAlivePlayers()) {
+    agents.get(survivor.id)?.markCompactStrategyReconciliationRequired?.();
+  }
   logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
   ctx.diaryRoom.lastEliminatedName = eliminated.name;
   ctx.eliminationOrder.push(eliminated.name);
@@ -176,6 +199,12 @@ export async function handleElimination(
     eliminatedAgent,
     eliminationMessageContext,
   );
+  if (messageResponse.providerAbsence || !messageResponse.message.trim()) {
+    for (const agent of agents.values()) {
+      agent.removeFromMemory?.(eliminated.name);
+    }
+    return;
+  }
   await assertCanAcceptCommit(ctx);
   gameState.recordEliminationMessage(eliminatedId, messageResponse.message, phase);
 

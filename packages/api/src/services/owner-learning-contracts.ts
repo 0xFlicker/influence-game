@@ -20,6 +20,7 @@ export type OwnerLearningAnalysisTrack =
 
 export type OwnerLearningAnalysisStatus =
   | "queued"
+  | "retry_queued"
   | "running"
   | "ready"
   | "no_change"
@@ -53,7 +54,30 @@ export type OwnerLearningSafeFailureCode =
   | "output_budget_exhausted"
   | "logical_call_budget_exhausted"
   | "evidence_unavailable"
-  | "worker_interrupted";
+  | "worker_interrupted"
+  | "internal_error";
+
+export type OwnerLearningExecutionPhase =
+  | "selection"
+  | "evidence_projection"
+  | "materialization"
+  | "call_reservation"
+  | "provider_invocation"
+  | "output_validation"
+  | "checkpoint_persistence"
+  | "finalization";
+
+export type OwnerLearningCallEvidenceState =
+  | "not_required"
+  | "pending"
+  | "stored"
+  | "degraded"
+  | "legacy_unavailable";
+
+export type OwnerLearningFailureManifestState = Exclude<
+  OwnerLearningCallEvidenceState,
+  "not_required"
+>;
 
 export type OwnerLearningOutputFailureCode =
   | "obsolete_output_protocol"
@@ -224,6 +248,7 @@ export interface OwnerLearningReviewDTO {
   proposalFingerprint: string | null;
   safeFailureCode: OwnerLearningSafeFailureCode | null;
   retryable: boolean;
+  ownerRetriesRemaining: 0 | 1;
   logicalCallCount: number;
   diveCount: number;
   applyDisposition: OwnerLearningApplyDisposition;
@@ -260,6 +285,7 @@ export type OwnerLearningReviewStatusDTO = Pick<
   | "proposalFingerprint"
   | "safeFailureCode"
   | "retryable"
+  | "ownerRetriesRemaining"
   | "logicalCallCount"
   | "diveCount"
   | "applyDisposition"
@@ -291,6 +317,14 @@ export function parseOwnerLearningGameIds(value: unknown): string[] {
   return ids;
 }
 
+/** Expected semantic/shape rejection from the owner-review contract parser. */
+export class OwnerLearningReviewResultValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OwnerLearningReviewResultValidationError";
+  }
+}
+
 export function parseOwnerLearningReviewResult(value: unknown): OwnerLearningReviewResult {
   const input = objectValue(value, "review result");
   const analysisTrack = enumValue(
@@ -299,7 +333,7 @@ export function parseOwnerLearningReviewResult(value: unknown): OwnerLearningRev
     ["evidence_rich", "strategy_health_check"] as const,
   );
   if (!Array.isArray(input.recommendations) || input.recommendations.length > OWNER_LEARNING_MAX_RECOMMENDATIONS) {
-    throw new Error("recommendations must contain at most three entries");
+    throw new OwnerLearningReviewResultValidationError("recommendations must contain at most three entries");
   }
 
   const recommendations = input.recommendations.map((entry, index) =>
@@ -312,7 +346,9 @@ export function parseOwnerLearningReviewResult(value: unknown): OwnerLearningRev
     ? undefined
     : { rationale: boundedString(objectValue(input.noChange, "noChange").rationale, "noChange.rationale", 1_200) };
   if ((proposal == null) === (noChange == null)) {
-    throw new Error("review result must contain exactly one proposal or noChange outcome");
+    throw new OwnerLearningReviewResultValidationError(
+      "review result must contain exactly one proposal or noChange outcome",
+    );
   }
 
   const strategyHealthClassification = input.strategyHealthClassification === undefined
@@ -326,7 +362,9 @@ export function parseOwnerLearningReviewResult(value: unknown): OwnerLearningRev
     // A change-ready proof can establish the classification implicitly while
     // the provider schema migrates; final harness validation supplies it.
     if (recommendations.length === 0) {
-      throw new Error("strategyHealthClassification is required for Strategy Health Check");
+      throw new OwnerLearningReviewResultValidationError(
+        "strategyHealthClassification is required for Strategy Health Check",
+      );
     }
   }
 
@@ -383,7 +421,9 @@ function parseRecommendation(
     ? parseProof(input.proof, index, evidenceRefs)
     : undefined;
   if (analysisTrack === "strategy_health_check" && proof === undefined) {
-    throw new Error(`recommendations[${index}].proof is required for Strategy Health Check`);
+    throw new OwnerLearningReviewResultValidationError(
+      `recommendations[${index}].proof is required for Strategy Health Check`,
+    );
   }
   return {
     id: input.id === undefined ? undefined : boundedString(input.id, `recommendations[${index}].id`, 200),
@@ -433,12 +473,16 @@ function parseProof(
       ] as const,
     );
   if ((kind === "prompt_guidance_defect" || kind === "combined") && rubricCategory === undefined) {
-    throw new Error(`recommendations[${index}].proof.rubricCategory is required`);
+    throw new OwnerLearningReviewResultValidationError(
+      `recommendations[${index}].proof.rubricCategory is required`,
+    );
   }
   if (kind === "observed_pattern" || kind === "combined") {
     const gameCount = new Set(evidenceRefs.map((ref) => ref.gameId)).size;
     if (gameCount < 2) {
-      throw new Error(`recommendations[${index}].proof observed pattern requires two games`);
+      throw new OwnerLearningReviewResultValidationError(
+        `recommendations[${index}].proof observed pattern requires two games`,
+      );
     }
   }
   return {
@@ -453,7 +497,7 @@ function parseProof(
 
 function parseEvidenceRefs(value: unknown, label: string): OwnerLearningEvidenceRef[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 24) {
-    throw new Error(`${label} must contain 1-24 typed references`);
+    throw new OwnerLearningReviewResultValidationError(`${label} must contain 1-24 typed references`);
   }
   return value.map((entry, index) => {
     const input = objectValue(entry, `${label}[${index}]`);
@@ -474,15 +518,17 @@ function parseEvidenceRefs(value: unknown, label: string): OwnerLearningEvidence
 function parseProposal(value: unknown): OwnerLearningStrategyProposal {
   const input = objectValue(value, "proposal");
   if (input.field !== "strategyStyle") {
-    throw new Error("owner learning proposal may target only strategyStyle");
+    throw new OwnerLearningReviewResultValidationError(
+      "owner learning proposal may target only strategyStyle",
+    );
   }
   if (typeof input.before !== "string" || typeof input.after !== "string") {
-    throw new Error("owner learning proposal values must be strings");
+    throw new OwnerLearningReviewResultValidationError("owner learning proposal values must be strings");
   }
-  const before = boundedString(input.before.trim(), "proposal.before", 2_000, true);
+  const before = boundedString(input.before, "proposal.before", 2_000, true);
   const after = boundedString(input.after.trim(), "proposal.after", 2_000, true);
-  if (before === after) {
-    throw new Error("owner learning proposal must change strategyStyle");
+  if (before.trim() === after) {
+    throw new OwnerLearningReviewResultValidationError("owner learning proposal must change strategyStyle");
   }
   return { field: "strategyStyle", before, after };
 }
@@ -493,16 +539,20 @@ function boundedString(
   max: number,
   allowEmpty = false,
 ): string {
-  if (typeof value !== "string") throw new Error(`${label} must be a string`);
+  if (typeof value !== "string") {
+    throw new OwnerLearningReviewResultValidationError(`${label} must be a string`);
+  }
   if ((!allowEmpty && value.trim().length === 0) || value.length > max) {
-    throw new Error(`${label} must contain ${allowEmpty ? "0" : "1"}-${max} characters`);
+    throw new OwnerLearningReviewResultValidationError(
+      `${label} must contain ${allowEmpty ? "0" : "1"}-${max} characters`,
+    );
   }
   return value;
 }
 
 function objectValue(value: unknown, label: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
+    throw new OwnerLearningReviewResultValidationError(`${label} must be an object`);
   }
   return value as Record<string, unknown>;
 }
@@ -513,7 +563,9 @@ function enumValue<const T extends readonly string[]>(
   allowed: T,
 ): T[number] {
   if (typeof value !== "string" || !allowed.includes(value)) {
-    throw new Error(`${label} must be one of ${allowed.join(", ")}`);
+    throw new OwnerLearningReviewResultValidationError(
+      `${label} must be one of ${allowed.join(", ")}`,
+    );
   }
   return value as T[number];
 }

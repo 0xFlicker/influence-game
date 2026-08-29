@@ -11,10 +11,7 @@ import {
   finalizeSeason,
   validateRatedGameRoster,
 } from "../services/seasons.js";
-import {
-  admitOwnedSeatInTransaction,
-  updateWaitingHouseSeatPersonaInTransaction,
-} from "../services/owned-seat-projection.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { fingerprintEffectiveRuntimeSnapshot } from "../services/revision-policy.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -223,26 +220,6 @@ describe("season admission and state", () => {
     }))).rejects.toMatchObject({ code: "invalid_state" });
   });
 
-  test("discards late House persona enrichment after the waiting boundary", async () => {
-    const db = await setupTestDB();
-    const gameId = await insertWaitingFreeGame(db);
-    await insertHouseSeat(db, gameId, "House Before");
-    const seat = (await db.select().from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId)))[0]!;
-    await db.update(schema.games).set({
-      status: "in_progress",
-      startedAt: new Date().toISOString(),
-    }).where(eq(schema.games.id, gameId));
-
-    await expect(db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
-      gameId,
-      playerId: seat.id,
-      persona: JSON.stringify({ name: "House After", personality: "late" }),
-    }))).rejects.toMatchObject({ code: "invalid_state" });
-    expect((await db.select().from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.id, seat.id)))[0]?.persona).toBe(seat.persona);
-  });
-
   test("keeps admitted games in a closing season and blocks premature finalization", async () => {
     const db = await setupTestDB();
     const owner = await insertUser(db, "boundary-owner");
@@ -262,10 +239,20 @@ describe("season admission and state", () => {
 
     const game = (await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0];
     expect(game?.seasonId).toBe(season.id);
-    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
+    const replay = await db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
       gameId,
       userId: owner,
       agentProfileId: profile.id,
+      playerId: randomUUID(),
+    }));
+    expect(replay.replayed).toBe(true);
+
+    const lateOwner = await insertUser(db, "late-boundary-owner");
+    const lateProfile = await createProfile(db, lateOwner, "Late Boundary");
+    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
+      gameId,
+      userId: lateOwner,
+      agentProfileId: lateProfile.id,
       playerId: randomUUID(),
     }))).rejects.toMatchObject({ code: "invalid_state" });
   });

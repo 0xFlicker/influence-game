@@ -6,7 +6,9 @@
  */
 
 import type { Subprocess } from "bun";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "path";
+import { cleanupE2eResources } from "./cleanup.js";
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../../..");
 
@@ -17,6 +19,14 @@ export interface TestServerHandles {
   webPort: number | null;
   apiUrl: string;
   webUrl: string | null;
+  logDirectory: string | null;
+  logCaptures: ProcessLogCapture[];
+}
+
+interface ProcessLogCapture {
+  name: string;
+  stdout: Promise<string>;
+  stderr: Promise<string>;
 }
 
 export interface StartTestServersOptions {
@@ -31,6 +41,10 @@ export interface StartTestServersOptions {
   publicIdentityLaunchCutoff?: string;
   /** Skip starting the web server (useful for API-only tests) */
   skipWeb?: boolean;
+  /** Root directory for bounded service logs, usually uploaded only on failure. */
+  logDirectory?: string;
+  /** Abort startup promptly when the owning harness is terminating. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -46,13 +60,20 @@ function randomPort(): number {
 async function waitForHealth(
   url: string,
   timeoutMs: number = 30000,
+  signal?: AbortSignal,
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(url);
+      if (signal?.aborted) throw new Error(`Startup aborted while waiting for ${url}`);
+      const remainingMs = timeoutMs - (Date.now() - start);
+      const requestTimeout = AbortSignal.timeout(Math.max(1, Math.min(1_000, remainingMs)));
+      const res = await fetch(url, {
+        signal: signal ? AbortSignal.any([signal, requestTimeout]) : requestTimeout,
+      });
       if (res.ok) return;
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error;
       // Server not ready yet
     }
     await Bun.sleep(250);
@@ -75,6 +96,10 @@ export async function startTestServers(
   const adminAddress = opts.adminAddress ?? "0xe2eadmin0000000000000000000000000000dead";
   const publicIdentityLaunchCutoff =
     opts.publicIdentityLaunchCutoff ?? "2026-07-01T00:00:00.000Z";
+  const configuredLogRoot = opts.logDirectory ?? process.env.INFLUENCE_E2E_RESULTS_DIR;
+  const logDirectory = configuredLogRoot
+    ? path.resolve(configuredLogRoot, `services-${apiPort}-${webPort ?? "api-only"}`)
+    : null;
 
   const apiEnv: Record<string, string> = {
     ...process.env as Record<string, string>,
@@ -100,14 +125,21 @@ export async function startTestServers(
       stderr: "pipe",
     },
   );
+  const apiLogs = captureProcessLogs(apiProcess, "api");
 
   const apiUrl = `http://127.0.0.1:${apiPort}`;
 
-  // Wait for API to be healthy
-  await waitForHealth(`${apiUrl}/health`);
+  try {
+    await waitForHealth(`${apiUrl}/health`, 30_000, opts.signal);
+  } catch (error) {
+    await terminateProcess(apiProcess, "api");
+    await persistProcessLogs([apiLogs], logDirectory);
+    throw await startupError(error, [apiLogs]);
+  }
 
   let webProcess: Subprocess | null = null;
   let webUrl: string | null = null;
+  let webLogs: ProcessLogCapture | null = null;
 
   if (!opts.skipWeb && webPort != null) {
     const webEnv: Record<string, string> = {
@@ -131,23 +163,19 @@ export async function startTestServers(
         stderr: "pipe",
       },
     );
+    webLogs = captureProcessLogs(webProcess, "web");
 
     webUrl = `http://localhost:${webPort}`;
 
     // Wait for web server to be healthy. Preserve child output on failure;
     // otherwise a Next startup error is hidden behind a generic timeout.
     try {
-      await waitForHealth(webUrl, 60000);
+      await waitForHealth(webUrl, 60_000, opts.signal);
     } catch (error) {
-      webProcess.kill("SIGTERM");
-      await webProcess.exited;
-      const [stdout, stderr] = await Promise.all([
-        readProcessPipe(webProcess.stdout),
-        readProcessPipe(webProcess.stderr),
-      ]);
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\n${stdout}\n${stderr}`.trim(),
-      );
+      await terminateProcess(webProcess, "web");
+      await terminateProcess(apiProcess, "api");
+      await persistProcessLogs([apiLogs, webLogs], logDirectory);
+      throw await startupError(error, [apiLogs, webLogs]);
     }
   }
 
@@ -158,12 +186,90 @@ export async function startTestServers(
     webPort,
     apiUrl,
     webUrl,
+    logDirectory,
+    logCaptures: webLogs ? [apiLogs, webLogs] : [apiLogs],
+  };
+}
+
+const MAX_CAPTURED_LOG_CHARS = 256 * 1024;
+
+function captureProcessLogs(proc: Subprocess, name: string): ProcessLogCapture {
+  return {
+    name,
+    stdout: readProcessPipe(proc.stdout),
+    stderr: readProcessPipe(proc.stderr),
   };
 }
 
 async function readProcessPipe(pipe: Subprocess["stdout"]): Promise<string> {
   if (!pipe || typeof pipe === "number") return "";
-  return new Response(pipe).text();
+  const reader = pipe.getReader();
+  const decoder = new TextDecoder();
+  let captured = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    captured += decoder.decode(value, { stream: true });
+    if (captured.length > MAX_CAPTURED_LOG_CHARS) {
+      captured = captured.slice(-MAX_CAPTURED_LOG_CHARS);
+    }
+  }
+  captured += decoder.decode();
+  return captured.slice(-MAX_CAPTURED_LOG_CHARS);
+}
+
+async function persistProcessLogs(
+  captures: ProcessLogCapture[],
+  logDirectory: string | null,
+): Promise<void> {
+  if (!logDirectory) return;
+  await mkdir(logDirectory, { recursive: true });
+  await Promise.all(captures.flatMap((capture) => [
+    capture.stdout.then((value) => writeFile(path.join(logDirectory, `${capture.name}.stdout.log`), value)),
+    capture.stderr.then((value) => writeFile(path.join(logDirectory, `${capture.name}.stderr.log`), value)),
+  ]));
+}
+
+async function startupError(
+  error: unknown,
+  captures: ProcessLogCapture[],
+): Promise<Error> {
+  const logs = await Promise.all(captures.flatMap(async (capture) => [
+    `--- ${capture.name} stdout ---\n${await capture.stdout}`,
+    `--- ${capture.name} stderr ---\n${await capture.stderr}`,
+  ])).then((groups) => groups.flat());
+  return new Error([
+    error instanceof Error ? error.message : String(error),
+    ...logs,
+  ].join("\n").trim());
+}
+
+async function terminateProcess(proc: Subprocess, name: string): Promise<void> {
+  if (proc.exitCode !== null) return;
+  proc.kill("SIGTERM");
+  if (await waitForProcessExit(proc, 5_000)) return;
+  proc.kill("SIGKILL");
+  if (!await waitForProcessExit(proc, 5_000)) {
+    throw new Error(`${name} did not exit after SIGKILL`);
+  }
+}
+
+async function waitForProcessExit(
+  proc: Subprocess,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (proc.exitCode !== null) return true;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      proc.exited.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 /**
@@ -172,25 +278,11 @@ async function readProcessPipe(pipe: Subprocess["stdout"]): Promise<string> {
 export async function stopTestServers(
   handles: TestServerHandles,
 ): Promise<void> {
-  const killTimeout = 5000;
-
-  const killProcess = async (proc: Subprocess, name: string) => {
-    try {
-      proc.kill("SIGTERM");
-      const exitPromise = proc.exited;
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`${name} did not exit in time`)), killTimeout),
-      );
-      await Promise.race([exitPromise, timeoutPromise]).catch(() => {
-        proc.kill("SIGKILL");
-      });
-    } catch (err) {
-      console.warn(`[test-server] Error stopping ${name}:`, err);
-    }
-  };
-
-  if (handles.webProcess) {
-    await killProcess(handles.webProcess, "web");
-  }
-  await killProcess(handles.apiProcess, "api");
+  await cleanupE2eResources([
+    ["web process", async () => {
+      if (handles.webProcess) await terminateProcess(handles.webProcess, "web");
+    }],
+    ["api process", () => terminateProcess(handles.apiProcess, "api")],
+    ["service logs", () => persistProcessLogs(handles.logCaptures, handles.logDirectory)],
+  ]);
 }

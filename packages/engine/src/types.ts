@@ -278,10 +278,10 @@ export interface MingleCoordinationReceiptRecord {
   actorId: UUID;
   audiencePlayerIds: UUID[];
   roomId: number;
-  proposedTargetName: string | null;
-  proposedAction: string | null;
-  commitment: string | null;
-  noProposalReason: string | null;
+  factKind: "proposal" | "commitment" | null;
+  actionKind: AllianceHuddleActionKind | null;
+  targetPlayerId: UUID | null;
+  noProposal: boolean;
   createdAt: string;
 }
 
@@ -393,52 +393,77 @@ export interface AllianceHuddleSessionRecord {
   completedAt: string;
 }
 
-/** A member's explicit tactical proposal from a private alliance huddle. */
-export interface AllianceHuddleCommitmentFact {
-  speakerId: UUID;
-  speakerName: string;
-  proposedTargetName: string | null;
-  noTargetReason: string | null;
-  proposedAction: string;
-  memberCommitments: Array<{ memberName: string; commitment: string }>;
-  contingency: string;
-  confidence: "low" | "medium" | "high";
-  dissent: string[];
-  alternativePlan: string | null;
+export type AllianceHuddleActionKind =
+  | "empower_vote"
+  | "council_vote"
+  | "format_ballot"
+  | "format_pointer";
+
+export type AllianceHuddleConfidence = "low" | "medium" | "high";
+
+export type AllianceHuddleResponseStance = "endorse" | "reject" | "counter";
+
+export type AllianceHuddleConditionKind =
+  | "target_ineligible"
+  | "vote_count_changed"
+  | "format_action_changed"
+  | "ally_response_changed";
+
+interface AllianceHuddleFactAtomBase {
+  actorPlayerId: UUID;
+  confidence: AllianceHuddleConfidence;
 }
 
-/**
- * Compact official huddle outcome limits applied at creation (and hydration
- * normalization). Protected recall never trims these further for budget.
- */
-export const ALLIANCE_HUDDLE_OUTCOME_LIMITS = {
-  askChars: 200,
-  planChars: 400,
-  postureChars: 80,
-  listItems: 6,
-  listItemChars: 160,
-  commitmentItems: 8,
-  commitmentActionChars: 200,
-  commitmentFieldChars: 160,
-  memberCommitmentItems: 6,
-  dissentItems: 4,
-} as const;
+export interface AllianceHuddleProposalFactAtom extends AllianceHuddleFactAtomBase {
+  kind: "proposal";
+  actionKind: AllianceHuddleActionKind;
+  targetPlayerId: UUID;
+}
 
+export interface AllianceHuddleCommitmentFactAtom extends AllianceHuddleFactAtomBase {
+  kind: "commitment";
+  actionKind: AllianceHuddleActionKind;
+  targetPlayerId: UUID;
+}
+
+export interface AllianceHuddleResponseFactAtom extends AllianceHuddleFactAtomBase {
+  kind: "response";
+  counterpartFactId: UUID;
+  stance: AllianceHuddleResponseStance;
+  replacementActionKind?: AllianceHuddleActionKind;
+  replacementTargetPlayerId?: UUID;
+}
+
+export interface AllianceHuddleContingencyFactAtom extends AllianceHuddleFactAtomBase {
+  kind: "contingency";
+  conditionKind: AllianceHuddleConditionKind;
+  conditionPlayerId?: UUID;
+  effectActionKind: AllianceHuddleActionKind;
+  effectTargetPlayerId: UUID;
+}
+
+/** Player-authored typed fact before the engine assigns session-local identity. */
+export type AllianceHuddleFactAtomDraft =
+  | AllianceHuddleProposalFactAtom
+  | AllianceHuddleCommitmentFactAtom
+  | AllianceHuddleResponseFactAtom
+  | AllianceHuddleContingencyFactAtom;
+
+/** Canonical huddle fact identity is assigned only after semantic acceptance. */
+export type AllianceHuddleFactAtom = AllianceHuddleFactAtomDraft & {
+  factId: UUID;
+  sessionId: UUID;
+};
+
+/** Canonical huddle outcome v2. All factual content is member-authored typed atoms. */
 export interface AllianceHuddleOutcome {
   id: UUID;
   sessionId: UUID;
   allianceId: UUID;
   window: AllianceHuddleWindow;
   round: number;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: "low" | "medium" | "high";
-  posture: string;
-  leakOrBetrayalClaims: string[];
-  /** Primary tactical facts supplied by members; House prose is only a summary. */
-  commitments?: AllianceHuddleCommitmentFact[];
+  /** Closed player-authored facts; House prose cannot add to this set. */
+  facts: AllianceHuddleFactAtom[];
   /**
    * Immutable server-private snapshot of session speakers at outcome creation.
    * Authorization for protected recall uses this set only — never current alliance
@@ -446,7 +471,7 @@ export interface AllianceHuddleOutcome {
    * matching completed-session record; such outcomes are unavailable for recall.
    * Must not appear in public/player/owner/MCP/postgame or producer-safe evaluation DTOs.
    */
-  participantPlayerIds?: UUID[];
+  participantPlayerIds: UUID[];
   createdAt: string;
 }
 
@@ -457,14 +482,7 @@ export interface CompactAllianceHuddleOutcome {
   allianceId: UUID;
   window: AllianceHuddleWindow;
   round: number;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: "low" | "medium" | "high";
-  posture: string;
-  leakOrBetrayalClaims: string[];
-  commitments?: AllianceHuddleCommitmentFact[];
+  facts: AllianceHuddleFactAtom[];
   createdAt: string;
 }
 
@@ -651,8 +669,6 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
-  /** Enable hidden strategic reflection calls that update agent memory (default true). */
-  enableStrategicReflections?: boolean;
   /** Messages per player in the lobby phase. Defaults to one. */
   lobbyMessagesPerPlayer?: number;
   /** Number of open-room movement beats per round (default 2). */
@@ -663,12 +679,8 @@ export interface GameConfig {
   powerLobbyAfterVote?: boolean;
   /** Emit persisted House MC summary artifacts between completed normal rounds (default true). */
   enableHouseRoundSummaries?: boolean;
-  /** Enable private House Strategy Bible Packet updates for producer/debug carry-forward (default false). */
-  enableHouseStrategyBible?: boolean;
   /** Enable long-form House gameplay summaries for rich producer validation (default false). */
   enableHouseLongFormSummaries?: boolean;
-  /** Enable private House producer briefs before diary-room questions (default false). */
-  enableHouseProducerBriefs?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

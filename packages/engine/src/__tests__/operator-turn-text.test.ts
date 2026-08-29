@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   formatAllianceActionOperatorText,
+  formatAllianceHuddleOutcomeOperatorText,
   formatMingleIntentOperatorText,
   formatMingleRoomAssignmentOperatorText,
   formatMingleTurnOperatorText,
-  formatStrategicReflectionOperatorText,
 } from "../operator-turn-text";
+import { formatAllianceHuddleFacts } from "../alliance-huddle-outcome";
 import { formatAgentTurnTrace } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner.types";
 import { Phase } from "../types";
@@ -95,18 +96,30 @@ describe("operator turn text", () => {
     expect(text).not.toContain("lineage=");
   });
 
-  test("strategic reflection includes lens allies threats plan", () => {
-    const text = formatStrategicReflectionOperatorText({
-      playerName: "Finn",
-      strategicLens: "vote_math",
-      allies: ["Sage"],
-      threats: ["Lyra"],
-      plan: "Hold the center and re-check sealed ballot targets.",
-    });
-    expect(text).toContain("Finn reflection: lens=vote_math");
-    expect(text).toContain("allies=Sage");
-    expect(text).toContain("threats=Lyra");
-    expect(text).toContain("plan=");
+  test("huddle outcome text is rendered only from typed atoms and reports an honest empty state", () => {
+    const names = new Map([["alice", "Alice"], ["bob", "Bob"]]);
+    const summaries = formatAllianceHuddleFacts([{
+      kind: "commitment",
+      factId: "fact-ab",
+      sessionId: "session-ab",
+      actorPlayerId: "alice",
+      actionKind: "empower_vote",
+      targetPlayerId: "bob",
+      confidence: "high",
+    }], (playerId) => names.get(playerId) ?? playerId);
+
+    expect(summaries).toEqual([
+      "Alice recorded a commitment to an empower vote for Bob (high confidence).",
+    ]);
+    expect(formatAllianceHuddleOutcomeOperatorText({
+      allianceName: "The Pair",
+      factSummaries: summaries,
+    })).toBe(
+      "House huddle outcome — The Pair: Alice recorded a commitment to an empower vote for Bob (high confidence).",
+    );
+    expect(formatAllianceHuddleFacts([], (playerId) => playerId)).toEqual([
+      "No structured huddle facts were recorded.",
+    ]);
   });
 
   test("chatty prints operator text even without thinking", () => {

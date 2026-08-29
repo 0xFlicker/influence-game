@@ -21,34 +21,97 @@ import { TemplateHouseInterviewer } from "./house-interviewer";
 import type { IHouseInterviewer } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
-import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
+import {
+  buildMingleInboxReplayFromTranscript,
+  hydrateMingleInboxFromReplay,
+  mingleInboxSessionForResumeTarget,
+} from "./mingle-inbox-replay";
 import {
   buildFormatKernelStateForResume,
   isFormatResumeCoordinate,
   resolveEmpoweredIdForRound,
   validateFormatResumePrerequisites,
 } from "./format-recovery";
-import {
-  buildHouseFormatResolutionFacts,
-  displayNameForFormat,
-  resolveFormatManifest,
-  type LaunchFormatId,
-} from "./formats";
+import { resolveFormatManifest } from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseContinuityRequirement, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseGameplaySummaryContext, HouseGameplaySummaryResult, HouseSummaryKind, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan } from "./game-runner.types";
+export type {
+  HouseNarrativeTurnContext,
+  HouseSummaryAttemptResult,
+  HouseSummaryEmittedResult,
+  HouseSummaryFailedResult,
+  HouseSummaryModelSkippedResult,
+} from "./game-runner.types";
+export type {
+  DurableGameTurnCommittedV1,
+  DurableGameTurnInitializationV1,
+  DurableGameTurnPlanV1,
+  DurableGameTurnSnapshotV1,
+  DurableGameTurnStore,
+  DurableProviderTurnBinding,
+} from "./game-runner.types";
 export { PLAYER_CONTINUITY_CAPSULE_VERSION } from "./game-runner.types";
 export {
-  admitHouseContinuityForRecovery,
-  isHouseContinuityCapsuleShape,
-  isHouseContinuityRequirement,
+  HOUSE_NARRATIVE_CONTINUITY_VERSION,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
+  createEmptyHouseNarrativeContinuity,
+  isHouseSummaryActorCoordinate,
+} from "./house-summary-frontier";
+export type {
+  HouseBeatClass,
+  HouseBeatStatus,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
+  HouseProviderUsage,
+  HouseSummaryBoundary,
+  HouseSummaryPhaseTelemetry,
+  HouseSummaryActorCoordinate,
+} from "./house-summary-frontier";
+export {
   parsePlayerContinuityCapsule,
-  sealHouseContinuityRequirement,
   validatePlayerContinuitySetForRecovery,
 } from "./player-continuity";
-import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
-import { sealHouseContinuityRequirement } from "./player-continuity";
+import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseSummaryAttemptResult, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
+import type {
+  DurableGameTurnCommittedV1,
+  DurableGameTurnSnapshotV1,
+  DurableGameTurnStore,
+} from "./game-runner.types";
+import type {
+  GameExecutionCursorV1,
+  GameTurnIntentV1,
+} from "./durable-game-turn";
+import {
+  buildTurnCommitDraft,
+  capturePlayerContinuity,
+  collectStagedEffects,
+  createDurableTurnIntent,
+  createStagedAgents,
+  seededRandom,
+  toDurableJsonObject,
+  type DurableTurnIntentInput,
+  type StagedTurnEffects,
+} from "./durable-game-runner";
+import {
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
+  createEmptyHouseNarrativeContinuity,
+  houseSummaryCharacterLimit,
+  isHouseSummaryActorCoordinate,
+  isBoundedHouseAuthoredText,
+  parseHouseNarrativeContinuity,
+  type HouseBeatClass,
+  type HouseNarrativeContinuityV2,
+  type HouseSummaryActorCoordinate,
+  type HouseSummaryBoundary,
+  type HouseSummaryPhaseTelemetry,
+} from "./house-summary-frontier";
 import {
   accumulatorProof,
   buildActorWitness,
@@ -78,20 +141,64 @@ import {
   runTribunalAccusation, runTribunalDefense,
   runJudgmentOpening, runJudgmentJuryQuestions, runJudgmentClosing, runJudgmentJuryVote,
 } from "./phases";
+import {
+  applyIntroductionBatch,
+  collectIntroductionBatch,
+} from "./phases/introduction";
+import {
+  beginLobbyPhase,
+  computeLobbyMessagesPerPlayer,
+  runLobbySpeakerTurn,
+} from "./phases/lobby";
+import {
+  applyEmpowerRevoteBatch,
+  applyEmpowerVoteBatch,
+  collectEmpowerRevoteBatch,
+  collectEmpowerVoteBatch,
+  finishEmpowerVote,
+  resolveEmpowerRevote,
+  tallyEmpowerVote,
+} from "./phases/vote";
 
 // ---------------------------------------------------------------------------
 // Game Runner
 // ---------------------------------------------------------------------------
 
+function houseSummaryBoundariesEqual(
+  left: HouseSummaryBoundary,
+  right: HouseSummaryBoundary,
+): boolean {
+  return left.version === right.version
+    && left.id === right.id
+    && left.gameId === right.gameId
+    && left.actorCoordinate === right.actorCoordinate
+    && left.round === right.round
+    && left.phase === right.phase
+    && left.beatClass === right.beatClass
+    && left.canonicalHead === right.canonicalHead
+    && left.dialogueHead === right.dialogueHead;
+}
+
+interface DurableHouseBeatInput {
+  actorCoordinate: HouseSummaryActorCoordinate;
+  phase: Phase;
+  beatClass: HouseBeatClass;
+  roundMilestone: boolean;
+}
+
+interface DurablePhaseTurnInput extends DurableTurnIntentInput {
+  houseBeat?: DurableHouseBeatInput;
+}
+
 export class GameRunner {
   private readonly bus = new GameEventBus();
-  private readonly gameState: GameState;
+  private gameState: GameState;
   private readonly machine: ReturnType<typeof createPhaseMachine>;
   private readonly config: GameConfig;
   private readonly agents: Map<UUID, IAgent>;
-  private readonly logger: TranscriptLogger;
-  private readonly contextBuilder: ContextBuilder;
-  private readonly diaryRoom: DiaryRoom;
+  private logger: TranscriptLogger;
+  private contextBuilder: ContextBuilder;
+  private diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
   private readonly formatKernelState: FormatKernelState = {
     offeredFormats: null,
@@ -105,11 +212,18 @@ export class GameRunner {
   private readonly tokenTracker?: TokenTracker;
   private readonly resumeFrom?: GameRunnerOptions["resumeFrom"];
   private readonly random?: () => number;
+  private readonly durableTurnStore?: DurableGameTurnStore;
+  private durableTurnSnapshot: DurableGameTurnSnapshotV1 | null = null;
+  private agentsStarted = false;
+  private durablePreparation: Promise<void> | null = null;
+  private streamListener?: (event: GameStreamEvent) => void;
+  private readonly canonicalEventListeners = new Set<CanonicalEventListener>();
   private flushedCanonicalSequence = 0;
   private terminalStreamReleased = false;
+  private terminalOutcomeDurablyAccepted = false;
   private readonly writtenCheckpointKeys = new Set<string>();
-  private houseStrategyBible: HouseStrategyBiblePacket | null = null;
-  private readonly completedHouseSummaryRounds = new Set<number>();
+  private readonly houseSummaryTelemetry: HouseSummaryPhaseTelemetry[] = [];
+  private houseNarrativeContinuity: HouseNarrativeContinuityV2;
   /** Mingle room messages keyed by recipient */
   private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
@@ -136,32 +250,39 @@ export class GameRunner {
     this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
     const gameStateOptions = options.gameId ? { gameId: options.gameId } : {};
-    this.resumeFrom = options.resumeFrom;
-    this.gameState = options.resumeFrom
-      ? GameState.fromCanonicalEvents(options.resumeFrom.canonicalEvents)
+    this.resumeFrom = options.resumeFrom ?? options.durableUpgradeFrom;
+    this.gameState = this.resumeFrom
+      ? GameState.fromCanonicalEvents(this.resumeFrom.canonicalEvents)
       : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), {
           ...gameStateOptions,
           formatManifest: resolveFormatManifest(config.formatManifest),
         });
+    this.houseNarrativeContinuity = createEmptyHouseNarrativeContinuity(this.gameState.gameId);
     this.config = {
       ...config,
       maxRounds,
       formatManifest: [...this.gameState.formatManifest],
     };
     this.random = options.random;
-    if (options.resumeFrom) {
-      for (const event of options.resumeFrom.canonicalEvents) {
+    if (this.resumeFrom) {
+      for (const event of this.resumeFrom.canonicalEvents) {
         if (event.type !== "player.eliminated") continue;
         this.eliminationOrderPlayerIds.push(event.payload.playerId);
         this.eliminationOrder.push(event.payload.playerName);
       }
       this.hydrateFormatKernelStateFromEvents(
-        options.resumeFrom.canonicalEvents,
-        options.resumeFrom.actorCoordinate,
+        this.resumeFrom.canonicalEvents,
+        this.resumeFrom.actorCoordinate,
       );
     }
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
+    if (options.durableTurnStore && (options.durableEventSink || options.durableCheckpointSink || options.resumeFrom)) {
+      throw new Error(
+        "durableTurnStore replaces phase-boundary resume, durableEventSink, and durableCheckpointSink",
+      );
+    }
+    this.durableTurnStore = options.durableTurnStore;
     this.durableEventSink = options.durableEventSink;
     this.durableCheckpointSink = options.durableCheckpointSink;
     this.beforeAcceptedCommit = options.beforeAcceptedCommit;
@@ -170,17 +291,14 @@ export class GameRunner {
       this.flushedCanonicalSequence = this.resumeFrom.lastEventSequence;
       this.writtenCheckpointKeys.add(`initial:${this.flushedCanonicalSequence}`);
       this.writtenCheckpointKeys.add(`phase_boundary:${this.flushedCanonicalSequence}`);
-      if (this.resumeFrom.houseContinuityCapsule) {
-        this.houseStrategyBible = {
-          ...this.resumeFrom.houseContinuityCapsule,
-          coveredWindow: {
-            fromRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
-            toRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
-            fromPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
-            toPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
-          },
-        };
+      const parsedHouseContinuity = parseHouseNarrativeContinuity(
+        this.resumeFrom.houseNarrativeContinuityCapsule,
+      );
+      if (parsedHouseContinuity.status !== "valid"
+          || parsedHouseContinuity.value.gameId !== this.gameState.gameId) {
+        throw new Error("Resume House narrative continuity is invalid or belongs to another game.");
       }
+      this.houseNarrativeContinuity = parsedHouseContinuity.value;
       if (this.resumeFrom.tokenCostCursor) {
         this.tokenTracker?.loadCursor(this.resumeFrom.tokenCostCursor);
       }
@@ -194,6 +312,19 @@ export class GameRunner {
     if (this.resumeFrom) {
       this.logger.seed(this.resumeFrom.transcriptReplay);
       hydrateMingleInboxFromReplay(this.mingleInbox, this.resumeFrom.mingleInboxReplay);
+      const canonicalHead = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
+      const dialogueHead = this.logger.transcript.reduce(
+        (head, entry) => Math.max(head, entry.entrySequence ?? 0),
+        0,
+      );
+      this.houseNarrativeContinuity.examinedCanonicalHead = Math.max(
+        this.houseNarrativeContinuity.examinedCanonicalHead,
+        canonicalHead,
+      );
+      this.houseNarrativeContinuity.examinedDialogueHead = Math.max(
+        this.houseNarrativeContinuity.examinedDialogueHead,
+        dialogueHead,
+      );
     }
     this.contextBuilder = new ContextBuilder(
       this.gameState,
@@ -213,8 +344,7 @@ export class GameRunner {
       this.agents,
       this.config,
       this.houseInterviewer,
-      () => this.houseStrategyBible,
-      () => this.buildHouseRoundFacts(this.gameState.round),
+      this.beforeAcceptedCommit,
     );
     if (this.durableEventSink) {
       this.logger.beginStreamBuffering();
@@ -223,6 +353,11 @@ export class GameRunner {
 
   get transcriptLog(): readonly TranscriptEntry[] {
     return this.logger.transcript;
+  }
+
+  /** Content-free per-boundary House summary provider/cadence telemetry. */
+  get houseSummaryPhaseTelemetry(): readonly HouseSummaryPhaseTelemetry[] {
+    return this.houseSummaryTelemetry;
   }
 
   get diaryLog(): ReadonlyArray<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> {
@@ -235,6 +370,7 @@ export class GameRunner {
 
   /** Register a listener for real-time game events (for WebSocket streaming). */
   setStreamListener(listener: (event: GameStreamEvent) => void): void {
+    this.streamListener = listener;
     this.logger.setStreamListener(listener);
   }
 
@@ -259,7 +395,12 @@ export class GameRunner {
 
   /** Register a listener for canonical accepted domain events. */
   setCanonicalEventListener(listener: CanonicalEventListener): () => void {
-    return this.gameState.subscribeCanonicalEvents(listener, { replayExisting: true });
+    if (!this.durableTurnStore) {
+      return this.gameState.subscribeCanonicalEvents(listener, { replayExisting: true });
+    }
+    this.canonicalEventListeners.add(listener);
+    for (const event of this.gameState.getCanonicalEvents()) listener(structuredClone(event));
+    return () => this.canonicalEventListeners.delete(listener);
   }
 
   /** Read the canonical accepted domain events emitted so far. */
@@ -302,6 +443,136 @@ export class GameRunner {
   // Main entry point
   // ---------------------------------------------------------------------------
 
+  /**
+   * Establish durable execution authority before background work begins.
+   * Repeated and concurrent calls share the same initialization attempt, and
+   * the explicit roster bootstrap is committed before this method returns.
+   */
+  async prepareDurableExecution(): Promise<void> {
+    if (!this.durableTurnStore) {
+      throw new Error("prepareDurableExecution requires a durable turn store");
+    }
+    if (this.durablePreparation) return this.durablePreparation;
+    const preparation = this.prepareDurableExecutionInternal();
+    this.durablePreparation = preparation;
+    try {
+      await preparation;
+    } catch (error) {
+      if (this.durablePreparation === preparation) this.durablePreparation = null;
+      throw error;
+    }
+  }
+
+  private startAgentsForGame(): void {
+    if (this.agentsStarted) return;
+    const players = this.gameState.getAllPlayers().map((player) => ({
+      id: player.id,
+      name: player.name,
+    }));
+    for (const agent of this.agents.values()) {
+      agent.onGameStart(this.gameState.gameId, players);
+    }
+    this.agentsStarted = true;
+  }
+
+  private async prepareDurableExecutionInternal(): Promise<void> {
+    const store = this.durableTurnStore;
+    if (!store) throw new Error("Durable execution preparation requires a turn store");
+    this.startAgentsForGame();
+
+    if (!this.durableTurnSnapshot) {
+      const durable = await store.load(this.gameState.gameId);
+      if (durable) {
+        this.durableTurnSnapshot = structuredClone(durable);
+        if (durable.canonicalEvents.length > 0) {
+          this.installDurableSnapshot(durable, { publish: false });
+        } else if (
+          durable.execution.cursor.kind !== "rules"
+          || durable.execution.cursor.operation !== "bootstrap_roster"
+        ) {
+          throw new Error("Empty durable game frontier is not at bootstrap_roster");
+        }
+      }
+    }
+
+    if (!this.durableTurnSnapshot) {
+      if (this.resumeFrom && this.durableTurnStore) {
+        const upgradeActor = createActor(this.machine, {
+          input: {
+            gameId: this.gameState.gameId,
+            playerIds: this.gameState.getAllPlayers().map((player) => player.id),
+            maxRounds: this.config.maxRounds,
+          },
+        });
+        upgradeActor.start();
+        try {
+          await this.hydratePhaseActorForResume(
+            upgradeActor,
+            this.resumeFrom.actorCoordinate,
+          );
+          this.durableTurnSnapshot = await store.initialize({
+            version: 1,
+            gameId: this.gameState.gameId,
+            xstateSnapshot: toDurableJsonObject(upgradeActor.getPersistedSnapshot()),
+            cursor: {
+              version: 1,
+              kind: "phase_enter",
+              actor: this.resumeFrom.actorCoordinate,
+            },
+            playerContinuityCapsules: [...(this.resumeFrom.playerContinuityCapsules ?? [])]
+              .map((capsule) => structuredClone(capsule)),
+            houseNarrativeContinuity: structuredClone(
+              this.resumeFrom.houseNarrativeContinuityCapsule,
+            ),
+            canonicalEvents: this.resumeFrom.canonicalEvents.map((event) => structuredClone(event)),
+            transcriptEntries: this.resumeFrom.transcriptReplay.map((entry) => structuredClone(entry)),
+          });
+          this.installDurableSnapshot(this.durableTurnSnapshot, { publish: false });
+        } finally {
+          upgradeActor.stop();
+        }
+      }
+    }
+
+    if (!this.durableTurnSnapshot) {
+      const players = this.gameState.getAllPlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+      }));
+      const bootstrapActor = createActor(this.machine, {
+        input: {
+          gameId: this.gameState.gameId,
+          playerIds: players.map((player) => player.id),
+          maxRounds: this.config.maxRounds,
+        },
+      });
+      bootstrapActor.start();
+      try {
+        bootstrapActor.send({ type: "PHASE_COMPLETE" });
+        await this.tickPhaseActor();
+        this.durableTurnSnapshot = await store.initialize({
+          version: 1,
+          gameId: this.gameState.gameId,
+          xstateSnapshot: toDurableJsonObject(bootstrapActor.getPersistedSnapshot()),
+          cursor: { version: 1, kind: "rules", operation: "bootstrap_roster" },
+          playerContinuityCapsules: capturePlayerContinuity(this.agents),
+          houseNarrativeContinuity: structuredClone(this.houseNarrativeContinuity),
+          canonicalEvents: [],
+          transcriptEntries: [],
+        });
+      } finally {
+        bootstrapActor.stop();
+      }
+    }
+
+    if (
+      this.durableTurnSnapshot.execution.cursor.kind === "rules"
+      && this.durableTurnSnapshot.execution.cursor.operation === "bootstrap_roster"
+    ) {
+      await this.commitDurableRosterBootstrap();
+    }
+  }
+
   async run(): Promise<{
     winner?: UUID;
     winnerName?: string;
@@ -311,7 +582,7 @@ export class GameRunner {
     rankedPlayerIds: UUID[];
   }> {
     const gameId = this.gameState.gameId;
-    const allPlayers = this.gameState.getAllPlayers().map((p) => ({ id: p.id, name: p.name }));
+    let allPlayers = this.gameState.getAllPlayers().map((p) => ({ id: p.id, name: p.name }));
 
     await this.flushDurableEvents({
       continueBuffering: true,
@@ -319,11 +590,17 @@ export class GameRunner {
       phase: Phase.INIT,
     });
 
-    for (const agent of this.agents.values()) {
-      agent.onGameStart(gameId, allPlayers);
+    this.startAgentsForGame();
+
+    if (this.durableTurnStore) {
+      await this.prepareDurableExecution();
+      allPlayers = this.gameState.getAllPlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+      }));
     }
 
-    if (this.resumeFrom?.playerContinuityCapsules?.length) {
+    if (!this.durableTurnStore && this.resumeFrom?.playerContinuityCapsules?.length) {
       const livingPlayerNames = this.gameState.getAlivePlayers().map((player) => player.name);
       for (const capsule of this.resumeFrom.playerContinuityCapsules) {
         const agent = this.agents.get(capsule.playerId);
@@ -334,27 +611,26 @@ export class GameRunner {
       }
     }
 
-    const actor = createActor(this.machine, {
-      input: {
-        gameId,
-        playerIds: allPlayers.map((p) => p.id),
-        maxRounds: this.config.maxRounds,
-      },
-    });
-
-    const emittedEvents: Array<{ type: string; [key: string]: unknown }> = [];
-    actor.on("PHASE_STARTED", (event) => emittedEvents.push(event as unknown as { type: string; [key: string]: unknown }));
-    actor.on("GAME_OVER", (event) => emittedEvents.push(event as unknown as { type: string; [key: string]: unknown }));
-
-    actor.start();
-    try {
-      await this.runGameLoop(actor);
-    } finally {
-      actor.stop();
+    if (this.durableTurnStore) {
+      await this.runDurableGameLoop();
+    } else {
+      const actor = createActor(this.machine, {
+        input: {
+          gameId,
+          playerIds: allPlayers.map((player) => player.id),
+          maxRounds: this.config.maxRounds,
+        },
+      });
+      actor.start();
+      try {
+        await this.runGameLoop(actor);
+      } finally {
+        actor.stop();
+      }
     }
     this.bus.complete();
 
-    if (this._aborted && this.durableEventSink) {
+    if (this._aborted && (this.durableEventSink || this.durableTurnStore)) {
       this.logger.dropStreamBuffer();
       throw new Error("Game run aborted");
     }
@@ -375,7 +651,7 @@ export class GameRunner {
       ...finalistIds,
       ...[...this.eliminationOrderPlayerIds].reverse(),
     ];
-    if (!this.durableEventSink) {
+    if (!this.durableEventSink && !this.durableTurnStore) {
       this.logger.emitStream({
         type: "game_over",
         winner: winner?.id,
@@ -427,21 +703,33 @@ export class GameRunner {
     const pendingEvents = this.gameState
       .getCanonicalEvents()
       .filter((event) => event.sequence > this.flushedCanonicalSequence);
-    const terminalOutcomeAccepted = pendingEvents.some(
+    const acceptsTerminalOutcome = pendingEvents.some(
       (event) => event.type === "jury.winner_determined",
     );
-    const releaseStream = options.releaseStream !== false && !terminalOutcomeAccepted;
+    const releaseStream = options.releaseStream !== false
+      && !this.terminalOutcomeDurablyAccepted
+      && !acceptsTerminalOutcome;
 
     try {
       if (pendingEvents.length > 0) {
         await this.durableEventSink(pendingEvents);
         this.flushedCanonicalSequence = pendingEvents[pendingEvents.length - 1]!.sequence;
+        if (acceptsTerminalOutcome) {
+          this.terminalOutcomeDurablyAccepted = true;
+        }
       }
-      if (releaseStream) {
-        this.logger.flushStreamBuffer();
-      }
+      const checkpointedStreamBuffer = releaseStream && options.checkpointKind
+        ? this.logger.takeStreamBufferForCheckpoint()
+        : null;
       if (options.checkpointKind) {
         await this.writeCheckpoint(options.checkpointKind, options.phase, options.phaseActor);
+      }
+      if (releaseStream) {
+        if (checkpointedStreamBuffer) {
+          this.logger.releaseCheckpointedStreamBuffer(checkpointedStreamBuffer);
+        } else {
+          this.logger.flushStreamBuffer();
+        }
       }
       if (options.continueBuffering && releaseStream) {
         this.logger.beginStreamBuffering();
@@ -585,6 +873,8 @@ export class GameRunner {
 
   private phaseForActorCoordinate(coordinate: string): Phase | undefined {
     switch (coordinate) {
+      case "introduction":
+        return Phase.INTRODUCTION;
       case "lobby":
       case "reckoning_lobby":
       case "tribunal_lobby":
@@ -668,14 +958,6 @@ export class GameRunner {
         });
       }
     }
-    const houseContinuityCapsule: HouseContinuityCapsule | null = this.houseStrategyBible
-      ? { ...this.houseStrategyBible }
-      : null;
-    const houseContinuityRequirement = sealHouseContinuityRequirement({
-      bibleEnabled: this.houseStrategyBibleEnabled(),
-      hasValidHousePacket: houseContinuityCapsule != null,
-    });
-
     let tokenCursor = this.tokenTracker?.toCursor() ?? null;
     const transcriptEntryCount = this.logger.transcript.length;
     const hasRuntimeSnapshot = phaseActor != null && kind === "phase_boundary";
@@ -764,8 +1046,7 @@ export class GameRunner {
       },
       boundaryCertificate,
       playerContinuityCapsules,
-      houseContinuityCapsule,
-      houseContinuityRequirement,
+      houseNarrativeContinuityCapsule: structuredClone(this.houseNarrativeContinuity),
       transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
       // Transient write input for API product-dialogue watermark; not player-facing.
       productDialogueProjection: this.buildProductDialogueProjection(),
@@ -774,6 +1055,858 @@ export class GameRunner {
       tokenCostCursor: tokenCursor,
     });
     this.writtenCheckpointKeys.add(checkpointKey);
+  }
+
+  private installDurableSnapshot(
+    snapshot: DurableGameTurnSnapshotV1,
+    options: { publish: boolean; stagedStreamEvents?: readonly GameStreamEvent[] },
+  ): void {
+    const previousEventHead = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
+    this.durableTurnSnapshot = structuredClone(snapshot);
+    this.gameState = GameState.fromCanonicalEvents(snapshot.canonicalEvents);
+    this.logger = new TranscriptLogger(this.gameState);
+    this.logger.seed(snapshot.transcriptEntries);
+    if (this.streamListener) this.logger.setStreamListener(this.streamListener);
+
+    this.mingleInbox.clear();
+    const actorCoordinate = this.actorCoordinateFromDurableSnapshot(snapshot);
+    hydrateMingleInboxFromReplay(
+      this.mingleInbox,
+      buildMingleInboxReplayFromTranscript({
+        transcriptReplay: snapshot.transcriptEntries,
+        players: this.gameState.getAllPlayers().map((player) => ({
+          id: player.id,
+          name: player.name,
+        })),
+        session: mingleInboxSessionForResumeTarget(actorCoordinate),
+      }),
+    );
+    this.contextBuilder = new ContextBuilder(
+      this.gameState,
+      this.logger,
+      this.mingleInbox,
+      this.totalPlayerCount,
+    );
+    this.hydrateDurableContextBuilder(
+      this.contextBuilder,
+      this.gameState,
+      snapshot.canonicalEvents,
+    );
+    const hydratedFormatState = buildFormatKernelStateForResume({
+      actorCoordinate,
+      canonicalEvents: snapshot.canonicalEvents,
+      getPlayerName: (id) => this.gameState.getPlayerName(id),
+    });
+    this.formatKernelState.offeredFormats = hydratedFormatState.offeredFormats;
+    this.formatKernelState.selectedFormat = hydratedFormatState.selectedFormat;
+    this.formatKernelState.pressure = hydratedFormatState.pressure;
+    this.formatKernelState.lastSelectedFormat = hydratedFormatState.lastSelectedFormat;
+    this.contextBuilder.currentFormatPressure = hydratedFormatState.pressure;
+    this.diaryRoom = new DiaryRoom(
+      this.gameState,
+      this.logger,
+      this.contextBuilder,
+      this.agents,
+      this.config,
+      this.houseInterviewer,
+      this.beforeAcceptedCommit,
+    );
+
+    const livingPlayerNames = this.gameState.getAlivePlayers().map((player) => player.name);
+    for (const capsule of snapshot.execution.playerContinuityCapsules) {
+      const agent = this.agents.get(capsule.playerId);
+      if (!agent?.restoreContinuityCapsule) {
+        throw new Error(`Missing agent for durable continuity ${capsule.playerName}/${capsule.playerId}`);
+      }
+      agent.restoreContinuityCapsule(capsule, { livingPlayerNames });
+    }
+    this.houseNarrativeContinuity = snapshot.execution.houseNarrativeContinuity
+      ? structuredClone(snapshot.execution.houseNarrativeContinuity)
+      : createEmptyHouseNarrativeContinuity(this.gameState.gameId);
+
+    this.eliminationOrder.length = 0;
+    this.eliminationOrderPlayerIds.length = 0;
+    for (const event of snapshot.canonicalEvents) {
+      if (event.type !== "player.eliminated") continue;
+      this.eliminationOrderPlayerIds.push(event.payload.playerId);
+      this.eliminationOrder.push(event.payload.playerName);
+    }
+
+    if (!options.publish) return;
+    for (const event of snapshot.canonicalEvents) {
+      if (event.sequence <= previousEventHead) continue;
+      for (const listener of this.canonicalEventListeners) {
+        listener(structuredClone(event));
+      }
+    }
+    for (const event of options.stagedStreamEvents ?? []) {
+      this.logger.emitStream(structuredClone(event));
+    }
+  }
+
+  private async commitDurableRosterBootstrap(): Promise<void> {
+    const store = this.durableTurnStore;
+    const base = this.durableTurnSnapshot;
+    if (!store || !base) throw new Error("Roster bootstrap requires initialized durable authority");
+    if (base.canonicalEvents.length !== 0 || base.execution.heads.eventSequence !== 0) {
+      throw new Error("Roster bootstrap requires an empty committed canonical frontier");
+    }
+    const rosterEvents = [...this.gameState.getCanonicalEvents()];
+    if (rosterEvents.length !== 1 || rosterEvents[0]?.type !== "game.roster_initialized") {
+      throw new Error("Roster bootstrap requires exactly one constructor roster event");
+    }
+    const requestedIntent = createDurableTurnIntent(base.execution, {
+      branch: "engine",
+      action: "bootstrap-roster",
+      actorIds: this.gameState.getAllPlayers().map((player) => player.id),
+    });
+    const planned = await store.planNextTurn(requestedIntent);
+    if (planned.status === "committed") {
+      this.installDurableSnapshot(planned.snapshot, { publish: false });
+      return;
+    }
+    const effects: StagedTurnEffects = {
+      canonicalEvents: rosterEvents,
+      transcriptEntries: [],
+      streamEvents: [],
+      playerContinuityCapsules: capturePlayerContinuity(this.agents),
+      acceptedProviderCallIds: [],
+    };
+    const draft = buildTurnCommitDraft({
+      base,
+      intent: planned.intent,
+      nextCursor: { version: 1, kind: "phase_enter", actor: "introduction" },
+      xstateSnapshot: structuredClone(base.execution.xstateSnapshot),
+      houseNarrativeContinuity: structuredClone(this.houseNarrativeContinuity),
+      effects,
+    });
+    let committed: DurableGameTurnCommittedV1;
+    try {
+      committed = await store.commitTurn(draft);
+    } catch (error) {
+      const retried = await store.planNextTurn(planned.intent);
+      if (retried.status !== "committed") throw error;
+      committed = retried;
+    }
+    this.installDurableSnapshot(committed.snapshot, { publish: true });
+  }
+
+  private actorCoordinateFromDurableSnapshot(snapshot: DurableGameTurnSnapshotV1): string {
+    const value = snapshot.execution.xstateSnapshot.value;
+    if (typeof value !== "string") {
+      throw new Error("Durable XState snapshot does not contain a scalar actor coordinate");
+    }
+    return value;
+  }
+
+  private requireDurableSnapshot(): DurableGameTurnSnapshotV1 {
+    if (!this.durableTurnSnapshot) {
+      throw new Error("Durable execution snapshot is not initialized");
+    }
+    return this.durableTurnSnapshot;
+  }
+
+  private hydrateDurableContextBuilder(
+    contextBuilder: ContextBuilder,
+    gameState: GameState,
+    canonicalEvents: readonly CanonicalGameEvent[],
+  ): void {
+    const revoteByRoundAndVoter = new Map<string, UUID>();
+    for (const event of canonicalEvents) {
+      if (event.type !== "vote.empower_revote_cast") continue;
+      revoteByRoundAndVoter.set(`${event.round}:${event.payload.voterId}`, event.payload.target);
+    }
+    contextBuilder.revealVoteLedgerEntries(canonicalEvents.flatMap((event) => {
+      if (event.type !== "vote.cast") return [];
+      const revoteTargetId = revoteByRoundAndVoter.get(`${event.round}:${event.payload.voterId}`);
+      return [{
+        round: event.round,
+        voterId: event.payload.voterId,
+        voterName: gameState.getPlayerName(event.payload.voterId),
+        empowerTargetId: event.payload.empowerTarget,
+        empowerTargetName: gameState.getPlayerName(event.payload.empowerTarget),
+        ...(revoteTargetId ? {
+          revoteEmpowerTargetId: revoteTargetId,
+          revoteEmpowerTargetName: gameState.getPlayerName(revoteTargetId),
+        } : {}),
+      }];
+    }));
+  }
+
+  private createDurableScratch(
+    intent: GameTurnIntentV1,
+    boundProviderActorIds: ReadonlySet<string>,
+  ): {
+    actor: PhaseActor;
+    context: PhaseRunnerContext;
+    readEffects: () => StagedTurnEffects;
+    stop: () => void;
+  } {
+    const base = this.durableTurnSnapshot;
+    if (!base) throw new Error("Durable turn execution requires a committed base snapshot");
+    const gameState = GameState.fromCanonicalEvents(base.canonicalEvents);
+    const logger = new TranscriptLogger(gameState);
+    logger.seed(base.transcriptEntries);
+    const streamEvents: GameStreamEvent[] = [];
+    logger.setStreamListener((event) => streamEvents.push(structuredClone(event)));
+    const stagedAgents = createStagedAgents(
+      this.agents,
+      base.execution.playerContinuityCapsules,
+      intent.providerSubcalls.filter(
+        (subcall) => subcall.actorId !== null && boundProviderActorIds.has(subcall.actorId),
+      ),
+    );
+    const actorCoordinate = this.actorCoordinateFromDurableSnapshot(base);
+    const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
+    hydrateMingleInboxFromReplay(
+      mingleInbox,
+      buildMingleInboxReplayFromTranscript({
+        transcriptReplay: base.transcriptEntries,
+        players: gameState.getAllPlayers().map((player) => ({
+          id: player.id,
+          name: player.name,
+        })),
+        session: mingleInboxSessionForResumeTarget(actorCoordinate),
+      }),
+    );
+    const contextBuilder = new ContextBuilder(
+      gameState,
+      logger,
+      mingleInbox,
+      this.totalPlayerCount,
+    );
+    this.hydrateDurableContextBuilder(
+      contextBuilder,
+      gameState,
+      base.canonicalEvents,
+    );
+    const formatKernelState = buildFormatKernelStateForResume({
+      actorCoordinate,
+      canonicalEvents: base.canonicalEvents,
+      getPlayerName: (id) => gameState.getPlayerName(id),
+    });
+    contextBuilder.currentFormatPressure = formatKernelState.pressure;
+    const diaryRoom = new DiaryRoom(
+      gameState,
+      logger,
+      contextBuilder,
+      stagedAgents.agents,
+      this.config,
+      this.houseInterviewer,
+      this.beforeAcceptedCommit,
+    );
+    const actor = createActor(this.machine, {
+      input: {
+        gameId: gameState.gameId,
+        playerIds: gameState.getAllPlayers().map((player) => player.id),
+        maxRounds: this.config.maxRounds,
+      },
+      snapshot: base.execution.xstateSnapshot as never,
+    });
+    actor.start();
+    const context: PhaseRunnerContext = {
+      gameState,
+      agents: stagedAgents.agents,
+      config: this.config,
+      logger,
+      contextBuilder,
+      diaryRoom,
+      houseInterviewer: this.houseInterviewer,
+      mingleInbox,
+      formatKernelState,
+      eliminationOrder: [...this.eliminationOrder],
+      eliminationOrderPlayerIds: [...this.eliminationOrderPlayerIds],
+      beforeAcceptedCommit: this.beforeAcceptedCommit,
+      random: seededRandom(intent.seed),
+    };
+    return {
+      actor,
+      context,
+      readEffects: () => collectStagedEffects({
+        base,
+        canonicalEvents: gameState.getCanonicalEvents(),
+        transcriptEntries: logger.transcript,
+        streamEvents,
+        playerContinuityCapsules: stagedAgents.readContinuity(),
+        acceptedProviderCallIds: stagedAgents.readAcceptedProviderCallIds(),
+      }),
+      stop: () => actor.stop(),
+    };
+  }
+
+  private async executeDurableTurn(
+    input: DurablePhaseTurnInput,
+    execute: (
+      context: PhaseRunnerContext,
+      actor: PhaseActor,
+    ) => Promise<GameExecutionCursorV1>,
+  ): Promise<void> {
+    const store = this.durableTurnStore;
+    const base = this.durableTurnSnapshot;
+    if (!store || !base) throw new Error("Durable turn coordinator is not initialized");
+    const requestedIntent = createDurableTurnIntent(base.execution, input);
+    const planned = await store.planNextTurn(requestedIntent);
+    if (planned.status === "committed") {
+      this.installDurableSnapshot(planned.snapshot, { publish: false });
+      return;
+    }
+    const intent = planned.intent;
+    const boundAgents: IAgent[] = [];
+    const boundProviderActorIds = new Set<string>();
+    for (const subcall of intent.providerSubcalls) {
+      if (!subcall.actorId) continue;
+      const agent = this.agents.get(subcall.actorId);
+      if (!agent?.setDurableProviderTurnBinding) continue;
+      agent.setDurableProviderTurnBinding({
+        turnId: intent.turnId,
+        subcallSlot: subcall.slot,
+        logicalCallId: subcall.logicalCallId,
+      });
+      boundAgents.push(agent);
+      boundProviderActorIds.add(subcall.actorId);
+    }
+    let scratch: ReturnType<GameRunner["createDurableScratch"]>;
+    try {
+      scratch = this.createDurableScratch(intent, boundProviderActorIds);
+    } catch (error) {
+      for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+      throw error;
+    }
+    let effects: StagedTurnEffects;
+    let nextCursor: GameExecutionCursorV1;
+    let nextHouseNarrativeContinuity = base.execution.houseNarrativeContinuity
+      ? structuredClone(base.execution.houseNarrativeContinuity)
+      : createEmptyHouseNarrativeContinuity(base.execution.gameId);
+    let xstateSnapshot;
+    try {
+      nextCursor = await execute(scratch.context, scratch.actor);
+      if (input.houseBeat) {
+        nextHouseNarrativeContinuity = await this.emitHousePhaseBeatForContext(
+          scratch.context,
+          nextHouseNarrativeContinuity,
+          input.houseBeat,
+        );
+      }
+      await this.tickPhaseActor();
+      effects = scratch.readEffects();
+      xstateSnapshot = toDurableJsonObject(scratch.actor.getPersistedSnapshot());
+    } finally {
+      scratch.stop();
+      for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+    }
+    const draft = buildTurnCommitDraft({
+      base,
+      intent,
+      nextCursor,
+      xstateSnapshot,
+      houseNarrativeContinuity: nextHouseNarrativeContinuity,
+      effects,
+    });
+    let committed: DurableGameTurnCommittedV1;
+    try {
+      committed = await store.commitTurn(draft);
+    } catch (error) {
+      const retriedPlan = await store.planNextTurn(intent);
+      if (retriedPlan.status !== "committed") throw error;
+      committed = retriedPlan;
+    }
+    this.installDurableSnapshot(committed.snapshot, {
+      publish: true,
+      stagedStreamEvents: effects.streamEvents,
+    });
+  }
+
+  private isDurableConvertedActorCoordinate(value: string): boolean {
+    return value === "introduction"
+      || value === "lobby"
+      || value === "vote"
+      || value === "format_menu"
+      || value === "format_pick"
+      || value === "format_mingle"
+      || value === "format_resolve"
+      || value === "reckoning_lobby"
+      || value === "reckoning_plea"
+      || value === "reckoning_vote"
+      || value === "tribunal_lobby"
+      || value === "tribunal_accusation"
+      || value === "tribunal_defense"
+      || value === "tribunal_vote"
+      || value === "judgment_opening"
+      || value === "judgment_jury_questions"
+      || value === "judgment_closing"
+      || value === "judgment_jury_vote";
+  }
+
+  private cursorAfterFormatResolve(actor: PhaseActor): GameExecutionCursorV1 {
+    const coordinate = String(actor.getSnapshot().value);
+    switch (coordinate) {
+      case "lobby":
+      case "reckoning_lobby":
+      case "tribunal_lobby":
+      case "judgment_opening":
+        return { version: 1, kind: "phase_enter", actor: coordinate };
+      case "end":
+        return { version: 1, kind: "terminal", stage: "commit_game" };
+      default:
+        throw new Error(`Format resolve ended at unexpected actor coordinate ${coordinate}`);
+    }
+  }
+
+  private cursorAfterEndgamePhase(
+    actor: PhaseActor,
+    expected: readonly string[],
+  ): GameExecutionCursorV1 {
+    const coordinate = String(actor.getSnapshot().value);
+    if (coordinate === "end") {
+      return { version: 1, kind: "terminal", stage: "commit_game" };
+    }
+    if (!expected.includes(coordinate)) {
+      throw new Error(`Endgame phase ended at unexpected actor coordinate ${coordinate}`);
+    }
+    return {
+      version: 1,
+      kind: "phase_enter",
+      actor: coordinate as Extract<GameExecutionCursorV1, { kind: "phase_enter" }>['actor'],
+    };
+  }
+
+  private tribunalAccusationsFromCanonical(
+    gameState: GameState,
+  ): Map<UUID, { accuserId: UUID; accuserName: string; text: string }> {
+    const accusations = new Map<UUID, { accuserId: UUID; accuserName: string; text: string }>();
+    for (const event of gameState.getCanonicalEvents()) {
+      if (
+        event.type !== "endgame.speech_recorded"
+        || event.round !== gameState.round
+        || event.phase !== Phase.ACCUSATION
+        || event.payload.speechKind !== "accusation"
+        || !event.payload.targetId
+      ) {
+        continue;
+      }
+      accusations.set(event.payload.targetId, {
+        accuserId: event.payload.playerId,
+        accuserName: gameState.getPlayerName(event.payload.playerId),
+        text: event.payload.text,
+      });
+    }
+    return accusations;
+  }
+
+  private async runDurableConvertedPhase(phase: string): Promise<void> {
+    while (this.actorCoordinateFromDurableSnapshot(this.requireDurableSnapshot()) === phase && !this._aborted) {
+      const base = this.durableTurnSnapshot;
+      if (!base) throw new Error("Converted phase has no durable execution snapshot");
+      const cursor = base.execution.cursor;
+
+      if (phase === "introduction" && cursor.kind === "phase_enter" && cursor.actor === "introduction") {
+        const actorIds = this.gameState.getAlivePlayerIds();
+        await this.executeDurableTurn({
+          branch: "parallel_provider_batch",
+          action: "introduction",
+          actorIds,
+          houseBeat: this.requireHouseBeat("introduction"),
+          providerActions: actorIds.map((actorId) => ({
+            actorId,
+            action: "introduction",
+            contractId: "agent-introduction-v1",
+          })),
+        }, async (ctx, scratchActor) => {
+          ctx.logger.emitPhaseChange(Phase.INTRODUCTION);
+          ctx.logger.logSystem("=== INTRODUCTION PHASE ===", Phase.INTRODUCTION);
+          const batch = await collectIntroductionBatch(ctx);
+          await applyIntroductionBatch(ctx, batch);
+          await ctx.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
+          scratchActor.send({
+            type: "UPDATE_ALIVE_PLAYERS",
+            aliveIds: ctx.gameState.getAlivePlayerIds(),
+          });
+          scratchActor.send({ type: "PHASE_COMPLETE" });
+          return { version: 1, kind: "phase_enter", actor: "lobby" };
+        });
+        continue;
+      }
+
+      if (phase === "lobby" && cursor.kind === "phase_enter" && cursor.actor === "lobby") {
+        const actorIds = this.gameState.getAlivePlayerIds();
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "round-start",
+          actorIds,
+        }, async (ctx) => {
+          await beginLobbyPhase(ctx);
+          return {
+            version: 1,
+            kind: "serial_actor",
+            lane: "lobby_speech",
+            actorIds,
+            actorIndex: 0,
+            pass: 1,
+          };
+        });
+        continue;
+      }
+
+      if (phase === "lobby" && cursor.kind === "serial_actor" && cursor.lane === "lobby_speech") {
+        const playerId = cursor.actorIds[cursor.actorIndex];
+        if (!playerId) throw new Error("Lobby durable cursor points past its actor roster");
+        const passes = computeLobbyMessagesPerPlayer(
+          cursor.actorIds.length,
+          this.config.lobbyMessagesPerPlayer,
+        );
+        await this.executeDurableTurn({
+          branch: "single_provider",
+          action: "lobby-speech",
+          actorIds: [playerId],
+          providerActions: [{
+            actorId: playerId,
+            action: "lobby",
+            contractId: "agent-lobby-message-v1",
+          }],
+        }, async (ctx) => {
+          const pass = cursor.pass ?? 1;
+          await runLobbySpeakerTurn(ctx, playerId, pass - 1, passes);
+          const nextIndex = cursor.actorIndex + 1;
+          if (nextIndex < cursor.actorIds.length) {
+            return { ...cursor, actorIndex: nextIndex };
+          }
+          if (pass < passes) {
+            return { ...cursor, actorIndex: 0, pass: pass + 1 };
+          }
+          return { version: 1, kind: "rules", operation: "phase_close" };
+        });
+        continue;
+      }
+
+      if (phase === "lobby" && cursor.kind === "rules" && cursor.operation === "phase_close") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "lobby-close",
+          houseBeat: this.requireHouseBeat("lobby"),
+        }, async (_ctx, scratchActor) => {
+          scratchActor.send({ type: "PHASE_COMPLETE" });
+          return { version: 1, kind: "phase_enter", actor: "vote" };
+        });
+        continue;
+      }
+
+      if (phase === "vote" && cursor.kind === "phase_enter" && cursor.actor === "vote") {
+        const actorIds = this.gameState.getAlivePlayerIds();
+        await this.executeDurableTurn({
+          branch: "parallel_provider_batch",
+          action: "empower-vote",
+          actorIds,
+          providerActions: actorIds.map((actorId) => ({
+            actorId,
+            action: "vote",
+            contractId: "agent-empower-vote-v1",
+          })),
+        }, async (ctx) => {
+          ctx.logger.emitPhaseChange(Phase.VOTE);
+          ctx.logger.logSystem("=== VOTE PHASE ===", Phase.VOTE);
+          const batch = await collectEmpowerVoteBatch(ctx);
+          await applyEmpowerVoteBatch(ctx, batch);
+          return { version: 1, kind: "rules", operation: "empower_tally" };
+        });
+        continue;
+      }
+
+      if (phase === "vote" && cursor.kind === "rules" && cursor.operation === "empower_tally") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "empower-tally",
+        }, async (ctx) => {
+          const tally = await tallyEmpowerVote(ctx);
+          return tally.tied
+            ? { version: 1, kind: "parallel_batch", batch: "empower_revote" }
+            : { version: 1, kind: "rules", operation: "empower_resolve" };
+        });
+        continue;
+      }
+
+      if (phase === "vote" && cursor.kind === "parallel_batch" && cursor.batch === "empower_revote") {
+        const tallyEvent = [...this.gameState.getCanonicalEvents()].reverse().find(
+          (event) => event.type === "vote.empower_tally_resolved" && event.round === this.gameState.round,
+        );
+        if (!tallyEvent || tallyEvent.type !== "vote.empower_tally_resolved" || !tallyEvent.payload.tied) {
+          throw new Error("Empower re-vote cursor is missing a tied tally event");
+        }
+        const tied = [...tallyEvent.payload.tied];
+        const actorIds = this.gameState.getAlivePlayerIds().filter((id) => !tied.includes(id));
+        await this.executeDurableTurn({
+          branch: "parallel_provider_batch",
+          action: "empower-revote",
+          actorIds,
+          targetIds: tied,
+          providerActions: actorIds.map((actorId) => ({
+            actorId,
+            action: "empower-revote",
+            contractId: "agent-empower-revote-v1",
+          })),
+        }, async (ctx) => {
+          const batch = await collectEmpowerRevoteBatch(ctx, tied);
+          await applyEmpowerRevoteBatch(ctx, tied, batch);
+          return { version: 1, kind: "rules", operation: "empower_resolve" };
+        });
+        continue;
+      }
+
+      if (phase === "vote" && cursor.kind === "rules" && cursor.operation === "empower_resolve") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "empower-resolve",
+          houseBeat: this.requireHouseBeat("vote"),
+        }, async (ctx, scratchActor) => {
+          const tallyEvent = [...ctx.gameState.getCanonicalEvents()].reverse().find(
+            (event) => event.type === "vote.empower_tally_resolved" && event.round === ctx.gameState.round,
+          );
+          if (!tallyEvent || tallyEvent.type !== "vote.empower_tally_resolved") {
+            throw new Error("Empower resolve cursor is missing its tally event");
+          }
+          const empoweredId = tallyEvent.payload.tied
+            ? await resolveEmpowerRevote(ctx, tallyEvent.payload.tied, ctx.random)
+            : ctx.gameState.empoweredId;
+          if (!empoweredId) throw new Error("Empower resolve produced no empowered player");
+          finishEmpowerVote(ctx, empoweredId);
+          scratchActor.send({ type: "VOTES_TALLIED", empoweredId });
+          scratchActor.send({ type: "PHASE_COMPLETE" });
+          return { version: 1, kind: "phase_enter", actor: "format_menu" };
+        });
+        continue;
+      }
+
+      if (phase === "format_menu" && cursor.kind === "phase_enter" && cursor.actor === "format_menu") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "format-menu",
+          actorIds: this.gameState.empoweredId ? [this.gameState.empoweredId] : [],
+          houseBeat: this.requireHouseBeat("format_menu"),
+        }, async (ctx, scratchActor) => {
+          await runFormatMenuPhase(ctx, scratchActor);
+          return { version: 1, kind: "phase_enter", actor: "format_pick" };
+        });
+        continue;
+      }
+
+      if (phase === "format_pick" && cursor.kind === "phase_enter" && cursor.actor === "format_pick") {
+        const empoweredId = this.gameState.empoweredId;
+        if (!empoweredId) throw new Error("Format pick cursor has no empowered player");
+        const alreadySelected = this.gameState.getCanonicalEvents().some(
+          (event) => event.type === "format.selected" && event.round === this.gameState.round,
+        );
+        await this.executeDurableTurn({
+          branch: alreadySelected ? "engine" : "single_provider",
+          action: "format-pick",
+          actorIds: [empoweredId],
+          houseBeat: this.requireHouseBeat("format_pick"),
+          providerActions: alreadySelected ? [] : [{
+            actorId: empoweredId,
+            action: "format-pick",
+            contractId: "agent-format-pick-v1",
+          }],
+        }, async (ctx, scratchActor) => {
+          await runFormatPickPhase(ctx, scratchActor);
+          return { version: 1, kind: "phase_enter", actor: "format_mingle" };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "phase_enter" && cursor.actor === "format_mingle") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "format-mingle",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("format_mingle"),
+        }, async (ctx, scratchActor) => {
+          await runFormatMinglePhase(ctx, scratchActor, { completePhase: false });
+          await runAllianceFormationPhase(ctx);
+          await runAllianceHuddleWindow(ctx, scratchActor, Phase.FORMAT_MINGLE);
+          if (String(scratchActor.getSnapshot().value) !== "format_resolve") {
+            throw new Error("Format Mingle did not advance its scratch actor to format_resolve");
+          }
+          return { version: 1, kind: "phase_enter", actor: "format_resolve" };
+        });
+        continue;
+      }
+
+      if (phase === "format_resolve" && cursor.kind === "phase_enter" && cursor.actor === "format_resolve") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "format-resolve",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("format_resolve"),
+        }, async (ctx, scratchActor) => {
+          await runFormatResolvePhase(ctx, scratchActor);
+          if (this.config.diaryRoomAfterPhases?.includes(Phase.FORMAT_RESOLVE)) {
+            await ctx.diaryRoom.runDiaryRoom(Phase.FORMAT_RESOLVE);
+          }
+          return this.cursorAfterFormatResolve(scratchActor);
+        });
+        continue;
+      }
+
+      if (phase === "reckoning_lobby" && cursor.kind === "phase_enter" && cursor.actor === "reckoning_lobby") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "reckoning-lobby",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("reckoning_lobby"),
+        }, async (ctx, scratchActor) => {
+          await runReckoningLobby(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["reckoning_plea"]);
+        });
+        continue;
+      }
+
+      if (phase === "reckoning_plea" && cursor.kind === "phase_enter" && cursor.actor === "reckoning_plea") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "reckoning-plea",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("reckoning_plea"),
+        }, async (ctx, scratchActor) => {
+          await runReckoningPlea(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["reckoning_vote"]);
+        });
+        continue;
+      }
+
+      if (phase === "reckoning_vote" && cursor.kind === "phase_enter" && cursor.actor === "reckoning_vote") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "reckoning-vote",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("reckoning_vote"),
+        }, async (ctx, scratchActor) => {
+          await runReckoningVote(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["tribunal_lobby"]);
+        });
+        continue;
+      }
+
+      if (phase === "tribunal_lobby" && cursor.kind === "phase_enter" && cursor.actor === "tribunal_lobby") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "tribunal-lobby",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("tribunal_lobby"),
+        }, async (ctx, scratchActor) => {
+          await runTribunalLobby(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["tribunal_accusation"]);
+        });
+        continue;
+      }
+
+      if (phase === "tribunal_accusation" && cursor.kind === "phase_enter" && cursor.actor === "tribunal_accusation") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "tribunal-accusation",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("tribunal_accusation"),
+        }, async (ctx, scratchActor) => {
+          await runTribunalAccusation(ctx, scratchActor, new Map());
+          return this.cursorAfterEndgamePhase(scratchActor, ["tribunal_defense"]);
+        });
+        continue;
+      }
+
+      if (phase === "tribunal_defense" && cursor.kind === "phase_enter" && cursor.actor === "tribunal_defense") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "tribunal-defense",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("tribunal_defense"),
+        }, async (ctx, scratchActor) => {
+          const accusations = this.tribunalAccusationsFromCanonical(ctx.gameState);
+          await runTribunalDefense(ctx, scratchActor, accusations);
+          return this.cursorAfterEndgamePhase(scratchActor, ["tribunal_vote"]);
+        });
+        continue;
+      }
+
+      if (phase === "tribunal_vote" && cursor.kind === "phase_enter" && cursor.actor === "tribunal_vote") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "tribunal-vote",
+          actorIds: [...this.agents.keys()],
+          houseBeat: this.requireHouseBeat("tribunal_vote"),
+        }, async (ctx, scratchActor) => {
+          await runTribunalVote(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["judgment_opening"]);
+        });
+        continue;
+      }
+
+      if (phase === "judgment_opening" && cursor.kind === "phase_enter" && cursor.actor === "judgment_opening") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "judgment-opening",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("judgment_opening"),
+        }, async (ctx, scratchActor) => {
+          await runJudgmentOpening(ctx, scratchActor);
+          await ctx.diaryRoom.runDiaryRoom(Phase.OPENING_STATEMENTS);
+          return this.cursorAfterEndgamePhase(scratchActor, ["judgment_jury_questions"]);
+        });
+        continue;
+      }
+
+      if (phase === "judgment_jury_questions" && cursor.kind === "phase_enter" && cursor.actor === "judgment_jury_questions") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "judgment-jury-questions",
+          actorIds: [...this.agents.keys()],
+          houseBeat: this.requireHouseBeat("judgment_jury_questions"),
+        }, async (ctx, scratchActor) => {
+          await runJudgmentJuryQuestions(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["judgment_closing"]);
+        });
+        continue;
+      }
+
+      if (phase === "judgment_closing" && cursor.kind === "phase_enter" && cursor.actor === "judgment_closing") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "judgment-closing",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          houseBeat: this.requireHouseBeat("judgment_closing"),
+        }, async (ctx, scratchActor) => {
+          await runJudgmentClosing(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, ["judgment_jury_vote"]);
+        });
+        continue;
+      }
+
+      if (phase === "judgment_jury_vote" && cursor.kind === "phase_enter" && cursor.actor === "judgment_jury_vote") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "judgment-jury-vote",
+          actorIds: [...this.agents.keys()],
+          houseBeat: this.requireHouseBeat("judgment_jury_vote"),
+        }, async (ctx, scratchActor) => {
+          await runJudgmentJuryVote(ctx, scratchActor);
+          return this.cursorAfterEndgamePhase(scratchActor, []);
+        });
+        continue;
+      }
+
+      throw new Error(`Durable cursor ${cursor.kind} is invalid for actor coordinate ${phase}`);
+    }
+  }
+
+  private async runDurableGameLoop(): Promise<void> {
+    while (!this._aborted) {
+      const snapshot = this.requireDurableSnapshot();
+      if (snapshot.execution.cursor.kind === "terminal") return;
+      const coordinate = this.actorCoordinateFromDurableSnapshot(snapshot);
+      if (!this.isDurableConvertedActorCoordinate(coordinate)) {
+        throw new Error(
+          `Durable execution reached unconverted cursor ${JSON.stringify(snapshot.execution.cursor)} at actor ${coordinate}`,
+        );
+      }
+      await this.runDurableConvertedPhase(coordinate);
+      await this.tickPhaseActor();
+    }
   }
 
   private async runGameLoop(actor: PhaseActor): Promise<void> {
@@ -799,8 +1932,6 @@ export class GameRunner {
     }
     await new Promise((r) => setTimeout(r, 0));
 
-    const prc = this.buildPhaseRunnerContext();
-
     while (!done && !this._aborted) {
       const snapshot = actor.getSnapshot();
       const state = snapshot.value as string;
@@ -815,21 +1946,15 @@ export class GameRunner {
         repeatedLoopCount = 0;
       }
 
+      const prc = this.buildPhaseRunnerContext();
       // --- Normal round phases ---
       if (state === "introduction") {
         await runIntroductionPhase(prc, actor);
-        await this.diaryRoom.runStrategicReflections(Phase.INTRODUCTION);
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
       } else if (state === "vote") {
-        if (this.gameState.round > 1) {
-          await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
-        }
         await runVotePhase(prc, actor);
-        if (this.gameState.round > 1) {
-          await this.diaryRoom.runStrategicReflections(Phase.VOTE);
-        }
       } else if (state === "format_menu") {
         await runFormatMenuPhase(prc, actor);
       } else if (state === "format_pick") {
@@ -840,7 +1965,6 @@ export class GameRunner {
         await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
       } else if (state === "format_resolve") {
         await runFormatResolvePhase(prc, actor);
-        await this.emitHouseRoundInterstitial(Phase.FORMAT_RESOLVE);
         await this.runConfiguredDiaryRoom(Phase.FORMAT_RESOLVE);
 
         // Legacy classic path (not on default transitions; resume/old logs only)
@@ -848,16 +1972,12 @@ export class GameRunner {
         await runMinglePhase(prc, actor, { phase: Phase.POST_VOTE_MINGLE });
       } else if (state === "power") {
         await runPowerPhase(prc, actor);
-        if (!this.gameState.councilCandidates) {
-          await this.emitHouseRoundInterstitial(Phase.POWER);
-        }
       } else if (state === "reveal") {
         await runRevealPhase(prc, actor);
       } else if (state === "pre_council_huddle") {
         await runAllianceHuddleWindow(prc, actor, Phase.PRE_COUNCIL_HUDDLE);
       } else if (state === "council") {
         await runCouncilPhase(prc, actor);
-        await this.emitHouseRoundInterstitial(Phase.COUNCIL);
         await this.runConfiguredDiaryRoom(Phase.COUNCIL);
 
         // --- THE RECKONING (4 -> 3) ---
@@ -899,9 +2019,23 @@ export class GameRunner {
       }
 
       await new Promise((r) => setTimeout(r, 0));
-      if (this._aborted && this.durableEventSink) {
+      if (this._aborted && (this.durableEventSink || this.durableTurnStore)) {
         this.logger.dropStreamBuffer();
         throw new Error("Game run aborted");
+      }
+      await this.flushDurableEvents({
+        continueBuffering: true,
+        releaseStream: false,
+      });
+
+      const houseBeat = this.houseBeatForActorCoordinate(state);
+      if (houseBeat) {
+        await this.emitHousePhaseBeat(
+          houseBeat.actorCoordinate,
+          houseBeat.phase,
+          houseBeat.beatClass,
+          houseBeat.roundMilestone,
+        );
       }
       await this.flushDurableEvents({
         continueBuffering: true,
@@ -1195,379 +2329,290 @@ export class GameRunner {
     return this.config.enableHouseRoundSummaries !== false;
   }
 
-  private houseStrategyBibleEnabled(): boolean {
-    return this.config.enableHouseStrategyBible === true;
-  }
-
   private houseLongFormSummariesEnabled(): boolean {
     return this.config.enableHouseLongFormSummaries === true;
   }
 
-  private async emitHouseRoundInterstitial(resolvedPhase: Phase): Promise<void> {
-    const round = this.gameState.round;
-    if (round <= 0 || this.completedHouseSummaryRounds.has(round) || !this.houseRoundSummariesEnabled()) {
-      return;
+  private houseBeatForActorCoordinate(
+    actorCoordinate: string,
+  ): {
+    actorCoordinate: HouseSummaryActorCoordinate;
+    phase: Phase;
+    beatClass: HouseBeatClass;
+    roundMilestone: boolean;
+  } | null {
+    if (!isHouseSummaryActorCoordinate(actorCoordinate)) return null;
+    const phase = this.phaseForActorCoordinate(actorCoordinate);
+    if (!phase) return null;
+    if (actorCoordinate === "power") {
+      const automaticElimination = this.gameState.councilCandidates === null;
+      return {
+        actorCoordinate,
+        phase,
+        beatClass: automaticElimination ? "milestone" : "ordinary",
+        roundMilestone: automaticElimination,
+      };
     }
-    this.completedHouseSummaryRounds.add(round);
-
-    const coveredWindow = this.buildHouseCoveredWindow(resolvedPhase);
-    const evidence = this.buildHouseEvidenceBundle(resolvedPhase);
-
-    if (this.houseStrategyBibleEnabled()) {
-      try {
-        const update = await this.houseInterviewer.updateStrategyBible({
-          round,
-          phase: resolvedPhase,
-          previousPacket: this.houseStrategyBible,
-          evidence,
-          coveredWindow,
-        });
-        if (update.packet) {
-          this.houseStrategyBible = update.packet;
-          this.logger.emitAgentTurn({
-            phase: resolvedPhase,
-            action: "house-strategy-bible",
-            actor: { name: "House", role: "house" },
-            visibility: "private",
-            response: {
-              packet: update.packet,
-              rationale: update.rationale,
-            },
-            thinking: update.thinking,
-            reasoningContext: update.reasoningContext,
-            scope: "thinking",
-          });
-        }
-      } catch {
-        // House packet generation is producer/debug work; never break the game loop.
-      }
-    }
-
-    const summaryContext = {
-      round,
-      phase: resolvedPhase,
-      kind: "round" as const,
-      alivePlayers: this.gameState.getAlivePlayers().map((player) => player.name),
-      packet: this.houseStrategyBible,
-      evidence,
-      coveredWindow,
+    const roundMilestone = actorCoordinate === "format_resolve" || actorCoordinate === "council";
+    const endgameMilestone = actorCoordinate === "reckoning_vote"
+      || actorCoordinate === "tribunal_vote"
+      || actorCoordinate === "judgment_jury_vote";
+    return {
+      actorCoordinate,
+      phase,
+      beatClass: roundMilestone || endgameMilestone ? "milestone" : "ordinary",
+      roundMilestone,
     };
-
-    try {
-      const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
-      this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system", evidence.roundFacts);
-      this.logger.logSystem(summary.summary, resolvedPhase);
-    } catch {
-      // non-fatal for summary generation
-    }
-
-    if (this.houseLongFormSummariesEnabled()) {
-      try {
-        const longForm = await this.houseInterviewer.generateLongFormGameplaySummary({
-          ...summaryContext,
-          kind: "long-form",
-        });
-        this.emitHouseSummaryTurn("house-long-form-summary", resolvedPhase, longForm, "private", evidence.roundFacts);
-      } catch {
-        // non-fatal for producer catch-up generation
-      }
-    }
   }
 
-  private emitHouseSummaryTurn(
-    action: "house-mc-summary" | "house-long-form-summary",
-    phase: Phase,
-    summary: HouseGameplaySummaryResult,
-    visibility: "private" | "system",
-    facts?: HouseRoundFacts,
+  private requireHouseBeat(actorCoordinate: string): DurableHouseBeatInput {
+    const beat = this.houseBeatForActorCoordinate(actorCoordinate);
+    if (!beat) {
+      throw new Error(`Missing House cadence metadata for ${actorCoordinate}`);
+    }
+    return beat;
+  }
+
+  private emitHousePhaseTelemetry(
+    telemetry: HouseSummaryPhaseTelemetry,
+    logger: TranscriptLogger = this.logger,
   ): void {
-    this.logger.emitAgentTurn({
-      phase,
-      action,
+    this.houseSummaryTelemetry.push(telemetry);
+    logger.emitAgentTurn({
+      phase: telemetry.phase,
+      action: "house-summary-phase-telemetry",
       actor: { name: "House", role: "house" },
-      visibility,
+      visibility: "private",
+      response: { telemetry },
+      scope: "thinking",
+    });
+  }
+
+  private buildHousePhaseTelemetry(
+    result: HouseSummaryAttemptResult,
+    pendingDelta: HouseSummaryPhaseTelemetry["pendingDelta"],
+  ): HouseSummaryPhaseTelemetry {
+    return {
+      version: 2,
+      boundaryId: result.boundary.id,
+      actorCoordinate: result.boundary.actorCoordinate,
+      round: result.boundary.round,
+      phase: result.boundary.phase,
+      beatClass: result.boundary.beatClass,
+      status: result.status,
+      providerCalls: result.providerCalls,
+      usageAvailable: result.usage.every((entry) => (
+        entry.responseId !== null
+        && entry.serviceTier !== null
+        && entry.promptTokens !== null
+        && entry.cachedTokens !== null
+        && entry.cacheWriteTokens !== null
+        && entry.completionTokens !== null
+        && entry.reasoningTokens !== null
+        && entry.totalTokens !== null
+      )),
+      usage: result.usage.map((entry) => ({ ...entry })),
+      pendingDelta,
+    };
+  }
+
+  private async emitHousePhaseBeat(
+    actorCoordinate: HouseSummaryActorCoordinate,
+    phase: Phase,
+    beatClass: HouseBeatClass,
+    roundMilestone = false,
+  ): Promise<void> {
+    this.houseNarrativeContinuity = await this.emitHousePhaseBeatForContext(
+      this.buildPhaseRunnerContext(),
+      this.houseNarrativeContinuity,
+      { actorCoordinate, phase, beatClass, roundMilestone },
+    );
+  }
+
+  private async emitHousePhaseBeatForContext(
+    context: PhaseRunnerContext,
+    initialContinuity: HouseNarrativeContinuityV2,
+    beat: DurableHouseBeatInput,
+  ): Promise<HouseNarrativeContinuityV2> {
+    const { actorCoordinate, phase, beatClass, roundMilestone } = beat;
+    const continuity = structuredClone(initialContinuity);
+    const round = context.gameState.round;
+    if (!this.houseRoundSummariesEnabled()) {
+      return continuity;
+    }
+    const projection = context.gameState.getDomainProjection();
+    const events = context.gameState.getCanonicalEventsAfter(
+      continuity.examinedCanonicalHead,
+    );
+    const narrationContext = compileHouseNarrationContext({
+      actorCoordinate,
+      round,
+      phase,
+      beatClass,
+      events,
+      projection,
+      transcript: context.logger.dialogueEntriesAfter(
+        continuity.examinedDialogueHead,
+      ),
+      diaryEntries: context.diaryRoom.diaryEntries,
+      afterCanonicalSequence: continuity.examinedCanonicalHead,
+      afterDialogueSequence: continuity.examinedDialogueHead,
+    });
+
+    if (!narrationContext.material) {
+      continuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      continuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
+      this.emitHousePhaseTelemetry({
+        version: 2,
+        boundaryId: narrationContext.boundary.id,
+        actorCoordinate,
+        round,
+        phase,
+        beatClass,
+        status: "preflight_skipped",
+        providerCalls: 0,
+        usageAvailable: true,
+        usage: [],
+        pendingDelta: "none",
+      }, context.logger);
+      return continuity;
+    }
+
+    const isFirstRoundMilestone = roundMilestone && !continuity.recentBeats.some(
+      (priorBeat) => priorBeat.boundary.round === round && priorBeat.boundary.beatClass === "milestone",
+    );
+    const hadPendingDelta = continuity.pendingDeltaCarry === 1;
+    let result: HouseSummaryAttemptResult = await context.houseInterviewer.generateHouseSummary({
+      narrationContext,
+      continuity,
+    });
+
+    if (result.status === "emitted") {
+      const maxSummaryCharacters = houseSummaryCharacterLimit(beatClass);
+      const validSummary = result.beat === null || (
+        houseSummaryBoundariesEqual(result.beat.boundary, narrationContext.boundary)
+        && result.beat.version === 2
+        && isBoundedHouseAuthoredText(result.beat.publicSummary, maxSummaryCharacters)
+      );
+      const validNotebook = result.privateNarrativeNotebook === null
+        || isBoundedHouseAuthoredText(
+          result.privateNarrativeNotebook,
+          HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+        );
+      const failureReason = !houseSummaryBoundariesEqual(result.boundary, narrationContext.boundary)
+        ? "house_summary_boundary_mismatch"
+        : result.beat === null && result.privateNarrativeNotebook === null
+          ? "empty_house_narrative_update"
+          : !validSummary
+            ? "house_summary_presentation_invalid"
+            : !validNotebook
+              ? "house_notebook_presentation_invalid"
+              : null;
+      if (failureReason !== null) {
+        result = {
+          status: "failed",
+          reason: failureReason,
+          boundary: narrationContext.boundary,
+          providerCalls: result.providerCalls,
+          usage: result.usage.map((entry) => ({ ...entry })),
+          ...(result.thinking ? { thinking: result.thinking } : {}),
+          ...(result.reasoningContext ? { reasoningContext: result.reasoningContext } : {}),
+        };
+      }
+    }
+
+    let pendingDelta: HouseSummaryPhaseTelemetry["pendingDelta"] = "none";
+    if (result.status === "emitted") {
+      if (result.beat) {
+        const publicSummary = result.beat.publicSummary;
+        context.logger.emitAgentTurn({
+          phase,
+          action: "house-mc-summary",
+          actor: { name: "House", role: "house" },
+          visibility: "system",
+          response: { summary: publicSummary },
+          scope: "system",
+          text: publicSummary,
+        });
+        context.logger.logSystem(publicSummary, phase, undefined, undefined, "house_summary");
+      }
+      const acceptedBeat = result.beat ? structuredClone(result.beat) : null;
+      const nextContinuity: HouseNarrativeContinuityV2 = {
+        version: 2,
+        gameId: context.gameState.gameId,
+        recentBeats: acceptedBeat
+          ? appendRecentHouseNarrativeBeat(continuity.recentBeats, acceptedBeat)
+          : continuity.recentBeats.map((priorBeat) => structuredClone(priorBeat)),
+        privateNarrativeNotebook: result.privateNarrativeNotebook
+          ?? continuity.privateNarrativeNotebook,
+        examinedCanonicalHead: narrationContext.boundary.canonicalHead,
+        examinedDialogueHead: context.logger.dialogueHead,
+        pendingDeltaCarry: 0,
+      };
+      Object.assign(continuity, nextContinuity);
+      pendingDelta = hadPendingDelta ? "carried" : "none";
+    } else if (result.status === "model_skipped") {
+      continuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      continuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
+      continuity.pendingDeltaCarry = 0;
+      pendingDelta = hadPendingDelta ? "dropped" : "none";
+    } else if (hadPendingDelta) {
+      continuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      continuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
+      continuity.pendingDeltaCarry = 0;
+      pendingDelta = "dropped";
+    } else {
+      continuity.pendingDeltaCarry = 1;
+      pendingDelta = "carried";
+    }
+    this.emitHousePhaseTelemetry(
+      this.buildHousePhaseTelemetry(result, pendingDelta),
+      context.logger,
+    );
+
+    if (isFirstRoundMilestone && this.houseLongFormSummariesEnabled()) {
+      await this.emitHouseLongFormSummary(context, continuity, phase, narrationContext);
+    }
+    return continuity;
+  }
+
+  private async emitHouseLongFormSummary(
+    context: PhaseRunnerContext,
+    continuity: HouseNarrativeContinuityV2,
+    phase: Phase,
+    narrationContext: import("./house-summary-frontier").HouseNarrationContext,
+  ): Promise<void> {
+    const coveredWindow: HouseCoveredWindow = {
+      fromRound: 1,
+      toRound: context.gameState.round,
+      toPhase: phase,
+    };
+    const summary = await context.houseInterviewer.generateLongFormGameplaySummary({
+      gameId: context.gameState.gameId,
+      round: context.gameState.round,
+      phase,
+      kind: "long-form",
+      coveredWindow,
+      narrationContext,
+      recentPublicBeats: continuity.recentBeats.map((priorBeat) => structuredClone(priorBeat)),
+      privateNarrativeNotebook: continuity.privateNarrativeNotebook,
+    });
+    if (!summary) return;
+    context.logger.emitAgentTurn({
+      phase,
+      action: "house-long-form-summary",
+      actor: { name: "House", role: "house" },
+      visibility: "private",
       response: {
         summary: summary.summary,
         kind: summary.kind,
-        packetRevisionId: summary.packetRevisionId,
         coveredWindow: summary.coveredWindow,
-        referencedAllianceNames: summary.referencedAllianceNames,
-        openQuestions: summary.openQuestions ?? [],
-        ...(facts ? { roundFacts: facts } : {}),
       },
       thinking: summary.thinking,
       reasoningContext: summary.reasoningContext,
       scope: "system",
       text: summary.summary,
     });
-  }
-
-  private buildHouseCoveredWindow(toPhase: Phase): HouseCoveredWindow {
-    return {
-      fromRound: this.houseStrategyBible?.updatedAtRound ?? 1,
-      toRound: this.gameState.round,
-      ...(this.houseStrategyBible?.updatedAtPhase && { fromPhase: this.houseStrategyBible.updatedAtPhase }),
-      toPhase,
-    };
-  }
-
-  private buildHouseCouncilRoles(
-    councilCandidates: [UUID, UUID] | null,
-    councilResolved: Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }> | null,
-  ): HouseCouncilRoleFact[] {
-    const candidateNames = councilCandidates
-      ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])] as [string, string]
-      : null;
-    const eliminatedId = councilResolved?.payload.eliminated ?? null;
-    const eliminatedName = eliminatedId ? this.gameState.getPlayerName(eliminatedId) : null;
-    const survivingCandidateId = councilCandidates?.find((id) => id !== eliminatedId) ?? null;
-    const survivingCandidateName = survivingCandidateId ? this.gameState.getPlayerName(survivingCandidateId) : null;
-    const votes = councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes;
-    const empoweredId = councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? null;
-
-    return this.gameState.getAllPlayers().map((player) => {
-      const votedForId = votes[player.id];
-      const votedForName = votedForId ? this.gameState.getPlayerName(votedForId) : null;
-      if (!councilCandidates) {
-        return {
-          playerName: player.name,
-          role: "not_applicable",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (councilCandidates.includes(player.id)) {
-        return {
-          playerName: player.name,
-          role: "candidate",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName: null,
-        };
-      }
-      if (votedForId && player.id === empoweredId) {
-        return {
-          playerName: player.name,
-          role: "empowered_tiebreaker",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (player.id === empoweredId && councilResolved?.payload.method === "plurality") {
-        return {
-          playerName: player.name,
-          role: "empowered_no_tiebreak_needed",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName: null,
-        };
-      }
-      if (votedForId && votedForId === eliminatedId) {
-        return {
-          playerName: player.name,
-          role: "voted_for_eliminated",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (votedForId) {
-        return {
-          playerName: player.name,
-          role: "voted_for_survivor",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      return {
-        playerName: player.name,
-        role: "non_voter",
-        candidateNames,
-        eliminatedName,
-        survivingCandidateName,
-        votedForName,
-      };
-    });
-  }
-
-  private buildHouseRoundFacts(round: number): HouseRoundFacts {
-    const events = this.gameState.getCanonicalEvents().filter((event) => event.round === round);
-    const empowerTally = this.latestRoundEvent(events, "vote.empower_tally_resolved");
-    const empoweredSet = this.latestRoundEvent(events, "vote.empowered_set");
-    const powerAction = this.latestRoundEvent(events, "power.action_set");
-    const candidatesResolved = this.latestRoundEvent(events, "power.candidates_resolved");
-    const councilResolved = this.latestRoundEvent(events, "council.elimination_resolved");
-    const playerEliminated = this.latestRoundEvent(events, "player.eliminated");
-    const roundResult = this.latestRoundEvent(events, "round.result_recorded");
-
-    const councilCandidates = councilResolved?.payload.candidates
-      ?? candidatesResolved?.payload.candidates
-      ?? this.gameState.councilCandidates;
-    const empoweredId = empoweredSet?.payload.empowered
-      ?? councilResolved?.payload.empoweredId
-      ?? this.gameState.empoweredId;
-
-    // Always derive omniscient format facts from durable events (R14 option A).
-    const formatResolution = buildHouseFormatResolutionFacts(
-      this.gameState.getCanonicalEvents(),
-      round,
-      (playerId) => this.gameState.getPlayerName(playerId),
-    );
-    const selectedFormatId =
-      formatResolution?.formatId
-      ?? roundResult?.payload.result.formatId
-      ?? this.formatKernelState.selectedFormat
-      ?? this.formatKernelState.lastSelectedFormat
-      ?? null;
-    const offeredFormatIds =
-      (formatResolution?.offeredFormatIds as [LaunchFormatId, LaunchFormatId] | null)
-      ?? this.formatKernelState.offeredFormats;
-    const formatMethod =
-      formatResolution?.resolutionKind
-      ?? roundResult?.payload.result.formatMethod
-      ?? selectedFormatId;
-    const eliminationPath: HouseRoundFacts["eliminationPath"] =
-      formatResolution || selectedFormatId || playerEliminated?.phase === "FORMAT_RESOLVE"
-        ? "format"
-        : councilResolved
-          ? "council"
-          : candidatesResolved?.payload.autoEliminated
-            ? "power_auto"
-            : "unknown";
-
-    return {
-      round,
-      empoweredName: empoweredId ? this.gameState.getPlayerName(empoweredId) : null,
-      empowerMethod: empoweredSet?.payload.method ?? empowerTally?.payload.method ?? null,
-      empowerVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.empowerVotes),
-      exposeVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.exposeVotes),
-      councilCandidates: councilCandidates
-        ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])]
-        : null,
-      powerAction: powerAction
-        ? {
-            action: powerAction.payload.action.action,
-            targetName: powerAction.payload.action.action === "pass"
-              ? null
-              : this.gameState.getPlayerName(powerAction.payload.action.target),
-          }
-        : null,
-      shieldGrantedName: candidatesResolved?.payload.shieldGranted
-        ? this.gameState.getPlayerName(candidatesResolved.payload.shieldGranted)
-        : null,
-      autoEliminatedName: candidatesResolved?.payload.autoEliminated
-        ? this.gameState.getPlayerName(candidatesResolved.payload.autoEliminated)
-        : null,
-      councilVoteCounts: councilCandidates
-        ? this.buildVoteCounts(
-            councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes,
-            [...councilCandidates],
-            councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? undefined,
-          )
-        : [],
-      councilMethod: councilResolved?.payload.method ?? null,
-      eliminatedName: playerEliminated?.payload.playerName
-        ?? formatResolution?.eliminatedName
-        ?? (councilResolved?.payload.eliminated ? this.gameState.getPlayerName(councilResolved.payload.eliminated) : null),
-      councilRoles: this.buildHouseCouncilRoles(councilCandidates, councilResolved),
-      selectedFormatId,
-      selectedFormatName: selectedFormatId ? displayNameForFormat(selectedFormatId) : null,
-      offeredFormatIds: offeredFormatIds ? [...offeredFormatIds] : null,
-      offeredFormatNames: offeredFormatIds
-        ? [displayNameForFormat(offeredFormatIds[0]), displayNameForFormat(offeredFormatIds[1])]
-        : null,
-      formatMethod: formatMethod ?? null,
-      eliminationPath,
-      formatResolution,
-    };
-  }
-
-  private latestRoundEvent<TType extends CanonicalGameEvent["type"]>(
-    events: readonly CanonicalGameEvent[],
-    type: TType,
-  ): Extract<CanonicalGameEvent, { type: TType }> | null {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.type === type) {
-        return event as Extract<CanonicalGameEvent, { type: TType }>;
-      }
-    }
-    return null;
-  }
-
-  private buildVoteCounts(
-    votes: Record<UUID, UUID>,
-    knownTargets: UUID[] = [],
-    excludedVoterId?: UUID,
-  ): HouseVoteCount[] {
-    const counts = new Map<UUID, { votes: number; voters: string[]; knownIndex: number }>();
-    for (const [index, targetId] of knownTargets.entries()) {
-      counts.set(targetId, { votes: 0, voters: [], knownIndex: index });
-    }
-
-    for (const [voterId, targetId] of Object.entries(votes) as Array<[UUID, UUID]>) {
-      if (voterId === excludedVoterId) continue;
-      if (knownTargets.length > 0 && !knownTargets.includes(targetId)) continue;
-      const current = counts.get(targetId) ?? { votes: 0, voters: [], knownIndex: Number.MAX_SAFE_INTEGER };
-      current.votes += 1;
-      current.voters.push(this.gameState.getPlayerName(voterId));
-      counts.set(targetId, current);
-    }
-
-    return Array.from(counts.entries())
-      .filter(([, count]) => count.votes > 0 || count.knownIndex !== Number.MAX_SAFE_INTEGER)
-      .sort(([, a], [, b]) => b.votes - a.votes || a.knownIndex - b.knownIndex)
-      .map(([playerId, count]) => ({
-        playerName: this.gameState.getPlayerName(playerId),
-        votes: count.votes,
-        voters: count.voters,
-      }));
-  }
-
-  private buildHouseEvidenceBundle(phase: Phase): HouseEvidenceBundle {
-    const allPlayers = this.gameState.getAllPlayers();
-    const alivePlayers = this.gameState.getAlivePlayers();
-    const roomAllocations = this.logger.transcript
-      .filter((entry) => entry.roomMetadata)
-      .map((entry) => ({
-        round: entry.round,
-        text: entry.text,
-        rooms: entry.roomMetadata?.rooms.map((room) => ({
-          roomId: room.roomId,
-          players: room.playerIds.map((playerId) => this.gameState.getPlayerName(playerId)),
-        })) ?? [],
-        excluded: entry.roomMetadata?.excluded ?? [],
-      }));
-
-    const candidates = this.gameState.councilCandidates;
-    return {
-      round: this.gameState.round,
-      phase,
-      alivePlayers: alivePlayers.map((player) => player.name),
-      eliminatedPlayers: allPlayers
-        .filter((player) => player.status === PlayerStatus.ELIMINATED)
-        .map((player) => player.name),
-      activeShieldNames: alivePlayers.filter((player) => player.shielded).map((player) => player.name),
-      empoweredName: this.gameState.empoweredId ? this.gameState.getPlayerName(this.gameState.empoweredId) : null,
-      councilCandidates: candidates
-        ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
-        : null,
-      recentTranscript: [...this.logger.transcript],
-      recentPublicMessages: [...this.logger.publicMessages],
-      recentDiaryEntries: [...this.diaryRoom.diaryEntries],
-      roomAllocations,
-      roundFacts: this.buildHouseRoundFacts(this.gameState.round),
-      canonicalEventCount: this.gameState.getCanonicalEvents().length,
-    };
   }
 
   private async runConfiguredDiaryRoom(phase: Phase): Promise<void> {

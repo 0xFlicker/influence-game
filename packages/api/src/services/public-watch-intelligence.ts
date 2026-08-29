@@ -17,7 +17,7 @@ import {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { CognitiveArtifactType, GameStatus } from "../db/schema.js";
+import type { GameStatus } from "../db/schema.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { getPersistedGameProjection } from "./game-projection-read-model.js";
 import { getGameWatchState } from "./game-watch-state.js";
@@ -137,14 +137,6 @@ const PUBLIC_WATCH_PHASE_RANKS = new Map(
   PUBLIC_WATCH_PHASE_ORDER.map((phase, index) => [phase, index]),
 );
 
-const STRATEGY_FIELDS: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "decisionLog", title: "Decision Log" },
-  { key: "strategicLens", title: "Strategic Lens" },
-  { key: "strategicLensRationale", title: "Lens Rationale" },
-  { key: "strategyPacketSummary", title: "Strategy Packet" },
-  { key: "strategicReflectionSummary", title: "Strategic Reflection" },
-];
-
 export async function getPublicWatchIntelligence(
   db: PublicWatchIntelligenceDB,
   params: PublicWatchIntelligenceParams,
@@ -228,12 +220,7 @@ export async function getPublicWatchIntelligence(
     contextRound,
     contextPhase,
   ).slice(0, limit);
-  const strategyCards = selectStrategyCards(
-    artifactCards.filter((card) => card.kind === "strategy"),
-    contextRound,
-    contextPhase,
-    limit,
-  );
+  const strategyCards: PublicWatchIntelligenceCard[] = [];
 
   return {
     ok: true,
@@ -299,7 +286,7 @@ async function loadArtifactCards(
       eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId),
       eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"),
       eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
-      inArray(schema.gameCognitiveArtifacts.artifactType, ["thinking", "strategy"] satisfies CognitiveArtifactType[]),
+      eq(schema.gameCognitiveArtifacts.artifactType, "thinking"),
       inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]),
       ne(schema.gameCognitiveArtifacts.action, "alliance-action"),
       not(like(schema.gameCognitiveArtifacts.action, "alliance-huddle-%")),
@@ -309,6 +296,7 @@ async function loadArtifactCards(
       ne(schema.gameCognitiveArtifacts.action, "format-save-or-eliminate-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-vote-bomb-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-majority-elimination-ballot"),
+      ne(schema.gameCognitiveArtifacts.action, "format-even-votes-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-safety-bounce-vote"),
       or(
         isNull(schema.gameCognitiveArtifacts.phase),
@@ -355,26 +343,7 @@ function artifactCardsFromRow(
     }];
   }
 
-  if (row.artifactType !== "strategy") return [];
-
-  return STRATEGY_FIELDS.flatMap((field) => {
-    const text = textFromPayloadField(row.payload, field.key);
-    if (!text) return [];
-    return [{
-      id: `${row.id}:${field.key}`,
-      kind: "strategy" as const,
-      source: "cognitive_artifact" as const,
-      actorPlayerId: context.actorPlayerId,
-      title: field.title,
-      text,
-      context: contextPrecision(row.round, row.phase, context.round, context.phase),
-      ...(row.round !== null && { round: row.round }),
-      ...(row.phase && { phase: row.phase }),
-      action: row.action,
-      ...(row.eventSequence !== null && { eventSequence: row.eventSequence }),
-      createdAt: row.createdAt,
-    }];
-  });
+  return [];
 }
 
 async function loadTranscriptThinkingCards(
@@ -432,75 +401,7 @@ function transcriptThinkingCardFromRow(
 }
 
 function textFromPayloadField(payload: Record<string, unknown>, field: string): string | null {
-  const value = payload[field];
-  if (field === "strategyPacketSummary") {
-    return textFromStrategyPacketSummary(value);
-  }
-  if (field === "strategicReflectionSummary") {
-    return textFromStrategicReflectionSummary(value);
-  }
-  return textFromStringOrSummary(value);
-}
-
-function textFromStringOrSummary(value: unknown): string | null {
-  if (typeof value === "string") {
-    return normalizeText(value);
-  }
-  if (isRecord(value)) {
-    return normalizeText(value.summary) ?? normalizeText(value.text);
-  }
-  return null;
-}
-
-function textFromStrategyPacketSummary(value: unknown): string | null {
-  const directText = textFromStringOrSummary(value);
-  if (directText) return directText;
-  if (!isRecord(value)) return null;
-
-  const parts = [
-    labeledText("Objective", value.objective),
-    labeledText("Coalition", value.coalitionPosture),
-    labeledText("Target", value.targetPosture),
-    labeledText("Next probe", value.nextSocialProbe),
-    labeledText("Revise if", value.reviseTrigger),
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(" ") : null;
-}
-
-function textFromStrategicReflectionSummary(value: unknown): string | null {
-  const directText = textFromStringOrSummary(value);
-  if (directText) return directText;
-  if (!isRecord(value)) return null;
-
-  const parts = [
-    labeledText("Plan", value.plan),
-    labeledList("Allies", value.allies),
-    labeledList("Threats", value.threats),
-    labeledText("Lens", value.strategicLens),
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(" ") : null;
-}
-
-function labeledText(label: string, value: unknown): string | null {
-  const text = normalizeText(value);
-  return text ? `${label}: ${punctuate(text)}` : null;
-}
-
-function labeledList(label: string, value: unknown): string | null {
-  if (!Array.isArray(value)) return null;
-  const text = value
-    .map((item) => normalizeText(item))
-    .filter((item): item is string => item !== null)
-    .join(", ");
-  return text ? `${label}: ${punctuate(text)}` : null;
-}
-
-function punctuate(text: string): string {
-  return /[.!?](?:["')\]]|\u201d|\u2019)*$/.test(text) ? text : `${text}.`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return normalizeText(payload[field]);
 }
 
 function normalizeText(value: unknown): string | null {
@@ -562,34 +463,6 @@ function rankCards(
     if (sequenceDiff !== 0) return sequenceDiff;
     return Date.parse(b.createdAt ?? "") - Date.parse(a.createdAt ?? "");
   });
-}
-
-function selectStrategyCards(
-  cards: PublicWatchIntelligenceCard[],
-  round: number,
-  phase: string,
-  limit: number,
-): PublicWatchIntelligenceCard[] {
-  const ranked = rankCards(cards, round, phase);
-  const selected: PublicWatchIntelligenceCard[] = [];
-  const selectedIds = new Set<string>();
-  const selectedTitles = new Set<string>();
-
-  for (const card of ranked) {
-    if (selectedTitles.has(card.title)) continue;
-    selected.push(card);
-    selectedIds.add(card.id);
-    selectedTitles.add(card.title);
-    if (selected.length === limit) return selected;
-  }
-
-  for (const card of ranked) {
-    if (selectedIds.has(card.id)) continue;
-    selected.push(card);
-    if (selected.length === limit) return selected;
-  }
-
-  return selected;
 }
 
 function contextRank(

@@ -9,6 +9,7 @@ import {
 } from "../services/owner-learning-review.js";
 import { setupTestDB } from "./test-utils.js";
 import {
+  failFixtureOwnerLearningReview,
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
 } from "./owner-learning-test-utils.js";
@@ -367,12 +368,17 @@ describe("owner learning review start", () => {
       idempotencyKey: "sysop-first",
     }, { projector, now });
     expect(first.status).toBe("started");
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "complete",
-      resolution: "failed",
-      resolvedAt: now.toISOString(),
-    }).where(eq(schema.agentLearningReviews.id, first.reviewId!));
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: first.reviewId!,
+      failureCode: "internal_error",
+      retryable: false,
+      now,
+      reviewUpdates: {
+        stage: "complete",
+        resolution: "failed",
+        resolvedAt: now.toISOString(),
+      },
+    });
 
     const second = await startOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,

@@ -43,7 +43,11 @@ export function OwnerLearningReviewView({
   const activeFacts = canonicalFacts(activeEvidence?.canonicalFacts);
   const rows = activityRows(activeFacts);
   const running = review.resolution == null
-    && (review.analysisStatus === "queued" || review.analysisStatus === "running");
+    && (
+      review.analysisStatus === "queued"
+      || review.analysisStatus === "retry_queued"
+      || review.analysisStatus === "running"
+    );
   const ready = review.analysisStatus === "ready" && review.result != null;
   const noChange = review.analysisStatus === "no_change" && review.result != null;
   const failed = review.analysisStatus === "failed" && review.resolution == null;
@@ -217,7 +221,7 @@ export function OwnerLearningReviewView({
                       href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}/edit?sourceReviewId=${encodeURIComponent(review.id)}`}
                       className="olm-button olm-button-secondary"
                       onClick={() => { void recordOwnerLearningManualEditorOpened(review.id); }}
-                    >Edit changes myself</Link>
+                    >Edit suggested strategy</Link>
                     <button
                       type="button"
                       className="olm-button olm-button-quiet"
@@ -242,17 +246,20 @@ export function OwnerLearningReviewView({
         <section className="olm-failure" role="status">
           <p className="olm-kicker">Review interrupted</p>
           <h2>The game facts are safe. Strategic analysis did not finish.</h2>
-          <p>{failureMessage(review.safeFailureCode)} Resolving the failure closes this review. Any credit used to start a metered review is not refunded.</p>
+          <p>{failureMessage(review.safeFailureCode)} Your completed analysis steps and evidence are saved.</p>
           <div className="olm-button-row">
-            {review.retryable && review.logicalCallCount < 4 && (
+            {review.retryable && review.ownerRetriesRemaining > 0 && (
               <button type="button" className="olm-button olm-button-primary" onClick={onRetry} disabled={pendingAction != null}>
                 {pendingAction === "retry" ? "Retrying…" : "Retry analysis"}
               </button>
             )}
             <button type="button" className="olm-button olm-button-secondary" onClick={() => onResolve("failed")} disabled={pendingAction != null}>
-              {pendingAction === "resolve" ? "Resolving…" : "Resolve failed review"}
+              {pendingAction === "resolve" ? "Closing…" : "Close review"}
             </button>
           </div>
+          {review.retryable && review.ownerRetriesRemaining > 0 && (
+            <p className="olm-failure-note">Retrying reuses saved progress and does not use another review credit.</p>
+          )}
         </section>
       )}
 
@@ -431,6 +438,7 @@ function failureMessage(code: string | null): string {
     logical_call_budget_exhausted: "The review used its four logical calls without a valid result.",
     evidence_unavailable: "The selected evidence could not be reauthorized.",
     worker_interrupted: "The review worker stopped before completion.",
+    internal_error: "The review stopped because of an internal processing error.",
   };
   return code ? messages[code] ?? "The review stopped safely." : "The review stopped safely.";
 }

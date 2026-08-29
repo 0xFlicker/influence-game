@@ -15,7 +15,7 @@ import {
   type GameResult,
 } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner";
-import type { IAgent, StrategyPacketSummary } from "../game-runner.types";
+import type { IAgent } from "../game-runner.types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
@@ -90,9 +90,9 @@ describe("simulation variant config", () => {
     const config = buildSimulationConfig("mingle");
 
     expect(config.lobbyMessagesPerPlayer).toBe(1);
-    expect(config.maxDiaryFollowUps).toBe(0);
+    expect(config.maxDiaryFollowUps).toBeUndefined();
     expect(config.diaryRoomAfterPhases).toEqual([]);
-    expect(config.enableStrategicReflections).toBe(false);
+    expect("enableStrategicReflections" in config).toBe(false);
     expect(config.agentActionTimeoutMs).toBe(90_000);
   });
 
@@ -116,14 +116,12 @@ describe("simulation variant config", () => {
     expect(() => parseArgs(["--formats", "not_registered"])).toThrow("registered");
   });
 
-  it("can opt simulation runs into strategic-reflection capture", () => {
+  it("does not accept obsolete strategic-reflection flags", () => {
     const args = parseArgs(["--strategic-reflections"]);
-    const config = buildSimulationConfig("mingle", {
-      enableStrategicReflections: args.enableStrategicReflections,
-    });
+    const config = buildSimulationConfig("mingle");
 
-    expect(args.enableStrategicReflections).toBe(true);
-    expect(config.enableStrategicReflections).toBe(true);
+    expect("enableStrategicReflections" in args).toBe(false);
+    expect("enableStrategicReflections" in config).toBe(false);
   });
 
   it("defaults to operator feed + House summaries without chatty", () => {
@@ -213,6 +211,47 @@ describe("simulation variant config", () => {
     expect(args.reasoningPolicy).toBe("high");
   });
 
+  it("parses the same ordered provider manifest as API-backed simulation", () => {
+    const args = parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna,reasoning=action-policy",
+      "--provider-entry", "katana:grok-4-5,reasoning=medium,max-calls=12",
+      "--provider-entry", "katana:glm-5-2,reasoning=action-policy,max-calls=24",
+    ]);
+
+    expect(args.providerManifest).toEqual([
+      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
+    expect(args.modelCatalogId).toBe("openai:gpt-5.6-luna");
+    expect(args.reasoningPolicy).toBe("action-policy");
+  });
+
+  it("lets explicit legacy model flags override an environment manifest", () => {
+    const previousManifest = process.env.INFLUENCE_SIM_PROVIDER_MANIFEST;
+    process.env.INFLUENCE_SIM_PROVIDER_MANIFEST = JSON.stringify([
+      { catalogId: "katana:grok-4-5" },
+    ]);
+    try {
+      const args = parseArgs(["--model-catalog", "openai:gpt-5-nano"]);
+      expect(args.providerManifest).toBeUndefined();
+      expect(args.modelCatalogId).toBe("openai:gpt-5-nano");
+    } finally {
+      if (previousManifest === undefined) {
+        delete process.env.INFLUENCE_SIM_PROVIDER_MANIFEST;
+      } else {
+        process.env.INFLUENCE_SIM_PROVIDER_MANIFEST = previousManifest;
+      }
+    }
+  });
+
+  it("rejects mixing provider-entry with legacy model flags", () => {
+    expect(() => parseArgs([
+      "--model-catalog", "openai:gpt-5-nano",
+      "--provider-entry", "openai:gpt-5.6-luna",
+    ])).toThrow("Do not combine");
+  });
+
   it("supports the short summaries alias and explicit disable flag", () => {
     expect(parseArgs(["--summaries"]).houseSummaries).toBe(true);
     expect(parseArgs(["--summaries", "--no-house-summaries"]).houseSummaries).toBe(false);
@@ -223,18 +262,16 @@ describe("simulation variant config", () => {
     const config = buildSimulationConfig("mingle", {
       richProducer: args.richProducer,
       enableDiary: args.enableDiary,
-      enableStrategicReflections: args.enableStrategicReflections,
     });
 
     expect(args.richProducer).toBe(true);
     expect(args.enableDiary).toBe(true);
-    expect(args.enableStrategicReflections).toBe(true);
-    expect(config.enableStrategicReflections).toBe(true);
+    expect("enableStrategicReflections" in args).toBe(false);
+    expect("enableStrategicReflections" in config).toBe(false);
+    expect(config.maxDiaryFollowUps).toBeUndefined();
     expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
-    expect(config.enableHouseStrategyBible).toBe(true);
     expect(config.enableHouseLongFormSummaries).toBe(true);
-    expect(config.enableHouseProducerBriefs).toBe(true);
   });
 
   it("can enable bounded diary sessions without rich producer packets", () => {
@@ -248,9 +285,7 @@ describe("simulation variant config", () => {
     expect(args.richProducer).toBe(false);
     expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
-    expect(config.enableHouseStrategyBible).toBe(false);
     expect(config.enableHouseLongFormSummaries).toBe(false);
-    expect(config.enableHouseProducerBriefs).toBe(false);
   });
 
   it("does not configure hidden pair cooldown for simulator variants", () => {
@@ -300,13 +335,12 @@ describe("simulation variant config", () => {
         variant: "power-lobby-diversity-mingle",
         gameTimeoutMs: 600000,
         llmTimeoutMs: 45000,
-        enableStrategicReflections: false,
       },
     };
 
     const stats = computeAggregateStats(
       [
-        gameResult({ gameNumber: 1 }),
+        gameResult({ gameNumber: 1, endgameType: "tribunal" }),
         gameResult({
           gameNumber: 2,
           status: "failed",
@@ -341,6 +375,7 @@ describe("simulation variant config", () => {
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
     expect(stats.tokenUsage.total.totalTokens).toBe(15);
+    expect(stats.perEndgameType).toEqual({ tribunal: 1 });
   });
 
   it("separates Flex spend from auto-tier fallbacks and projects Flex costs", () => {
@@ -372,7 +407,6 @@ describe("simulation variant config", () => {
         variant: "mingle",
         gameTimeoutMs: 600000,
         llmTimeoutMs: 900000,
-        enableStrategicReflections: false,
         flex: true,
       },
     };
@@ -403,6 +437,9 @@ describe("simulation variant config", () => {
     expect(summary).toContain("- Flex: 1 calls, $0.0006 estimated.");
     expect(summary).toContain("- Auto/default fallback: 1 calls, $0.0003 estimated.");
     expect(summary).toContain("## Cost Estimates");
+    expect(summary).toContain("| Reckoning stage events | 0 |");
+    expect(summary).toContain("| Accepted jury questions | 0 |");
+    expect(summary).toContain("| Accepted jury ballots | 0 |");
     expect(summary).toContain("| gpt-5-mini * | $0.0001 | $0.0006 | $0.0007 |");
     expect(summary).toContain("| grok-4-3 | $0.0016 | $0.0016 | $0.0033 |");
   });
@@ -469,25 +506,6 @@ describe("simulation variant config", () => {
     expect(formatted).not.toContain("\x1b[2m\x1b[90mthinking:");
   });
 
-  it("formats private-only non-Mingle agent-turn traces for chatty live output", () => {
-    const event: AgentTurnEvent = {
-      type: "agent_turn",
-      round: 1,
-      phase: Phase.VOTE,
-      timestamp: 1_700_000_000_000,
-      action: "strategic-reflection",
-      actor: { id: "atlas-id", name: "Atlas", role: "player" },
-      visibility: "private",
-      response: { plan: "Keep Mira close and test Vera." },
-      thinking: "Private reflection should be visible in chatty output.",
-    };
-
-    const formatted = formatAgentTurnTrace(event);
-
-    expect(formatted).toContain("R1/VOTE Atlas [trace:strategic-reflection]");
-    expect(formatted).toContain("thinking: Private reflection should be visible in chatty output.");
-  });
-
   it("formats private exposure-bench choice traces without treating them as public transcript", () => {
     const event: AgentTurnEvent = {
       type: "agent_turn",
@@ -540,25 +558,8 @@ describe("simulation variant config", () => {
     expect(formatAgentTurnTrace(event)).toBeNull();
   });
 
-  it("keeps transcript thinking when an agent has a strategy packet", () => {
-    const strategyPacket: StrategyPacketSummary = {
-      revisionId: "r1-vote-1",
-      previousRevisionId: null,
-      updatedAtRound: 1,
-      updatedAtPhase: Phase.VOTE,
-      objective: "Keep Mira close.",
-      targetPosture: "Pressure Vera.",
-      coalitionPosture: "Stay warm with Atlas.",
-      nextSocialProbe: "Ask Rune about the vote.",
-      strategicLens: "information_control",
-      strategicLensRationale: "The vote exposed unstable alliances.",
-      uncertainty: "Whether Vera is actually isolated.",
-      reviseTrigger: "Mira breaks trust.",
-      changedSincePrevious: "initial packet",
-    };
-    const agent = {
-      getStrategyPacket: () => strategyPacket,
-    } as unknown as IAgent;
+  it("keeps transcript thinking when an agent carries compact strategy", () => {
+    const agent = {} as IAgent;
 
     expect(transcriptThinkingFor(agent, "Use the packet, but revise if needed.", "Native trace.")).toEqual({
       thinking: "Use the packet, but revise if needed.",

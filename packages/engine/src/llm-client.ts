@@ -1,8 +1,14 @@
 import OpenAI from "openai";
 import {
   PROVIDER_PROFILES,
+  type ModelReasoningPolicy,
+  type ModelRequestCapabilities,
   type ProviderProfileId,
+  type ResolvedProviderManifestEntry,
 } from "./model-catalog";
+import { createProviderEvidenceFetch } from "./provider-execution";
+import { createProviderAdapter } from "./provider-adapters";
+import type { LlmProviderAdapter } from "./model-invocation";
 
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
@@ -23,6 +29,22 @@ export interface LlmClientConfig {
   openAIServiceTier?: OpenAIRequestServiceTier;
 }
 
+/** One credential-free sealed manifest entry paired with its runtime client. */
+export interface LlmProviderRuntime {
+  adapter: LlmProviderAdapter;
+  catalogId: string;
+  providerProfileId: ProviderProfileId;
+  modelId: string;
+  modelCapabilities: ModelRequestCapabilities;
+  reasoningPolicy: ModelReasoningPolicy;
+  toolChoiceMode: LlmToolChoiceMode;
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  openAIServiceTier?: OpenAIRequestServiceTier;
+  position: number;
+  role: "primary" | "fallback";
+  maxCallsPerGame?: number;
+}
+
 export interface CreateLlmClientOptions {
   timeout?: number;
   maxRetries?: number;
@@ -36,6 +58,7 @@ export interface CreateLlmClientOptions {
 const FLEX_429_RETRY_LIMIT = 3;
 const FLEX_RETRY_BASE_DELAY_MS = 1_000;
 const FLEX_RETRY_MAX_DELAY_MS = 30_000;
+export const NO_FLEX_TRANSPORT_RETRY_HEADER = "x-influence-no-flex-transport-retry";
 
 type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 type FlexFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -106,6 +129,7 @@ async function requestWithServiceTier(request: Request, serviceTier: "flex" | "a
     if (!body || typeof body !== "object" || Array.isArray(body)) return null;
     const headers = new Headers(request.headers);
     headers.delete("content-length");
+    headers.delete(NO_FLEX_TRANSPORT_RETRY_HEADER);
     return new Request(request.url, {
       method: request.method,
       headers,
@@ -158,6 +182,8 @@ export function createFlexProcessingFetch(
       return await baseFetch(originalRequest);
     }
 
+    const disableTransportRetry = originalRequest.headers.get(NO_FLEX_TRANSPORT_RETRY_HEADER) === "1";
+
     const resume = options.resume;
     let serviceTier: "flex" | "auto" = resume?.nextTier ?? "flex";
     let flex429s = resume?.flex429Count ?? 0;
@@ -197,6 +223,8 @@ export function createFlexProcessingFetch(
         throw error;
       }
       if (response.status !== 429) return response;
+
+      if (disableTransportRetry) return response;
 
       if (serviceTier === "auto") return response;
 
@@ -352,6 +380,15 @@ export function createLlmClientFromEnv(
       ?? (options.flexProcessing === false ? "auto" : "flex")
     : undefined;
   const flexProcessingEnabled = openAIServiceTier === "flex";
+  const evidenceFetch = createProviderEvidenceFetch(
+    fetch,
+    [apiKey, katanaKey, katanaSecret].filter((value): value is string =>
+      Boolean(value),
+    ),
+  );
+  const providerFetch = flexProcessingEnabled
+    ? createFlexProcessingFetch(evidenceFetch)
+    : evidenceFetch;
 
   return {
     client: new OpenAI({
@@ -359,7 +396,7 @@ export function createLlmClientFromEnv(
       ...(baseURL && { baseURL }),
       ...(options.timeout !== undefined && { timeout: options.timeout }),
       ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
-      ...(flexProcessingEnabled && { fetch: createFlexProcessingFetch() }),
+      fetch: providerFetch,
     }),
     apiKeySource: apiKeyConfig?.key ?? "local-default",
     baseURL,
@@ -371,6 +408,56 @@ export function createLlmClientFromEnv(
     ...(openAIServiceTier && { openAIServiceTier }),
     ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
   };
+}
+
+/** Resolve one client per provider profile, then bind every sealed entry. */
+export function createLlmProviderRuntimesFromEnv(
+  manifest: readonly ResolvedProviderManifestEntry[],
+  env: NodeJS.ProcessEnv = process.env,
+  options: Omit<CreateLlmClientOptions, "providerProfileId"> = {},
+): LlmProviderRuntime[] | null {
+  const clients = new Map<ProviderProfileId, LlmClientConfig>();
+  const adapters = new Map<ProviderProfileId, LlmProviderAdapter>();
+  const runtimes: LlmProviderRuntime[] = [];
+  for (const entry of manifest) {
+    let config = clients.get(entry.providerProfile.id);
+    if (!config) {
+      config = createLlmClientFromEnv(env, {
+        ...options,
+        maxRetries: 0,
+        providerProfileId: entry.providerProfile.id,
+      }) ?? undefined;
+      if (!config) return null;
+      clients.set(entry.providerProfile.id, config);
+    }
+    let adapter = adapters.get(entry.providerProfile.id);
+    if (!adapter) {
+      adapter = createProviderAdapter(entry.providerProfile.id, config.client);
+      adapters.set(entry.providerProfile.id, adapter);
+    }
+    runtimes.push({
+      adapter,
+      catalogId: entry.catalogId,
+      providerProfileId: entry.providerProfile.id,
+      modelId: entry.modelId,
+      modelCapabilities: entry.model.capabilities,
+      reasoningPolicy: entry.reasoningPolicy,
+      toolChoiceMode:
+        entry.model.preferredToolChoiceMode ?? config.toolChoiceMode,
+      ...(config.openAIReasoningSummary && {
+        openAIReasoningSummary: config.openAIReasoningSummary,
+      }),
+      ...(config.openAIServiceTier && {
+        openAIServiceTier: config.openAIServiceTier,
+      }),
+      position: entry.position,
+      role: entry.role,
+      ...(entry.maxCallsPerGame !== undefined && {
+        maxCallsPerGame: entry.maxCallsPerGame,
+      }),
+    });
+  }
+  return runtimes;
 }
 
 export function describeLlmProvider(config: LlmClientConfig): string {

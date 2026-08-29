@@ -3,9 +3,9 @@
 Operator checklist for deploying, verifying, and publishing Influence as a
 Farcaster Mini App on `thehouse.game`.
 
-**Audience:** solo operator / staging-to-production deploy  
+**Audience:** solo operator / staging-to-production deploy
 **Related code:** `packages/web` (SDK, manifest, Mini App chrome),
-`packages/api` (Quick Auth login, account resolution)  
+`packages/api` (Quick Auth login, account resolution)
 **Related design notes:** [`docs/farcaster-mini-app.md`](./farcaster-mini-app.md)
 
 ---

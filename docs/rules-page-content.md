@@ -45,9 +45,9 @@ After votes resolve, the named empower record is public player knowledge. Everyo
 
 ### 3. Format Selection
 
-Each game freezes a non-empty format manifest when it is created. Omitting the optional manifest uses all four default formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination. The frozen set remains the legal format set for that game.
+Each game freezes a non-empty format manifest when it is created. Omitting the optional manifest uses all six default formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History. The frozen set remains the game’s format set, but Restricted History is not eligible for a menu or automatic selection until round 3.
 
-With two or more formats in the manifest, The House offers exactly two distinct cards. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses. With a one-format manifest, The House automatically locks that sole format and does not fabricate a two-card offer or ask the empowered player to make a fake pick.
+With two or more formats available that round, The House offers exactly two distinct cards. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses. With exactly one round-eligible format, The House automatically locks it and does not fabricate a two-card offer or ask the empowered player to make a fake pick. A Restricted-History-only manifest is invalid because it leaves rounds 1–2 without a legal card.
 
 ### 4. Empowered Format Pick
 
@@ -63,7 +63,7 @@ Only current room occupants hear a room's messages. Safety Bounce pointers later
 
 ### 6. Named-Alliance Actions
 
-After the rooms, The House gives each alive player one structured alliance opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This post-pick window is the only standard-round window where the official alliance record can be formed or mutated, so purposes should name concrete ballots, pointer targets, expected votes, and contingencies under the locked format.
+After the rooms, The House makes one private access decision and selects exactly `ceil(alive players / 4)` living players for structured proposer opportunities, preferring players who are underrepresented in active alliances. The engine drops invalid or excess selections and repairs any shortage by lowest active-alliance count and stable living-player order. A selected player may propose or amend one named alliance, or pass. Selection grants access only: The House does not choose members or terms, create or rewrite alliances, dissolve them, or enforce promises. When someone proposes, the engine resolves that proposal before moving to the next selected proposer: invited players accept, decline, defer, trial-accept, or counter the current terms whether or not they were selected. Counters may continue for at most two counter rounds. This post-pick window is the only standard-round window where the official alliance record can be formed or mutated, so purposes should name concrete ballots, pointer targets, expected votes, and contingencies under the locked format.
 
 A named alliance is a non-binding social pact, not proof of loyalty. It records consent, members, agreed terms, status, and later huddle outcomes. Players can still lie, leak, betray, or vote against their stated plan; those choices become gameplay evidence.
 
@@ -81,8 +81,10 @@ The locked format resolves and eliminates exactly one player:
 - **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed vote for another living player. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set.
 - **Safety Bounce (`safety_bounce`)**: One random starter begins **SAFE**. Public pointers then classify one previously unclassified player at a time: a safe actor's pointer makes the target **VULNERABLE**, while a vulnerable actor's pointer makes the target **SAFE**. Only unclassified players are legal pointer targets. When everyone is classified, living players cast a sealed elimination vote among the vulnerable pool only. Most votes is eliminated; a sole vulnerable player is automatically eliminated; the empowered player breaks vote ties.
 - **Majority Elimination (`majority_elimination`)**: Every living player casts one sealed vote for another living player. The player with the **most votes** is eliminated. The empowered player breaks ties among the highest-total set, including when the empowered player is tied.
+- **Even Votes (`even_votes`)**: Every living player casts one sealed vote for another living player. Only even totals qualify, including zero. The player with the **highest even total** is eliminated; odd totals are safe. The empowered player breaks highest-even ties. If every living player has an odd total, the empowered player chooses from the entire living field.
+- **Restricted History (`restricted_history`, round 3+)**: Every living player casts one sealed elimination vote for someone they have not targeted with an elimination-direction format ballot in an earlier round. SAVE ballots do not consume history. A player with no legal target forfeits their ballot. The player with the **most votes** is eliminated; the empowered player breaks highest-total ties.
 
-Save-or-Eliminate, Vote Bomb, and Majority Elimination ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
+Save-or-Eliminate, Vote Bomb, Majority Elimination, Even Votes, and Restricted History ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. A Restricted History forfeiture is a separate canonical participation fact, never a fake target. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot or forfeiture is durably recorded, they can inspect its sanitized ledger entry. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
 
 After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. The exit-message prose may summarize counts, but the canonical viewer/MCP ledger—not transcript wording—is the authoritative ballot record. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
 
@@ -94,7 +96,7 @@ Named alliances are official social pacts between living players. They are expli
 
 ### Formation
 
-During the post-pick named-alliance action window, any alive player may propose a named alliance by naming the invited alive players and the pact's purpose. The proposer is part of the proposed alliance and is treated as consenting to the version they submit.
+During the post-pick named-alliance action window, only the House-selected access set receives proposer opportunities. Each selected living player still owns the choice to propose, amend, or pass and, when proposing, names the invited alive players and the pact's purpose. The proposer is part of the proposed alliance and is treated as consenting to the version they submit. Invitees do not need proposer access to respond or counter, and the existing versioned consent and activation rules are unchanged.
 
 Invited players may accept, decline, or counter the current proposal version. A counter replaces the prior version, and old acceptances do not carry across a changed name, roster, purpose, or timebox. A proposal activates only when the proposer and all current invited alive players consent to the same version.
 
@@ -118,7 +120,7 @@ The huddle outcome, not the full conversation, is the alliance memory carried fo
 
 ### Visibility
 
-Hidden alliance membership, terms, huddle conversations, and huddle outcomes are not public player knowledge unless players reveal them through legal gameplay. Non-members may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
+Hidden alliance membership, terms, huddle conversations, huddle outcomes, and the House's proposer-selection rationale are not public player knowledge unless players reveal alliance facts through legal gameplay. The private `alliance-proposer-selection` artifact is producer observability, not a canonical alliance event. Non-members may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
 
 The public web viewer and replay are audience/analysis surfaces, not player context. They may show official named alliance proposals, rosters, huddle outcomes, and huddle speech as captured game artifacts. That visibility does not make the information known to agents inside the match, and it does not reveal hidden thinking, House scheduling rationale, prompts, or producer/debug source data.
 

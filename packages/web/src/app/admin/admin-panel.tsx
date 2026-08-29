@@ -4,12 +4,28 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { fillGame, hideGame, isFillAccepted, listAdminGames, startGame, stopGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
+import { fillGame, hideGame, listAdminGames, startGame, stopGame, unhideGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
 import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "./admin-postgame-media";
+import { AdminDeploymentAdmission } from "./admin-deployment-admission";
+import {
+  AdminProviderFailuresPanel,
+  AdminProviderFailuresPill,
+} from "./admin-provider-failures-view";
+import {
+  AdminGameFilterBar,
+  DEFAULT_ADMIN_GAME_FILTERS,
+  filterAdminGames,
+  hasNarrowedAdminGameFilters,
+  type AdminGameFilters,
+} from "./admin-game-filters";
+import {
+  RetrySettlementDialog,
+  settlementRetryIsAvailable,
+} from "./admin-game-settlement";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -44,16 +60,22 @@ function GameCard({
   game,
   onRefresh,
   canStop,
+  canHide,
   onOpenCosts,
+  onOpenProviderFailures,
 }: {
   game: AdminGameSummary;
   onRefresh: () => void | Promise<void>;
   canStop: boolean;
+  canHide: boolean;
   onOpenCosts: () => void;
+  onOpenProviderFailures: () => void;
 }) {
   const router = useRouter();
   const pct = progressPct(game);
   const [stopping, setStopping] = useState(false);
+  const [togglingVisibility, setTogglingVisibility] = useState(false);
+  const [confirmHide, setConfirmHide] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleStop() {
@@ -68,6 +90,21 @@ function GameCard({
     }
   }
 
+  async function handleToggleVisibility() {
+    setConfirmHide(false);
+    setActionError(null);
+    setTogglingVisibility(true);
+    try {
+      if (game.hidden) await unhideGame(game.id);
+      else await hideGame(game.id);
+      await onRefresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTogglingVisibility(false);
+    }
+  }
+
   return (
     <div
       onClick={() => router.push(`/games/${game.slug}`)}
@@ -76,6 +113,9 @@ function GameCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-2">
           <span className="text-white font-semibold">{game.slug}</span>
+          {game.hidden && (
+            <span className="rounded bg-orange-900/40 px-1.5 py-0.5 text-[10px] text-orange-400">hidden</span>
+          )}
           <span className="text-white/50 text-sm">
             {game.playerCount}-player · Round {game.currentRound}/{game.maxRounds} ·{" "}
             {game.modelLabel}
@@ -105,6 +145,11 @@ function GameCard({
           onClick={onOpenCosts}
           ariaLabel={`Open cost details for game ${game.slug}`}
         />
+        <AdminProviderFailuresPill
+          summary={game.providerFailures}
+          onClick={onOpenProviderFailures}
+          ariaLabel={`Open provider failures for game ${game.slug}`}
+        />
         {canStop && (
           <div className="flex items-center gap-2">
             <button
@@ -116,10 +161,49 @@ function GameCard({
             </button>
           </div>
         )}
+        {canHide && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (game.hidden) handleToggleVisibility();
+              else setConfirmHide(true);
+            }}
+            disabled={togglingVisibility}
+            className="text-xs text-white/30 transition-colors hover:text-orange-300 disabled:opacity-50"
+          >
+            {togglingVisibility ? "…" : game.hidden ? "Unhide" : "Hide"}
+          </button>
+        )}
         {actionError && (
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
       </div>
+      {confirmHide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={(event) => event.stopPropagation()}>
+          <div className="mx-4 w-full max-w-sm rounded-xl border border-white/10 bg-zinc-900 p-6">
+            <p className="mb-4 text-sm text-white">
+              Hide game <strong>{game.slug}</strong> from public lists? It remains available through the Hidden filter.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmHide(false)}
+                className="rounded-lg px-3 py-1.5 text-sm text-white/50 transition-colors hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleVisibility}
+                className="rounded-lg bg-orange-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-orange-500"
+              >
+                Hide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -140,13 +224,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
     setActionError(null);
     setFilling(true);
     try {
-      const result = await fillGame(game.id);
-      if (isFillAccepted(result)) {
-        setFilling(false);
-        onRefresh();
-        return;
-      }
-      // Sync path (legacy): fill completed immediately
+      await fillGame(game.id);
       setFilling(false);
       onRefresh();
     } catch (err) {
@@ -179,15 +257,17 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
     }
   }
 
-  async function handleHide() {
+  async function handleToggleVisibility() {
     setConfirmHide(false);
     setActionError(null);
     setHiding(true);
     try {
-      await hideGame(game.id);
-      onRefresh();
+      if (game.hidden) await unhideGame(game.id);
+      else await hideGame(game.id);
+      await onRefresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
       setHiding(false);
     }
   }
@@ -197,29 +277,30 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
   return (
     <div
       onClick={() => router.push(`/games/${game.slug}`)}
-      className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
+      className="flex cursor-pointer flex-col gap-4 rounded-xl border border-white/10 p-5 transition-colors hover:border-white/20 lg:flex-row lg:items-center lg:justify-between"
     >
-      <div>
-        <div className="flex items-center gap-3 mb-1">
+      <div className="min-w-0">
+        <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-white font-semibold">{game.slug}</span>
+          {game.hidden && (
+            <span className="rounded bg-orange-900/40 px-1.5 py-0.5 text-[10px] text-orange-400">hidden</span>
+          )}
           <span className="text-white/50 text-sm">
-            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {game.modelLabel}
+            {game.playerCount}-player · Not started · {game.modelLabel}
           </span>
           {filling && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-400 animate-pulse">
-              Generating AI players…
+              Filling seats…
             </span>
           )}
         </div>
-        <p className="text-xs text-white/30">
-          {filling ? "AI personas being generated — game will be ready shortly" : "Waiting to start"}
-        </p>
+        <p className="text-xs text-white/30">Waiting to start</p>
       </div>
-      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+      <div className="flex flex-shrink-0 flex-col items-start gap-1 lg:items-end">
         {actionError && (
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canFill && !filling && (
             <button
               onClick={(e) => { e.stopPropagation(); handleFill(); }}
@@ -248,12 +329,16 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
           {canHide && (
             <button
-              onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (game.hidden) handleToggleVisibility();
+                else setConfirmHide(true);
+              }}
               disabled={hiding}
-              title="Hide from public lists"
+              title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
               className="text-xs border border-white/10 hover:border-orange-700 text-white/30 hover:text-orange-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
-              {hiding ? "…" : "Hide"}
+              {hiding ? "…" : game.hidden ? "Unhide" : "Hide"}
             </button>
           )}
         </div>
@@ -262,7 +347,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
             <p className="text-white text-sm mb-4">
-              Hide game <strong>{game.slug}</strong> from public lists? It can be restored from Game History.
+              Hide game <strong>{game.slug}</strong> from public lists? It remains available through the Hidden filter.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -272,7 +357,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
                 Cancel
               </button>
               <button
-                onClick={handleHide}
+                onClick={handleToggleVisibility}
                 className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-lg transition-colors"
               >
                 Hide
@@ -324,18 +409,24 @@ function RecentGameRow({
   game,
   canHide,
   canStop,
+  canRetrySettlement,
   onRefresh,
   onOpenCosts,
   onOpenHighlights,
   onOpenMedia,
+  onOpenProviderFailures,
+  onOpenRetry,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
   canStop: boolean;
+  canRetrySettlement: boolean;
   onRefresh: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
   onOpenMedia: () => void;
+  onOpenProviderFailures: () => void;
+  onOpenRetry: () => void;
 }) {
   const router = useRouter();
   const [hiding, setHiding] = useState(false);
@@ -350,13 +441,16 @@ function RecentGameRow({
     minute: "2-digit",
   });
 
-  async function handleHide() {
+  async function handleToggleVisibility() {
     setConfirmHide(false);
     setHiding(true);
     try {
-      await hideGame(game.id);
-      onRefresh();
-    } catch {
+      if (game.hidden) await unhideGame(game.id);
+      else await hideGame(game.id);
+      await onRefresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
       setHiding(false);
     }
   }
@@ -378,59 +472,82 @@ function RecentGameRow({
   return (
     <tr
       onClick={() => router.push(`/games/${game.slug}`)}
-      className="border-t border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
+      className={`block cursor-pointer border-t border-white/5 transition-colors hover:bg-white/[0.02] md:table-row ${game.hidden ? "opacity-50" : ""}`}
     >
-      <td className="py-3 px-4 text-white/60 text-sm">{game.slug}</td>
-      <td className="py-3 px-4 text-white text-sm">
+      <td className="block w-full px-4 pt-4 align-top md:table-cell md:w-56 md:py-4">
+        <p className="font-mono text-sm font-medium text-white/80">{game.slug}</p>
+        {game.hidden && (
+          <span className="mt-1 inline-flex rounded bg-orange-900/40 px-1.5 py-0.5 text-[10px] text-orange-400">hidden</span>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-white/35">
+          <span>{game.playerCount} players</span>
+          <span>{game.currentRound > 0 ? `${game.currentRound} rounds` : "Rounds unavailable"}</span>
+          <span>{date}</span>
+        </div>
+        <p className="mt-1 line-clamp-1 text-xs text-white/30" title={game.modelLabel}>{game.modelLabel}</p>
+      </td>
+      <td className="block w-full px-4 py-3 align-top text-sm text-white md:table-cell md:py-4">
         {game.winner ? (
-          <span>
-            {game.winner}{" "}
-            <span className="text-white/40 text-xs">({game.winnerPersona})</span>
-          </span>
+          <div className="max-w-xl">
+            <p className="font-semibold">{game.winner}</p>
+            {game.winnerPersona && (
+              <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-white/40" title={game.winnerPersona}>
+                {game.winnerPersona}
+              </p>
+            )}
+          </div>
         ) : (
           <span className="text-white/30 italic">—</span>
         )}
       </td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.playerCount}p</td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.currentRound}</td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.modelLabel}</td>
-      <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
-      <td className="py-3 px-4">
-        <StatusBadge status={game.status} errorInfo={game.errorInfo} />
-      </td>
-      <td className="py-3 px-4">
-        <AdminCostPill
-          summary={game.cost}
-          onClick={onOpenCosts}
-          ariaLabel={`Open cost details for game ${game.slug}`}
-        />
-      </td>
-      <td className="py-3 px-4">
-        <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
-      </td>
-      <td className="py-3 px-4">
-        <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
-      </td>
-      <td className="py-3 px-4">
-        {canVoidSuspendedGame(game.status, canStop) && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
-            disabled={voiding}
-            className="mr-3 text-amber-300/70 hover:text-amber-200 text-xs transition-colors disabled:opacity-50"
-          >
-            {voiding ? "Voiding..." : "Void"}
-          </button>
-        )}
-        {canHide && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
-            disabled={hiding}
-            title="Hide from public lists"
-            className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
-          >
-            {hiding ? "…" : "Hide"}
-          </button>
-        )}
+      <td className="block w-full px-4 pb-4 align-top md:table-cell md:w-80 md:py-4">
+        <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+          <StatusBadge status={game.status} errorInfo={game.errorInfo} />
+          <AdminCostPill
+            summary={game.cost}
+            onClick={onOpenCosts}
+            ariaLabel={`Open cost details for game ${game.slug}`}
+          />
+          <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
+          <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
+          <AdminProviderFailuresPill
+            summary={game.providerFailures}
+            onClick={onOpenProviderFailures}
+            ariaLabel={`Open provider failures for game ${game.slug}`}
+          />
+          {settlementRetryIsAvailable(game, canRetrySettlement) && (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); onOpenRetry(); }}
+              className="min-h-8 rounded-md border border-amber-700/40 px-2.5 py-1 text-xs text-amber-200 transition-colors hover:border-amber-400/60 hover:bg-amber-950/40 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            >
+              Retry settlement
+            </button>
+          )}
+          {canVoidSuspendedGame(game.status, canStop) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
+              disabled={voiding}
+              className="min-h-8 rounded-md border border-amber-700/40 px-2.5 py-1 text-xs text-amber-200 transition-colors hover:border-amber-400/60 hover:bg-amber-950/40 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50"
+            >
+              {voiding ? "Voiding..." : "Void"}
+            </button>
+          )}
+          {canHide && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (game.hidden) handleToggleVisibility();
+                else setConfirmHide(true);
+              }}
+              disabled={hiding}
+              title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
+              className="min-h-8 rounded-md border border-white/10 px-2.5 py-1 text-xs text-white/45 transition-colors hover:border-orange-500/50 hover:text-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50"
+            >
+              {hiding ? "…" : game.hidden ? "Unhide" : "Hide"}
+            </button>
+          )}
+        </div>
         {actionError && <p className="mt-1 text-xs text-red-400/80">{actionError}</p>}
         {confirmVoid && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
@@ -459,7 +576,7 @@ function RecentGameRow({
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
-                Hide game <strong>{game.slug}</strong> from public lists? It can be restored from Game History.
+                Hide game <strong>{game.slug}</strong> from public lists? It remains available through the Hidden filter.
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -469,7 +586,7 @@ function RecentGameRow({
                   Cancel
                 </button>
                 <button
-                  onClick={handleHide}
+                  onClick={handleToggleVisibility}
                   className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-lg transition-colors"
                 >
                   Hide
@@ -497,14 +614,16 @@ export function AdminPanel() {
   const canFillGame = hasPermission("fill_game");
   const canHideGame = hasPermission("hide_game");
   const canManagePostgameMedia = hasPermission("manage_postgame_media");
+  const canRetrySettlement = hasPermission("retry_game_settlement");
 
-  const [activeGames, setActiveGames] = useState<AdminGameSummary[]>([]);
-  const [suspendedGames, setSuspendedGames] = useState<AdminGameSummary[]>([]);
-  const [waitingGames, setWaitingGames] = useState<AdminGameSummary[]>([]);
-  const [recentGames, setRecentGames] = useState<AdminGameSummary[]>([]);
+  const [games, setGames] = useState<AdminGameSummary[]>([]);
+  const [filters, setFilters] = useState<AdminGameFilters>(DEFAULT_ADMIN_GAME_FILTERS);
+  const [recentLimit, setRecentLimit] = useState(5);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
+  const [providerFailuresGame, setProviderFailuresGame] = useState<AdminGameSummary | null>(null);
+  const [retryGame, setRetryGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -516,26 +635,7 @@ export function AdminPanel() {
     try {
       const all = await listAdminGames();
       if (fetchRequestIdRef.current !== fetchRequestId) return;
-      setActiveGames(all.filter((g) => g.status === "in_progress"));
-      setSuspendedGames(
-        all
-          .filter((g) => g.status === "suspended")
-          .sort(
-            (a, b) =>
-              new Date(b.completedAt ?? b.createdAt).getTime() -
-              new Date(a.completedAt ?? a.createdAt).getTime(),
-          ),
-      );
-      setWaitingGames(all.filter((g) => g.status === "waiting"));
-      setRecentGames(
-        all
-          .filter((g) => g.status === "completed" || g.status === "cancelled")
-          .sort(
-            (a, b) =>
-              new Date(b.completedAt ?? b.createdAt).getTime() -
-              new Date(a.completedAt ?? a.createdAt).getTime(),
-        ),
-      );
+      setGames(all);
     } catch (err) {
       if (fetchRequestIdRef.current !== fetchRequestId) return;
       setError(err instanceof Error ? err.message : "Failed to load games.");
@@ -550,6 +650,29 @@ export function AdminPanel() {
     const interval = setInterval(fetchGames, 10000);
     return () => clearInterval(interval);
   }, [fetchGames]);
+
+  const filteredGames = filterAdminGames(games, filters);
+  const byMostRecent = (left: AdminGameSummary, right: AdminGameSummary) =>
+    new Date(right.completedAt ?? right.createdAt).getTime()
+      - new Date(left.completedAt ?? left.createdAt).getTime();
+  const activeGames = filteredGames.filter((game) => game.status === "in_progress");
+  const suspendedGames = filteredGames.filter((game) => game.status === "suspended").sort(byMostRecent);
+  const waitingGames = filteredGames.filter((game) => game.status === "waiting");
+  const recentGames = filteredGames
+    .filter((game) => game.status === "completed" || game.status === "cancelled")
+    .sort(byMostRecent);
+  const narrowed = hasNarrowedAdminGameFilters(filters);
+  const displayedRecentGames = narrowed ? recentGames : recentGames.slice(0, recentLimit);
+  const hiddenCount = games.filter((game) => game.hidden).length;
+  const statusAllows = (...statuses: AdminGameSummary["status"][]) =>
+    filters.status === "all" || statuses.includes(filters.status);
+  const showSection = (statuses: AdminGameSummary["status"][], count: number) =>
+    statusAllows(...statuses) && (!narrowed || count > 0);
+
+  function updateFilters(next: AdminGameFilters) {
+    setFilters(next);
+    setRecentLimit(5);
+  }
 
   return (
     <div>
@@ -580,8 +703,17 @@ export function AdminPanel() {
         </div>
       )}
 
+      <AdminGameFilterBar filters={filters} hiddenCount={hiddenCount} onChange={updateFilters} />
+      <AdminDeploymentAdmission />
+
+      {!loading && games.length > 0 && filteredGames.length === 0 && (
+        <div className="mb-8 rounded-xl border border-white/10 p-8 text-center text-sm text-white/30">
+          No games match the current filters.
+        </div>
+      )}
+
       {/* Active games */}
-      <section className="mb-8">
+      {showSection(["in_progress"], activeGames.length) && <section className="mb-8">
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Active Games ({activeGames.length})
         </h2>
@@ -596,27 +728,35 @@ export function AdminPanel() {
         ) : (
           <div className="space-y-3">
             {activeGames.map((g) => (
-              <GameCard key={g.id} game={g} onRefresh={fetchGames} canStop={canStopGame} onOpenCosts={() => setCostGame(g)} />
+              <GameCard
+                key={g.id}
+                game={g}
+                onRefresh={fetchGames}
+                canStop={canStopGame}
+                canHide={canHideGame}
+                onOpenCosts={() => setCostGame(g)}
+                onOpenProviderFailures={() => setProviderFailuresGame(g)}
+              />
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {/* Failed games */}
-      {suspendedGames.length > 0 && (
+      {showSection(["suspended"], suspendedGames.length) && suspendedGames.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xs font-semibold text-amber-300/80 uppercase tracking-wider mb-3">
             Failed Games ({suspendedGames.length})
           </h2>
-          <div className="overflow-x-auto rounded-xl border border-amber-900/40">
-            <table className="min-w-[72rem] w-full">
-              <thead>
+          <div className="rounded-xl border border-amber-900/40">
+            <table className="block w-full md:table md:table-fixed">
+              <thead className="hidden md:table-header-group">
                 <tr className="border-b border-amber-900/30">
-                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Game", "Winner", "Operations"].map(
                     (h) => (
                       <th
                         key={h}
-                        className="text-left text-xs font-medium text-amber-200/40 uppercase tracking-wider px-4 py-3"
+                        className={`${h === "Operations" ? "w-80 text-right" : h === "Game" ? "w-56 text-left" : "text-left"} px-4 py-3 text-xs font-medium uppercase tracking-wider text-amber-200/40`}
                       >
                         {h}
                       </th>
@@ -624,9 +764,21 @@ export function AdminPanel() {
                   )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block md:table-row-group">
                 {suspendedGames.map((g) => (
-                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} canStop={canStopGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
+                  <RecentGameRow
+                    key={g.id}
+                    game={g}
+                    onRefresh={fetchGames}
+                    canHide={canHideGame}
+                    canStop={canStopGame}
+                    canRetrySettlement={canRetrySettlement}
+                    onOpenCosts={() => setCostGame(g)}
+                    onOpenHighlights={() => setHighlightsGame(g)}
+                    onOpenMedia={() => setMediaGame(g)}
+                    onOpenProviderFailures={() => setProviderFailuresGame(g)}
+                    onOpenRetry={() => setRetryGame(g)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -635,7 +787,7 @@ export function AdminPanel() {
       )}
 
       {/* Waiting to start */}
-      <section className="mb-8">
+      {showSection(["waiting"], waitingGames.length) && <section className="mb-8">
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Waiting to Start ({waitingGames.length})
         </h2>
@@ -662,20 +814,14 @@ export function AdminPanel() {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {/* Recent games */}
-      <section>
+      {showSection(["completed", "cancelled"], recentGames.length) && <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider">
-            Recent Games
+            Recent Games ({recentGames.length})
           </h2>
-          <Link
-            href="/admin/games"
-            className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            View all →
-          </Link>
         </div>
         {loading ? (
           <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
@@ -686,15 +832,15 @@ export function AdminPanel() {
             No completed games yet.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="min-w-[72rem] w-full">
-              <thead>
+          <div className="rounded-xl border border-white/10">
+            <table className="block w-full md:table md:table-fixed">
+              <thead className="hidden md:table-header-group">
                 <tr className="border-b border-white/10">
-                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Game", "Winner", "Operations"].map(
                     (h) => (
                       <th
                         key={h}
-                        className="text-left py-3 px-4 text-xs text-white/30 font-medium"
+                        className={`${h === "Operations" ? "w-80 text-right" : h === "Game" ? "w-56 text-left" : "text-left"} px-4 py-3 text-xs font-medium text-white/30`}
                       >
                         {h}
                       </th>
@@ -702,15 +848,36 @@ export function AdminPanel() {
                   )}
                 </tr>
               </thead>
-              <tbody>
-                {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} canStop={canStopGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
+              <tbody className="block md:table-row-group">
+                {displayedRecentGames.map((g) => (
+                  <RecentGameRow
+                    key={g.id}
+                    game={g}
+                    canHide={canHideGame}
+                    canStop={canStopGame}
+                    canRetrySettlement={canRetrySettlement}
+                    onRefresh={fetchGames}
+                    onOpenCosts={() => setCostGame(g)}
+                    onOpenHighlights={() => setHighlightsGame(g)}
+                    onOpenMedia={() => setMediaGame(g)}
+                    onOpenProviderFailures={() => setProviderFailuresGame(g)}
+                    onOpenRetry={() => setRetryGame(g)}
+                  />
                 ))}
               </tbody>
             </table>
           </div>
         )}
-      </section>
+        {!narrowed && displayedRecentGames.length < recentGames.length && (
+          <button
+            type="button"
+            onClick={() => setRecentLimit((current) => current + 10)}
+            className="mt-3 w-full rounded-lg border border-white/10 px-4 py-2 text-sm text-white/45 transition-colors hover:border-white/20 hover:text-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            Show more ({recentGames.length - displayedRecentGames.length} remaining)
+          </button>
+        )}
+      </section>}
       {costGame && (
         <AdminCostPanel key={costGame.id} game={costGame} onClose={() => setCostGame(null)} onBackfilled={fetchGames} />
       )}
@@ -723,6 +890,21 @@ export function AdminPanel() {
           game={mediaGame}
           canManage={canManagePostgameMedia}
           onClose={() => setMediaGame(null)}
+        />
+      )}
+      {providerFailuresGame && (
+        <AdminProviderFailuresPanel
+          key={providerFailuresGame.id}
+          game={providerFailuresGame}
+          onClose={() => setProviderFailuresGame(null)}
+        />
+      )}
+      {retryGame && (
+        <RetrySettlementDialog
+          key={retryGame.id}
+          game={retryGame}
+          onClose={() => setRetryGame(null)}
+          onSettled={fetchGames}
         />
       )}
     </div>

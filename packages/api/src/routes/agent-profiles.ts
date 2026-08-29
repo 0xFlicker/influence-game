@@ -11,7 +11,8 @@
  */
 
 import { Hono, type Context } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
+import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -28,7 +29,6 @@ import {
 } from "../services/agent-archetypes.js";
 import {
   AgentProfileManagementError,
-  adoptOwnedDraftAvatarAndCreateAgentProfile,
   createOwnedAgentProfile,
   MAX_AGENT_DISPLAY_NAME_LENGTH,
   updateOwnedAgentProfile,
@@ -36,9 +36,11 @@ import {
 import {
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
+  recordAvatarChange,
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
+  resumeOwnedAttachedAvatarCompletions,
   type AvatarCompletionRead,
 } from "../services/avatar-generation.js";
 import type { AgentMutationReceipt } from "../services/agent-mutation-receipt.js";
@@ -91,9 +93,9 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/avatar/generate-draft");
     if (!body) return c.json({ error: "Invalid JSON body" }, 400);
     if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > MAX_AGENT_DISPLAY_NAME_LENGTH
-      || typeof body.personality !== "string" || !body.personality.trim() || body.personality.trim().length > 8_000
-      || (body.backstory !== undefined && (typeof body.backstory !== "string" || body.backstory.length > 2_000))
-      || (body.strategyStyle !== undefined && (typeof body.strategyStyle !== "string" || body.strategyStyle.length > 2_000))
+      || typeof body.personality !== "string" || !body.personality.trim() || body.personality.trim().length > AGENT_PROFILE_LIMITS.personality
+      || (body.backstory !== undefined && (typeof body.backstory !== "string" || body.backstory.length > AGENT_PROFILE_LIMITS.backstory))
+      || (body.strategyStyle !== undefined && (typeof body.strategyStyle !== "string" || body.strategyStyle.length > AGENT_PROFILE_LIMITS.strategyStyle))
       || !isAgentGender(body.gender)) {
       return c.json({ error: "Draft portrait fields are missing or exceed agent profile limits" }, 400);
     }
@@ -273,64 +275,34 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const user = c.get("user");
     try {
       const publicBaseUrl = new URL(c.req.url).origin;
-      let draftCompletion = null;
-      let result;
-      if (!body.avatarUrl && typeof body.avatarGenerationRequestId === "string") {
-        const adopted = await adoptOwnedDraftAvatarAndCreateAgentProfile(db, {
-          userId: user.id,
-          publicBaseUrl,
-        }, body.avatarGenerationRequestId, {
-          name: typeof body.name === "string" ? body.name : "",
-          gender: isAgentGender(body.gender) ? body.gender : null,
-          backstory: typeof body.backstory === "string" && body.backstory.trim() ? body.backstory : null,
-          personality: typeof body.personality === "string" ? body.personality : "",
-          strategyStyle: typeof body.strategyStyle === "string" && body.strategyStyle.trim() ? body.strategyStyle : null,
-          personaKey: typeof body.personaKey === "string" ? body.personaKey : null,
-        }, {
-          name: body.name,
-          backstory: body.backstory,
-          personality: body.personality,
-          strategyStyle: body.strategyStyle,
-          personaKey: body.personaKey,
-          gender: body.gender,
-        });
-        if (!adopted.ok) {
-          const messages = {
-            not_found: "Draft portrait request not found.",
-            pending: "Portrait generation is still in progress.",
-            profile_changed: "Agent details changed after portrait generation. Regenerate the portrait.",
-            already_consumed: "Draft portrait request has already been used.",
-          } as const;
-          return c.json({ error: messages[adopted.reason] }, adopted.reason === "pending" ? 409 : 400);
-        }
-        draftCompletion = adopted.completion;
-        result = adopted.result;
-      } else {
-        result = await createOwnedAgentProfile(db, {
-          userId: user.id,
-          publicBaseUrl,
-          avatarChangeSource: "web_upload",
-        }, {
-          name: body.name,
-          backstory: body.backstory,
-          personality: body.personality,
-          strategyStyle: body.strategyStyle,
-          personaKey: body.personaKey,
-          gender: body.gender,
-          avatarUrl: body.avatarUrl,
-        });
+      if (!isUuid(body.creationRequestId)) {
+        return c.json({ error: "creationRequestId must be a UUID." }, 400);
       }
-      if (result.profile.avatarUrl) {
+      const avatarGenerationRequestId = typeof body.avatarGenerationRequestId === "string"
+        ? body.avatarGenerationRequestId
+        : undefined;
+      const result = await createOwnedAgentProfile(db, {
+        userId: user.id,
+        publicBaseUrl,
+        avatarChangeSource: "web_upload",
+        ...(avatarGenerationRequestId && { avatarGenerationRequestId }),
+      }, {
+        name: body.name,
+        backstory: body.backstory,
+        personality: body.personality,
+        strategyStyle: body.strategyStyle,
+        personaKey: body.personaKey,
+        gender: body.gender,
+        avatarUrl: body.avatarUrl,
+        creationRequestId: body.creationRequestId,
+      });
+      if (result.profile.avatarUrl || result.avatarCompletion) {
         return c.json({
           ...playerSafeAgentProfile(result.profile),
-          receipt: result.receipt,
-        }, 201);
-      }
-      if (draftCompletion) {
-        return c.json({
-          ...playerSafeAgentProfile(result.profile),
-          receipt: withAvatarCompletionReceipt(result.receipt, draftCompletion),
-          avatarCompletion: draftCompletion,
+          receipt: result.avatarCompletion
+            ? withAvatarCompletionReceipt(result.receipt, result.avatarCompletion)
+            : result.receipt,
+          ...(result.avatarCompletion && { avatarCompletion: result.avatarCompletion }),
         }, 201);
       }
 
@@ -448,6 +420,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       .filter(Boolean)
       .slice(0, 50);
 
+    await resumeOwnedAttachedAvatarCompletions(db, user.id, ids);
     const completions = await latestAvatarCompletionsByAgentProfileId(db, user.id, ids);
     return c.json({
       avatarCompletions: Object.fromEntries(completions),
@@ -478,6 +451,25 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     })));
   });
 
+  // Recover an Agent after creation committed but its response was lost.
+  app.get("/api/agent-profiles/creation-requests/:id", requireAuth(db), async (c) => {
+    const creationRequestId = c.req.param("id");
+    if (!isUuid(creationRequestId)) {
+      return c.json({ error: "creationRequestId must be a UUID." }, 400);
+    }
+    const user = c.get("user");
+    const profile = (await db.select().from(schema.agentProfiles).where(and(
+      eq(schema.agentProfiles.userId, user.id),
+      eq(schema.agentProfiles.creationRequestId, creationRequestId),
+    )).limit(1))[0];
+    if (!profile) return c.json({ error: "Agent creation request not found" }, 404);
+    const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
+    return c.json({
+      ...playerSafeAgentProfile(profile),
+      ...(avatarCompletion && { avatarCompletion }),
+    });
+  });
+
   // -------------------------------------------------------------------------
   // GET /api/agent-profiles/:id — get a single agent profile
   // -------------------------------------------------------------------------
@@ -500,7 +492,11 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
-    return c.json(playerSafeAgentProfile(profile));
+    const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
+    return c.json({
+      ...playerSafeAgentProfile(profile),
+      ...(avatarCompletion && { avatarCompletion }),
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -521,6 +517,9 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         userId: user.id,
         publicBaseUrl: new URL(c.req.url).origin,
         avatarChangeSource: "web_manual_update",
+        ...(typeof body.avatarGenerationRequestId === "string" && {
+          avatarGenerationRequestId: body.avatarGenerationRequestId,
+        }),
       }, profileId, {
         name: body.name,
         backstory: body.backstory,
@@ -530,11 +529,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         gender: body.gender,
         avatarUrl: body.avatarUrl,
         sourceReviewId: body.sourceReviewId,
+        expectedRevisionId: body.expectedRevisionId,
       });
       return c.json({
         ...playerSafeAgentProfile(result.profile),
         statsReset: false,
         receipt: result.receipt,
+        ...(result.avatarCompletion && { avatarCompletion: result.avatarCompletion }),
       });
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
@@ -552,6 +553,20 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const user = c.get("user");
     const profileId = c.req.param("id");
     const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        SELECT id
+        FROM avatar_generation_requests
+        WHERE user_id = ${user.id}
+          AND agent_profile_id = ${profileId}
+          AND status IN ('queued', 'processing')
+        ORDER BY id
+        FOR UPDATE
+      `);
+      const activeAvatarRequests = await tx.select().from(schema.avatarGenerationRequests).where(and(
+        eq(schema.avatarGenerationRequests.userId, user.id),
+        eq(schema.avatarGenerationRequests.agentProfileId, profileId),
+        inArray(schema.avatarGenerationRequests.status, ["queued", "processing"]),
+      ));
       await acquireDailyFreeLocks(tx);
       const locked = await lockProfileAfterLiveRosterGames(tx, {
         profileId,
@@ -583,6 +598,32 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       if (competitionReceipt.length > 0
         || competitionRating.length > 0
         || competitionSnapshot.length > 0) return "rated" as const;
+
+      if (activeAvatarRequests.length > 0) {
+        const now = new Date().toISOString();
+        await tx.update(schema.avatarGenerationRequests).set({
+          status: "skipped",
+          failureCode: "profile_deleted",
+          failureMessage: "The Agent was deleted before portrait generation completed.",
+          completedAt: now,
+          updatedAt: now,
+        }).where(inArray(
+          schema.avatarGenerationRequests.id,
+          activeAvatarRequests.map((request) => request.id),
+        ));
+        for (const request of activeAvatarRequests) {
+          await recordAvatarChange(tx, {
+            userId: user.id,
+            agentProfileId: profileId,
+            source: "generation_skipped",
+            status: "skipped",
+            generationRequestId: request.id,
+            previousAvatarUrl: locked.profile.avatarUrl,
+            newAvatarUrl: locked.profile.avatarUrl,
+            safeMetadata: { reason: "profile_deleted" },
+          });
+        }
+      }
 
       // Unrated legacy seats may outlive a deleted unused profile. Rated
       // competition rows retain restrictive references and will fail closed.
@@ -711,8 +752,18 @@ function escapeRegExp(value: string): string {
 }
 
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {
-  const { currentRevisionId: _currentRevisionId, ...safe } = profile;
-  return safe;
+  const {
+    currentRevisionId: _currentRevisionId,
+    creationRequestId: _creationRequestId,
+    creationPayloadFingerprint: _creationPayloadFingerprint,
+    ...safe
+  } = profile;
+  return { ...safe, profileRevisionId: _currentRevisionId };
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function agentProfileErrorResponse(

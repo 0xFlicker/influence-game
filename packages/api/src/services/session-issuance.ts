@@ -5,6 +5,7 @@ import { getPermissionsForAddress } from "../db/rbac.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { projectAuthenticatedPublicIdentity } from "./authenticated-public-identity.js";
 import type { AuthenticatedAccount } from "./account-authentication.js";
+import { projectCurrentLegalAcceptance } from "./legal-acceptance.js";
 
 export async function projectLoginMethods(db: DrizzleDB, userId: string) {
   const credentials = await db
@@ -30,13 +31,22 @@ export async function issueInfluenceSession(
   db: DrizzleDB,
   user: AuthenticatedAccount,
 ) {
-  const [resolved, loginMethods] = await Promise.all([
+  const [resolved, loginMethods, legal] = await Promise.all([
     user.walletAddress
       ? getPermissionsForAddress(db, user.walletAddress)
       : Promise.resolve({ roles: [], permissions: [] }),
     projectLoginMethods(db, user.id),
+    projectCurrentLegalAcceptance(db, user.id),
   ]);
-  const token = await createSessionToken(user.id, resolved);
+  const token = await createSessionToken(user.id, {
+    ...resolved,
+    legalAcceptance: legal.accepted
+      ? {
+        termsVersion: legal.termsVersion,
+        privacyVersion: legal.privacyVersion,
+      }
+      : null,
+  });
 
   return {
     token,
@@ -48,6 +58,7 @@ export async function issueInfluenceSession(
       roles: resolved.roles,
       permissions: resolved.permissions,
       loginMethods,
+      legal,
     },
   };
 }

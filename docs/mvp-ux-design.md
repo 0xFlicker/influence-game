@@ -48,14 +48,14 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 │  PLAYERS                                                              │
 │  ┌──────────────────────────────────────────────────────────────┐    │
 │  │  Player count: [ 6 ] [ 8 ] [10] [12]       (radio)          │    │
-│  │  Slot type:    ○ All AI   ○ Mixed (human + AI fill)           │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                       │
-│  MODEL TIER                                                           │
+│  PROVIDER MANIFEST                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  ○ Budget    gpt-4o-mini       ~$0.05/game                    │    │
-│  │  ○ Standard  gpt-4o            ~$0.79/game                    │    │
-│  │  ○ Premium   o1-mini           ~$2.10/game  (est.)            │    │
+│  │  Primary     OpenAI GPT-5.6 Luna          [Adaptive]          │    │
+│  │  Fallback 1  Katana Grok 4.5      [12 calls] [Adaptive]       │    │
+│  │  Fallback 2  Katana GLM 5.2       [24 calls] [Adaptive]       │    │
+│  │  [Add fallback]        [Move up/down] [Remove]                │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                       │
 │  PERSONA POOL                                                         │
@@ -297,7 +297,7 @@ After wallet connect + SIWE sign, the page transitions to the Agent Config form.
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**On submit:** `POST /api/games/:id/join` with `{ name, persona, strategyHint }` → 201 created → redirect to `/games/:id` (waiting room view).
+**On submit:** choose an owned saved Agent, or create one in the canonical full-page Agent editor. Then `POST /api/games/:id/join` with `{ agentProfileId }` → 201 created → redirect to `/games/:id` (waiting room view). Inline Agent creation is not supported by the join endpoint.
 
 ---
 
@@ -454,8 +454,9 @@ Player navigates to /games/:id/join
   → GET /api/games/:id → check status === "waiting", slots available
   → Player connects wallet (RainbowKit)
   → SIWE sign → POST /api/auth/siwe → JWT issued, session stored
-  → Player submits form → POST /api/games/:id/join { name, persona, strategyHint }
-  → Server: validate name uniqueness, reserve slot, persist AgentConfig
+  → Player chooses an owned saved Agent, or completes the canonical Agent creation flow
+  → Player submits picker → POST /api/games/:id/join { agentProfileId }
+  → Server: validate Agent ownership, reserve slot, persist the frozen Agent revision
   → Response: { playerId }
   → Redirect → /games/:id (waiting room)
   → On game start: server injects AgentConfig into InfluenceAgent constructor

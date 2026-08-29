@@ -19,6 +19,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   requireAuth,
+  requireServiceAuth,
   requirePermission,
   optionalAuth,
   type AuthEnv,
@@ -38,10 +39,13 @@ import {
   pickAgentNames,
   pickArchetypes,
 } from "@influence/engine";
-import { startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
+import {
+  startGame,
+  tryReturnZeroEventOwnerFailureToWaiting,
+  validateGameStartReadiness,
+} from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
-  markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -61,12 +65,11 @@ import {
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-
-const DAILY_FREE_MODEL = "gpt-5.6-luna";
-const DAILY_FREE_MODEL_SELECTION = {
-  catalogId: `openai:${DAILY_FREE_MODEL}`,
-  reasoningPolicy: "action-policy",
-} as const;
+import {
+  DAILY_FREE_MODEL,
+  DAILY_FREE_MODEL_SELECTION,
+  DAILY_FREE_PROVIDER_MANIFEST,
+} from "../services/daily-provider-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -253,7 +256,7 @@ export function createFreeQueueRoutes(
   // POST /api/free-queue/draw — daily draw (admin/scheduler)
   // -------------------------------------------------------------------------
 
-  app.post("/api/free-queue/draw", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
+  app.post("/api/free-queue/draw", requireServiceAuth(db), requirePermission("schedule_free_game"), async (c) => {
     const idempotencyKey = c.req.header("Idempotency-Key")?.trim();
     if (!idempotencyKey || idempotencyKey.length > 200) {
       return c.json({
@@ -288,6 +291,10 @@ export function createFreeQueueRoutes(
       minPlayers,
       maxPlayers,
       modelSelection: DAILY_FREE_MODEL_SELECTION,
+      // Exact Katana qualification measured 0.8 credits for three bounded
+      // Grok calls and 0.4 for three GLM calls. The 12/24 caps keep the two
+      // fallback entries within an approximately equal per-game credit guard.
+      providerManifest: DAILY_FREE_PROVIDER_MANIFEST,
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",
@@ -492,7 +499,7 @@ export function createFreeQueueRoutes(
   // POST /api/free-queue/start — start today's free game (admin/scheduler)
   // -------------------------------------------------------------------------
 
-  app.post("/api/free-queue/start", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
+  app.post("/api/free-queue/start", requireServiceAuth(db), requirePermission("schedule_free_game"), async (c) => {
     const requestedGameId = c.req.query("gameId")?.trim();
     const gameConditions = [
       eq(schema.games.trackType, "free"),
@@ -527,7 +534,17 @@ export function createFreeQueueRoutes(
 
     const readiness = await validateGameStartReadiness(db, game.id);
     if (readiness.error) {
-      return c.json({ error: readiness.error }, 500);
+      return c.json({
+        error: readiness.error,
+        ...(readiness.code && { code: readiness.code }),
+        ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
+      }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
+        ? 409
+        : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
+          ? 503
+          : 500);
     }
 
     const owner = await acquireGameRunOwner(db, game.id);
@@ -544,16 +561,16 @@ export function createFreeQueueRoutes(
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      const cleanup = await markOwnerStartupFailed(
+      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
         db,
         game.id,
         owner.claim.ownerEpoch,
         startupError,
       );
-      if (cleanup.rosterDisposition === "repair_required") {
+      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
         console.warn("[free-queue] Startup failure roster requires repair", {
           gameId: game.id,
-          ...cleanup.reconciliationError,
+          ...cleanup.cleanup.reconciliationError,
         });
       }
       await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");

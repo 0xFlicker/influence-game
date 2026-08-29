@@ -8,13 +8,57 @@
 
 import { randomUUID } from "crypto";
 import type OpenAI from "openai";
-import type { ChatCompletion } from "openai/resources/chat/completions";
-import type { LlmToolChoiceMode } from "./llm-client";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { withInfluenceGamePromptContext } from "./game-prompt-context";
+import {
+  displayNameForFormat,
+  type LaunchFormatId,
+} from "./format-presentation-metadata";
+import type { LlmProviderRuntime, LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
-import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
+import {
+  pairProviderLogicalCallOrdinals,
+  providerAcceptedDecisionId,
+  ProviderAttemptError,
+  ProviderExecutionCoordinator,
+  ProviderUnavailableError,
+  type ProviderCandidateValidation,
+  type ProviderAttemptRecord,
+  type ProviderExecutionHooks,
+  type ProviderLogicalCallExecution,
+} from "./provider-execution";
+import {
+  createProviderAdapter,
+  executeModelInvocation,
+  isLlmProviderAdapter,
+} from "./provider-adapters";
+import type {
+  LlmProviderAdapter,
+  ModelInvocation,
+  ModelInvocationMessage,
+  ModelInvocationResult,
+  ProviderModelOutcome,
+} from "./model-invocation";
+import {
+  createExactStructuredOutputArtifact,
+  type StructuredDomainDecodeResult,
+} from "./structured-output";
+import {
+  houseSummaryCharacterLimit,
+  isBoundedHouseAuthoredText,
+  type HouseBeatClass,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  type HouseProviderUsage,
+} from "./house-summary-frontier";
+import {
+  decodeAcceptedHouseLongForm,
+  decodeHouseLongFormProvider,
+  HOUSE_LONG_FORM_SUMMARY_SCHEMA,
+} from "./house-long-form";
+import type { AllianceHuddleConfidence, AllianceHuddleFactAtom, AllianceHuddleWindow } from "./types";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
@@ -24,27 +68,49 @@ import {
   type ProviderProfileId,
 } from "./model-catalog";
 import type {
-  HouseAllianceHypothesis,
-  HouseCouncilRoleFact,
-  HouseConfidence,
-  HouseCoveredWindow,
   HouseGameplaySummaryContext,
   HouseGameplaySummaryResult,
-  HousePlayerTrajectory,
-  HouseProducerBrief,
-  HouseRoundFacts,
-  HouseStoryArc,
-  HouseStrategyBiblePacket,
-  HouseStrategyBibleUpdateContext,
-  HouseStrategyBibleUpdateResult,
-  HouseVoteCount,
+  HouseNarrativeTurnContext,
+  HouseSummaryAttemptResult,
   PrivateDecisionTrace,
   PrivateDecisionTraceContext,
   PrivateDecisionTraceMessage,
   PrivateDecisionTraceToolCall,
   PrivateTraceSink,
-  TranscriptEntry,
+  PhaseContext,
 } from "./game-runner.types";
+
+interface HouseStructuredDecoder<TValue> {
+  decodeProvider(record: Record<string, unknown>): StructuredDomainDecodeResult<TValue>;
+  decodeAccepted(value: unknown): StructuredDomainDecodeResult<TValue>;
+}
+
+function houseStructuredRecordArtifact<TValue = Record<string, unknown>>(
+  action: string,
+  name: string,
+  schema: Record<string, unknown>,
+  decoder?: HouseStructuredDecoder<TValue>,
+) {
+  const decodeProvider = (value: unknown): StructuredDomainDecodeResult<TValue> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { status: "invalid", message: `${name} must be an object.` };
+    }
+    return decoder
+      ? decoder.decodeProvider(value as Record<string, unknown>)
+      : { status: "valid", value: value as TValue };
+  };
+  const decodeAccepted = (value: unknown): StructuredDomainDecodeResult<TValue> =>
+    decoder
+      ? decoder.decodeAccepted(value)
+      : decodeProvider(value);
+  return createExactStructuredOutputArtifact<Record<string, unknown>, TValue>({
+    action,
+    name,
+    schema,
+    decodeProviderPayload: decodeProvider,
+    decodeAcceptedValue: decodeAccepted,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Interview context passed to the House
@@ -55,32 +121,15 @@ export interface DiaryRoomContext {
   precedingPhase: Phase;
   /** Current round number */
   round: number;
+  /** Stable one-based roster ordinal for this interview session. */
+  providerInterviewOrdinal: number;
   /** The agent being interviewed */
+  agentId: UUID;
   agentName: string;
-  /** All alive players */
-  alivePlayers: string[];
-  /** Currently active shields on living players */
-  activeShieldNames: string[];
-  /** Recently eliminated players (if any) */
-  eliminatedPlayers: string[];
-  /** Most recently eliminated player name */
-  lastEliminated: string | null;
-  /** Who is currently empowered (if known) */
-  empoweredName: string | null;
-  /** Council candidates (if in reveal/council context) */
-  councilCandidates: [string, string] | null;
-  /** Recent public messages for context */
-  recentMessages: Array<{ from: string; text: string; phase: Phase }>;
+  /** The same actor-scoped projection used for this player's own model turn. */
+  playerKnowledge: PhaseContext;
   /** This player's previous diary room Q&A entries */
   previousDiaryEntries?: Array<{ round: number; question: string; answer: string }>;
-  /** Messages this specific player sent recently */
-  playerMessages?: Array<{ text: string; phase: Phase }>;
-  /** Private producer/debug brief generated by the House before the visible question. */
-  producerBrief?: HouseProducerBrief | null;
-  /** Authoritative facts for the current round from canonical events/projections. */
-  roundFacts?: HouseRoundFacts;
-  /** This interviewee's role in the latest Council, if a Council happened. */
-  councilRole?: HouseCouncilRoleFact | null;
 }
 
 export interface HouseMingleAssignmentPlayer {
@@ -92,7 +141,7 @@ export interface HouseMingleAssignmentContext {
   round: number;
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE;
   roomCount: number;
-  selectedFormatName: string | null;
+  selectedFormatId: LaunchFormatId | null;
   formatRuleSummary: string | null;
   players: HouseMingleAssignmentPlayer[];
 }
@@ -104,6 +153,31 @@ export interface HouseMingleRoomAssignment {
 
 export interface HouseMingleAssignmentResult {
   rooms: HouseMingleRoomAssignment[];
+  rationale?: string;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export interface HouseAllianceProposerCandidate {
+  playerId: UUID;
+  playerName: string;
+  activeAllianceCount: number;
+}
+
+export interface HouseAllianceProposerSelectionContext {
+  round: number;
+  phase: Phase.FORMAT_MINGLE;
+  budget: number;
+  candidates: HouseAllianceProposerCandidate[];
+}
+
+export interface HouseAllianceProposerSelectionItem {
+  playerId: UUID;
+  rationale: string;
+}
+
+export interface HouseAllianceProposerSelectionResult {
+  selected: HouseAllianceProposerSelectionItem[];
   rationale?: string;
   thinking?: string;
   reasoningContext?: string;
@@ -123,6 +197,7 @@ export interface HouseAllianceHuddleScheduleContext {
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
   budget: number;
+  /** Canonical caller field; provider prompts present these as players remaining. */
   alivePlayers: string[];
   candidates: HouseAllianceHuddleCandidate[];
 }
@@ -144,6 +219,8 @@ export interface HouseAllianceHuddleOutcomeContext {
   round: number;
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
+  /** Stable one-based position in the engine's deterministic schedule for this phase. */
+  providerLogicalCallOrdinal: number;
   alliance: {
     id: UUID;
     name: string;
@@ -152,8 +229,8 @@ export interface HouseAllianceHuddleOutcomeContext {
     timebox?: string | null;
   };
   transcript: Array<{ from: string; text: string }>;
-  /** Authoritative member proposals. House may summarize but may not invent beyond them. */
-  commitments: AllianceHuddleCommitmentFact[];
+  /** Authoritative member-authored atoms. House may narrate but may not add facts. */
+  facts: AllianceHuddleFactAtom[];
 }
 
 export interface HouseAllianceHuddleOutcomeResult {
@@ -161,8 +238,8 @@ export interface HouseAllianceHuddleOutcomeResult {
   plan: string;
   promises: string[];
   dissent: string[];
-  confidence: AllianceHuddleOutcome["confidence"];
-  posture: AllianceHuddleOutcome["posture"];
+  confidence: AllianceHuddleConfidence;
+  posture: string;
   leakOrBetrayalClaims: string[];
   thinking?: string;
   reasoningContext?: string;
@@ -177,21 +254,31 @@ export type FollowUpResult =
   | { type: "question"; question: string }
   | { type: "close"; message: string };
 
+const HOUSE_FOLLOW_UP_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    decision: { type: "string", enum: ["follow_up", "close"] },
+    text: { type: "string", minLength: 1 },
+  },
+  required: ["decision", "text"],
+  additionalProperties: false,
+};
+
 export interface IHouseInterviewer {
   /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
+  /** Select scarce proposer access from candidates remaining in the game. The engine validates and repairs output. */
+  selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult>;
   /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
   planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
   /** Summarize a completed named-alliance huddle into the official compact outcome memory. */
   summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult>;
-  /** Update the private House Strategy Bible Packet from the previous packet and current producer evidence. */
-  updateStrategyBible(context: HouseStrategyBibleUpdateContext): Promise<HouseStrategyBibleUpdateResult>;
-  /** Generate a packet-backed concise House MC summary. */
-  generateHouseSummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult>;
-  /** Generate a richer packet-backed gameplay catch-up summary for producer validation. */
-  generateLongFormGameplaySummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult>;
-  /** Generate a private producer brief before asking a diary-room question. */
-  generateProducerBrief(context: DiaryRoomContext, packet: HouseStrategyBiblePacket | null): Promise<HouseProducerBrief>;
+  /** Author viewer copy and optionally replace the private House notebook. */
+  generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult>;
+  /** Generate richer House-authored producer copy without feeding it back into game state. */
+  generateLongFormGameplaySummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult | null>;
   /** Generate the first diary room interview question for an agent */
   generateQuestion(context: DiaryRoomContext): Promise<string>;
   /** Decide whether to ask a follow-up or close the session. */
@@ -199,12 +286,6 @@ export interface IHouseInterviewer {
     context: DiaryRoomContext,
     conversationSoFar: Array<{ question: string; answer: string }>,
   ): Promise<FollowUpResult>;
-
-  /**
-   * Generate a dramatic House MC-style narrative summary of recent gameplay.
-   * Used for in-progress simulation traces to make them more engaging.
-   */
-  generateGameplaySummary(recentTranscript: TranscriptEntry[], round: number, phase: Phase, alivePlayers: string[]): Promise<string>;
 }
 
 export interface LLMHouseInterviewerOptions {
@@ -217,97 +298,429 @@ export interface LLMHouseInterviewerOptions {
   modelCapabilities?: ModelRequestCapabilities;
   reasoningPolicy?: ModelReasoningPolicy;
   catalogId?: string;
+  /** Test-only/runtime override; production defaults to the beat-class hard limit. */
+  houseSummaryTimeoutMs?: number;
+  /** Observable provider-attempt hooks used by durable API and simulation adapters. */
+  providerExecutionHooks?: ProviderExecutionHooks;
+  /** Ordered, sealed runtime entries. The constructor client/model remain the primary projection. */
+  providerManifest?: readonly LlmProviderRuntime[];
 }
+
+const HOUSE_SUMMARY_LIMITS = {
+  ordinary: {
+    wallClockMs: 45_000,
+    maxCompletionTokens: 512,
+    maxProseCharacters: houseSummaryCharacterLimit("ordinary"),
+  },
+  milestone: {
+    wallClockMs: 75_000,
+    maxCompletionTokens: 900,
+    maxProseCharacters: houseSummaryCharacterLimit("milestone"),
+  },
+} as const satisfies Record<HouseBeatClass, {
+  wallClockMs: number;
+  maxCompletionTokens: number;
+  maxProseCharacters: number;
+}>;
 
 // ---------------------------------------------------------------------------
 // LLM-driven House Interviewer
 // ---------------------------------------------------------------------------
 
-const HOUSE_PERSONALITY = `You are "The House" — the omniscient narrator and showrunner of "Influence", a social strategy game where AI agents scheme, betray, and eliminate each other.
+const PLAYER_FACING_INTERVIEWER_PERSONALITY = `You are The House interviewer speaking directly to one Influence contestant.
 
-Your personality:
-- You are dramatic, perceptive, and darkly witty — like the best reality TV producers
-- You see EVERYTHING: every Mingle-room conversation, every alliance, every betrayal
-- You ask questions that provoke genuine strategic reflection and great entertainment
-- You sometimes hint at things the player doesn't know you've seen
-- You vary your style: sometimes pointed, sometimes sympathetic, sometimes provocatively blunt
-- You never reveal secrets outright, but you love to needle players about their contradictions
-- You address each player by name and tailor your question to THEIR specific situation
+Ask incisive, entertaining questions that help the contestant reflect on strategy, relationships, contradictions, and emotion. The supplied player knowledge is your entire information boundary: use public information and only the private conversations, decisions, alliances, and prior diary answers included there. Never imply access to another contestant's private conversation, sealed decision, diary, a producer notebook, a House viewer summary, or operator traces.
 
-Rules:
-- Ask ONE question at a time (can be multi-part)
-- Keep it to 1-2 sentences
-- EVERY question must reference a SPECIFIC player name, quote, or event from the game state below
-- BANNED generic openers: "what's on your mind?", "what's your strategy?", "how are you feeling?", "what do you think about the game?", "what's your read on things?"
-- BANNED vague prompts: "tell us about...", "walk us through...", "what happened in..."
-- Instead, be SHARP: "You told [name] you'd protect them — was that a lie?", "When [name] said [quote], you flinched — what were you thinking?", "[Name] voted against you last round. Are you going to let that slide?"
-- If you have their previous diary answers, call out a specific contradiction or broken promise
-- Respond with ONLY the question text, nothing else`;
+Ask one question at a time, in one or two sentences. Ground it in a concrete player, quote, event, decision, relationship, or prior answer from the supplied boundary. Do not invent missing facts.`;
 
-function extractJsonObject(raw: string): Record<string, unknown> | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
+function recordValue(value: unknown, label: string): StructuredDomainDecodeResult<Record<string, unknown>> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? { status: "valid", value: value as Record<string, unknown> }
+    : { status: "invalid", message: `${label} must be an object.` };
+}
 
-  try {
-    return JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    const first = trimmed.indexOf("{");
-    const last = trimmed.lastIndexOf("}");
-    if (first === -1 || last <= first) return null;
-    try {
-      return JSON.parse(trimmed.slice(first, last + 1)) as Record<string, unknown>;
-    } catch {
-      return null;
+function hasOnlyKeys(record: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(record).every((key) => allowed.has(key));
+}
+
+function decodeHouseThinking(
+  record: Record<string, unknown>,
+  label: string,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<{ thinking?: string }> {
+  const hasThinking = Object.prototype.hasOwnProperty.call(record, "thinking");
+  if (representation === "provider") {
+    if (!hasThinking || (record.thinking !== null && typeof record.thinking !== "string")) {
+      return { status: "invalid", message: `${label} thinking must be a string or null.` };
     }
+    const thinking = readNullableString(record.thinking);
+    return { status: "valid", value: thinking ? { thinking } : {} };
+  }
+  if (!hasThinking) return { status: "valid", value: {} };
+  const thinking = readNullableString(record.thinking);
+  return thinking
+    ? { status: "valid", value: { thinking } }
+    : { status: "invalid", message: `Accepted ${label} thinking must be a non-empty string when present.` };
+}
+
+function requireDistinctContextIds(ids: readonly string[], label: string): void {
+  if (ids.some((id) => !id.trim()) || new Set(ids).size !== ids.length) {
+    throw new Error(`${label} must contain distinct non-empty IDs.`);
   }
 }
 
-function parseHouseMingleAssignmentRecord(parsed: Record<string, unknown>): HouseMingleAssignmentResult {
-  const rawRooms = Array.isArray(parsed.rooms) ? parsed.rooms : [];
-  const rooms = rawRooms
-    .map((room): HouseMingleRoomAssignment | null => {
-      if (!room || typeof room !== "object") return null;
-      const roomRecord = room as Record<string, unknown>;
-      const roomId = Number(roomRecord.roomId);
-      const rawPlayers = Array.isArray(roomRecord.playerIds)
-        ? roomRecord.playerIds
-        : Array.isArray(roomRecord.players)
-          ? roomRecord.players
-          : [];
-      const playerIds = rawPlayers.filter((value): value is string => typeof value === "string");
-      if (!Number.isInteger(roomId)) return null;
-      return { roomId, playerIds };
-    })
-    .filter((room): room is HouseMingleRoomAssignment => room !== null);
-
+function decodeHouseMingleAssignment(
+  value: unknown,
+  context: HouseMingleAssignmentContext,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<HouseMingleAssignmentResult> {
+  const decodedRecord = recordValue(value, "House Mingle assignment");
+  if (decodedRecord.status === "invalid") return decodedRecord;
+  const record = decodedRecord.value;
+  if (!hasOnlyKeys(record, ["rooms", "rationale", "thinking"])) {
+    return { status: "invalid", message: "House Mingle assignment contains unsupported fields." };
+  }
+  if (!Array.isArray(record.rooms) || record.rooms.length !== context.roomCount) {
+    return { status: "invalid", message: "House Mingle assignment must include every room exactly once." };
+  }
+  const legalPlayerIds = new Set(context.players.map((player) => player.id));
+  const seenRooms = new Set<number>();
+  const seenPlayers = new Set<UUID>();
+  const rooms: HouseMingleRoomAssignment[] = [];
+  for (const room of record.rooms) {
+    const decodedRoom = recordValue(room, "House Mingle room");
+    if (decodedRoom.status === "invalid") return decodedRoom;
+    if (!hasOnlyKeys(decodedRoom.value, ["roomId", "playerIds"])) {
+      return { status: "invalid", message: "House Mingle room contains unsupported fields." };
+    }
+    const roomId = decodedRoom.value.roomId;
+    if (
+      typeof roomId !== "number"
+      || !Number.isInteger(roomId)
+      || roomId < 1
+      || roomId > context.roomCount
+      || seenRooms.has(roomId)
+    ) {
+      return { status: "invalid", message: "House Mingle room ID is unavailable or duplicated." };
+    }
+    if (!Array.isArray(decodedRoom.value.playerIds)) {
+      return { status: "invalid", message: "House Mingle room playerIds must be an array." };
+    }
+    const playerIds: UUID[] = [];
+    for (const playerId of decodedRoom.value.playerIds) {
+      if (
+        typeof playerId !== "string"
+        || !legalPlayerIds.has(playerId)
+        || seenPlayers.has(playerId)
+      ) {
+        return { status: "invalid", message: "House Mingle player ID is unavailable or duplicated." };
+      }
+      seenPlayers.add(playerId);
+      playerIds.push(playerId);
+    }
+    seenRooms.add(roomId);
+    rooms.push({ roomId, playerIds });
+  }
+  if (seenPlayers.size !== legalPlayerIds.size) {
+    return { status: "invalid", message: "House Mingle assignment must include every player exactly once." };
+  }
+  const rationale = readNullableString(record.rationale);
+  if (!rationale) return { status: "invalid", message: "House Mingle rationale must be non-empty." };
+  const thinking = decodeHouseThinking(record, "House Mingle", representation);
+  if (thinking.status === "invalid") return thinking;
   return {
-    rooms,
-    rationale: typeof parsed.rationale === "string" ? parsed.rationale : undefined,
-    thinking: typeof parsed.thinking === "string" ? parsed.thinking : undefined,
-    reasoningContext: typeof parsed.reasoningContext === "string" ? parsed.reasoningContext : undefined,
+    status: "valid",
+    value: {
+      rooms,
+      rationale,
+      ...thinking.value,
+    },
   };
 }
 
-function normalizeHuddleScheduleItems(value: unknown): HouseAllianceHuddleScheduleItem[] {
-  return readRecordArray(value)
-    .map((record) => {
-      const allianceId = readString(record.allianceId);
-      if (!allianceId) return null;
-      return {
-        allianceId,
-        rationale: readString(record.rationale, "The House did not provide a detailed rationale."),
-      };
-    })
-    .filter((item): item is HouseAllianceHuddleScheduleItem => item !== null);
+const HOUSE_SUMMARY_SYSTEM_PROMPT = `You are Influence's omniscient House showrunner. Write a concise viewer-facing beat in your own voice and maintain a private narrative notebook for future House turns. Return the exact schema.
+
+publicSummary is presentation for human viewers and players. It may connect events, strategy, private threads, irony, and dramatic consequences when useful. Write null when this material boundary needs no public beat.
+
+privateNarrativeNotebook is your bounded, private whole-snapshot showrunner memory. Use it to preserve developing arcs, private threads, contradictions, promises, and future narrative opportunities. Write null to preserve the prior notebook unchanged. Ordinary beats should normally preserve it; milestone beats may replace it after absorbing new developments. Neither field is game-state authority, and the engine will never parse either field for facts.`;
+
+interface HouseSummaryProviderValue {
+  publicSummary: string | null;
+  privateNarrativeNotebook: string | null;
 }
 
-function parseHouseAllianceHuddleScheduleRecord(parsed: Record<string, unknown>): HouseAllianceHuddleScheduleResult {
+function houseSummarySchema(maxPublicSummaryCharacters: number): Record<string, unknown> {
   return {
-    scheduled: normalizeHuddleScheduleItems(parsed.scheduled),
-    skipped: normalizeHuddleScheduleItems(parsed.skipped),
-    rationale: readNullableString(parsed.rationale) ?? undefined,
-    thinking: readNullableString(parsed.thinking) ?? undefined,
-    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
+    type: "object",
+    additionalProperties: false,
+    required: ["publicSummary", "privateNarrativeNotebook"],
+    properties: {
+      publicSummary: {
+        type: ["string", "null"],
+        minLength: 1,
+        maxLength: maxPublicSummaryCharacters,
+      },
+      privateNarrativeNotebook: {
+        type: ["string", "null"],
+        minLength: 1,
+        maxLength: HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+      },
+    },
+  };
+}
+
+function decodeHouseSummary(
+  record: Record<string, unknown>,
+  maxPublicSummaryCharacters: number,
+): StructuredDomainDecodeResult<HouseSummaryProviderValue> {
+  if (!hasOnlyKeys(record, ["publicSummary", "privateNarrativeNotebook"])) {
+    return { status: "invalid", message: "House summary contains unsupported fields." };
+  }
+  const publicSummary = record.publicSummary;
+  if (publicSummary !== null && !isBoundedHouseAuthoredText(publicSummary, maxPublicSummaryCharacters)) {
+    return { status: "invalid", message: "House public summary is outside the allowed presentation bounds." };
+  }
+  const privateNarrativeNotebook = record.privateNarrativeNotebook;
+  if (privateNarrativeNotebook !== null && !isBoundedHouseAuthoredText(
+    privateNarrativeNotebook,
+    HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  )) {
+    return { status: "invalid", message: "House private narrative notebook is outside the allowed presentation bounds." };
+  }
+  return {
+    status: "valid",
+    value: { publicSummary, privateNarrativeNotebook } as HouseSummaryProviderValue,
+  };
+}
+
+function createHouseSummaryArtifact(beatClass: HouseBeatClass) {
+  const maxPublicSummaryCharacters = houseSummaryCharacterLimit(beatClass);
+  const decode = (value: unknown): StructuredDomainDecodeResult<HouseSummaryProviderValue> => {
+    const decoded = recordValue(value, "House summary");
+    return decoded.status === "invalid"
+      ? decoded
+      : decodeHouseSummary(decoded.value, maxPublicSummaryCharacters);
+  };
+  return createExactStructuredOutputArtifact({
+    action: "house.house-audience-summary.v3",
+    name: "house_audience_summary_v3",
+    schema: houseSummarySchema(maxPublicSummaryCharacters),
+    decodeProviderPayload: decode,
+    decodeAcceptedValue: decode,
+  });
+}
+
+const HOUSE_SUMMARY_ARTIFACTS = {
+  ordinary: createHouseSummaryArtifact("ordinary"),
+  milestone: createHouseSummaryArtifact("milestone"),
+} as const satisfies Record<HouseBeatClass, ReturnType<typeof createHouseSummaryArtifact>>;
+
+function decodeHouseFollowUpProvider(
+  record: Record<string, unknown>,
+  mayAskFollowUp: boolean,
+): StructuredDomainDecodeResult<FollowUpResult> {
+  if (!hasOnlyKeys(record, ["decision", "text"])) {
+    return { status: "invalid", message: "House follow-up contains unsupported fields." };
+  }
+  const text = readNullableString(record.text);
+  if (!text) return { status: "invalid", message: "House follow-up text must be non-empty." };
+  if (record.decision === "follow_up") {
+    return mayAskFollowUp
+      ? { status: "valid", value: { type: "question", question: text } }
+      : { status: "invalid", message: "House cannot ask beyond the session question limit." };
+  }
+  return record.decision === "close"
+    ? { status: "valid", value: { type: "close", message: text } }
+    : { status: "invalid", message: "House follow-up decision is unsupported." };
+}
+
+function decodeAcceptedHouseFollowUp(
+  value: unknown,
+  mayAskFollowUp: boolean,
+): StructuredDomainDecodeResult<FollowUpResult> {
+  const decodedRecord = recordValue(value, "Accepted House follow-up");
+  if (decodedRecord.status === "invalid") return decodedRecord;
+  const record = decodedRecord.value;
+  if (record.type === "question" && mayAskFollowUp && readNullableString(record.question)) {
+    return hasOnlyKeys(record, ["type", "question"])
+      ? { status: "valid", value: { type: "question", question: readString(record.question) } }
+      : { status: "invalid", message: "Accepted House question contains unsupported fields." };
+  }
+  if (record.type === "close" && readNullableString(record.message)) {
+    return hasOnlyKeys(record, ["type", "message"])
+      ? { status: "valid", value: { type: "close", message: readString(record.message) } }
+      : { status: "invalid", message: "Accepted House close contains unsupported fields." };
+  }
+  return { status: "invalid", message: "Accepted House follow-up is incomplete or inconsistent." };
+}
+
+function contentFreeHouseFailureFields(error: unknown): { status: number | "unknown"; code: string; type: string } {
+  const record = error && typeof error === "object" && !Array.isArray(error)
+    ? error as Record<string, unknown>
+    : {};
+  const safeToken = (value: unknown): string =>
+    typeof value === "string" && /^[A-Za-z0-9_.-]{1,80}$/.test(value) ? value : "unknown";
+  return {
+    status: typeof record.status === "number" && Number.isFinite(record.status) ? record.status : "unknown",
+    code: safeToken(record.code),
+    type: safeToken(record.type) !== "unknown"
+      ? safeToken(record.type)
+      : error instanceof Error
+        ? "error"
+        : "unknown",
+  };
+}
+
+function isHouseArtifactProviderExhaustion(error: unknown): error is ProviderUnavailableError {
+  return error instanceof ProviderUnavailableError && error.outcome.kind !== "cancellation";
+}
+
+function decodeHouseAllianceProposerSelection(
+  value: unknown,
+  context: HouseAllianceProposerSelectionContext,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<HouseAllianceProposerSelectionResult> {
+  const decodedRecord = recordValue(value, "House proposer selection");
+  if (decodedRecord.status === "invalid") return decodedRecord;
+  const record = decodedRecord.value;
+  if (!hasOnlyKeys(record, ["selected", "rationale", "thinking"])) {
+    return { status: "invalid", message: "House proposer selection contains unsupported fields." };
+  }
+  if (!Array.isArray(record.selected) || record.selected.length !== context.budget) {
+    return { status: "invalid", message: "House proposer selection must spend the exact proposer budget." };
+  }
+  const eligible = new Set(context.candidates.map((candidate) => candidate.playerId));
+  const seen = new Set<UUID>();
+  const selected: HouseAllianceProposerSelectionItem[] = [];
+  for (const item of record.selected) {
+    const decodedItem = recordValue(item, "House proposer selection item");
+    if (decodedItem.status === "invalid") return decodedItem;
+    if (!hasOnlyKeys(decodedItem.value, ["playerId", "rationale"])) {
+      return { status: "invalid", message: "House proposer item contains unsupported fields." };
+    }
+    const playerId = decodedItem.value.playerId;
+    const rationale = readNullableString(decodedItem.value.rationale);
+    if (
+      typeof playerId !== "string"
+      || !eligible.has(playerId)
+      || seen.has(playerId)
+      || !rationale
+    ) {
+      return { status: "invalid", message: "House proposer item is ineligible, duplicated, or incomplete." };
+    }
+    seen.add(playerId);
+    selected.push({ playerId, rationale });
+  }
+  const rationale = readNullableString(record.rationale);
+  if (!rationale) return { status: "invalid", message: "House proposer rationale must be non-empty." };
+  const thinking = decodeHouseThinking(record, "House proposer", representation);
+  if (thinking.status === "invalid") return thinking;
+  return {
+    status: "valid",
+    value: {
+      selected,
+      rationale,
+      ...thinking.value,
+    },
+  };
+}
+
+function deterministicAllianceProposerSelection(
+  context: HouseAllianceProposerSelectionContext,
+  rationalePrefix: string,
+): HouseAllianceProposerSelectionItem[] {
+  return context.candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((left, right) =>
+      left.candidate.activeAllianceCount - right.candidate.activeAllianceCount || left.index - right.index,
+    )
+    .slice(0, context.budget)
+    .map(({ candidate }) => ({
+      playerId: candidate.playerId,
+      rationale: `${rationalePrefix} ${candidate.playerName} with ${candidate.activeAllianceCount} active alliance${candidate.activeAllianceCount === 1 ? "" : "s"}.`,
+    }));
+}
+
+function normalizedBoundedStrings(value: unknown, maxItems: number, maxChars: number): string[] | null {
+  if (!Array.isArray(value) || value.length > maxItems) return null;
+  const strings: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") return null;
+    const normalized = item
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized || normalized.length > maxChars) return null;
+    strings.push(normalized);
+  }
+  return strings;
+}
+
+function decodeHouseAllianceHuddleSchedule(
+  value: unknown,
+  context: HouseAllianceHuddleScheduleContext,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<HouseAllianceHuddleScheduleResult> {
+  const decodedRecord = recordValue(value, "House huddle schedule");
+  if (decodedRecord.status === "invalid") return decodedRecord;
+  const record = decodedRecord.value;
+  if (!hasOnlyKeys(record, ["scheduled", "skipped", "rationale", "thinking"])) {
+    return { status: "invalid", message: "House huddle schedule contains unsupported fields." };
+  }
+  if (!Array.isArray(record.scheduled) || !Array.isArray(record.skipped)) {
+    return { status: "invalid", message: "House huddle schedule requires scheduled and skipped arrays." };
+  }
+  if (record.scheduled.length > context.budget) {
+    return { status: "invalid", message: "House huddle schedule exceeds the available budget." };
+  }
+  const eligible = new Set(context.candidates.map((candidate) => candidate.allianceId));
+  const seen = new Set<UUID>();
+  const decodeItems = (
+    items: unknown[],
+    label: string,
+  ): StructuredDomainDecodeResult<HouseAllianceHuddleScheduleItem[]> => {
+    const output: HouseAllianceHuddleScheduleItem[] = [];
+    for (const item of items) {
+      const decodedItem = recordValue(item, label);
+      if (decodedItem.status === "invalid") return decodedItem;
+      if (!hasOnlyKeys(decodedItem.value, ["allianceId", "rationale"])) {
+        return { status: "invalid", message: `${label} contains unsupported fields.` };
+      }
+      const allianceId = decodedItem.value.allianceId;
+      const rationale = readNullableString(decodedItem.value.rationale);
+      if (
+        typeof allianceId !== "string"
+        || !eligible.has(allianceId)
+        || seen.has(allianceId)
+        || !rationale
+      ) {
+        return { status: "invalid", message: `${label} is ineligible, duplicated, or incomplete.` };
+      }
+      seen.add(allianceId);
+      output.push({ allianceId, rationale });
+    }
+    return { status: "valid", value: output };
+  };
+  const scheduled = decodeItems(record.scheduled, "Scheduled huddle item");
+  if (scheduled.status === "invalid") return scheduled;
+  const skipped = decodeItems(record.skipped, "Skipped huddle item");
+  if (skipped.status === "invalid") return skipped;
+  if (seen.size !== eligible.size) {
+    return { status: "invalid", message: "House huddle schedule must partition every eligible alliance." };
+  }
+  const rationale = readNullableString(record.rationale);
+  if (!rationale) return { status: "invalid", message: "House huddle schedule rationale must be non-empty." };
+  const thinking = decodeHouseThinking(record, "House huddle schedule", representation);
+  if (thinking.status === "invalid") return thinking;
+  return {
+    status: "valid",
+    value: {
+      scheduled: scheduled.value,
+      skipped: skipped.value,
+      rationale,
+      ...thinking.value,
+    },
   };
 }
 
@@ -319,176 +732,6 @@ function readNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === "string")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function readConfidence(value: unknown): HouseConfidence {
-  return value === "high" || value === "medium" || value === "low" ? value : "low";
-}
-
-function readHuddlePosture(value: unknown): AllianceHuddleOutcome["posture"] {
-  return value === "coordinating" ||
-    value === "fracturing" ||
-    value === "performative" ||
-    value === "guarded" ||
-    value === "betrayal_watch"
-    ? value
-    : "guarded";
-}
-
-function readAllianceStatus(value: unknown): HouseAllianceHypothesis["status"] {
-  return value === "forming" ||
-    value === "active" ||
-    value === "fracturing" ||
-    value === "retired" ||
-    value === "speculative"
-    ? value
-    : "speculative";
-}
-
-function readStoryStatus(value: unknown): HouseStoryArc["status"] {
-  return value === "emerging" || value === "active" || value === "resolved" || value === "dropped"
-    ? value
-    : "emerging";
-}
-
-function readRecordArray(value: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is Record<string, unknown> =>
-    item !== null && typeof item === "object" && !Array.isArray(item),
-  );
-}
-
-function readCoveredWindow(value: unknown, fallback: HouseCoveredWindow): HouseCoveredWindow {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
-  const record = value as Record<string, unknown>;
-  const fromRound = typeof record.fromRound === "number" && Number.isFinite(record.fromRound)
-    ? record.fromRound
-    : fallback.fromRound;
-  const toRound = typeof record.toRound === "number" && Number.isFinite(record.toRound)
-    ? record.toRound
-    : fallback.toRound;
-  const fromPhase = typeof record.fromPhase === "string" && record.fromPhase in Phase
-    ? record.fromPhase as Phase
-    : fallback.fromPhase;
-  const toPhase = typeof record.toPhase === "string" && record.toPhase in Phase
-    ? record.toPhase as Phase
-    : fallback.toPhase;
-  return {
-    fromRound,
-    toRound,
-    ...(fromPhase && { fromPhase }),
-    ...(toPhase && { toPhase }),
-  };
-}
-
-function normalizeAlliances(value: unknown): HouseAllianceHypothesis[] {
-  return readRecordArray(value).map((record, index) => ({
-    name: readString(record.name, `Unnamed alliance ${index + 1}`),
-    members: readStringArray(record.members),
-    status: readAllianceStatus(record.status),
-    confidence: readConfidence(record.confidence),
-    evidence: readStringArray(record.evidence),
-    tension: readNullableString(record.tension),
-    openQuestions: readStringArray(record.openQuestions),
-  }));
-}
-
-function normalizePlayerTrajectories(value: unknown): HousePlayerTrajectory[] {
-  return readRecordArray(value).map((record) => ({
-    playerName: readString(record.playerName, "Unknown"),
-    currentRead: readString(record.currentRead, "No clear House read yet."),
-    pressurePoints: readStringArray(record.pressurePoints),
-    likelyNextMove: readNullableString(record.likelyNextMove),
-  }));
-}
-
-function normalizeStoryArcs(value: unknown): HouseStoryArc[] {
-  return readRecordArray(value).map((record, index) => ({
-    title: readString(record.title, `Story arc ${index + 1}`),
-    summary: readString(record.summary, "No summary provided."),
-    involvedPlayers: readStringArray(record.involvedPlayers),
-    status: readStoryStatus(record.status),
-  }));
-}
-
-function parseHouseStrategyBible(
-  raw: string,
-  context: HouseStrategyBibleUpdateContext,
-): HouseStrategyBibleUpdateResult {
-  const parsed = extractJsonObject(raw);
-  if (!parsed) {
-    return { packet: null, rationale: "House Strategy Bible response was not parseable JSON." };
-  }
-
-  const previous = context.previousPacket;
-  const packetRecord = parsed.packet && typeof parsed.packet === "object" && !Array.isArray(parsed.packet)
-    ? parsed.packet as Record<string, unknown>
-    : parsed;
-  const previousRevisionId = previous?.revisionId ?? null;
-  const revisionId = readString(
-    packetRecord.revisionId,
-    `house-r${context.round}-${context.phase.toLowerCase()}-${previous ? "rev" : "initial"}`,
-  );
-
-  const packet: HouseStrategyBiblePacket = {
-    revisionId,
-    previousRevisionId: readNullableString(packetRecord.previousRevisionId) ?? previousRevisionId,
-    updatedAtRound: context.round,
-    updatedAtPhase: context.phase,
-    coveredWindow: readCoveredWindow(packetRecord.coveredWindow, context.coveredWindow),
-    summary: readString(packetRecord.summary, "The House is still forming its read of the game."),
-    alliances: normalizeAlliances(packetRecord.alliances),
-    tensions: readStringArray(packetRecord.tensions),
-    promises: readStringArray(packetRecord.promises),
-    voteBlocs: readStringArray(packetRecord.voteBlocs),
-    mingleDiscoveries: readStringArray(packetRecord.mingleDiscoveries),
-    playerTrajectories: normalizePlayerTrajectories(packetRecord.playerTrajectories),
-    storyArcs: normalizeStoryArcs(packetRecord.storyArcs),
-    droppedThreads: readStringArray(packetRecord.droppedThreads),
-    openQuestions: readStringArray(packetRecord.openQuestions),
-    changedSincePrevious: readString(packetRecord.changedSincePrevious, previous ? "Updated House read." : "Initial House read."),
-  };
-
-  return {
-    packet,
-    rationale: readNullableString(parsed.rationale) ?? undefined,
-    thinking: readNullableString(parsed.thinking) ?? undefined,
-    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
-  };
-}
-
-function parseHouseSummary(
-  raw: string,
-  context: HouseGameplaySummaryContext,
-): HouseGameplaySummaryResult {
-  const parsed = extractJsonObject(raw);
-  if (!parsed) {
-    return {
-      summary: raw.trim() || `Round ${context.round}: The House is watching the pressure shift.`,
-      kind: context.kind,
-      packetRevisionId: context.packet?.revisionId ?? null,
-      coveredWindow: context.coveredWindow,
-      referencedAllianceNames: [],
-    };
-  }
-
-  return {
-    summary: readString(parsed.summary, `Round ${context.round}: The House is watching the pressure shift.`),
-    kind: context.kind,
-    packetRevisionId: context.packet?.revisionId ?? null,
-    coveredWindow: readCoveredWindow(parsed.coveredWindow, context.coveredWindow),
-    referencedAllianceNames: readStringArray(parsed.referencedAllianceNames),
-    openQuestions: readStringArray(parsed.openQuestions),
-    thinking: readNullableString(parsed.thinking) ?? undefined,
-    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
-  };
-}
 
 function huddleCoordinationLabel(window: AllianceHuddleWindow): string {
   if (window === "format") return "locked-format";
@@ -500,52 +743,87 @@ function defaultHuddleAsk(window: AllianceHuddleWindow): string {
   return window === "pre_vote" ? "Align before the public Vote." : "Align before Council.";
 }
 
-function parseHouseAllianceHuddleOutcome(
-  parsed: Record<string, unknown>,
+function decodeHouseAllianceHuddleOutcome(
+  value: unknown,
+  representation: "provider" | "accepted",
+): StructuredDomainDecodeResult<HouseAllianceHuddleOutcomeResult> {
+  const decodedRecord = recordValue(value, "House huddle outcome");
+  if (decodedRecord.status === "invalid") return decodedRecord;
+  const record = decodedRecord.value;
+  if (!hasOnlyKeys(record, [
+    "ask",
+    "plan",
+    "promises",
+    "dissent",
+    "confidence",
+    "posture",
+    "leakOrBetrayalClaims",
+    "thinking",
+  ])) {
+    return { status: "invalid", message: "House huddle outcome contains unsupported fields." };
+  }
+  const ask = readNullableString(record.ask);
+  const plan = readNullableString(record.plan);
+  const promises = normalizedBoundedStrings(record.promises, 12, 500);
+  const dissent = normalizedBoundedStrings(record.dissent, 12, 500);
+  const leakOrBetrayalClaims = normalizedBoundedStrings(
+    record.leakOrBetrayalClaims,
+    12,
+    500,
+  );
+  if (!ask || !plan || ask.length > 800 || plan.length > 1_600) {
+    return { status: "invalid", message: "House huddle ask and plan must be bounded non-empty strings." };
+  }
+  if (!promises || !dissent || !leakOrBetrayalClaims) {
+    return { status: "invalid", message: "House huddle outcome lists must contain bounded non-empty strings." };
+  }
+  if (record.confidence !== "low" && record.confidence !== "medium" && record.confidence !== "high") {
+    return { status: "invalid", message: "House huddle confidence is unsupported." };
+  }
+  if (
+    record.posture !== "coordinating"
+    && record.posture !== "fracturing"
+    && record.posture !== "performative"
+    && record.posture !== "guarded"
+    && record.posture !== "betrayal_watch"
+  ) {
+    return { status: "invalid", message: "House huddle posture is unsupported." };
+  }
+  const thinking = decodeHouseThinking(record, "House huddle", representation);
+  if (thinking.status === "invalid") return thinking;
+  return {
+    status: "valid",
+    value: {
+      ask,
+      plan,
+      promises,
+      dissent,
+      confidence: record.confidence,
+      posture: record.posture,
+      leakOrBetrayalClaims,
+      ...thinking.value,
+    },
+  };
+}
+
+function fallbackHouseAllianceHuddleOutcome(
   context: HouseAllianceHuddleOutcomeContext,
 ): HouseAllianceHuddleOutcomeResult {
   const transcriptFallback = context.transcript.length > 0
     ? `Members discussed ${huddleCoordinationLabel(context.window)} coordination.`
     : `No explicit member messages were recorded for ${context.alliance.name}.`;
   return {
-    ask: readString(
-      parsed.ask,
-      defaultHuddleAsk(context.window),
-    ),
-    plan: readString(parsed.plan, transcriptFallback),
-    promises: readStringArray(parsed.promises),
-    dissent: readStringArray(parsed.dissent),
-    confidence: readConfidence(parsed.confidence),
-    posture: readHuddlePosture(parsed.posture),
-    leakOrBetrayalClaims: readStringArray(parsed.leakOrBetrayalClaims),
-    thinking: readNullableString(parsed.thinking) ?? undefined,
-    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
-  };
-}
-
-function parseHouseProducerBrief(
-  raw: string,
-  context: DiaryRoomContext,
-  packet: HouseStrategyBiblePacket | null,
-): HouseProducerBrief {
-  const parsed = extractJsonObject(raw) ?? {};
-  return {
-    playerName: context.agentName,
-    packetRevisionId: packet?.revisionId ?? null,
-    storyRole: readString(parsed.storyRole, `${context.agentName} is still defining their role in the game.`),
-    pressurePoints: readStringArray(parsed.pressurePoints),
-    relevantAllianceHypotheses: readStringArray(parsed.relevantAllianceHypotheses),
-    contradictions: readStringArray(parsed.contradictions),
-    questionAngles: readStringArray(parsed.questionAngles),
-    safeToReveal: readStringArray(parsed.safeToReveal),
-    privateDoNotReveal: readStringArray(parsed.privateDoNotReveal),
-    thinking: readNullableString(parsed.thinking) ?? undefined,
-    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
+    ask: defaultHuddleAsk(context.window),
+    plan: transcriptFallback,
+    promises: [],
+    dissent: [],
+    confidence: "low",
+    posture: "guarded",
+    leakOrBetrayalClaims: [],
   };
 }
 
 export class LLMHouseInterviewer implements IHouseInterviewer {
-  private readonly openai: OpenAI;
   private readonly model: string;
   private readonly providerProfileId: ProviderProfileId;
   private readonly catalogId?: string;
@@ -557,10 +835,15 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly privateTraceOwnerEpoch?: string;
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly structuredOutputTimeoutMs: number;
+  private readonly houseSummaryTimeoutMs?: number;
+  private readonly providerExecution: ProviderExecutionCoordinator;
+  private readonly providerManifest: readonly LlmProviderRuntime[];
+  private readonly responseProviderRuntime = new WeakMap<object, LlmProviderRuntime>();
+  private readonly responseProviderAttemptId = new WeakMap<object, string>();
+  private readonly responseProviderOutcome = new WeakMap<object, ProviderModelOutcome>();
   private tokenTracker: TokenTracker | null = null;
 
-  constructor(openaiClient: OpenAI, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
-    this.openai = openaiClient;
+  constructor(provider: OpenAI | LlmProviderAdapter, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
     this.catalogId = options.catalogId;
@@ -571,6 +854,25 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.privateTraceOwnerEpoch = options.ownerEpoch;
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 45_000;
+    this.houseSummaryTimeoutMs = options.houseSummaryTimeoutMs;
+    this.providerExecution = new ProviderExecutionCoordinator({
+      hooks: options.providerExecutionHooks,
+    });
+    this.providerManifest = options.providerManifest?.length
+      ? options.providerManifest.map((entry) => ({ ...entry }))
+      : [{
+          adapter: isLlmProviderAdapter(provider)
+            ? provider
+            : createProviderAdapter(this.providerProfileId, provider),
+          catalogId: options.catalogId ?? `${this.providerProfileId}:${model}`,
+          providerProfileId: this.providerProfileId,
+          modelId: model,
+          modelCapabilities: this.modelCapabilities,
+          reasoningPolicy: this.reasoningPolicy,
+          toolChoiceMode: this.toolChoiceMode,
+          position: 0,
+          role: "primary",
+        }];
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -578,7 +880,128 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.tokenTracker = tracker;
   }
 
-  private recordUsage(source: string, response: ChatCompletion): void {
+  private startProviderCall(
+    context: PrivateDecisionTraceContext,
+  ): ProviderLogicalCallExecution {
+    return this.providerExecution.startCall({
+      ...(context.gameId && { gameId: context.gameId }),
+      ...(context.ownerEpoch && { ownerEpoch: context.ownerEpoch }),
+      actor: context.actor,
+      action: context.action,
+      ...(context.phase && { phase: context.phase }),
+      ...(context.round !== undefined && { round: context.round }),
+      logicalCallOrdinal: context.logicalCallOrdinal ?? 1,
+    });
+  }
+
+  private executeModelCall<T, TStructuredValue = unknown>(params: {
+    call: ProviderLogicalCallExecution;
+    invocation:
+      | ModelInvocation<TStructuredValue>
+      | (() => ModelInvocation<TStructuredValue>);
+    maxAttempts: number;
+    requestSignalFactory?: () => AbortSignal | undefined;
+    cancellationSignal?: AbortSignal;
+    validate(
+      response: ProviderModelOutcome,
+      structuredValue: TStructuredValue | undefined,
+    ): ProviderCandidateValidation<T>;
+    onRetry?: (record: ProviderAttemptRecord) => void;
+  }): Promise<T> {
+    return executeModelInvocation({
+      call: params.call,
+      runtimes: this.providerManifest,
+      invocation: params.invocation,
+      maxAttempts: params.maxAttempts,
+      ...(params.requestSignalFactory && { requestSignalFactory: params.requestSignalFactory }),
+      ...(params.cancellationSignal && {
+        cancellationSignal: params.cancellationSignal,
+      }),
+      validate: params.validate,
+      ...(params.onRetry && { onRetry: params.onRetry }),
+    }).then(({ value, manifestPosition, acceptedAttemptId, liveOutcome }) => {
+      if (value && typeof value === "object") {
+        this.responseProviderRuntime.set(
+          value as object,
+          this.providerManifest[manifestPosition]!,
+        );
+        if (acceptedAttemptId) {
+          this.responseProviderAttemptId.set(value as object, acceptedAttemptId);
+        }
+        if (liveOutcome) {
+          this.responseProviderOutcome.set(value as object, liveOutcome);
+        }
+      }
+      return value;
+    });
+  }
+
+  private runtimeForResponse(response: ProviderModelOutcome): LlmProviderRuntime {
+    return this.responseProviderRuntime.get(response as object)
+      ?? this.providerManifest[0]!;
+  }
+
+  private executeHouseModelTransport(
+    context: PrivateDecisionTraceContext,
+    invocation: ModelInvocation,
+    options: {
+      maxAttempts?: number;
+      requestSignalFactory?: () => AbortSignal | undefined;
+      cancellationSignal?: AbortSignal;
+      validate?: (response: ProviderModelOutcome) => ProviderCandidateValidation<ProviderModelOutcome>;
+    } = {},
+  ): Promise<ProviderModelOutcome> {
+    return this.executeModelCall({
+      call: this.startProviderCall(context),
+      invocation,
+      maxAttempts: options.maxAttempts ?? 2,
+      ...(options.requestSignalFactory && { requestSignalFactory: options.requestSignalFactory }),
+      ...(options.cancellationSignal && { cancellationSignal: options.cancellationSignal }),
+      validate: (response) => {
+        if (response.refusal || response.stopReason === "content_filter") {
+          return {
+            status: "unusable",
+            kind: "refusal",
+            message: response.refusal ?? "content_filter",
+            retryable: false,
+          };
+        }
+        if (response.stopReason === "length") {
+          return {
+            status: "unusable",
+            kind: "undecodable_structured_output",
+            message: "length",
+            retryable: true,
+          };
+        }
+        if (!response.text && response.toolCalls.length === 0) {
+          return {
+            status: "unusable",
+            kind: "empty_output",
+            message: "missing_assistant_message",
+            retryable: true,
+          };
+        }
+        return options.validate?.(response) ?? this.validateHouseTextResponse(response);
+      },
+    });
+  }
+
+  private validateHouseTextResponse(
+    response: ProviderModelOutcome,
+  ): ProviderCandidateValidation<ProviderModelOutcome> {
+    const content = response.text?.trim();
+    return content
+      ? { status: "usable", value: response }
+      : {
+          status: "unusable",
+          kind: "empty_output",
+          message: "empty_house_text",
+          retryable: true,
+        };
+  }
+
+  private recordUsage(source: string, response: ProviderModelOutcome): void {
     if (!this.tokenTracker) return;
     const usage = LLMHouseInterviewer.providerUsageMetadata(response);
     if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return;
@@ -588,12 +1011,32 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
-      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      parseOpenAIServiceTier(response.serviceTier),
       usage.cacheWriteTokens ?? 0,
     );
   }
 
-  private privateTraceContext(action: string, round: number, phase: Phase): PrivateDecisionTraceContext {
+  static providerUsage(response: ProviderModelOutcome, callId: string): HouseProviderUsage {
+    const usage = LLMHouseInterviewer.providerUsageMetadata(response);
+    return {
+      callId,
+      responseId: response.responseId ?? null,
+      serviceTier: parseOpenAIServiceTier(response.serviceTier) ?? null,
+      promptTokens: usage?.promptTokens ?? null,
+      cachedTokens: usage?.cachedTokens ?? null,
+      cacheWriteTokens: usage?.cacheWriteTokens ?? null,
+      completionTokens: usage?.completionTokens ?? null,
+      reasoningTokens: usage?.reasoningTokens ?? null,
+      totalTokens: usage?.totalTokens ?? null,
+    };
+  }
+
+  private privateTraceContext(
+    action: string,
+    round: number,
+    phase: Phase,
+    logicalCallOrdinal = 1,
+  ): PrivateDecisionTraceContext {
     return {
       ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
       ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
@@ -604,17 +1047,45 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       },
       phase,
       round,
+      logicalCallOrdinal,
     };
   }
 
+  private diaryPrivateTraceContext(
+    action: "house-question" | "house-followup",
+    context: DiaryRoomContext,
+    exchangeOrdinal = 1,
+  ): PrivateDecisionTraceContext {
+    return this.privateTraceContext(
+      action,
+      context.round,
+      Phase.DIARY_ROOM,
+      pairProviderLogicalCallOrdinals(
+        context.providerInterviewOrdinal,
+        exchangeOrdinal,
+      ),
+    );
+  }
+
   private static privateTraceMessages(
-    messages: readonly { role: string; content: unknown; name?: string }[],
+    messages: readonly {
+      role: string;
+      content?: unknown;
+      name?: string;
+      tool_call_id?: string;
+      tool_calls?: unknown;
+    }[],
   ): PrivateDecisionTraceMessage[] {
-    return messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      ...(message.name && { name: message.name }),
-    }));
+    return messages.map((message) => {
+      const toolCalls = LLMHouseInterviewer.privateTraceToolCalls({ tool_calls: message.tool_calls });
+      return {
+        role: message.role,
+        content: message.content ?? null,
+        ...(message.name && { name: message.name }),
+        ...(message.tool_call_id && { toolCallId: message.tool_call_id }),
+        ...(toolCalls && { toolCalls }),
+      };
+    });
   }
 
   private static privateTraceToolCalls(message: unknown): PrivateDecisionTraceToolCall[] | undefined {
@@ -650,68 +1121,34 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   }
 
-  private static providerUsageMetadata(response: ChatCompletion): PrivateDecisionTrace["usage"] | undefined {
-    const usage = (response as unknown as Record<string, unknown>).usage;
-    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
-    const usageRecord = usage as Record<string, unknown>;
-    const completionDetails = usageRecord.completion_tokens_details &&
-      typeof usageRecord.completion_tokens_details === "object" &&
-      !Array.isArray(usageRecord.completion_tokens_details)
-      ? usageRecord.completion_tokens_details as Record<string, unknown>
-      : {};
-    const promptDetails = usageRecord.prompt_tokens_details &&
-      typeof usageRecord.prompt_tokens_details === "object" &&
-      !Array.isArray(usageRecord.prompt_tokens_details)
-      ? usageRecord.prompt_tokens_details as Record<string, unknown>
-      : {};
-    const inputDetails = usageRecord.input_tokens_details &&
-      typeof usageRecord.input_tokens_details === "object" &&
-      !Array.isArray(usageRecord.input_tokens_details)
-      ? usageRecord.input_tokens_details as Record<string, unknown>
-      : {};
-    const outputDetails = usageRecord.output_tokens_details &&
-      typeof usageRecord.output_tokens_details === "object" &&
-      !Array.isArray(usageRecord.output_tokens_details)
-      ? usageRecord.output_tokens_details as Record<string, unknown>
-      : {};
-    const routerBilling = usageRecord.imgnai &&
-      typeof usageRecord.imgnai === "object" &&
-      !Array.isArray(usageRecord.imgnai)
-      ? usageRecord.imgnai as Record<string, unknown>
-      : undefined;
-    const diagnostics = "imgnai" in usageRecord && !routerBilling ? ["malformed_router_billing"] : [];
-    const promptTokens = LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens)
-      ?? LLMHouseInterviewer.readNumberField(usageRecord.input_tokens);
-    const completionTokens = LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens)
-      ?? LLMHouseInterviewer.readNumberField(usageRecord.output_tokens);
-    const cachedTokens = LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens)
-      ?? LLMHouseInterviewer.readNumberField(inputDetails.cached_tokens);
-    const cacheWriteTokens = LLMHouseInterviewer.readNumberField(promptDetails.cache_write_tokens)
-      ?? LLMHouseInterviewer.readNumberField(inputDetails.cache_write_tokens);
-    const reasoningTokens = LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens)
-      ?? LLMHouseInterviewer.readNumberField(outputDetails.reasoning_tokens);
+  private static providerUsageMetadata(response: ProviderModelOutcome): PrivateDecisionTrace["usage"] | undefined {
+    const usage = response.accounting?.usage;
+    if (!usage) return undefined;
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(promptTokens !== undefined && { promptTokens }),
-      ...(completionTokens !== undefined && { completionTokens }),
-      ...(cachedTokens !== undefined && { cachedTokens }),
-      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
-      ...(reasoningTokens !== undefined && { reasoningTokens }),
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) }),
-      ...(routerBilling && { routerBilling }),
-      ...(diagnostics.length > 0 && { diagnostics }),
+      ...(usage.promptTokens !== undefined && { promptTokens: usage.promptTokens }),
+      ...(usage.completionTokens !== undefined && { completionTokens: usage.completionTokens }),
+      ...(usage.cachedTokens !== undefined && { cachedTokens: usage.cachedTokens }),
+      ...(usage.cacheWriteTokens !== undefined && { cacheWriteTokens: usage.cacheWriteTokens }),
+      ...(usage.reasoningTokens !== undefined && { reasoningTokens: usage.reasoningTokens }),
+      ...(usage.totalTokens !== undefined && { totalTokens: usage.totalTokens }),
     };
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
 
   private async emitPrivateDecisionTrace(params: {
     context: PrivateDecisionTraceContext;
-    messages: readonly { role: string; content: unknown; name?: string }[];
-    response: ChatCompletion;
+    messages: readonly {
+      role: string;
+      content?: unknown;
+      name?: string;
+      tool_call_id?: string;
+      tool_calls?: unknown;
+    }[];
+    response: ProviderModelOutcome;
     output?: unknown;
+    toolRequest?: boolean;
   }): Promise<void> {
     if (!this.privateTraceSink) return;
-    const choice = params.response.choices[0];
-    const message = choice?.message;
     const outputRecord =
       params.output && typeof params.output === "object" && !Array.isArray(params.output)
         ? params.output as Record<string, unknown>
@@ -719,17 +1156,36 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const emittedThinking = readString(outputRecord.thinking);
     const reasoningContext =
       readString(outputRecord.reasoningContext) ||
-      LLMHouseInterviewer.extractReasoningContext(message);
-    const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
-    const content = typeof message?.content === "string" ? message.content : null;
-    const requestedReasoningEffort = this.requestedReasoningEffort();
+      params.response.reasoning?.content;
+    const toolCalls = params.response.toolCalls.length > 0
+      ? params.response.toolCalls.map((call) => ({
+          ...(call.id && { id: call.id }),
+          type: "function_call",
+          name: call.name,
+          arguments: call.arguments,
+        }))
+      : undefined;
+    const content = params.response.text ?? null;
+    const runtime = this.runtimeForResponse(params.response);
+    const configuredEffort = runtime.reasoningPolicy === "low"
+      || runtime.reasoningPolicy === "medium"
+      || runtime.reasoningPolicy === "high"
+      ? runtime.reasoningPolicy
+      : undefined;
+    const requestReasoningEffort = runtime.modelCapabilities.supportsReasoningEffort
+      ? configuredEffort
+      : undefined;
+    const requestedReasoningEffort = requestReasoningEffort;
     const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: params.context.actor.id ?? "house",
-      requestShape: "chat_completions",
+      requestShape: params.response.transport,
       usage: LLMHouseInterviewer.providerUsageMetadata(params.response),
     });
-    const decisionId = randomUUID();
+    const acceptedAttemptId = this.responseProviderAttemptId.get(params.response as object);
+    const decisionId = acceptedAttemptId
+      ? providerAcceptedDecisionId(acceptedAttemptId)
+      : randomUUID();
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(params.context.gameId && { gameId: params.context.gameId }),
@@ -741,27 +1197,28 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ...(params.context.round !== undefined && { round: params.context.round }),
       createdAt: new Date().toISOString(),
       model: {
-        provider: this.providerProfileId,
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        name: this.model,
+        provider: runtime.providerProfileId,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        name: runtime.modelId,
       },
       ...(requestedReasoningEffort && { requestedReasoningEffort }),
-      reasoningPolicy: this.reasoningPolicy,
+      reasoningPolicy: runtime.reasoningPolicy,
       prompt: {
         messages: privateTraceMessages,
       },
       request: {
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        model: runtime.modelId,
         messages: privateTraceMessages,
-        ...(requestedReasoningEffort && { reasoning_effort: requestedReasoningEffort }),
-        reasoningPolicy: this.reasoningPolicy,
+        ...(requestReasoningEffort && { reasoning_effort: requestReasoningEffort }),
+        reasoningPolicy: runtime.reasoningPolicy,
       },
       response: {
-        raw: params.response,
-        finishReason: choice?.finish_reason ?? null,
+        transport: params.response.transport,
+        raw: params.response.nativeResponse,
+        finishReason: params.response.stopReason ?? params.response.status ?? null,
         content,
         ...(toolCalls && { toolCalls }),
       },
@@ -788,16 +1245,57 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return undefined;
   }
 
-  private modelParams(maxTokens: number, temperature: number) {
-    const usesReasoningBudget = this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
-    const budget = this.applyMessageTokenFloor(usesReasoningBudget ? maxTokens + 4000 : maxTokens);
-    const reasoningEffort = this.requestedReasoningEffort();
+  private static modelMessages(
+    messages: readonly ChatCompletionMessageParam[],
+  ): ModelInvocationMessage[] {
+    return messages.map((message) => {
+      if (message.role === "tool") {
+        return {
+          role: "tool" as const,
+          content: typeof message.content === "string"
+            ? message.content
+            : JSON.stringify(message.content),
+          toolCallId: message.tool_call_id,
+        };
+      }
+      if (message.role === "assistant") {
+        return {
+          role: "assistant" as const,
+          content: typeof message.content === "string" ? message.content : null,
+          ...(message.tool_calls?.length && {
+            toolCalls: message.tool_calls.map((call) => ({
+              id: call.id,
+              name: call.function.name,
+              arguments: call.function.arguments,
+            })),
+          }),
+        };
+      }
+      if (message.role === "function") {
+        throw new Error("Legacy function messages are not supported by provider-native invocation adapters");
+      }
+      return {
+        role: message.role,
+        content: typeof message.content === "string"
+          ? message.content
+          : JSON.stringify(message.content),
+      };
+    });
+  }
+
+  private houseInvocation<TStructuredValue = unknown>(
+    messages: readonly ChatCompletionMessageParam[],
+    result: ModelInvocationResult<TStructuredValue>,
+    outputTokenLimit: number,
+    temperature: number,
+  ): ModelInvocation<TStructuredValue> {
+    const effort = this.requestedReasoningEffort();
     return {
-      ...(this.modelCapabilities.usesMaxCompletionTokens
-        ? { max_completion_tokens: budget }
-        : { max_tokens: budget }),
-      ...(this.modelCapabilities.supportsTemperature && { temperature }),
-      ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
+      messages: LLMHouseInterviewer.modelMessages(messages),
+      result,
+      outputTokenLimit,
+      ...(effort && { reasoning: { effort } }),
+      temperature,
     };
   }
 
@@ -809,132 +1307,108 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return Math.max(maxTokens, 8192);
   }
 
-  private jsonObjectResponseFormat(name: string) {
-    return {
-      type: "json_schema" as const,
-      json_schema: {
-        name,
-        schema: {
-          type: "object",
-          additionalProperties: true,
-        },
-      },
-    };
-  }
-
-  private structuredOutputSignal(): AbortSignal | undefined {
+  private structuredOutputSignalFactory(): (() => AbortSignal) | undefined {
     if (this.structuredOutputTimeoutMs < 1) return undefined;
-    return AbortSignal.timeout(this.structuredOutputTimeoutMs);
+    return () => AbortSignal.timeout(this.structuredOutputTimeoutMs);
   }
 
-  private parseStructuredJsonContent(content: string | null | undefined): Record<string, unknown> | null {
-    const text = content?.trim();
-    if (!text) return null;
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-      return parsed as Record<string, unknown>;
-    } catch {
-      return extractJsonObject(text);
-    }
-  }
-
-  private async callHouseJsonSchema(params: {
+  private async callHouseJsonSchema<TValue extends object>(params: {
     action: string;
+    artifactAction?: string;
     source: string;
     round: number;
     phase: Phase;
+    traceContext?: PrivateDecisionTraceContext;
     messages: Array<{ role: "system" | "user"; content: string }>;
     schemaName: string;
     schema: Record<string, unknown>;
+    decoder: HouseStructuredDecoder<TValue>;
     maxTokens: number;
     temperature: number;
-  }): Promise<{ parsed: Record<string, unknown>; response: ChatCompletion }> {
+  }): Promise<{ value: TValue; response?: ProviderModelOutcome }> {
     let effectiveMaxTokens = this.applyStructuredTokenFloor(params.maxTokens);
     const maxAttempts = 2;
-    let lastError: Error | null = null;
-    let lastResponse: ChatCompletion | null = null;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await this.openai.chat.completions.create(
+    const traceContext = params.traceContext ?? this.privateTraceContext(
+      params.action,
+      params.round,
+      params.phase,
+    );
+    const providerCall = this.startProviderCall(traceContext);
+    const requestSignalFactory = this.structuredOutputSignalFactory();
+    const artifact = houseStructuredRecordArtifact<TValue>(
+      params.artifactAction ?? `house.${params.action}.v1`,
+      params.schemaName,
+      params.schema,
+      params.decoder,
+    );
+    try {
+      const result = await this.executeModelCall({
+        call: providerCall,
+        invocation: () => this.houseInvocation(
+          params.messages,
           {
-            model: this.model,
-            messages: params.messages,
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: params.schemaName,
-                strict: true,
-                schema: params.schema,
-              },
-            },
-            ...this.modelParams(effectiveMaxTokens, params.temperature),
+            kind: "structured",
+            artifact,
           },
-          { signal: this.structuredOutputSignal() },
-        );
-        lastResponse = response;
-        this.recordUsage(params.source, response);
-
-        const choice = response.choices[0];
-        if (choice?.message?.refusal) {
-          throw new Error("model_refusal");
-        }
-        if (choice?.finish_reason === "content_filter") {
-          throw new Error("content_filter");
-        }
-        if (choice?.finish_reason === "length") {
-          throw new Error("length");
-        }
-
-        const parsed = this.parseStructuredJsonContent(choice?.message?.content);
-        if (!parsed) {
-          throw new Error("invalid_json");
-        }
-        return { parsed, response };
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        const isNonRetryable =
-          lastError.message === "model_refusal" ||
-          lastError.message === "content_filter" ||
-          lastError.message === "request_aborted" ||
-          lastError.name === "APIUserAbortError" ||
-          lastError.name === "AbortError";
-        const shouldRetry = attempt < maxAttempts && !isNonRetryable;
-        if (!shouldRetry) break;
-        if (lastError.message === "length" || lastError.message === "invalid_json") {
-          effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
-        }
-        console.warn(`[house-structured-output] action=${params.action} attempt ${attempt} failed, retrying: ${lastError.message}`);
-      }
-    }
-
-    const failure = lastError ?? new Error("unknown_failure");
-    if (lastResponse) {
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext(params.action, params.round, params.phase),
-        messages: params.messages,
-        response: lastResponse,
-        output: { error: failure.message },
+          effectiveMaxTokens,
+          params.temperature,
+        ),
+        maxAttempts,
+        ...(requestSignalFactory && { requestSignalFactory }),
+        validate: (_response, value) => value
+          ? { status: "usable", value }
+          : {
+              status: "unusable",
+              kind: "malformed_output",
+              message: "Structured House payload was not decoded.",
+            },
+        onRetry: (record) => {
+          if (
+            record.outcome.kind === "undecodable_structured_output" ||
+            record.outcome.kind === "malformed_output"
+          ) {
+            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
+          }
+          console.warn(
+            `[house-structured-output] action=${params.action} attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
+          );
+        },
       });
+      const response = this.responseProviderOutcome.get(result);
+      if (response) this.recordUsage(params.source, response);
+      return { value: result, ...(response && { response }) };
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      console.warn(
+        `[house-structured-output] action=${params.action} failed: ${failure.message}`,
+      );
+      throw error;
     }
-    console.warn(`[house-structured-output] action=${params.action} failed: ${failure.message}`);
-    throw failure;
   }
 
   async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
+    if (!Number.isInteger(context.roomCount) || context.roomCount < 1) {
+      throw new Error("House Mingle assignment requires a positive integer room count.");
+    }
+    requireDistinctContextIds(
+      context.players.map((player) => player.id),
+      "House Mingle player context",
+    );
     const playerLines = context.players
       .map((player) => `- ${player.name} (${player.id})`)
       .join("\n");
 
     const roomList = Array.from({ length: context.roomCount }, (_, index) => index + 1).join(", ");
+    const selectedFormatName = context.selectedFormatId === null
+      ? null
+      : displayNameForFormat(context.selectedFormatId);
     const prompt = `Assign initial Mingle rooms for Round ${context.round}.
 
 Phase: ${context.phase}
-Locked format: ${context.selectedFormatName ?? "none"}
+Locked format: ${selectedFormatName ?? "none"}
 Locked rules: ${context.formatRuleSummary ?? "No locked format rules are available."}
 Rooms available: ${roomList}
-Alive players:
+Players remaining:
 ${playerLines}
 
 Your job:
@@ -954,10 +1428,10 @@ Respond with JSON only:
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are the House producer assigning private Mingle rooms. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const { parsed, response } = await this.callHouseJsonSchema({
+      const { value, response } = await this.callHouseJsonSchema({
         action: "house-mingle-assignment",
         source: "House/mingle-assignment",
         round: context.round,
@@ -969,13 +1443,21 @@ Respond with JSON only:
           properties: {
             rooms: {
               type: "array",
+              minItems: context.roomCount,
+              maxItems: context.roomCount,
               items: {
                 type: "object",
                 properties: {
-                  roomId: { type: "integer" },
+                  roomId: {
+                    type: "integer",
+                    enum: Array.from({ length: context.roomCount }, (_, index) => index + 1),
+                  },
                   playerIds: {
                     type: "array",
-                    items: { type: "string" },
+                    items: {
+                      type: "string",
+                      enum: context.players.map((player) => player.id),
+                    },
                   },
                 },
                 required: ["roomId", "playerIds"],
@@ -988,22 +1470,28 @@ Respond with JSON only:
           required: ["rooms", "rationale", "thinking"],
           additionalProperties: false,
         },
+        decoder: {
+          decodeProvider: (record) => decodeHouseMingleAssignment(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseMingleAssignment(accepted, context, "accepted"),
+        },
         maxTokens: 1200,
         temperature: 0.4,
       });
 
-      const output = parseHouseMingleAssignmentRecord({
-        ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
-      });
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-mingle-assignment", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
+      const output = response?.reasoning?.content
+        ? { ...value, reasoningContext: response.reasoning.content }
+        : value;
+      if (response) {
+        await this.emitPrivateDecisionTrace({
+          context: this.privateTraceContext("house-mingle-assignment", context.round, context.phase),
+          messages,
+          response,
+          output,
+        });
+      }
       return output;
     } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
       const message = err instanceof Error ? err.message : String(err);
       return {
         rooms: [],
@@ -1012,7 +1500,123 @@ Respond with JSON only:
     }
   }
 
+  async selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult> {
+    if (
+      !Number.isInteger(context.budget)
+      || context.budget < 0
+      || context.budget > context.candidates.length
+    ) {
+      throw new Error("House proposer context has an invalid budget.");
+    }
+    requireDistinctContextIds(
+      context.candidates.map((candidate) => candidate.playerId),
+      "House proposer candidate context",
+    );
+    const candidates = context.candidates
+      .map((candidate, index) =>
+        `${index + 1}. ${candidate.playerName} (${candidate.playerId}); activeAlliances=${candidate.activeAllianceCount}`,
+      )
+      .join("\n");
+    const prompt = `Select scarce named-alliance proposer access for Influence.
+
+Round: ${context.round}
+Phase: ${context.phase}
+Proposer budget: ${context.budget}
+Eligible players remaining:
+${candidates || "(none)"}
+
+Your job:
+- Select exactly ${context.budget} unique eligible players to receive a propose, amend, or pass opportunity.
+- Prefer players with fewer active alliances so underrepresented players receive access before already well-connected players.
+- Use only the exact player IDs listed above.
+- Select access only. Do not choose alliance members or terms, create or rewrite alliances, dissolve alliances, enforce promises, or assume a selected player will propose.
+- Supply a short private producer rationale for every selection and for the plan overall.
+
+Respond with JSON only.`;
+
+    try {
+      const messages = [
+        {
+          role: "system" as const,
+          content: withInfluenceGamePromptContext("You are The House producer selecting scarce named-alliance proposer access. Return JSON only."),
+        },
+        { role: "user" as const, content: prompt },
+      ];
+      const { value, response } = await this.callHouseJsonSchema({
+        action: "house-alliance-proposer-selection",
+        source: "House/alliance-proposer-selection",
+        round: context.round,
+        phase: context.phase,
+        messages,
+        schemaName: "house_alliance_proposer_selection",
+        schema: {
+          type: "object",
+          properties: {
+            selected: {
+              type: "array",
+              minItems: context.budget,
+              maxItems: context.budget,
+              items: {
+                type: "object",
+                properties: {
+                  playerId: {
+                    type: "string",
+                    enum: context.candidates.map((candidate) => candidate.playerId),
+                  },
+                  rationale: { type: "string" },
+                },
+                required: ["playerId", "rationale"],
+                additionalProperties: false,
+              },
+            },
+            rationale: { type: "string" },
+            thinking: { type: ["string", "null"] },
+          },
+          required: ["selected", "rationale", "thinking"],
+          additionalProperties: false,
+        },
+        decoder: {
+          decodeProvider: (record) => decodeHouseAllianceProposerSelection(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceProposerSelection(accepted, context, "accepted"),
+        },
+        maxTokens: 1200,
+        temperature: 0.3,
+      });
+      const output = response?.reasoning?.content
+        ? { ...value, reasoningContext: response.reasoning.content }
+        : value;
+      if (response) {
+        await this.emitPrivateDecisionTrace({
+          context: this.privateTraceContext("house-alliance-proposer-selection", context.round, context.phase),
+          messages,
+          response,
+          output,
+        });
+      }
+      return output;
+    } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
+      const selected = deterministicAllianceProposerSelection(context, "Fallback selected");
+      return {
+        selected,
+        rationale: `House proposer selection failed; deterministic underrepresentation-first fallback selected ${selected.length} of ${context.budget} proposer opportunities (${err instanceof Error ? err.message : String(err)}).`,
+      };
+    }
+  }
+
   async planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult> {
+    if (
+      !Number.isInteger(context.budget)
+      || context.budget < 0
+    ) {
+      throw new Error("House huddle schedule context has an invalid budget.");
+    }
+    requireDistinctContextIds(
+      context.candidates.map((candidate) => candidate.allianceId),
+      "House huddle candidate context",
+    );
     const candidates = context.candidates
       .map((candidate, index) => [
         `${index + 1}. ${candidate.name} (${candidate.allianceId})`,
@@ -1028,7 +1632,7 @@ Round: ${context.round}
 Phase: ${context.phase}
 Window: ${context.window}
 Global huddle budget: ${context.budget}
-Alive players: ${context.alivePlayers.join(", ")}
+Players remaining: ${context.alivePlayers.join(", ")}
 
 Eligible active alliances:
 ${candidates || "(none)"}
@@ -1045,10 +1649,10 @@ Respond with JSON only.`;
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer scheduling scarce named-alliance huddles. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer scheduling scarce named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const { parsed, response } = await this.callHouseJsonSchema({
+      const { value, response } = await this.callHouseJsonSchema({
         action: "house-alliance-huddle-schedule",
         source: "House/alliance-huddle-schedule",
         round: context.round,
@@ -1060,10 +1664,14 @@ Respond with JSON only.`;
           properties: {
             scheduled: {
               type: "array",
+              maxItems: context.budget,
               items: {
                 type: "object",
                 properties: {
-                  allianceId: { type: "string" },
+                  allianceId: {
+                    type: "string",
+                    enum: context.candidates.map((candidate) => candidate.allianceId),
+                  },
                   rationale: { type: "string" },
                 },
                 required: ["allianceId", "rationale"],
@@ -1072,10 +1680,14 @@ Respond with JSON only.`;
             },
             skipped: {
               type: "array",
+              maxItems: context.candidates.length,
               items: {
                 type: "object",
                 properties: {
-                  allianceId: { type: "string" },
+                  allianceId: {
+                    type: "string",
+                    enum: context.candidates.map((candidate) => candidate.allianceId),
+                  },
                   rationale: { type: "string" },
                 },
                 required: ["allianceId", "rationale"],
@@ -1088,21 +1700,27 @@ Respond with JSON only.`;
           required: ["scheduled", "skipped", "rationale", "thinking"],
           additionalProperties: false,
         },
+        decoder: {
+          decodeProvider: (record) => decodeHouseAllianceHuddleSchedule(record, context, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceHuddleSchedule(accepted, context, "accepted"),
+        },
         maxTokens: 1800,
         temperature: 0.4,
       });
-      const output = parseHouseAllianceHuddleScheduleRecord({
-        ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
-      });
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-alliance-huddle-schedule", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
+      const output = response?.reasoning?.content
+        ? { ...value, reasoningContext: response.reasoning.content }
+        : value;
+      if (response) {
+        await this.emitPrivateDecisionTrace({
+          context: this.privateTraceContext("house-alliance-huddle-schedule", context.round, context.phase),
+          messages,
+          response,
+          output,
+        });
+      }
       return output;
     } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
       const scheduled = context.candidates.slice(0, context.budget).map((candidate) => ({
         allianceId: candidate.allianceId,
         rationale: `Fallback schedule: ${candidate.name} is active and within the ${context.budget}-huddle budget.`,
@@ -1138,12 +1756,12 @@ Timebox: ${context.alliance.timebox ?? "open-ended"}
 Huddle transcript:
 ${transcript}
 
-Authoritative structured member proposals:
-${JSON.stringify(context.commitments)}
+Authoritative structured member facts:
+${JSON.stringify(context.facts)}
 
 Your job:
 - Record the ask, plan, promises/protections, dissent, confidence, posture, and explicit leak or betrayal claims.
-- Treat the structured member proposals as authoritative for targets, commitments, contingencies, and dissent. You may compress them into prose but must not manufacture a target, agreement, promise, or consensus absent from those facts.
+- Treat only the typed member facts as authoritative for targets, commitments, responses, and contingencies. You may compress them into prose but must not manufacture a target, agreement, promise, consensus, or dissent absent from those facts.
 - Do not invent loyalty or force agreement if members were guarded or silent.
 - Do not mutate the alliance terms; this outcome is tactical memory, not a new contract.
 - Keep the outcome compact and useful for future member-safe prompts.
@@ -1152,282 +1770,324 @@ Respond with JSON only.`;
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer summarizing named-alliance huddles. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const { parsed, response } = await this.callHouseJsonSchema({
+      const traceContext = this.privateTraceContext(
+        "house-alliance-huddle-outcome",
+        context.round,
+        context.phase,
+        context.providerLogicalCallOrdinal,
+      );
+      const { value, response } = await this.callHouseJsonSchema({
         action: "house-alliance-huddle-outcome",
         source: "House/alliance-huddle-outcome",
         round: context.round,
         phase: context.phase,
+        traceContext,
         messages,
         schemaName: "house_alliance_huddle_outcome",
         schema: {
           type: "object",
           properties: {
-            ask: { type: "string" },
-            plan: { type: "string" },
-            promises: { type: "array", items: { type: "string" } },
-            dissent: { type: "array", items: { type: "string" } },
+            ask: { type: "string", minLength: 1, maxLength: 800 },
+            plan: { type: "string", minLength: 1, maxLength: 1600 },
+            promises: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
+            dissent: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
             confidence: { type: "string", enum: ["low", "medium", "high"] },
             posture: { type: "string", enum: ["coordinating", "fracturing", "performative", "guarded", "betrayal_watch"] },
-            leakOrBetrayalClaims: { type: "array", items: { type: "string" } },
+            leakOrBetrayalClaims: { type: "array", maxItems: 12, items: { type: "string", minLength: 1, maxLength: 500 } },
             thinking: { type: ["string", "null"] },
           },
           required: ["ask", "plan", "promises", "dissent", "confidence", "posture", "leakOrBetrayalClaims", "thinking"],
           additionalProperties: false,
         },
+        decoder: {
+          decodeProvider: (record) => decodeHouseAllianceHuddleOutcome(record, "provider"),
+          decodeAccepted: (accepted) => decodeHouseAllianceHuddleOutcome(accepted, "accepted"),
+        },
         maxTokens: 1800,
         temperature: 0.35,
       });
-      const output = parseHouseAllianceHuddleOutcome({
-        ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
-      }, context);
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-alliance-huddle-outcome", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
-      return output;
-    } catch {
-      return parseHouseAllianceHuddleOutcome({}, context);
-    }
-  }
-
-  async updateStrategyBible(context: HouseStrategyBibleUpdateContext): Promise<HouseStrategyBibleUpdateResult> {
-    const evidence = this.formatHouseEvidence(context.evidence);
-    const previousPacket = context.previousPacket
-      ? JSON.stringify(context.previousPacket, null, 2)
-      : "(none yet; create the first House Strategy Bible Packet)";
-
-    const prompt = `Update the private House Strategy Bible Packet for Influence.
-
-Round: ${context.round}
-Phase boundary: ${context.phase}
-Covered window: R${context.coveredWindow.fromRound}-${context.coveredWindow.toRound}
-
-Previous packet:
-${previousPacket}
-
-Producer evidence:
-${evidence}
-
-Your job:
-- Carry forward prior useful reads; do not silently forget unresolved threads.
-- Name alliances only as producer hypotheses, with confidence and evidence.
-- Revise, fracture, retire, or lower confidence when votes, eliminations, diary answers, or room behavior contradict prior reads.
-- Authoritative round facts and the current player lists override the previous packet. If the previous packet conflicts about alive/eliminated players, active shields, the current/last empowered player, Council candidates, or the latest elimination, rewrite it as stale history or drop it.
-- Active shields are only active if listed as active in Producer evidence. Historical shield grants must be described as past/expired unless the current active shield list says otherwise.
-- Do not describe an older eliminated player as the fresh wound after a later Council has resolved.
-- Track tensions, promises, vote blocs, Mingle discoveries, player trajectories, story arcs, dropped threads, and open questions.
-- Do not treat House hypotheses as canonical truth.
-
-Respond with JSON only:
-{
-  "packet": {
-    "revisionId": "house-r${context.round}-${context.phase.toLowerCase()}-1",
-    "previousRevisionId": ${context.previousPacket ? `"${context.previousPacket.revisionId}"` : "null"},
-    "coveredWindow": { "fromRound": ${context.coveredWindow.fromRound}, "toRound": ${context.coveredWindow.toRound}, "toPhase": "${context.phase}" },
-    "summary": "compact producer read of the game",
-    "alliances": [
-      {
-        "name": "short memorable alliance hypothesis name",
-        "members": ["Player"],
-        "status": "speculative|forming|active|fracturing|retired",
-        "confidence": "low|medium|high",
-        "evidence": ["specific evidence"],
-        "tension": "optional fracture or pressure",
-        "openQuestions": ["what the House still needs to know"]
+      const output = response?.reasoning?.content
+        ? { ...value, reasoningContext: response.reasoning.content }
+        : value;
+      if (response) {
+        await this.emitPrivateDecisionTrace({
+          context: traceContext,
+          messages,
+          response,
+          output,
+        });
       }
-    ],
-    "tensions": ["active tensions"],
-    "promises": ["pending or broken promises"],
-    "voteBlocs": ["vote coordination reads"],
-    "mingleDiscoveries": ["notable room discoveries"],
-    "playerTrajectories": [
-      { "playerName": "Player", "currentRead": "trajectory", "pressurePoints": ["pressure"], "likelyNextMove": "optional" }
-    ],
-    "storyArcs": [
-      { "title": "arc name", "summary": "what is developing", "involvedPlayers": ["Player"], "status": "emerging|active|resolved|dropped" }
-    ],
-    "droppedThreads": ["threads that no longer matter"],
-    "openQuestions": ["questions for future summaries and diaries"],
-    "changedSincePrevious": "what changed from the previous packet"
-  },
-  "rationale": "short producer/debug rationale",
-  "thinking": "brief hidden producer thinking"
-    }`;
-
-    try {
-      const messages = [
-        { role: "system" as const, content: "You are The House producer maintaining a private Strategy Bible. Return JSON only." },
-        { role: "user" as const, content: prompt },
-      ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_strategy_bible"),
-        ...this.modelParams(5000, 0.35),
-      });
-      this.recordUsage("House/strategy-bible", response);
-
-      const output = parseHouseStrategyBible(response.choices[0]?.message?.content?.trim() ?? "", context);
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-strategy-bible", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
       return output;
     } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
+      return fallbackHouseAllianceHuddleOutcome(context);
+    }
+  }
+
+  async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
+    const narration = context.narrationContext;
+    const limits = HOUSE_SUMMARY_LIMITS[narration.boundary.beatClass];
+    const deadline = Date.now() + (this.houseSummaryTimeoutMs ?? limits.wallClockMs);
+    const usage: HouseProviderUsage[] = [];
+    let providerCalls = 0;
+    const messages: ChatCompletionMessageParam[] = [
+      { role: "system", content: withInfluenceGamePromptContext(HOUSE_SUMMARY_SYSTEM_PROMPT) },
+      {
+        role: "user",
+        content: JSON.stringify({
+          gameInformation: {
+            boundary: {
+              actorCoordinate: narration.boundary.actorCoordinate,
+              round: narration.boundary.round,
+              phase: narration.boundary.phase,
+              beatClass: narration.boundary.beatClass,
+            },
+            canonicalEvents: narration.canonicalEvents,
+            projection: narration.projection,
+            acceptedPublicDialogue: narration.publicDialogue,
+            ...(narration.boundary.beatClass === "milestone" && {
+              omniscientPrivateContext: {
+                acceptedPrivateDialogueAndDecisions: narration.privateDialogueAndDecisions,
+                acceptedDiaryEntries: narration.diaryEntries,
+              },
+            }),
+          },
+          houseNarrativeContext: {
+            authority: "narrative_non_authoritative",
+            recentPublicBeats: context.continuity.recentBeats.map((beat) => ({
+              boundaryId: beat.boundary.id,
+              publicSummary: beat.publicSummary,
+            })),
+            privateNarrativeNotebook: context.continuity.privateNarrativeNotebook,
+          },
+          outputBounds: {
+            publicSummaryCharacters: limits.maxProseCharacters,
+            privateNarrativeNotebookCharacters: HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+            notebookUpdatePolicy: narration.boundary.beatClass === "milestone"
+              ? "replace the whole notebook when new developments materially change the ongoing narrative"
+              : "normally return null to preserve the notebook",
+          },
+        }),
+      },
+    ];
+    const baseResult = () => ({
+      boundary: narration.boundary,
+      providerCalls,
+      usage: usage.map((entry) => ({ ...entry })),
+    });
+    const failed = (reason: string): HouseSummaryAttemptResult => ({
+      status: "failed",
+      reason,
+      ...baseResult(),
+    });
+
+    if (!narration.material) return failed("empty_narration_context");
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) return failed("deadline_exhausted");
+
+    const callId = randomUUID();
+    providerCalls = 1;
+    usage.push({
+      callId,
+      responseId: null,
+      serviceTier: null,
+      promptTokens: null,
+      cachedTokens: null,
+      cacheWriteTokens: null,
+      completionTokens: null,
+      reasoningTokens: null,
+      totalTokens: null,
+    });
+
+    const artifact = HOUSE_SUMMARY_ARTIFACTS[narration.boundary.beatClass];
+    const traceContext = {
+      ...this.privateTraceContext(
+        "house-summary-author",
+        narration.boundary.round,
+        narration.boundary.phase,
+        Math.max(1, narration.boundary.canonicalHead),
+      ),
+      boundary: { currentEventSequence: narration.boundary.canonicalHead },
+    };
+
+    try {
+      const value = await this.executeModelCall({
+        call: this.startProviderCall(traceContext),
+        invocation: () => this.houseInvocation(
+          messages,
+          { kind: "structured", artifact },
+          limits.maxCompletionTokens,
+          0.65,
+        ),
+        maxAttempts: 1,
+        requestSignalFactory: () => AbortSignal.timeout(remainingMs),
+        validate: (_response, decoded) => decoded
+          ? { status: "usable", value: decoded }
+          : {
+              status: "unusable",
+              kind: "malformed_output",
+              message: "House summary was not decoded.",
+            },
+      });
+      const response = this.responseProviderOutcome.get(value);
+      if (response) {
+        this.recordUsage("House/mc-summary", response);
+        usage[0] = LLMHouseInterviewer.providerUsage(response, callId);
+        await this.emitPrivateDecisionTrace({
+          context: traceContext,
+          messages,
+          response,
+          output: { callId, value },
+        });
+      }
+      if (value.publicSummary === null && value.privateNarrativeNotebook === null) {
+        return {
+          status: "model_skipped",
+          reason: "no_public_summary_or_notebook_update",
+          ...baseResult(),
+          ...(response?.reasoning?.content && { reasoningContext: response.reasoning.content }),
+        };
+      }
       return {
-        packet: null,
-        rationale: `House Strategy Bible update failed (${err instanceof Error ? err.message : String(err)}).`,
+        status: "emitted",
+        beat: value.publicSummary === null
+          ? null
+          : {
+              version: 2,
+              boundary: structuredClone(narration.boundary),
+              publicSummary: value.publicSummary,
+            },
+        privateNarrativeNotebook: value.privateNarrativeNotebook,
+        ...baseResult(),
+        ...(response?.reasoning?.content && { reasoningContext: response.reasoning.content }),
       };
+    } catch (error) {
+      if (error instanceof ProviderAttemptError) {
+        const accounting = error.record.accounting?.usage;
+        const rawBody = error.record.rawResponse?.body;
+        const rawRecord = rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
+          ? rawBody as Record<string, unknown>
+          : {};
+        const nativeRecord = rawRecord.nativeResponse
+            && typeof rawRecord.nativeResponse === "object"
+            && !Array.isArray(rawRecord.nativeResponse)
+          ? rawRecord.nativeResponse as Record<string, unknown>
+          : {};
+        usage[0] = {
+          callId,
+          responseId: typeof rawRecord.responseId === "string"
+            ? rawRecord.responseId
+            : typeof rawRecord.id === "string"
+              ? rawRecord.id
+              : typeof nativeRecord.id === "string"
+                ? nativeRecord.id
+                : null,
+          serviceTier: parseOpenAIServiceTier(error.record.accounting?.effectiveServiceTier) ?? null,
+          promptTokens: accounting?.promptTokens ?? null,
+          cachedTokens: accounting?.cachedTokens ?? null,
+          cacheWriteTokens: accounting?.cacheWriteTokens ?? null,
+          completionTokens: accounting?.completionTokens ?? null,
+          reasoningTokens: accounting?.reasoningTokens ?? null,
+          totalTokens: accounting?.totalTokens ?? null,
+        };
+      }
+      if (!isHouseArtifactProviderExhaustion(error)) throw error;
+      const { status, code, type } = contentFreeHouseFailureFields(error);
+      console.warn(`[house-summary] provider_failure call=${callId} status=${status} code=${code} type=${type}`);
+      return failed("provider_failure");
     }
   }
 
-  async generateHouseSummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
-    const prompt = this.buildSummaryPrompt(context, "Generate a concise, watchable 3-5 sentence House MC summary for the audience.");
+  async generateLongFormGameplaySummary(
+    context: HouseGameplaySummaryContext,
+  ): Promise<HouseGameplaySummaryResult | null> {
+    const prompt = JSON.stringify({
+      task: "Write a long-form private producer catch-up in the House's own voice.",
+      boundary: {
+        round: context.round,
+        phase: context.phase,
+        kind: context.kind,
+        coveredWindow: context.coveredWindow,
+      },
+      gameInformation: context.narrationContext,
+      recentPublicBeats: context.recentPublicBeats,
+      privateNarrativeNotebook: context.privateNarrativeNotebook,
+      instruction: "Synthesize the season's developing arcs, strategy, reversals, private threads, and next narrative pressure. This prose is producer presentation only and will never be parsed into game state.",
+    });
     try {
       const messages = [
-        { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are Influence's omniscient House showrunner. Write rich private producer copy and return the exact schema.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
+      const { value, response } = await this.callHouseJsonSchema({
+        action: "house-long-form-summary",
+        artifactAction: "house.house-long-form-summary.v3",
+        source: "House/long-form-summary",
+        round: context.round,
+        phase: context.phase,
         messages,
-        response_format: this.jsonObjectResponseFormat("house_mc_summary"),
-        ...this.modelParams(1600, 0.8),
+        schemaName: "house_long_form_summary_v3",
+        schema: HOUSE_LONG_FORM_SUMMARY_SCHEMA,
+        decoder: {
+          decodeProvider: (record) => decodeHouseLongFormProvider(record, context),
+          decodeAccepted: (accepted) => decodeAcceptedHouseLongForm(accepted, context),
+        },
+        maxTokens: this.requestedReasoningEffort() ? 8_000 : 4_000,
+        temperature: 0.65,
       });
-      this.recordUsage("House/mc-summary", response);
-      const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-summary", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
+      const output: HouseGameplaySummaryResult = response?.reasoning?.content
+        ? { ...value, reasoningContext: response.reasoning.content }
+        : value;
+      if (response) {
+        await this.emitPrivateDecisionTrace({
+          context: this.privateTraceContext("house-long-form-summary", context.round, context.phase),
+          messages,
+          response,
+          output,
+        });
+      }
       return output;
-    } catch {
-      return this.templateSummary(context, "The House is watching closely as the game narrows and the pressure shifts.");
-    }
-  }
-
-  async generateLongFormGameplaySummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
-    const prompt = this.buildSummaryPrompt(
-      context,
-      "Generate a long-form producer catch-up summary. Explain teams forming or weakening, leverage shifts, unresolved promises, and House open questions.",
-    );
-    try {
-      const messages = [
-        { role: "system" as const, content: "You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only." },
-        { role: "user" as const, content: prompt },
-      ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_long_form_summary"),
-        ...this.modelParams(4000, 0.75),
-      });
-      this.recordUsage("House/long-form-summary", response);
-      const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-long-form-summary", context.round, context.phase),
-        messages,
-        response,
-        output,
-      });
-      return output;
-    } catch {
-      return this.templateSummary(context, "The long-form House read is unavailable, but the game continues to turn on shifting promises and pressure.");
-    }
-  }
-
-  async generateProducerBrief(
-    context: DiaryRoomContext,
-    packet: HouseStrategyBiblePacket | null,
-  ): Promise<HouseProducerBrief> {
-    const packetText = packet ? JSON.stringify(packet, null, 2) : "(no House Strategy Bible Packet yet)";
-    const prompt = `Create a private producer brief before The House interviews ${context.agentName}.
-
-Current diary context:
-${this.buildGameStatePrompt(context)}
-
-Canonical fact contract:
-${this.buildCanonicalFactContract(context)}
-
-Current House Strategy Bible Packet:
-${packetText}
-
-Your job:
-- Identify ${context.agentName}'s current story role.
-- Name pressure points, relevant alliance hypotheses, contradictions, and sharp question angles.
-- Separate safe-to-reveal material from private producer reads that must not be dumped into the visible question.
-- Treat the diary context and Canonical fact contract as authoritative over the House Strategy Bible Packet.
-- If the packet conflicts about active shields, who is empowered, who is alive/eliminated, current council status, or the latest elimination, mark that packet claim as stale history and do not repeat it as live truth.
-- The visible question may needle the player, but it must not reveal hidden House packet content as fact.
-
-Respond with JSON only:
-{
-  "storyRole": "short role",
-  "pressurePoints": ["pressure"],
-  "relevantAllianceHypotheses": ["alliance hypothesis names or reads"],
-  "contradictions": ["contradictions to probe"],
-  "questionAngles": ["specific angles The House can ask about"],
-  "safeToReveal": ["safe player-known facts or carefully framed pressure"],
-  "privateDoNotReveal": ["hidden producer reads not to disclose directly"],
-  "thinking": "brief hidden producer thinking"
-    }`;
-
-    try {
-      const messages = [
-        { role: "system" as const, content: "You are The House producer preparing a private diary-room brief. Return JSON only." },
-        { role: "user" as const, content: prompt },
-      ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_producer_brief"),
-        ...this.modelParams(1800, 0.55),
-      });
-      this.recordUsage("House/producer-brief", response);
-      const output = parseHouseProducerBrief(response.choices[0]?.message?.content?.trim() ?? "", context, packet);
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-producer-brief", context.round, Phase.DIARY_ROOM),
-        messages,
-        response,
-        output,
-      });
-      return output;
-    } catch {
-      return parseHouseProducerBrief("", context, packet);
+    } catch (error) {
+      if (!isHouseArtifactProviderExhaustion(error)) throw error;
+      return null;
     }
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const gameStatePrompt = this.buildGameStatePrompt(context);
     const messages = [
-      { role: "system" as const, content: HOUSE_PERSONALITY },
+      {
+        role: "system" as const,
+        content: withInfluenceGamePromptContext(
+          `${PLAYER_FACING_INTERVIEWER_PERSONALITY}\n\nRespond with ONLY the question text, nothing else.`,
+        ),
+      },
       { role: "user" as const, content: gameStatePrompt },
     ];
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...this.modelParams(150, 0.9),
-    });
+    const response = await this.executeHouseModelTransport(
+      this.diaryPrivateTraceContext("house-question", context),
+      this.houseInvocation(
+        messages,
+        { kind: "text" },
+        this.applyMessageTokenFloor(
+          this.requestedReasoningEffort() ? 4_150 : 150,
+        ),
+        0.9,
+      ),
+    );
 
     this.recordUsage("House/question", response);
 
-    const question = response.choices[0]?.message?.content?.trim();
+    const question = response.text?.trim();
     const output = question && question.length > 0
       ? question
       : `${context.agentName}, what's on your mind right now?`;
     await this.emitPrivateDecisionTrace({
-      context: this.privateTraceContext("house-question", context.round, Phase.DIARY_ROOM),
+      context: this.diaryPrivateTraceContext("house-question", context),
       messages,
       response,
       output: { question: output },
@@ -1468,439 +2128,102 @@ Wrap up if:
 
 Your follow-up MUST reference something specific from their answer — a name they mentioned, a claim they made, an emotion they showed. Never ask a generic follow-up.
 
-Respond with EXACTLY one of these formats:
-FOLLOW_UP: <your next question>
-CLOSE: <your brief closing remark to the player, 1 sentence>`;
+Return the decision and text through the required structured response:
+- Use decision "follow_up" and put the next question in text.
+- Use decision "close" and put a one-sentence closing remark to the player in text.`;
     const messages = [
-      { role: "system" as const, content: HOUSE_PERSONALITY },
+      { role: "system" as const, content: withInfluenceGamePromptContext(PLAYER_FACING_INTERVIEWER_PERSONALITY) },
       { role: "user" as const, content: followUpPrompt },
     ];
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
+    const mayAskFollowUp = exchangeCount < 4;
+    const { value, response } = await this.callHouseJsonSchema({
+      action: "house-followup",
+      source: "House/followup",
+      round: context.round,
+      phase: context.precedingPhase,
+      traceContext: this.diaryPrivateTraceContext(
+        "house-followup",
+        context,
+        exchangeCount + 1,
+      ),
       messages,
-      ...this.modelParams(200, 0.8),
+      schemaName: "house_followup",
+      schema: HOUSE_FOLLOW_UP_SCHEMA,
+      decoder: {
+        decodeProvider: (record) => decodeHouseFollowUpProvider(record, mayAskFollowUp),
+        decodeAccepted: (accepted) => decodeAcceptedHouseFollowUp(accepted, mayAskFollowUp),
+      },
+      maxTokens: this.requestedReasoningEffort() ? 4_200 : 200,
+      temperature: 0.8,
     });
 
-    this.recordUsage("House/followup", response);
-
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
-
-    let output: FollowUpResult;
-    if (raw.startsWith("FOLLOW_UP:")) {
-      output = { type: "question", question: raw.slice("FOLLOW_UP:".length).trim() };
-    } else if (raw.startsWith("CLOSE:")) {
-      output = { type: "close", message: raw.slice("CLOSE:".length).trim() };
-    } else {
-      // If the LLM didn't follow the format, treat as a close
-      output = { type: "close", message: raw || `Thank you, ${context.agentName}. The House sees all.` };
+    if (response) {
+      await this.emitPrivateDecisionTrace({
+        context: this.diaryPrivateTraceContext(
+          "house-followup",
+          context,
+          exchangeCount + 1,
+        ),
+        messages,
+        response,
+        output: value,
+      });
     }
-
-    await this.emitPrivateDecisionTrace({
-      context: this.privateTraceContext("house-followup", context.round, Phase.DIARY_ROOM),
-      messages,
-      response,
-      output,
-    });
-    return output;
-  }
-
-  private formatActiveShields(names: string[]): string {
-    return names.length > 0 ? names.join(", ") : "none";
-  }
-
-  private formatCouncilRoleForPrompt(role: HouseCouncilRoleFact | null | undefined): string {
-    if (!role || role.role === "not_applicable") return "none";
-    const candidates = role.candidateNames ? role.candidateNames.join(" vs ") : "unknown candidates";
-    switch (role.role) {
-      case "candidate":
-        return `Council candidate/on the block (${candidates}); did not cast a Council vote.`;
-      case "voted_for_eliminated":
-        return `Council voter for eliminated player ${role.eliminatedName ?? role.votedForName ?? "unknown"}.`;
-      case "voted_for_survivor":
-        return `Council voter for surviving candidate ${role.votedForName ?? role.survivingCandidateName ?? "unknown"}.`;
-      case "empowered_tiebreaker":
-        return `Empowered tiebreaker-only Council choice: ${role.votedForName ?? "unknown"}.`;
-      case "empowered_no_tiebreak_needed":
-        return `Empowered player; Council resolved without needing your tiebreaker.`;
-      case "non_voter":
-        return `No Council ballot recorded; candidates were ${candidates}.`;
-    }
-  }
-
-  private buildCanonicalFactContract(context: DiaryRoomContext): string {
-    const roundFacts = context.roundFacts;
-    const latestEliminated = roundFacts?.eliminatedName
-      ?? roundFacts?.autoEliminatedName
-      ?? context.lastEliminated
-      ?? "none";
-    return `- Canonical game state overrides House Strategy Bible, producer hypotheses, player memory, and prior summaries.
-- Active shields right now: ${this.formatActiveShields(context.activeShieldNames)}.
-- Current/last resolved empowered player: ${context.empoweredName ?? "none"}.
-- Latest eliminated player for this context: ${latestEliminated}.
-- If older material says a different player is currently empowered, shielded, alive, eliminated, freshly gone, or in live Council danger, treat that older material as stale history.
-- Do not describe historical shields as active. If no active shield is listed, do not say anyone is shielded or a shield anchor.
-- If Council has just resolved, there is no live Council candidate remaining inside Diary Room; any candidates are historical/resolved only.`;
+    return value;
   }
 
   private buildGameStatePrompt(context: DiaryRoomContext): string {
-    const {
-      precedingPhase,
-      round,
-      agentName,
-      alivePlayers,
-      activeShieldNames,
-      eliminatedPlayers,
-      lastEliminated,
-      empoweredName,
-      councilCandidates,
-      recentMessages,
-      previousDiaryEntries,
-      playerMessages,
-      roundFacts,
-      councilRole,
-    } = context;
-
-    const recentMsgText = recentMessages
-      .slice(-8)
-      .map((m) => `  [${m.phase}] ${m.from}: "${m.text}"`)
-      .join("\n");
-
-    // What this specific player said recently
-    const playerMsgText = (playerMessages ?? [])
-      .slice(-5)
-      .map((m) => `  [${m.phase}] "${m.text}"`)
-      .join("\n");
-
-    // Previous diary Q&A for follow-up continuity
-    const prevDiaryText = (previousDiaryEntries ?? [])
-      .slice(-2)
-      .map((d) => `  Round ${d.round} — Q: "${d.question}" A: "${d.answer}"`)
-      .join("\n");
-    const latestEliminatedName = roundFacts?.eliminatedName ?? roundFacts?.autoEliminatedName ?? lastEliminated;
-
-    let situationContext = "";
-    switch (precedingPhase) {
-      case Phase.INTRODUCTION:
-        situationContext = `Introductions just wrapped. The House wants to know ${agentName}'s STRATEGY going into the game. Ask what their game plan is — who caught their attention, who might they want to work with (or avoid), and how do they plan to play this? Reference a SPECIFIC player from the introductions and ask how ${agentName} plans to approach them. Think: "the game starts now — what's your move?"`;
-        break;
-      case Phase.LOBBY:
-        situationContext = `The Round ${round} lobby just ended. Pick ONE specific thing ${agentName} or another player said in the lobby (from the messages below) and ask about the subtext — what were they REALLY saying?`;
-        break;
-      case Phase.RUMOR:
-        situationContext = `Anonymous rumors just hit. Pick a specific rumor from the messages below and ask ${agentName}: did they write it? Do they believe it? Who do they think wrote it? Make them squirm.`;
-        break;
-      case Phase.REVEAL:
-        if (councilCandidates) {
-          situationContext = `${councilCandidates[0]} and ${councilCandidates[1]} are on the chopping block. Ask ${agentName} about their SPECIFIC relationship with one of these candidates — did they vote for this? Are they relieved, guilty, or scared?`;
-        } else {
-          situationContext = `The reveal just happened. Ask about a specific vote or power play that ${agentName} was involved in.`;
-        }
-        break;
-      case Phase.COUNCIL:
-        if (councilRole?.role === "candidate") {
-          const result = councilRole.eliminatedName === agentName ? "left the game" : "survived the block";
-          situationContext = `${agentName} was a Council candidate and ${result}. Ask about being on the block against ${councilRole.candidateNames?.find((name) => name !== agentName) ?? "the other candidate"}, who fought for them, who abandoned them, or what debt/suspicion this creates. Do not ask whether ${agentName} cast a Council vote.`;
-        } else if (councilRole?.role === "voted_for_eliminated") {
-          situationContext = `${latestEliminatedName ?? councilRole.eliminatedName ?? "A player"} is gone after the resolved Council, and ${agentName} voted to eliminate them. Ask about that Council vote directly: was it loyalty, threat management, pressure, or a betrayal they are willing to own?`;
-        } else if (councilRole?.role === "voted_for_survivor") {
-          situationContext = `${latestEliminatedName ?? "A player"} is gone after the resolved Council, but ${agentName} voted for ${councilRole.votedForName ?? "the survivor"}. Ask why they were on the other side, whether they were protecting ${councilRole.survivingCandidateName ?? councilRole.votedForName ?? "the survivor"}, or what this reveals about their alliances.`;
-        } else if (councilRole?.role === "empowered_tiebreaker") {
-          situationContext = `${agentName} held empowered tiebreak leverage and named ${councilRole.votedForName ?? "a candidate"} as their tiebreaker-only Council choice. Ask what price, promise, or threat informed that leverage. Do not describe it as a normal Council ballot unless the tie required it.`;
-        } else if (councilRole?.role === "empowered_no_tiebreak_needed") {
-          situationContext = `${agentName} held empowered tiebreak leverage, but the Council resolved without needing a tiebreaker. Ask how it feels to hold unused leverage, whether the outcome matched their preference, or how others' votes changed their plan. Do not imply ${agentName} cast a Council vote or decided the elimination.`;
-        } else if (latestEliminatedName) {
-          situationContext = `${latestEliminatedName} is the latest player gone after the resolved Council. Ask ${agentName} what this result changes for their relationships, pressure map, or next vote. Do not imply they personally cast a Council vote unless Authoritative Round Facts says they did. Do not describe any surviving candidate as still being in a live Council vote.`;
-        } else {
-          situationContext = `The council just voted. Ask about a specific decision ${agentName} made.`;
-        }
-        break;
-      default:
-        situationContext = `Phase ${precedingPhase} just ended. Ask about a specific moment that just happened.`;
-    }
-
-    return `Generate a diary room interview question for ${agentName}.
-
-## Game State
-- Round: ${round}
-- Just completed: ${precedingPhase} phase
-- Alive players: ${alivePlayers.join(", ")}
-${eliminatedPlayers.length > 0 ? `- Eliminated so far: ${eliminatedPlayers.join(", ")}` : "- No eliminations yet"}
-- Active shields right now: ${this.formatActiveShields(activeShieldNames)}
-${empoweredName ? `- Current/last resolved empowered player: ${empoweredName}` : ""}
-${councilCandidates ? `- ${precedingPhase === Phase.COUNCIL ? "Most recent council candidates (resolved, not live)" : "Council candidates"}: ${councilCandidates[0]} vs ${councilCandidates[1]}` : ""}
-- ${agentName}'s Council role: ${this.formatCouncilRoleForPrompt(councilRole)}
-
-## Canonical Fact Contract
-${this.buildCanonicalFactContract(context)}
-${roundFacts ? `\n## Authoritative Round Facts\n${this.formatRoundFactsForPrompt(roundFacts)}\n` : ""}
-
-## Situation — Your Angle
-${situationContext}
-
-## What ${agentName} Said Recently
-${playerMsgText || "(nothing notable)"}
-
-## Recent Public Messages (other players)
-${recentMsgText || "(none yet)"}
-${prevDiaryText ? `\n## ${agentName}'s Previous Diary Entries\n${prevDiaryText}\n\nDo NOT repeat or rephrase previous questions. Build on what they revealed — call out contradictions, probe deeper, or challenge them on new developments since their last answer.` : ""}
-${context.producerBrief ? `\n## Private Producer Brief\nStory role: ${context.producerBrief.storyRole}\nPressure points: ${context.producerBrief.pressurePoints.join("; ") || "none"}\nRelevant alliance hypotheses: ${context.producerBrief.relevantAllianceHypotheses.join("; ") || "none"}\nContradictions: ${context.producerBrief.contradictions.join("; ") || "none"}\nQuestion angles: ${context.producerBrief.questionAngles.join("; ") || "none"}\nSafe to reveal: ${context.producerBrief.safeToReveal.join("; ") || "none"}\nPrivate do not reveal directly: ${context.producerBrief.privateDoNotReveal.join("; ") || "none"}\nUse the brief to sharpen your question, but do NOT dump hidden producer analysis as fact.\n` : ""}
-
-Your question MUST name a specific player or reference a specific quote/event from the messages above. If you cannot find anything specific, pick the most interesting player name from the alive list and ask ${agentName} what they REALLY think about that person.`;
-  }
-
-  private formatHouseEvidence(evidence: HouseGameplaySummaryContext["evidence"]): string {
-    const transcript = evidence.recentTranscript
-      .map((entry) => `R${entry.round}/${entry.phase} ${entry.from} [${entry.scope}]: ${entry.text}`)
-      .join("\n");
-    const diary = evidence.recentDiaryEntries
-      .map((entry) => `R${entry.round} after ${entry.precedingPhase} ${entry.agentName}: Q="${entry.question}" A="${entry.answer}"`)
-      .join("\n");
-    const rooms = evidence.roomAllocations
-      .map((allocation) => {
-        const roomText = allocation.rooms
-          .map((room) => `Room ${room.roomId}: ${room.players.join(", ") || "empty"}`)
-          .join(" | ");
-        return `R${allocation.round}: ${roomText}${allocation.excluded.length > 0 ? ` | Excluded: ${allocation.excluded.join(", ")}` : ""}`;
-      })
-      .join("\n");
-
-    return `Alive: ${evidence.alivePlayers.join(", ")}
-Eliminated: ${evidence.eliminatedPlayers.join(", ") || "none"}
-Active shields: ${this.formatActiveShields(evidence.activeShieldNames)}
-Empowered: ${evidence.empoweredName ?? "unknown"}
-Council candidates: ${evidence.councilCandidates?.join(" vs ") ?? "none"}
-Canonical event count: ${evidence.canonicalEventCount}
-
-Authoritative round facts:
-${this.formatRoundFactsForPrompt(evidence.roundFacts)}
-
-Recent transcript:
-${transcript || "(none)"}
-
-Recent diary entries:
-${diary || "(none)"}
-
-Recent Mingle room allocations:
-${rooms || "(none)"}`;
-  }
-
-  private formatRoundFactsForPrompt(facts: HouseRoundFacts): string {
-    const formatLines =
-      facts.eliminationPath === "format" || facts.selectedFormatId
-        ? [
-            `Elimination path: format kernel`,
-            `Locked format: ${facts.selectedFormatName ?? facts.selectedFormatId ?? "unknown"}${facts.selectedFormatId ? ` (id: ${facts.selectedFormatId})` : ""}`,
-            `Offered formats: ${facts.offeredFormatNames?.join(" vs ") ?? facts.offeredFormatIds?.join(" vs ") ?? "unknown"}`,
-            `Format method: ${facts.formatMethod ?? "unknown"}`,
-            `Power action: none (classic Power→Council not used this round)`,
-            `Council candidates: none (format kernel round)`,
-            `Council vote counts: none`,
-            ...this.formatFormatResolutionForPrompt(facts.formatResolution),
-          ]
-        : [
-            `Elimination path: ${facts.eliminationPath}`,
-            `Expose vote counts: ${this.formatVoteCountsForPrompt(facts.exposeVoteCounts)}`,
-            `Power action: ${facts.powerAction ? `${facts.powerAction.action}${facts.powerAction.targetName ? ` -> ${facts.powerAction.targetName}` : ""}` : "unknown"}`,
-            `Shield granted: ${facts.shieldGrantedName ?? "none"}`,
-            `Council candidates: ${facts.councilCandidates?.join(" vs ") ?? "none"}`,
-            `Council vote counts: ${this.formatVoteCountsForPrompt(facts.councilVoteCounts)}${facts.councilMethod ? ` (${facts.councilMethod})` : ""}`,
-            `Council roles: ${facts.councilRoles.map((role) => `${role.playerName}=${this.formatCouncilRoleForPrompt(role)}`).join("; ") || "none"}`,
-            `Auto-eliminated: ${facts.autoEliminatedName ?? "none"}`,
-          ];
-
-    return [
-      `Round: ${facts.round}`,
-      `Empowered: ${facts.empoweredName ?? "unknown"}${facts.empowerMethod ? ` (${facts.empowerMethod})` : ""}`,
-      `Empower vote counts: ${this.formatVoteCountsForPrompt(facts.empowerVoteCounts)}`,
-      ...formatLines,
-      `Eliminated: ${facts.eliminatedName ?? facts.autoEliminatedName ?? "none"}`,
-    ].join("\n");
-  }
-
-  private formatFormatResolutionForPrompt(
-    resolution: HouseRoundFacts["formatResolution"],
-  ): string[] {
-    if (!resolution) {
-      return ["Format resolution: (missing — do not invent ballot tallies)"];
-    }
-    const lines: string[] = [
-      "House omniscient format resolution (sealed ballots are fully visible to The House):",
-      `Resolution: ${resolution.resolutionSummary}`,
-      `Resolution kind: ${resolution.resolutionKind}`,
+    const { agentName, playerKnowledge, precedingPhase, previousDiaryEntries } = context;
+    const recall = playerKnowledge.recallPlan;
+    const publicTranscript = (playerKnowledge.publicTranscriptContext ?? []).slice(-16);
+    const privateConversation = [
+      ...(recall?.hot.activeRoomMessages ?? playerKnowledge.mingleMessages),
+      ...(recall?.history.dialogueEvidence ?? [])
+        .filter((entry) => entry.sourceClass === "mingle")
+        .map((entry) => ({
+          from: entry.speakerLabel,
+          text: entry.dialogueText,
+          round: entry.round,
+          phase: entry.phase,
+        })),
     ];
-    if (resolution.tiebreakByEmpoweredName) {
-      lines.push(`Empowered tiebreak by: ${resolution.tiebreakByEmpoweredName}`);
-    }
-    if (resolution.bouncePointers.length > 0) {
-      lines.push(
-        `Bounce pointers: ${resolution.bouncePointers
-          .map((p) => `${p.actorName}→${p.targetName} (${p.classification})`)
-          .join("; ")}`,
-      );
-    }
-    if (resolution.safeNames.length > 0 || resolution.vulnerableNames.length > 0) {
-      lines.push(
-        `Safe pool: ${resolution.safeNames.join(", ") || "none"} | Vulnerable pool: ${resolution.vulnerableNames.join(", ") || "none"}`,
-      );
-    }
-    if (resolution.zeroSafeNames.length > 0) {
-      lines.push(`Zero-vote safe: ${resolution.zeroSafeNames.join(", ")}`);
-    }
-    if (resolution.ballots.length > 0) {
-      lines.push(
-        `Every sealed ballot: ${resolution.ballots
-          .map((b) =>
-            b.polarity
-              ? `${b.voterName}→${b.polarity}:${b.targetName}`
-              : `${b.voterName}→${b.targetName}`,
-          )
-          .join("; ")}`,
-      );
-    }
-    if (resolution.scores.length > 0) {
-      lines.push(
-        `Scoreboard: ${resolution.scores
-          .map((s) => `${s.playerName}=${s.value}${s.bucket ? ` (${s.bucket})` : ""}`)
-          .join(", ")}`,
-      );
-    }
-    lines.push(`Format eliminated: ${resolution.eliminatedName}`);
-    return lines;
-  }
-
-  private formatVoteCountsForPrompt(counts: HouseVoteCount[]): string {
-    if (counts.length === 0) return "none";
-    return counts
-      .map((count) => {
-        const voters = count.voters.length > 0 ? ` from ${count.voters.join(", ")}` : "";
-        return `${count.playerName}=${count.votes}${voters}`;
-      })
-      .join("; ");
-  }
-
-  private buildSummaryPrompt(context: HouseGameplaySummaryContext, instruction: string): string {
-    const packet = context.packet ? JSON.stringify(context.packet, null, 2) : "(no House Strategy Bible Packet available)";
-    return `${instruction}
-
-Round: ${context.round}
-Phase: ${context.phase}
-Summary kind: ${context.kind}
-Alive: ${context.alivePlayers.join(", ")}
-Covered window: R${context.coveredWindow.fromRound}-${context.coveredWindow.toRound}
-
-House Strategy Bible Packet:
-${packet}
-
-Producer evidence:
-${this.formatHouseEvidence(context.evidence)}
-
-Rules:
-- Treat the Authoritative round facts as the official scoreboard. The engine will prefix concise terminal summaries with these facts, so your prose should interpret why they matter rather than re-list every count.
-- Current Producer evidence overrides the House Strategy Bible Packet when they conflict. Retire or correct stale packet claims instead of repeating them.
-- When Elimination path is format kernel: use the locked format full name (Save-or-Eliminate, Vote Bomb, Safety Bounce). Do NOT invent classic Power, expose, Council candidates, or Council tallies for that round. If Power action / Council lines say none, believe them.
-- House is omniscient: Authoritative round facts include every sealed ballot and the scoreboard. Use those exact ballots/totals. Do not invent a different pile-on story that contradicts "Every sealed ballot" / Scoreboard lines.
-- Vote Bomb: each player casts one sealed vote; zero votes is safe; among players with at least one vote, fewest is eliminated. Do not call a Vote Bomb ballot "protection," and do not describe a zero-vote player as eliminated.
-- Save-or-Eliminate: SAVE raises net, ELIMINATE lowers net; lowest net leaves.
-- Safety Bounce: public pointers classify SAFE/VULNERABLE, then sealed vote among the vulnerable pool (most out).
-- Active shields are exactly the names in Producer evidence's "Active shields" line. If it says "none", do not describe any shield as currently active.
-- If a shield was granted in Authoritative round facts but is no longer active, describe it as historical or expired rather than current protection.
-- The latest elimination is the eliminated/auto-eliminated name in Authoritative round facts. Do not frame older exits as the fresh wound after a later elimination.
-- Still name the most important concrete facts when they drive the story: who was empowered, which format locked, how elimination worked under that format, who left, and what social debt remains.
-- If the power action is "pass" on a classic round, describe it as the empowered player passing on using power or declining to intervene. Never say they passed, gave, gifted, handed, or transferred power to another player.
-- Write like a showrunner recapping fresh consequence: name what just changed, who gained leverage or debt, who is under heat, and what decision or relationship tension is next.
-- Avoid robotic bookkeeping such as "historical artifact" language or a bare player-count recap. Prior shields and empowerment should matter only as why someone survived, who owes whom, or why a current conflict exists.
-- Alliance names like "Nyx bloc" are allowed only as social history or current social influence, never as proof of current mechanical empowerment.
-- Use packet-backed dynamics when available, especially named alliances, fractures, leverage, betrayals, promises, and open questions.
-- Do not overstate weak evidence. If a read is speculative, phrase it as a House read or question.
-- Do not expose hidden reasoning as player knowledge.
-- Keep the voice dramatic, perceptive, and varied.
-- Prefer full format names in prose, not snake_case ids.
-
-Respond with JSON only:
-{
-  "summary": "summary text",
-  "referencedAllianceNames": ["alliance names used"],
-  "openQuestions": ["House open questions posed by this summary"],
-  "coveredWindow": { "fromRound": ${context.coveredWindow.fromRound}, "toRound": ${context.coveredWindow.toRound}, "toPhase": "${context.phase}" },
-  "thinking": "brief hidden producer thinking"
-}`;
-  }
-
-  private templateSummary(context: HouseGameplaySummaryContext, fallback: string): HouseGameplaySummaryResult {
-    return {
-      summary: fallback,
-      kind: context.kind,
-      packetRevisionId: context.packet?.revisionId ?? null,
-      coveredWindow: context.coveredWindow,
-      referencedAllianceNames: context.packet?.alliances.map((alliance) => alliance.name).slice(0, 3) ?? [],
-      openQuestions: context.packet?.openQuestions.slice(0, 3) ?? [],
+    const promptContext = {
+      interview: {
+        subject: { id: context.agentId, name: agentName },
+        round: context.round,
+        precedingPhase,
+      },
+      playerVisibleBoard: {
+        remainingPlayers: playerKnowledge.alivePlayers,
+        empoweredId: playerKnowledge.empoweredId ?? null,
+        councilCandidates: playerKnowledge.councilCandidates ?? null,
+        revealedVoteLedger: playerKnowledge.revealedVoteLedger ?? [],
+        latestExitedPlayerName: playerKnowledge.latestEliminatedPlayerName ?? null,
+        endgameStage: playerKnowledge.endgameStage ?? null,
+        finalists: playerKnowledge.finalists ?? null,
+      },
+      publicCanonicalRecord: playerKnowledge.gameEventRecord ?? [],
+      publicTranscript,
+      subjectPrivateConversation: privateConversation,
+      subjectRecentDecisions: playerKnowledge.recentDecisions ?? [],
+      subjectAllianceContext: playerKnowledge.allianceContext ?? {
+        activeAlliances: [],
+        openProposals: [],
+        proposalHistory: [],
+      },
+      subjectPriorDiary: (previousDiaryEntries ?? []).slice(-6),
     };
+
+    return `Generate one diary-room interview question for ${agentName} after ${precedingPhase}.
+
+The JSON below is the complete information boundary for this player-facing question. It contains public information plus only private conversations, decisions, alliances, and prior diary answers available to ${agentName}. Treat anything absent as unknown. Never imply knowledge from another player's private conversation, sealed decision, diary, House summary, producer notebook, or operator trace.
+
+${JSON.stringify(promptContext, null, 2)}
+
+Ask about one concrete player, quote, decision, relationship, contradiction, or change visible inside this boundary. Build on prior diary answers without repeating a prior question. Keep the question to one or two sentences.`;
   }
 
-  async generateGameplaySummary(
-    recentTranscript: TranscriptEntry[],
-    round: number,
-    phase: Phase,
-    alivePlayers: string[],
-  ): Promise<string> {
-    const transcriptText = recentTranscript
-      .slice(-20)
-      .map((e) => {
-        const prefix = e.scope === "mingle"
-          ? `[mingle to ${e.to?.join(",") || "room"}]`
-          : e.scope === "whisper"
-            ? `[legacy whisper to ${e.to?.join(",")}]`
-            : e.scope === "thinking"
-              ? "[thinking]"
-              : "";
-        return `R${e.round}/${e.phase} ${e.from}${prefix}: ${e.text}`;
-      })
-      .join("\n");
-
-    const summaryPrompt = `You are the House MC — the dramatic narrator and showrunner for "Influence".
-
-Generate a concise, engaging 3-5 sentence in-progress summary of the current game state for the audience.
-
-Round: ${round}
-Current phase: ${phase}
-Alive: ${alivePlayers.join(", ")}
-
-Recent events/transcript (last ~20 entries):
-${transcriptText}
-
-Focus on:
-- Key social dynamics, alliances, betrayals, or standout Mingle room conversations/movements
-- What just changed, who gained leverage or debt, who is under heat, and what decision or relationship tension is next
-- Who is rising or falling in social influence without mistaking social centrality for current mechanical empowerment
-- Dramatic tension or ironic moments
-- Describe prior shields or empowerment only through current consequence: why someone survived, who owes whom, or why a conflict exists now
-- Keep it witty, perceptive, and in the style of a reality TV narrator
-
-Respond with ONLY the summary paragraph, no intro or labels.`;
-    const messages = [
-      { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator." },
-      { role: "user" as const, content: summaryPrompt },
-    ];
-
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...this.modelParams(32768, 0.9),
-    });
-
-    const summary = response.choices[0]?.message?.content?.trim();
-    const output = summary && summary.length > 0
-      ? summary
-      : `The latest room talk has turned private reads into public pressure, and the House is watching who converts that leverage into safety before the next cut.`;
-    await this.emitPrivateDecisionTrace({
-      context: this.privateTraceContext("house-gameplay-summary", round, phase),
-      messages,
-      response,
-      output: { summary: output },
-    });
-    return output;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1925,6 +2248,16 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
     };
   }
 
+  async selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult> {
+    return {
+      selected: deterministicAllianceProposerSelection(context, "Template House selected"),
+      rationale:
+        "Template House selected proposer access by lowest active-alliance count, breaking ties by roster order.",
+    };
+  }
+
   async planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult> {
     const scheduled = context.candidates.slice(0, context.budget).map((candidate) => ({
       allianceId: candidate.allianceId,
@@ -1945,8 +2278,20 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
 
   async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
     const speakerNames = context.transcript.map((entry) => entry.from);
-    const proposals = context.commitments.map((commitment) =>
-      `${commitment.speakerName}: ${commitment.proposedAction}${commitment.proposedTargetName ? ` -> ${commitment.proposedTargetName}` : ""}`,
+    const proposals = context.facts.flatMap((fact) =>
+      fact.kind === "proposal" || fact.kind === "commitment"
+        ? [`${fact.actorPlayerId}: ${fact.actionKind} -> ${fact.targetPlayerId}`]
+        : [],
+    );
+    const promises = context.facts.flatMap((fact) =>
+      fact.kind === "commitment"
+        ? [`${fact.actorPlayerId}: ${fact.actionKind} -> ${fact.targetPlayerId}`]
+        : [],
+    );
+    const dissent = context.facts.flatMap((fact) =>
+      fact.kind === "response" && fact.stance === "reject"
+        ? [`${fact.actorPlayerId} rejected ${fact.counterpartFactId}`]
+        : [],
     );
     return {
       ask: defaultHuddleAsk(context.window),
@@ -1955,99 +2300,57 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         : context.transcript.length > 0
           ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate ${huddleCoordinationLabel(context.window)} commitments.`
           : `No explicit member messages were recorded for ${context.alliance.name}.`,
-      promises: context.commitments.flatMap((commitment) => commitment.memberCommitments.map(({ memberName, commitment: promise }) => `${memberName}: ${promise}`)),
-      dissent: context.commitments.flatMap((commitment) => commitment.dissent),
-      confidence: context.commitments.some((commitment) => commitment.confidence === "high") ? "high" : context.commitments.length > 0 ? "medium" : "low",
-      posture: context.commitments.some((commitment) => commitment.dissent.length > 0) ? "fracturing" : context.commitments.length > 0 ? "coordinating" : "guarded",
+      promises,
+      dissent,
+      confidence: context.facts.some((fact) => fact.confidence === "high") ? "high" : context.facts.length > 0 ? "medium" : "low",
+      posture: dissent.length > 0 ? "fracturing" : context.facts.length > 0 ? "coordinating" : "guarded",
       leakOrBetrayalClaims: [],
       thinking: "Template House summarized the huddle deterministically.",
     };
   }
 
-  async updateStrategyBible(context: HouseStrategyBibleUpdateContext): Promise<HouseStrategyBibleUpdateResult> {
-    const previousRevisionId = context.previousPacket?.revisionId ?? null;
-    const alliances: HouseAllianceHypothesis[] = context.evidence.alivePlayers.length >= 2
-      ? [{
-          name: "Template Watch Pair",
-          members: context.evidence.alivePlayers.slice(0, 2),
-          status: "speculative",
-          confidence: "low",
-          evidence: ["Template House fallback groups the first two alive players as a watch pair."],
-          tension: null,
-          openQuestions: ["Will this pair show coordinated votes or room movement?"],
-        }]
-      : [];
+  async generateHouseSummary(context: HouseNarrativeTurnContext): Promise<HouseSummaryAttemptResult> {
+    const narration = context.narrationContext;
+    const dialogue = narration.publicDialogue.at(-1);
+    const event = narration.canonicalEvents.at(-1);
+    const publicSummary = dialogue
+      ? `${dialogue.speaker} makes their position clear: “${dialogue.text}”`
+      : event
+        ? `The game shifts as ${event.type.split(".").join(" ")}.`
+        : narration.projection
+          ? `${narration.projection.remainingPlayers.length} players remain as the next move takes shape.`
+          : null;
+    if (!publicSummary) {
+      return {
+        status: "failed",
+        reason: "empty_narration_context",
+        boundary: narration.boundary,
+        providerCalls: 0,
+        usage: [],
+      };
+    }
     return {
-      packet: {
-        revisionId: `house-r${context.round}-${context.phase.toLowerCase()}-${previousRevisionId ? "2" : "1"}`,
-        previousRevisionId,
-        updatedAtRound: context.round,
-        updatedAtPhase: context.phase,
-        coveredWindow: context.coveredWindow,
-        summary: `Template House read for round ${context.round}.`,
-        alliances,
-        tensions: [],
-        promises: [],
-        voteBlocs: [],
-        mingleDiscoveries: [],
-        playerTrajectories: context.evidence.alivePlayers.map((playerName) => ({
-          playerName,
-          currentRead: "Template House has no strong read yet.",
-          pressurePoints: [],
-          likelyNextMove: null,
-        })),
-        storyArcs: [{
-          title: "Template Pressure",
-          summary: "The game is narrowing and the House is tracking who stays visible.",
-          involvedPlayers: context.evidence.alivePlayers,
-          status: "active",
-        }],
-        droppedThreads: [],
-        openQuestions: ["Who will convert social proximity into a vote?"],
-        changedSincePrevious: previousRevisionId ? "Template packet carried forward." : "Initial template packet.",
+      status: "emitted",
+      beat: {
+        version: 2,
+        boundary: structuredClone(narration.boundary),
+        publicSummary,
       },
-      rationale: "Template House generated a deterministic Strategy Bible Packet.",
-    };
-  }
-
-  async generateHouseSummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
-    return {
-      summary: context.packet?.summary
-        ? `The House sees ${context.packet.summary}; now the question is who can turn that read into protection, pressure, or a clean vote.`
-        : `The latest move has shifted the pressure map, and the House is watching who turns fresh leverage into safety or danger.`,
-      kind: context.kind,
-      packetRevisionId: context.packet?.revisionId ?? null,
-      coveredWindow: context.coveredWindow,
-      referencedAllianceNames: context.packet?.alliances.map((alliance) => alliance.name).slice(0, 3) ?? [],
-      openQuestions: context.packet?.openQuestions.slice(0, 3) ?? [],
+      privateNarrativeNotebook: null,
+      boundary: narration.boundary,
+      providerCalls: 0,
+      usage: [],
     };
   }
 
   async generateLongFormGameplaySummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
+    const latestBeat = context.recentPublicBeats.at(-1)?.publicSummary;
     return {
-      summary: `Long-form House summary for round ${context.round}: ${context.alivePlayers.join(", ")} remain. Teams are still hypothetical, pressure is accumulating, and the House wants to know who will convert room talk into votes.`,
-      kind: "long-form",
-      packetRevisionId: context.packet?.revisionId ?? null,
-      coveredWindow: context.coveredWindow,
-      referencedAllianceNames: context.packet?.alliances.map((alliance) => alliance.name).slice(0, 3) ?? [],
-      openQuestions: context.packet?.openQuestions.slice(0, 3) ?? ["Who will act first?"],
-    };
-  }
-
-  async generateProducerBrief(
-    context: DiaryRoomContext,
-    packet: HouseStrategyBiblePacket | null,
-  ): Promise<HouseProducerBrief> {
-    return {
-      playerName: context.agentName,
-      packetRevisionId: packet?.revisionId ?? null,
-      storyRole: `${context.agentName} is a template contestant under House observation.`,
-      pressurePoints: ["Explain what changed this round."],
-      relevantAllianceHypotheses: packet?.alliances.map((alliance) => alliance.name).slice(0, 2) ?? [],
-      contradictions: [],
-      questionAngles: [`Ask ${context.agentName} who they trust least after ${context.precedingPhase}.`],
-      safeToReveal: [`The House noticed ${context.precedingPhase} just ended.`],
-      privateDoNotReveal: ["Do not reveal private packet internals directly."],
+      summary: latestBeat
+        ? `Producer catch-up: ${latestBeat}`
+        : `Producer catch-up for round ${context.round}.`,
+      kind: context.kind,
+      coveredWindow: structuredClone(context.coveredWindow),
     };
   }
 
@@ -2060,14 +2363,22 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
-    const { precedingPhase, round, agentName, alivePlayers, lastEliminated, councilCandidates, councilRole } = context;
+    const { precedingPhase, round, agentName, playerKnowledge } = context;
+    const remainingPlayers = playerKnowledge.alivePlayers.map((player) => player.name);
+    const latestExitedPlayer = playerKnowledge.latestEliminatedPlayerName ?? null;
+    const recentDecision = playerKnowledge.recentDecisions?.at(-1)?.detail;
+    const playerName = (playerId: UUID): string =>
+      playerKnowledge.alivePlayers.find((player) => player.id === playerId)?.name ?? playerId;
+    const councilCandidates = playerKnowledge.councilCandidates
+      ? playerKnowledge.councilCandidates.map(playerName) as [string, string]
+      : null;
 
     switch (precedingPhase) {
       case Phase.INTRODUCTION:
         return `${agentName}, the introductions are done and the game is about to begin. What's your strategy going in? Who are you thinking of working with, and who should watch their back?`;
 
       case Phase.LOBBY:
-        return `${agentName}, the public discussion for round ${round} just wrapped. With ${alivePlayers.length} players still in the game, what did you pick up on? Are any alliances forming?`;
+        return `${agentName}, the public discussion for round ${round} just wrapped. With ${remainingPlayers.length} players still in the game, what did you pick up on? Are any alliances forming?`;
 
       case Phase.RUMOR:
         return `${agentName}, the rumors have been flying this round. What do you believe, what do you think is misinformation, and how does it affect your strategy?`;
@@ -2079,38 +2390,13 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         return `${agentName}, the reveal phase is over. What are your thoughts on how this round is playing out?`;
 
       case Phase.COUNCIL:
-        if (councilRole?.role === "candidate") {
-          const opponent = councilRole.candidateNames?.find((name) => name !== agentName) ?? "the other candidate";
-          return `${agentName}, you were on the Council block against ${opponent} and did not cast a Council vote. Who do you think decided your fate, and what does that do to your game now?`;
-        }
-        if (councilRole?.role === "voted_for_eliminated") {
-          return `${agentName}, your Council vote helped send ${councilRole.eliminatedName ?? lastEliminated ?? "someone"} out. Was that loyalty, self-preservation, or a betrayal you are prepared to defend?`;
-        }
-        if (councilRole?.role === "voted_for_survivor") {
-          return `${agentName}, you voted for ${councilRole.votedForName ?? "the surviving candidate"}, but ${lastEliminated ?? councilRole.eliminatedName ?? "someone else"} left. Were you protecting the survivor, or were you on the wrong side of the room?`;
-        }
-        if (councilRole?.role === "empowered_tiebreaker") {
-          return `${agentName}, as the empowered player your Council choice was tiebreaker-only. What did ${councilRole.votedForName ?? "that candidate"} need to do to earn or avoid your tiebreaker?`;
-        }
-        if (councilRole?.role === "empowered_no_tiebreak_needed") {
-          return `${agentName}, you held the empowered tiebreaker, but the Council resolved without needing it. Did the room land where you wanted, or did the unused leverage change your read on everyone?`;
-        }
-        if (lastEliminated) {
-          return `${agentName}, ${lastEliminated} has just been eliminated. How do you feel about this result? What's your plan going forward?`;
-        }
-        return `${agentName}, the council has spoken. How does this change your strategy for the next round?`;
+        return recentDecision
+          ? `${agentName}, your record says: ${recentDecision} What does that decision change about your next move?`
+          : `${agentName}, ${latestExitedPlayer ?? "the Council result"} has changed the board. Which relationship does that put under the most pressure?`;
 
       default:
         return `${agentName}, tell the audience what's on your mind. What's your strategy going forward?`;
     }
   }
 
-  async generateGameplaySummary(
-    _recentTranscript: TranscriptEntry[],
-    round: number,
-    phase: Phase,
-    alivePlayers: string[],
-  ): Promise<string> {
-    return `Round ${round} (${phase}): ${alivePlayers.length} players remain. The game continues with shifting power and hidden motives. The House sees all.`;
-  }
 }

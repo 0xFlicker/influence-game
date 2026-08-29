@@ -8,11 +8,11 @@ import { GameState, createUUID } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { ContextBuilder } from "../context-builder";
 import { Phase } from "../types";
-import type { UUID } from "../types";
+import type { AllianceHuddleFactAtom, UUID } from "../types";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
-  StrategyPacketSummary,
+  CompactStrategyState,
   TranscriptEntry,
 } from "../game-runner.types";
 import {
@@ -39,41 +39,50 @@ const BOB = "bob" as UUID;
 const CHARLIE = "charlie" as UUID;
 const DANA = "dana" as UUID;
 
-function makeStrategyPacket(overrides: Partial<StrategyPacketSummary> = {}): StrategyPacketSummary {
+function huddleCommitment(factId: string, targetPlayerId: UUID = BOB): AllianceHuddleFactAtom {
   return {
-    revisionId: "rev-1",
-    previousRevisionId: null,
-    updatedAtRound: 2,
-    updatedAtPhase: Phase.VOTE,
+    kind: "commitment",
+    factId,
+    sessionId: "session-ab",
+    actorPlayerId: ALICE,
+    actionKind: "empower_vote",
+    targetPlayerId,
+    confidence: "high",
+  };
+}
+
+function makeStrategyPacket(overrides: Record<string, unknown> = {}): CompactStrategyState {
+  const prose = Object.values({
     objective: "Stay aligned with Bob through midgame",
     targetPosture: "Pressure Charlie if he drifts",
     coalitionPosture: "Hold Alice-Bob pair",
     nextSocialProbe: "Confirm Bob still commits on vote",
-    strategicLens: "coalition_geometry",
-    strategicLensRationale: "Pair integrity is the main lever",
     uncertainty: "Whether Charlie has a side deal",
     reviseTrigger: "If Bob flips publicly",
-    changedSincePrevious: "initial",
     ...overrides,
+  }).filter((value): value is string => typeof value === "string").join(" ");
+  return {
+    lifecycle: "active",
+    baseline: prose,
+    deltas: [],
+    priorEpoch: null,
+    revision: 1,
   };
 }
 
-function makeContinuity(overrides: Partial<RecallContinuitySnapshot> = {}): RecallContinuitySnapshot {
+type ContinuityOverrides = Partial<RecallContinuitySnapshot> & {
+  strategyPacket?: CompactStrategyState;
+  reflectionSummary?: unknown;
+  recentStrategicDecisions?: unknown[];
+  strategicEvidenceVersion?: number;
+  strategyPacketRevisionCounter?: number;
+};
+
+function makeContinuity(overrides: ContinuityOverrides = {}): RecallContinuitySnapshot {
   return {
-    strategyPacket: makeStrategyPacket(),
-    reflectionSummary: null,
-    recentStrategicDecisions: [
-      {
-        round: 2,
-        phase: Phase.VOTE,
-        action: "empower",
-        label: "Empower ballot",
-        decisionLog: "Empowered Bob to keep the pair chooser seat",
-      },
-    ],
-    strategicEvidenceVersion: 1,
-    strategyPacketRevisionCounter: 1,
-    ...overrides,
+    compactStrategy: overrides.compactStrategy
+      ?? overrides.strategyPacket
+      ?? makeStrategyPacket(),
   };
 }
 
@@ -115,13 +124,7 @@ function basePhaseContext(overrides: Partial<PhaseContext> = {}): PhaseContext {
             {
               id: "outcome-1",
               round: 2,
-              ask: "Lock the pair on Bob empowerment",
-              plan: "Signal commitment in mingle then vote Bob",
-              promises: ["Bob backs Alice if exposed"],
-              dissent: [],
-              confidence: "high",
-              posture: "locked_pair",
-              leakOrBetrayalClaims: [],
+              facts: [huddleCommitment("fact-1")],
             },
           ],
         },
@@ -544,9 +547,6 @@ describe("compileRecallPlan", () => {
   });
 
   it("protected overflow still reserves bounded strategic history, while protected content remains complete", () => {
-    const hugePromises = Array.from({ length: 80 }, (_, i) =>
-      `Promise block ${i}: ${"commitment ".repeat(40)}with Bob empowerment lock`,
-    );
     const phaseContext = basePhaseContext({
       allianceContext: {
         activeAlliances: [
@@ -562,13 +562,7 @@ describe("compileRecallPlan", () => {
               {
                 id: "outcome-huge",
                 round: 2,
-                ask: "Massive protected outcome ask " + "x".repeat(500),
-                plan: "Massive protected outcome plan " + "y".repeat(500),
-                promises: hugePromises,
-                dissent: [],
-                confidence: "high",
-                posture: "locked_pair",
-                leakOrBetrayalClaims: [],
+                facts: [huddleCommitment("fact-huge")],
               },
             ],
           },
@@ -618,13 +612,15 @@ describe("compileRecallPlan", () => {
     );
     // Protected content remains complete
     expect(plan.protected.huddleOutcomes).toHaveLength(1);
-    expect(plan.protected.huddleOutcomes[0]!.promises.length).toBe(hugePromises.length);
-    expect(plan.protected.strategyThread?.objective).toBe(`Alice commitment ${"x".repeat(8_000)}`);
+    expect(plan.protected.huddleOutcomes[0]!.facts).toEqual([
+      huddleCommitment("fact-huge"),
+    ]);
+    expect(plan.protected.compactStrategy.baseline).toContain(`Alice commitment ${"x".repeat(8_000)}`);
     expect(plan.receipt.protectedOverflow).toBe(true);
     expect(plan.receipt.selectedLaneCounts.history).toBe(1);
   });
 
-  it("prioritizes the current strategic target's latest required evidence under overflow", () => {
+  it("prioritizes a typed current-board candidate without parsing compact strategy prose", () => {
     const phaseContext = basePhaseContext({
       round: 4,
       phase: Phase.MINGLE,
@@ -647,6 +643,10 @@ describe("compileRecallPlan", () => {
         proposalHistory: [],
       },
       recentDecisions: [],
+      councilCandidates: [
+        VAST_AZURE_SURGE_R4_RECALL.actorIds.zara,
+        VAST_AZURE_SURGE_R4_RECALL.actorIds.lyra,
+      ],
     });
     const continuity = makeContinuity({
       strategyPacket: makeStrategyPacket({
@@ -661,28 +661,17 @@ describe("compileRecallPlan", () => {
       }),
       recentStrategicDecisions: [],
     });
-    const overflowContinuity = makeContinuity({
-      ...continuity,
-      strategyPacket: makeStrategyPacket({
-        ...continuity.strategyPacket,
-        objective:
-          `${continuity.strategyPacket!.objective} ${"protected ".repeat(16_000)}`,
-      }),
-    });
-
     const params = {
       actorId: VAST_AZURE_SURGE_R4_RECALL.actorIds.finn,
       promptClass: "strategic_decision" as const,
-      continuity: overflowContinuity,
+      continuity,
       phaseContext,
       transcript: VAST_AZURE_SURGE_R4_RECALL.entries,
     };
     const plan = compileRecallPlan(params);
 
-    expect(plan.budget.protectedOverflow).toBe(true);
-    expect(plan.budget.historyBudgetChars).toBe(
-      VAST_AZURE_SURGE_R4_RECALL.reserveChars,
-    );
+    expect(plan.budget.protectedOverflow).toBe(false);
+    expect(plan.budget.historyBudgetChars).toBeGreaterThan(0);
     expect(plan.budget.historyChars).toBeLessThanOrEqual(
       plan.budget.historyBudgetChars,
     );
@@ -705,18 +694,7 @@ describe("compileRecallPlan", () => {
         prioritySpeakerMatch: false,
         currentRoundMatch: false,
       });
-    const preferredPairChars = explanation
-      .filter(({ entrySequence }) => (
-        entrySequence === VAST_AZURE_SURGE_R4_RECALL.requiredFirstSequence
-        || entrySequence === VAST_AZURE_SURGE_R4_RECALL.preferredNextSequence
-      ))
-      .reduce((sum, item) => sum + item.serializedChars, 0);
-    expect(preferredPairChars).toBe(
-      VAST_AZURE_SURGE_R4_RECALL.serializedPairChars,
-    );
-    expect(preferredPairChars).toBeGreaterThan(
-      VAST_AZURE_SURGE_R4_RECALL.reserveChars,
-    );
+    expect(plan.protected.compactStrategy).toEqual(continuity.compactStrategy);
   });
 
   it("hot-room saturation does not borrow the protected-overflow history reserve", () => {
@@ -793,7 +771,7 @@ describe("compileRecallPlan", () => {
     expect(plan.history.dialogueEvidence).toEqual([]);
   });
 
-  it("indirect commitment sharing a current player/commitment anchor is selected; stale Strategy Thread target does not seed", () => {
+  it("uses typed commitment anchors and never seeds from free-form compact strategy", () => {
     const phaseContext = basePhaseContext({
       latestEliminatedPlayerName: "Dana",
       jury: [{ playerId: DANA, playerName: "Dana", eliminatedRound: 1 }],
@@ -858,7 +836,7 @@ describe("compileRecallPlan", () => {
       }),
       huddleOutcomes: [],
     });
-    expect(withStaleTarget.has("uniquezz")).toBe(true);
+    expect(withStaleTarget.has("uniquezz")).toBe(false);
     // Alive Bob from board still seeds; strategy-dead Dana does not create an exclusive retrieval path
     // (commitment selection below does not require Dana).
 
@@ -982,7 +960,7 @@ describe("compileRecallPlan", () => {
   it("receipt is content-free (no dialogue, names, entry IDs, rejected counts)", () => {
     const plan = compileRecallPlan({
       actorId: ALICE,
-      promptClass: "strategic_reflection",
+      promptClass: "strategic_decision",
       continuity: makeContinuity(),
       phaseContext: basePhaseContext(),
       transcript: [
@@ -1004,7 +982,7 @@ describe("compileRecallPlan", () => {
     expect(receiptJson).not.toMatch(/rejected/i);
     expect(receiptJson).not.toMatch(/foreign/i);
     // Structural fields present
-    expect(plan.receipt.promptClass).toBe("strategic_reflection");
+    expect(plan.receipt.promptClass).toBe("strategic_decision");
     expect(typeof plan.receipt.protectedTokenEstimate).toBe("number");
     expect(typeof plan.receipt.historyTokenEstimate).toBe("number");
     expect(plan.receipt.eventBoundary).toEqual(
@@ -1036,7 +1014,10 @@ describe("compileRecallPlan", () => {
   it("budget envelopes are defined for all prompt classes", () => {
     expect(RECALL_BUDGET_ENVELOPES.ordinary_speech.historyCeilingChars).toBe(0);
     expect(RECALL_BUDGET_ENVELOPES.strategic_decision.historyCeilingChars).toBeGreaterThan(0);
-    expect(RECALL_BUDGET_ENVELOPES.strategic_reflection.historyCeilingChars).toBeGreaterThan(0);
+    expect(Object.keys(RECALL_BUDGET_ENVELOPES)).toEqual([
+      "ordinary_speech",
+      "strategic_decision",
+    ]);
   });
 });
 
@@ -1127,5 +1108,33 @@ describe("ContextBuilder.compileRecallPlan", () => {
     });
     expect(serializeRecallPlan(a)).toBe(serializeRecallPlan(b));
     expect(measureStructuredChars(a.protected)).toBeGreaterThan(0);
+  });
+
+  it("keeps viewer-facing House summaries out of contestant phase context and Recall Plans", () => {
+    const viewerBeat = "Viewer-only House arc: Alice now carries the pressure.";
+    logger.logSystem(
+      viewerBeat,
+      Phase.LOBBY,
+      undefined,
+      undefined,
+      "house_summary",
+    );
+    logger.logPublic(bobId, "Alice, are you still with me?", Phase.LOBBY);
+
+    const phaseContext = builder.buildPhaseContext(aliceId, Phase.VOTE);
+    expect(JSON.stringify(phaseContext.publicTranscriptContext)).not.toContain(viewerBeat);
+    expect(JSON.stringify(phaseContext.publicMessages)).not.toContain(viewerBeat);
+
+    const plan = builder.compileRecallPlan({
+      agentId: aliceId,
+      promptClass: "strategic_decision",
+      continuity: makeContinuity(),
+      phase: Phase.VOTE,
+      phaseContext,
+    });
+    expect(serializeRecallPlan(plan)).not.toContain(viewerBeat);
+    expect(plan.history.dialogueEvidence.some((entry) =>
+      entry.dialogueText.includes("are you still with me"),
+    )).toBe(true);
   });
 });

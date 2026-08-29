@@ -12,6 +12,7 @@ import {
   resolveOwnedOwnerLearningReview,
 } from "../services/owner-learning-resolution.js";
 import {
+  failFixtureOwnerLearningReview,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
 } from "./owner-learning-test-utils.js";
@@ -81,9 +82,21 @@ describe("owner learning apply and resolution", () => {
     expect(await db.select().from(schema.agentLearningReviewApplications)).toHaveLength(1);
   });
 
-  test("applies and receipts the exact canonical proposal produced from padded provider strings", async () => {
+  test("preserves the byte-exact server-authored baseline while canonicalizing the replacement", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewedStrategy = "Build trust before committing. \n";
+    const revision = (await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, fixture.revisionId)))[0]!;
+    await db.update(schema.agentProfiles).set({
+      strategyStyle: reviewedStrategy,
+    }).where(eq(schema.agentProfiles.id, fixture.agentProfileId));
+    await db.update(schema.agentRevisions).set({
+      behaviorSnapshot: {
+        ...revision.behaviorSnapshot,
+        strategyInstructions: reviewedStrategy,
+      },
+    }).where(eq(schema.agentRevisions.id, fixture.revisionId));
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
     const result = parseOwnerLearningReviewResult({
       diagnosis: "Trust did not become a testable voting commitment.",
@@ -104,7 +117,7 @@ describe("owner learning apply and resolution", () => {
       }],
       proposal: {
         field: "strategyStyle",
-        before: " \n Build trust before committing.\t",
+        before: reviewedStrategy,
         after: "\tBuild explicit commitments before coordinating the vote. \n",
       },
     });
@@ -127,7 +140,7 @@ describe("owner learning apply and resolution", () => {
 
     expect(applied).toMatchObject({
       proposalFingerprint,
-      priorStrategyStyle: "Build trust before committing.",
+      priorStrategyStyle: reviewedStrategy,
       resultingStrategyStyle: "Build explicit commitments before coordinating the vote.",
     });
     expect((await db.select().from(schema.agentProfiles)
@@ -137,7 +150,7 @@ describe("owner learning apply and resolution", () => {
       .where(eq(schema.agentLearningReviewApplications.reviewId, reviewId)))[0])
       .toMatchObject({
         proposalFingerprint,
-        priorStrategyStyle: "Build trust before committing.",
+        priorStrategyStyle: reviewedStrategy,
         resultingStrategyStyle: "Build explicit commitments before coordinating the vote.",
       });
   });
@@ -193,6 +206,39 @@ describe("owner learning apply and resolution", () => {
     expect(await db.select().from(schema.agentLearningReviewApplications)).toEqual([]);
   });
 
+  test("replays an identical linked manual update after its response is lost", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    await markReviewReady(db, reviewId);
+    const before = (await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!;
+    const request = {
+      strategyStyle: "Verify the coalition twice before coordinating the vote.",
+      sourceReviewId: reviewId,
+      expectedRevisionId: before.currentRevisionId,
+    };
+
+    const first = await updateOwnedAgentProfile(
+      db,
+      { userId: fixture.ownerUserId },
+      fixture.agentProfileId,
+      request,
+    );
+    const replay = await updateOwnedAgentProfile(
+      db,
+      { userId: fixture.ownerUserId },
+      fixture.agentProfileId,
+      request,
+    );
+
+    expect(replay.profile.id).toBe(first.profile.id);
+    expect(replay.profile.strategyStyle).toBe(request.strategyStyle);
+    expect((await db.select().from(schema.agentLearningEvents)
+      .where(eq(schema.agentLearningEvents.reviewId, reviewId)))
+      .filter((event) => event.kind === "review_resolved")).toHaveLength(1);
+  });
+
   test("does not let linked edits resolve unfinished or analytically unchanged reviews", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -208,13 +254,18 @@ describe("owner learning apply and resolution", () => {
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
 
     await markReviewReady(db, reviewId);
-    const presentation = await updateOwnedAgentProfile(
+    await expect(updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
+      strategyStyle: "Build explicit reciprocal commitments, verify the bloc, then coordinate the vote.",
+      sourceReviewId: reviewId,
+    })).rejects.toMatchObject({ code: "source_review_conflict" });
+    await expect(updateOwnedAgentProfile(
       db,
       { userId: fixture.ownerUserId },
       fixture.agentProfileId,
       { avatarUrl: "https://cdn.example/review-avatar.png", sourceReviewId: reviewId },
-    );
-    expect(presentation.profileRevision.outcome).toBe("preserved");
+    )).rejects.toMatchObject({ code: "source_review_conflict" });
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
     const review = (await db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
     expect(review.resolution).toBeNull();
@@ -297,11 +348,11 @@ describe("owner learning apply and resolution", () => {
 
     const failedFixture = await insertPlayedOwnerLearningAgent(db);
     const failedReviewId = await startFixtureOwnerLearningReview(db, failedFixture);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "provider_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: failedReviewId,
+      failureCode: "provider_error",
       retryable: false,
-    }).where(eq(schema.agentLearningReviews.id, failedReviewId));
+    });
     const failedProfile = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, failedFixture.agentProfileId)))[0]!;
     await resolveOwnedOwnerLearningReview(db, {

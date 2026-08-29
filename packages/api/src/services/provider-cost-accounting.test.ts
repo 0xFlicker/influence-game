@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
+import { eq, sql } from "drizzle-orm";
 import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "../__tests__/test-utils.js";
@@ -9,6 +10,7 @@ import {
   getGameCostDetail,
   quoteProviderUsageCeiling,
   priceOwnerLearningTokenReceipt,
+  recordProviderSpendForAttempt,
   recordProviderSpendForTrace,
 } from "./provider-cost-accounting.js";
 
@@ -32,6 +34,7 @@ function createTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDeci
     },
     prompt: { messages: [{ role: "user", content: "private prompt" }] },
     response: {
+      transport: "openai.responses",
       raw: {
         id: "resp_test_1",
         object: "response",
@@ -51,6 +54,35 @@ function createTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDeci
       content: "public-ish output",
     },
     ...overrides,
+  };
+}
+
+function attemptSpendInput(
+  gameId: string,
+  ownerEpoch: string,
+  id: string,
+  accounting?: Parameters<typeof recordProviderSpendForAttempt>[1]["accounting"],
+): Parameters<typeof recordProviderSpendForAttempt>[1] {
+  return {
+    id,
+    logicalCallId: `logical-${id}`,
+    gameId,
+    ownerEpoch,
+    attemptOrdinal: 1,
+    actorId: "atlas",
+    actorName: "Atlas",
+    actorRole: "player",
+    action: "vote",
+    phase: Phase.VOTE,
+    round: 2,
+    transport: "openai.chat_completions",
+    providerProfileId: "openai",
+    catalogId: "openai:gpt-5-nano",
+    modelName: "gpt-5-nano",
+    completedAt: "2026-07-03T12:00:01.000Z",
+    latencyMs: 1_000,
+    outcomeKind: "usable",
+    accounting,
   };
 }
 
@@ -97,7 +129,7 @@ describe("provider cost accounting", () => {
       estimatedCostUsd: 0.28,
       estimatedCostMicrousd: 280_000,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -113,7 +145,7 @@ describe("provider cost accounting", () => {
       estimatedCostUsd: 0.14,
       estimatedCostMicrousd: 140_000,
       pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -149,7 +181,7 @@ describe("provider cost accounting", () => {
       ownerEpoch,
       captureSource: "live_trace",
       costSource: "static_estimate",
-      apiSurface: "openai_responses",
+      apiSurface: "openai.responses",
       promptTokens: 1000,
       cachedTokens: 100,
       completionTokens: 2000,
@@ -158,7 +190,7 @@ describe("provider cost accounting", () => {
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "1.25",
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(JSON.stringify(rows[0]!.routerBilling)).not.toContain("must redact");
@@ -169,7 +201,7 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.ownerEpochBreakdowns).toHaveLength(1);
     expect(detail.detail.providerNativeTotals.katana_credit).toBe(1.25);
-    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-30");
+    expect(detail.detail.pricing.rateCardVersions).toContain("2026-08-24");
   });
 
   test("prices live Luna Responses by the effective Flex tier and cache-write usage", async () => {
@@ -219,7 +251,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 1_495,
       pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
       safeMetadata: {
         effectiveServiceTier: "flex",
         cacheWriteTokens: 3_000,
@@ -485,7 +517,7 @@ describe("provider cost accounting", () => {
       totalTokens: 100_000,
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
 
@@ -528,7 +560,7 @@ describe("provider cost accounting", () => {
       modelName: "grok-4-3",
       totalTokens: 250_000,
       estimatedCostMicrousd: 687500,
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -590,7 +622,7 @@ describe("provider cost accounting", () => {
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(rows[0]).toMatchObject({
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(rows[0]!.pricedAt).not.toBe("2026-07-03T13:00:00.000Z");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -730,7 +762,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -795,7 +827,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
     expect(JSON.stringify(rows[0]!.diagnostics)).not.toContain("cost_unavailable");
@@ -930,6 +962,233 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.backfill.traceBackfilledEntries).toBe(0);
     expect(detail.detail.backfill.terminalBackfilledEntries).toBe(0);
+  });
+
+  test("keeps successful traces as evidence when an owner epoch has journal-authoritative spend", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-journal-authority-test",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "atlas", name: "Atlas", role: "player" },
+        action: "vote",
+        model: { provider: "openai", name: "gpt-5-nano" },
+        usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+      },
+    });
+    await db.insert(schema.providerLogicalCalls).values({
+      id: "journal-logical-call-test",
+      gameId,
+      actorId: "atlas",
+      actorName: "Atlas",
+      actorRole: "player",
+      action: "vote",
+      phase: Phase.VOTE,
+      round: 2,
+      logicalCallOrdinal: 1,
+      nextAttemptOrdinal: 2,
+    });
+    await db.insert(schema.providerCallAttempts).values({
+      id: "journal-attempt-cost-test",
+      logicalCallId: "journal-logical-call-test",
+      gameId,
+      ownerEpoch,
+      attemptOrdinal: 1,
+      transportAttemptId: "journal-attempt-cost-transport",
+      reservationHash: "reservation-hash",
+      terminalHash: "terminal-hash",
+      status: "terminal",
+      transport: "openai.chat_completions",
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5-nano",
+      modelName: "gpt-5-nano",
+      startedAt: "2026-07-03T12:00:00.000Z",
+      completedAt: "2026-07-03T12:00:01.000Z",
+      latencyMs: 1_000,
+      outcomeKind: "usable",
+      disposition: "accepted",
+      evidenceState: "not_required",
+    });
+    await recordProviderSpendForAttempt(db, {
+      id: "journal-attempt-cost-test",
+      logicalCallId: "journal-logical-call-test",
+      gameId,
+      ownerEpoch,
+      attemptOrdinal: 1,
+      actorId: "atlas",
+      actorName: "Atlas",
+      actorRole: "player",
+      action: "vote",
+      phase: Phase.VOTE,
+      round: 2,
+      transport: "openai.chat_completions",
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5-nano",
+      modelName: "gpt-5-nano",
+      completedAt: "2026-07-03T12:00:01.000Z",
+      latencyMs: 1_000,
+      outcomeKind: "usable",
+      accounting: {
+        usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+      },
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+    expect(result.inserted).toBe(0);
+    const spend = await db.select().from(schema.gameProviderSpendEntries);
+    expect(spend).toHaveLength(1);
+    expect(spend[0]!.captureSource).toBe("live_trace");
+  });
+
+  test("distinguishes missing usage from provider-reported zero usage", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "missing-usage"),
+    );
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "empty-usage", { usage: {} }),
+    );
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "zero-usage", {
+        usage: {
+          promptTokens: 0,
+          cachedTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+        },
+      }),
+    );
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    const bySource = new Map(rows.map((row) => [row.sourceKey, row]));
+    expect(bySource.get("provider-attempt:missing-usage")).toMatchObject({
+      costSource: "unavailable",
+      estimatedCostMicrousd: null,
+    });
+    expect(bySource.get("provider-attempt:empty-usage")).toMatchObject({
+      costSource: "unavailable",
+      estimatedCostMicrousd: null,
+    });
+    expect(bySource.get("provider-attempt:zero-usage")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 0,
+    });
+  });
+
+  test("prices Katana Grok 4.5 and GLM 5.2 attempts when router cost is absent", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const usage = {
+      promptTokens: 1_000,
+      cachedTokens: 0,
+      completionTokens: 500,
+      reasoningTokens: 0,
+      totalTokens: 1_500,
+    };
+
+    await recordProviderSpendForAttempt(db, {
+      ...attemptSpendInput(gameId, ownerEpoch, "katana-grok-4-5", { usage }),
+      transport: "katana.chat_completions",
+      providerProfileId: "katana",
+      catalogId: "katana:grok-4-5",
+      modelName: "grok-4-5",
+    });
+    await recordProviderSpendForAttempt(db, {
+      ...attemptSpendInput(gameId, ownerEpoch, "katana-glm-5-2", { usage }),
+      transport: "katana.chat_completions",
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      modelName: "glm-5-2",
+    });
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    const byModel = new Map(rows.map((row) => [row.modelName, row]));
+    expect(byModel.get("grok-4-5")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 5_050,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-08-24",
+    });
+    expect(byModel.get("glm-5-2")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 2_521,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-08-24",
+    });
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.unpricedCallCount).toBe(0);
+  });
+
+  test("atomically retries the spend row and rollup after rollup failure", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const input = attemptSpendInput(gameId, ownerEpoch, "atomic-rollup", {
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    });
+
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION fail_provider_attempt_rollup_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected rollup failure';
+      END;
+      $$
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER fail_provider_attempt_rollup_insert
+      BEFORE INSERT ON game_cost_rollups
+      FOR EACH ROW EXECUTE FUNCTION fail_provider_attempt_rollup_insert()
+    `);
+    try {
+      await expect(recordProviderSpendForAttempt(db, input)).rejects.toThrow(
+        "Failed query",
+      );
+      expect(await db.select().from(schema.gameProviderSpendEntries)
+        .where(eq(schema.gameProviderSpendEntries.gameId, gameId))).toHaveLength(0);
+      expect(await db.select().from(schema.gameCostRollups)
+        .where(eq(schema.gameCostRollups.gameId, gameId))).toHaveLength(0);
+    } finally {
+      await db.execute(sql`
+        DROP TRIGGER IF EXISTS fail_provider_attempt_rollup_insert
+        ON game_cost_rollups
+      `);
+      await db.execute(sql`DROP FUNCTION IF EXISTS fail_provider_attempt_rollup_insert()`);
+    }
+
+    expect(await recordProviderSpendForAttempt(db, input)).toMatchObject({
+      inserted: true,
+    });
+    expect(await recordProviderSpendForAttempt(db, input)).toMatchObject({
+      inserted: false,
+    });
+    expect(await db.select().from(schema.gameProviderSpendEntries)
+      .where(eq(schema.gameProviderSpendEntries.gameId, gameId))).toHaveLength(1);
+    const rollups = await db.select().from(schema.gameCostRollups)
+      .where(eq(schema.gameCostRollups.gameId, gameId));
+    expect(rollups).toHaveLength(2);
+    expect(rollups.find((row) => row.rollupScope === "game")).toMatchObject({
+      callCount: 1,
+      totalTokens: 15,
+    });
   });
 
   test("omits private manifest IDs from backfill diagnostics", async () => {

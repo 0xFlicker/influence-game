@@ -1576,21 +1576,25 @@ function extractCognitionProse(
     };
   }
   const prose: Record<string, unknown> = {};
-  for (const key of [
-    "decisionLog",
-    "strategicLens",
-    "strategicLensRationale",
-    "strategyPacketRevision",
-    "strategyPacketUpdate",
-    "strategyPacketSummary",
-    "strategicReflectionSummary",
-  ] as const) {
-    const value = payload[key];
-    if (typeof value === "string" && value.length > 0) {
-      prose[key] = value;
-    }
+  if (payload.stage !== "proposal" || !isRecord(payload.strategyCandidate)) return prose;
+  const operation = payload.strategyCandidate.operation;
+  if (operation !== "replace" && operation !== "delta") return prose;
+  prose.strategyStage = "proposal";
+  prose.strategyOperation = operation;
+  const submittedValue = payload.strategyCandidate.submittedValue;
+  if (typeof submittedValue === "string") {
+    prose.strategySubmission = "value";
+    prose.strategyValue = submittedValue;
+  } else if (submittedValue === null) {
+    prose.strategySubmission = "no_change";
+  } else {
+    prose.strategySubmission = "mechanically_invalid";
   }
   return prose;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ---------------------------------------------------------------------------

@@ -136,7 +136,7 @@ describe("owner learning evidence", () => {
     // Locks the optimized incremental packer to the exact retained output of
     // the original full-request estimator for this three-game stress case.
     expect(sha256StableJson(first.input)).toBe(
-      "sha256:99683609d7470c1fb035e7cac2a2f8d9aafa6d0ab9d9d8361b9364a9af4b3c4a",
+      "sha256:f803b0c0ac3b9fd9407b8bf014517f257930ef857ecde0525d1ee05bab06b844",
     );
     const serialized = JSON.stringify(first.input);
     expect(serialized).not.toContain("olm_");

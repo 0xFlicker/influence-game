@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import {
+  providerAcceptedDecisionId,
   validateCanonicalGameEvent,
   type CanonicalGameEvent,
 } from "@influence/engine";
@@ -68,6 +69,18 @@ export async function appendGameEvents(
       let nextSequence = owner.lastPersistedEventSequence + 1;
       let newHead = owner.lastPersistedEventSequence;
       const inserted: CanonicalGameEvent[] = [];
+      const acceptedCalls = await tx.select({
+        id: schema.providerLogicalCalls.id,
+        acceptedAttemptId: schema.providerLogicalCalls.acceptedAttemptId,
+      }).from(schema.providerLogicalCalls).where(and(
+        eq(schema.providerLogicalCalls.gameId, params.gameId),
+        sql`${schema.providerLogicalCalls.acceptedAttemptId} IS NOT NULL`,
+      ));
+      const acceptedCallByDecisionId = new Map(
+        acceptedCalls.flatMap((call) => call.acceptedAttemptId
+          ? [[providerAcceptedDecisionId(call.acceptedAttemptId), call.id] as const]
+          : []),
+      );
 
       for (const event of params.events) {
         validateEnvelopeMetadata(params.gameId, event);
@@ -107,6 +120,25 @@ export async function appendGameEvents(
             sourcePointers: event.sourcePointers as unknown as ReadonlyArray<Record<string, unknown>>,
             envelope: event as unknown as Record<string, unknown>,
           });
+
+        const acceptedCallIds = new Set(event.sourcePointers.flatMap((pointer) => {
+          if (!pointer.decisionId) return [];
+          const logicalCallId = acceptedCallByDecisionId.get(pointer.decisionId);
+          return logicalCallId ? [logicalCallId] : [];
+        }));
+        for (const logicalCallId of acceptedCallIds) {
+          const committed = await tx.update(schema.providerLogicalCalls).set({
+            canonicalEventSequence: event.sequence,
+            canonicalCommittedAt: event.timestamp,
+            updatedAt: event.timestamp,
+          }).where(and(
+            eq(schema.providerLogicalCalls.id, logicalCallId),
+            sql`(${schema.providerLogicalCalls.canonicalEventSequence} IS NULL OR ${schema.providerLogicalCalls.canonicalEventSequence} = ${event.sequence})`,
+          )).returning({ id: schema.providerLogicalCalls.id });
+          if (committed.length === 0) {
+            throw new Error("Provider accepted action conflicts with its canonical event handoff");
+          }
+        }
 
         inserted.push(event);
         newHead = event.sequence;

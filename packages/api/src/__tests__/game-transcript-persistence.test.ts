@@ -250,6 +250,22 @@ describe("U2 product dialogue watermark at checkpoints", () => {
     expect(retry.ok).toBe(true);
     expect(await db.select().from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId))).toHaveLength(1);
 
+    const conflictingHouseContinuity = structuredClone(enriched.houseNarrativeContinuityCapsule!);
+    conflictingHouseContinuity.privateNarrativeNotebook = "A different accepted House notebook.";
+    const houseConflict = await writeGameCheckpoint(db, {
+      gameId,
+      ownerEpoch,
+      checkpoint: {
+        ...enriched,
+        houseNarrativeContinuityCapsule: conflictingHouseContinuity,
+        productDialogueProjection: projection,
+      },
+    });
+    expect(houseConflict).toEqual({
+      ok: false,
+      error: "conflicting House narrative continuity at checkpoint boundary",
+    });
+
     // Conflicting content at same sequence must not succeed.
     const conflict = await writeGameCheckpoint(db, {
       gameId,

@@ -5,9 +5,10 @@
  * runs migrations, and truncates all tables for test isolation.
  */
 
-import { sql } from "drizzle-orm";
+import { getTableName, is, sql } from "drizzle-orm";
+import { PgTable } from "drizzle-orm/pg-core";
 import postgres from "postgres";
-import { createDB, type DrizzleDB } from "../db/index.js";
+import { createDB, schema, type DrizzleDB } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
@@ -89,61 +90,11 @@ export async function setupTestDB(): Promise<DrizzleDB> {
   return db;
 }
 
-// All Influence table names (from schema) — truncate only these, not unrelated tables.
-const INFLUENCE_TABLES = [
-  "agent_learning_events",
-  "agent_learning_review_applications",
-  "agent_learning_review_calls",
-  "agent_learning_review_games",
-  "agent_learning_moment_evidence",
-  "agent_learning_reviews",
-  "agent_learning_game_evidence",
-  "agent_learning_review_entitlements",
-  "mcp_oauth_access_tokens",
-  "mcp_oauth_refresh_tokens",
-  "mcp_oauth_authorization_codes",
-  "mcp_oauth_clients",
-  "authentication_credentials",
-  "verified_email_claims",
-  "game_cognitive_artifact_reads",
-  "game_cognitive_artifacts",
-  "game_cost_accounting_audit_events",
-  "game_cost_reconciliations",
-  "game_cost_rollups",
-  "game_provider_spend_entries",
-  "game_evidence_manifest_reads",
-  "game_evidence_manifests",
-  "game_checkpoints",
-  "game_completion_settlement_attempts",
-  "game_completion_settlements",
-  "game_transcript_states",
-  "game_watch_state_summaries",
-  "game_events",
-  "game_run_owners",
-  "season_honors",
-  "competition_receipt_evidence",
-  "competition_receipts",
-  "competition_rating_events",
-  "agent_competition_ratings",
-  "free_track_ratings",
-  "free_queue_prompt_suppressions",
-  "free_game_queue",
-  "avatar_change_events",
-  "avatar_generation_requests",
-  "agent_memories",
-  "transcripts",
-  "game_results",
-  "game_players",
-  "agent_revisions",
-  "agent_profiles",
-  "games",
-  "seasons",
-  "address_roles",
-  "role_permissions",
-  "roles",
-  "permissions",
-  "users",
-];
+// Derive every Influence table from the Drizzle schema so reset ownership
+// grows with schema additions while excluding unrelated database tables.
+const INFLUENCE_TABLES = Object.values(schema)
+  .filter((value) => is(value, PgTable))
+  .map((table) => getTableName(table));
 
 async function truncateAll(db: DrizzleDB): Promise<void> {
   const tableList = INFLUENCE_TABLES.map((t) => `"${t}"`).join(", ");

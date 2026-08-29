@@ -79,7 +79,7 @@ export interface CompletedResultsFormatRecapModel {
   ledger: Array<{
     voterName: string;
     targetName: string;
-    polarity: "Save" | "Eliminate" | null;
+    polarity: "Save" | "Exit" | null;
   }>;
   safetyBounce: {
     starterName: string | null;
@@ -225,16 +225,22 @@ function buildCellLookup(results: CompletedGameResultsRead): Map<string, Omit<Co
         formatRecap.selectedFormatId,
       );
       for (const entry of formatRecap.ballotPresentation.rollCall) {
-        const polarity = entry.polarity
-          ? labelFromToken(entry.polarity)
-          : null;
+        const polarity = entry.polarity === "eliminate"
+          ? "Exit"
+          : entry.polarity
+            ? labelFromToken(entry.polarity)
+            : null;
         setCell(
           cells,
           columnId,
           entry.voter,
           entry.target,
-          polarity ? `${polarity} ${entry.target.name}` : entry.target.name,
-          `${columnId}:${entry.polarity ?? "vote"}:${entry.target.id}`,
+          entry.target === null
+            ? "FORFEIT"
+            : polarity ? `${polarity} ${entry.target.name}` : entry.target.name,
+          entry.target === null
+            ? `${columnId}:forfeit`
+            : `${columnId}:${entry.polarity ?? "vote"}:${entry.target.id}`,
         );
       }
     }
@@ -270,14 +276,14 @@ function setCell(
   cells: Map<string, Omit<CompletedResultsVoteCell, "colorClass">>,
   columnId: string,
   voter: CompletedGameResultsPlayerRef,
-  target: CompletedGameResultsPlayerRef,
-  targetName = target.name,
-  groupKey = `${columnId}:${target.id}`,
+  target: CompletedGameResultsPlayerRef | null,
+  targetName?: string,
+  groupKey?: string,
 ): void {
   cells.set(`${columnId}:${voter.id}`, {
-    targetId: target.id,
-    targetName,
-    groupKey,
+    targetId: target?.id ?? null,
+    targetName: targetName ?? target?.name ?? "FORFEIT",
+    groupKey: groupKey ?? `${columnId}:${target?.id ?? "forfeit"}`,
   });
 }
 
@@ -360,7 +366,7 @@ function leadingHostileTargets(results: CompletedGameResultsRead): Set<string> {
       increment(counts, entry.target.id);
     }
     for (const entry of round.formatRecap?.ballotPresentation.rollCall ?? []) {
-      if (entry.polarity !== "save") {
+      if (entry.target && entry.polarity !== "save") {
         increment(counts, entry.target.id);
       }
     }
@@ -395,10 +401,12 @@ function buildFormatRecapModel(
     ledgerStatus: recap.ballotPresentation.status,
     ledger: recap.ballotPresentation.rollCall.map((entry) => ({
       voterName: entry.voter.name,
-      targetName: entry.target.name,
-      polarity: entry.polarity
-        ? (labelFromToken(entry.polarity) as "Save" | "Eliminate")
-        : null,
+      targetName: entry.target?.name ?? "FORFEIT",
+      polarity: entry.polarity === "eliminate"
+        ? "Exit"
+        : entry.polarity
+          ? "Save"
+          : null,
     })),
     safetyBounce: recap.safetyBounce
       ? {
@@ -424,7 +432,7 @@ function formatScoringModel(
   if (!scoring) return null;
   if (scoring.kind === "save_or_eliminate") {
     return {
-      columns: ["Agent", "Saves", "Eliminates", "Net"],
+      columns: ["Agent", "Saves", "Exits", "Net"],
       rows: scoring.rows.map((row) => ({
         playerName: row.player.name,
         values: [
@@ -453,6 +461,45 @@ function formatScoringModel(
         values: [
           String(row.votes),
           row.votes === highestTotal ? "Highest total" : "Below highest total",
+        ],
+      })),
+    };
+  }
+  if (scoring.kind === "restricted_history") {
+    const highestTotal = Math.max(...scoring.rows.map((row) => row.votes), 0);
+    const forfeited = new Set(scoring.forfeited.map((player) => player.id));
+    return {
+      columns: ["Agent", "Votes", "History status"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [
+          String(row.votes),
+          forfeited.has(row.player.id)
+            ? "Ballot forfeited"
+            : row.votes === highestTotal ? "Highest total" : "Below highest total",
+        ],
+      })),
+    };
+  }
+  if (scoring.kind === "even_votes") {
+    const allOdd = scoring.rows.every((row) => row.votes % 2 !== 0);
+    const highestEven = Math.max(
+      ...scoring.rows.filter((row) => row.evenEligible).map((row) => row.votes),
+      0,
+    );
+    return {
+      columns: ["Agent", "Votes", "Parity status"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [
+          String(row.votes),
+          allOdd
+            ? "Odd · empowered choice"
+            : !row.evenEligible
+              ? "Odd · safe"
+              : row.votes === highestEven
+                ? "Highest even · elimination eligible"
+                : "Even · below danger",
         ],
       })),
     };

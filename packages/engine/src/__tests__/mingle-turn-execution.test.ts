@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { ContextBuilder } from "../context-builder";
 import { GameState } from "../game-state";
 import type {
+  CompactStrategyApplicationResult,
+  CompactStrategyCandidate,
+  CompactStrategyDecisionBoundary,
+  CompactStrategyState,
   IAgent,
   MingleTurnAction,
   PhaseContext,
@@ -16,6 +20,11 @@ import type { PhaseRunnerContext } from "../phases/phase-runner-context";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase, type UUID } from "../types";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
+import {
+  applyStrategyCandidate,
+  cloneCompactStrategyState,
+  createOpeningStrategyState,
+} from "../strategy-state";
 
 const PLAYERS = [
   { id: "a", name: "A" },
@@ -28,6 +37,7 @@ const PLAYERS = [
 class TurnAgent {
   readonly histories: Array<Array<{ from: string; text: string }>> = [];
   readonly contexts: PhaseContext[] = [];
+  private compactStrategyState = createOpeningStrategyState();
 
   constructor(
     readonly id: UUID,
@@ -39,6 +49,17 @@ class TurnAgent {
   async onPhaseStart(): Promise<void> {}
   getRecallContinuitySnapshot(): RecallContinuitySnapshot {
     return emptyRecallContinuitySnapshot();
+  }
+  getCompactStrategyState(): CompactStrategyState {
+    return cloneCompactStrategyState(this.compactStrategyState);
+  }
+  commitCompactStrategyCandidate(
+    boundary: CompactStrategyDecisionBoundary,
+    candidate: CompactStrategyCandidate,
+  ): CompactStrategyApplicationResult {
+    const result = applyStrategyCandidate(this.compactStrategyState, boundary, candidate);
+    this.compactStrategyState = result.state;
+    return result;
   }
   async takeMingleTurn(
     context: PhaseContext,
@@ -81,6 +102,7 @@ function harness() {
     gotoRoomId: 3,
     gotoPlayerName: null,
     thinking: "move later",
+    strategyDelta: "Use movement to test whether B follows.",
   }]);
   const b = new TurnAgent("b", "B", [{
     message: "B answers",
@@ -88,6 +110,7 @@ function harness() {
     gotoRoomId: null,
     gotoPlayerName: null,
     thinking: "stay",
+    strategyDelta: "Hold the room and make A reveal the plan.",
   }]);
   const agents = new Map<UUID, IAgent>([
     ["a", a as unknown as IAgent],
@@ -169,6 +192,14 @@ describe("shared Mingle turn execution", () => {
     expect(mingleInbox.get("b")).toEqual([{ from: "A", text: "A opens" }]);
     expect(logger.transcript.filter((entry) => entry.scope === "mingle").map((entry) => entry.text))
       .toEqual(["A opens", "B answers"]);
+    expect(a.getCompactStrategyState()).toMatchObject({
+      revision: 1,
+      deltas: ["Use movement to test whether B follows."],
+    });
+    expect(b.getCompactStrategyState()).toMatchObject({
+      revision: 1,
+      deltas: ["Hold the room and make A reveal the plan."],
+    });
 
     const frozenRooms = new Map<UUID, number>([["a", 2], ["b", 2]]);
     const frozen = commitMingleTurnMovements({
@@ -235,5 +266,36 @@ describe("shared Mingle turn execution", () => {
       gotoRoomId: 3,
     });
     expect("requestedToRoomId" in records[0]!).toBe(false);
+  });
+
+  test("does not mutate strategy when ownership becomes stale before acceptance", async () => {
+    const { ctx, a } = harness();
+    initializeMingleExecution(ctx, Phase.MINGLE);
+    ctx.beforeAcceptedCommit = () => {
+      throw new Error("stale execution owner");
+    };
+
+    await expect(executeMingleTurn({
+      ctx,
+      phase: Phase.MINGLE,
+      room: {
+        roomId: 2,
+        round: 1,
+        beat: 1,
+        playerIds: ["a", "b"],
+      },
+      playerId: "a",
+      roomCount: 3,
+      roomCounts: [
+        { roomId: 1, count: 0 },
+        { roomId: 2, count: 2 },
+        { roomId: 3, count: 3 },
+      ],
+      mingleIntent: null,
+      totalBeats: 2,
+      conversationHistory: [],
+    })).rejects.toThrow("stale execution owner");
+
+    expect(a.getCompactStrategyState()).toEqual(createOpeningStrategyState());
   });
 });

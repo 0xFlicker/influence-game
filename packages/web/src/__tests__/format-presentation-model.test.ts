@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Phase } from "@influence/engine";
 import {
+  createEvenVotesClearViewerDecisions,
+  createEvenVotesTieViewerDecisions,
   createMajorityEliminationClearViewerDecisions,
   createMajorityEliminationTieViewerDecisions,
   createSafetyBounceViewerDecisions,
@@ -654,6 +656,45 @@ describe("format presentation compiler", () => {
     );
   });
 
+  it("stages Even Votes with exact parity eligibility and an empowered highest-even tie", () => {
+    const clear = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createEvenVotesClearViewerDecisions(),
+    });
+    const tied = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createEvenVotesTieViewerDecisions(),
+    });
+
+    expect(clear.status).toBe("ready");
+    expect(clear.cues.find((cue) => cue.kind === "format_aggregate")).toMatchObject({
+      ballotPresentationStatus: "revealed",
+      resolution: {
+        formatId: "even_votes",
+        eliminatedId: "lyra",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: { atlas: 0, lyra: 2, echo: 1, rex: 1 },
+          eligiblePlayerIds: ["atlas", "lyra"],
+        },
+      },
+    });
+    expect(tied.status).toBe("ready");
+    expect(tied.cues.at(-2)).toMatchObject({
+      kind: "format_tiebreak",
+      tiebreakerId: "atlas",
+      tiedPlayerIds: ["lyra", "echo"],
+    });
+    expect(tied.cues.at(-1)).toMatchObject({
+      kind: "format_elimination",
+      eliminatedId: "echo",
+    });
+  });
+
   it("accepts a one-format manifest selection without inventing an offer", () => {
     const selected = createMajorityEliminationClearViewerDecisions()[1]!;
     const result = compileFormatPresentationPrefix({
@@ -671,6 +712,86 @@ describe("format presentation compiler", () => {
       "format_selected",
       "format_selected",
     ]);
+  });
+
+  it("renders a canonical Restricted History forfeiture in the sealed roll call", () => {
+    const restricted: ViewerDecisionEvent[] = [
+      event({
+        sequence: 1,
+        round: 3,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        payload: {
+          empoweredId: "atlas",
+          offeredFormatIds: ["majority_elimination", "restricted_history"],
+        },
+      }),
+      event({
+        sequence: 2,
+        round: 3,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        payload: { empoweredId: "atlas", formatId: "restricted_history" },
+      }),
+      event({
+        sequence: 3,
+        round: 3,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_forfeited",
+        payload: {
+          formatId: "restricted_history",
+          voterId: "atlas",
+          reason: "history_exhausted",
+        },
+      }),
+      event({
+        sequence: 4,
+        round: 3,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.resolved",
+        payload: {
+          formatId: "restricted_history",
+          empoweredId: "atlas",
+          eliminatedId: "atlas",
+          resolutionKind: "auto",
+          tiedPlayerIds: ["atlas"],
+          tiebreakerId: null,
+          aggregate: {
+            capability: "sealed_elim",
+            totals: { atlas: 0 },
+            eligiblePlayerIds: ["atlas"],
+          },
+        },
+      }),
+    ];
+    const result = compileFormatPresentationPrefix({
+      gameId: "restricted-history-forfeit",
+      gameKernel: "format",
+      roster: [{ id: "atlas", name: "Atlas" }],
+      decisions: restricted,
+      formatManifest: ["majority_elimination", "restricted_history"],
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.cues.find((cue) => cue.kind === "format_roll_call")).toMatchObject({
+      ballot: {
+        voterId: "atlas",
+        targetId: null,
+        forfeited: true,
+      },
+    });
+
+    const tooEarly = compileFormatPresentationPrefix({
+      gameId: "restricted-history-too-early",
+      gameKernel: "format",
+      roster: [{ id: "atlas", name: "Atlas" }],
+      decisions: restricted.map((decision) => ({ ...decision, round: 2 })),
+      formatManifest: ["majority_elimination", "restricted_history"],
+    });
+    expect(tooEarly).toMatchObject({
+      status: "incomplete",
+      diagnostic: { code: "invalid_menu", sequence: 1 },
+    });
   });
 
   it("paces early, middle, and closing Safety Bounce decisions without altering facts", () => {

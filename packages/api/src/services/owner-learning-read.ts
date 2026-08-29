@@ -76,6 +76,7 @@ export async function getOwnedOwnerLearningReview(
     proposalFingerprint: row.review.proposalFingerprint,
     safeFailureCode: row.review.safeFailureCode,
     retryable: row.review.retryable,
+    ownerRetriesRemaining: row.review.ownerRetryCount === 0 ? 1 : 0,
     logicalCallCount: row.review.logicalCallCount,
     diveCount: row.review.diveCount,
     applyDisposition: deriveOwnerLearningApplyDisposition({
@@ -129,6 +130,7 @@ export async function getOwnedOwnerLearningReviewStatus(
     proposalFingerprint: schema.agentLearningReviews.proposalFingerprint,
     safeFailureCode: schema.agentLearningReviews.safeFailureCode,
     retryable: schema.agentLearningReviews.retryable,
+    ownerRetryCount: schema.agentLearningReviews.ownerRetryCount,
     logicalCallCount: schema.agentLearningReviews.logicalCallCount,
     diveCount: schema.agentLearningReviews.diveCount,
     reviewedRevisionId: schema.agentLearningReviews.reviewedRevisionId,
@@ -162,6 +164,7 @@ export async function getOwnedOwnerLearningReviewStatus(
     proposalFingerprint: row.proposalFingerprint,
     safeFailureCode: row.safeFailureCode,
     retryable: row.retryable,
+    ownerRetriesRemaining: row.ownerRetryCount === 0 ? 1 : 0,
     logicalCallCount: row.logicalCallCount,
     diveCount: row.diveCount,
     applyDisposition: deriveOwnerLearningApplyDisposition({

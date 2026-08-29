@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   GameState,
   Phase,
@@ -96,6 +96,7 @@ describe("ProductionGameMcpReadModel", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
   });
 
   test("reads deployed game summaries, projections, filters, and player timelines from DB state", async () => {
@@ -288,7 +289,7 @@ describe("ProductionGameMcpReadModel", () => {
       gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
       round: 1,
     }, PRODUCER_ACCESS);
-    expect(classicRound.schemaVersion).toBe(2);
+    expect(classicRound.schemaVersion).toBe(3);
     expect(classicRound.game).toMatchObject({
       gameKernel: "classic",
       gameKernelSource: "inferred",
@@ -354,7 +355,8 @@ describe("ProductionGameMcpReadModel", () => {
       id: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
       name: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
     });
-    expect(brief.postgame.schemaVersion).toBe(2);
+    expect(brief.schemaVersion).toBe(2);
+    expect(brief.postgame.schemaVersion).toBe(3);
     expect(brief.postgame.executiveSummary[0]?.text).toBe(
       "Shadowtech controlled power for 3 consecutive rounds.",
     );
@@ -429,6 +431,20 @@ describe("ProductionGameMcpReadModel", () => {
     expect(player.player.overallGameShape.value).toBe("under the radar");
     expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
 
+    const eliminatedPlayer = await readModel.readPlayerGameSummary({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+      player: EDGE_SMOKE_DUSK_PLAYERS.ash.name,
+    }, PRODUCER_ACCESS);
+    expect(eliminatedPlayer.ok).toBe(true);
+    if (!eliminatedPlayer.ok) return;
+    const serializedAlignment = JSON.parse(JSON.stringify(
+      eliminatedPlayer.player.majorityAlignmentByRound,
+    )) as Array<{ round: number; aligned: boolean | null }>;
+    expect(serializedAlignment.slice(0, 2)).toEqual([
+      expect.objectContaining({ round: 1, aligned: false }),
+      expect.objectContaining({ round: 2, aligned: null }),
+    ]);
+
     const turningPoints = await readModel.readGameTurningPoints({
       gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
     }, PRODUCER_ACCESS);
@@ -457,28 +473,136 @@ describe("ProductionGameMcpReadModel", () => {
       grade.player.id === EDGE_SMOKE_DUSK_EXPECTED.winnerId &&
       grade.grade === "A"
     )).toBe(true);
+    expect(producer.producerAnalysis.playerByPlayerStrategicGrades.find((grade) =>
+      grade.player.id === EDGE_SMOKE_DUSK_PLAYERS.willow.id
+    )?.signals).toMatchObject({
+      majorityAlignmentRoundsScored: 2,
+      majorityAlignedRounds: 1,
+      majorityAlignmentRate: 0.5,
+    });
     expect(producer.developerEvidence).toHaveProperty("cognitiveArtifacts");
+  });
+
+  test("producer game analysis exposes honest first-page metadata for private indexes", async () => {
+    await insertEdgeSmokeDuskFixture(db);
+    await db.update(schema.games)
+      .set({ cognitiveArtifactCaptureVersion: 1 })
+      .where(eq(schema.games.id, EDGE_SMOKE_DUSK_GAME_ID));
+    const owner = (await db.select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+      .from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, EDGE_SMOKE_DUSK_GAME_ID)))[0];
+    if (!owner) throw new Error("expected edge-smoke-dusk owner epoch");
+
+    const cognitiveIds = Array.from({ length: 52 }, () => randomUUID());
+    await db.insert(schema.gameCognitiveArtifacts).values(cognitiveIds.map((id, index) => ({
+      id,
+      gameId: EDGE_SMOKE_DUSK_GAME_ID,
+      artifactType: index % 2 === 0 ? "thinking" as const : "strategy" as const,
+      actorRole: "player" as const,
+      actorPlayerId: EDGE_SMOKE_DUSK_PLAYERS.lilith.id,
+      actorUserId: "user-lilith",
+      action: "vote",
+      payloadByteLength: 2,
+      payload: {},
+      createdAt: "2026-08-19T12:00:00.000Z",
+    })));
+    const traceIds = Array.from({ length: 53 }, () => randomUUID());
+    await db.insert(schema.gameEvidenceManifests).values(traceIds.map((id) => ({
+      id,
+      gameId: EDGE_SMOKE_DUSK_GAME_ID,
+      ownerEpoch: owner.ownerEpoch,
+      evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      redactionStatus: "active" as const,
+      metadata: {},
+      createdAt: "2026-08-19T12:00:00.000Z",
+    })));
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const producer = await readModel.readProducerGameAnalysis({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+    }, PRODUCER_ACCESS);
+    expect(producer.ok).toBe(true);
+    if (!producer.ok) return;
+    const cognitiveFirst = asRecord(producer.developerEvidence.cognitiveArtifacts);
+    const traceFirst = asRecord(producer.developerEvidence.traceManifests);
+    const cognitiveCursor = cognitiveFirst.nextCursor;
+    const traceCursor = traceFirst.nextCursor;
+    expect(producer.schemaVersion).toBe(3);
+    expect(cognitiveFirst).toMatchObject({
+      ok: true,
+      pageSize: 50,
+      totalCount: 52,
+    });
+    expect(traceFirst).toMatchObject({
+      ok: true,
+      pageSize: 50,
+      totalCount: 53,
+    });
+    expect(typeof cognitiveCursor).toBe("string");
+    expect(typeof traceCursor).toBe("string");
+    if (typeof cognitiveCursor !== "string" || typeof traceCursor !== "string") {
+      throw new Error("Expected producer analysis continuation cursors");
+    }
+
+    const seenCognitiveIds = (cognitiveFirst.artifacts as Array<{ id: string }>).map(({ id }) => id);
+    let nextCognitiveCursor: string | null = cognitiveCursor;
+    while (nextCognitiveCursor) {
+      const response = await readModel.listCognitiveArtifacts({
+        gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+        limit: 17,
+        cursor: nextCognitiveCursor,
+      }, PRODUCER_ACCESS);
+      const page = asRecord(response.cognitiveArtifacts);
+      seenCognitiveIds.push(...(page.artifacts as Array<{ id: string }>).map(({ id }) => id));
+      nextCognitiveCursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+    }
+
+    const seenTraceIds = (traceFirst.manifests as Array<{ id: string }>).map(({ id }) => id);
+    let nextTraceCursor: string | null = traceCursor;
+    while (nextTraceCursor) {
+      const response = await readModel.listTraceManifests(
+        EDGE_SMOKE_DUSK_GAME_ID,
+        PRODUCER_ACCESS,
+        17,
+        nextTraceCursor,
+      );
+      const page = asRecord(response.developerEvidence);
+      seenTraceIds.push(...(page.manifests as Array<{ id: string }>).map(({ id }) => id));
+      nextTraceCursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+    }
+
+    expect(seenCognitiveIds).toHaveLength(cognitiveIds.length);
+    expect(new Set(seenCognitiveIds).size).toBe(cognitiveIds.length);
+    expect([...seenCognitiveIds].sort()).toEqual([...cognitiveIds].sort());
+    expect(seenTraceIds).toHaveLength(traceIds.length);
+    expect(new Set(seenTraceIds).size).toBe(traceIds.length);
+    expect([...seenTraceIds].sort()).toEqual([...traceIds].sort());
   });
 
   test("persists every launch format through sanitized MCP facts and viewer events", async () => {
     const fixtures = [
       {
-        name: "Save-or-Eliminate",
+        name: "Save-or-Exit",
         formatId: "save_or_eliminate" as const,
+        surfaceId: "save_or_exit" as const,
         ballotCount: 4,
         pointerCount: 0,
         resolutionKind: "clear" as const,
       },
       {
-        name: "Vote Bomb",
+        name: "The Short List",
         formatId: "vote_bomb" as const,
+        surfaceId: "short_list" as const,
         ballotCount: 4,
         pointerCount: 0,
-        resolutionKind: "clear" as const,
+        resolutionKind: "auto" as const,
       },
       {
         name: "Safety Bounce",
         formatId: "safety_bounce" as const,
+        surfaceId: "safety_bounce" as const,
         ballotCount: 4,
         pointerCount: 3,
         resolutionKind: "clear" as const,
@@ -486,6 +610,7 @@ describe("ProductionGameMcpReadModel", () => {
       {
         name: "Safety Bounce sole vulnerable",
         formatId: "safety_bounce_sole_vulnerable" as const,
+        surfaceId: "safety_bounce" as const,
         ballotCount: 0,
         pointerCount: 2,
         resolutionKind: "auto" as const,
@@ -508,12 +633,11 @@ describe("ProductionGameMcpReadModel", () => {
 
       const roundFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
       const format = roundFacts.canonicalGameFacts.roundFacts.format;
+      expect(roundFacts.schemaVersion).toBe(3);
       expect(roundFacts.game).toMatchObject({ gameKernel: "format" });
       expect(format).toMatchObject({
         status: "available",
-        selectedFormatId: fixture.formatId === "safety_bounce_sole_vulnerable"
-          ? "safety_bounce"
-          : fixture.formatId,
+        selectedFormatId: fixture.surfaceId,
         resolutionKind: fixture.resolutionKind,
       });
       expect(format.acceptedBallots).toHaveLength(fixture.ballotCount);
@@ -564,6 +688,7 @@ describe("ProductionGameMcpReadModel", () => {
         eventType: "format.ballot_cast",
         visibilityMode: "public",
       }, PRODUCER_ACCESS);
+      expect(ballots.schemaVersion).toBe(2);
       expect(ballots.canonicalGameFacts.events).toHaveLength(fixture.ballotCount);
       expect(ballots.canonicalGameFacts.events.every((entry) => entry.eventShape === "viewer_decision")).toBe(true);
       expect(ballots.canonicalGameFacts.events.every((entry) => entry.event?.type === "format.ballot_cast")).toBe(true);
@@ -582,6 +707,26 @@ describe("ProductionGameMcpReadModel", () => {
       expect(serialized).not.toContain("thinking");
       expect(serialized).not.toContain("reasoningContext");
       expect(serialized).not.toContain("decisionLog");
+      expect(serialized).not.toContain('"saveOrEliminate"');
+      expect(serialized).not.toContain('"voteBomb"');
+      expect(serialized).not.toContain('"majorityElimination"');
+
+      if (fixture.formatId === "save_or_eliminate") {
+        expect(serialized).toContain('"saveOrExit"');
+      }
+
+      if (fixture.formatId === "vote_bomb") {
+        expect(serialized).toContain('"formatId":"short_list"');
+        expect(serialized).toContain('"shortList"');
+        expect(serialized).not.toContain('"formatId":"vote_bomb"');
+        const storedSelection = (await db
+          .select({ envelope: schema.gameEvents.envelope })
+          .from(schema.gameEvents)
+          .where(eq(schema.gameEvents.gameId, gameId)))
+          .map((row) => asRecord(row.envelope))
+          .find((envelope) => envelope.type === "format.selected");
+        expect(asRecord(storedSelection?.payload).formatId).toBe("vote_bomb");
+      }
     }
   });
 
@@ -922,7 +1067,7 @@ describe("ProductionGameMcpReadModel", () => {
     const expectedEntry = (ballot: typeof submittedBallots[number]) => ({
       voter: { id: ballot.voterId, name: playerName(ballot.voterId) },
       target: { id: ballot.targetId, name: playerName(ballot.targetId) },
-      polarity: ballot.polarity,
+      polarity: ballot.polarity === "eliminate" ? "exit" as const : ballot.polarity,
     });
 
     for (const ballotCount of [1, 2, 4]) {
@@ -954,8 +1099,9 @@ describe("ProductionGameMcpReadModel", () => {
       }, ownerAccess);
       expect(prefixEvents.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
         submittedBallots.slice(0, ballotCount).map((ballot) => ({
-          formatId: "save_or_eliminate",
           ...ballot,
+          formatId: "save_or_exit",
+          polarity: ballot.polarity === "eliminate" ? "exit" : ballot.polarity,
         })),
       );
       expect(JSON.stringify(prefixEvents)).not.toContain("sourcePointers");
@@ -971,7 +1117,7 @@ describe("ProductionGameMcpReadModel", () => {
       expectedEntry(submittedBallots.find((ballot) => ballot.voterId === player.id)!));
     expect(ownerFormat).toMatchObject({
       status: "available",
-      selectedFormatId: "save_or_eliminate",
+      selectedFormatId: "save_or_exit",
       acceptedBallots: expectedAcceptedBallots,
       ballotPresentation: {
         status: "revealed",
@@ -1033,8 +1179,9 @@ describe("ProductionGameMcpReadModel", () => {
     expect(publicBallots.canonicalGameFacts.events).toHaveLength(4);
     expect(publicBallots.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
       submittedBallots.map((ballot) => ({
-        formatId: "save_or_eliminate",
         ...ballot,
+        formatId: "save_or_exit",
+        polarity: ballot.polarity === "eliminate" ? "exit" : ballot.polarity,
       })),
     );
     expect(JSON.stringify(publicBallots)).not.toContain("sourcePointers");
@@ -1071,6 +1218,8 @@ describe("ProductionGameMcpReadModel", () => {
     expect(producerBallots.canonicalGameFacts.events.every((entry) => entry.eventShape === "canonical")).toBe(true);
     expect(JSON.stringify(producerBallots)).toContain("sourcePointers");
     expect(JSON.stringify(producerBallots)).toContain(PRIVATE_DECISION_SENTINEL);
+    expect(JSON.stringify(producerBallots)).toContain('"formatId":"save_or_exit"');
+    expect(JSON.stringify(producerBallots)).not.toContain('"formatId":"save_or_eliminate"');
 
     const producerPointerMatch = await readModel.filterEvents({
       gameIdOrSlug: gameId,
@@ -1321,7 +1470,7 @@ describe("ProductionGameMcpReadModel", () => {
       { gameIdOrSlug: gameId, round: 1 },
       PRODUCER_ACCESS,
     );
-    expect(roundFacts.schemaVersion).toBe(2);
+    expect(roundFacts.schemaVersion).toBe(3);
     expect(roundFacts.game.gameKernelDiagnostics).toEqual(
       resolved!.gameKernelDiagnostics,
     );
@@ -1338,6 +1487,21 @@ describe("ProductionGameMcpReadModel", () => {
     await insertGamePlayer(db, { gameId, userId });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
+    const legacyOutcome = {
+      id: "outcome-glass",
+      sessionId: "session-glass",
+      allianceId: "alliance-glass",
+      window: "pre_vote" as const,
+      round: 1,
+      ask: "Align before the public Vote.",
+      plan: "Glass Table agrees to keep the plan hidden.",
+      promises: [],
+      dissent: [],
+      confidence: "medium",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-11T00:00:10.000Z",
+    };
     const allianceEvent: CanonicalGameEvent = {
       sequence: events.length + 1,
       gameId,
@@ -1350,21 +1514,7 @@ describe("ProductionGameMcpReadModel", () => {
       payloadVersion: 1,
       sourcePointers: [],
       payload: {
-        outcome: {
-          id: "outcome-glass",
-          sessionId: "session-glass",
-          allianceId: "alliance-glass",
-          window: "pre_vote",
-          round: 1,
-          ask: "Align before the public Vote.",
-          plan: "Glass Table agrees to keep the plan hidden.",
-          promises: [],
-          dissent: [],
-          confidence: "medium",
-          posture: "coordinating",
-          leakOrBetrayalClaims: [],
-          createdAt: "2026-06-11T00:00:10.000Z",
-        },
+        outcome: legacyOutcome,
       },
     };
     await appendGameEvents(db, { gameId, ownerEpoch, events: [...events, allianceEvent] });
@@ -1483,25 +1633,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: 1,
-      ask: "Vote with Bob.",
-      plan: "Alice and Bob agree to test Cara as the first vote.",
-      promises: ["Alice backs Bob publicly."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
-      commitments: [{
-        speakerId: alice,
-        speakerName: "Alice",
-        proposedTargetName: "Cara",
-        noTargetReason: null,
-        proposedAction: "Vote Cara if the active format permits it.",
-        memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
-        contingency: "Re-evaluate if Cara earns immunity.",
+      facts: [{
+        kind: "commitment",
+        factId: "fact-ab",
+        sessionId: "session-ab",
+        actorPlayerId: alice,
+        actionKind: "council_vote",
+        targetPlayerId: cara,
         confidence: "high",
-        dissent: ["Bob prefers Dax if Cara is unavailable."],
-        alternativePlan: "Vote Dax only if Cara is unavailable.",
       }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:05.000Z",
     });
     state.recordAllianceHuddleCompleted({
@@ -1520,13 +1661,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-cd",
       window: "pre_vote",
       round: 1,
-      ask: "Keep Alice out.",
-      plan: "Cara and Dax target Alice quietly.",
-      promises: ["Do not tell Alice."],
-      dissent: [],
-      confidence: "medium",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [{
+        kind: "proposal",
+        factId: "fact-cd",
+        sessionId: "session-cd",
+        actorPlayerId: cara,
+        actionKind: "council_vote",
+        targetPlayerId: alice,
+        confidence: "medium",
+      }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:15.000Z",
     });
 
@@ -1591,7 +1735,8 @@ describe("ProductionGameMcpReadModel", () => {
       allianceName: "Back Row Pair",
       messageCount: 1,
       outcomeSummary: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
+        factCount: 1,
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
     expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("messages");
@@ -1611,12 +1756,12 @@ describe("ProductionGameMcpReadModel", () => {
         thinking: "I need Bob to feel this was his idea.",
       }],
       outcome: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
-        commitments: [{
-          proposedTargetName: "Cara",
-          proposedAction: "Vote Cara if the active format permits it.",
-          dissent: ["Bob prefers Dax if Cara is unavailable."],
-        }],
+        facts: [expect.objectContaining({
+          kind: "commitment",
+          actorPlayerId: alice,
+          targetPlayerId: cara,
+        })],
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
 
@@ -1627,9 +1772,9 @@ describe("ProductionGameMcpReadModel", () => {
     }, PRODUCER_ACCESS);
     expect(producerResult.allianceFacts?.huddles[0]).toMatchObject({
       outcome: {
-        commitments: [expect.objectContaining({
-          proposedTargetName: "Cara",
-          memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
+        facts: [expect.objectContaining({
+          actorPlayerId: alice,
+          targetPlayerId: cara,
         })],
       },
     });
@@ -1785,6 +1930,10 @@ describe("ProductionGameMcpReadModel", () => {
   });
 
   test("reads and searches private trace evidence through DB manifests and storage", async () => {
+    await db.insert(schema.users).values({
+      id: PRODUCER_ACCESS.userId,
+      walletAddress: "0xproducerevidence0000000000000000000000001",
+    });
     const gameId = await insertGame(db, { slug: "mcp-private-trace" });
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
@@ -1795,7 +1944,8 @@ describe("ProductionGameMcpReadModel", () => {
       decisionId,
       body: JSON.stringify({
         reasoningContext: "the secret plan is to shield Mira",
-        toolArguments: { expose: "Vera" },
+        toolArguments: { expose: "Vera", formatId: "vote_bomb" },
+        authoredText: "Vote Bomb stays historical in raw evidence.",
       }),
     });
 
@@ -1840,7 +1990,9 @@ describe("ProductionGameMcpReadModel", () => {
       ok: true,
       response: {
         manifest: { id: manifestId, gameId },
-        content: expect.stringContaining("the secret plan"),
+        content: expect.stringMatching(
+          /"formatId":"vote_bomb".*Vote Bomb stays historical in raw evidence\./,
+        ),
         contentType: PRIVATE_TRACE_CONTENT_TYPE,
       },
     });
@@ -1883,7 +2035,195 @@ describe("ProductionGameMcpReadModel", () => {
       status: "not_found",
     });
   });
+
+  test("producer trace pagination exhausts equal timestamps exactly once and rejects foreign cursors", async () => {
+    const gameId = await insertGame(db, { slug: "mcp-private-trace-pages" });
+    const otherGameId = await insertGame(db, { slug: "mcp-private-trace-pages-other" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await insertOwner(db, otherGameId);
+    const storage = new FakePrivateTraceStorage();
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 13; index++) {
+      expectedIds.push(await insertPrivateTraceManifest(db, storage, {
+        gameId,
+        ownerEpoch,
+        decisionId: randomUUID(),
+        body: JSON.stringify({ index }),
+        createdAt: "2026-08-19T12:00:00.000Z",
+      }));
+    }
+
+    const readModel = new ProductionGameMcpReadModel(
+      db,
+      new PrivateTraceReadModel(db, () => storage),
+    );
+    const first = await readModel.listTraceManifests(gameId, PRODUCER_ACCESS, 2);
+    const firstPage = asRecord(first.developerEvidence);
+    const firstCursor = firstPage.nextCursor;
+    expect(first.schemaVersion).toBe(2);
+    expect(firstPage).toMatchObject({
+      ok: true,
+      pageSize: 2,
+      totalCount: expectedIds.length,
+    });
+    expect(typeof firstCursor).toBe("string");
+    if (typeof firstCursor !== "string") throw new Error("Expected trace pagination cursor");
+    const firstLinkageSummary = firstPage.linkageSummary;
+
+    const lateManifestId = "00000000-0000-4000-8000-000000000002";
+    await insertPrivateTraceManifest(db, storage, {
+      id: lateManifestId,
+      gameId,
+      ownerEpoch,
+      decisionId: randomUUID(),
+      body: JSON.stringify({ insertedAfterFirstPage: true }),
+      createdAt: "2026-08-19T12:00:00.000Z",
+    });
+
+    const tampered = `${firstCursor.slice(0, -1)}${firstCursor.endsWith("a") ? "b" : "a"}`;
+    expect(asRecord((await readModel.listTraceManifests(
+      gameId,
+      PRODUCER_ACCESS,
+      2,
+      tampered,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      otherGameId,
+      PRODUCER_ACCESS,
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      randomUUID(),
+      PRODUCER_ACCESS,
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      gameId,
+      { userId: "another-producer", authProfile: "producer" },
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    await expect(readModel.listTraceManifests(gameId, {
+      userId: randomUUID(),
+      authProfile: "subject",
+    }, 2, firstCursor)).rejects.toThrow("Producer-only MCP evidence requires MCP scope: producer");
+
+    const seen = (firstPage.manifests as Array<{ id: string }>).map((manifest) => manifest.id);
+    let cursor: string | null = firstCursor;
+    let pageIndex = 0;
+    const pageSizes = [1, 5, 3];
+    while (cursor) {
+      const response = await readModel.listTraceManifests(
+        gameId,
+        PRODUCER_ACCESS,
+        pageSizes[pageIndex % pageSizes.length],
+        cursor,
+      );
+      const page = asRecord(response.developerEvidence);
+      expect(page).toMatchObject({ ok: true, totalCount: expectedIds.length });
+      expect(page.linkageSummary).toEqual(firstLinkageSummary);
+      const manifests = page.manifests as Array<{ id: string }>;
+      expect(page.pageSize).toBe(manifests.length);
+      seen.push(...manifests.map((manifest) => manifest.id));
+      cursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+      pageIndex += 1;
+    }
+
+    expect(seen).toHaveLength(expectedIds.length);
+    expect(new Set(seen).size).toBe(expectedIds.length);
+    expect([...seen].sort()).toEqual([...expectedIds].sort());
+    expect(seen).not.toContain(lateManifestId);
+  });
+
+  test("trace linkage summary excludes canonical events committed after its manifest snapshot", async () => {
+    const gameId = await insertGame(db, { slug: "mcp-private-trace-linkage-snapshot" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const lockAcquired = Promise.withResolvers<void>();
+    const releaseLock = Promise.withResolvers<void>();
+    const locker = db.transaction(async (tx) => {
+      await tx.execute(sql`LOCK TABLE game_evidence_manifests IN ACCESS EXCLUSIVE MODE`);
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+    await lockAcquired.promise;
+
+    const readModel = new PrivateTraceReadModel(db, () => new FakePrivateTraceStorage());
+    const listing = readModel.listManifests(gameId);
+    await waitForBlockedTraceManifestRead(db);
+    const decisionId = randomUUID();
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: [{
+        sequence: 1,
+        gameId,
+        round: 1,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        timestamp: "2026-08-19T12:00:00.000Z",
+        source: "engine",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [{
+          kind: "agent_turn",
+          actorId: "atlas",
+          action: "vote",
+          round: 1,
+          phase: Phase.VOTE,
+          decisionId,
+        }],
+        payload: {
+          voterId: "atlas",
+          empowerTarget: "mira",
+          exposeTarget: "echo",
+        },
+      }],
+    });
+    releaseLock.resolve();
+    await locker;
+
+    const sealed = await listing;
+    expect(sealed).toMatchObject({
+      ok: true,
+      totalCount: 0,
+      linkageSummary: {
+        trustedCanonicalPrefixStatus: "empty",
+        eligibleAcceptedDecisionCount: 0,
+        degradedAcceptedDecisionCount: 0,
+      },
+    });
+    const fresh = await readModel.listManifests(gameId);
+    expect(fresh).toMatchObject({
+      ok: true,
+      totalCount: 0,
+      linkageSummary: {
+        trustedCanonicalPrefixStatus: "complete",
+        eligibleAcceptedDecisionCount: 1,
+        degradedAcceptedDecisionCount: 1,
+      },
+    });
+  });
 });
+
+async function waitForBlockedTraceManifestRead(db: DrizzleDB): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await db.execute<{ waiting: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%game_evidence_manifests%'
+          AND query LIKE 'select%'
+      ) AS waiting
+    `);
+    if (row?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for the trace manifest read to block on the table lock");
+}
 
 async function insertEdgeSmokeDuskFixture(db: DrizzleDB): Promise<void> {
   const userId = "user-lilith";
@@ -2048,8 +2388,8 @@ function createPersistedFormatFixtureEvents(
       formatId: selectedFormat,
       empoweredId: empowered,
       eliminatedId: cara.id,
-      resolutionKind: "clear",
-      tiedPlayerIds: [],
+      resolutionKind: "auto",
+      tiedPlayerIds: [cara.id],
       tiebreakerId: null,
       saveOrEliminate: null,
       voteBomb: {
@@ -2150,13 +2490,15 @@ async function insertPrivateTraceManifest(
   db: DrizzleDB,
   storage: FakePrivateTraceStorage,
   params: {
+    id?: string;
     gameId: string;
     ownerEpoch: string;
     decisionId?: string;
     body: string;
+    createdAt?: string;
   },
 ): Promise<string> {
-  const manifestId = randomUUID();
+  const manifestId = params.id ?? randomUUID();
   const bucket = "private-trace-bucket";
   const key = `content/${params.gameId}/private-traces/test-${manifestId}.json`;
   const byteLength = Buffer.byteLength(params.body, "utf8");
@@ -2186,6 +2528,7 @@ async function insertPrivateTraceManifest(
       round: 1,
       modelName: "gpt-5-nano",
     },
+    ...(params.createdAt && { createdAt: params.createdAt }),
   });
 
   return manifestId;
@@ -2839,7 +3182,10 @@ describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
       actorPlayerId: ownerB,
       actorUserId: userId,
       artifactType: "strategy",
-      payload: { decisionLog: "seat-b strategy" },
+      payload: {
+        stage: "proposal",
+        strategyCandidate: { operation: "delta", submittedValue: "seat-b strategy" },
+      },
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognitionArtifact(db, {
@@ -2883,7 +3229,12 @@ describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
     expect(thinkingEntry?.strategyProse).toBeUndefined();
 
     const strategyEntry = page.entries.find((e) => e.id === strategyB);
-    expect(strategyEntry?.strategyProse?.decisionLog).toBe("seat-b strategy");
+    expect(strategyEntry?.strategyProse).toMatchObject({
+      stage: "proposal",
+      operation: "delta",
+      submission: "value",
+      value: "seat-b strategy",
+    });
     expect(strategyEntry?.strategyProse?.contentTrust).toBe("untrusted_game_authored");
   });
 

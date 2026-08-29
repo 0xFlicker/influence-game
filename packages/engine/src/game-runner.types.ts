@@ -5,7 +5,8 @@
  */
 
 import type {
-  AllianceHuddleCommitmentFact,
+  AllianceHuddleFactAtom,
+  AllianceHuddleFactAtomDraft,
   UUID,
   PowerAction,
   JuryMember,
@@ -24,7 +25,51 @@ import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 import type { ModelReasoningEffort, ModelReasoningPolicy, ProviderProfileId } from "./model-catalog";
+import type {
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
+  HouseProviderUsage,
+  HouseSummaryBoundary,
+} from "./house-summary-frontier";
+import type {
+  DurableJsonObject,
+  GameExecutionCursorV1,
+  GameExecutionStateV1,
+  GameTurnCommitDraftV1,
+  GameTurnCommitResultV1,
+  GameTurnIntentV1,
+} from "./durable-game-turn";
 export type { TokenCostCursor };
+export type {
+  ProviderAttemptFailureKind,
+  ProviderAttemptFailureOutcome,
+  ProviderAttemptAccountingFacts,
+  ProviderAttemptDisposition,
+  ProviderAttemptIntent,
+  ProviderAttemptOutcome,
+  ProviderAttemptRecord,
+  ProviderAttemptUsageFacts,
+  ProviderExecutionHooks,
+  ProviderLogicalCallCoordinate,
+  ProviderPreparedRequest,
+  SanitizedProviderRequestEvidence,
+  SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export type {
+  HouseBeatClass,
+  HouseBeatStatus,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrationCanonicalEvent,
+  HouseNarrationDiaryEntry,
+  HouseNarrationDialogue,
+  HouseNarrationProjection,
+  HouseNarrativeContinuityV2,
+  HouseProviderUsage,
+  HouseSummaryBoundary,
+  HouseSummaryPhaseTelemetry,
+} from "./house-summary-frontier";
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
 
@@ -58,6 +103,8 @@ export interface GameRunnerOptions {
   maxRoundsMode?: "completion_scaled" | "exact";
   /** Runtime resume input for supported completed phase-boundary checkpoints. */
   resumeFrom?: GameRunnerResumeOptions;
+  /** One-time upgrade of a validated pre-logical-turn phase boundary into the current durable authority. */
+  durableUpgradeFrom?: GameRunnerResumeOptions;
   /** Optional producer/debug sink for private model-call traces. */
   privateTraceSink?: PrivateTraceSink;
   /** Awaited durability boundary for API-backed canonical event persistence. */
@@ -70,6 +117,55 @@ export interface GameRunnerOptions {
   tokenTracker?: TokenTracker;
   /** Injectable format-menu RNG for deterministic simulation and tests. */
   random?: () => number;
+  /**
+   * Atomic logical-turn authority for crash-safe games. This capability replaces
+   * phase-boundary event/checkpoint sinks; callers must not configure both paths.
+   * `durableUpgradeFrom` is the single cutover exception and is consumed only
+   * while creating the first logical-turn authority for an existing active game.
+   */
+  durableTurnStore?: DurableGameTurnStore;
+}
+
+/** Authoritative engine inputs used only when a durable game has no cursor yet. */
+export interface DurableGameTurnInitializationV1 {
+  version: 1;
+  gameId: UUID;
+  xstateSnapshot: DurableJsonObject;
+  cursor: GameExecutionCursorV1;
+  playerContinuityCapsules: PlayerContinuityCapsule[];
+  houseNarrativeContinuity: HouseNarrativeContinuityV2 | null;
+  canonicalEvents: CanonicalGameEvent[];
+  transcriptEntries: TranscriptEntry[];
+}
+
+/** Full committed frontier required to reconstruct every next-turn consumer. */
+export interface DurableGameTurnSnapshotV1 {
+  version: 1;
+  execution: GameExecutionStateV1;
+  canonicalEvents: CanonicalGameEvent[];
+  transcriptEntries: TranscriptEntry[];
+}
+
+export interface DurableGameTurnCommittedV1 {
+  version: 1;
+  result: GameTurnCommitResultV1;
+  snapshot: DurableGameTurnSnapshotV1;
+}
+
+export type DurableGameTurnPlanV1 =
+  | { version: 1; status: "execute"; intent: GameTurnIntentV1 }
+  | ({ version: 1; status: "committed" } & DurableGameTurnCommittedV1);
+
+/**
+ * GameRunner-facing durable coordinator. `planNextTurn` is always called before
+ * model dispatch; `commitTurn` atomically advances events, dialogue, publications,
+ * continuity, the native XState snapshot, and the closed execution cursor.
+ */
+export interface DurableGameTurnStore {
+  load(gameId: UUID): Promise<DurableGameTurnSnapshotV1 | null>;
+  initialize(input: DurableGameTurnInitializationV1): Promise<DurableGameTurnSnapshotV1>;
+  planNextTurn(intent: GameTurnIntentV1): Promise<DurableGameTurnPlanV1>;
+  commitTurn(draft: GameTurnCommitDraftV1): Promise<DurableGameTurnCommittedV1>;
 }
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
@@ -108,8 +204,8 @@ export interface GameRunnerResumeOptions {
   lastEventSequence: number;
   transcriptReplay: readonly TranscriptEntry[];
   tokenCostCursor?: TokenCostCursor | null;
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule: HouseNarrativeContinuityV2;
   /** Validated active-player private continuity capsules for supported resume hydration. */
   playerContinuityCapsules?: readonly PlayerContinuityCapsule[];
   mingleInboxReplay?: MingleInboxReplay | null;
@@ -264,16 +360,7 @@ export interface RuntimeSnapshotV1 {
  * These are producer-only state for supported-boundary hydration of agent/House behavior.
  * They must not leak raw thinking or reasoningContext.
  */
-export const PLAYER_CONTINUITY_CAPSULE_VERSION = 1 as const;
-
-/**
- * Checkpoint-time House Strategy Bible continuity contract.
- * Sealed when the checkpoint is written; recovery and passport must not re-read live config.
- */
-export type HouseContinuityRequirement =
-  | "disabled"
-  | "awaiting_first_valid_update"
-  | "required";
+export const PLAYER_CONTINUITY_CAPSULE_VERSION = 2 as const;
 
 export interface PlayerPowerActionMemoryEntry {
   round: number;
@@ -292,34 +379,12 @@ export interface PlayerContinuityCapsule {
   version: typeof PLAYER_CONTINUITY_CAPSULE_VERSION;
   playerId: UUID;
   playerName: string;
-  strategyPacket: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
+  /** The only private strategy source admitted by supported recovery. */
+  compactStrategy: CompactStrategyState;
   notes: Array<{ subject: string; note: string }>;
   relationships: { allies: string[]; threats: string[] };
   powerActionMemory: PlayerPowerActionMemoryEntry[];
   roundHistory: PlayerRoundHistoryEntry[];
-  /** Bounded private strategic receipts carried across supported restarts. */
-  recentStrategicDecisions: StrategicDecisionReceipt[];
-  /** Ensures the next Strategy Thread revision advances after hydration. */
-  strategyPacketRevisionCounter: number;
-}
-
-export interface HouseContinuityCapsule {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  summary: string;
-  alliances: HouseAllianceHypothesis[];
-  tensions: string[];
-  promises: string[];
-  voteBlocs: string[];
-  mingleDiscoveries: string[];
-  playerTrajectories: HousePlayerTrajectory[];
-  storyArcs: HouseStoryArc[];
-  droppedThreads: string[];
-  openQuestions: string[];
-  changedSincePrevious: string;
 }
 
 export interface GameCheckpointCapsule {
@@ -335,13 +400,8 @@ export interface GameCheckpointCapsule {
   /** Boundary safety evidence captured at write time (U3+). */
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  /**
-   * Checkpoint-time House continuity contract. Absent on legacy capsules;
-   * recovery fails closed for player continuity without versioned capsules,
-   * and passport treats missing House requirement as the historical strict path.
-   */
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule?: HouseNarrativeContinuityV2 | null;
   transcriptReplay?: {
     /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
     version: 1 | 2;
@@ -368,7 +428,7 @@ export interface GameCheckpointCapsule {
 // Agent response — structured output from message-producing methods
 // ---------------------------------------------------------------------------
 
-export interface AgentResponse {
+export interface AgentResponse extends StrategicDecisionMetadata {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking: string;
   /** The actual message content */
@@ -378,8 +438,6 @@ export interface AgentResponse {
    * `reasoning_content`; hosted OpenAI calls may provide a labeled provider summary.
    */
   reasoningContext?: string;
-  /** Private producer/debug receipt describing what this action meant strategically. */
-  decisionLog?: string | null;
   /** Private producer/debug frame describing the main evidence lens for this response. */
   strategicLens?: StrategicLens;
   /** Compact private rationale for the selected strategic lens. */
@@ -389,6 +447,32 @@ export interface AgentResponse {
    * Used to correlate dialogue with owned cognition; not board-fact authority.
    */
   decisionId?: UUID;
+  /**
+   * Explicit absence returned when an optional provider-backed utterance exhausts.
+   * Empty message/thinking fields remain non-authoritative compatibility fields;
+   * phase runners must omit the turn entirely when this marker is present.
+   */
+  providerAbsence?: ProviderSpeechAbsence;
+}
+
+export interface ProviderSpeechAbsence {
+  kind: "provider_exhausted";
+  outcome:
+    | "refusal"
+    | "rate_limit"
+    | "service_error"
+    | "transport_error"
+    | "transport_timeout"
+    | "authentication"
+    | "configuration"
+    | "request_error"
+    | "cancellation"
+    | "empty_output"
+    | "malformed_output"
+    | "wrong_tool"
+    | "undecodable_structured_output"
+    | "budget_exhausted"
+    | "circuit_open";
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -403,6 +487,8 @@ export interface PrivateDecisionTraceMessage {
   role: string;
   content: unknown;
   name?: string;
+  toolCallId?: string;
+  toolCalls?: PrivateDecisionTraceToolCall[];
 }
 
 export interface PrivateDecisionTraceToolCall {
@@ -436,6 +522,8 @@ export interface PrivateDecisionTraceContext {
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
   round?: number;
+  /** Durable phase-owned ordinal for repeated calls at this actor/action boundary. */
+  logicalCallOrdinal?: number;
   boundary?: PrivateDecisionTraceBoundary;
   /**
    * Structural-only Recall Plan receipt for this call (KTD5 / R16).
@@ -487,6 +575,8 @@ export interface PrivateDecisionTrace {
   };
   request?: unknown;
   response: {
+    /** Exact provider-native transport used for this accepted response. */
+    transport?: string;
     raw: unknown;
     finishReason?: string | null;
     content?: string | null;
@@ -515,89 +605,131 @@ export interface PrivateDecisionTrace {
   providerReasoningSummary?: ProviderReasoningSummary;
   toolName?: string;
   toolArguments?: unknown;
-  decisionLog?: string;
-  strategicLens?: StrategicLens;
-  strategicLensRationale?: string;
-  strategyPacketUpdate?: StrategyPacketUpdateAction;
-  strategyPacketSummary?: StrategyPacketSummary;
-  strategicReflectionSummary?: StrategicReflectionSummary;
-  strategyPacketRevision?: string;
+  /** Model-submitted compact strategy proposal. Acceptance is decided later. */
+  strategyCandidate?: {
+    operation: "replace" | "delta";
+    submittedValue: unknown;
+  };
   boundary?: PrivateDecisionTraceBoundary;
 }
 
 export type PrivateTraceSink = (trace: PrivateDecisionTrace) => Promise<void> | void;
 
-export interface StrategicDecisionMetadata {
-  /** Compact private receipt tied to the current action, not raw hidden reasoning. */
-  decisionLog?: string | null;
+// ---------------------------------------------------------------------------
+// Compact private strategy state
+// ---------------------------------------------------------------------------
+
+export type CompactStrategyLifecycle =
+  | "opening"
+  | "active"
+  | "reconciliation_required"
+  | "repair_required";
+
+export type CompactStrategyDecisionBoundary =
+  | "ordinary_action"
+  | "diary_follow_up"
+  | "post_eviction_diary"
+  | "diary_repair"
+  | "action_repair";
+
+export interface CompactStrategyPriorEpoch {
+  lifecycle: "opening" | "active";
+  baseline: string | null;
+  deltas: string[];
+  revision: number;
+}
+
+/**
+ * Engine-owned private cognition. Canonical board facts always override this
+ * fallible strategy text when the two disagree.
+ */
+export interface CompactStrategyState {
+  lifecycle: CompactStrategyLifecycle;
+  /** Null during the implicit authored opening posture and while reconciling. */
+  baseline: string | null;
+  /** Ordered, mechanically accepted refinements to the current epoch. */
+  deltas: string[];
+  /** The last valid epoch, retained only while post-eviction repair is pending. */
+  priorEpoch: CompactStrategyPriorEpoch | null;
+  /** Monotonic engine-owned revision; models never supply this value. */
+  revision: number;
+}
+
+/** Raw flat fields decoded independently from the mechanic-specific action. */
+export interface CompactStrategyCandidate {
+  strategy?: unknown;
+  strategyDelta?: unknown;
+}
+
+export type CompactStrategyOperation = "replace" | "delta";
+
+export type CompactStrategyRejectionReason =
+  | "action_not_accepted"
+  | "boundary_field_not_allowed"
+  | "lifecycle_operation_not_allowed"
+  | "required_value_missing"
+  | "value_not_string"
+  | "value_too_long"
+  | "delta_limit_reached"
+  | "aggregate_too_long";
+
+export interface CompactStrategyApplicationBase {
+  operation: CompactStrategyOperation;
+  state: CompactStrategyState;
+  previousRevision: number;
+  resultingRevision: number;
+}
+
+export interface CompactStrategyAccepted extends CompactStrategyApplicationBase {
+  status: "accepted";
+  value: string;
+}
+
+export interface CompactStrategyNoChange extends CompactStrategyApplicationBase {
+  status: "no_change";
+  reason: "optional_value_absent";
+}
+
+export interface CompactStrategyRejected extends CompactStrategyApplicationBase {
+  status: "rejected";
+  reason: CompactStrategyRejectionReason;
+  diagnostic: string;
+}
+
+export type CompactStrategyApplicationResult =
+  | CompactStrategyAccepted
+  | CompactStrategyNoChange
+  | CompactStrategyRejected;
+
+export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
+  /**
+   * Engine-only marker that this response came from a model-authored strategic
+   * surface even when the offered strategy field was omitted. Provider and
+   * deterministic fallbacks omit it so they cannot consume a pending repair.
+   */
+  strategyCandidateProposed?: boolean;
+  /** Engine-only mechanic validation outcome for candidate discard diagnostics. */
+  strategyGameplayAccepted?: boolean;
   /**
    * Fresh private-decision receipt minted by this exact model call.
    * Acceptance writers may use it only when the returned value is accepted directly.
    */
   decisionId?: UUID;
+  /** Engine-owned provenance for a legal required action chosen without a model result. */
+  engineFallback?: EngineFallbackProvenance;
 }
 
-export interface StrategicDecisionReceipt {
-  round: number;
-  phase: Phase;
-  action: string;
-  label: string;
-  decisionLog: string;
-}
+export type EngineFallbackReason =
+  | "provider_exhausted"
+  | "action_timed_out"
+  | "invalid_model_output"
+  | "agent_method_unavailable";
 
-export interface StrategyPacketSummary {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  objective: string;
-  targetPosture: string;
-  coalitionPosture: string;
-  nextSocialProbe: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  uncertainty: string;
-  reviseTrigger: string;
-  changedSincePrevious: string;
-}
-
-export interface StrategyPacketUpdateAction {
-  objective: string;
-  targetPosture: string;
-  coalitionPosture: string;
-  nextSocialProbe: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  uncertainty: string;
-  reviseTrigger: string;
-  changedSincePrevious: string;
-}
-
-export type HouseAllianceStatus = "speculative" | "forming" | "active" | "fracturing" | "retired";
-export type HouseConfidence = "low" | "medium" | "high";
-
-export interface HouseAllianceHypothesis {
-  name: string;
-  members: string[];
-  status: HouseAllianceStatus;
-  confidence: HouseConfidence;
-  evidence: string[];
-  tension?: string | null;
-  openQuestions?: string[];
-}
-
-export interface HousePlayerTrajectory {
-  playerName: string;
-  currentRead: string;
-  pressurePoints: string[];
-  likelyNextMove?: string | null;
-}
-
-export interface HouseStoryArc {
-  title: string;
-  summary: string;
-  involvedPlayers: string[];
-  status: "emerging" | "active" | "resolved" | "dropped";
+export interface EngineFallbackProvenance {
+  source: "engine";
+  reason: EngineFallbackReason;
+  /** Stable coordinate used to replay the same choice from the same legal set. */
+  seed: string;
 }
 
 export interface HouseCoveredWindow {
@@ -607,189 +739,61 @@ export interface HouseCoveredWindow {
   toPhase?: Phase;
 }
 
-export interface HouseVoteCount {
-  playerName: string;
-  votes: number;
-  voters: string[];
-}
-
-/** One sealed format ballot (House/producer omniscient; not player-public until reveal). */
-export interface HouseFormatBallotLine {
-  voterName: string;
-  targetName: string;
-  /** Present for Save-or-Eliminate. */
-  polarity?: "save" | "eliminate";
-}
-
-export interface HouseFormatScoreLine {
-  playerName: string;
-  value: number;
-  /** e.g. zero_safe | positive | net | vulnerable_total */
-  bucket?: string;
-}
-
-export interface HouseFormatBouncePointerLine {
-  actorName: string;
-  targetName: string;
-  classification: "SAFE" | "VULNERABLE";
-}
-
-/**
- * Full format resolution snapshot for House MC / producer.
- * House sees every sealed ballot; player-facing surfaces stay sealed.
- */
-export interface HouseFormatResolutionFacts {
-  round: number;
-  formatId: string;
-  formatName: string;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  ballots: HouseFormatBallotLine[];
-  scores: HouseFormatScoreLine[];
-  zeroSafeNames: string[];
-  safeNames: string[];
-  vulnerableNames: string[];
-  bouncePointers: HouseFormatBouncePointerLine[];
-  resolutionKind: string;
-  resolutionSummary: string;
-  eliminatedName: string;
-  tiebreakByEmpoweredName: string | null;
-}
-
-export interface HouseRoundFacts {
-  round: number;
-  empoweredName: string | null;
-  empowerMethod: string | null;
-  empowerVoteCounts: HouseVoteCount[];
-  exposeVoteCounts: HouseVoteCount[];
-  councilCandidates: [string, string] | null;
-  powerAction: { action: PowerAction["action"]; targetName: string | null } | null;
-  shieldGrantedName: string | null;
-  autoEliminatedName: string | null;
-  councilVoteCounts: HouseVoteCount[];
-  councilMethod: string | null;
-  eliminatedName: string | null;
-  councilRoles: HouseCouncilRoleFact[];
-  /** Format-kernel fields (null on classic Power→Council rounds). */
-  selectedFormatId: string | null;
-  selectedFormatName: string | null;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  /** How elimination resolved under the format (e.g. format id / method string). */
-  formatMethod: string | null;
-  /** Which elimination spine produced the exit this round. */
-  eliminationPath: "format" | "council" | "power_auto" | "unknown";
-  /**
-   * Omniscient format resolution: every sealed ballot, scoreboard, bounce chain.
-   * Null on classic rounds or before format resolve completes.
-   */
-  formatResolution: HouseFormatResolutionFacts | null;
-}
-
-export type HouseCouncilRole =
-  | "candidate"
-  | "voted_for_eliminated"
-  | "voted_for_survivor"
-  | "empowered_tiebreaker"
-  | "empowered_no_tiebreak_needed"
-  | "non_voter"
-  | "not_applicable";
-
-export interface HouseCouncilRoleFact {
-  playerName: string;
-  role: HouseCouncilRole;
-  candidateNames: [string, string] | null;
-  eliminatedName: string | null;
-  survivingCandidateName: string | null;
-  votedForName: string | null;
-}
-
-export interface HouseStrategyBiblePacket {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  coveredWindow: HouseCoveredWindow;
-  summary: string;
-  alliances: HouseAllianceHypothesis[];
-  tensions: string[];
-  promises: string[];
-  voteBlocs: string[];
-  mingleDiscoveries: string[];
-  playerTrajectories: HousePlayerTrajectory[];
-  storyArcs: HouseStoryArc[];
-  droppedThreads: string[];
-  openQuestions: string[];
-  changedSincePrevious: string;
-}
-
-export interface HouseEvidenceBundle {
-  round: number;
-  phase: Phase;
-  alivePlayers: string[];
-  eliminatedPlayers: string[];
-  activeShieldNames: string[];
-  empoweredName: string | null;
-  councilCandidates: [string, string] | null;
-  recentTranscript: TranscriptEntry[];
-  recentPublicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean }>;
-  recentDiaryEntries: Array<{ round: number; precedingPhase: Phase; agentName: string; question: string; answer: string }>;
-  roomAllocations: Array<{ round: number; text: string; rooms: Array<{ roomId: number; players: string[] }>; excluded: string[] }>;
-  roundFacts: HouseRoundFacts;
-  canonicalEventCount: number;
-}
-
-export interface HouseStrategyBibleUpdateContext {
-  round: number;
-  phase: Phase;
-  previousPacket: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
-  coveredWindow: HouseCoveredWindow;
-}
-
-export interface HouseStrategyBibleUpdateResult {
-  packet: HouseStrategyBiblePacket | null;
-  rationale?: string;
-  thinking?: string;
-  reasoningContext?: string;
-}
-
 export type HouseSummaryKind = "round" | "phase" | "long-form";
 
 export interface HouseGameplaySummaryContext {
+  gameId: UUID;
   round: number;
   phase: Phase;
   kind: HouseSummaryKind;
-  alivePlayers: string[];
-  packet: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
   coveredWindow: HouseCoveredWindow;
+  narrationContext: HouseNarrationContext;
+  recentPublicBeats: HouseNarrativeBeat[];
+  privateNarrativeNotebook: string | null;
 }
 
 export interface HouseGameplaySummaryResult {
   summary: string;
   kind: HouseSummaryKind;
-  packetRevisionId: string | null;
   coveredWindow: HouseCoveredWindow;
-  referencedAllianceNames: string[];
-  openQuestions?: string[];
   thinking?: string;
   reasoningContext?: string;
 }
 
-export interface HouseProducerBrief {
-  playerName: string;
-  packetRevisionId: string | null;
-  storyRole: string;
-  pressurePoints: string[];
-  relevantAllianceHypotheses: string[];
-  contradictions: string[];
-  questionAngles: string[];
-  safeToReveal: string[];
-  privateDoNotReveal: string[];
+export interface HouseNarrativeTurnContext {
+  narrationContext: HouseNarrationContext;
+  continuity: HouseNarrativeContinuityV2;
+}
+
+interface HouseSummaryAttemptBase {
+  boundary: HouseSummaryBoundary;
+  providerCalls: number;
+  usage: HouseProviderUsage[];
   thinking?: string;
   reasoningContext?: string;
 }
+
+export interface HouseSummaryEmittedResult extends HouseSummaryAttemptBase {
+  status: "emitted";
+  beat: HouseNarrativeBeat | null;
+  /** Non-null replaces the whole notebook; null preserves the prior snapshot. */
+  privateNarrativeNotebook: string | null;
+}
+
+export interface HouseSummaryModelSkippedResult extends HouseSummaryAttemptBase {
+  status: "model_skipped";
+  reason: string;
+}
+
+export interface HouseSummaryFailedResult extends HouseSummaryAttemptBase {
+  status: "failed";
+  reason: string;
+}
+
+export type HouseSummaryAttemptResult =
+  | HouseSummaryEmittedResult
+  | HouseSummaryModelSkippedResult
+  | HouseSummaryFailedResult;
 
 export type AllianceActionKind =
   | "propose"
@@ -825,8 +829,18 @@ export interface AllianceProposalResponseAction extends AllianceActionBase {
 }
 
 export interface AllianceCounterAction extends AllianceActionBase {
-  action: "counter" | "amend";
+  action: "counter";
   lineageId: UUID;
+  versionId?: UUID;
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+}
+
+export interface AllianceAmendAction extends AllianceActionBase {
+  action: "amend";
+  allianceId: UUID;
   versionId?: UUID;
   name: string;
   memberNames: string[];
@@ -842,29 +856,56 @@ export type AllianceAction =
   | AllianceProposalAction
   | AllianceProposalResponseAction
   | AllianceCounterAction
+  | AllianceAmendAction
   | AlliancePassAction;
 
+export interface AllianceActionOpportunityTerms {
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+}
+
+export type AllianceActionOpportunity =
+  | {
+    kind: "proposer";
+  }
+  | {
+    kind: "response";
+    lineageId: UUID;
+    versionId: UUID;
+    counterAllowed: boolean;
+    terms: AllianceActionOpportunityTerms;
+  };
+
 export interface AllianceHuddlePromptContext {
+  sessionId: UUID;
   allianceId: UUID;
   allianceName: string;
+  memberIds: UUID[];
   memberNames: string[];
   purpose: string;
   timebox?: string | null;
   window: "format" | "pre_vote" | "pre_council";
   scheduleId: UUID;
   pass: number;
+  /** Earlier engine-ID'd facts in this exact session, in acceptance order. */
+  priorFacts: AllianceHuddleFactAtom[];
 }
 
-export interface AllianceHuddleTurnAction {
+export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
+  /** Typed provider exhaustion for an optional huddle turn; omit the turn entirely. */
+  providerAbsence?: ProviderSpeechAbsence;
   thinking?: string;
   reasoningContext?: string;
   message: string | null;
   noReply?: boolean;
-  decisionLog?: string | null;
-  commitment?: Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName">;
+  factAtoms: AllianceHuddleFactAtomDraft[];
 }
 
-export interface MingleTurnAction {
+export interface MingleTurnAction extends StrategicDecisionMetadata {
+  /** Typed provider exhaustion for an optional turn; never emit a transcript entry. */
+  providerAbsence?: ProviderSpeechAbsence;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Private room message. Empty/null means no TALK action. */
@@ -877,43 +918,21 @@ export interface MingleTurnAction {
   gotoPlayerName?: string | null;
   /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
-  /** Private producer/debug strategic decision metadata for this action. */
-  decisionLog?: string | null;
   /** Private receipt for a concrete proposal made in a decision-relevant allied room. */
   coordinationReceipt?: {
-    proposedTarget: string | null;
-    proposedAction: string | null;
-    commitment: string | null;
-    noProposalReason: string | null;
+    factKind: "proposal" | "commitment" | null;
+    actionKind: import("./types").AllianceHuddleActionKind | null;
+    targetPlayerId: UUID | null;
+    noProposal: boolean;
   };
 }
 
-export interface MingleIntentAction extends MingleIntentSummaryBase {
+export interface MingleIntentAction extends MingleIntentSummaryBase, StrategicDecisionMetadata {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
-  /** Private producer/debug strategic decision metadata for this action. */
-  decisionLog?: string | null;
 }
-
-export interface StrategicReflectionAction {
-  certainties: string[];
-  suspicions: string[];
-  allies: string[];
-  threats: string[];
-  plan: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  /** Agent's internal thinking (hidden from players, visible to viewers) */
-  thinking?: string;
-  /** Model-side reasoning evidence for debug surfaces. */
-  reasoningContext?: string;
-  /** New strategy packet revision carried forward from this reflection, if one was produced. */
-  strategyPacket?: StrategyPacketSummary | null;
-}
-
-export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan" | "strategicLens" | "strategicLensRationale">;
 
 export interface TargetDecision extends StrategicDecisionMetadata {
   target: UUID;
@@ -936,11 +955,10 @@ export interface CandidateChoiceRequest {
   protectedCandidateId?: UUID;
 }
 
-export interface CandidateSelectionDecision {
+export interface CandidateSelectionDecision extends StrategicDecisionMetadata {
   selectedCandidateIds: UUID[];
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
 }
 
 export interface PowerActionOptions {
@@ -961,6 +979,8 @@ export type FormatDecisionFallbackReason =
   | "invalid_save_or_eliminate_ballot"
   | "invalid_vote_bomb_target"
   | "invalid_majority_elimination_target"
+  | "invalid_even_votes_target"
+  | "invalid_restricted_history_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
@@ -986,6 +1006,10 @@ export interface AgentTurnEvent {
   actor: AgentTurnActor;
   visibility: AgentTurnVisibility;
   response: Record<string, unknown>;
+  /** Exact correlation with the proposal-time private decision trace. */
+  decisionId?: UUID;
+  /** Post-guard mechanical result; authorized exactly like `thinking`. */
+  strategyResult?: CompactStrategyApplicationResult;
   thinking?: string;
   reasoningContext?: string;
   scope?: TranscriptEntry["scope"];
@@ -1025,6 +1049,20 @@ export interface IAgent {
    * the implementation emits private decision traces. Optional for mock agents.
    */
   getLastPrivateDecisionId?(): UUID | undefined;
+  /** Bind the next provider call to an already-planned durable turn slot. */
+  setDurableProviderTurnBinding?(binding: DurableProviderTurnBinding | null): void;
+  /** Current private compact-strategy state. Phase code never mutates this value directly. */
+  getCompactStrategyState?(): CompactStrategyState;
+  /**
+   * Apply a strategy candidate only after the associated gameplay proposal has
+   * passed the phase's acceptance guard and canonical mechanic mutation.
+   */
+  commitCompactStrategyCandidate?(
+    boundary: CompactStrategyDecisionBoundary,
+    candidate: CompactStrategyCandidate,
+  ): CompactStrategyApplicationResult;
+  /** Canonical elimination invalidates the current strategy epoch. */
+  markCompactStrategyReconciliationRequired?(): CompactStrategyState;
   /** Called once when the game starts */
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void;
   /** Called at the start of each phase with current game context */
@@ -1037,8 +1075,8 @@ export interface IAgent {
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
   /** Called before House initial Mingle room assignment to form a hidden private-room strategy intent */
   getMingleIntent?(context: PhaseContext): Promise<MingleIntentAction | null>;
-  /** Called during Mingle I to propose, respond to, counter, or pass on official named alliances. */
-  getAllianceAction?(context: PhaseContext): Promise<AllianceAction>;
+  /** Called during Mingle I for one engine-scoped official named-alliance opportunity. */
+  getAllianceAction?(context: PhaseContext, opportunity: AllianceActionOpportunity): Promise<AllianceAction>;
   /** Called during a House-scheduled alliance huddle for one private speaking opportunity. */
   getAllianceHuddleTurn?(context: PhaseContext, huddle: AllianceHuddlePromptContext, conversationHistory?: Array<{ from: string; text: string }>): Promise<AllianceHuddleTurnAction>;
   /** Send a private room message to all other occupants, or null to pass */
@@ -1103,6 +1141,14 @@ export interface IAgent {
     context: PhaseContext,
     aliveIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getEvenVotesBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getRestrictedHistoryBallot?(
+    context: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
@@ -1132,7 +1178,7 @@ export interface IAgent {
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
   getEndgameEliminationVote(context: PhaseContext, options?: AgentCallOptions): Promise<TargetDecision>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
+  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<StrategicDecisionMetadata & { targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
   /** Tribunal: defend against an accusation */
   getDefense(context: PhaseContext, accusation: string, accuserName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
@@ -1146,11 +1192,6 @@ export interface IAgent {
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision>;
 
-  // --- Strategic reflection (called after diary room) ---
-  /** Produce a private strategic reflection for memory and strategy continuity. */
-  getStrategicReflection(context: PhaseContext, options?: StrategicReflectionOptions): Promise<StrategicReflectionAction | null | void>;
-  /** Return the live private strategy packet for this game run, if one exists. */
-  getStrategyPacket?(): StrategyPacketSummary | null;
   /**
    * Narrow continuity snapshot for Recall Plan compilation (U3).
    * Phase runners obtain this immediately before ContextBuilder; they never read agent memory fields directly.
@@ -1184,6 +1225,12 @@ export interface IAgent {
   removeFromMemory?(playerName: string): void;
 }
 
+export interface DurableProviderTurnBinding {
+  turnId: string;
+  subcallSlot: number;
+  logicalCallId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Phase context passed to agents
 // ---------------------------------------------------------------------------
@@ -1202,13 +1249,7 @@ export interface PlayerAllianceContextAlliance extends PlayerAllianceContextTerm
   huddleOutcomes: Array<{
     id: UUID;
     round: number;
-    ask: string;
-    plan: string;
-    promises: string[];
-    dissent: string[];
-    confidence: "low" | "medium" | "high";
-    posture: string;
-    leakOrBetrayalClaims: string[];
+    facts: AllianceHuddleFactAtom[];
   }>;
 }
 
@@ -1227,10 +1268,19 @@ export interface PlayerAllianceContext {
   proposalHistory: PlayerAllianceContextProposal[];
 }
 
+export interface RestrictedHistoryLegalityProjection {
+  priorTargetIds: UUID[];
+  priorTargetNames: string[];
+  legalTargetIds: UUID[];
+  legalTargetNames: string[];
+}
+
 export interface PhaseContext {
   gameId: UUID;
   round: number;
   phase: Phase;
+  /** Durable phase-owned ordinal for repeated provider calls at this boundary. */
+  providerLogicalCallOrdinal?: number;
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;
@@ -1243,6 +1293,8 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Current format menu, locked rules, and public Safety Bounce board. */
   formatPressure?: FormatPressureProjection;
+  /** Actor-specific Restricted History exclusions and current legal targets. */
+  restrictedHistoryLegality?: RestrictedHistoryLegalityProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */
   revealedVoteLedger?: RevealedVoteLedgerEntry[];
   /** Player-visible canonical event record rendered with names for endgame context. */
@@ -1373,6 +1425,7 @@ export type TranscriptDialogueKind =
   | "system_phase_banner"
   | "system_room_allocation"
   | "system_elimination"
+  | "house_summary"
   | "system_announcement";
 
 /**
@@ -1458,24 +1511,15 @@ export interface TranscriptEntry {
  */
 export type RecallPromptClass =
   | "ordinary_speech"
-  | "strategic_decision"
-  | "strategic_reflection";
+  | "strategic_decision";
 
 /**
  * Narrow actor continuity input for Recall Plan compilation.
  * Phase runners obtain this immediately before context build (U3); pure compiler takes it as data.
  */
 export interface RecallContinuitySnapshot {
-  strategyPacket: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
-  recentStrategicDecisions: readonly StrategicDecisionReceipt[];
-  /**
-   * Monotonic actor-local version for strategic evidence boundary / cache keys.
-   * Advanced when a decision receipt is retained; Strategy Thread mutation stays on reflection.
-   */
-  strategicEvidenceVersion: number;
-  /** Optional Strategy Thread revision counter from continuity capsules. */
-  strategyPacketRevisionCounter?: number;
+  /** Cloned engine-owned private strategy state; free-form text is never authoritative. */
+  compactStrategy: CompactStrategyState;
 }
 
 /** Canonical board facts pinned in the protected lane (structured, not rendered). */
@@ -1496,17 +1540,11 @@ export interface RecallBoardContractFacts {
   isEliminated?: boolean;
 }
 
-/** Compact huddle outcome fields retained in protected recall (no participant snapshot). */
+/** Typed huddle facts retained in protected recall (no participant snapshot or House prose). */
 export interface RecallProtectedHuddleOutcome {
   id: UUID;
   round: number;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: "low" | "medium" | "high";
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: AllianceHuddleFactAtom[];
 }
 
 /** Active-room conversation (hot lane), distinct from historical Mingle archive. */
@@ -1548,11 +1586,9 @@ export interface RecallPlanBudgetLedger {
 
 export interface RecallPlanProtectedLane {
   boardContract: RecallBoardContractFacts;
-  strategyThread: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
+  compactStrategy: CompactStrategyState;
   huddleOutcomes: RecallProtectedHuddleOutcome[];
   currentReceipts: {
-    recentStrategicDecisions: StrategicDecisionReceipt[];
     recentDecisions: RecentDecisionContextEntry[];
     revealedVoteLedger: RevealedVoteLedgerEntry[];
   };

@@ -79,15 +79,16 @@ bun run simulate -- --variant power-lobby-mingle
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing the legacy JSONL simulator against LM Studio or another OpenAI-compatible local endpoint.
 
 For durable local evaluation, prefer `simulate:api`. It authenticates to the running API with `INFLUENCE_API_SESSION_TOKEN`, or exchanges the saved producer MCP OAuth token from `INFLUENCE_MCP_TOKEN` / `~/.influence-game/mcp-token.json` through the loopback-only `/api/auth/local-cli-session` route. The CLI creates a real game, fills AI slots, starts the API background runner, and waits only until the durable event cursor advances. The API process must already be configured for the selected provider: LM Studio needs `INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1`, while Katana needs `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET`.
+Normal `POST /api/games/:id/fill` requests construct deterministic House persona metadata synchronously and return the completed roster with HTTP 200; they do not call a model. Saved-agent generation remains a separate hosted-model feature.
 API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed.
 
-Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. API games use `games.config.modelSelection` as their sole game model authority. Dynamic text catalog IDs are supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
+Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test one router-backed model. API games seal `games.config.providerManifest` as their ordered execution authority; use repeated `--provider-entry <catalog-id>,reasoning=<policy>,max-calls=<n>` arguments to create a primary plus bounded fallbacks. `action-policy` is the Adaptive reasoning choice. Dynamic text catalog IDs remain supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
 
 For deployment, the one startup migration maps legacy `budget` / `standard` / `premium` to `openai:gpt-5-nano` / `openai:gpt-5-mini` / `openai:gpt-5.4-mini` with `action-policy` and removes `modelTier`. Keep old API writers stopped while it runs. Rollback is roll-forward. OpenAI `serviceTier` is unrelated.
 
 Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext` (including labeled OpenAI reasoning summaries when enabled), `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Live standard rounds write one House room-assignment decision, Format Mingle turns, post-pick named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, format actions, and House MC summary records. They do not request per-player `mingle-intent` calls; historical artifacts and isolated prompt-lab fixtures may still contain them. Strategic reflection and `strategy-packet` records are written when enabled. Later private decisions may include `decisionLog` receipts that explain strategic pivots for normal reflection carry-forward. `--rich-producer` also writes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records. For prompt-continuity validation, check that the Current Board Contract keeps live players, eliminated players, jurors, empowerment, and endgame status clear; named-alliance context shows member-safe rosters, terms, failed proposals, and huddle outcomes without leaking raw huddle transcript; Format Mingle prompts carry the locked rule sheet; Judgment question prompts use questions-only history; and House MC summaries emphasize consequence over player-count bookkeeping.
 
-API-backed durable checkpoints are inspectable through the admin durable-run read model. Each checkpoint summary includes a hydration passport with status-only stamps for event/projection replay, boundary safety, Runtime Snapshot v1 evidence, transcript/token cursors, private player/House continuity, owner epoch proof, and privacy validation. Runtime Snapshot v1 candidacy requires sealed boundary identity across the actor witness, accumulator registry, transcript watermark, token cursor, and expected player continuity set; bare or unserialized accumulator state blocks candidacy. The passport never exposes raw continuity capsules or model reasoning, and `hydration_candidate` is only readiness evidence. Supported phase-boundary startup recovery is a separate runtime contract documented in `docs/statefulness-plan.md`.
+Current API-backed games persist an atomic logical-turn frontier containing the XState snapshot, typed cursor, canonical/dialogue heads, player and House continuity, provider-call links, and viewer-publication head. An ordinary process reload adopts unfinished `in_progress` games under a fresh owner epoch and continues the same IDs; do not cancel, rewind, or drain them. A supported active game from immediately before this cutover is upgraded once from its exact validated phase-boundary snapshot without changing its canonical event log. Checkpoint summaries and hydration passports otherwise remain historical/forensic inspection. The admin and producer MCP durable-run read model shows safe structural execution/turn/publication progress without raw snapshots, continuity, or prose. The exact runtime contract and corruption limits are documented in `docs/statefulness-plan.md`.
 
 To expose the local simulation corpus to another local MCP client:
 
@@ -108,7 +109,7 @@ bun run mcp:game:oauth -- docs/simulations
 
 The helper opens a PKCE authorization-code flow at `/oauth/mcp/authorize`, exchanges the code for a one-hour opaque MCP bearer token, and saves it to `~/.influence-game/mcp-token.json` with user-only file permissions. Override that path with `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different handoff location. The bridge reads `INFLUENCE_MCP_TOKEN` first, then falls back to the saved token file, introspects before each JSON-RPC request, and delegates to the existing read-only Game MCP only when the token is active for `aud=game-mcp`, `purpose=mcp_access`, and includes the `producer` scope. The `producer` scope is privileged developer access and requires the current `producer` role.
 
-The current Streamable HTTP MCP surface is documented in `docs/game-mcp-production-oauth.md`. `/mcp` is the single deployed resource for The House's Influence MCP and uses `agents:read`, `agents:write`, `games:read`, and `producer` scopes to separate owned-agent reads, agent/pre-match writes, accessible game/season inspection, and privileged producer trace or competition-evidence tools. Producer access requires the current `producer` role; non-producer scopes never expose private traces, hidden `mu`/`sigma`, opponent evidence, revision magnitude, or active-match actions. User-facing agent summaries may include per-agent games/wins, receipt-derived season points, and separately labeled account-level free-track ELO; account ELO is not per-agent ELO and does not decide either seasonal crown. Web/API base URLs must be HTTPS outside explicit loopback development hosts.
+The current Streamable HTTP MCP surface is documented in `docs/game-mcp-production-oauth.md`. `/mcp` is the single deployed resource for The House's Influence MCP and uses `agents:read`, `agents:write`, `games:read`, and `producer` scopes to separate owned-agent reads, agent/pre-match writes, accessible game/season inspection, and privileged producer trace, Admin Cost Detail, or competition-evidence tools. Producer access requires the current `producer` role; non-producer scopes never expose private traces, provider cost detail, hidden `mu`/`sigma`, opponent evidence, revision magnitude, or active-match actions. User-facing agent summaries may include per-agent games/wins, receipt-derived season points, and separately labeled account-level free-track ELO; account ELO is not per-agent ELO and does not decide either seasonal crown. Web/API base URLs must be HTTPS outside explicit loopback development hosts.
 
 ### Dual Crown seasons
 
@@ -129,6 +130,12 @@ bun run dist/backfill-agent-revisions.js
 Creating a season in the producer UI immediately makes it active. The same UI can close admission, inspect competition evidence, and finalize the crowns.
 
 ### Daily Free draw idempotency
+
+`POST /api/free-queue/draw` and `POST /api/free-queue/start` are operational
+service-account endpoints. Their JWT must carry `schedule_free_game`; they do
+not require a human Terms/Privacy claim or a `legal_acceptances` row. Do not
+provision acceptance records for the scheduler identity. Ordinary player and
+account routes continue to enforce the current legal-acceptance policy.
 
 `POST /api/free-queue/draw` requires an `Idempotency-Key` header containing 1-200 nonblank characters. A successful draw persists that key on the created Daily Free game, and retrying the same key returns that exact game in any status. The draw advisory lock also converges distinct operator keys: while any Daily Free game is still `waiting`, a new draw request returns that exact waiting game instead of creating a parallel roster. Once it starts, a later distinct key may create the next game from the owners who are then eligible. This lets a recovered late game coexist with the following scheduled draw after the recovered game has started, without weakening duplicate-delivery protection.
 
@@ -209,14 +216,11 @@ Do not wrap `bun run dev:api` or `bun run dev:web` in another `doppler run`.
 ### 4. Run tests
 
 ```bash
-# Unit tests -- fast, no LLM calls, no secrets needed
-bun test:engine
+# Automatically discovered provider-free tests; no secrets needed
+bun run test
 
-# Full integration tests -- requires a hosted or local OpenAI-compatible LLM provider
-bun run test:engine:full
-
-# All packages (unit tests only)
-bun test
+# Automatically discovered API tests; local PostgreSQL required
+bun run test:postgres
 
 # Type check everything
 bun run typecheck
@@ -224,8 +228,16 @@ bun run typecheck
 # Deterministic layered-auth browser/API coverage (local Docker PostgreSQL)
 bun run test:e2e:layered-auth
 
+# Other deterministic Browser Coverage lanes (local Docker PostgreSQL)
+bun run test:e2e:identity
+bun run test:e2e:format-viewer
+bun run test:browser:api
+
 # Real Clerk development-instance coverage (explicit credentials required)
 bun run test:e2e:layered-auth:clerk
+
+# Live-provider suites are manual and fail closed without provider configuration
+doppler run -- bun run test:live-provider
 ```
 
 ### Format-aware viewer verification
@@ -236,18 +248,19 @@ Use deterministic fixtures before creating a fresh game:
 - `mild-cream-rune` — second all-format completed replay/results fixture.
 - `young-ruby-isle` — Safety Bounce-heavy completed fixture.
 - `edge-smoke-dusk` — frozen engine-authored classic characterization; the
-  browser story route-projects its canonical events, so no persisted row is
-  required.
+  browser harness persists its canonical events into the isolated fixture
+  database.
 
-With the local API and web processes already running, execute:
+Run the hermetic story from the repository root:
 
 ```bash
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 \
-PLAYWRIGHT_FORMAT_VIEWER=1 \
-bunx playwright test e2e/format-aware-game-viewer.spec.ts
+bun run test:e2e:format-viewer
 ```
 
-The story installs Playwright Clock and does not use sleep-based assertions. It
+The story creates and migrates a unique PostgreSQL database, seeds the named
+format and classic games from canonical engine events, starts local API/web
+children, and drops/stops everything during cleanup. It installs Playwright
+Clock and does not use sleep-based assertions. It
 checks browser-routed current-state entry for every format, deterministic
 WebSocket reconnect and higher-sequence repair, reload from a local mid-roll-call
 position, terminal/malformed trusted prefixes, canonical pointer landing, lane
@@ -264,8 +277,10 @@ DRIZZLE_MIGRATIONS_DIR=./drizzle \
 bun test src/__tests__/production-game-mcp-read-model.test.ts
 ```
 
-The test database path uses `setupTestDB()` and its process advisory lock. Do not
-run these DB tests concurrently inside one Bun process.
+The shared API test database uses `setupTestDB()` and its process advisory lock.
+Run the API/PostgreSQL lane as one Bun process with `--max-concurrency 1`; do not
+use `test.concurrent` or `describe.concurrent` in shared-DB tests. Browser
+harnesses use unique databases instead and never truncate the shared database.
 
 A fresh controlled format game is still required for end-to-end API/WebSocket
 integration proof beyond the deterministic browser-routed story. Use
@@ -296,7 +311,8 @@ packages/
       game-state.ts     # Mutable game state + phase transitions
       phase-machine.ts  # xstate v5 FSM for round cycle
       game-runner.ts    # Orchestrates agents through each phase
-      agent.ts          # LLM-backed player (Chat Completions locally, Responses summaries for hosted OpenAI)
+      agent.ts          # Provider-neutral LLM-backed player
+      provider-adapters.ts # Native OpenAI Responses and Katana/local Chat transports
       simulate.ts       # CLI batch simulation runner
       __tests__/        # Unit + integration tests
 
@@ -330,6 +346,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_AVATAR_GENERATION_ASSET_HOSTS` | No | `imgnai.com` | Comma-separated HTTPS host allowlist for downloading completed Katana avatar assets before copying them into Influence storage |
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
+| `INFLUENCE_LLM_REQUEST_TIMEOUT_MS` | No | `45000` | Per-attempt provider request timeout for API games; clamped to 1-300 seconds |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
@@ -384,7 +401,13 @@ set +a
 
 The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-content-local`, and writes the required private trace env vars to `.env.private-trace.local`. Restarting Docker does not usually make the file stale if the same MinIO container, ports, bucket, and credentials remain in place. If the container was recreated, credentials changed, or storage writes look missing, rerun `bun run s3:bootstrap` and then `bun run trace:local:smoke` to verify a trace write/read/search round trip.
 
-Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials.
+Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces and Owner Learning failure evidence. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials. The bucket lifecycle must exempt `content/owner-learning-reviews/` from expiry or deletion; those review/diagnostic objects have audit retention, no application deletion endpoint, and no configured expiry. Treat a lifecycle rule that can remove that prefix as a deployment blocker.
+
+Deploy Owner Learning migrations `0064`–`0069` before starting the updated review worker. `0064` installs review-scoped append-only diagnostics and the strict failed-review commit invariant, `0065` versions invocation attempts, `0066` adds pre-dispatch request plus pre-validation response staging, `0067` requires byte-complete linked response evidence before a new failure can be classified as `invalid_structured_output`, `0068` adds the `retry_queued` recovery fence, and `0069` removes any prerelease compatibility trigger and reasserts the strict terminal-failure invariant. New recovery requests use the distinct `retry_queued` state as an additional fence against stale binaries.
+
+This cutover does not permit old and new Owner Learning workers to overlap. Pause new Owner Learning admission, stop and prove every old worker drained, apply and verify `0064`–`0069`, deploy the updated API/worker fleet, then resume admission. An old worker can terminalize a review without the required diagnostic/manifest/event transaction, so applying the strict migration while an old invocation is still in flight is a deployment blocker. Likewise, the updated worker must never run against a schema missing `0069`. If drain proof is unavailable, abort the rollout rather than weakening the invariant or allowing an old worker to discard another response.
+
+Owner Learning failure envelopes first enter the transactional Postgres outbox and reconcile to deterministic keys under that prefix. Storage failure is expected to leave the exact outbox body pending or degraded indefinitely rather than discard it. Monitor pending/degraded manifest counts, reconciliation attempts/errors, failure phase/fingerprint, owner recovery outcomes, and appended retry spend. Never manually delete an outbox row or original attempt to clear an alert.
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. The API returns absolute local upload/read URLs from the request origin so the browser can upload through `127.0.0.1:3000` while the web app runs on `localhost:3001`. Staging/production should use the S3 backend.
 

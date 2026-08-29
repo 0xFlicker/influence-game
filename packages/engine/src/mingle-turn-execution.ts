@@ -4,6 +4,7 @@ import { formatMingleTurnOperatorText } from "./operator-turn-text";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseRunnerContext,
@@ -173,16 +174,21 @@ export async function executeMingleTurn(input: {
   }
 
   await assertCanAcceptCommit(ctx);
+  if (resolvedAction.providerAbsence) {
+    return {
+      playerId,
+      fromName,
+      recipientNames,
+      roomId: room.roomId,
+      turn: room.beat,
+      action: resolvedAction,
+      message: null,
+      messageSent: false,
+      turnAction: "no_reply",
+    };
+  }
   const receipt = resolvedAction.coordinationReceipt;
-  if (
-    receipt
-    && (
-      receipt.proposedTarget
-      || receipt.proposedAction
-      || receipt.commitment
-      || receipt.noProposalReason
-    )
-  ) {
+  if (receipt && (receipt.factKind !== null || receipt.noProposal)) {
     gameState.recordMingleCoordinationReceipt({
       id: createUUID(),
       round: gameState.round,
@@ -190,13 +196,18 @@ export async function executeMingleTurn(input: {
       actorId: playerId,
       audiencePlayerIds: [...room.playerIds],
       roomId: room.roomId,
-      proposedTargetName: receipt.proposedTarget,
-      proposedAction: receipt.proposedAction,
-      commitment: receipt.commitment,
-      noProposalReason: receipt.noProposalReason,
+      factKind: receipt.factKind,
+      actionKind: receipt.actionKind,
+      targetPlayerId: receipt.targetPlayerId,
+      noProposal: receipt.noProposal,
       createdAt: new Date().toISOString(),
     });
   }
+  resolveActionStrategyCandidate(
+    agent,
+    resolvedAction,
+    resolvedAction.strategyGameplayAccepted !== false,
+  );
 
   const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
   const messageSent = Boolean(message && recipientIds.length > 0);
@@ -265,6 +276,7 @@ export function commitMingleTurnMovements(input: {
   const records: MingleTurnExecutionRecord[] = [];
 
   for (const turn of turns) {
+    if (turn.action.providerAbsence) continue;
     const requested = requestedMovements.get(turn.playerId) ?? {
       toRoomId: turn.roomId,
       gotoRoomId: null,

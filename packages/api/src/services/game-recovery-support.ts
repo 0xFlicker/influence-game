@@ -1,9 +1,9 @@
 import {
-  admitHouseContinuityForRecovery,
   buildMingleInboxReplayFromTranscript,
   GameState,
   isFormatResumeCoordinate,
   mingleInboxSessionForResumeTarget,
+  parseHouseNarrativeContinuity,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   validateFormatResumePrerequisites,
   validatePlayerContinuitySetForRecovery,
@@ -63,12 +63,31 @@ const RESUME_SUPPORTED_ACTOR_COORDINATES = new Set<string>(
   ),
 );
 
+const HISTORICAL_SUPPORTED_ACTOR_COORDINATES = new Set<string>([
+  ...RESUME_SUPPORTED_ACTOR_COORDINATES,
+  "mingle_i",
+  "pre_vote_huddle",
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isSupportedActorCoordinate(value: string): value is GameRunnerResumeActorCoordinate {
   return RESUME_SUPPORTED_ACTOR_COORDINATES.has(value);
+}
+
+function isHistoricalActorCoordinate(value: string): value is GameRunnerResumeActorCoordinate {
+  return HISTORICAL_SUPPORTED_ACTOR_COORDINATES.has(value);
+}
+
+function isAdmittedActorCoordinate(
+  value: string,
+  historical: boolean,
+): value is GameRunnerResumeActorCoordinate {
+  return historical
+    ? isHistoricalActorCoordinate(value)
+    : isSupportedActorCoordinate(value);
 }
 
 function isRuntimeSnapshotV1(value: unknown): value is RuntimeSnapshotV1 {
@@ -328,13 +347,17 @@ function validateActorCoordinatePrerequisites(
   actorCoordinate: GameRunnerResumeActorCoordinate,
   canonicalEvents: readonly CanonicalGameEvent[],
   gameState: GameState,
+  historical: boolean,
 ): string | null {
   const hasRoundStarted = canonicalEvents.some((event) => event.type === "round.started");
   if (actorCoordinate === "lobby") {
     return hasRoundStarted ? "unsupported_lobby_after_round_started" : null;
   }
   if (!hasRoundStarted) return `${actorCoordinate}_missing_round_started`;
-  if (actorCoordinate === "vote") return null;
+  if (actorCoordinate === "vote" ||
+      (historical && (actorCoordinate === "mingle_i" || actorCoordinate === "pre_vote_huddle"))) {
+    return null;
+  }
 
   // Endgame checkpoints are valid after either legacy Council elimination or a
   // format-kernel elimination. Validate their endgame state directly before
@@ -398,7 +421,7 @@ function validateActorCoordinatePrerequisites(
 function evaluateCheckpointIntegrity(params: {
   checkpoint: HistoricalCheckpointIntegrityInput;
   persistedEvents: PersistedEventsResult;
-  requireCurrentHead: boolean;
+  mode: "historical" | "resume";
 }): SupportedRecoveryEvaluation {
   if (params.checkpoint.checkpointKind !== "phase_boundary") {
     return { ok: false, reason: `unsupported_checkpoint_kind:${params.checkpoint.checkpointKind}` };
@@ -409,7 +432,8 @@ function evaluateCheckpointIntegrity(params: {
   if (!isRuntimeSnapshotV1(runtimeSnapshot)) return { ok: false, reason: "missing_runtime_snapshot" };
 
   const actorCoordinate = runtimeSnapshot.actorWitness.actorCoordinate;
-  if (!isSupportedActorCoordinate(actorCoordinate)) {
+  const historical = params.mode === "historical";
+  if (!isAdmittedActorCoordinate(actorCoordinate, historical)) {
     return { ok: false, reason: `unsupported_actor_coordinate:${actorCoordinate}` };
   }
   const transcriptReplay = readTranscriptReplay(isRecord(snapshot) ? snapshot.transcriptReplay : null);
@@ -426,7 +450,7 @@ function evaluateCheckpointIntegrity(params: {
   if (params.persistedEvents.status !== "complete") {
     return { ok: false, reason: `invalid_event_log:${params.persistedEvents.status}` };
   }
-  if (params.requireCurrentHead &&
+  if (params.mode === "resume" &&
       params.persistedEvents.lastTrustedSequence !== params.checkpoint.lastEventSequence) {
     return { ok: false, reason: "checkpoint_not_at_event_head" };
   }
@@ -458,7 +482,12 @@ function evaluateCheckpointIntegrity(params: {
   });
   if (!accumulatorResult.ok) return { ok: false, reason: accumulatorResult.reason };
 
-  const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents, gameState);
+  const prerequisiteReason = validateActorCoordinatePrerequisites(
+    actorCoordinate,
+    canonicalEvents,
+    gameState,
+    historical,
+  );
   if (prerequisiteReason) return { ok: false, reason: prerequisiteReason };
 
   const tokenCostCursor = readTokenCostCursor(params.checkpoint.tokenCostCursor);
@@ -483,12 +512,15 @@ function evaluateCheckpointIntegrity(params: {
     return { ok: false, reason: playerContinuityResult.reason };
   }
 
-  const houseContinuityResult = admitHouseContinuityForRecovery({
-    requirement: isRecord(snapshot) ? snapshot.houseContinuityRequirement : undefined,
-    capsule: isRecord(snapshot) ? snapshot.houseContinuityCapsule : null,
-  });
-  if (!houseContinuityResult.ok) {
-    return { ok: false, reason: houseContinuityResult.reason };
+  const houseNarrativeRaw = isRecord(snapshot)
+    ? snapshot.houseNarrativeContinuityCapsule
+    : null;
+  if (houseNarrativeRaw == null) {
+    return { ok: false, reason: "missing_house_narrative_continuity_v2" };
+  }
+  const houseNarrativeResult = parseHouseNarrativeContinuity(houseNarrativeRaw);
+  if (houseNarrativeResult.status === "invalid") {
+    return { ok: false, reason: "malformed_house_narrative_continuity" };
   }
 
   const shouldReplayMingleInbox =
@@ -507,8 +539,7 @@ function evaluateCheckpointIntegrity(params: {
       tokenCostCursor,
       mingleInboxReplay: shouldReplayMingleInbox ? mingleInboxReplay : null,
       currentAccusations: accumulatorResult.currentAccusations,
-      houseContinuityCapsule: houseContinuityResult.capsule,
-      houseContinuityRequirement: houseContinuityResult.requirement,
+      houseNarrativeContinuityCapsule: houseNarrativeResult.value,
       playerContinuityCapsules: playerContinuityResult.capsules,
     },
   };
@@ -525,7 +556,7 @@ export function evaluateHistoricalCheckpointIntegrity(params: {
 }): SupportedRecoveryEvaluation {
   return evaluateCheckpointIntegrity({
     ...params,
-    requireCurrentHead: false,
+    mode: "historical",
   });
 }
 
@@ -540,7 +571,23 @@ export function evaluateSupportedRecovery(params: {
   return evaluateCheckpointIntegrity({
     checkpoint: params.checkpoint,
     persistedEvents: params.persistedEvents,
-    requireCurrentHead: true,
+    mode: "resume",
+  });
+}
+
+/** Validate the same exact boundary for the one-time active-game cutover. */
+export function evaluateDurableActiveGameUpgrade(params: {
+  gameStatus: GameStatus;
+  checkpoint: HistoricalCheckpointIntegrityInput;
+  persistedEvents: PersistedEventsResult;
+}): SupportedRecoveryEvaluation {
+  if (params.gameStatus !== "in_progress") {
+    return { ok: false, reason: `unsupported_game_status:${params.gameStatus}` };
+  }
+  return evaluateCheckpointIntegrity({
+    checkpoint: params.checkpoint,
+    persistedEvents: params.persistedEvents,
+    mode: "resume",
   });
 }
 

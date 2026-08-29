@@ -9,7 +9,11 @@
 import { loadStoredMcpAccessToken } from "./game-mcp/oauth-token-store";
 import {
   DEFAULT_MODEL_CATALOG_ID,
+  normalizeProviderManifest,
   normalizeReasoningPolicy,
+  parseProviderManifestEntry,
+  type GameProviderManifest,
+  type GameProviderManifestEntry,
   type ModelReasoningPolicy,
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
@@ -23,6 +27,7 @@ interface ApiSimArgs {
   provider: "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
   model?: string;
   modelCatalogId?: string;
+  providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   timingPreset: "fast" | "standard" | "slow";
   maxRounds: number | "auto";
@@ -78,6 +83,8 @@ export function parseArgs(
 ): ApiSimArgs {
   const envMaxRounds = parseMaxRounds(env.INFLUENCE_API_SIM_MAX_ROUNDS);
   let hasExplicitMaxRounds = envMaxRounds !== undefined;
+  let sawCliProviderEntry = false;
+  let sawCliLegacyModelSelection = false;
   const args: ApiSimArgs = {
     apiBaseUrl: env.INFLUENCE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
     games: readPositiveInt(env.INFLUENCE_API_SIM_GAMES, 1),
@@ -87,6 +94,7 @@ export function parseArgs(
     provider: parseProvider(env.INFLUENCE_API_SIM_PROVIDER) ?? "openai",
     model: env.INFLUENCE_API_SIM_MODEL,
     modelCatalogId: env.INFLUENCE_API_SIM_MODEL_CATALOG_ID,
+    providerManifest: parseProviderManifestEnv(env.INFLUENCE_API_SIM_PROVIDER_MANIFEST),
     serviceTier: normalizeServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER) ?? "flex",
     reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_API_SIM_REASONING_POLICY) ?? undefined,
     timingPreset: parseTimingPreset(env.INFLUENCE_API_SIM_TIMING_PRESET) ?? "fast",
@@ -116,19 +124,44 @@ export function parseArgs(
       args.players = Number(next);
       i++;
     } else if (arg === "--provider" && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.provider = parseProvider(next) ?? args.provider;
       i++;
     } else if (arg === "--model" && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.model = next;
       i++;
     } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.modelCatalogId = next;
+      i++;
+    } else if (arg === "--provider-entry" && next) {
+      if (sawCliLegacyModelSelection) {
+        throw new Error("Do not combine --provider-entry with legacy model flags");
+      }
+      if (!sawCliProviderEntry) {
+        args.providerManifest = [];
+        sawCliProviderEntry = true;
+      }
+      args.providerManifest = [
+        ...(args.providerManifest ?? []),
+        parseProviderEntry(next),
+      ];
       i++;
     } else if (arg === "--flex") {
       args.serviceTier = "flex";
     } else if (arg === "--standard" || arg === "--no-flex") {
       args.serviceTier = "auto";
     } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       const policy = normalizeReasoningPolicy(next);
       if (policy) args.reasoningPolicy = policy;
       i++;
@@ -181,21 +214,27 @@ export function parseArgs(
   if (!hasExplicitMaxRounds) {
     args.maxRounds = defaultApiSimulationMaxRounds(args.players);
   }
+  if (args.providerManifest) {
+    args.providerManifest = normalizeProviderManifest(args.providerManifest);
+  }
   return args;
 }
 
 async function main(): Promise<void> {
   const args = parseArgs();
   const sessionToken = await resolveSessionToken(args.apiBaseUrl);
-  const catalogId = args.modelCatalogId ?? catalogIdFromProviderAndModel(args.provider, args.model);
+  const providerManifest = args.providerManifest ?? normalizeProviderManifest([{
+    catalogId: args.modelCatalogId ?? catalogIdFromProviderAndModel(args.provider, args.model),
+    ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+  }]);
   const launched: GameCreateResponse[] = [];
 
   for (let index = 0; index < args.games; index++) {
-    const game = await createGame(args, sessionToken, catalogId);
+    const game = await createGame(args, sessionToken, providerManifest);
     launched.push(game);
     await fillGame(args.apiBaseUrl, sessionToken, game.id);
     await startGame(args.apiBaseUrl, sessionToken, game.id);
-    console.log(`Started API game ${game.slug ?? game.id} (${game.id}) with ${catalogId}`);
+    console.log(`Started API game ${game.slug ?? game.id} (${game.id}) with ${providerManifest.map((entry) => entry.catalogId).join(" -> ")}`);
   }
 
   if (args.waitForAdvance) {
@@ -234,31 +273,54 @@ async function resolveSessionToken(apiBaseUrl: string): Promise<string> {
 async function createGame(
   args: ApiSimArgs,
   sessionToken: string,
-  catalogId: string,
+  providerManifest: GameProviderManifest,
 ): Promise<GameCreateResponse> {
   return apiFetch<GameCreateResponse>(args.apiBaseUrl, "/api/games", {
     method: "POST",
     headers: authHeaders(sessionToken),
-    body: JSON.stringify(buildGameCreateBody(args, catalogId)),
+    body: JSON.stringify(buildGameCreateBody(args, providerManifest)),
   });
 }
 
-export function buildGameCreateBody(args: ApiSimArgs, catalogId: string) {
+export function buildGameCreateBody(
+  args: ApiSimArgs,
+  manifestOrCatalogId?: GameProviderManifest | string,
+) {
+  const providerManifest = Array.isArray(manifestOrCatalogId)
+    ? normalizeProviderManifest(manifestOrCatalogId)
+    : args.providerManifest
+      ?? normalizeProviderManifest([{
+        catalogId: manifestOrCatalogId
+          ?? args.modelCatalogId
+          ?? catalogIdFromProviderAndModel(args.provider, args.model),
+        ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+      }]);
   return {
     playerCount: args.players,
-    modelSelection: {
-      catalogId,
-      ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
-    },
+    providerManifest,
     timingPreset: args.timingPreset,
     maxRounds: args.maxRounds,
     visibility: args.visibility,
-    slotType: "all_ai",
     fillStrategy: "balanced",
     viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
     formatManifest: [...args.formatManifest],
   };
+}
+
+function parseProviderManifestEnv(value: string | undefined): GameProviderManifest | undefined {
+  if (!value?.trim()) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("INFLUENCE_API_SIM_PROVIDER_MANIFEST must be valid JSON");
+  }
+  return normalizeProviderManifest(parsed);
+}
+
+export function parseProviderEntry(value: string): GameProviderManifestEntry {
+  return parseProviderManifestEntry(value);
 }
 
 function normalizeServiceTier(value: string | undefined): "flex" | "auto" | undefined {
@@ -381,6 +443,10 @@ function printHelp(): void {
   console.log(`Usage:
   bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id>
   bun run simulate:api -- --provider katana --model deepseek-v4-flash
+  bun run simulate:api -- \\
+    --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \\
+    --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \\
+    --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:

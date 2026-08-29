@@ -15,10 +15,9 @@ import {
   Phase,
   TokenTracker,
   createLlmClientFromEnv,
-  estimateCostForKnownModel,
-  normalizeGameModelSelection,
+  createLlmProviderRuntimesFromEnv,
   normalizeOpenAIRequestServiceTier,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
   resolveFormatManifest,
 } from "@influence/engine";
 import type {
@@ -33,61 +32,52 @@ import type {
   PhaseContext,
   PlayerContinuityCapsule,
   ProviderProfileId,
+  ResolvedProviderManifestEntry,
   PrivateDecisionTrace,
   PrivateTraceSink,
   PowerAction,
-  StrategicReflectionAction,
   TargetDecision,
-  TranscriptEntry,
   UUID,
-  ViewerMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { PgMemoryStore } from "../db/memory-store.js";
 import {
-  broadcastGameEvent,
   broadcastRaw,
   broadcastViewerDecisionEvent,
   broadcastWatchState,
   getObserverCount,
 } from "./ws-manager.js";
-import { ViewerEventPacer } from "./viewer-event-pacer.js";
-import { appendGameEvents, hashCanonicalEvent } from "./game-events.js";
+import { appendGameEvents } from "./game-events.js";
 import { getGameWatchState, type GameWatchState } from "./game-watch-state.js";
 import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
-import { writeGameCheckpoint } from "./game-checkpoints.js";
 import {
-  acquireRecoveryGameRunOwner,
   assertOwnerActive,
   GameOwnerTransitionError,
-  markGameSuspended,
   markOwnerStartupFailed,
+  relinquishDurableGameRunOwner,
   renewGameRunOwner,
   type OwnerStartupFailureResult,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
-import { recordProviderSpendForTrace } from "./provider-cost-accounting.js";
 import { recordPromptReuseForTrace } from "./prompt-reuse-accounting.js";
-import {
-  findStartupRecoverableGameIds,
-  getSupportedRecovery,
-} from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 import { CompetitionSettlementRepairRequiredError } from "./competition-completion.js";
 import {
-  COMPLETION_SETTLEMENT_REPAIR_REQUIRED,
-  COMPLETION_SETTLEMENT_TRANSIENT_FAILURE,
-  captureGameCompletionSettlement,
+  checkGameStartAdmission,
+} from "./deployment-admission.js";
+import {
   GameCompletionSettlementError,
   getGameCompletionSettlementSummary,
-  prepareCapturedCompletionAfterRunnerExit,
-  settleCapturedGameCompletion,
 } from "./game-completion-settlement.js";
-import { serializeTranscriptEntry } from "./transcript-serialization.js";
 import { tryReconcileAcceptedActionCorrelations } from "./accepted-action-correlation.js";
+import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
+import { checkDailyProviderAdmission } from "./provider-health.js";
+import { createDurableGameRunnerStore } from "./durable-game-runner-store.js";
+import { settleDurableTerminalGame } from "./durable-game-terminal.js";
+import { getDueGamePublicationHead } from "./game-publications.js";
 
 export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
@@ -128,15 +118,16 @@ function startOwnerHeartbeat(
         stopped = true;
         clearInterval(interval);
         runner.abort();
-        await markGameSuspended(db, gameId, "owner_heartbeat_failed", { message }).catch(() => {});
+        await relinquishDurableGameRunOwner(
+          db,
+          gameId,
+          ownerEpoch,
+          "owner_heartbeat_failed",
+        ).catch(() => false);
         await tryRefreshGameWatchStateSummary(db, gameId, "owner_heartbeat_failed");
         broadcastRaw(gameId, {
-          type: "game_status",
-          gameId,
-          status: "suspended",
-          terminal: true,
-          reasonCode: "owner_heartbeat_failed",
-          message: "The game failed and cannot be resumed.",
+          type: "error",
+          message: "The game runner disconnected; committed play remains available for restart.",
         });
       });
   }, OWNER_HEARTBEAT_MS);
@@ -161,7 +152,6 @@ function createPrivateTraceSink(
       gameId,
       ownerEpoch,
     };
-    let traceManifestId: string | undefined;
     try {
       const cognitiveResult = await writeCognitiveArtifactsForTrace(db, {
         gameId,
@@ -187,8 +177,6 @@ function createPrivateTraceSink(
       });
       if (!result.ok) {
         console.warn(`[game-lifecycle] Private trace degraded for game ${gameId}: ${result.error}`);
-      } else {
-        traceManifestId = result.manifestId;
       }
     } catch (error) {
       console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
@@ -200,30 +188,20 @@ function createPrivateTraceSink(
       console.warn(`[game-lifecycle] Prompt reuse capture failed for game ${gameId}:`, error);
     }
 
-    try {
-      await recordProviderSpendForTrace(db, {
-        gameId,
-        ownerEpoch,
-        trace: enrichedTrace,
-        eventSequence: trace.boundary?.finalEventSequence,
-        ...(traceManifestId && { traceManifestId }),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[game-lifecycle] Cost accounting capture failed for game ${gameId}: ${message}`);
-    }
   };
 }
 
 /** Map of gameId → active game. Prevents double-starts and enables status queries. */
 const activeGames = new Map<string, ActiveGame>();
+/** Games establishing their initial durable frontier before background execution. */
+const startingGames = new Set<string>();
 
 export function isGameRunning(gameId: string): boolean {
-  return activeGames.has(gameId);
+  return startingGames.has(gameId) || activeGames.has(gameId);
 }
 
 export function getActiveGameCount(): number {
-  return activeGames.size;
+  return activeGames.size + startingGames.size;
 }
 
 export function abortGame(gameId: string): boolean {
@@ -300,7 +278,11 @@ async function publishCurrentWatchState(
   try {
     const watchState = prebuiltWatchState ?? await getGameWatchState(db, gameId);
     if (watchState) {
-      broadcastWatchState(gameId, watchState);
+      broadcastWatchState(
+        gameId,
+        watchState,
+        await getDueGamePublicationHead(db, gameId),
+      );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -332,15 +314,18 @@ class ApiTestMockAgent implements IAgent {
   async onPhaseStart() {}
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: {
+        lifecycle: "opening",
+        baseline: null,
+        deltas: [],
+        priorEpoch: null,
+        revision: 0,
+      },
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
   restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {
@@ -421,77 +406,10 @@ class ApiTestMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "api route test jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "api route test plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "api route test broad reflection",
-      thinking: "api route test strategic reflection",
-    };
-  }
-
   updateAlly(_playerName: string): void {}
   updateThreat(_playerName: string): void {}
   addNote(_playerName: string, _note: string): void {}
   removeFromMemory(_playerName: string): void {}
-}
-
-interface CompletedGameRunResult {
-  winner?: string;
-  winnerName?: string;
-  rounds: number;
-  transcript: TranscriptEntry[];
-  eliminationOrder: string[];
-  rankedPlayerIds: string[];
-}
-
-async function captureCompletedGame(
-  db: DrizzleDB,
-  params: {
-    gameId: string;
-    resultGameId: string;
-    ownerEpoch: string;
-    result: CompletedGameRunResult;
-    finalEventSequence: number;
-    finalEventHash: string;
-    tokenTracker: TokenTracker;
-    gameConfig: Record<string, unknown>;
-  },
-): Promise<void> {
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(params.gameConfig.modelSelection),
-  );
-  const model = resolvedModelSelection.modelId;
-  const usage = params.tokenTracker.getTotalUsage();
-  const cost = estimateCostForKnownModel(usage, model);
-  await captureGameCompletionSettlement(db, {
-    gameId: params.gameId,
-    ownerEpoch: params.ownerEpoch,
-    finalEventSequence: params.finalEventSequence,
-    finalEventHash: params.finalEventHash,
-    terminalResult: {
-      gameId: params.resultGameId,
-      winnerId: params.result.winner ?? null,
-      winnerName: params.result.winnerName ?? null,
-      rounds: params.result.rounds,
-      transcript: params.result.transcript,
-      eliminationOrder: params.result.eliminationOrder,
-      rankedPlayerIds: params.result.rankedPlayerIds,
-    },
-    tokenUsage: {
-      total: usage,
-      perAction: params.tokenTracker.getAllUsage(),
-      byServiceTier: params.tokenTracker.getUsageByServiceTier(),
-    },
-    resolvedModel: model,
-    calculatedCost: cost,
-    completionConfig: { ...params.gameConfig, viewerMode: "replay" },
-    finishedAt: new Date().toISOString(),
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -530,19 +448,12 @@ export function buildEngineConfigFromGameRecord(
       mingle: roomPhaseTimer,
     },
     diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
-    // Preserve House Strategy Bible / summary contracts sealed into the game record so
-    // checkpoint-time House continuity requirements match the runtime that produced them.
+    // Preserve House narration configuration sealed into the game record.
     ...(typeof gameConfig.enableHouseRoundSummaries === "boolean" && {
       enableHouseRoundSummaries: gameConfig.enableHouseRoundSummaries,
     }),
-    ...(typeof gameConfig.enableHouseStrategyBible === "boolean" && {
-      enableHouseStrategyBible: gameConfig.enableHouseStrategyBible,
-    }),
     ...(typeof gameConfig.enableHouseLongFormSummaries === "boolean" && {
       enableHouseLongFormSummaries: gameConfig.enableHouseLongFormSummaries,
-    }),
-    ...(typeof gameConfig.enableHouseProducerBriefs === "boolean" && {
-      enableHouseProducerBriefs: gameConfig.enableHouseProducerBriefs,
     }),
   };
 }
@@ -555,6 +466,21 @@ function providerPreflightEnabled(env: NodeJS.ProcessEnv): boolean {
 function providerPreflightTimeoutMs(env: NodeJS.ProcessEnv): number {
   const configured = Number(env.INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : 10_000;
+}
+
+const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 45_000;
+const MIN_PROVIDER_REQUEST_TIMEOUT_MS = 1_000;
+const MAX_PROVIDER_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
+export function providerRequestTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const configured = Number(env.INFLUENCE_LLM_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
+  }
+  return Math.max(
+    MIN_PROVIDER_REQUEST_TIMEOUT_MS,
+    Math.min(MAX_PROVIDER_REQUEST_TIMEOUT_MS, Math.floor(configured)),
+  );
 }
 
 function publicProviderStartupError(error: unknown): string {
@@ -591,11 +517,65 @@ export async function preflightSelectedModel(
   await llmConfig.client.models.retrieve(modelId);
 }
 
+export async function preflightProviderManifest(
+  manifest: readonly ResolvedProviderManifestEntry[],
+  createClient: (providerProfileId: ProviderProfileId) => ModelPreflightClient | null,
+): Promise<void> {
+  const providerEntries = new Map<
+    ProviderProfileId,
+    { client: ModelPreflightClient; modelIds: string[] }
+  >();
+  for (const entry of manifest) {
+    const providerProfileId = entry.providerProfile.id;
+    let provider = providerEntries.get(providerProfileId);
+    if (!provider) {
+      const client = createClient(providerProfileId);
+      if (!client) {
+        throw new Error("LLM provider not configured");
+      }
+      provider = { client, modelIds: [] };
+      providerEntries.set(providerProfileId, provider);
+    }
+    provider.modelIds.push(entry.modelId);
+  }
+
+  await Promise.all([...providerEntries].map(async ([providerProfileId, provider]) => {
+    if (providerProfileId === "katana") {
+      const models = await provider.client.client.models.list();
+      const availableModelIds = new Set(models.data?.map((model) => model.id) ?? []);
+      const unavailableModelId = provider.modelIds.find(
+        (modelId) => !availableModelIds.has(modelId),
+      );
+      if (unavailableModelId) {
+        throw new Error(
+          `Model ${unavailableModelId} is not available from ${provider.client.providerLabel}`,
+        );
+      }
+      return;
+    }
+
+    await Promise.all(provider.modelIds.map(
+      (modelId) => preflightSelectedModel(provider.client, modelId, providerProfileId),
+    ));
+  }));
+}
+
 export async function validateGameStartReadiness(
   db: DrizzleDB,
   gameId: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ error?: string }> {
+): Promise<{
+  error?: string;
+  code?:
+    | "deployment_admission_closed"
+    | "deployment_admission_unavailable"
+    | "provider_admission_closed"
+    | "provider_admission_unavailable";
+  retryable?: boolean;
+}> {
+  const admission = await checkGameStartAdmission(db);
+  if (!admission.ok) return admission;
+
   const game = (await db
     .select()
     .from(schema.games)
@@ -612,27 +592,20 @@ export async function validateGameStartReadiness(
     return { error: "Invalid game configuration" };
   }
 
-  let resolvedModelSelection;
+  let resolvedProviderManifest;
   try {
-    resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(gameConfig.modelSelection),
-    );
+    resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }
 
-  if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
-    return {};
+  if (game.trackType === "free") {
+    const providerAdmission = await checkDailyProviderAdmission(db, resolvedProviderManifest);
+    if (!providerAdmission.ok) return providerAdmission;
   }
 
-  const llmConfig = createLlmClientFromEnv(env, {
-    maxRetries: 0,
-    providerProfileId: resolvedModelSelection.providerProfile.id,
-    timeout: providerPreflightTimeoutMs(env),
-    openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-  });
-  if (!llmConfig) {
-    return { error: "LLM provider not configured" };
+  if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
+    return {};
   }
 
   if (!providerPreflightEnabled(env)) {
@@ -640,14 +613,22 @@ export async function validateGameStartReadiness(
   }
 
   try {
-    await preflightSelectedModel(
-      llmConfig,
-      resolvedModelSelection.modelId,
-      resolvedModelSelection.providerProfile.id,
+    await preflightProviderManifest(
+      resolvedProviderManifest,
+      (providerProfileId) => createLlmClientFromEnv(env, {
+        maxRetries: 0,
+        providerProfileId,
+        timeout: providerPreflightTimeoutMs(env),
+        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+      }),
     );
   } catch (error) {
+    const message = publicProviderStartupError(error);
+    if (message === "LLM provider not configured") {
+      return { error: message };
+    }
     return {
-      error: `LLM provider preflight failed: ${publicProviderStartupError(error)}`,
+      error: `LLM provider preflight failed: ${message}`,
     };
   }
 
@@ -658,13 +639,28 @@ export async function startGame(
   db: DrizzleDB,
   gameId: string,
   ownerEpoch?: string,
-  options: { resumeFrom?: GameRunnerOptions["resumeFrom"] } = {},
+  options: Pick<GameRunnerOptions, "durableUpgradeFrom"> = {},
 ): Promise<{ error?: string }> {
-  // Prevent double-start
-  if (activeGames.has(gameId)) {
+  if (isGameRunning(gameId)) {
     return { error: "Game is already running" };
   }
+  startingGames.add(gameId);
+  try {
+    return await startGameWithOwner(db, gameId, ownerEpoch, options);
+  } finally {
+    startingGames.delete(gameId);
+  }
+}
 
+async function startGameWithOwner(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch?: string,
+  options: Pick<GameRunnerOptions, "durableUpgradeFrom"> = {},
+): Promise<{ error?: string }> {
+  if (!ownerEpoch) {
+    return { error: "Durable game owner is required" };
+  }
   // Load game record
   const game = (await db
     .select()
@@ -693,17 +689,20 @@ export async function startGame(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(gameConfig.modelSelection),
-  );
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
 
-  const llmConfig = useTestMockRunner
+  const providerRuntimes = useTestMockRunner
     ? null
-    : createLlmClientFromEnv(process.env, {
-        providerProfileId: resolvedModelSelection.providerProfile.id,
-        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-      });
-  if (!llmConfig) {
+    : createLlmProviderRuntimesFromEnv(
+        resolveProviderManifestFromGameConfig(gameConfig),
+        process.env,
+        {
+          openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+          timeout: providerRequestTimeoutMs(process.env),
+        },
+      );
+  const primaryRuntime = providerRuntimes?.[0];
+  if (!primaryRuntime) {
     if (!useTestMockRunner) {
       return { error: "LLM provider not configured" };
     }
@@ -714,7 +713,10 @@ export async function startGame(
   const privateTraceSink = ownerEpoch
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
-  const toolChoiceMode = resolvedModelSelection.model.preferredToolChoiceMode ?? llmConfig?.toolChoiceMode;
+  const providerExecutionHooks = ownerEpoch
+    ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
+    : undefined;
+  const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -729,7 +731,7 @@ export async function startGame(
       return new ApiTestMockAgent(player.id, persona.name);
     }
 
-    if (!llmConfig) {
+    if (!primaryRuntime || !providerRuntimes) {
       throw new Error("LLM provider not configured");
     }
 
@@ -752,13 +754,13 @@ export async function startGame(
       player.id,
       persona.name,
       personality,
-      llmConfig.client,
+      primaryRuntime.adapter,
       model,
       persona.backstory,
       memoryStore,
       {
         ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
-        ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
+        ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
         modelCapabilities: resolvedModelSelection.model.capabilities,
@@ -767,6 +769,8 @@ export async function startGame(
         ...(player.agentProfileId && persona.strategyHints && { strategyInstructions: persona.strategyHints }),
         ...(agentCfg.temperature !== undefined && { temperature: agentCfg.temperature }),
         ...(privateTraceSink && { privateTraceSink }),
+        ...(providerExecutionHooks && { providerExecutionHooks }),
+        providerManifest: providerRuntimes,
       },
     );
     agent.setTokenTracker(tokenTracker);
@@ -775,9 +779,9 @@ export async function startGame(
 
   const engineConfig = buildEngineConfigFromGameRecord(gameConfig, game.minPlayers, game.maxPlayers);
 
-  const houseInterviewer = !useTestMockRunner && llmConfig
+  const houseInterviewer = !useTestMockRunner && primaryRuntime && providerRuntimes
     ? new LLMHouseInterviewer(
-        llmConfig.client,
+        primaryRuntime.adapter,
         resolvedModelSelection.modelId,
         {
           gameId,
@@ -788,6 +792,8 @@ export async function startGame(
           reasoningPolicy: resolvedModelSelection.reasoningPolicy,
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
+          ...(providerExecutionHooks && { providerExecutionHooks }),
+          providerManifest: providerRuntimes,
         },
       )
     : undefined;
@@ -796,29 +802,40 @@ export async function startGame(
   // Create runner
   const runner = new GameRunner(agents, engineConfig, houseInterviewer, {
     gameId,
-    ...(options.resumeFrom && { resumeFrom: options.resumeFrom }),
+    ...(options.durableUpgradeFrom && {
+      durableUpgradeFrom: options.durableUpgradeFrom,
+    }),
     ...(privateTraceSink && { privateTraceSink }),
     tokenTracker,
-    ...(ownerEpoch && {
-      durableEventSink: (events) => appendDurableEventsAndPublishWatchState(db, { gameId, ownerEpoch, events }),
-      durableCheckpointSink: async (checkpoint) => {
-        const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
-        if (!result.ok) {
-          console.warn(`[game-lifecycle] Checkpoint degraded for game ${gameId}: ${result.error}`);
-        }
+    durableTurnStore: createDurableGameRunnerStore(db, { gameId, ownerEpoch }, {
+      onCommitted: async (result) => {
+        await reconcileAcceptedActionsForLifecycle(db, {
+          gameId,
+          ownerEpoch,
+          ...(result.canonicalEvents.length > 0 && {
+            events: result.canonicalEvents.map((entry) => entry.event),
+          }),
+        });
+        const refresh = await tryRefreshGameWatchStateSummary(
+          db,
+          gameId,
+          "durable_turn_committed",
+        );
+        await publishCurrentWatchState(
+          db,
+          gameId,
+          "durable turn commit",
+          refresh?.watchState,
+        );
       },
-      beforeAcceptedCommit: () => assertOwnerActive(db, gameId, ownerEpoch),
     }),
+    beforeAcceptedCommit: () => assertOwnerActive(db, gameId, ownerEpoch),
   });
 
-  // Stream game events to WebSocket observers via the display-hold pacer
-  const viewerMode: ViewerMode =
-    (gameConfig.viewerMode as ViewerMode) ?? "speedrun";
-  const pacer = new ViewerEventPacer(
-    viewerMode === "replay" ? "speedrun" : viewerMode,
-    (event) => broadcastGameEvent(gameId, event),
-  );
-  runner.setStreamListener((event) => pacer.emit(event));
+  // Close the owner-claim-to-runner-init crash window before returning to the
+  // request or startup reconciler. This is idempotent for adopted games and
+  // commits the explicit roster bootstrap for a new game.
+  await runner.prepareDurableExecution();
 
   // Run game asynchronously
   const heartbeat = ownerEpoch
@@ -871,6 +888,7 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
   errorMessage: string,
 ): Promise<
   | { outcome: "returned_to_waiting"; cleanup: OwnerStartupFailureResult }
+  | { outcome: "retained_for_resume" }
   | {
       outcome: "not_returned";
       cleanupFailure: { code: "stale_owner" | "invalid_state" | "unknown"; message: string };
@@ -882,6 +900,18 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
       cleanup: await markOwnerStartupFailed(db, gameId, ownerEpoch, errorMessage),
     };
   } catch (error) {
+    if (
+      error instanceof GameOwnerTransitionError
+      && error.code === "stale_owner"
+      && await relinquishDurableGameRunOwner(
+        db,
+        gameId,
+        ownerEpoch,
+        "startup_failed_after_durable_initialization",
+      )
+    ) {
+      return { outcome: "retained_for_resume" };
+    }
     return {
       outcome: "not_returned",
       cleanupFailure: {
@@ -890,67 +920,6 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
       },
     };
   }
-}
-
-export async function recoverGame(
-  db: DrizzleDB,
-  gameId: string,
-): Promise<{ error?: string; recovered?: boolean; skippedReason?: string }> {
-  if (activeGames.has(gameId)) {
-    return { error: "Game is already running" };
-  }
-
-  const candidate = await getSupportedRecovery(db, gameId);
-  if (!candidate.ok) {
-    return { skippedReason: candidate.reason };
-  }
-
-  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence);
-  if (!owner.ok) {
-    return { error: owner.error };
-  }
-
-  let startupError: string | undefined;
-  try {
-    const result = await startGame(db, gameId, owner.claim.ownerEpoch, {
-      resumeFrom: candidate.resumeFrom,
-    });
-    startupError = result.error;
-  } catch (error) {
-    startupError = error instanceof Error ? error.message : String(error);
-  }
-
-  if (startupError) {
-    await markGameSuspended(db, gameId, "recovery_startup_failed", { message: startupError });
-    await tryRefreshGameWatchStateSummary(db, gameId, "recovery_startup_failed");
-    return { error: startupError };
-  }
-
-  await tryRefreshGameWatchStateSummary(db, gameId, "recovery_started");
-  return { recovered: true };
-}
-
-export async function recoverGamesOnStartup(
-  db: DrizzleDB,
-): Promise<{ attempted: number; recovered: number; skipped: Array<{ gameId: string; reason: string }> }> {
-  const gameIds = await findStartupRecoverableGameIds(db);
-  const skipped: Array<{ gameId: string; reason: string }> = [];
-  let recovered = 0;
-
-  for (const gameId of gameIds) {
-    const result = await recoverGame(db, gameId);
-    if (result.recovered) {
-      recovered += 1;
-      continue;
-    }
-    skipped.push({ gameId, reason: result.error ?? result.skippedReason ?? "unknown" });
-  }
-
-  return {
-    attempted: gameIds.length,
-    recovered,
-    skipped,
-  };
 }
 
 export async function reconcilePostgameMediaAfterCompletion(
@@ -971,6 +940,20 @@ export async function reconcilePostgameMediaAfterCompletion(
 // Async game execution
 // ---------------------------------------------------------------------------
 
+async function relinquishInterruptedGame(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+): Promise<void> {
+  await relinquishDurableGameRunOwner(
+    db,
+    gameId,
+    ownerEpoch,
+    "runner_interrupted",
+  ).catch(() => false);
+  await tryRefreshGameWatchStateSummary(db, gameId, "runner_interrupted");
+}
+
 async function runGameAsync(
   db: DrizzleDB,
   gameId: string,
@@ -980,91 +963,46 @@ async function runGameAsync(
   ownerEpoch?: string,
   heartbeat?: OwnerHeartbeat,
 ): Promise<void> {
-  let clearMemoryOnExit = true;
-  let persistedTranscriptEntries = 0;
-  let completionCaptured = false;
+  let clearMemoryOnExit = false;
   try {
-    const result = await runner.run();
+    await runner.run();
     if (!ownerEpoch) {
       throw new Error(`Durable completion owner is required for game ${gameId}`);
     }
     await reconcileAcceptedActionsForLifecycle(db, { gameId, ownerEpoch });
-    const finalEvent = runner.getCanonicalEvents().at(-1);
-    if (!finalEvent) {
-      throw new Error(`Durable completion event boundary is missing for game ${gameId}`);
-    }
-    await captureCompletedGame(db, {
-      gameId,
-      resultGameId: runner.getStateSnapshot().gameId,
-      ownerEpoch,
-      result,
-      finalEventSequence: finalEvent.sequence,
-      finalEventHash: hashCanonicalEvent(finalEvent),
-      tokenTracker,
-      gameConfig,
-    });
-    completionCaptured = true;
-    await settleCapturedGameCompletion(db, gameId, { source: "runner" });
-    runner.releaseTerminalStream();
+    await settleDurableTerminalGame(db, { gameId, ownerEpoch });
+    clearMemoryOnExit = true;
     const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
-    persistedTranscriptEntries = result.transcript.length;
   } catch (err) {
-    // Game failed — owner-backed runs fail closed instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
-    let failure = classifyGameRunFailure(err);
-    console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
+    console.error(`[game-lifecycle] Durable runner for ${gameId} stopped:`, errorMessage);
 
     if (ownerEpoch) {
       try {
         const settlement = await getGameCompletionSettlementSummary(db, gameId);
         if (settlement.state === "completed") {
-          runner.releaseTerminalStream();
+          clearMemoryOnExit = true;
           const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion_confirmed");
           await publishCurrentWatchState(db, gameId, "completion confirmed", refresh?.watchState);
           await reconcilePostgameMediaAfterCompletion(db, gameId);
           return;
         }
-        if (settlement.state === "pending" || settlement.state === "repair_required") return;
+        if (settlement.state === "repair_required") {
+          await db.update(schema.gameExecutionStates).set({
+            status: "repair_required",
+            updatedAt: new Date().toISOString(),
+          }).where(and(
+            eq(schema.gameExecutionStates.gameId, gameId),
+            eq(schema.gameExecutionStates.ownerEpoch, ownerEpoch),
+          ));
+        }
       } catch (transitionError) {
         console.error(
           `[game-lifecycle] Failed to inspect completion settlement state for game ${gameId}:`,
           transitionError,
         );
-      }
-      // Capture may have committed even when the caller observed an ambiguous
-      // transport error. The finally block derives the transition from the
-      // durable row; avoid overwriting it with the generic runner-failure path.
-      if (completionCaptured) return;
-    }
-
-    if (!ownerEpoch) {
-      // Legacy non-owner path keeps best-effort partial transcripts. Durable runs
-      // only publish transcript rows after event-backed terminal completion.
-      try {
-        const partialTranscript = runner.transcriptLog.slice(persistedTranscriptEntries);
-        if (partialTranscript.length > 0) {
-          const captureRow = (await db
-            .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
-            .from(schema.games)
-            .where(eq(schema.games.id, gameId))
-            .limit(1))[0];
-          const transcriptCaptureVersion = captureRow?.transcriptCaptureVersion ?? 0;
-          const CHUNK_SIZE = 100;
-          for (let i = 0; i < partialTranscript.length; i += CHUNK_SIZE) {
-            const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
-            await db.insert(schema.transcripts)
-              .values(
-                chunk.map((entry) => serializeTranscriptEntry(gameId, entry, {
-                  transcriptCaptureVersion,
-                })),
-              );
-          }
-          console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);
-        }
-      } catch (transcriptErr) {
-        console.error(`[game-lifecycle] Failed to save partial transcript for game ${gameId}:`, transcriptErr);
       }
     }
 
@@ -1073,110 +1011,21 @@ async function runGameAsync(
         .select({ status: schema.games.status })
         .from(schema.games)
         .where(eq(schema.games.id, gameId)))[0];
-      if (currentGame?.status === "suspended") {
+      // The admin stop route commits `cancelled` before aborting the local
+      // runner. Every other abort is process/ownership lifecycle: preserve the
+      // committed game and let a current or replacement runtime adopt it.
+      if (currentGame?.status === "in_progress") {
         clearMemoryOnExit = false;
-        return;
-      }
-
-      const cancelled = await db.update(schema.games)
-        .set({
-          status: "cancelled",
-          endedAt: new Date().toISOString(),
-        })
-        .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")))
-        .returning({ id: schema.games.id });
-      if (cancelled.length > 0) {
-        await tryRefreshGameWatchStateSummary(db, gameId, "runner_cancelled");
-        broadcastRaw(gameId, {
-          type: "game_status",
-          gameId,
-          status: "cancelled",
-          terminal: true,
-          reasonCode: "admin_stop",
-          message: "Game cancelled.",
-        });
+        await relinquishInterruptedGame(db, gameId, ownerEpoch);
       }
       return;
     }
-
-    const startupCleanup = ownerEpoch
-      ? await tryReturnZeroEventOwnerFailureToWaiting(
-          db,
-          gameId,
-          ownerEpoch,
-          failure.failureReason,
-        )
-      : null;
-    if (startupCleanup?.outcome === "returned_to_waiting") {
-      if (startupCleanup.cleanup.rosterDisposition === "repair_required") {
-        console.warn("[game-lifecycle] Startup failure roster requires repair", {
-          gameId,
-          ...startupCleanup.cleanup.reconciliationError,
-        });
-      }
-      const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "runner_startup_failed");
-      await publishCurrentWatchState(db, gameId, "runner startup failed", refresh?.watchState);
-      return;
-    }
-    if (startupCleanup?.outcome === "not_returned") {
-      failure = {
-        failureReason: "startup_cleanup_conflict",
-        failureDetails: {
-          originalFailure: failure,
-          cleanupFailure: startupCleanup.cleanupFailure,
-        },
-      };
-    }
-
-    // Notify live viewers that the game cannot resume.
-    broadcastRaw(gameId, { type: "error", message: "The game failed and cannot be resumed." });
-
-    try {
-      // Read current config and append errorInfo
-      const game = (await db
-        .select({ config: schema.games.config })
-        .from(schema.games)
-        .where(eq(schema.games.id, gameId)))[0];
-      const currentConfig = game ? JSON.parse(game.config) : {};
-      const updatedConfig = {
-        ...currentConfig,
-        errorInfo: errorMessage,
-      };
-
-      if (ownerEpoch) {
-        clearMemoryOnExit = false;
-        await db.update(schema.games)
-          .set({ config: JSON.stringify(updatedConfig) })
-          .where(eq(schema.games.id, gameId));
-        await markGameSuspended(
-          db,
-          gameId,
-          failure.failureReason,
-          failure.failureDetails,
-        );
-        await tryRefreshGameWatchStateSummary(db, gameId, failure.failureReason);
-        broadcastRaw(gameId, {
-          type: "game_status",
-          gameId,
-          status: "suspended",
-          terminal: true,
-          reasonCode: failure.failureReason,
-          message: "The game failed and cannot be resumed.",
-        });
-      } else {
-        const fallbackConfig = { ...updatedConfig, viewerMode: "replay" };
-        broadcastRaw(gameId, { type: "game_over", totalRounds: 0 });
-        await db.update(schema.games)
-          .set({
-            status: "cancelled",
-            endedAt: new Date().toISOString(),
-            config: JSON.stringify(fallbackConfig),
-          })
-          .where(eq(schema.games.id, gameId));
-        await tryRefreshGameWatchStateSummary(db, gameId, "legacy_runner_failed");
-      }
-    } catch (dbErr) {
-      console.error(`[game-lifecycle] Failed to update game ${gameId} status after error:`, dbErr);
+    if (ownerEpoch) {
+      await relinquishInterruptedGame(db, gameId, ownerEpoch);
+      broadcastRaw(gameId, {
+        type: "error",
+        message: "The game runner disconnected; committed play remains available for restart.",
+      });
     }
   } finally {
     heartbeat?.stop();
@@ -1189,33 +1038,5 @@ async function runGameAsync(
       }
     }
     activeGames.delete(gameId);
-    if (ownerEpoch) {
-      try {
-        const prepared = await prepareCapturedCompletionAfterRunnerExit(db, gameId, "runner_exit");
-        if (prepared.prepared
-          && (prepared.state === "pending" || prepared.state === "repair_required")) {
-          const failureReason = prepared.state === "repair_required"
-            ? COMPLETION_SETTLEMENT_REPAIR_REQUIRED
-            : COMPLETION_SETTLEMENT_TRANSIENT_FAILURE;
-          const refresh = await tryRefreshGameWatchStateSummary(db, gameId, failureReason);
-          await publishCurrentWatchState(db, gameId, failureReason, refresh?.watchState);
-          broadcastRaw(gameId, {
-            type: "game_status",
-            gameId,
-            status: "suspended",
-            terminal: true,
-            reasonCode: failureReason,
-            message: prepared.state === "repair_required"
-              ? "Results under review."
-              : "Finalizing results.",
-          });
-        }
-      } catch (error) {
-        console.error(
-          `[game-lifecycle] Failed to prepare sealed completion after runner exit for game ${gameId}:`,
-          error,
-        );
-      }
-    }
   }
 }

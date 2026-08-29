@@ -11,11 +11,14 @@ import {
   setServer,
   handleOpen,
   handleClose,
+  parseAfterPublicationSequence,
   broadcastGameEvent,
+  broadcastGamePublication,
   broadcastRaw,
   broadcastViewerDecisionEvent,
   broadcastWatchState,
   sendWatchState,
+  sendGamePublication,
   getObserverCount,
   type WsConnectionData,
 } from "../services/ws-manager.js";
@@ -120,6 +123,17 @@ describe("WebSocket Manager", () => {
     expect(getObserverCount("game-multi-1")).toBe(0);
 
     handleClose(ws3); // cleanup
+  });
+
+  test("parses only canonical non-negative reconnect cursors", () => {
+    expect(parseAfterPublicationSequence(null)).toBe(0);
+    expect(parseAfterPublicationSequence("0")).toBe(0);
+    expect(parseAfterPublicationSequence("42")).toBe(42);
+    for (const invalid of ["", "-1", "+1", "1.0", "1e2", " 1", "9007199254740992"]) {
+      expect(() => parseAfterPublicationSequence(invalid)).toThrow(
+        "afterPublicationSequence must be a non-negative safe integer",
+      );
+    }
   });
 
   test("broadcastGameEvent translates transcript_entry to message event", () => {
@@ -510,34 +524,12 @@ describe("WebSocket Manager", () => {
     });
   });
 
-  test("broadcastRaw ignores message events that bypass the TypeScript boundary", () => {
-    const { server, published } = createMockServer();
-    setServer(server);
-
-    const unsafeMessage = {
-      type: "message",
-      entry: {
-        round: 1,
-        phase: Phase.MINGLE,
-        timestamp: Date.now(),
-        from: "Alice",
-        scope: "mingle",
-        text: "Unsafe raw message",
-        reasoningContext: "PRIVATE_RAW_BYPASS_SENTINEL",
-      },
-    } as unknown as Parameters<typeof broadcastRaw>[1];
-
-    broadcastRaw("game-unsafe-raw", unsafeMessage);
-
-    expect(published).toHaveLength(0);
-  });
-
   test("sendWatchState sends watch_state event to single client", () => {
     const { ws, sent } = createMockWs("game-123");
 
     const state = watchStateFixture("game-123", 7);
 
-    sendWatchState(ws, state);
+    sendWatchState(ws, state, 12);
 
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]!);
@@ -545,6 +537,7 @@ describe("WebSocket Manager", () => {
     expect(parsed.state.schemaVersion).toBe(5);
     expect(parsed.state.gameId).toBe("game-123");
     expect(parsed.state.eventCursor.sequence).toBe(7);
+    expect(parsed.throughPublicationSequence).toBe(12);
     expect(parsed.state.players[0].currentAgent).toMatchObject({
       name: "Current Alice",
       competition: { gamesPlayed: 3, wins: 1 },
@@ -557,12 +550,13 @@ describe("WebSocket Manager", () => {
     const { server, published } = createMockServer();
     setServer(server);
 
-    broadcastWatchState("game-watch", watchStateFixture("game-watch", 11));
+    broadcastWatchState("game-watch", watchStateFixture("game-watch", 11), 19);
 
     expect(published[0]!.topic).toBe("game:game-watch");
     const parsed = JSON.parse(published[0]!.data);
     expect(parsed).toMatchObject({
       type: "watch_state",
+      throughPublicationSequence: 19,
       state: {
         schemaVersion: 5,
         gameId: "game-watch",
@@ -570,6 +564,36 @@ describe("WebSocket Manager", () => {
         projection: { availability: "available" },
       },
     });
+  });
+
+  test("broadcasts and directly sends the same sequenced publication envelope", () => {
+    const { server, published } = createMockServer();
+    const { ws, sent } = createMockWs("game-publication");
+    setServer(server);
+    const publication = {
+      type: "publication" as const,
+      gameId: "game-publication",
+      publicationSequence: 4,
+      turnSequence: 2,
+      payload: {
+        type: "message" as const,
+        entry: {
+          entrySequence: 3,
+          round: 1,
+          phase: Phase.LOBBY,
+          from: "player-a",
+          scope: "public" as const,
+          text: "Committed before publication.",
+          timestamp: 123,
+        },
+      },
+    };
+
+    broadcastGamePublication(publication);
+    sendGamePublication(ws, publication);
+
+    expect(JSON.parse(published[0]!.data)).toEqual(publication);
+    expect(JSON.parse(sent[0]!)).toEqual(publication);
   });
 
   test("broadcastViewerDecisionEvent projects canonical decisions without producer provenance", () => {

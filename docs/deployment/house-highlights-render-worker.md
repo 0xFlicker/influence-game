@@ -1,6 +1,6 @@
 # House Highlights Render Worker
 
-The production image is `ghcr.io/0xflicker/influence-render-worker`. Main builds publish a short commit SHA and `staging`; ephemeral PR builds publish `pr-N`.
+The production image is `ghcr.io/0xflicker/influence-render-worker`. Main builds publish immutable digest evidence plus short-SHA and `staging` discovery aliases; ephemeral PR builds publish `pr-N`. Staging and production runtime deployment always use the exact digest selected by the release manifest.
 
 The image starts the single-concurrency poller by default:
 
@@ -192,34 +192,36 @@ music filenames, worker state, object keys, or repair controls.
 
 ## `linode-iac` Handoff
 
-Add a third service beside `api` and `web`, pinned to the same promoted short-SHA
-release family:
+Run a third service beside `api` and `web`, pinned to the same exact-digest
+Release family. The steady-state production color contract is:
 
 ```yaml
 render-worker:
-  image: ghcr.io/0xflicker/influence-render-worker:${INFLUENCE_IMAGE_TAG}
-  restart: unless-stopped
-  mem_limit: 1g
+  profiles: ["worker"]
+  image: ${WORKER_IMAGE_REF:?WORKER_IMAGE_REF is required}
+  restart: "on-failure:5"
+  env_file: ${WORKER_ENV_FILE:?WORKER_ENV_FILE is required}
   depends_on:
     api:
       condition: service_healthy
   environment:
-    POSTGAME_MEDIA_API_URL: http://api:3001
-    POSTGAME_MEDIA_WORKER_TOKEN: ${POSTGAME_MEDIA_WORKER_TOKEN}
+    POSTGAME_MEDIA_API_URL: http://influence-${COLOR:?COLOR is required}-api:3001
     POSTGAME_MEDIA_POLL_INTERVAL_MS: "5000"
     POSTGAME_MEDIA_HTTP_TIMEOUT_MS: "15000"
     POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS: "300000"
     POSTGAME_MEDIA_TEMP_DIR: /tmp/influence-render-worker
     POSTGAME_MEDIA_MIN_FREE_BYTES: "2147483648"
-    POSTGAME_MEDIA_REMOTION_CONCURRENCY: "1"
+    POSTGAME_MEDIA_DRAIN_ACK_FILE: /var/run/influence-worker/drain-ack.json
+    POSTGAME_MEDIA_STARTUP_MODE: ${WORKER_STARTUP_MODE:?WORKER_STARTUP_MODE is required}
     REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium
   volumes:
     - /var/lib/influence/render-worker-tmp:/tmp/influence-render-worker
-  stop_grace_period: 30s
+    - /var/lib/influence/worker-control/${COLOR:?COLOR is required}:/var/run/influence-worker
+  stop_grace_period: 25m
 ```
 
-Use a `1g` worker memory limit on the current staging host and `2g` in production. These are protective container ceilings, not a claim that staging has already been load-profiled. Also add the current worker token to the API service, provision at least 2 GiB
-free on the temp mount, and keep one replica. Do not add public ports or object-
+Provision at least 2 GiB free on the temp mount and keep one worker replica per
+active deployment shape. Do not add public ports or object-
 storage credentials to the worker. The image's Docker healthcheck runs `--health`;
 deployment validation must use the existing admin backfill path with an approved
 disposable completed game, then confirm public player playback and the `ffprobe`
@@ -230,8 +232,9 @@ CI publishes:
 - `ghcr.io/0xflicker/influence-render-worker:<short-sha>` and `:staging` from `main`;
 - `ghcr.io/0xflicker/influence-render-worker:pr-<number>` for ephemeral PR builds.
 
-The `linode-iac` deployment should pin the same selected immutable SHA for API,
-web, and worker. Moving `staging` and `latest` tags may remain discovery aliases,
-but are never runtime deployment inputs. Rollback restores the prior immutable
-three-image release; queued/leased jobs remain API-owned and can be reclaimed
-after their lease expires.
+The `linode-iac` deployment pins API, web, and worker to the exact digests in one
+Release family. Moving short-SHA, `staging`, and `latest` tags remain discovery
+aliases only. Rollback restores the prior immutable three-image family;
+queued/leased jobs remain API-owned and can be reclaimed after their lease
+expires. Production handoff additionally binds drain intent and acknowledgement
+to the current worker generation before enabling candidate claims.

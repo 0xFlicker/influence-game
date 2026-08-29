@@ -10,17 +10,31 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
 
+## Agent Profile
+
+The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation and update use one canonical full-page editor; game join and Daily Free acquisition select an existing profile or route through that editor instead of maintaining inline copies of the form.
+
+In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Portrait generation is an independent completion attached to the saved profile: it may remain pending when profile save succeeds, and an explicit uploaded portrait remains authoritative.
+
 ## Owner Learning Loop
 
 The owner-only postgame workflow that turns one to three completed Daily Free games from one Agent Profile's current strategy family into deterministic game facts, a bounded strategic review, and an optional exact `strategyStyle` proposal. The family contains the active analytical revision plus game-effective `runtime_policy_change` variants derived directly from it, so a runtime policy override cannot make otherwise relevant play disappear from review. It is for owners who use the web app as well as owners working through MCP; it is not a producer agent-tuning surface. Canonical events and postgame projections remain the authority for actions and outcomes. Authorized dialogue and owned cognition provide strategic context but never repair or override game facts.
 
 ## Review credit
 
-An owner-wide, zero-or-one metered entitlement to purchase an Owner Learning review. The published balance is spendable truth: `1` means a review can start now; `0` with `nextAvailableAt` means time alone will make the earned credit spendable; and `0` without a timestamp means another eligible Daily Free completion is required. Credits never stack and may be spent on any owned Agent Profile that has selectable current-strategy-family games. Starting metered analysis consumes the credit and begins the rolling 24-hour start interval in the same transaction. Persisted sysops use explicit `unlimited` mode with no numeric balance and consume neither credits nor the rolling interval. Thin evidence, disabled live generation, input selection, and deterministic preflight consume nothing.
+An owner-wide, zero-or-one metered entitlement to purchase an Owner Learning review. The published balance is spendable truth: `1` means a review can start now; `0` with `nextAvailableAt` means time alone will make the earned credit spendable; and `0` without a timestamp means another eligible Daily Free completion is required. Credits never stack and may be spent on any owned Agent Profile that has selectable current-strategy-family games. Starting metered analysis consumes the credit and begins the rolling 24-hour start interval in the same transaction. The same review may use its one recovery without consuming another entitlement or emitting another `credit_consumed`; any new provider attempt still records its own usage and cost. Persisted sysops use explicit `unlimited` mode with no numeric balance and consume neither credits nor the rolling interval. Thin evidence, disabled live generation, input selection, and deterministic preflight consume nothing.
 
 ## Learning review
 
-A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. They may retry within the lifetime call budget, resolve failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. A retryable failure has exactly one no-credit owner recovery that reuses the last validated checkpoint, preserves every earlier diagnostic and accounting receipt, and retries a failed logical turn as attempt 2 at the same ordinal. Owners may close failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+
+## Learning review invocation attempt
+
+One append-only provider execution for a logical Owner Learning turn. `ordinal` remains the bounded logical turn 1–4; `attemptOrdinal` distinguishes the original attempt from the one permitted recovery. Before dispatch, the attempt durably stages the exact credential-scrubbed request contract; each raw transport response is appended at observation time, and the decoded provider result is staged before worker validation. An attempt keeps its request identity, provider-turn protocol, transport and response receipts, evidence/diagnostic linkage, token usage, cost, and retry ancestry forever. At most one attempt may succeed for a logical ordinal.
+
+## Learning review failure diagnostic
+
+The append-only, review-scoped record that correlates a terminal failure with its exact worker phase, safe/internal code, fingerprint, attempt/provider coordinates, manifest state, and private evidence envelope. The compact summary is safe for the admin ledger. The credential-scrubbed envelope retains authorized strategy/evidence and raw provider or internal-error evidence under a deterministic non-expiring object prefix. Only a freshly authorized `admin` or `sysop` may read its bounded content; owner REST/web DTOs and production MCP never expose it. A legacy failure whose old worker discarded the original body is explicitly `legacy_unavailable` rather than reconstructed.
 
 ## Strategy Health Check
 
@@ -28,11 +42,31 @@ The remedial Owner Learning track used only when exactly three selected current-
 
 ## Game model selection authority
 
-`games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
+`games.config.providerManifest` is the sole runtime authority for a game's ordered provider/model execution. The sealed manifest contains the primary entry, bounded fallbacks, reasoning policy, and fallback-call caps; later catalog or Daily-default changes cannot rewrite it. `modelSelection` is only the bounded legacy-primary projection used during the blue/green restoration window. OpenAI `serviceTier` is unrelated.
 
 ## New-game admission
 
 True newly created games admit 6–12 agents. This is a creation-time policy, not a universal invariant for every persisted game: historical four-player games remain readable and restorable under their existing historical contracts. Endgame progression is separate again—The Reckoning begins when exactly four agents remain, regardless of the game's original roster size.
+
+## Deployment admission lease
+
+The single durable production-release barrier for new game starts. It records an opaque lease ID, monotonic deployment fence, candidate and workflow provenance, release phase, database-owned heartbeat and deadlines, and terminal audit outcome. The authoritative waiting-to-`in_progress` ownership transaction locks the same singleton admission state used to acquire the lease, so a racing start is either committed and counted as active before drain or denied after the barrier; route preflight is only a friendly early response. Expiry reopens admission only during `draining` or private `validating`. Once `switching` begins, admission stays closed until the host transaction durably accepts or restores the route.
+
+## Deployment fence
+
+The database-monotonic token paired with an opaque deployment admission lease ID. Release-controller mutations must present the exact pair, and every newer lease permanently stales earlier pairs. The fence is private controller authority rather than a human admin credential: human Resume compares an opaque lease identity and revision while the server resolves the fence internally. A fence controls release admission and phase changes; it does not supersede the owner epoch that fences canonical game writes.
+
+## Release-control protocol
+
+The versioned API contract a production candidate exposes through health evidence and the controller-authenticated activation seam. A validation-mode API runs its bundled migrations and initializes every canonical request route, but it does not seed operational data, reconcile postgame work, classify or recover game runs, start owner-learning loops, or accept new render claims. Only the exact active deployment fence in `accepting` may activate those background behaviors, and repeated activation is idempotent only for that same fence. The reported migration-set identity covers every bundled Drizzle file; it is eligibility evidence, while migrations still execute inside the API container.
+
+## Accepted-runtime recovery reconciliation
+
+The durable, single-flight application process that adopts unfinished `in_progress` logical-turn games after a fenced deployment becomes terminally accepted. Candidate validation never claims game ownership; lease completion records reconciliation pending, and the accepted runtime may adopt committed cursors only after deployment admission reopens. Normal startup outside a deployment performs the same adoption directly.
+
+## Render-worker generation
+
+The identity of one postgame render-worker process lifetime. A worker publishes a fresh generation before claiming work, and release drain intent and acknowledgment must name that exact generation so controller recovery can reuse a valid acknowledgment without accepting stale process state. Existing database job leases remain the authority for in-flight work.
 
 ## TranscriptEntry
 
@@ -71,7 +105,7 @@ Correlation is forward-only. Legacy rows without an exact decision-bearing manif
 
 ## Format Mingle social sequence
 
-The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, or agree to trial alliances during the structured action window; official alliance records cannot be formed or mutated outside that window in v1.
+The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, agree to trial alliances, amend an active alliance, or pass during the structured action window; official alliance records cannot be formed or mutated outside that window in v1. Each model call receives only its current legal opportunity. Proposal/version identity remains engine-owned, while request-local amendment handles select among the acting player's active alliances.
 
 ## Mingle
 
@@ -95,39 +129,51 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
+The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
+The active exit (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Format catalog
 
-The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-elim formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-elim formats are separate capability classes. See also round format, format menu, Majority Elimination.
+The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-exit formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-exit formats are separate capability classes. See also round format, format menu, Highest Count.
 
 ## Format manifest
 
-The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the four-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the six-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game, while catalog admission rules may narrow the legal cards for a particular round. If exactly one card is available that round it auto-selects without a menu or empowered pick call. A manifest containing only later-round cards is invalid because round 1 would have no legal format. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
 
 ## Format menu
 
-The two distinct legal round formats The House offers after empower resolves when the frozen manifest contains at least two cards. The empowered agent must pick exactly one. Menu construction uses the frozen manifest with soft anti-repeat pressure: exclude last round’s format when at least two other manifest cards remain, otherwise sample two from the manifest. A one-format manifest skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
+The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
-## Save-or-eliminate
+## Format surface vocabulary
 
-A launch round format where each alive agent casts one ballot as either a save (+1 net to another living agent) or an eliminate (−1 net to another living agent). Lowest net score is eliminated; ties are broken by the empowered agent.
+Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
 
-## Vote Bomb
+## Save-or-Exit
 
-Also called Fewest Votes. A launch round format where each alive agent casts one non-self elimination-direction vote. Agents who receive zero votes are safe. Among agents with at least one vote, fewest votes is eliminated; ties are broken by the empowered agent.
+A launch round format where each remaining agent casts one ballot as either SAVE (+1 net to another remaining agent) or EXIT (−1 net to another remaining agent). Lowest net score exits; ties are broken by the empowered agent. Canonical engine ID: `save_or_eliminate`. Surface ID: `save_or_exit`.
+
+## The Short List
+
+A launch round format where each remaining agent casts one non-self vote. Agents who receive zero votes are safe. Among agents with at least one vote, the fewest votes exits; ties are broken by the empowered agent. Canonical engine ID: `vote_bomb`. Surface ID: `short_list`.
 
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
 
-## Majority Elimination
+## Highest Count
 
-A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. The player with the most votes is eliminated; ties for the highest total are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from Vote Bomb (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote.
+A default catalog round format where each remaining agent casts one sealed non-self vote. The player with the highest total exits; ties are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from The Short List (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote. Canonical engine ID: `majority_elimination`. Surface ID: `highest_count`.
+
+## Even Votes
+
+A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. Only even totals qualify, including zero, and the highest even total is eliminated. Odd totals are safe unless every living player finishes odd; that exceptional all-odd board sends the entire living field to the empowered tiebreak so the round still produces exactly one elimination. The strategy is parity control rather than ordinary plurality.
+
+## Restricted History
+
+A default catalog round format admitted only from round 3 onward. Each alive agent casts one sealed elimination vote, but cannot target a living player they targeted with an elimination-direction format ballot in an earlier round. SAVE ballots do not consume target history. A player with no legal non-self target canonically forfeits their ballot. Highest total is eliminated and the empowered player breaks a highest-total tie.
 
 ## Operator
 
@@ -161,11 +207,11 @@ reduced-motion timing without changing cue order or canonical outcomes.
 
 ## Elimination message
 
-The eliminated agent's one-time final public statement, requested only after `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Eliminate count components) and no voter identities. The accepted statement is recorded as `player.elimination_message_recorded`.
+The exited agent's one-time final public statement, requested only after canonical `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Exit count components) and no voter identities. The accepted statement is recorded canonically as `player.elimination_message_recorded`.
 
 ## Revealed vote ledger
 
-The public agent-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and strategy reflections can use empower votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
+The public agent-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and later strategic decisions can use empower votes as social receipts rather than relying on hidden memory or strategy prose.
 
 ## Revealed game facts
 
@@ -179,45 +225,57 @@ A retired hidden decision artifact from the pre-format Mingle experiment. Live s
 
 The producer-side placement of alive agents into initial Format Mingle rooms using one House call with the living roster and locked format rule sheet. The House can propose strategically useful vote-bloc groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
 
+## House alliance proposer plan
+
+A private producer access decision made once per Format Mingle alliance-action window. The House selects a scarce set of eligible living players to receive the existing propose, amend, or pass opportunity, preferring players underrepresented in active alliances. The engine validates and repairs the exact access quota; selected agents still own members and terms and may decline, while invitee response and consent remain independent. The plan creates no canonical alliance facts and gives The House no power to create, rewrite, activate, dissolve, or enforce an alliance.
+
+## House narrative beat
+
+A House-authored public summary attached to an engine-owned actor-coordinate boundary. It is presentation for human players, viewers, producers, and replay, and is published byte-for-byte after shape, non-empty, control-character, and beat-length validation. It is never a canonical event, result input, contestant memory, Recall Plan candidate, or authority for reconstructing a game fact.
+
+## House narration context
+
+The bounded omniscient context supplied to a House creative turn. It can contain direct canonical-event and projection data, public dialogue, private conversations and sealed decisions, diary Q&A, recent public House beats, and the private narrative notebook. It contains no source aliases, model-authored claims, receipts, fact-read action, or renderer registry. The House may interpret and reveal this information to human viewers; reducers and AI contestant prompts never derive knowledge or state from the resulting prose.
+
+## House private narrative notebook
+
+One bounded, opaque showrunner snapshot carried inside `HouseNarrativeContinuityV2`. A non-null accepted update replaces the whole notebook; null, malformed output, refusal, or exhaustion preserves the previous snapshot. The notebook may carry private arcs and unresolved narrative threads and feed later House summary and long-form prompts. It never enters viewer payload fields or any AI contestant, diary-interviewer, or Judgment prompt.
+
+## House summary phase telemetry
+
+Engine-generated status and provider accounting for one scheduled House beat: boundary, outcome, provider calls and usage, and pending-delta disposition. It contains no model-authored factual attestation and consumes no model tokens. Simulation instrumentation reconciles its call identities and known token subtotals with `TokenTracker`; missing usage, tier, or pricing remains explicitly unavailable rather than zero.
+
 ## Strategy signal
 
 A private-room behavior during Mingle that reveals or advances game posture, such as naming a target or ally, asking for a commitment, trading information, offering protection, planting doubt, coordinating a public story, testing trust through social questions, or moving rooms for a stated purpose. Strategy signals are producer/debug evidence that Mingle made game talk available; they are not a mandatory action every agent must perform on every turn.
 
 ## Strategic lens
 
-The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
+The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across decisions without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
 
 ## Agent turn record
 
 A producer/debug record of one agent decision, message, or hidden assessment. Agent turn records preserve structured response fields, hidden thinking, native reasoning context or labeled provider summaries when available, visibility, actor, phase, and action so simulations and MCP queries can analyze behavior without treating every private decision as public dialogue or canonical game state.
 
-## Strategic reflection record
+## Compact strategy state
 
-A structured producer/debug artifact for an agent's hidden strategic assessment after a decision phase. It should expose the agent's current certainties, suspicions, allies, threats, and plan, plus hidden reasoning metadata when available, so simulations and the game MCP can validate whether Mingle changed broader strategy. It is not player-visible dialogue.
-
-## Strategy Thread / Carry-Forward Packet
-
-A compact private strategy state an agent carries across rounds. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is private producer/debug state, not player-visible dialogue, canonical board state, or `MemoryStore` truth. On supported phase-boundary startup recovery it is restored from a versioned player continuity capsule sealed into the checkpoint, together with reflection, notes, relationships, round history, power-action memory, and recent decision receipts.
+Engine-owned private cognition carried across agent decisions without a separate reflection call. It has an implicit `opening` posture, an `active` concise baseline plus ordered accepted deltas, and explicit `reconciliation_required` / `repair_required` lifecycle states after an eviction or unusable replacement. The first valid survivor diary answer after an eviction replaces the old epoch with a full baseline. An optional diary follow-up or ordinary strategic action appends a delta only for an exceptional, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; null or omission means the current strategy still applies. A delta does not summarize its action or restate unchanged intent. Canonical board facts always override this fallible prose. Capsule v2 restores the lifecycle, baseline, deltas, prior reconciliation epoch when needed, and engine-owned revision without parsing transcripts or `MemoryStore`.
 
 ## Recall Plan
 
-A server-authored, deterministic context-selection contract for one agent call. ContextBuilder compiles it from the actor, an explicit **prompt class** (`ordinary_speech` | `strategic_decision` | `strategic_reflection`), current projection, and a narrow `RecallContinuitySnapshot` (Strategy Thread, reflection summary, recent strategic receipts, strategic evidence version). It is not model-controlled search, never makes dialogue authoritative, and must not reveal the existence of ineligible private material. Unspecified callers default to `ordinary_speech`.
+A server-authored, deterministic context-selection contract for one agent call. ContextBuilder compiles it from the actor, an explicit **prompt class** (`ordinary_speech` | `strategic_decision`), current projection, and a narrow `RecallContinuitySnapshot` containing only compact strategy state. It is not model-controlled search, never makes dialogue authoritative, and must not reveal the existence of ineligible private material. Unspecified callers default to `ordinary_speech`.
 
 **Lanes (render order):**
 
-- **Protected** — Current Board Contract (canonical facts override all memory), Strategy Thread, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent strategic decisions, recent decisions, revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
+- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized typed huddle fact atoms (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
 - **Hot** — Active-room Mingle conversation for the current turn only. Distinct from historical archive recall.
-- **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision` and `strategic_reflection`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
+- **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
 
-Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters and strategic reflections at most 1,600; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
+Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
 
-**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. Older huddle outcomes recover a participant snapshot only from the matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
+**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. A historical payload-v1 huddle outcome preserves only safe session metadata and an optional participant snapshot; its old summary prose contributes `facts: []`. The snapshot may be recovered only from matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
 
 **Evaluation artifact:** Simulation batches write `game-N-recall-plan.json` — a producer-only structural aggregate (`coverage: "structural_recall_receipts"`) of prompt-class counts, lane/source-class counts, budget token estimates (`ceil(chars/4)`), and actor-authorized event boundaries. It never stores dialogue, names, entry IDs, rejected counts, prompts, thinking, or reasoning. Full `game-N.json` / private traces remain producer artifacts and are **not** the R13 promotion input; the deterministic gate lives in `context-recall-evaluation.test.ts` against a frozen late-game corpus.
-
-## Decision log
-
-A compact private receipt attached to a strategic agent action. It records what the action meant strategically so later prompts and strategic reflection can understand when and why the agent changed course. Decision logs are producer/debug context for the same agent and maintainers; they are not player-visible dialogue, canonical board state, raw thinking, or native reasoning context.
 
 ## Whisper
 
@@ -233,11 +291,11 @@ A provider-generated summary from hosted OpenAI's Responses API reasoning summar
 
 ## Cognitive artifact
 
-A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, ordinary thinking and strategy are available to the owner plus same-game participants, alliance-huddle thinking and strategy are subject-owner-only unless the accessor has producer/admin access, and producer/admin surfaces may read all split artifacts directly.
+A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or logical-turn execution state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, ordinary thinking and strategy are available to the owner plus same-game participants, alliance-huddle thinking and strategy are subject-owner-only unless the accessor has producer/admin access, and producer/admin surfaces may read all split artifacts directly.
 
 ## Player-private reasoning lane
 
-The owner-accessible product lane for an agent's private reasoning and strategy, including reasoning artifacts and strategy reflections exposed through authorized game/MCP contexts for the user's own agents. Player-private reasoning can include the agent's `thinking`, `reasoningContext`, reasoning summaries, and strategic reflection content when artifact policy allows it. It must not include producer-only wrappers such as full prompt requests, raw provider responses, provider profile metadata, model IDs, requested reasoning effort, token or usage counts, router billing fields, private trace storage keys, or provider debug envelopes unless a later product decision explicitly creates a sanitized player-facing form.
+The owner-accessible product lane for an agent's private reasoning and strategy, including reasoning artifacts and compact strategy candidates exposed through authorized game/MCP contexts for the user's own agents. Player-private reasoning can include the agent's `thinking`, `reasoningContext`, reasoning summaries, and strategy prose when artifact policy allows it. It must not include producer-only wrappers such as full prompt requests, raw provider responses, provider profile metadata, model IDs, requested reasoning effort, token or usage counts, router billing fields, private trace storage keys, or provider debug envelopes unless a later product decision explicitly creates a sanitized player-facing form.
 
 ## chatty mode
 
@@ -285,7 +343,7 @@ A verified external authentication identity, such as a Privy subject or a manage
 
 ## Authentication wrapper
 
-The provider-neutral entry surface for establishing an Influence browser session. It separates Sign in from Create account: Sign in supports managed email/password and the existing combined Privy email-or-wallet flow, while Create account supports managed email/password only. OAuth renders it in place while keeping the authorization request mounted; other entry points use existing redirect behavior without preserving or replaying an interrupted application action.
+The provider-neutral entry surface for establishing an Influence browser session. It separates Sign in from Create account while supporting managed email/password and Privy email-or-wallet authentication in both paths. Sign in never creates an account implicitly: an unknown verified identity moves to an explicit consent-gated Create account step. OAuth renders the wrapper in place while keeping the authorization request mounted; other entry points use existing redirect behavior without preserving or replaying an interrupted application action.
 
 ## Managed-provider exit
 
@@ -335,19 +393,11 @@ A per-result season record that connects a completed game to its agent, owner, a
 
 ## House MC
 
-The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a normal round resolves. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
-
-## House Strategy Bible Packet
-
-A private producer/debug strategy state The House carries across a game run when enabled. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, or canonical board state. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, a private House capsule for supported resume; intentional absence is non-blocking only when that sealed contract allows it.
-
-## House Producer Brief
-
-A private per-player diary-room setup derived from the House Strategy Bible Packet and current game context. It identifies the player's story role, pressure points, relevant alliance hypotheses, contradictions, and question angles so The House can ask sharper diary questions without revealing hidden producer analysis as player knowledge.
+The House's viewer-facing narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a material cadence boundary. The summary is House-authored prose for human players/viewers, not a deterministic rendering of proof claims. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
 
 ## House Long-Form Summary
 
-A producer/audience catch-up summary The House emits in rich simulation runs between House Strategy Bible Packet updates. It explains teams forming or weakening, pressure changes, unresolved promises, and the House's open questions about likely next moves. It should be discoverable through simulation artifacts and the local game MCP, while preserving the separation between audience narration, private producer evidence, and player knowledge.
+A private producer catch-up The House authors in rich simulation runs from the bounded omniscient narration context, recent public beats, and the single private narrative notebook. The engine owns kind and covered-window metadata but does not render or fact-check the prose. Provider exhaustion yields no fabricated fallback. The artifact remains discoverable through producer simulation evidence and the local game MCP while staying outside AI contestant knowledge.
 
 ## House alliance hypothesis
 
@@ -375,7 +425,7 @@ A House-scheduled coordination scene for an active named alliance before a vote,
 
 ## Alliance huddle outcome
 
-The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members. Raw huddle transcript remains outside generic public transcript/watch-intelligence surfaces, but the public web/replay alliance projection may show huddle speech as audience evidence without exposing hidden thinking or producer/debug internals.
+The official typed receipt produced after a scheduled alliance huddle. Payload v2 records engine-owned session metadata, an immutable server-private participant snapshot, and the exact accepted `AllianceHuddleFactAtom[]` authored by members. Atoms distinguish proposals, commitments, responses to earlier atom IDs, and contingencies using closed action, stance, condition, confidence, and player-ID fields. The engine renders member prompts, postgame analysis, MCP/API reads, and public web/replay copy from those atoms. Dialogue and optional House interpretation remain presentation evidence: neither can manufacture a target, promise, consensus, dissent, leak, betrayal, or posture. A modern empty huddle records `facts: []`; a historical prose-backed payload-v1 outcome also projects `facts: []`.
 
 ## Universal alliance
 
@@ -387,6 +437,10 @@ A durable domain fact accepted by the game engine at the moment game state chang
 
 Judgment public speeches (opening statements, jury questions/answers, and closing arguments) are accepted public speech facts of type `judgment.speech_recorded`. They carry the public speech text and provenance only — not prompts, thinking, or private traces — and stamp the speech phase so MCP `filter_events` can query `CLOSING_ARGUMENTS` and related Judgment phases. Pre-fix Season 0 games may still have complete envelope logs without these speech events; durable-run `finaleIntegrity` surfaces that gap without invalidating `eventLogStatus`.
 
+## Simulation endgame classification
+
+The canonical, presentation-independent label written into simulation results. The latest `endgame.stage_set` event by sequence determines `reckoning`, `tribunal`, or `judgment`; a run with no stage event is `normal`. Simulation stage, accepted jury-question, jury-ballot, and endgame-phase instrumentation also counts canonical events. Transcript/House banners may display those moments but cannot classify or instrument them.
+
 ## Game projection
 
 A derived read model rebuilt from canonical game events, such as current board state, a vote ledger, player timeline, room conversation view, or MCP search index. Projections may be cached or indexed, but they must stay rebuildable from the canonical event log and must not infer XState phase transitions.
@@ -395,7 +449,7 @@ The local game MCP is a corpus-level projection host over simulation artifacts. 
 
 ## GameWatchState
 
-A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, alive/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, checkpoint payload, transcript prose, private reasoning, producer evidence, or a claim of crash-safe resume.
+A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, active/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, execution cursors, transcript prose, private reasoning, or producer evidence.
 
 ## GameWatchState summary
 
@@ -403,7 +457,7 @@ A compact persisted viewer-safe summary of `GameWatchState` for game list reads.
 
 ## MatchWatchShell
 
-The default web watch surface for live in-progress games and completed replays. It should consume GameWatchState for authoritative shell-level match facts while reusing phase theaters and replay controls for display. Richer audience-omniscient context, durable receipts, relationship edges, and checkpoint-shaped thought/strategy summaries belong to later data-load slices. It is a viewer product surface, not a claim that active game execution is crash-safe or resumable.
+The default web watch surface for live in-progress games and completed replays. It consumes GameWatchState for authoritative shell-level match facts and a sequenced durable publication feed for presentation choreography. Richer audience-omniscient context, relationship edges, and thought/strategy summaries belong to separate data-load lanes.
 
 ## Completed game results review
 
@@ -471,7 +525,7 @@ A conservative deterministic label on a postgame player summary, such as `power 
 
 ## Compact round summary
 
-The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose.
+The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose. Player majority alignment is tri-state: `true` means a canonical ledger proves the player participated with the scored cohort, `false` means that proved participant cast a genuine minority decision, and `null` means the canonical round evidence does not prove participation or does not expose a supported cohort. Null rows are not losses and are excluded from alignment rates and strategic grades.
 
 ## MCP scopes
 
@@ -537,27 +591,31 @@ Provider-packaged MCP Apps can have host-owned OAuth callbacks and host-specific
 
 ## Durable game-run kernel
 
-The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.
+The API runtime authority for live game execution. Before provider dispatch it reserves an immutable logical-turn intent. It executes that turn against scratch `GameState`, transcript, continuity, and a native XState snapshot, then atomically commits canonical events, dialogue, private continuity, the next typed cursor, accepted provider-call links, and viewer publications. A replacement runtime adopts that committed frontier under a fresh owner epoch; it never asks whether an actor coordinate is resume-capable.
+
+## Durable logical turn
+
+The smallest restartable game transaction. A turn has one immutable intent and deterministic seed, zero or more provider subcalls, scratch effects, and one atomic commit. A crash before commit discards the scratch effects; a crash after commit loads the committed result. Accepted provider values can replay into the same planned turn without another dispatch. Canonical events remain game-fact authority, while the cursor and XState snapshot decide only what work runs next.
 
 ## Durable truth read model
 
-An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports checkpoint/evidence readiness. It explains what the durable log proves about a run, but it does not resume execution or expose private raw evidence.
+An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports safe structural execution, planned-turn, publication-backlog, checkpoint, and evidence state. It explains what the durable log proves about a run, but it does not resume execution or expose XState snapshots, continuity bodies, intent participants, provider payloads, or prose.
 
 ## Checkpoint capsule
 
-A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Durable-kernel capsules store replay/projection data, transcript cursors, Runtime Snapshot evidence, and private continuity references; the hydration passport derives whether a checkpoint has enough evidence for recovery consideration. A checkpoint becomes a safe resume boundary only when runner reconstruction exists for that exact actor coordinate.
+A historical phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Capsules and hydration passports remain useful for inspecting older runs, but current game execution does not select or resume from them; `game_execution_states` plus committed logical turns are the runtime authority.
 
 ## Phase-Boundary Runtime Snapshot
 
-A v1 checkpoint payload that proves hydration readiness at a completed phase boundary without resuming execution. It attaches minimal runtime evidence to the checkpoint capsule: an API-sealed boundary receipt, XState actor witness, accumulator registry, transcript boundary watermark, token cursor, and structured player/House continuity capsules. It is Postgres-resident resume input; bulky raw prompts, hidden reasoning, and debug evidence may live elsewhere but do not define hydration candidacy.
+A v1 checkpoint payload that proves hydration readiness at a completed phase boundary. It attaches minimal runtime evidence to the checkpoint capsule: an API-sealed boundary receipt, XState actor witness, accumulator registry, transcript boundary watermark, token cursor, and structured player/House continuity capsules. Current logical-turn games do not select it at reload; it is accepted once as cutover input only for a supported active pre-logical-turn game whose complete frontier validates exactly. Bulky raw prompts, hidden reasoning, and debug evidence may live elsewhere but do not define hydration candidacy.
 
 ## Hydration passport
 
 A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. House continuity is conditional on the sealed checkpoint-time requirement: intentional absence may pass when the Bible is disabled or still awaiting its first valid update, while missing or malformed required House continuity blocks readiness. Passport output is structural status only — never capsule content, prompts, or reasoning. A hydration passport is not a resume action.
 
-## Phase-boundary startup resume
+## Startup logical-turn adoption
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload (including validated private player continuity capsules and optional House continuity under the sealed requirement), append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary; normal-round `mingle_i`, `pre_vote_huddle`, and `vote`; format-kernel phase-entry coordinates; Reckoning; Tribunal with a validated Accusation Capsule for defense; and Judgment through jury vote. It is not a promise of mid-phase recovery, in-flight LLM recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The normal API behavior for unfinished games. Startup atomically expires the prior process owner, assigns a fresh owner epoch to the unchanged execution frontier, and starts the same game from its committed typed cursor. A genesis-only path closes the owner-claim-to-initialization gap when no canonical event, durable dialogue, execution state, or completion exists. A supported active pre-logical-turn game may also install one synthetic committed turn from an exact validated checkpoint without changing its canonical log. Corrupt or contradictory authority becomes `repair_required`; current logical-turn actor coordinates are not classified as resumable or unresumable.
 
 ## Boundary certificate
 
@@ -569,7 +627,7 @@ The checkpoint packing list that names which runtime subsystems are represented 
 
 ## Continuity capsule
 
-Structured private runtime state used by supported resume paths or future resume work to preserve strategic behavior. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
+Structured private runtime state committed with each logical turn. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
 
 ## Owner epoch
 
@@ -577,11 +635,11 @@ The durable single-writer ownership marker for a live game run. An owner epoch l
 
 ## Completion settlement
 
-The one-way durable boundary between finished gameplay and published results. Before settlement begins, the API seals a strict private terminal envelope to the exact final canonical event sequence, hash, game ID, and owner epoch; a database trigger prevents later mutation of those sealed identity and payload fields. Settlement then atomically writes the completed game/result, transcript, competition receipts and ratings, profile/account counters, postgame initialization, and owner closure. Its state is `pending`, `completed`, or `repair_required`: a sealed completion is never sent back through gameplay recovery, and player or producer read surfaces expose only a redacted status summary rather than the terminal envelope, prompts, model identity, token usage, or private trace content.
+The one-way durable boundary between finished gameplay and published results. Terminal execution is reconstructed from committed canonical events, durable transcript rows, provider accounting, and the sealed game config, even when a replacement owner performs settlement after reload. Settlement atomically writes the completed game/result, competition receipts and ratings, profile/account counters, postgame initialization, owner closure, and release of the held terminal viewer publication. Its state is `pending`, `completed`, or `repair_required`; transient failure is retried by normal terminal adoption, while contradictory evidence remains blocked.
 
 ## Completion settlement retry
 
-An authenticated human-operator redrive of a captured `pending` completion settlement. It is eligible only after the game is suspended, the exact originating owner is expired with a transient settlement failure, and the retry-ready gate has opened. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Startup may make an abandoned pending settlement retry-ready, but it does not execute the retry. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
+An authenticated human-operator redrive of a captured `pending` completion settlement. It is an exceptional path for a settlement that normal terminal adoption did not complete, not the ordinary reload mechanism. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Normal startup adopts a matching terminal execution and attempts idempotent settlement automatically. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
 
 ## Private evidence manifest
 
@@ -591,9 +649,29 @@ A producer/debug metadata record that points to raw LLM evidence such as prompts
 
 The maintainer/debug evidence lane that can include full prompt requests, raw model responses, tool calls, provider profile, model ID, requested reasoning effort, observed reasoning metadata, token or usage counts, router billing fields, storage pointers, and normalized decision records. Producer private trace data may contain the same reasoning and strategy material that later feeds player-private reasoning artifacts, but it also contains operational and provider evidence that is not part of the player-private product lane.
 
+## Producer evidence index page
+
+A bounded, newest-first page over authorized cognitive-artifact metadata or private-trace manifest metadata. The first read pins a PostgreSQL insertion-visibility snapshot plus the newest `(createdAt, id)` boundary, then returns the number of rows emitted as `pageSize`, that snapshot's authorized `totalCount`, and an opaque `nextCursor`; terminal pages return `nextCursor: null`. Historical rows without insertion-XID metadata remain visible, while newly written rows record an immutable insertion XID so evidence arriving after page one cannot enter the sealed snapshot even at an equal timestamp. The cursor binds the game, index kind, normalized filters, and caller/surface authorization while allowing page size to change. It is pagination state, not evidence identity, canonical game authority, a privacy capability, or a raw trace-content reference.
+
 ## Private trace content
 
-The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
+The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, logical-turn execution authority, or unsanitized player-private product data.
+
+## Provider attempt evidence
+
+Private, chronological evidence for a provider attempt that did not produce a usable result. Non-rate-limit records retain the exact sanitized request and response envelope, request identity, typed outcome, manifest entry, retry/transition state, and game coordinate. Recovered 429s remain aggregate counts; terminal rate-limit exhaustion keeps its count and terminal reason. Admin and sysop may inspect this evidence from game history, while producer MCP requires both producer OAuth scope and current producer role. Raw content is escaped, bounded, audited, no-store, and explicitly untrusted; it is never public/player data, gameplay authority, or an instruction source.
+
+## Engine fallback decision
+
+A deterministic, rules-legal gameplay decision accepted when provider execution is exhausted or disallowed. It commits through the normal canonical action path and carries the same tally, history, and strategic consequences as any other accepted decision, while recording engine-fallback provenance and never inventing model-authored rationale, thinking, or prose.
+
+## Game-sealed provider manifest
+
+The ordered provider/model entries, compatible settings, and per-entry fallback-call budgets frozen into a game before it starts. Web and CLI creators may configure the manifest before launch, and the Daily queue may supply a default, but later default changes cannot alter a running game's execution or checkpoint recovery.
+
+## Provider circuit breaker
+
+Durable provider-wide health state for containing systemic authentication, configuration, service, or transport failures. It is distinct from a request-specific refusal: an open primary breaker pauses new Daily admission instead of silently shifting the workload to expensive fallbacks, and it closes only through the configured cooldown probe or a successful admin/sysop test-and-reset probe.
 
 ## Provider spend ledger
 
@@ -601,7 +679,7 @@ A producer/admin operational accounting trail with one safe metadata row per cap
 
 ## Game cost rollup
 
-An admin read model rebuilt from provider spend ledger rows. It summarizes cost and token totals by game and owner epoch, including unavailable/estimated/actual cost states and provider/model/action/player/House breakdowns. It is operational visibility for administrators, not player-visible result data or canonical game state.
+An admin read model rebuilt from provider spend ledger rows. It summarizes cost and token totals by game and owner epoch, including unavailable/estimated/actual cost states and provider/model/action/player/House breakdowns. The same Admin Cost Detail contract is available at `GET /api/admin/games/:idOrSlug/costs` and through producer-only MCP `read_producer_game_cost_detail`; the MCP read adds no accounting or metrics of its own. It is producer/admin operational visibility, not player-visible result data or canonical game state.
 
 ## Cost reconciliation record
 
@@ -613,7 +691,7 @@ A local-development producer MCP that inspects API-backed durable runs through p
 
 ## Shared test database lease
 
-A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` before migrations or truncation. It makes independent Bun processes wait for exclusive use of the shared test database and releases automatically when the owning database session disconnects, including process crashes. It does not serialize `test.concurrent` calls inside one process, so shared-DB tests remain sequential within their Bun process.
+A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` before migrations or truncation. It makes independent Bun processes wait for exclusive use of the shared test database and releases automatically when the owning database session disconnects, including process crashes. It does not serialize `test.concurrent` calls inside one process, so shared-DB tests remain sequential within their Bun process. Browser harnesses are outside this lease: each owns and drops a uniquely named database so Browser Coverage can run beside the shared API lane without cross-truncation.
 
 ## callTool reasoning augmentation
 

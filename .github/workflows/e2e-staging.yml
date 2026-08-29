@@ -1,10 +1,35 @@
 name: "E2E Staging Tests"
+run-name: "E2E staging / ${{ inputs.candidate_sha }}"
 
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: "Immutable image tag that was deployed (informational)"
+      candidate_sha:
+        description: "Full source SHA deployed to staging"
+        required: true
+      api_digest:
+        description: "Immutable API image digest"
+        required: true
+      web_digest:
+        description: "Immutable web image digest"
+        required: true
+      worker_digest:
+        description: "Immutable render-worker image digest"
+        required: true
+      migration_set:
+        description: "Bundled migration-set identity"
+        required: true
+      staging_run_id:
+        description: "Trusted Linode staging workflow run ID"
+        required: true
+      staging_run_attempt:
+        description: "Trusted Linode staging workflow run attempt"
+        required: true
+      staging_receipt_artifact:
+        description: "Exact staging deployment receipt artifact"
+        required: true
+      staging_receipt_digest:
+        description: "SHA-256 identity of the staging receipt"
         required: true
 
 permissions:
@@ -13,14 +38,69 @@ permissions:
 jobs:
   e2e:
     name: Run E2E Tests
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      API_DIGEST: ${{ inputs.api_digest }}
+      WEB_DIGEST: ${{ inputs.web_digest }}
+      WORKER_DIGEST: ${{ inputs.worker_digest }}
+      MIGRATION_SET: ${{ inputs.migration_set }}
+      STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+      STAGING_RUN_ATTEMPT: ${{ inputs.staging_run_attempt }}
+      STAGING_RECEIPT_ARTIFACT: ${{ inputs.staging_receipt_artifact }}
+      STAGING_RECEIPT_DIGEST: ${{ inputs.staging_receipt_digest }}
+      E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      MIN_RELEASE_CONTROL_PROTOCOL: "1"
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Validate candidate evidence
+        id: validate-evidence
+        run: |
+          if ! [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_sha must be a full lowercase git SHA" >&2
+            exit 64
+          fi
+          for digest in "$API_DIGEST" "$WEB_DIGEST" "$WORKER_DIGEST" "$MIGRATION_SET" "$STAGING_RECEIPT_DIGEST"; do
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "candidate evidence contains an invalid SHA-256 digest" >&2
+              exit 64
+            fi
+          done
+          if ! [[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]*$ ]] || ! [[ "$STAGING_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "staging run identity must contain positive integers" >&2
+            exit 64
+          fi
+          expected_receipt="staging-deployment-receipt-${STAGING_RUN_ID}-${STAGING_RUN_ATTEMPT}"
+          if [ "$STAGING_RECEIPT_ARTIFACT" != "$expected_receipt" ]; then
+            echo "staging receipt artifact does not match the staging run identity" >&2
+            exit 64
+          fi
+
+      - name: Checkout source history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve deployed source identity
+        id: source-identity
+        run: |
+          expected_sha="$(git rev-parse --verify "${CANDIDATE_SHA}^{commit}")"
+          if [ "$expected_sha" != "$CANDIDATE_SHA" ]; then
+            echo "resolved commit $expected_sha does not match candidate $CANDIDATE_SHA" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$expected_sha" "$GITHUB_SHA"; then
+            echo "candidate $expected_sha is not reachable from the trusted main workflow commit $GITHUB_SHA" >&2
+            exit 1
+          fi
+          git checkout --detach "$expected_sha"
+          [ "$(git rev-parse HEAD)" = "$expected_sha" ] || exit 1
+          echo "commit_sha=$expected_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved and checked out deployed source commit $expected_sha"
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
@@ -42,7 +122,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -51,6 +131,125 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: bunx playwright test
+        id: release-e2e
+        run: bun run test:e2e:staging
         env:
-          PLAYWRIGHT_BASE_URL: http://influence-staging
+          PLAYWRIGHT_BASE_URL: https://influence-staging.tail8a79ed.ts.net
+          STAGING_RELEASE_GATE: "1"
+          STAGING_IMAGE_TAG: ${{ inputs.candidate_sha }}
+          STAGING_EXPECTED_COMMIT_SHA: ${{ steps.source-identity.outputs.commit_sha }}
+          STAGING_MIN_RELEASE_CONTROL_PROTOCOL: ${{ env.MIN_RELEASE_CONTROL_PROTOCOL }}
+
+      - name: Create immutable staging E2E evidence
+        id: e2e-evidence
+        run: |
+          jq -S -n \
+            --arg candidate_sha "$CANDIDATE_SHA" \
+            --arg api_digest "$API_DIGEST" \
+            --arg web_digest "$WEB_DIGEST" \
+            --arg worker_digest "$WORKER_DIGEST" \
+            --arg migration_set "$MIGRATION_SET" \
+            --argjson staging_run_id "$STAGING_RUN_ID" \
+            --argjson staging_run_attempt "$STAGING_RUN_ATTEMPT" \
+            --arg staging_receipt_artifact "$STAGING_RECEIPT_ARTIFACT" \
+            --arg staging_receipt_digest "$STAGING_RECEIPT_DIGEST" \
+            --argjson e2e_run_id "$GITHUB_RUN_ID" \
+            --argjson e2e_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg trusted_workflow_sha "$GITHUB_SHA" \
+            '{
+              schema_version: 2,
+              source: {
+                repository: "0xFlicker/influence-game",
+                workflow: ".github/workflows/e2e-staging.yml",
+                run_id: $e2e_run_id,
+                run_attempt: $e2e_run_attempt,
+                trusted_workflow_sha: $trusted_workflow_sha
+              },
+              candidate_sha: $candidate_sha,
+              images: {
+                api: {digest: $api_digest},
+                web: {digest: $web_digest},
+                render_worker: {digest: $worker_digest}
+              },
+              migration_set: $migration_set,
+              staging: {
+                repository: "0xFlicker/linode-iac",
+                workflow: ".github/workflows/deploy-staging.yml",
+                run_id: $staging_run_id,
+                run_attempt: $staging_run_attempt,
+                receipt_artifact: $staging_receipt_artifact,
+                receipt_digest: $staging_receipt_digest
+              }
+            }' > staging-e2e-evidence.json
+          evidence_digest="sha256:$(sha256sum staging-e2e-evidence.json | awk '{ print $1 }')"
+          echo "evidence_digest=$evidence_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable staging E2E evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.E2E_EVIDENCE_ARTIFACT }}
+          path: staging-e2e-evidence.json
+          if-no-files-found: error
+          retention-days: 35
+
+      - name: Generate GitHub App token for linode-iac
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+          permission-contents: write
+
+      - name: Report qualified production candidate
+        id: candidate-dispatch
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: '0xFlicker',
+              repo: 'linode-iac',
+              event_type: 'influence-production-candidate-qualified',
+              client_payload: {
+                e2e_run_id: context.runId,
+                e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+                e2e_evidence_artifact: process.env.E2E_EVIDENCE_ARTIFACT,
+                e2e_evidence_digest: '${{ steps.e2e-evidence.outputs.evidence_digest }}'
+              }
+            });
+
+      - name: Record staging release evidence
+        if: ${{ always() && steps.e2e-evidence.outcome == 'success' }}
+        env:
+          E2E_OUTCOME: ${{ steps.release-e2e.outcome }}
+          DISPATCH_OUTCOME: ${{ steps.candidate-dispatch.outcome }}
+        run: |
+          {
+            echo "## Influence staging release evidence"
+            echo
+            echo "- Candidate: \`$CANDIDATE_SHA\`"
+            echo "- API digest: \`$API_DIGEST\`"
+            echo "- Web digest: \`$WEB_DIGEST\`"
+            echo "- Worker digest: \`$WORKER_DIGEST\`"
+            echo "- Migration set: \`$MIGRATION_SET\`"
+            echo "- Minimum release-control protocol: \`$MIN_RELEASE_CONTROL_PROTOCOL\`"
+            echo "- Staging receipt: [\`$STAGING_RECEIPT_ARTIFACT\`](https://github.com/0xFlicker/linode-iac/actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT)"
+            echo "- E2E run: [\`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\`](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT)"
+            echo "- Immutable evidence artifact: \`$E2E_EVIDENCE_ARTIFACT\`"
+            echo "- Immutable evidence digest: \`${{ steps.e2e-evidence.outputs.evidence_digest }}\`"
+            echo "- E2E result: \`$E2E_OUTCOME\`"
+            echo "- Candidate callback: \`$DISPATCH_OUTCOME\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: staging-e2e-failure-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14

@@ -223,8 +223,24 @@ function adminGame(overrides: Partial<AdminGameSummary> = {}): AdminGameSummary 
       lastAttemptedAt: "2026-07-09T01:00:00.000Z",
       completedAt: "2026-07-09T01:00:00.000Z",
     },
+    providerFailures: emptyProviderFailures(),
     createdAt: "2026-07-09T00:00:00.000Z",
     completedAt: "2026-07-09T01:00:00.000Z",
     ...overrides,
+  };
+}
+
+function emptyProviderFailures() {
+  return {
+    schemaVersion: 1 as const,
+    state: "empty" as const,
+    failureCount: 0,
+    exactFailureCount: 0,
+    rateLimitCount: 0,
+    recoveredCount: 0,
+    terminalCount: 0,
+    degradedCount: 0,
+    transitionedCount: 0,
+    lastFailureAt: null,
   };
 }

@@ -18,6 +18,28 @@ describe("Database Schema", () => {
     db = await setupTestDB();
   });
 
+  test("shared setup clears every schema generation, including global settings", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({ id: userId, displayName: "Reset Probe" });
+    await db.insert(schema.legalAcceptances).values({
+      userId,
+      termsVersion: "reset-probe",
+      privacyVersion: "reset-probe",
+      deploymentSha: "reset-probe",
+      source: "account_creation",
+    });
+    await db.insert(schema.appSettings).values({
+      key: "reset_probe",
+      value: "true",
+    });
+
+    db = await setupTestDB();
+
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+    expect(await db.select().from(schema.appSettings)).toHaveLength(0);
+  });
+
   // -------------------------------------------------------------------------
   // Users
   // -------------------------------------------------------------------------

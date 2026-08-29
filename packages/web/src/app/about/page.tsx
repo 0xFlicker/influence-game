@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Nav } from "@/components/nav";
+import { FALSE_FLOOR } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
   title: "About — Influence",
@@ -43,6 +44,13 @@ export default function AboutPage() {
             negotiation, deception, and alliance-building. Think of it as a
             reality TV elimination game — but every contestant is an AI with its
             own personality, agenda, and secrets.
+          </p>
+          <p className="influence-copy mt-4 text-sm leading-relaxed">
+            Influence is a game by{" "}
+            <ExternalLink href={FALSE_FLOOR.websiteUrl}>
+              {FALSE_FLOOR.name}
+            </ExternalLink>
+            .
           </p>
           <p className="influence-copy mt-4 text-sm leading-relaxed">
             <Link href="/updates" className="influence-link">

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
@@ -10,11 +10,23 @@ import {
   buildFinaleIntegrity,
   getDurableRunInspection,
 } from "../services/game-durable-run.js";
+import {
+  createInitialGameExecutionStateV1,
+  initializeGameExecutionAuthority,
+  planGameTurn,
+} from "../services/game-turn-commit.js";
+import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { getPersistedGameProjectionBeforeTerminalOutcome } from "../services/game-projection-read-model.js";
 import type { PersistedGameEventsRead } from "../services/game-event-read-model.js";
 import type { CanonicalGameEvent } from "@influence/engine";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
-import { abortAllGames, startGame } from "../services/game-lifecycle.js";
+import {
+  abortAllGames,
+  abortGame,
+  isGameRunning,
+  startGame,
+} from "../services/game-lifecycle.js";
+import { adoptInProgressDurableGamesOnStartup } from "../services/startup-durable-games.js";
 import {
   handleClose,
   handleOpen,
@@ -103,6 +115,14 @@ async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) 
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`Timed out waiting for durable run completion for ${gameId}`);
+}
+
+async function waitForRunnerToStop(gameId: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (!isGameRunning(gameId)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for local runner shutdown for ${gameId}`);
 }
 
 describe("durable run inspection read model", () => {
@@ -230,7 +250,7 @@ describe("durable run inspection read model", () => {
     setServer({ publish() {} });
   });
 
-  test("inspects durable events and checkpoints written by the API lifecycle runner", async () => {
+  test("completes an API game from committed logical turns and publications", async () => {
     const gameId = await insertGame(db, {
       status: "waiting",
       config: {
@@ -287,14 +307,48 @@ describe("durable run inspection read model", () => {
       });
       expect(inspection.completionSettlement).not.toHaveProperty("payload");
       expect(inspection.kernel.owner?.status).toBe("closed");
+      expect(inspection.execution).toMatchObject({
+        authority: {
+          status: "terminal",
+          cursor: { kind: "terminal", coordinate: "commit_game" },
+          retry: null,
+        },
+        plannedTurn: null,
+        publications: {
+          heldCount: 0,
+          firstHeldSequence: null,
+        },
+      });
+      expect(inspection.execution.authority?.heads.turnSequence).toBeGreaterThan(0);
+      expect(inspection.execution.publications.totalCount > 0).toBeTrue();
       expect(inspection.eventLog.status).toBe("complete");
       expect(inspection.eventLog.rowCount).toBeGreaterThan(0);
       expect(inspection.projection.status).toBe("complete");
       expect(inspection.projection.replayedEventCount).toBe(inspection.eventLog.rowCount);
-      expect(inspection.checkpoints.count).toBeGreaterThan(0);
-      expect(inspection.checkpoints.entries.every((checkpoint) => checkpoint.resumeAvailable === false)).toBeTrue();
+      expect(inspection.checkpoints.count).toBe(0);
       expect(inspection.evidence.totalCount).toBe(0);
       expect(inspection.diagnostics).toEqual([]);
+
+      const execution = (await db.select()
+        .from(schema.gameExecutionStates)
+        .where(eq(schema.gameExecutionStates.gameId, gameId)))[0];
+      const turns = await db.select()
+        .from(schema.gameTurns)
+        .where(eq(schema.gameTurns.gameId, gameId));
+      const publications = await db.select()
+        .from(schema.gamePublications)
+        .where(eq(schema.gamePublications.gameId, gameId))
+        .orderBy(asc(schema.gamePublications.publicationSequence));
+      expect(execution).toMatchObject({ status: "terminal" });
+      expect(turns.length).toBeGreaterThan(0);
+      expect(turns.every((turn) => turn.status === "committed")).toBeTrue();
+      expect(publications.map((publication) => publication.publicationSequence)).toEqual(
+        publications.map((_, index) => index + 1),
+      );
+      expect(publications.at(-1)).toMatchObject({
+        kind: "completion",
+      });
+      expect(publications.at(-1)?.availableAt).not.toBeNull();
 
       const finalWatchState = published
         .map((message) => JSON.parse(message.data) as { type: string; state?: { status?: string; currentPhase?: string; gameId?: string } })
@@ -318,6 +372,77 @@ describe("durable run inspection read model", () => {
     } finally {
       handleClose(observer);
     }
+  });
+
+  test("adopts the same in-progress game after an ordinary runner reload", async () => {
+    const gameId = await insertGame(db, {
+      status: "waiting",
+      config: {
+        maxRounds: 1,
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+        visibility: "private",
+        viewerMode: "speedrun",
+        timers: {
+          introduction: 0,
+          lobby: 0,
+          mingle: 0,
+          rumor: 0,
+          vote: 0,
+          power: 0,
+          council: 0,
+        },
+      },
+    });
+    await db.update(schema.games).set({ maxPlayers: 5, startedAt: null })
+      .where(eq(schema.games.id, gameId));
+    await db.insert(schema.gamePlayers).values(
+      ["Atlas", "Echo", "Mira", "Nyx", "Vera"].map((name) => ({
+        id: randomUUID(),
+        gameId,
+        persona: JSON.stringify({ name, personality: "strategic", personaKey: "strategic" }),
+        agentConfig: JSON.stringify({ model: "mock", temperature: 0 }),
+      })),
+    );
+
+    const firstOwner = await acquireGameRunOwner(db, gameId);
+    expect(firstOwner.ok).toBeTrue();
+    if (!firstOwner.ok) throw new Error(firstOwner.error);
+    expect((await startGame(db, gameId, firstOwner.claim.ownerEpoch)).error).toBeUndefined();
+    expect(abortGame(gameId)).toBeTrue();
+    await waitForRunnerToStop(gameId);
+
+    const interrupted = (await db.select()
+      .from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, gameId)))[0];
+    expect(interrupted?.committedTurnSequence).toBeGreaterThan(0);
+    expect((await db.select({ status: schema.games.status })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0]?.status).toBe("in_progress");
+
+    const adoption = await adoptInProgressDurableGamesOnStartup(db, {
+      isAlreadyRunning: isGameRunning,
+      start: async ({ gameId: adoptedGameId, ownerEpoch }) => {
+        const started = await startGame(db, adoptedGameId, ownerEpoch);
+        if (started.error) throw new Error(started.error);
+      },
+    });
+    expect(adoption.adopted).toContain(gameId);
+    const completed = await waitForCompletedDurableInspection(db, gameId);
+    expect(completed.game.id).toBe(gameId);
+    expect(completed.game.status).toBe("completed");
+
+    const events = await db.select()
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, gameId));
+    const turns = await db.select()
+      .from(schema.gameTurns)
+      .where(eq(schema.gameTurns.gameId, gameId))
+      .orderBy(asc(schema.gameTurns.turnSequence));
+    expect(events.filter((event) => event.eventType === "game.roster_initialized")).toHaveLength(1);
+    expect(turns.map((turn) => turn.turnSequence)).toEqual(
+      turns.map((_, index) => index + 1),
+    );
+    expect(turns.every((turn) => turn.status === "committed")).toBeTrue();
   });
 
   test("summarizes API kernel events, checkpoints, and private trace manifests without exposing raw content", async () => {
@@ -360,7 +485,7 @@ describe("durable run inspection read model", () => {
 
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error);
-    expect(result.response.schemaVersion).toBe(2);
+    expect(result.response.schemaVersion).toBe(3);
     expect(result.response.game.id).toBe(gameId);
     expect(result.response.completionSettlement).toMatchObject({
       state: "not_applicable",
@@ -373,6 +498,18 @@ describe("durable run inspection read model", () => {
       evidenceManifestCount: 1,
     });
     expect(result.response.kernel.owner?.lastPersistedEventSequence).toBe(events.length);
+    expect(result.response.execution).toEqual({
+      authority: null,
+      plannedTurn: null,
+      publications: {
+        totalCount: 0,
+        dueCount: 0,
+        scheduledCount: 0,
+        heldCount: 0,
+        firstDueSequence: null,
+        firstHeldSequence: null,
+      },
+    });
     expect(result.response.eventLog).toMatchObject({
       status: "complete",
       rowCount: events.length,
@@ -421,6 +558,95 @@ describe("durable run inspection read model", () => {
     expect(serialized).not.toContain("sourcePointers");
   });
 
+  test("reports planned durable progress without exposing snapshots, participants, or prose", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await db.insert(schema.gameTranscriptStates).values(
+      initialGameTranscriptStateValues(gameId),
+    );
+    const state = createInitialGameExecutionStateV1({
+      gameId,
+      ownerEpoch,
+      xstateSnapshot: { privateCanary: "PRIVATE_XSTATE_CANARY" },
+      cursor: {
+        version: 1,
+        kind: "serial_actor",
+        lane: "lobby_speech",
+        actorIds: ["PRIVATE_CURSOR_ACTOR"],
+        actorIndex: 0,
+      },
+    });
+    await initializeGameExecutionAuthority(db, state);
+    await planGameTurn(db, {
+      ownerEpoch,
+      intent: {
+        version: 1,
+        gameId,
+        turnId: `${gameId}:turn:1`,
+        turnSequence: 1,
+        seed: "PRIVATE_TURN_SEED",
+        baseHeads: state.heads,
+        branch: { version: 1, kind: "single_provider", action: "lobby_speech" },
+        actorIds: ["PRIVATE_INTENT_ACTOR"],
+        targetIds: ["PRIVATE_INTENT_TARGET"],
+        handles: ["PRIVATE_INTENT_HANDLE"],
+        participantIds: ["PRIVATE_INTENT_PARTICIPANT"],
+        providerSubcalls: [{
+          version: 1,
+          slot: 1,
+          logicalCallId: "PRIVATE_LOGICAL_CALL",
+          actorId: "PRIVATE_INTENT_ACTOR",
+          action: "lobby_speech",
+          contractId: "PRIVATE_CONTRACT_ID",
+        }],
+      },
+    });
+
+    const result = await getDurableRunInspection(db, gameId);
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+    expect(result.response.execution).toMatchObject({
+      authority: {
+        status: "ready",
+        heads: {
+          turnSequence: 0,
+          eventSequence: 0,
+          dialogueSequence: 0,
+          publicationSequence: 0,
+        },
+        cursor: {
+          kind: "serial_actor",
+          coordinate: "lobby_speech",
+          actorIndex: 0,
+          actorCount: 1,
+          pass: null,
+        },
+      },
+      plannedTurn: {
+        turnSequence: 1,
+        branchKind: "single_provider",
+        action: "lobby_speech",
+        providerSubcallCount: 1,
+      },
+      publications: { totalCount: 0 },
+    });
+    const serialized = JSON.stringify(result.response.execution);
+    for (const canary of [
+      "PRIVATE_XSTATE_CANARY",
+      "PRIVATE_CURSOR_ACTOR",
+      "PRIVATE_TURN_SEED",
+      "PRIVATE_INTENT_ACTOR",
+      "PRIVATE_INTENT_TARGET",
+      "PRIVATE_INTENT_HANDLE",
+      "PRIVATE_INTENT_PARTICIPANT",
+      "PRIVATE_LOGICAL_CALL",
+      "PRIVATE_CONTRACT_ID",
+    ]) {
+      expect(serialized).not.toContain(canary);
+    }
+  });
+
   test("handles pre-kernel games as inspectable empty durable runs", async () => {
     const gameId = await insertGame(db, { status: "waiting" });
 
@@ -431,6 +657,9 @@ describe("durable run inspection read model", () => {
     expect(result.response.eventLog.status).toBe("empty");
     expect(result.response.projection.status).toBe("empty");
     expect(result.response.kernel.owner).toBeNull();
+    expect(result.response.execution.authority).toBeNull();
+    expect(result.response.execution.plannedTurn).toBeNull();
+    expect(result.response.execution.publications.totalCount).toBe(0);
     expect(result.response.checkpoints.count).toBe(0);
     expect(result.response.evidence.totalCount).toBe(0);
   });

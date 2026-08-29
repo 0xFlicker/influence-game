@@ -10,6 +10,11 @@ import { hashCanonicalEvent } from "../services/game-events.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { createSeason } from "../services/seasons.js";
 import {
+  acquireDeploymentAdmissionLease,
+  completeDeploymentAdmissionLease,
+} from "../services/deployment-admission.js";
+import { recordProviderHealthOutcomeInTransaction } from "../services/provider-health.js";
+import {
   createCanonicalEventFixture,
   insertCanonicalEventRows,
 } from "./durable-run-test-utils.js";
@@ -29,6 +34,132 @@ afterAll(async () => {
 });
 
 describe("free queue season admission", () => {
+  test("ordinary player queue mutations still require current legal acceptance", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "pending-player");
+    const profile = (await createOwnedAgentProfile(db, { userId: ownerId }, {
+      name: "Pending Player Agent",
+      personality: "Patient",
+    })).profile;
+    const token = await createSessionToken(ownerId, {
+      roles: ["player"],
+      permissions: [],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const response = await app.request("/api/free-queue/join", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ agentProfileId: profile.id }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "LEGAL_ACCEPTANCE_REQUIRED" });
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+  });
+
+  test("service scheduler token draws and starts without legal claims or acceptance rows", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "pending-scheduler");
+    await createQueuedAgent(db, "pending-scheduler-a", "Aster Service");
+    await createQueuedAgent(db, "pending-scheduler-b", "Maris Service");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:service-auth",
+      },
+    });
+    expect(draw.status).toBe(201);
+    const drawn = await draw.json() as { gameId: string };
+
+    const start = await app.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(start.status).toBe(200);
+    expect(await start.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+    await abortAllGames();
+  });
+
+  test("Daily start remains waiting when the primary provider circuit opens before claim", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "provider-health-scheduler");
+    await createQueuedAgent(db, "provider-health-a", "Provider Aster");
+    await createQueuedAgent(db, "provider-health-b", "Provider Maris");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:provider-health",
+      },
+    });
+    expect(draw.status).toBe(201);
+    const { gameId } = await draw.json() as { gameId: string };
+    await db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }));
+
+    const start = await app.request(`/api/free-queue/start?gameId=${gameId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(start.status).toBe(409);
+    expect(await start.json()).toMatchObject({
+      code: "provider_admission_closed",
+      retryable: true,
+    });
+    expect((await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0])
+      .toMatchObject({ status: "waiting" });
+    expect(await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId))).toHaveLength(0);
+  });
+
+  test("service scheduler endpoints remain forbidden without schedule permission", async () => {
+    const db = await setupTestDB();
+    const userId = await insertUser(db, "pending-non-scheduler");
+    const token = await createSessionToken(userId, {
+      roles: ["scheduler"],
+      permissions: [],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    for (const path of ["/api/free-queue/draw", "/api/free-queue/start"]) {
+      const response = await app.request(path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Idempotency-Key": "daily-free:test:no-service-permission",
+        },
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "Insufficient permissions" });
+    }
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+  });
+
   test("REST join preserves its response id and maps owned-agent errors", async () => {
     const db = await setupTestDB();
     const ownerId = await insertUser(db, "rest-owner");
@@ -116,6 +247,19 @@ describe("free queue season admission", () => {
       catalogId: "openai:gpt-5.6-luna",
       reasoningPolicy: "action-policy",
     });
+    expect(gameConfig.providerManifest).toEqual([
+      gameConfig.modelSelection,
+      {
+        catalogId: "katana:glm-5-2",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 24,
+      },
+      {
+        catalogId: "katana:grok-4-5",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 12,
+      },
+    ]);
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
       .toEqual(Array(10).fill("gpt-5.6-luna"));
@@ -229,6 +373,76 @@ describe("free queue season admission", () => {
       .where(eq(schema.games.id, drawn.gameId)))[0]?.status).toBe("in_progress");
     expect((await db.select().from(schema.games)
       .where(eq(schema.games.id, unrelatedGameId)))[0]?.status).toBe("waiting");
+    await abortAllGames();
+  });
+
+  test("denies a Daily Free start at the deployment barrier without replaying it", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "draining-operator");
+    await createQueuedAgent(db, "draining-a", "Aster Draining");
+    await createQueuedAgent(db, "draining-b", "Maris Draining");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:deployment-admission",
+      },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "3".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 654,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    let startupCalls = 0;
+    const admissionAwareApp = new Hono().route("/", createFreeQueueRoutes(db, {
+      startGame: async () => {
+        startupCalls += 1;
+        return {};
+      },
+    }));
+
+    const blocked = await admissionAwareApp.request(
+      `/api/free-queue/start?gameId=${drawn.gameId}`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toMatchObject({
+      code: "deployment_admission_closed",
+      retryable: true,
+    });
+    expect(startupCalls).toBe(0);
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
+      status: "waiting",
+      startedAt: null,
+    });
+    expect(await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toHaveLength(0);
+
+    const released = await completeDeploymentAdmissionLease(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      outcome: "aborted",
+      reason: "free queue admission test complete",
+    });
+    expect(released.ok).toBeTrue();
+
+    const retried = await admissionAwareApp.request(
+      `/api/free-queue/start?gameId=${drawn.gameId}`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(retried.status).toBe(200);
+    expect(startupCalls).toBe(1);
     await abortAllGames();
   });
 

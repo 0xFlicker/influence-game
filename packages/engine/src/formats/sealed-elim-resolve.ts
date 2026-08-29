@@ -36,10 +36,16 @@ export interface ResolveSealedElimOptions<TDecision, TTieEvidence> {
   collectDecision: (
     participant: SealedElimParticipant,
     fallbackTargetId: UUID,
+    legalTargetIds: readonly UUID[],
   ) => Promise<CollectedSealedElimDecision<TDecision>>;
   recordAcceptedBallot: (
     accepted: AcceptedSealedElimDecision<TDecision>,
   ) => Promise<void>;
+  legalTargetIdsFor?: (
+    participant: SealedElimParticipant,
+    aliveIds: readonly UUID[],
+  ) => readonly UUID[];
+  recordForfeitedBallot?: (participant: SealedElimParticipant) => Promise<void>;
   breakTie: (
     tiedPlayerIds: readonly UUID[],
   ) => Promise<SealedElimTieResolution<TTieEvidence>>;
@@ -48,6 +54,7 @@ export interface ResolveSealedElimOptions<TDecision, TTieEvidence> {
 
 export interface ResolvedSealedElimRound<TTieEvidence> {
   ballots: SealedElimBallot[];
+  forfeitedVoterIds: UUID[];
   score: SealedElimScore;
   aggregate: SealedElimAggregate;
   resolution: Exclude<FormatEliminationResolution, { kind: "tie" }>;
@@ -72,10 +79,15 @@ export function scoreSealedElimBallots(
   registration: SealedElimRegistration,
   aliveIds: readonly UUID[],
   ballots: readonly SealedElimBallot[],
+  options: {
+    forfeitedVoterIds?: readonly UUID[];
+    legalTargetIdsByVoter?: ReadonlyMap<UUID, readonly UUID[]>;
+  } = {},
 ): { score: SealedElimScore; resolution: FormatEliminationResolution } {
-  if (ballots.length !== aliveIds.length) {
+  const forfeitedVoterIds = options.forfeitedVoterIds ?? [];
+  if (ballots.length + forfeitedVoterIds.length !== aliveIds.length) {
     throw new Error(
-      `${registration.id} incomplete sealed ballots: ${ballots.length}/${aliveIds.length}`,
+      `${registration.id} incomplete sealed ballots: ${ballots.length + forfeitedVoterIds.length}/${aliveIds.length}`,
     );
   }
 
@@ -85,11 +97,31 @@ export function scoreSealedElimBallots(
       throw new Error(`${registration.id} duplicate sealed ballot voter: ${ballot.voterId}`);
     }
     voters.add(ballot.voterId);
-    if (!registration.isLegalBallot(ballot.voterId, ballot.targetId, aliveIds)) {
+    const legalTargetIds = options.legalTargetIdsByVoter?.get(ballot.voterId) ?? aliveIds;
+    if (
+      !registration.isLegalBallot(ballot.voterId, ballot.targetId, aliveIds)
+      || !legalTargetIds.includes(ballot.targetId)
+    ) {
       throw new Error(
         `${registration.id} illegal sealed ballot: ${ballot.voterId}->${ballot.targetId}`,
       );
     }
+  }
+  for (const voterId of forfeitedVoterIds) {
+    if (voters.has(voterId)) {
+      throw new Error(`${registration.id} duplicate sealed ballot voter: ${voterId}`);
+    }
+    if (!aliveIds.includes(voterId)) {
+      throw new Error(`${registration.id} illegal forfeited voter: ${voterId}`);
+    }
+    if (registration.ballotParticipation !== "forfeit_if_no_legal_target") {
+      throw new Error(`${registration.id} does not allow ballot forfeiture`);
+    }
+    const legalTargetIds = options.legalTargetIdsByVoter?.get(voterId);
+    if (!legalTargetIds || legalTargetIds.length > 0) {
+      throw new Error(`${registration.id} illegal ballot forfeiture: ${voterId}`);
+    }
+    voters.add(voterId);
   }
   for (const aliveId of aliveIds) {
     if (!voters.has(aliveId)) {
@@ -109,19 +141,35 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
 ): Promise<ResolvedSealedElimRound<TTieEvidence>> {
   const aliveIds = options.participants.map((participant) => participant.id);
   const ballots: SealedElimBallot[] = [];
+  const forfeitedVoterIds: UUID[] = [];
+  const legalTargetIdsByVoter = new Map<UUID, readonly UUID[]>();
 
   for (const participant of options.participants) {
-    const otherIds = aliveIds.filter((id) => id !== participant.id);
-    const fallbackTargetId = otherIds.at(-1) ?? otherIds[0];
+    const legalTargetIds = options.legalTargetIdsFor?.(participant, aliveIds)
+      ?? aliveIds.filter((id) => id !== participant.id);
+    legalTargetIdsByVoter.set(participant.id, legalTargetIds);
+    const fallbackTargetId = legalTargetIds.at(-1) ?? legalTargetIds[0];
     if (!fallbackTargetId) {
-      throw new Error(`${options.registration.id} requires at least two alive players`);
+      if (
+        options.registration.ballotParticipation !== "forfeit_if_no_legal_target"
+        || !options.recordForfeitedBallot
+      ) {
+        throw new Error(`${options.registration.id} requires at least one legal target`);
+      }
+      forfeitedVoterIds.push(participant.id);
+      await options.recordForfeitedBallot(participant);
+      continue;
     }
-    const collected = await options.collectDecision(participant, fallbackTargetId);
+    const collected = await options.collectDecision(
+      participant,
+      fallbackTargetId,
+      legalTargetIds,
+    );
     const legal = options.registration.isLegalBallot(
       participant.id,
       collected.targetId,
       aliveIds,
-    );
+    ) && legalTargetIds.includes(collected.targetId);
     const ballot = {
       voterId: participant.id,
       targetId: legal ? collected.targetId : fallbackTargetId,
@@ -136,7 +184,10 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
   }
 
   await options.beforeScore?.();
-  const scored = scoreSealedElimBallots(options.registration, aliveIds, ballots);
+  const scored = scoreSealedElimBallots(options.registration, aliveIds, ballots, {
+    forfeitedVoterIds,
+    legalTargetIdsByVoter,
+  });
   let resolution = scored.resolution;
   let tieEvidence: TTieEvidence | null = null;
   if (resolution.kind === "tie") {
@@ -147,6 +198,7 @@ export async function resolveSealedElimRound<TDecision, TTieEvidence>(
 
   return {
     ballots,
+    forfeitedVoterIds,
     score: scored.score,
     aggregate: options.registration.aggregate.toAggregate(scored.score),
     resolution,

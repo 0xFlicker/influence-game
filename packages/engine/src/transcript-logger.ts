@@ -31,6 +31,7 @@ const DIALOGUE_SCOPES = new Set<TranscriptEntry["scope"]>([
 export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
   readonly publicMessages: Array<{ from: string; text: string; phase: Phase; round: number; anonymous?: boolean; displayOrder?: number }> = [];
+  private readonly dialogueEntries: TranscriptEntry[] = [];
   private _streamListener?: (event: GameStreamEvent) => void;
   private streamBuffer: GameStreamEvent[] | null = null;
   /** 1-based product dialogue sequence counter (dialogue scopes only). */
@@ -41,6 +42,7 @@ export class TranscriptLogger {
   seed(entries: readonly TranscriptEntry[]): void {
     this.transcript.length = 0;
     this.publicMessages.length = 0;
+    this.dialogueEntries.length = 0;
     this.dialogueSequence = 0;
     for (const entry of entries) {
       const seededEntry: TranscriptEntry = { ...entry };
@@ -50,6 +52,9 @@ export class TranscriptLogger {
         seededEntry.entrySequence > this.dialogueSequence
       ) {
         this.dialogueSequence = seededEntry.entrySequence;
+      }
+      if (typeof seededEntry.entrySequence === "number" && DIALOGUE_SCOPES.has(seededEntry.scope)) {
+        this.dialogueEntries.push(seededEntry);
       }
       if (seededEntry.scope === "public") {
         this.publicMessages.push({
@@ -73,9 +78,23 @@ export class TranscriptLogger {
   }
 
   flushStreamBuffer(): void {
+    const buffered = this.takeStreamBufferForCheckpoint();
+    if (!buffered) return;
+    this.releaseCheckpointedStreamBuffer(buffered);
+  }
+
+  /**
+   * Detach viewer events while keeping them unreleased. The runner uses this
+   * to persist the matching transcript and House notebook before delivery.
+   */
+  takeStreamBufferForCheckpoint(): GameStreamEvent[] | null {
     const buffered = this.streamBuffer;
     this.streamBuffer = null;
-    if (!buffered) return;
+    return buffered;
+  }
+
+  /** Release events only after the checkpoint containing them is durable. */
+  releaseCheckpointedStreamBuffer(buffered: readonly GameStreamEvent[]): void {
     for (const event of buffered) {
       this.deliverStreamEvent(event);
     }
@@ -88,6 +107,21 @@ export class TranscriptLogger {
   /** Whether the durable stream buffer is empty (post-flush boundary evidence). */
   isStreamBufferEmpty(): boolean {
     return this.streamBuffer === null || this.streamBuffer.length === 0;
+  }
+
+  get dialogueHead(): number {
+    return this.dialogueSequence;
+  }
+
+  dialogueEntriesAfter(sequence: number): readonly TranscriptEntry[] {
+    let low = 0;
+    let high = this.dialogueEntries.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if ((this.dialogueEntries[middle]?.entrySequence ?? 0) <= sequence) low = middle + 1;
+      else high = middle;
+    }
+    return this.dialogueEntries.slice(low);
   }
 
   emitStream(event: GameStreamEvent): void {
@@ -107,16 +141,32 @@ export class TranscriptLogger {
   }
 
   emitPhaseChange(phase: Phase): void {
+    this.gameState.recordPhaseEntered(phase);
     const alivePlayers = this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name }));
     this.emitStream({ type: "phase_change", phase, round: this.gameState.round, alivePlayers });
   }
 
   emitAgentTurn(input: AgentTurnInput): void {
+    const {
+      decisionId: responseDecisionId,
+      strategyResult: responseStrategyResult,
+      ...response
+    } = input.response as Record<string, unknown> & {
+      decisionId?: AgentTurnEvent["decisionId"];
+      strategyResult?: AgentTurnEvent["strategyResult"];
+    };
     const event: AgentTurnEvent = {
       type: "agent_turn",
       round: this.gameState.round,
       timestamp: Date.now(),
       ...input,
+      response,
+      ...(input.decisionId ?? responseDecisionId
+        ? { decisionId: input.decisionId ?? responseDecisionId }
+        : {}),
+      ...(input.strategyResult ?? responseStrategyResult
+        ? { strategyResult: input.strategyResult ?? responseStrategyResult }
+        : {}),
     };
     this.emitStream(event);
   }
@@ -131,6 +181,7 @@ export class TranscriptLogger {
       throw new Error(`pushDialogueEntry called for non-dialogue scope ${entry.scope}`);
     }
     this.transcript.push(entry);
+    this.dialogueEntries.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 
@@ -335,7 +386,13 @@ export class TranscriptLogger {
     this.pushDialogueEntry(entry);
   }
 
-  logDiary(from: string, text: string, thinking?: string, reasoningContext?: string): void {
+  logDiary(
+    from: string,
+    text: string,
+    thinking?: string,
+    reasoningContext?: string,
+    recipientPlayerId?: string,
+  ): void {
     const speakerPlayerId = resolvePlayerIdByName(this.gameState, from);
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -345,6 +402,7 @@ export class TranscriptLogger {
       scope: "diary",
       text,
       speakerPlayerId,
+      ...(recipientPlayerId && { to: [recipientPlayerId] }),
       ...(thinking && { thinking }),
       ...(reasoningContext && { reasoningContext }),
     };

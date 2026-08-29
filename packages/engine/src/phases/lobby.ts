@@ -2,6 +2,7 @@ import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -18,7 +19,7 @@ async function runLobbyMessages(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, config } = ctx;
+  const { gameState, config } = ctx;
   const alivePlayers = gameState.getAlivePlayers();
   const messagesPerPlayer = computeLobbyMessagesPerPlayer(alivePlayers.length, config.lobbyMessagesPerPlayer);
 
@@ -26,30 +27,7 @@ async function runLobbyMessages(
   // the public lobby messages already logged in the same beat.
   for (let sub = 0; sub < messagesPerPlayer; sub++) {
     for (const player of alivePlayers) {
-      const agent = agents.get(player.id)!;
-      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.LOBBY, "ordinary_speech");
-      phaseCtx.lobbySubRound = sub;
-      phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
-      const { message, thinking, reasoningContext, decisionLog } = await agent.getLobbyMessage(phaseCtx);
-      await assertCanAcceptCommit(ctx);
-      const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
-      logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);
-      logger.emitAgentTurn({
-        phase: Phase.LOBBY,
-        action: "lobby-message",
-        actor: { id: player.id, name: player.name, role: "player" },
-        visibility: "public",
-        response: {
-          message,
-          subRound: sub,
-          totalSubRounds: messagesPerPlayer,
-          ...strategicDecisionResponse({ decisionLog }),
-        },
-        thinking,
-        reasoningContext,
-        scope: "public",
-        text: message,
-      });
+      await runLobbySpeakerTurn(ctx, player.id, sub, messagesPerPlayer);
     }
   }
 
@@ -57,10 +35,52 @@ async function runLobbyMessages(
   await new Promise((r) => setTimeout(r, 0));
 }
 
-export async function runLobbyPhase(
+/** One serial Lobby prompt and its accepted effects. Durable execution commits this unit. */
+export async function runLobbySpeakerTurn(
   ctx: PhaseRunnerContext,
-  actor: PhaseActor,
+  playerId: string,
+  subRound: number,
+  totalSubRounds: number,
 ): Promise<void> {
+  const { gameState, agents, logger } = ctx;
+  const player = gameState.getPlayer(playerId);
+  if (!player) throw new Error(`Lobby turn references missing player ${playerId}`);
+  const agent = agents.get(player.id);
+  if (!agent) throw new Error(`Lobby turn references missing agent ${playerId}`);
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.LOBBY, "ordinary_speech");
+  phaseCtx.lobbySubRound = subRound;
+  phaseCtx.lobbyTotalSubRounds = totalSubRounds;
+  const response = await agent.getLobbyMessage(phaseCtx);
+  const { message, thinking, reasoningContext } = response;
+  if (response.providerAbsence || !message.trim()) return;
+  await assertCanAcceptCommit(ctx);
+  const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
+  logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);
+  resolveActionStrategyCandidate(
+    agent,
+    response,
+    response.strategyGameplayAccepted !== false,
+  );
+  logger.emitAgentTurn({
+    phase: Phase.LOBBY,
+    action: "lobby-message",
+    actor: { id: player.id, name: player.name, role: "player" },
+    visibility: "public",
+    response: {
+      message,
+      subRound,
+      totalSubRounds,
+      ...strategicDecisionResponse(response),
+    },
+    thinking,
+    reasoningContext,
+    scope: "public",
+    text: message,
+  });
+}
+
+/** Engine-only Lobby entry effects; no model dispatch. */
+export async function beginLobbyPhase(ctx: PhaseRunnerContext): Promise<void> {
   const { gameState, logger, contextBuilder } = ctx;
   await assertCanAcceptCommit(ctx);
   contextBuilder.currentPostVotePressure = null;
@@ -69,6 +89,13 @@ export async function runLobbyPhase(
   const round = gameState.round;
   logger.emitPhaseChange(Phase.LOBBY);
   logger.logSystem(`=== ROUND ${round}: LOBBY PHASE ===`, Phase.LOBBY);
+}
+
+export async function runLobbyPhase(
+  ctx: PhaseRunnerContext,
+  actor: PhaseActor,
+): Promise<void> {
+  await beginLobbyPhase(ctx);
 
   await runLobbyMessages(ctx, actor);
 }

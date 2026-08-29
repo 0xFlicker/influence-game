@@ -56,7 +56,13 @@ export interface PrivateRecallSelectionObservation {
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
+import {
+  restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
+  type HistoricalFormatBallot,
+} from "./formats/restricted-history";
 import type { CanonicalGameEvent } from "./canonical-events";
+import { displayNameForFormat } from "./format-presentation-metadata";
 import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
 export type PhaseContextBuildExtra = {
@@ -203,13 +209,7 @@ export class ContextBuilder {
         return {
           id: compact.id,
           round: compact.round,
-          ask: compact.ask,
-          plan: compact.plan,
-          promises: [...compact.promises],
-          dissent: [...compact.dissent],
-          confidence: compact.confidence,
-          posture: compact.posture,
-          leakOrBetrayalClaims: [...compact.leakOrBetrayalClaims],
+          facts: structuredClone(compact.facts),
         };
       });
   }
@@ -327,6 +327,8 @@ export class ContextBuilder {
     switch (event.type) {
       case "game.roster_initialized":
         return `${prefix}: Game roster: ${event.payload.players.map((p) => p.name).join(", ")}`;
+      case "game.phase_entered":
+        return `${prefix}: ${event.payload.phase} began with ${event.payload.remainingPlayers.map((p) => p.name).join(", ")} remaining.`;
       case "round.started":
         return `${prefix}: Round ${event.payload.round} started.`;
       case "shields.expired":
@@ -349,24 +351,26 @@ export class ContextBuilder {
       case "vote.empowered_set":
         return `${prefix}: Empowered player set to ${this.name(event.payload.empowered)} by ${event.payload.method}.`;
       case "format.menu_offered":
-        return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.join(" vs ")}.`;
+        return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.map(displayNameForFormat).join(" vs ")}.`;
       case "format.selected":
-        return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${event.payload.formatId}.`;
+        return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${displayNameForFormat(event.payload.formatId)}.`;
       case "format.ballot_cast": {
-        const polarity = event.payload.polarity ?? "eliminate";
+        const polarity = event.payload.polarity === "save" ? "SAVE" : "EXIT";
         const target = this.name(event.payload.targetId);
         return `${prefix}: Your format ballot: ${polarity} → ${target} (sealed).`;
       }
+      case "format.ballot_forfeited":
+        return `${prefix}: ${this.name(event.payload.voterId)} forfeited their Restricted History ballot because no legal target remained.`;
       case "format.safety_bounce_started":
         return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;
       case "format.safety_bounce_pointer":
         return `${prefix}: ${this.name(event.payload.actorId)} pointed to ${this.name(event.payload.targetId)} (${event.payload.classification}).`;
       case "format.resolved":
-        return `${prefix}: Format ${event.payload.formatId} resolved; eliminated ${this.name(event.payload.eliminatedId)} (${event.payload.resolutionKind}).`;
+        return `${prefix}: ${displayNameForFormat(event.payload.formatId)} resolved; ${this.name(event.payload.eliminatedId)} exited (${event.payload.resolutionKind}).`;
       case "power.action_set":
-        return `${prefix}: Power action: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
+        return `${prefix}: Power action: ${event.payload.action.action === "eliminate" ? "exit" : event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
       case "power.candidates_resolved":
-        return `${prefix}: Power resolved candidates=${event.payload.candidates ? this.formatPlayerList(event.payload.candidates) : "none"}; shield granted=${this.name(event.payload.shieldGranted)}; auto-eliminated=${this.name(event.payload.autoEliminated)}; expose scores ${this.formatCounts(event.payload.exposeScores)}.`;
+        return `${prefix}: Power resolved candidates=${event.payload.candidates ? this.formatPlayerList(event.payload.candidates) : "none"}; shield granted=${this.name(event.payload.shieldGranted)}; automatic exit=${this.name(event.payload.autoEliminated)}; expose scores ${this.formatCounts(event.payload.exposeScores)}.`;
       case "alliance.proposal_submitted":
         return `${prefix}: Alliance proposal submitted for ${event.payload.lineage.versions[0]?.terms.name ?? event.payload.lineage.allianceId}.`;
       case "alliance.response_recorded":
@@ -390,22 +394,22 @@ export class ContextBuilder {
       case "alliance.huddle_completed":
         return `${prefix}: Alliance huddle completed for ${event.payload.session.allianceId} in ${event.payload.session.window}.`;
       case "alliance.huddle_outcome_recorded":
-        return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payload.outcome.plan}`;
+        return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payloadVersion === 2 ? event.payload.outcome.facts.length : 0} structured facts.`;
       case "council.vote_cast":
-        return `${prefix}: ${this.name(event.payload.voterId)} voted at Council to eliminate ${this.name(event.payload.target)}.`;
+        return `${prefix}: ${this.name(event.payload.voterId)} voted at Council for ${this.name(event.payload.target)} to exit.`;
       case "council.elimination_resolved":
-        return `${prefix}: Council resolved: candidates ${this.formatPlayerList(event.payload.candidates)}; votes ${this.formatVoteMap(event.payload.tally.votes)}; eliminated ${this.name(event.payload.eliminated)} by ${event.payload.method}.`;
+        return `${prefix}: Council resolved: candidates ${this.formatPlayerList(event.payload.candidates)}; votes ${this.formatVoteMap(event.payload.tally.votes)}; ${this.name(event.payload.eliminated)} exited by ${event.payload.method}.`;
       case "player.last_message_recorded":
       case "player.elimination_message_recorded":
         return `${prefix}: ${this.name(event.payload.playerId)} gave final words: "${event.payload.message}"`;
       case "player.eliminated":
-        return `${prefix}: ${event.payload.playerName} was eliminated.`;
+        return `${prefix}: ${event.payload.playerName} exited the game.`;
       case "endgame.stage_set":
         return `${prefix}: Endgame stage set to ${event.payload.stage}; last regular empowered=${this.name(event.payload.lastEmpoweredFromRegularRounds)}.`;
       case "endgame.elimination_vote_cast":
-        return `${prefix}: ${this.name(event.payload.voterId)} voted to eliminate ${this.name(event.payload.target)}.`;
+        return `${prefix}: ${this.name(event.payload.voterId)} voted for ${this.name(event.payload.target)} to exit.`;
       case "endgame.elimination_resolved":
-        return `${prefix}: ${event.payload.stage ?? "endgame"} elimination resolved: votes ${this.formatVoteMap(event.payload.tally.votes)}${event.payload.juryTiebreakerVotes ? `; jury tiebreaker ${this.formatVoteMap(event.payload.juryTiebreakerVotes)}` : ""}; eliminated ${this.name(event.payload.eliminated)} by ${event.payload.method}.`;
+        return `${prefix}: ${event.payload.stage ?? "endgame"} exit resolved: votes ${this.formatVoteMap(event.payload.tally.votes)}${event.payload.juryTiebreakerVotes ? `; jury tiebreaker ${this.formatVoteMap(event.payload.juryTiebreakerVotes)}` : ""}; ${this.name(event.payload.eliminated)} exited by ${event.payload.method}.`;
       case "jury.vote_cast":
         return `${prefix}: Juror ${this.name(event.payload.jurorId)} voted for finalist ${this.name(event.payload.finalistId)}.`;
       case "jury.winner_determined":
@@ -430,7 +434,7 @@ export class ContextBuilder {
         return `${prefix}: ${speaker} ${kindLabel}${target}${counterpart}: "${event.payload.text}"`;
       }
       case "round.result_recorded":
-        return `${prefix}: Round result recorded: empowered=${this.name(event.payload.result.empoweredId)}, candidates=${this.formatPlayerList(event.payload.result.candidates)}, power=${event.payload.result.powerAction}, shield granted=${this.name(event.payload.result.shieldGranted)}, eliminated=${this.name(event.payload.result.eliminated)}.`;
+        return `${prefix}: Round result recorded: empowered=${this.name(event.payload.result.empoweredId)}, candidates=${this.formatPlayerList(event.payload.result.candidates)}, power=${event.payload.result.powerAction === "eliminate" ? "exit" : event.payload.result.powerAction}, shield granted=${this.name(event.payload.result.shieldGranted)}, exited=${this.name(event.payload.result.eliminated)}.`;
     }
   }
 
@@ -441,6 +445,7 @@ export class ContextBuilder {
   ): boolean {
     switch (event.type) {
       case "format.ballot_cast":
+      case "format.ballot_forfeited":
         return event.payload.voterId === agentId
           || this.formatBallotIsResolved(event, resolvedFormats);
       case "alliance.proposal_submitted":
@@ -460,9 +465,9 @@ export class ContextBuilder {
       case "alliance.huddle_completed":
         return false;
       case "alliance.huddle_outcome_recorded": {
-        const alliance = event.payload.alliance
-          ?? this.gameState.getAlliance(event.payload.outcome.allianceId);
-        return alliance ? this.allianceRecordVisibleToAgent(alliance, agentId) : false;
+        const outcome = this.gameState.getDomainProjection()
+          .allianceHuddleOutcomes[event.payload.outcome.id];
+        return outcome ? actorAuthorizedForHuddleOutcome(outcome, agentId) : false;
       }
       default:
         return true;
@@ -483,7 +488,7 @@ export class ContextBuilder {
     for (const event of events) {
       if (!this.canonicalEventVisibleToAgent(event, agentId, resolvedFormats)) continue;
       if (
-        event.type === "format.ballot_cast"
+        (event.type === "format.ballot_cast" || event.type === "format.ballot_forfeited")
         && this.formatBallotIsResolved(event, resolvedFormats)
       ) {
         continue;
@@ -497,7 +502,10 @@ export class ContextBuilder {
   }
 
   private formatBallotIsResolved(
-    ballot: Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>,
+    ballot: Extract<
+      CanonicalGameEvent,
+      { type: "format.ballot_cast" | "format.ballot_forfeited" }
+    >,
     resolvedFormats?: ReadonlyMap<string, number>,
   ): boolean {
     if (resolvedFormats) {
@@ -540,14 +548,20 @@ export class ContextBuilder {
     if (presentation.status !== "revealed") return [];
     const prefix = `R${resolved.round}${resolved.phase ? `/${resolved.phase}` : ""}`;
     return presentation.rollCall.map((entry) => {
-      const polarity = entry.polarity ?? "eliminate";
+      if (entry.targetId === null) {
+        return `${prefix}: ${this.name(entry.voterId)} forfeited their Restricted History ballot (no legal target).`;
+      }
+      const polarity = entry.polarity === "save" ? "SAVE" : "EXIT";
       return `${prefix}: ${this.name(entry.voterId)} format ballot: ${polarity} → ${this.name(entry.targetId)}.`;
     });
   }
 
   private buildPublicTranscriptContext(): PublicTranscriptContextEntry[] {
     return this.logger.transcript
-      .filter((entry) => entry.scope === "public" || entry.scope === "system")
+      .filter((entry) =>
+        (entry.scope === "public" || entry.scope === "system")
+        && entry.dialogueKind !== "house_summary",
+      )
       .map((entry) => ({
         round: entry.round,
         phase: entry.phase,
@@ -557,36 +571,50 @@ export class ContextBuilder {
   }
 
   private buildJudgmentQuestionHistory(): JudgmentQuestionHistoryEntry[] {
-    const history: JudgmentQuestionHistoryEntry[] = [];
-    for (const entry of this.logger.transcript) {
-      if (entry.phase !== Phase.JURY_QUESTIONS || entry.scope !== "public") continue;
-      const question = entry.text.match(/^\[QUESTION to (.+?)\] (.+)$/);
-      if (question) {
+    const history: Array<{
+      jurorId: UUID;
+      finalistId: UUID;
+      entry: JudgmentQuestionHistoryEntry;
+    }> = [];
+
+    for (const event of this.gameState.getCanonicalEvents()) {
+      if (event.type !== "judgment.speech_recorded") continue;
+      const { speechKind, playerId, addresseeId, text } = event.payload;
+      if (!addresseeId) continue;
+
+      if (speechKind === "jury_question") {
         history.push({
-          jurorName: entry.from,
-          finalistName: question[1] ?? "unknown",
-          question: question[2] ?? "",
+          jurorId: playerId,
+          finalistId: addresseeId,
+          entry: {
+            jurorName: this.name(playerId),
+            finalistName: this.name(addresseeId),
+            question: text,
+          },
         });
         continue;
       }
-      const answer = entry.text.match(/^\[ANSWER to (.+?)\] (.+)$/);
-      if (answer) {
-        const finalistName = entry.from;
-        for (let index = history.length - 1; index >= 0; index -= 1) {
-          const item = history[index];
-          if (item && item.jurorName === answer[1] && item.finalistName === finalistName && item.answer == null) {
-            item.answer = answer[2] ?? "";
-            break;
-          }
+
+      if (speechKind !== "jury_answer") continue;
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        const item = history[index];
+        if (
+          item
+          && item.jurorId === addresseeId
+          && item.finalistId === playerId
+          && item.entry.answer == null
+        ) {
+          item.entry.answer = text;
+          break;
         }
       }
     }
-    return history;
+
+    return history.map(({ entry }) => entry);
   }
 
   private buildRecentDecisionHistory(agentId: UUID): RecentDecisionContextEntry[] {
     const decisions: RecentDecisionContextEntry[] = [];
-    const playerName = this.gameState.getPlayerName(agentId);
     const councilResolvedByRound = new Map<number, Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }>>();
 
     for (const event of this.gameState.getCanonicalEvents()) {
@@ -625,7 +653,7 @@ export class ContextBuilder {
               round: event.round,
               phase: Phase.POWER,
               label: "Power Action",
-              detail: `Your Power action in Round ${event.round}: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`,
+              detail: `Your Power action in Round ${event.round}: ${event.payload.action.action === "eliminate" ? "exit" : event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`,
             });
           }
           break;
@@ -650,8 +678,8 @@ export class ContextBuilder {
             decisions.push({
               round: event.round,
               phase: event.phase ?? Phase.VOTE,
-              label: "Endgame Elimination Vote",
-              detail: `Your endgame direct elimination vote in Round ${event.round}: ${this.name(event.payload.target)}. This was not empower/expose.`,
+              label: "Endgame Exit Vote",
+              detail: `Your endgame direct exit vote in Round ${event.round}: ${this.name(event.payload.target)}. This was not empower/expose.`,
             });
           }
           break;
@@ -662,6 +690,31 @@ export class ContextBuilder {
               phase: Phase.JURY_VOTE,
               label: "Jury Vote",
               detail: `Your jury vote: ${this.name(event.payload.finalistId)} to win.`,
+            });
+          }
+          break;
+        case "judgment.speech_recorded":
+          if (
+            event.payload.playerId === agentId
+            && event.payload.addresseeId
+            && event.payload.speechKind === "jury_question"
+          ) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.JURY_QUESTIONS,
+              label: "Judgment Question",
+              detail: `Your Judgment question to ${this.name(event.payload.addresseeId)}: "${event.payload.text}"`,
+            });
+          } else if (
+            event.payload.playerId === agentId
+            && event.payload.addresseeId
+            && event.payload.speechKind === "jury_answer"
+          ) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.JURY_QUESTIONS,
+              label: "Judgment Answer",
+              detail: `Your Judgment answer to ${this.name(event.payload.addresseeId)}: "${event.payload.text}"`,
             });
           }
           break;
@@ -676,7 +729,7 @@ export class ContextBuilder {
         round: resolved.round,
         phase: Phase.COUNCIL,
         label: "Council Candidate",
-        detail: `You were a Council candidate this round and did not cast a Council vote. Candidates: ${this.formatPlayerList(resolved.payload.candidates)}; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+        detail: `You were a Council candidate this round and did not cast a Council vote. Candidates: ${this.formatPlayerList(resolved.payload.candidates)}; exited: ${this.name(resolved.payload.eliminated)}.`,
       });
     }
 
@@ -693,7 +746,7 @@ export class ContextBuilder {
         round: resolved.round,
         phase: Phase.COUNCIL,
         label: "Council Tiebreak Not Needed",
-        detail: `You were empowered in Round ${resolved.round}, but the Council vote resolved by plurality. You did not cast a tiebreaker; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+        detail: `You were empowered in Round ${resolved.round}, but the Council vote resolved by plurality. You did not cast a tiebreaker; exited: ${this.name(resolved.payload.eliminated)}.`,
       });
     }
 
@@ -710,32 +763,46 @@ export class ContextBuilder {
       });
     }
 
-    for (const entry of this.logger.transcript) {
-      if (entry.phase !== Phase.JURY_QUESTIONS || entry.scope !== "public") continue;
-      const question = entry.text.match(/^\[QUESTION to (.+?)\] (.+)$/);
-      if (entry.from === playerName && question) {
-        decisions.push({
-          round: entry.round,
-          phase: Phase.JURY_QUESTIONS,
-          label: "Judgment Question",
-          detail: `Your Judgment question to ${question[1] ?? "unknown"}: "${question[2] ?? ""}"`,
-        });
-        continue;
-      }
-      const answer = entry.text.match(/^\[ANSWER to (.+?)\] (.+)$/);
-      if (entry.from === playerName && answer) {
-        decisions.push({
-          round: entry.round,
-          phase: Phase.JURY_QUESTIONS,
-          label: "Judgment Answer",
-          detail: `Your Judgment answer to ${answer[1] ?? "unknown"}: "${answer[2] ?? ""}"`,
-        });
-      }
-    }
-
     return decisions
       .sort((a, b) => a.round - b.round || this.decisionPhaseOrder(a.phase) - this.decisionPhaseOrder(b.phase))
       .slice(-12);
+  }
+
+  private buildRestrictedHistoryLegality(
+    agentId: UUID,
+    formatPressure: FormatPressureProjection | undefined,
+  ): PhaseContext["restrictedHistoryLegality"] {
+    if (formatPressure?.selectedFormat !== "restricted_history") return undefined;
+
+    const history: HistoricalFormatBallot[] = this.gameState.getCanonicalEvents().flatMap((event) =>
+      event.type === "format.ballot_cast"
+        ? [{
+            round: event.round,
+            voterId: event.payload.voterId,
+            targetId: event.payload.targetId,
+            polarity: event.payload.polarity,
+          }]
+        : []
+    );
+    const aliveIds = this.gameState.getAlivePlayers().map((player) => player.id);
+    const priorTargetIds = restrictedHistoryPriorTargetIds(
+      agentId,
+      this.gameState.round,
+      history,
+    );
+    const legalTargetIds = restrictedHistoryLegalTargets(
+      agentId,
+      aliveIds,
+      this.gameState.round,
+      history,
+    );
+
+    return {
+      priorTargetIds,
+      priorTargetNames: priorTargetIds.map((id) => this.name(id)),
+      legalTargetIds,
+      legalTargetNames: legalTargetIds.map((id) => this.name(id)),
+    };
   }
 
   buildPhaseContext(
@@ -759,6 +826,8 @@ export class ContextBuilder {
     },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
+    const providerLogicalCallOrdinal =
+      (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
 
     const roomAllocations = roomInfo?.includeRoomAllocations && this.currentRoomAllocations.length > 0
       ? this.currentRoomAllocations.map((r) => ({
@@ -768,11 +837,15 @@ export class ContextBuilder {
           playerNames: r.playerIds.map((id) => this.gameState.getPlayerName(id)),
         }))
       : undefined;
+    const formatPressure = extra && "formatPressure" in extra
+      ? extra.formatPressure ?? undefined
+      : this.currentFormatPressure ?? undefined;
 
     return {
       gameId: this.gameState.gameId,
       round: this.gameState.round,
       phase,
+      providerLogicalCallOrdinal,
       selfId: agentId,
       selfName: player.name,
       alivePlayers: this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name, shielded: p.shielded })),
@@ -785,9 +858,8 @@ export class ContextBuilder {
       postVotePressure: extra && "postVotePressure" in extra
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
-      formatPressure: extra && "formatPressure" in extra
-        ? extra.formatPressure ?? undefined
-        : this.currentFormatPressure ?? undefined,
+      formatPressure,
+      restrictedHistoryLegality: this.buildRestrictedHistoryLegality(agentId, formatPressure),
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       gameEventRecord: this.buildGameEventRecord(agentId),
       publicTranscriptContext: this.buildPublicTranscriptContext(),

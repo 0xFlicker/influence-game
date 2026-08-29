@@ -20,6 +20,11 @@ import type { GameConfig, RoomAllocation } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { MockAgent } from "./mock-agent";
 import { allocateRooms } from "../phases/mingle";
+import {
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+} from "../provider-execution";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -166,6 +171,128 @@ describe("Mingle Rooms (current open-room phase)", () => {
     maxPlayers: 12,
   };
 
+  it("omits provider-exhausted Mingle turns without transcript or agent-turn state", async () => {
+    class AbsentMingleAgent extends MockAgent {
+      override async takeMingleTurn(): Promise<MingleTurnAction> {
+        return {
+          thinking: "",
+          message: null,
+          noReply: true,
+          gotoRoomId: null,
+          gotoPlayerName: null,
+          providerAbsence: {
+            kind: "provider_exhausted",
+            outcome: "service_error",
+          },
+        };
+      }
+    }
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
+      (name) => new AbsentMingleAgent(createUUID(), name),
+    );
+    const events: GameStreamEvent[] = [];
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, mingleSessionsPerRound: 1 },
+      new FixedMingleHouseInterviewer(
+        Object.fromEntries(agents.map((agent) => [agent.name, 1])),
+      ),
+    );
+    runner.setStreamListener((event) => events.push(event));
+
+    const result = await runner.run();
+
+    expect(result.winner).toBeDefined();
+    expect(result.transcript.some((entry) => entry.scope === "mingle")).toBe(false);
+    expect(events.some((event) =>
+      event.type === "agent_turn" && event.action === "mingle-turn"
+    )).toBe(false);
+  });
+
+  it("commits one legal seeded vote fallback with engine provenance", async () => {
+    class FailedVoteAgent extends MockAgent {
+      override async getVotes(): Promise<never> {
+        throw Object.setPrototypeOf(
+          new Error("provider exhausted"),
+          ProviderAttemptError.prototype,
+        );
+      }
+    }
+    const failed = new FailedVoteAgent(createUUID(), "Alpha");
+    const agents = [
+      failed,
+      ...["Beta", "Gamma", "Delta", "Echo"].map(
+        (name) => new MockAgent(createUUID(), name),
+      ),
+    ];
+    const runner = new GameRunner(agents, TEST_CONFIG);
+
+    await runner.run();
+    const fallbackVotes = runner.getCanonicalEvents().filter(
+      (event) => event.type === "vote.cast" && event.payload.voterId === failed.id,
+    );
+
+    expect(fallbackVotes.length).toBeGreaterThan(0);
+    for (const event of fallbackVotes) {
+      if (event.type !== "vote.cast") continue;
+      expect(event.payload.empowerTarget).not.toBe(failed.id);
+      expect(agents.map((agent) => agent.id)).toContain(event.payload.empowerTarget);
+      const pointer = event.sourcePointers.find((source) =>
+        source.actorId === failed.id && source.action === "vote"
+      );
+      expect(pointer).toMatchObject({
+        actorId: failed.id,
+        engineFallback: {
+          source: "engine",
+          reason: "provider_exhausted",
+          seed: expect.any(String),
+        },
+      });
+      expect(pointer).not.toHaveProperty("decisionId");
+    }
+  });
+
+  it("keeps required votes legal when provider health or budget blocks dispatch", async () => {
+    const failures = [
+      new ProviderCircuitOpenError("openai:gpt-5.6-luna", "provider:openai", 4, true),
+      new ProviderCallBudgetExhaustedError("katana:grok-4-5", 3, 3),
+    ];
+
+    for (const failure of failures) {
+      class BlockedVoteAgent extends MockAgent {
+        override async getVotes(): Promise<never> {
+          throw failure;
+        }
+      }
+      const blocked = new BlockedVoteAgent(createUUID(), "Alpha");
+      const agents = [
+        blocked,
+        ...["Beta", "Gamma", "Delta", "Echo"].map(
+          (name) => new MockAgent(createUUID(), name),
+        ),
+      ];
+      const runner = new GameRunner(agents, TEST_CONFIG);
+
+      await runner.run();
+      const fallbackVotes = runner.getCanonicalEvents().filter(
+        (event) => event.type === "vote.cast" && event.payload.voterId === blocked.id,
+      );
+      expect(fallbackVotes.length).toBeGreaterThan(0);
+      for (const event of fallbackVotes) {
+        if (event.type !== "vote.cast") continue;
+        expect(event.payload.empowerTarget).not.toBe(blocked.id);
+        expect(agents.map((agent) => agent.id)).toContain(event.payload.empowerTarget);
+        expect(event.sourcePointers[0]).toMatchObject({
+          actorId: blocked.id,
+          engineFallback: {
+            source: "engine",
+            reason: "provider_exhausted",
+          },
+        });
+      }
+    }
+  });
+
   it("open room allocation system message appears in transcript", async () => {
     const agents = [
       new MockAgent(createUUID(), "Alpha"),
@@ -236,7 +363,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(events.some((event) => event.type === "agent_turn" && event.action === "mingle-intent")).toBe(false);
     expect(house.seenContext).toMatchObject({
       phase: Phase.FORMAT_MINGLE,
-      selectedFormatName: expect.any(String),
+      selectedFormatId: expect.any(String),
       formatRuleSummary: expect.any(String),
       players: agents.map((agent) => ({ id: agent.id, name: agent.name })),
     });
@@ -423,7 +550,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       new ScriptedVoteAgent(betaId, "Beta", { empowerTarget: alphaId }, null),
       new ScriptedVoteAgent(gammaId, "Gamma", { empowerTarget: alphaId }, alphaId),
       new ScriptedVoteAgent(deltaId, "Delta", { empowerTarget: betaId }, alphaId),
-      new ScriptedVoteAgent(echoId, "Echo", { empowerTarget: echoId }, betaId),
+      new ScriptedVoteAgent(echoId, "Echo", { empowerTarget: gammaId }, betaId),
     ];
     const runner = new GameRunner(
       agents,
@@ -454,7 +581,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       revoteEmpowerTargetName: "Alpha",
     });
     expect(echoLedger).toMatchObject({
-      empowerTargetName: "Echo",
+      empowerTargetName: "Gamma",
       revoteEmpowerTargetName: "Beta",
     });
   });
@@ -2440,6 +2567,66 @@ describe("Full game - endgame integration", () => {
 });
 
 describe("Tribunal accusation stable commit order", () => {
+  it("keeps a timed-out required accusation target and offers the target a defense without fabricated prose", async () => {
+    const { runTribunalAccusation, runTribunalDefense } = await import("../phases/endgame");
+    const { TranscriptLogger } = await import("../transcript-logger");
+    const { ContextBuilder } = await import("../context-builder");
+    const { DEFAULT_CONFIG } = await import("../types");
+    const players = ["First", "Second", "Third"].map((name) => ({ id: createUUID(), name }));
+    const gs = new GameState(players, { gameId: "game-acc-timeout", now: () => 1_700_000_000_000 });
+    gs.startRound();
+    const defended = new Set<string>();
+
+    class TimedAccuser extends MockAgent {
+      override async getAccusation(): Promise<never> {
+        return new Promise(() => {});
+      }
+
+      override async getDefense(): Promise<AgentResponse> {
+        defended.add(this.id);
+        return { message: "A real defense.", thinking: "Current defense thought." };
+      }
+    }
+
+    const agents = new Map(players.map((player) => [
+      player.id,
+      new TimedAccuser(player.id, player.name),
+    ]));
+    const logger = new TranscriptLogger(gs);
+    const mingleInbox = new Map<string, Array<{ from: string; text: string }>>();
+    const contextBuilder = new ContextBuilder(gs, logger, mingleInbox, players.length);
+    const accusations = new Map<string, { accuserId: string; accuserName: string; text: string }>();
+    const ctx = {
+      gameState: gs,
+      agents,
+      config: { ...DEFAULT_CONFIG, agentActionTimeoutMs: 5 },
+      logger,
+      contextBuilder,
+      diaryRoom: null as never,
+      houseInterviewer: null as never,
+      mingleInbox,
+      formatKernelState: {
+        offeredFormats: null,
+        selectedFormat: null,
+        pressure: null,
+        lastSelectedFormat: null,
+      },
+      eliminationOrder: [],
+    };
+    const fakeActor = { send: () => undefined } as never;
+
+    await runTribunalAccusation(ctx, fakeActor, accusations);
+
+    expect(accusations.size).toBeGreaterThan(0);
+    expect([...accusations.values()].every((accusation) => accusation.text === "")).toBe(true);
+    expect(gs.getCanonicalEvents().some((event) =>
+      event.type === "endgame.speech_recorded" && event.payload.speechKind === "accusation"
+    )).toBe(false);
+
+    await runTribunalDefense(ctx, fakeActor, accusations);
+    expect([...accusations.keys()].every((targetId) => defended.has(targetId))).toBe(true);
+  });
+
   it("selects the same defense context regardless of promise completion order", async () => {
     const { runTribunalAccusation } = await import("../phases/endgame");
     const { TranscriptLogger } = await import("../transcript-logger");

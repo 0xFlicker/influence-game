@@ -5,15 +5,23 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { hashHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
+import {
+  createEdgeSmokeDuskEvents,
+  EDGE_SMOKE_DUSK_EXPECTED,
+  EDGE_SMOKE_DUSK_GAME_ID,
+  EDGE_SMOKE_DUSK_PLAYERS,
+  hashHouseHighlightsTrailerManifest,
+  type HouseHighlightsTrailerManifest,
+} from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { createPostgameMediaWorkerRoutes, postgameMediaPublicBaseUrl } from "../routes/postgame-media-worker.js";
 import { createUploadRoutes } from "../routes/upload.js";
+import { appendGameEvents } from "../services/game-events.js";
 import { getAdminPostgameMedia, getPublicPostgameMedia } from "../services/postgame-media.js";
 import { reconcilePostgameMediaForGame, requestPostgameMedia } from "../services/postgame-media-coordinator.js";
 import { claimPostgameMedia, finalizePostgameMedia, heartbeatPostgameMedia } from "../services/postgame-media-worker.js";
-import { insertGame } from "./durable-run-test-utils.js";
+import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("postgame media worker routes and leases", () => {
@@ -121,6 +129,36 @@ describe("postgame media worker routes and leases", () => {
     });
   });
 
+  test("creates a trailer snapshot regardless of owner legal acceptance", async () => {
+    const { gameId } = await insertOwnedCompletedMediaGame(db);
+
+    expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("queued");
+    const [row] = await db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(row).toMatchObject({
+      status: "queued",
+    });
+    expect(row?.renderInputSnapshot).not.toBeNull();
+  });
+
+  test("claims a queued trailer regardless of owner legal acceptance", async () => {
+    const ownerUserId = "postgame-media-queued-owner";
+    const gameId = await insertQueuedMedia(db, "queued-consent");
+    await db.insert(schema.users).values({
+      id: ownerUserId,
+      email: "queued-owner@test.example",
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: "postgame-media-queued-player",
+      gameId,
+      userId: ownerUserId,
+      persona: JSON.stringify({ name: "Queued Owner", personality: "Careful" }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+
+    expect(await claimPostgameMedia(db, "current-worker-token")).not.toBeNull();
+  });
+
   test("records safe durable audit history for an admin backfill request", async () => {
     const actorUserId = "postgame-media-actor";
     const gameId = "postgame-media-audit";
@@ -183,6 +221,44 @@ describe("postgame media worker routes and leases", () => {
     expect(row?.artifactVersion).not.toBe("rv_fixture-version");
   });
 
+  test("requeues a stored waiting-music snapshot regardless of owner legal acceptance", async () => {
+    const actorUserId = "postgame-media-consent-actor";
+    const ownerUserId = "postgame-media-consent-owner";
+    const gameId = await insertQueuedMedia(db, "waiting-music-consent");
+    await db.insert(schema.users).values([
+      { id: actorUserId, walletAddress: "0xpostgamemediaconsentactor" },
+      { id: ownerUserId, walletAddress: "0xpostgamemediaconsentowner" },
+    ]);
+    await db.insert(schema.gamePlayers).values({
+      id: "postgame-media-consent-player",
+      gameId,
+      userId: ownerUserId,
+      persona: JSON.stringify({ name: "Consent Player", personality: "Careful" }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+    await db.update(schema.gamePostgameMedia)
+      .set({ status: "waiting_music", attemptFinishedAt: new Date().toISOString() })
+      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+
+    const result = await requestPostgameMedia(db, {
+      gameId,
+      actorUserId,
+      action: "backfill",
+      reason: "Prepared score restored",
+      source: "admin_route",
+    });
+
+    expect(result.outcome).toBe("queued");
+    const [row] = await db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(row).toMatchObject({
+      status: "queued",
+      renderVersion: 2,
+      attemptNumber: 2,
+    });
+    expect(row?.artifactVersion).not.toBe("rv_fixture-version");
+  });
+
   test("allows an unexpired lease to heartbeat and rejects it after expiry", async () => {
     const gameId = await insertQueuedMedia(db, "lease-validity");
     const now = new Date("2026-07-10T00:00:00.000Z");
@@ -207,6 +283,10 @@ describe("postgame media worker routes and leases", () => {
     const claim = claims.find((entry) => entry !== null);
     expect(claims.filter((entry) => entry !== null)).toHaveLength(1);
 
+    const differentGameId = await insertQueuedMedia(db, "claim-during-worker-drain");
+    const differentClaim = await claimPostgameMedia(db, "replacement-worker-token", new Date(now.getTime() + 1_000));
+    expect(differentClaim?.gameId).toBe(differentGameId);
+
     await db.update(schema.gamePostgameMedia)
       .set({ leaseExpiresAt: new Date(now.getTime() - 1_000).toISOString() })
       .where(eq(schema.gamePostgameMedia.gameId, gameId));
@@ -218,6 +298,8 @@ describe("postgame media worker routes and leases", () => {
       attemptNumber: claim!.attemptNumber,
       leaseToken: claim!.leaseToken,
     }, new Date(now.getTime() + 3_000))).toBe(false);
+    expect(await finalizePostgameMedia(db, finalizeFixture(gameId, claim!), { now: new Date(now.getTime() + 3_000) }))
+      .toEqual({ ok: false, error: "stale_or_invalid_lease" });
   });
 
   test("finalize enforces provenance and opaque storage prefix without replacing a ready version twice", async () => {
@@ -379,6 +461,61 @@ describe("postgame media worker routes and leases", () => {
     expect((await getPublicPostgameMedia(db, gameId)).status).toBe("ready");
   });
 });
+
+async function insertOwnedCompletedMediaGame(
+  db: DrizzleDB,
+): Promise<{ gameId: string; ownerIds: [string, string] }> {
+  const directOwnerId = "postgame-media-direct-owner";
+  const profileOwnerId = "postgame-media-profile-owner";
+  const profileId = "postgame-media-owned-profile";
+  await db.insert(schema.users).values([
+    { id: directOwnerId, email: "direct-owner@test.example" },
+    { id: profileOwnerId, email: "profile-owner@test.example" },
+  ]);
+  await db.insert(schema.agentProfiles).values({
+    id: profileId,
+    userId: profileOwnerId,
+    name: "Consent Fixture Agent",
+    personality: "Precise and patient.",
+  });
+  const gameId = await insertGame(db, {
+    id: EDGE_SMOKE_DUSK_GAME_ID,
+    slug: EDGE_SMOKE_DUSK_EXPECTED.slug,
+    status: "completed",
+    config: {
+      maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+      visibility: "public",
+      viewerMode: "speedrun",
+    },
+  });
+  await db.insert(schema.gamePlayers).values(Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({
+    id: player.id,
+    gameId,
+    userId: player.id === EDGE_SMOKE_DUSK_PLAYERS.lilith.id ? directOwnerId : null,
+    agentProfileId: player.id === EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id ? profileId : null,
+    persona: JSON.stringify({
+      name: player.name,
+      personality: `${player.name} fixture persona`,
+      personaKey: "strategic",
+    }),
+    agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+  })));
+  await db.insert(schema.gameResults).values({
+    id: crypto.randomUUID(),
+    gameId,
+    winnerId: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
+    roundsPlayed: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+    tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }),
+    finishedAt: "2026-07-01T00:00:00.000Z",
+  });
+  const ownerEpoch = await insertOwner(db, gameId);
+  await appendGameEvents(db, {
+    gameId,
+    ownerEpoch,
+    events: createEdgeSmokeDuskEvents(gameId),
+  });
+  return { gameId, ownerIds: [directOwnerId, profileOwnerId] };
+}
 
 async function insertQueuedMedia(db: DrizzleDB, suffix: string): Promise<string> {
   const gameId = `postgame-media-${suffix}`;

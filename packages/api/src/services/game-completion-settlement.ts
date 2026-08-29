@@ -205,6 +205,8 @@ export interface CaptureGameCompletionSettlementResult {
 export type SettleCapturedGameCompletionContext =
   | {
       source: "runner";
+      /** Active terminal owner after an ordinary process-restart adoption. */
+      adoptedOwnerEpoch?: string;
       actorUserId?: never;
       requestedReason?: never;
       auditAttemptId?: never;
@@ -608,9 +610,14 @@ export async function preparePendingCompletionSettlementsOnStartup(
 ): Promise<PreparePendingCompletionSettlementsResult> {
   const rows = await db.select({ gameId: schema.gameCompletionSettlements.gameId })
     .from(schema.gameCompletionSettlements)
+    .leftJoin(
+      schema.gameExecutionStates,
+      eq(schema.gameExecutionStates.gameId, schema.gameCompletionSettlements.gameId),
+    )
     .where(and(
       eq(schema.gameCompletionSettlements.state, "pending"),
       isNull(schema.gameCompletionSettlements.retryReadyAt),
+      sql`${schema.gameExecutionStates.status} IS DISTINCT FROM 'terminal'`,
     ))
     .orderBy(asc(schema.gameCompletionSettlements.gameId));
   const readyGameIds: string[] = [];
@@ -679,6 +686,13 @@ export async function captureGameCompletionSettlement(
       );
     }
 
+    const terminalExecutionBoundary = await terminalExecutionBoundaryMatches(tx, {
+      gameId: input.gameId,
+      ownerEpoch: input.ownerEpoch,
+      finalEventSequence: input.finalEventSequence,
+      finalEventHash: input.finalEventHash,
+    });
+
     const owner = (await tx.select({
       status: schema.gameRunOwners.status,
       expiresAt: schema.gameRunOwners.expiresAt,
@@ -733,10 +747,10 @@ export async function captureGameCompletionSettlement(
         `Final event boundary ${input.finalEventSequence} was not found`,
       );
     }
-    if (eventBoundary.ownerEpoch !== input.ownerEpoch) {
+    if (eventBoundary.ownerEpoch !== input.ownerEpoch && !terminalExecutionBoundary) {
       throw new GameCompletionSettlementCaptureError(
         "event_owner_mismatch",
-        "Final event boundary belongs to a different owner epoch",
+        "Final event boundary belongs to a different owner without adopted terminal execution authority",
       );
     }
     if (eventBoundary.eventHash !== input.finalEventHash) {
@@ -892,9 +906,7 @@ export async function settleCapturedGameCompletion(
           eq(schema.gameEvents.sequence, settlement.finalEventSequence),
         ))
         .limit(1))[0];
-      if (!eventBoundary
-        || eventBoundary.ownerEpoch !== settlement.ownerEpoch
-        || eventBoundary.eventHash !== settlement.finalEventHash) {
+      if (!eventBoundary || eventBoundary.eventHash !== settlement.finalEventHash) {
         throw new DeterministicSettlementError(
           "completion_boundary_conflict",
           `Completion boundary for game ${gameId} no longer matches durable events`,
@@ -905,6 +917,7 @@ export async function settleCapturedGameCompletion(
         status: schema.games.status,
         trackType: schema.games.trackType,
         seasonId: schema.games.seasonId,
+        config: schema.games.config,
       }).from(schema.games)
         .where(eq(schema.games.id, gameId))
         .for("update")
@@ -934,7 +947,47 @@ export async function settleCapturedGameCompletion(
           `Originating owner boundary for game ${gameId} no longer matches the sealed result`,
         );
       }
-      const activeOwner = owner.status === "active" && game.status === "in_progress";
+      const runnerOwnerEpoch = context.source === "runner"
+        ? context.adoptedOwnerEpoch ?? settlement.ownerEpoch
+        : settlement.ownerEpoch;
+      const runnerOwner = runnerOwnerEpoch === settlement.ownerEpoch
+        ? owner
+        : (await tx.select({
+            status: schema.gameRunOwners.status,
+            failureReason: schema.gameRunOwners.failureReason,
+            lastPersistedEventSequence: schema.gameRunOwners.lastPersistedEventSequence,
+          }).from(schema.gameRunOwners)
+            .where(and(
+              eq(schema.gameRunOwners.gameId, gameId),
+              eq(schema.gameRunOwners.ownerEpoch, runnerOwnerEpoch),
+            ))
+            .for("update")
+            .limit(1))[0];
+      const terminalExecutionBoundary = await terminalExecutionBoundaryMatches(tx, {
+        gameId,
+        ownerEpoch: runnerOwnerEpoch,
+        finalEventSequence: settlement.finalEventSequence,
+        finalEventHash: settlement.finalEventHash,
+      });
+      const executionAuthorityExists = (await tx.select({
+        gameId: schema.gameExecutionStates.gameId,
+      }).from(schema.gameExecutionStates)
+        .where(eq(schema.gameExecutionStates.gameId, gameId))
+        .limit(1))[0] !== undefined;
+      const directPreDurableRunner = !executionAuthorityExists
+        && context.source === "runner"
+        && context.adoptedOwnerEpoch === undefined
+        && runnerOwnerEpoch === settlement.ownerEpoch;
+      const activeOwner = runnerOwner?.status === "active"
+        && runnerOwner.lastPersistedEventSequence === settlement.finalEventSequence
+        && game.status === "in_progress"
+        && (terminalExecutionBoundary || directPreDurableRunner);
+      if (eventBoundary.ownerEpoch !== settlement.ownerEpoch && !activeOwner) {
+        throw new DeterministicSettlementError(
+          "completion_boundary_conflict",
+          `Completion boundary for game ${gameId} is not owned by the active terminal execution authority`,
+        );
+      }
       const retryReadyAtMs = settlement.retryReadyAt
         ? Date.parse(settlement.retryReadyAt)
         : Number.NaN;
@@ -1087,11 +1140,20 @@ export async function settleCapturedGameCompletion(
         });
       }
 
+      const currentConfig = assertJsonRecord(
+        JSON.parse(game.config) as unknown,
+        `Completion game ${gameId} has an invalid config`,
+      );
+      const completionConfig = { ...envelope.completionConfig };
+      if (currentConfig.providerManifest !== undefined) {
+        completionConfig.providerManifest = currentConfig.providerManifest;
+      }
+
       const completed = await tx.update(schema.games)
         .set({
           status: "completed",
           endedAt: envelope.finishedAt,
-          config: JSON.stringify(envelope.completionConfig),
+          config: JSON.stringify(completionConfig),
         })
         .where(and(
           eq(schema.games.id, gameId),
@@ -1104,6 +1166,16 @@ export async function settleCapturedGameCompletion(
           `Game ${gameId} could not be completed from its current status`,
         );
       }
+
+      await releaseHeldTerminalPublications(tx, {
+        gameId,
+        ownerEpoch: context.source === "runner"
+          ? context.adoptedOwnerEpoch ?? settlement.ownerEpoch
+          : settlement.ownerEpoch,
+        finalEventSequence: settlement.finalEventSequence,
+        finalEventHash: settlement.finalEventHash,
+        finishedAt: envelope.finishedAt,
+      });
 
       try {
         await tx.transaction(async (mediaTx) => {
@@ -1126,6 +1198,22 @@ export async function settleCapturedGameCompletion(
           "completion_game_state_conflict",
           `Originating owner ${settlement.ownerEpoch} could not be closed`,
         );
+      }
+      if (context.source === "runner" && context.adoptedOwnerEpoch && context.adoptedOwnerEpoch !== settlement.ownerEpoch) {
+        const closedAdoptedOwner = await tx.update(schema.gameRunOwners)
+          .set({ status: "closed", closedAt: envelope.finishedAt })
+          .where(and(
+            eq(schema.gameRunOwners.gameId, gameId),
+            eq(schema.gameRunOwners.ownerEpoch, context.adoptedOwnerEpoch),
+            eq(schema.gameRunOwners.status, "active"),
+          ))
+          .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+        if (closedAdoptedOwner.length !== 1) {
+          throw new DeterministicSettlementError(
+            "completion_game_state_conflict",
+            `Adopted terminal owner ${context.adoptedOwnerEpoch} could not be closed`,
+          );
+        }
       }
 
       await tx.update(schema.gameCompletionSettlements)
@@ -1193,6 +1281,184 @@ export async function settleCapturedGameCompletion(
 }
 
 type SettlementTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+
+async function terminalExecutionBoundaryMatches(
+  tx: SettlementTransaction,
+  input: {
+    gameId: string;
+    ownerEpoch: string;
+    finalEventSequence: number;
+    finalEventHash: string;
+  },
+): Promise<boolean> {
+  const execution = (await tx.select({
+    ownerEpoch: schema.gameExecutionStates.ownerEpoch,
+    status: schema.gameExecutionStates.status,
+    eventHeadSequence: schema.gameExecutionStates.eventHeadSequence,
+    eventHeadHash: schema.gameExecutionStates.eventHeadHash,
+    executionCursor: schema.gameExecutionStates.executionCursor,
+  }).from(schema.gameExecutionStates)
+    .where(eq(schema.gameExecutionStates.gameId, input.gameId))
+    .for("update")
+    .limit(1))[0];
+  return execution?.ownerEpoch === input.ownerEpoch
+    && execution.status === "terminal"
+    && execution.eventHeadSequence === input.finalEventSequence
+    && execution.eventHeadHash === input.finalEventHash
+    && execution.executionCursor.kind === "terminal"
+    && execution.executionCursor.stage === "commit_game";
+}
+
+/**
+ * Release terminal choreography in the same transaction that seals game
+ * completion. A null availableAt is therefore never made visible before the
+ * result, transcript seal, competition evidence, and game status all commit.
+ */
+async function releaseHeldTerminalPublications(
+  tx: SettlementTransaction,
+  input: {
+    gameId: string;
+    ownerEpoch: string;
+    finalEventSequence: number;
+    finalEventHash: string;
+    finishedAt: string;
+  },
+): Promise<void> {
+  const execution = (await tx.select({
+    ownerEpoch: schema.gameExecutionStates.ownerEpoch,
+    status: schema.gameExecutionStates.status,
+    eventHeadSequence: schema.gameExecutionStates.eventHeadSequence,
+    eventHeadHash: schema.gameExecutionStates.eventHeadHash,
+    publicationHeadSequence: schema.gameExecutionStates.publicationHeadSequence,
+    nextPublicationAvailableAt: schema.gameExecutionStates.nextPublicationAvailableAt,
+    executionCursor: schema.gameExecutionStates.executionCursor,
+  }).from(schema.gameExecutionStates)
+    .where(eq(schema.gameExecutionStates.gameId, input.gameId))
+    .for("update")
+    .limit(1))[0];
+  // Historical completion settlements predate durable execution/publication authority.
+  if (!execution) return;
+  if (
+    execution.ownerEpoch !== input.ownerEpoch
+    || execution.status !== "terminal"
+    || execution.eventHeadSequence !== input.finalEventSequence
+    || execution.eventHeadHash !== input.finalEventHash
+    || execution.executionCursor.kind !== "terminal"
+    || execution.executionCursor.stage !== "commit_game"
+  ) {
+    throw new DeterministicSettlementError(
+      "completion_boundary_conflict",
+      `Terminal publication authority for game ${input.gameId} does not match completion`,
+    );
+  }
+
+  const publications = await tx.select({
+    id: schema.gamePublications.id,
+    publicationSequence: schema.gamePublications.publicationSequence,
+    kind: schema.gamePublications.kind,
+    payload: schema.gamePublications.payload,
+    availableAt: schema.gamePublications.availableAt,
+  }).from(schema.gamePublications)
+    .where(eq(schema.gamePublications.gameId, input.gameId))
+    .orderBy(asc(schema.gamePublications.publicationSequence))
+    .for("update");
+  if (publications.length !== execution.publicationHeadSequence) {
+    throw new DeterministicSettlementError(
+      "completion_boundary_conflict",
+      `Terminal publication frontier for game ${input.gameId} has an invalid row count`,
+    );
+  }
+  if (publications.length === 0) return;
+
+  let priorAvailableMs = Number.NEGATIVE_INFINITY;
+  let heldTailStarted = false;
+  const heldTerminalRows: typeof publications = [];
+  for (const [index, publication] of publications.entries()) {
+    if (publication.publicationSequence !== index + 1) {
+      throw new DeterministicSettlementError(
+        "completion_boundary_conflict",
+        `Terminal publication frontier for game ${input.gameId} is not contiguous`,
+      );
+    }
+    if (publication.availableAt === null) {
+      heldTailStarted = true;
+      if (!isTerminalPublication(publication.kind, publication.payload)) {
+        throw new DeterministicSettlementError(
+          "completion_boundary_conflict",
+          `Game ${input.gameId} has a held nonterminal publication`,
+        );
+      }
+      heldTerminalRows.push(publication);
+      continue;
+    }
+    if (heldTailStarted) {
+      throw new DeterministicSettlementError(
+        "completion_boundary_conflict",
+        `Game ${input.gameId} has a scheduled publication after held terminal output`,
+      );
+    }
+    const availableMs = Date.parse(publication.availableAt);
+    if (!Number.isFinite(availableMs) || availableMs <= priorAvailableMs) {
+      throw new DeterministicSettlementError(
+        "completion_boundary_conflict",
+        `Game ${input.gameId} publication timestamps are not strictly monotonic`,
+      );
+    }
+    priorAvailableMs = availableMs;
+  }
+  if (heldTerminalRows.length === 0) {
+    throw new DeterministicSettlementError(
+      "completion_boundary_conflict",
+      `Terminal game ${input.gameId} has no held completion publication`,
+    );
+  }
+
+  const persistedPacingMs = execution.nextPublicationAvailableAt === null
+    ? Number.NEGATIVE_INFINITY
+    : Date.parse(execution.nextPublicationAvailableAt);
+  const finishedAtMs = Date.parse(input.finishedAt);
+  if (
+    !Number.isFinite(finishedAtMs)
+    || (execution.nextPublicationAvailableAt !== null && !Number.isFinite(persistedPacingMs))
+  ) {
+    throw new DeterministicSettlementError(
+      "completion_boundary_conflict",
+      `Terminal publication pacing for game ${input.gameId} is invalid`,
+    );
+  }
+  let nextAvailableMs = Math.max(priorAvailableMs, persistedPacingMs, finishedAtMs);
+  for (const publication of heldTerminalRows) {
+    nextAvailableMs += 1;
+    const updated = await tx.update(schema.gamePublications)
+      .set({ availableAt: new Date(nextAvailableMs).toISOString() })
+      .where(and(
+        eq(schema.gamePublications.id, publication.id),
+        isNull(schema.gamePublications.availableAt),
+      ))
+      .returning({ id: schema.gamePublications.id });
+    if (updated.length !== 1) {
+      throw new DeterministicSettlementError(
+        "completion_boundary_conflict",
+        `Terminal publication ${publication.id} changed during settlement`,
+      );
+    }
+  }
+  await tx.update(schema.gameExecutionStates).set({
+    nextPublicationAvailableAt: new Date(nextAvailableMs).toISOString(),
+    updatedAt: input.finishedAt,
+  }).where(eq(schema.gameExecutionStates.gameId, input.gameId));
+}
+
+function isTerminalPublication(
+  kind: typeof schema.gamePublications.$inferSelect.kind,
+  payload: unknown,
+): boolean {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const record = payload as Record<string, unknown>;
+  return kind === "completion"
+    && record.version === 1
+    && record.kind === "completion";
+}
 
 function validateStoredSettlement(
   settlement: typeof schema.gameCompletionSettlements.$inferSelect,

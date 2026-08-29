@@ -407,6 +407,21 @@ export class GameState {
     return new Date(this.now()).toISOString();
   }
 
+  /** Record the accepted phase boundary used by viewer/replay choreography. */
+  recordPhaseEntered(phase: Phase): void {
+    this.appendCanonicalEvent("game.phase_entered", {
+      phase,
+      remainingPlayers: this.getAlivePlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+      })),
+    }, {
+      phase,
+      visibility: "public",
+      source: "engine",
+    });
+  }
+
   private assertAllianceMutationPhase(options: AllianceMutationOptions): Phase {
     const phase = options.phase ?? Phase.FORMAT_MINGLE;
     if (phase !== Phase.MINGLE_I && phase !== Phase.FORMAT_MINGLE) {
@@ -584,6 +599,10 @@ export class GameState {
 
   getCanonicalEvents(): readonly CanonicalGameEvent[] {
     return this.canonicalEvents.list();
+  }
+
+  getCanonicalEventsAfter(sequence: number): readonly CanonicalGameEvent[] {
+    return this.canonicalEvents.listAfter(sequence);
   }
 
   subscribeCanonicalEvents(
@@ -934,6 +953,13 @@ export class GameState {
     return null;
   }
 
+  canCounterAllianceProposal(lineageId: UUID): boolean {
+    const lineage = this._allianceProposalLineages.get(lineageId);
+    if (!lineage || lineage.status !== "open") return false;
+    return lineage.versions.filter((version) => version.counterIndex > 0).length
+      < ALLIANCE_COUNTER_LIMIT;
+  }
+
   recordAllianceCounter(
     input: AllianceCounterInput,
     options: AllianceMutationOptions = {},
@@ -941,14 +967,13 @@ export class GameState {
     const phase = this.assertAllianceMutationPhase(options);
     const existing = this._allianceProposalLineages.get(input.lineageId);
     if (!existing) throw new Error(`Unknown alliance proposal lineage: ${input.lineageId}`);
-    if (existing.status !== "open") return null;
+    if (!this.canCounterAllianceProposal(input.lineageId)) return null;
     const currentVersion = this.currentAllianceVersion(existing);
     const currentRequiredConsentMemberIds = currentVersion.requiredConsentMemberIds ?? currentVersion.terms.memberIds;
     if (!currentRequiredConsentMemberIds.includes(input.proposerId)) {
       throw new Error(`Alliance counter proposer is not invited to the current version: ${input.proposerId}`);
     }
     const counterCount = existing.versions.filter((version) => version.counterIndex > 0).length;
-    if (counterCount >= ALLIANCE_COUNTER_LIMIT) return null;
 
     const terms = this.normalizeAllianceTerms(input);
     this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, existing.allianceId);
@@ -1101,9 +1126,26 @@ export class GameState {
     const alliance = this._alliances.get(outcome.allianceId);
     if (!alliance) throw new Error(`Cannot record huddle outcome for unknown alliance ${outcome.allianceId}`);
     const session = this._allianceHuddleSessions.get(outcome.sessionId);
+    if (!session) {
+      throw new Error(`Cannot record huddle outcome without completed session ${outcome.sessionId}`);
+    }
+    if (
+      session.allianceId !== outcome.allianceId
+      || session.window !== outcome.window
+      || session.round !== outcome.round
+    ) {
+      throw new Error(`Cannot record huddle outcome with mismatched session metadata ${outcome.sessionId}`);
+    }
+    if (outcome.participantPlayerIds.length > 0) {
+      const supplied = [...new Set(outcome.participantPlayerIds)].sort();
+      const recorded = [...new Set(session.speakerIds)].sort();
+      if (supplied.length !== recorded.length || supplied.some((id, index) => id !== recorded[index])) {
+        throw new Error(`Cannot record huddle outcome with mismatched participant snapshot ${outcome.sessionId}`);
+      }
+    }
     const prepared = withParticipantSnapshotFromSession(
       outcome,
-      outcome.participantPlayerIds ?? session?.speakerIds,
+      outcome.participantPlayerIds.length > 0 ? outcome.participantPlayerIds : session?.speakerIds,
     );
     const updatedAlliance: AllianceRecord = {
       ...cloneAllianceRecord(alliance),
@@ -1853,7 +1895,7 @@ export class GameState {
    * Tie -> broken by lastEmpoweredFromRegularRounds (they choose).
    * Returns the eliminated player's ID.
    */
-  tallyEndgameEliminationVotes(): UUID {
+  tallyEndgameEliminationVotes(random: () => number = Math.random): UUID {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
     for (const id of alive) counts[id] = 0;
@@ -1865,7 +1907,7 @@ export class GameState {
     const maxVotes = Math.max(...Object.values(counts), 0);
     if (maxVotes === 0) {
       // No votes cast — random elimination
-      const randomTarget = alive[Math.floor(Math.random() * alive.length)];
+      const randomTarget = alive[Math.floor(random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate");
       this.appendCanonicalEvent("endgame.elimination_resolved", {
         stage: this._endgameStage,
@@ -1938,6 +1980,7 @@ export class GameState {
   tallyTribunalVotes(
     juryTiebreakerVotes?: Record<UUID, UUID>,
     juryTiebreakerSourcePointers: CanonicalSourcePointer[] = [],
+    random: () => number = Math.random,
   ): UUID {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
@@ -1949,7 +1992,7 @@ export class GameState {
 
     const maxVotes = Math.max(...Object.values(counts), 0);
     if (maxVotes === 0) {
-      const randomTarget = alive[Math.floor(Math.random() * alive.length)];
+      const randomTarget = alive[Math.floor(random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate in tribunal");
       this.appendCanonicalEvent("endgame.elimination_resolved", {
         stage: this._endgameStage,
@@ -2062,7 +2105,7 @@ export class GameState {
    * Majority wins. Tie -> finalist with more cumulative empower votes wins.
    * Returns the winner's ID and how the result was determined.
    */
-  tallyJuryVotes(): { winnerId: UUID; method: "majority" | "empower_tiebreaker" | "random_tiebreaker"; voteCounts: { id: UUID; name: string; votes: number }[] } {
+  tallyJuryVotes(random: () => number = Math.random): { winnerId: UUID; method: "majority" | "empower_tiebreaker" | "random_tiebreaker"; voteCounts: { id: UUID; name: string; votes: number }[] } {
     const finalists = this.getAlivePlayerIds();
     if (finalists.length !== 2) throw new Error("Judgment requires exactly 2 finalists");
 
@@ -2138,7 +2181,7 @@ export class GameState {
     }
 
     // Ultimate fallback: random
-    const winnerId = Math.random() < 0.5 ? f1 : f2;
+    const winnerId = random() < 0.5 ? f1 : f2;
     this.appendCanonicalEvent("jury.winner_determined", {
       tally: { votes: { ...this._juryVoteTally.votes } },
       winnerId,
@@ -2205,6 +2248,21 @@ export class GameState {
         phase: Phase.FORMAT_RESOLVE,
         visibility: "producer",
         sourcePointers,
+      },
+    );
+  }
+
+  recordFormatBallotForfeited(voterId: UUID): void {
+    this.appendCanonicalEvent(
+      "format.ballot_forfeited",
+      {
+        formatId: "restricted_history" as const,
+        voterId,
+        reason: "history_exhausted" as const,
+      },
+      {
+        phase: Phase.FORMAT_RESOLVE,
+        visibility: "producer",
       },
     );
   }

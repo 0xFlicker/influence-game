@@ -6,6 +6,7 @@ import { GameState, createUUID } from "../game-state";
 import type {
   AgentCallOptions,
   AgentResponse,
+  GameStreamEvent,
   IAgent,
   PhaseContext,
   PowerActionDecision,
@@ -139,6 +140,19 @@ class EliminatePowerProbeAgent extends GoodbyeProbeAgent {
   }
 }
 
+class InvalidPassPowerProbeAgent extends GoodbyeProbeAgent {
+  override async getPowerAction(): Promise<PowerActionDecision> {
+    return {
+      action: "pass",
+      target: "not-a-player",
+      thinking: "model rationale must not survive repair",
+      reasoningContext: "hidden model reasoning must not survive repair",
+      decisionId: "invalid-power-decision",
+      strategyDelta: "commit the invalid pass target",
+    };
+  }
+}
+
 function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext {
   const gameState = new GameState(agents.map((agent) => ({ id: agent.id, name: agent.name })));
   gameState.startRound();
@@ -243,10 +257,10 @@ describe("goodbye message handling", () => {
       },
     });
 
-    expect(capturedTool?.function.name).toBe("elimination_message");
+    expect(capturedTool?.function.name).toBe("farewell_message");
     expect(capturedTool?.function.strict).toBe(true);
     expect(capturedTool?.function.parameters?.additionalProperties).toBe(false);
-    expect(capturedPrompt).toContain("You have been ELIMINATED.");
+    expect(capturedPrompt).toContain("You have EXITED the game.");
     expect(capturedPrompt).toContain("You will not get another turn");
     expect(capturedPrompt).toContain("Do NOT discuss future strategy");
     expect(capturedPrompt).toContain("You were exposed by: Mira, Vera");
@@ -304,14 +318,14 @@ describe("goodbye message handling", () => {
     expect(capturedPrompt).toContain("This vote was sealed.");
     expect(capturedPrompt).toContain("You received 3 votes.");
     expect(capturedPrompt).toContain(
-      "Sealed count detail: 1 SAVE, 2 ELIMINATE, net -1.",
+      "Sealed count detail: 1 SAVE, 2 EXIT, net -1.",
     );
     expect(capturedPrompt).toContain("You are not being told who cast those ballots.");
     expect(capturedPrompt).not.toContain("Echo voted");
     expect(capturedPrompt).not.toContain("Vera voted");
   });
 
-  test("InfluenceAgent normalizes a rejected elimination-message tool call to House fallback", async () => {
+  test("InfluenceAgent returns typed absence for a rejected elimination-message tool call", async () => {
     const { openai, calls } = makeOpenAIStub([
       { content: null, refusal: "I cannot provide that message." },
     ]);
@@ -341,8 +355,12 @@ describe("goodbye message handling", () => {
     });
 
     expect(result).toEqual({
-      thinking: "House fallback after elimination-message tool failure.",
-      message: "I have no final words.",
+      thinking: "",
+      message: "",
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: "refusal",
+      },
     });
     expect(calls).toHaveLength(1);
   });
@@ -440,9 +458,9 @@ describe("goodbye message handling", () => {
       eliminationContext,
     );
     expect(preferredCalls).toEqual(["new"]);
-    expect(preferredContext.logger.transcript.at(-1)?.text).toBe(
-      "I have no final words.",
-    );
+    expect(preferredContext.logger.transcript.some((entry) =>
+      entry.from === "Charlie" && entry.scope === "public"
+    )).toBe(false);
 
     const legacy = makeAgents();
     const legacyCalls: string[] = [];
@@ -468,7 +486,7 @@ describe("goodbye message handling", () => {
     );
   });
 
-  test("handleElimination aborts a timed-out message and records deterministic fallback", async () => {
+  test("handleElimination aborts a timed-out optional message without fabricating speech", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
     const charlieId = createUUID();
@@ -503,17 +521,46 @@ describe("goodbye message handling", () => {
     expect(prc.logger.transcript).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          text: "Charlie elimination message timed out after 5ms; using House fallback.",
+          text: "Charlie elimination message timed out after 5ms; omitting optional speech.",
         }),
-        expect.objectContaining({ text: "I have no final words." }),
       ]),
     );
-    expect(prc.gameState.getPlayer(charlieId)?.lastMessage).toBe(
-      "I have no final words.",
-    );
+    expect(prc.logger.transcript.some((entry) =>
+      entry.from === "Charlie" && entry.scope === "public"
+    )).toBe(false);
+    expect(prc.gameState.getPlayer(charlieId)?.lastMessage).toBeUndefined();
   });
 
-  test("handleElimination fails clearly when neither migration method exists", async () => {
+  test("handleElimination propagates non-provider message defects instead of treating them as silence", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    agents[2]!.getEliminationMessage = async () => {
+      throw new TypeError("elimination message invariant failed");
+    };
+    const prc = makePhaseRunnerContext(agents);
+
+    await expect(handleElimination(prc, charlieId, Phase.COUNCIL, {
+      mode: "council",
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    })).rejects.toThrow("elimination message invariant failed");
+    expect(prc.logger.transcript.some((entry) =>
+      entry.from === "Charlie" && entry.scope === "public"
+    )).toBe(false);
+  });
+
+  test("handleElimination omits optional speech when no message method exists", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
     const charlieId = createUUID();
@@ -534,18 +581,18 @@ describe("goodbye message handling", () => {
     }).getLastMessage = undefined;
     const prc = makePhaseRunnerContext(agents);
 
-    await expect(
-      handleElimination(prc, charlieId, Phase.COUNCIL, {
-        mode: "council",
-        voteDisclosure: {
-          visibility: "public",
-          votesReceived: 1,
-          voterNames: ["Bob"],
-        },
-      }),
-    ).rejects.toThrow(
-      "Agent Charlie implements neither getEliminationMessage nor deprecated getLastMessage",
-    );
+    await handleElimination(prc, charlieId, Phase.COUNCIL, {
+      mode: "council",
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    });
+    expect(prc.gameState.getPlayer(charlieId)?.status).toBe(PlayerStatus.ELIMINATED);
+    expect(prc.logger.transcript.some((entry) =>
+      entry.from === "Charlie" && entry.scope === "public"
+    )).toBe(false);
   });
 
   test("elimination messages are collected only after elimination commits", async () => {
@@ -556,9 +603,9 @@ describe("goodbye message handling", () => {
 
     const agents = [
       new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
-      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
       new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, charlieId),
-      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: charlieId }, daveId),
     ];
     const prc = makePhaseRunnerContext(agents);
     const actor = { send() {} };
@@ -571,26 +618,27 @@ describe("goodbye message handling", () => {
     await runPowerPhase(prc, actor as never);
     await runCouncilPhase(prc, actor as never);
 
-    expect(agents[0]!.eliminationMessageContexts).toHaveLength(0);
-    expect(agents[1]!.eliminationMessageContexts).toHaveLength(0);
-    expect(agents[3]!.eliminationMessageContexts).toHaveLength(0);
-    expect(agents[2]!.eliminationMessageContexts).toHaveLength(1);
+    const eliminatedAgents = agents.filter(
+      (agent) => agent.eliminationMessageContexts.length === 1,
+    );
+    expect(eliminatedAgents).toHaveLength(1);
+    const eliminatedAgent = eliminatedAgents[0]!;
+    for (const survivor of agents.filter((agent) => agent !== eliminatedAgent)) {
+      expect(survivor.eliminationMessageContexts).toHaveLength(0);
+    }
 
-    const goodbyeContext = agents[2]!.eliminationMessageContexts[0]!;
+    const goodbyeContext = eliminatedAgent.eliminationMessageContexts[0]!;
     expect(goodbyeContext.phase).toBe(Phase.COUNCIL);
     expect(goodbyeContext.isEliminated).toBe(true);
-    expect(goodbyeContext.alivePlayers.map((player) => player.name)).toEqual([
-      "Alice",
-      "Bob",
-      "Dave",
-    ]);
-    expect(goodbyeContext.eliminationContext).toEqual({
+    expect(goodbyeContext.alivePlayers.map((player) => player.name)).not.toContain(
+      eliminatedAgent.name,
+    );
+    expect(goodbyeContext.eliminationContext).toMatchObject({
       mode: "council",
       exposedBy: [],
       voteDisclosure: {
         visibility: "public",
         votesReceived: 1,
-        voterNames: ["Bob"],
       },
     });
     const canonicalTypes = prc.gameState.getCanonicalEvents().map((event) => event.type);
@@ -616,12 +664,20 @@ describe("goodbye message handling", () => {
       .filter((event) => event.type === "council.vote_cast");
     expect(councilEvents).not.toHaveLength(0);
     for (const event of councilEvents) {
-      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
-        actorId: event.payload.voterId,
-        decisionId: `council-${event.payload.voterId}`,
-      }));
+      const pointer = event.sourcePointers.find((source) =>
+        source.actorId === event.payload.voterId
+      );
+      expect(pointer).toBeDefined();
+      if (pointer?.engineFallback) {
+        expect(pointer).not.toHaveProperty("decisionId");
+        expect(pointer.engineFallback).toMatchObject({ source: "engine" });
+      } else {
+        expect(pointer?.decisionId).toBe(`council-${event.payload.voterId}`);
+      }
     }
-    expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
+    expect(prc.logger.transcript.at(-1)?.text).toBe(
+      `${eliminatedAgent.name} signing off.`,
+    );
   });
 
   test("format-kernel vote resolves empower only and never builds an expose ledger", async () => {
@@ -633,9 +689,9 @@ describe("goodbye message handling", () => {
 
     const agents = [
       new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
-      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
       new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
-      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: daveId }, charlieId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: daveId }, charlieId),
     ];
     const prc = makePhaseRunnerContext(agents);
     const actor = { send() {} };
@@ -656,6 +712,70 @@ describe("goodbye message handling", () => {
     }
   });
 
+  test("phase fallbacks rethrow non-provider and cancellation errors without accepting the failing action", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const makeAgents = () => [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId, bobId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId, aliceId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId, charlieId),
+    ];
+
+    const voteAgents = makeAgents();
+    voteAgents[0]!.getVotes = async () => {
+      throw new TypeError("vote invariant failed");
+    };
+    const voteCtx = makePhaseRunnerContext(voteAgents);
+    await expect(runVotePhase(voteCtx, { send() {} } as never)).rejects.toThrow("vote invariant failed");
+    expect(voteCtx.gameState.currentVoteTally.empowerVotes[aliceId]).toBeUndefined();
+
+    const endgameAgents = makeAgents();
+    endgameAgents[0]!.getEndgameEliminationVote = async () => {
+      throw new DOMException("owner cancelled", "AbortError");
+    };
+    const endgameCtx = makePhaseRunnerContext(endgameAgents);
+    await expect(runReckoningVote(endgameCtx, { send() {} } as never)).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(endgameCtx.gameState.getCanonicalEvents().some((event) =>
+      event.type === "endgame.elimination_vote_cast" && event.payload.voterId === aliceId
+    )).toBe(false);
+  });
+
+  test("a late endgame response after timeout cannot create a second accepted vote", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId, bobId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId, aliceId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId, charlieId),
+    ];
+    agents[0]!.getEndgameEliminationVote = async (): Promise<TargetDecision> => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { target: bobId, thinking: "Late model thought.", decisionId: "late-decision" };
+    };
+    const ctx = makePhaseRunnerContext(agents);
+    ctx.config.agentActionTimeoutMs = 5;
+
+    await runReckoningVote(ctx, { send() {} } as never);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    const aliceVotes = ctx.gameState.getCanonicalEvents().filter((event) =>
+      event.type === "endgame.elimination_vote_cast" && event.payload.voterId === aliceId
+    );
+    expect(aliceVotes).toHaveLength(1);
+    expect(aliceVotes[0]?.sourcePointers[0]).toMatchObject({
+      engineFallback: { source: "engine", reason: "action_timed_out" },
+    });
+    expect(aliceVotes[0]?.sourcePointers[0]).not.toHaveProperty("decisionId");
+  });
+
   test("non-pass Power action carries the empowered player's current-call receipt", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
@@ -665,7 +785,7 @@ describe("goodbye message handling", () => {
       new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
       new EliminatePowerProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
       new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
-      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
     ];
     const prc = makePhaseRunnerContext(agents);
 
@@ -679,6 +799,49 @@ describe("goodbye message handling", () => {
       actorId: bobId,
       decisionId: `power-${bobId}`,
     }));
+  });
+
+  test("invalid pass targets use seeded engine provenance without model rationale", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new InvalidPassPowerProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+    const streamEvents: GameStreamEvent[] = [];
+    prc.logger.setStreamListener((event) => streamEvents.push(event));
+
+    await runVotePhase(prc, { send() {} } as never);
+    await runPowerPhase(prc, { send() {} } as never);
+
+    const powerEvent = prc.gameState.getCanonicalEvents()
+      .findLast((event) => event.type === "power.action_set");
+    expect(powerEvent?.payload.action.action).toBe("pass");
+    expect(powerEvent?.payload.action.target).not.toBe("not-a-player");
+    expect(powerEvent?.sourcePointers).toEqual([
+      expect.objectContaining({
+        actorId: bobId,
+        action: "power",
+        engineFallback: {
+          source: "engine",
+          reason: "invalid_model_output",
+          seed: `${prc.gameState.gameId}:1:POWER:${bobId}:power`,
+        },
+      }),
+    ]);
+    expect(powerEvent?.sourcePointers[0]).not.toHaveProperty("decisionId");
+    const powerTurn = streamEvents.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "power-action",
+    );
+    expect(powerTurn?.thinking).toBeUndefined();
+    expect(powerTurn?.reasoningContext).toBeUndefined();
+    expect(powerTurn?.response).not.toHaveProperty("strategyDelta");
   });
 
   test("tribunal juror tiebreaker is skipped when live vote resolves", async () => {
@@ -856,50 +1019,56 @@ function makeOpenAIStub(responses: OpenAIStubResponse[]): { openai: OpenAI; call
   return {
     calls,
     openai: {
-      chat: {
-        completions: {
-          create: async (params: Record<string, unknown>) => {
-            calls.push(params);
-            const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
-            const toolCalls = response.toolName && response.toolArguments
-              ? [
-                  {
-                    id: "call_test",
-                    type: "function",
-                    function: {
-                      name: response.toolName,
-                      arguments: response.toolArguments,
-                    },
-                  },
-                ]
-              : undefined;
-
-            return {
-              id: "chatcmpl_test",
-              object: "chat.completion",
-              created: 0,
-              model: "gpt-5-nano",
-              choices: [
-                {
-                  index: 0,
-                  finish_reason: response.finishReason ?? (toolCalls ? "tool_calls" : "stop"),
-                  message: {
+      responses: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
+          const output = response.toolName && response.toolArguments
+            ? [{
+                id: "fc_test",
+                type: "function_call",
+                call_id: "call_test",
+                name: response.toolName,
+                arguments: response.toolArguments,
+              }]
+            : response.refusal
+              ? [{
+                  id: "msg_refusal",
+                  type: "message",
+                  role: "assistant",
+                  status: "completed",
+                  content: [{ type: "refusal", refusal: response.refusal }],
+                }]
+              : response.content !== undefined && response.content !== null
+                ? [{
+                    id: "msg_text",
+                    type: "message",
                     role: "assistant",
-                    content: response.content ?? null,
-                    refusal: response.refusal ?? null,
-                    tool_calls: toolCalls,
-                  },
-                },
-              ],
-              usage: {
-                prompt_tokens: 1,
-                completion_tokens: 1,
-                total_tokens: 2,
-                prompt_tokens_details: { cached_tokens: 0 },
-                completion_tokens_details: { reasoning_tokens: 0 },
-              },
-            };
-          },
+                    status: "completed",
+                    content: [{
+                      type: "output_text",
+                      text: response.content,
+                      annotations: [],
+                    }],
+                  }]
+                : [];
+          const incomplete = response.finishReason === "length";
+          return {
+            id: "resp_test",
+            object: "response",
+            status: incomplete ? "incomplete" : "completed",
+            ...(incomplete && {
+              incomplete_details: { reason: "max_output_tokens" },
+            }),
+            output,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              total_tokens: 2,
+              input_tokens_details: { cached_tokens: 0 },
+              output_tokens_details: { reasoning_tokens: 0 },
+            },
+          };
         },
       },
     } as unknown as OpenAI,
@@ -925,12 +1094,14 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
 }
 
 function getUserPrompt(call: Record<string, unknown> | undefined): string {
-  const messages = call?.messages as Array<{ role: string; content: string }> | undefined;
-  return messages?.find((message) => message.role === "user")?.content ?? "";
+  const input = call?.input;
+  if (typeof input === "string") return input;
+  return (input as Array<{ role: string; content: string }> | undefined)
+    ?.find((message) => message.role === "user")?.content ?? "";
 }
 
-describe("InfluenceAgent tool-call fallbacks", () => {
-  test("sendRoomMessage accepts JSON arguments returned as assistant content", async () => {
+describe("InfluenceAgent exact tool-call boundary", () => {
+  test("sendRoomMessage rejects JSON arguments returned as assistant content", async () => {
     const { openai, calls } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -944,20 +1115,26 @@ describe("InfluenceAgent tool-call fallbacks", () => {
 
     const result = await agent.sendRoomMessage(makeAgentContext(Phase.MINGLE), ["Atlas", "Vera"]);
 
-    expect(result).toEqual({
-      thinking: "Build trust, then steer the next vote.",
-      message: "Vera, I think we can keep heat off each other if we both watch Mira's next move.",
+    expect(result).toMatchObject({
+      message: "",
+      providerAbsence: { outcome: "wrong_tool" },
     });
 
     const tool = (calls[0]?.tools as Array<{
-      function: { strict?: boolean; parameters?: { required?: string[]; additionalProperties?: unknown } };
+      strict?: boolean;
+      parameters?: { required?: string[]; additionalProperties?: unknown };
     }>)[0];
-    expect(tool?.function.strict).toBe(true);
-    expect(tool?.function.parameters?.required).toEqual(["thinking", "message", "pass"]);
-    expect(tool?.function.parameters?.additionalProperties).toBe(false);
+    expect(tool?.strict).toBe(true);
+    expect(tool?.parameters?.required).toEqual([
+      "thinking",
+      "message",
+      "pass",
+      "strategyDelta",
+    ]);
+    expect(tool?.parameters?.additionalProperties).toBe(false);
   });
 
-  test("getVotes accepts JSON arguments returned as assistant content", async () => {
+  test("getVotes rejects JSON arguments returned as assistant content", async () => {
     const { openai } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -968,13 +1145,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const votes = await agent.getVotes(makeAgentContext(Phase.VOTE));
-
-    expect(votes).toMatchObject({
-      empowerTarget: "mira-id",
-      thinking: "Empower an ally who will pick a favorable format.",
-    });
-    expect(votes).not.toHaveProperty("exposeTarget");
+    await expect(agent.getVotes(makeAgentContext(Phase.VOTE)))
+      .rejects.toThrow("Tool call missing for cast_votes");
   });
 
   test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {
@@ -984,8 +1156,10 @@ describe("InfluenceAgent tool-call fallbacks", () => {
         toolName: "use_power",
         toolArguments: JSON.stringify({
           thinking: "Take the shot before the council can scatter.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1000,65 +1174,33 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       action: "eliminate",
       target: "mira-id",
       thinking: "Take the shot before the council can scatter.",
+      reasoningContext: undefined,
+      strategyDelta: null,
     });
     expect(calls).toHaveLength(2);
-    expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
+    expect(calls[1]?.max_output_tokens).toBeGreaterThan(calls[0]?.max_output_tokens as number);
   });
 
-  test("getPowerAction retries with strict JSON schema when a completed response has no tool call", async () => {
+  test("getPowerAction does not rewrite a missing native tool call into another request shape", async () => {
     const { openai, calls } = makeOpenAIStub([
       { content: null, finishReason: "stop" },
       {
         content: JSON.stringify({
           thinking: "Take the shot before the council can scatter.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
         }),
       },
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const action = await agent.getPowerAction(
+    await expect(agent.getPowerAction(
       makeAgentContext(Phase.POWER),
       ["vera-id", "mira-id"],
-    );
-
-    expect(action).toEqual({
-      action: "eliminate",
-      target: "mira-id",
-      thinking: "Take the shot before the council can scatter.",
-    });
-    expect(calls).toHaveLength(2);
-    expect(calls[1]?.response_format).toEqual({
-      type: "json_schema",
-      json_schema: {
-        name: "use_power_arguments",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
-            action: {
-              type: "string",
-              enum: ["eliminate", "protect", "pass"],
-              description: "The power action to take",
-            },
-            target: { type: "string", description: "Player name to target" },
-            shieldPullUpCandidates: {
-              type: "array",
-              items: { type: "string" },
-              description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
-            },
-            decisionLog: {
-              type: ["string", "null"],
-              description: "Compact private producer/debug receipt for what this action means strategically. Use null when there is no meaningful strategic note.",
-            },
-          },
-          required: ["thinking", "action", "target", "shieldPullUpCandidates", "decisionLog"],
-          additionalProperties: false,
-        },
-      },
-    });
+    )).rejects.toThrow("Tool call missing for use_power");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toHaveProperty("tools");
+    expect(calls[0]).not.toHaveProperty("text");
   });
 
   test("getPowerAction does not retry a refusal through JSON fallback", async () => {
@@ -1067,23 +1209,17 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       {
         content: JSON.stringify({
           thinking: "This response should not be requested.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
         }),
       },
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const action = await agent.getPowerAction(
+    await expect(agent.getPowerAction(
       makeAgentContext(Phase.POWER),
       ["vera-id", "mira-id"],
-    );
-
-    expect(action).toEqual({
-      action: "pass",
-      target: "vera-id",
-      thinking: "fallback to pass under pressure",
-    });
+    )).rejects.toThrow("model_refusal");
     expect(calls).toHaveLength(1);
   });
 
@@ -1095,6 +1231,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Let council expose the alliances.",
           action: "pass",
           target: "Vera",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1123,6 +1261,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Honor the current public receipt.",
           action: "protect",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1151,8 +1291,10 @@ describe("InfluenceAgent tool-call fallbacks", () => {
         toolName: "use_power",
         toolArguments: JSON.stringify({
           thinking: "Take one direct shot.",
-          action: "eliminate",
+          action: "exit",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
       {
@@ -1161,6 +1303,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Avoid a second direct shot without a fresh receipt.",
           action: "pass",
           target: "Vera",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1174,9 +1318,9 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     await agent.getPowerAction(round2Ctx, ["vera-id", "mira-id"]);
 
     const secondPrompt = getUserPrompt(calls[1]);
-    expect(secondPrompt).toContain("Your last empowered action: R1 eliminate -> Mira.");
+    expect(secondPrompt).toContain("Your last empowered action: R1 exit -> Mira.");
     expect(secondPrompt).toContain("Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt");
-    expect(secondPrompt).toContain("eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate");
+    expect(secondPrompt).toContain("exit is gated by fresh current-round Power Lobby evidence against that exact candidate");
     expect(secondPrompt).toContain("your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby");
     expect(secondPrompt).toContain("When the lobby record conflicts, when council would expose useful public votes");
   });

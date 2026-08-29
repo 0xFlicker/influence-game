@@ -1,7 +1,8 @@
 import { and, asc, eq, or } from "drizzle-orm";
 import {
   Phase,
-  type AllianceHuddleOutcome,
+  decodeLegacyAllianceHuddleOutcomeV1,
+  type AllianceHuddleFactAtom,
   type AllianceProposalLineage,
   type AllianceRecord,
   type CanonicalGameEvent,
@@ -52,13 +53,7 @@ export interface PublicAllianceOutcomeRead {
   id: string;
   round: number;
   window: string;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: AllianceHuddleFactAtom[];
 }
 
 export interface PublicAllianceConsequenceRead {
@@ -273,7 +268,10 @@ function buildPublicAllianceFacts(params: {
         break;
       }
       case "alliance.huddle_outcome_recorded": {
-        const outcome = outcomeRead(event.payload.outcome);
+        const canonicalOutcome = event.payloadVersion === 1
+          ? decodeLegacyAllianceHuddleOutcomeV1(event.payload.outcome, undefined)
+          : event.payload.outcome;
+        const outcome = outcomeRead(canonicalOutcome);
         outcomeBySessionId.set(event.payload.outcome.sessionId, outcome);
         const existing = outcomesByAllianceId.get(event.payload.outcome.allianceId) ?? [];
         outcomesByAllianceId.set(event.payload.outcome.allianceId, [
@@ -545,18 +543,14 @@ function termsRead(
   };
 }
 
-function outcomeRead(outcome: AllianceHuddleOutcome): PublicAllianceOutcomeRead {
+function outcomeRead(
+  outcome: import("@influence/engine").AllianceHuddleOutcome,
+): PublicAllianceOutcomeRead {
   return {
     id: outcome.id,
     round: outcome.round,
     window: outcome.window,
-    ask: outcome.ask,
-    plan: outcome.plan,
-    promises: [...outcome.promises],
-    dissent: [...outcome.dissent],
-    confidence: outcome.confidence,
-    posture: outcome.posture,
-    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+    facts: structuredClone(outcome.facts),
   };
 }
 

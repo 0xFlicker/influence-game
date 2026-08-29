@@ -10,18 +10,21 @@
  *   bun run simulate -- --games 3 --players 6 --personas Atlas,Vera,Finn,Mira,Rex,Lyra
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
- *   bun run simulate -- --variant mingle --strategic-reflections
  *   bun run simulate -- --variant mingle --diary
  *   bun run simulate -- --variant mingle --house-summaries
  *   bun run simulate -- --variant mingle --rich-producer
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
+ *   bun run simulate -- --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+ *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \
+ *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
  *
  * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
  * but must not run or wait on them. Start from the reported branch/HEAD with a
  * clean worktree, choose one provider, and keep every batch capped at two rounds.
  *
  * Hosted OpenAI (Doppler dev may set a local base URL; the catalog forces hosted):
+ * Player and House requests include the shared fictional, text-only game-context contract.
  *   doppler run --project social-strategy-agent --config dev -- \
  *     bun run simulate -- \
  *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
@@ -38,13 +41,18 @@
  * Require FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE on two-card rounds,
  * model-authored format actions (`decisionSource: "llm"` with useful thinking),
  * no fallback, and no default Power/Council elimination. Omission uses the
- * frozen four-format default. For proof of one specific card, append
+ * frozen six-format default. For proof of one round-1-eligible card, append
  * `--formats <id>` and require FORMAT LOCKED -> FORMAT RESOLVE with no
  * format.menu_offered event, format-pick turn, or empowered pick model call.
- * Do not use extra production rounds as a catalog-coverage gate. See
+ * Restricted History requires round 3 plus a round-1-eligible companion format.
+ * See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
+ *
+ * Simulations consume the final persisted Agent Profile strategy supplied to the
+ * run. Unsaved editor drafts and Owner Learning before/after presentation never
+ * enter simulation context; review proposals affect play only after they are saved.
  *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "FORMAT LOCKED: ...", "Y format ballot: ...") with the agent's
@@ -63,13 +71,16 @@
  *   API-backed runs reconcile trace/cognition/prompt-reuse rows only after the
  *   durable append assigns the final sequence. CLI JSONL does not perform that
  *   API-side reconciliation or historical backfill.
- *   API-backed durable checkpoints may expose a status-only hydration passport
- *   through admin inspection, but private player/House continuity capsules and
- *   model reasoning remain outside public transcript, websocket, and canonical
- *   event output. A candidate passport requires sealed checkpoint-boundary
- *   evidence across the manifest, actor witness, accumulators, transcript
- *   watermark, token cursor, and continuity capsules; it is not runtime resume.
+ *   API-backed games commit canonical events, transcript rows, private
+ *   continuity, the native XState cursor, accepted provider links, and viewer
+ *   publications as one durable logical turn. CLI simulation JSONL is not that
+ *   crash-resume authority. Checkpoints and hydration passports remain
+ *   historical inspection artifacts, except for the one-time validated cutover
+ *   of an active pre-logical-turn game. Diary entries are viewer publications;
+ *   private huddles, thinking, House notebook state, and model reasoning are not.
  * - `game-{N}-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
+ * - `game-{N}-provider-attempts.json`: exact coordinator-sanitized non-429
+ *   failure envelopes plus compact recovered/exhausted rate-limit aggregates.
  * - `game-{N}-recall-plan.json`: **safe structural Recall Plan receipt aggregate** for
  *   selective-context-recall evaluation (R16/R17). Contains prompt-class counts,
  *   budget token estimates, selected lane/source-class counts, and an actor-authorized
@@ -86,21 +97,33 @@
  *   for the two real Mingle-intent contexts, not model use or behavior. The probe's
  *   evaluation-only output includes content-free rank, score, target/current-round
  *   match, serialized-cost, and terminal-reason diagnostics.
+ * - Batch/game instrumentation also includes content-free `houseSummaryCadence`
+ *   totals by actor coordinate: eligible/emitted/preflight/model-skip/failure counts,
+ *   provider calls and usage, pending-delta disposition, unique call identities,
+ *   and known-token reconciliation. Authored House prose remains presentation.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
  *
  * Live standard rounds make one House `mingle-room-assignment` request from the
- * living roster and locked format, then emit one assignment record per player
+ * remaining roster and locked format, then emit one assignment record per player
  * with source/repair metadata. They do not request per-player `mingle-intent`;
  * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
- * events: post-pick `alliance-action` turns capture proposal/accept/decline/
- * counter behavior, `alliance-huddle-schedule` turns capture private House
+ * events: one private `alliance-proposer-selection` House turn records the
+ * `ceil(alive / 4)` access set, underrepresentation preference, and engine
+ * repair notes without creating alliance facts. Only finalized players receive
+ * proposer `alliance-action` calls; invitee response/counter calls remain
+ * demand-driven. Each provider call exposes only its current legal opportunity
+ * through a closed nested decision union, while accepted artifacts retain the
+ * flat canonical ID-based shape. Selected agents retain propose/amend/pass
+ * ownership, and the engine binds proposal/version identity and maps request-local
+ * amendment handles. `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and
  * `alliance-huddle-outcome` records carry those facts forward alongside a
- * compact House summary. Huddle transcript entries use `scope: "huddle"` and
+ * compact House summary. Repeated outcome calls use their one-based position in
+ * the sorted schedule as a stable provider logical-call ordinal. Huddle transcript entries use `scope: "huddle"` and
  * are producer/debug evidence, not public/player-safe live transcript.
  * Modern product-dialogue capture also carries additive normalized actor
  * identity, audience, dialogue kind, and formal-speech correlation context for
@@ -115,23 +138,36 @@
  * context is intentionally narrower than operator transport: sanitized accepted
  * ballot mappings are readable there immediately after durable record, while
  * viewer named Roll Call presentation remains resolution-gated. Together the format
- * records expose seven typed agent decisions: pickRoundFormat,
+ * records expose nine typed agent decisions: pickRoundFormat,
  * getSaveOrEliminateBallot, getVoteBombBallot, getMajorityEliminationBallot,
+ * getEvenVotesBallot, getRestrictedHistoryBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
  * prompts render the acting player's computed status and the exact consequence:
  * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
+ * Provider requests call the renamed formats Save-or-Exit (`save_or_exit`),
+ * The Short List (`short_list`), and Highest Count (`highest_count`), use
+ * remaining/exited/exit vocabulary, and expose matching provider tool names.
+ * The engine maps those provider values back to canonical
+ * `save_or_eliminate`/`vote_bomb`/`majority_elimination` format IDs and the
+ * canonical `eliminate` action before validation, journaling, checkpointing,
+ * or event emission. Raw simulation events remain canonical evidence; derived
+ * MCP reads translate them to the current surface vocabulary.
  * Specialized
  * `candidate-selection`, `power-action`, and Council records remain readable
  * for legacy/classic runs but are not the expected standard-round lane.
- * Hidden `strategic-reflection` and `strategy-packet` records are written there
- * when `--strategic-reflections` is enabled for validation runs. The hidden
- * cadence starts after Introductions, then continues at later-round vote and
- * legacy/classic Council-diary reflection boundaries where exercised. Later private decisions may include
- * `strategicLens` and `decisionLog` fields for searchable producer/debug
- * validation. In API-backed games, versioned player continuity capsules also
- * carry Strategy Thread state across supported phase-boundary startup recovery;
+ * Private decision turns carry compact strategy candidates on existing gameplay
+ * and diary calls; there is no separate strategic-reflection cadence. Ordinary
+ * `strategyDelta` values are reserved for exceptional actionable changes to
+ * future posture. Strict schemas use JSON null, and compatible non-strict outputs
+ * may omit the field, when current strategy still applies. The exact string
+ * `"null"` is normalized to the same no-change outcome. Producer review should
+ * retain accepted/rejected/no-change diagnostics and group strategy-candidate
+ * counts plus output tokens by action family without treating prose as canonical
+ * fact or alliance obligation. In
+ * API-backed games, versioned player continuity capsules carry compact strategy
+ * state across supported phase-boundary startup recovery;
  * local CLI simulations remain uninterrupted-run artifacts unless an API path
  * is used.
  *
@@ -147,10 +183,9 @@
  * effective analytical revision; simulation comparisons should hold the same
  * snapshot constant rather than relying on a mutable display profile.
  *
- * `--rich-producer` enables private House Strategy Bible Packet updates,
- * packet-backed long-form House summaries, bounded format-resolution diary
- * sessions, legacy Council diary compatibility, and producer-brief records for
- * validating House strategic carry-forward through the local game MCP.
+ * `--rich-producer` enables House-authored private long-form summaries over the
+ * same narrative notebook, bounded format-resolution diary sessions, and legacy
+ * Council diary compatibility. It adds no separate House memory or proof calls.
  * Use `--diary` when you only want those bounded diary sessions without the
  * private rich-producer packet stack.
  * Default console mode (no `--chatty`) prints an **operator action feed**: phase
@@ -158,12 +193,17 @@
  * outcome lines, and House MC summaries — without thinking/reasoning spam.
  * Use `--chatty` for full transcript + thinking/reasoning. Use
  * `--no-operator-feed` / `--quiet` for phase-progress-only. Use
- * `--no-house-summaries` to suppress the between-round House MC block.
- * Structured round facts remain in the house-mc-summary turns JSONL payload.
+ * `--no-house-summaries` to suppress the complete phase-cadence House MC path.
+ * House prose is a system transcript row with `dialogueKind: "house_summary"`;
+ * canonical events/projections, never that prose, remain game-state authority.
+ * Simulation endgame classification and stage/Judgment instrumentation likewise
+ * consume canonical `endgame.stage_set`, accepted Judgment speech, and jury events.
+ * Changing, translating, duplicating, or omitting a House banner cannot change
+ * the reported endgame type or accepted jury counts.
  */
 
 import type OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -187,22 +227,42 @@ import {
 } from "./token-tracker";
 import {
   aggregateInstrumentation,
+  classifyCanonicalEndgame,
   instrumentGame,
   type BatchInstrumentation,
   type GameInstrumentation,
   type GitMetadata,
+  type SimulationEndgameType,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
-import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
-import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import {
+  createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
+  describeLlmProvider,
+} from "./llm-client";
+import type {
+  LlmProviderRuntime,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+} from "./llm-client";
+import type {
+  ProviderAttemptIntent,
+  ProviderAttemptRecord,
+  ProviderExecutionHooks,
+} from "./provider-execution";
+import { ProviderCallBudgetExhaustedError } from "./provider-execution";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
+  normalizeProviderManifest,
   normalizeReasoningPolicy,
+  parseProviderManifestEntry,
   resolveCatalogIdForModel,
   resolveModelSelection,
+  resolveProviderManifest,
   type ModelReasoningPolicy,
   type ModelRequestCapabilities,
+  type GameProviderManifest,
   type ProviderProfileId,
 } from "./model-catalog";
 
@@ -221,6 +281,8 @@ export interface SimArgs {
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;
+  /** Ordered provider route sealed into simulation evidence and used for bounded fallback traversal. */
+  providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
   /**
@@ -238,9 +300,7 @@ export interface SimArgs {
   operatorFeed: boolean;
   /** Print concise House MC summaries live (default on; independent of chatty). */
   houseSummaries: boolean;
-  /** Include hidden strategic-reflection agent_turn records in validation artifacts. */
-  enableStrategicReflections?: boolean;
-  /** Enable House Strategy Bible, long-form summaries, producer briefs, and bounded diary validation. */
+  /** Enable House long-form narration and bounded diary validation. */
   richProducer?: boolean;
   /** Enable bounded diary-room sessions in simulation config. */
   enableDiary?: boolean;
@@ -282,6 +342,8 @@ function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSum
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+  let sawCliProviderEntry = false;
+  let sawCliLegacyModelSelection = false;
   const args: SimArgs = {
     games: 3,
     players: MIN_NEW_GAME_PLAYERS,
@@ -289,6 +351,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     personas: null,
     model: DEFAULT_MODEL_ID,
     ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
+    ...(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST && {
+      providerManifest: parseSimulationProviderManifestEnv(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST),
+    }),
     ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
       reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
     }),
@@ -300,7 +365,6 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     operatorFeed: process.env.INFLUENCE_SIM_OPERATOR_FEED !== "false",
     // House MC is generated by default; print it unless explicitly disabled.
     houseSummaries: process.env.INFLUENCE_SIM_HOUSE_SUMMARIES !== "false",
-    enableStrategicReflections: process.env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
     richProducer: process.env.INFLUENCE_SIM_RICH_PRODUCER === "true",
     enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
     openAIReasoningSummary: undefined,
@@ -324,12 +388,34 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.personas = next.split(",").map((s) => s.trim());
       i++;
     } else if (arg === "--model" && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.model = next;
       i++;
     } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.modelCatalogId = next;
       i++;
+    } else if (arg === "--provider-entry" && next) {
+      if (sawCliLegacyModelSelection) {
+        throw new Error("Do not combine --provider-entry with legacy model flags");
+      }
+      if (!sawCliProviderEntry) {
+        args.providerManifest = [];
+        sawCliProviderEntry = true;
+      }
+      args.providerManifest = [
+        ...(args.providerManifest ?? []),
+        parseProviderManifestEntry(next),
+      ];
+      i++;
     } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       const reasoningPolicy = normalizeReasoningPolicy(next);
       if (reasoningPolicy) {
         args.reasoningPolicy = reasoningPolicy;
@@ -370,13 +456,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.houseSummaries = true;
     } else if (arg === "--no-house-summaries" || arg === "--no-summaries") {
       args.houseSummaries = false;
-    } else if (arg === "--strategic-reflections" || arg === "--enable-strategic-reflections") {
-      args.enableStrategicReflections = true;
-    } else if (arg === "--no-strategic-reflections") {
-      args.enableStrategicReflections = false;
     } else if (arg === "--rich-producer") {
       args.richProducer = true;
-      args.enableStrategicReflections = true;
       args.enableDiary = true;
     } else if (arg === "--no-rich-producer") {
       args.richProducer = false;
@@ -399,8 +480,12 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   }
 
   if (args.richProducer === true) {
-    args.enableStrategicReflections = true;
     args.enableDiary = true;
+  }
+  if (args.providerManifest) {
+    args.providerManifest = normalizeProviderManifest(args.providerManifest);
+    args.modelCatalogId = args.providerManifest[0]!.catalogId;
+    args.reasoningPolicy = args.providerManifest[0]!.reasoningPolicy;
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
@@ -469,18 +554,30 @@ function buildRunMetadata(
       ...(modelRuntime?.reasoningPolicy && { reasoningPolicy: modelRuntime.reasoningPolicy }),
       ...(args.modelCatalogId && { modelCatalogId: args.modelCatalogId }),
       ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+      ...(args.providerManifest && {
+        providerManifest: args.providerManifest.map((entry) => ({ ...entry })),
+      }),
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
       operatorFeed: args.operatorFeed,
       houseSummaries: args.houseSummaries,
-      enableStrategicReflections: args.enableStrategicReflections ?? false,
       richProducer: args.richProducer ?? false,
       enableDiary: args.enableDiary ?? false,
       openAIReasoningSummary,
       flex: args.flex,
     },
   };
+}
+
+function parseSimulationProviderManifestEnv(value: string): GameProviderManifest {
+  try {
+    return normalizeProviderManifest(JSON.parse(value));
+  } catch (error) {
+    throw new Error(
+      `INFLUENCE_SIM_PROVIDER_MANIFEST is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const POWER_LOBBY_VARIANTS = new Set([
@@ -514,7 +611,6 @@ export function buildSimulationConfig(
   variant: string,
   options: {
     agentActionTimeoutMs?: number;
-    enableStrategicReflections?: boolean;
     richProducer?: boolean;
     enableDiary?: boolean;
     maxRounds?: number;
@@ -546,18 +642,13 @@ export function buildSimulationConfig(
     },
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
-    // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
-    maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
-    enableStrategicReflections: richProducer ? true : options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
     mingleSessionsPerRound: mingle ? 3 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
     enableHouseRoundSummaries: true,
-    enableHouseStrategyBible: richProducer,
     enableHouseLongFormSummaries: richProducer,
-    enableHouseProducerBriefs: richProducer,
   };
 }
 
@@ -590,6 +681,8 @@ function selectCast(
   toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
+  providerExecutionHooks?: ProviderExecutionHooks,
+  providerManifest?: readonly LlmProviderRuntime[],
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -621,8 +714,179 @@ function selectCast(
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      ...(providerExecutionHooks && { providerExecutionHooks }),
+      ...(providerManifest && { providerManifest }),
     });
   });
+}
+
+export interface LocalProviderAttemptArtifact {
+  formatVersion: 1;
+  gameId: string;
+  ownerEpoch: string;
+  failures: Array<{
+    gameId: string;
+    ownerEpoch: string;
+    logicalCallId: string;
+    attemptJournalId: string;
+    attempt: ProviderAttemptRecord;
+  }>;
+  rateLimits: Array<{
+    logicalCallId: string;
+    count: number;
+    outcome: "pending" | "recovered" | "exhausted";
+    terminalReason?: string;
+  }>;
+}
+
+function stableSimulationJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableSimulationJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSimulationJson(record[key])}`).join(",")}}`;
+}
+
+function simulationHash(value: unknown): string {
+  return `sha256:${createHash("sha256").update(stableSimulationJson(value)).digest("hex")}`;
+}
+
+/** Local counterpart of the API journal: exact sanitized failures, compact 429s. */
+export function createLocalProviderExecutionJournal(input: {
+  gameId: string;
+  ownerEpoch: string;
+  providerManifest?: readonly Pick<
+    LlmProviderRuntime,
+    "catalogId" | "providerProfileId" | "modelId" | "maxCallsPerGame"
+  >[];
+  onChange?: (artifact: LocalProviderAttemptArtifact) => void;
+}): { hooks: ProviderExecutionHooks; snapshot: () => LocalProviderAttemptArtifact } {
+  const reservations = new Map<string, string>();
+  const terminals = new Map<string, string>();
+  const failures: LocalProviderAttemptArtifact["failures"] = [];
+  const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
+  const usedCallsByCatalog = new Map<string, number>();
+  const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.logical-call.v1",
+    coordinate: {
+      gameId: input.gameId,
+      actor: intent.coordinate.actor,
+      action: intent.coordinate.action,
+      phase: intent.coordinate.phase,
+      round: intent.coordinate.round,
+      logicalCallOrdinal: intent.coordinate.logicalCallOrdinal,
+    },
+  });
+  const attemptId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.attempt.v1",
+    logicalCallId: logicalId(intent),
+    attemptOrdinal: intent.attemptOrdinal,
+  });
+  const snapshot = (): LocalProviderAttemptArtifact => ({
+    formatVersion: 1,
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    failures: [...failures],
+    rateLimits: [...rateLimits.values()],
+  });
+  const publish = () => {
+    try {
+      input.onChange?.(snapshot());
+    } catch (error) {
+      // The in-memory reservation remains authoritative for an uninterrupted
+      // local run; a diagnostics-artifact failure must not alter gameplay.
+      console.warn("Local provider-attempt artifact degraded:", error);
+    }
+  };
+
+  return {
+    hooks: {
+      onReserve(intent) {
+        if (
+          (intent.coordinate.gameId !== undefined && intent.coordinate.gameId !== input.gameId) ||
+          (intent.coordinate.ownerEpoch !== undefined && intent.coordinate.ownerEpoch !== input.ownerEpoch)
+        ) {
+          throw new Error("Local provider attempt is outside this simulation journal");
+        }
+        const id = attemptId(intent);
+        if (reservations.has(id)) throw new Error(`Provider attempt ${id} is already reserved`);
+        if (input.providerManifest) {
+          const catalogId = intent.preparedRequest.catalogId;
+          const entry = input.providerManifest.find(
+            (candidate) => candidate.catalogId === catalogId,
+          );
+          if (!catalogId || !entry) {
+            throw new Error(`Provider entry ${catalogId ?? "<missing>"} is not sealed for this simulation`);
+          }
+          if (
+            entry.providerProfileId !== intent.preparedRequest.providerProfileId
+            || entry.modelId !== intent.preparedRequest.model
+          ) {
+            throw new Error(`Provider entry ${catalogId} does not match its sealed simulation runtime`);
+          }
+          const usedCalls = usedCallsByCatalog.get(catalogId) ?? 0;
+          if (
+            entry.maxCallsPerGame !== undefined
+            && usedCalls >= entry.maxCallsPerGame
+          ) {
+            throw new ProviderCallBudgetExhaustedError(
+              catalogId,
+              usedCalls,
+              entry.maxCallsPerGame,
+            );
+          }
+          usedCallsByCatalog.set(catalogId, usedCalls + 1);
+        }
+        reservations.set(id, simulationHash(intent));
+        publish();
+      },
+      onTerminal(record) {
+        const id = attemptId(record);
+        if (!reservations.has(id)) throw new Error("Provider attempt was not reserved");
+        const terminalHash = simulationHash(record);
+        const existing = terminals.get(id);
+        if (existing && existing !== terminalHash) {
+          throw new Error("Provider attempt terminal facts conflict with the local journal");
+        }
+        if (existing) return;
+        terminals.set(id, terminalHash);
+        const callId = logicalId(record);
+        if (record.outcome.kind === "rate_limit") {
+          const aggregate = rateLimits.get(callId) ?? {
+            logicalCallId: callId,
+            count: 0,
+            outcome: "pending" as const,
+          };
+          aggregate.count += 1;
+          aggregate.outcome = record.disposition === "exhausted" ? "exhausted" : "pending";
+          if (record.disposition === "exhausted") aggregate.terminalReason = record.outcome.message;
+          rateLimits.set(callId, aggregate);
+        } else {
+          const aggregate = rateLimits.get(callId);
+          if (aggregate?.outcome === "pending") {
+            if (record.outcome.kind === "usable") {
+              aggregate.outcome = "recovered";
+            } else if (record.disposition === "exhausted") {
+              aggregate.outcome = "exhausted";
+              aggregate.terminalReason = record.outcome.message;
+            }
+          }
+          if (record.outcome.kind !== "usable") {
+            failures.push({
+              gameId: input.gameId,
+              ownerEpoch: input.ownerEpoch,
+              logicalCallId: callId,
+              attemptJournalId: id,
+              attempt: record,
+            });
+          }
+        }
+        publish();
+      },
+    },
+    snapshot,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -636,7 +900,7 @@ export interface GameResult {
   winnerPersona: string | undefined;
   rounds: number;
   eliminationOrder: string[];
-  endgameType: string;
+  endgameType: SimulationEndgameType | "error";
   playerPersonas: Record<string, string>;
   durationMs: number;
   transcriptPath: string;
@@ -687,22 +951,6 @@ export interface AggregateStats {
     flexCostEstimates: CostEstimate[];
   };
   instrumentation: BatchInstrumentation;
-}
-
-// ---------------------------------------------------------------------------
-// Extract data from transcript
-// ---------------------------------------------------------------------------
-
-function extractEndgameType(transcript: readonly TranscriptEntry[]): string {
-  let lastStage = "normal";
-  for (const entry of transcript) {
-    if (entry.scope === "system") {
-      if (entry.text.includes("THE JUDGMENT")) lastStage = "judgment";
-      else if (entry.text.includes("THE TRIBUNAL")) lastStage = "tribunal";
-      else if (entry.text.includes("THE RECKONING")) lastStage = "reckoning";
-    }
-  }
-  return lastStage;
 }
 
 function getSurvivalRound(
@@ -968,8 +1216,6 @@ export function formatAgentTurnTrace(event: AgentTurnEvent): string | null {
 
 /** Actions that are pure producer/debug and skip the default operator action feed. */
 const OPERATOR_FEED_SKIP_ACTIONS = new Set([
-  "house-producer-brief",
-  "house-strategy-bible",
   "house-long-form-summary",
   "diary-answer",
 ]);
@@ -1085,9 +1331,11 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Reveal phases | ${stats.instrumentation.council.revealPhases} |`);
   lines.push(`| Council phases | ${stats.instrumentation.council.councilPhases} |`);
   lines.push(`| Council votes | ${stats.instrumentation.council.councilVotes} |`);
-  lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
-  lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
-  lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Reckoning stage events | ${stats.instrumentation.endgame.reckoning} |`);
+  lines.push(`| Tribunal stage events | ${stats.instrumentation.endgame.tribunal} |`);
+  lines.push(`| Judgment stage events | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Accepted jury questions | ${stats.instrumentation.endgame.juryQuestions} |`);
+  lines.push(`| Accepted jury ballots | ${stats.instrumentation.endgame.juryVotes} |`);
   lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
   lines.push(`| Mingle sessions instrumented | ${stats.instrumentation.rooms.mingleSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
@@ -1097,11 +1345,9 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Fallback room assignments | ${stats.instrumentation.rooms.assignmentSources.fallback} |`);
   lines.push(`| Movement-derived room records | ${stats.instrumentation.rooms.assignmentSources.movement} |`);
   lines.push(`| Room assignment repair notes | ${stats.instrumentation.rooms.assignmentSources.repairNotes} |`);
-  lines.push(`| House Strategy Bible calls | ${stats.instrumentation.houseProducer.strategyBibleCalls} |`);
   lines.push(`| House MC summary calls | ${stats.instrumentation.houseProducer.mcSummaryCalls} |`);
   lines.push(`| House MC transcript entries | ${stats.instrumentation.houseProducer.mcSummaryTranscriptEntries} |`);
   lines.push(`| House long-form summaries | ${stats.instrumentation.houseProducer.longFormSummaryCalls} |`);
-  lines.push(`| House producer briefs | ${stats.instrumentation.houseProducer.producerBriefCalls} |`);
   lines.push(`| Immediate repeat rooms flagged | ${stats.instrumentation.rooms.repeatPairFlags.immediateRepeats} |`);
   lines.push(`| Avoidable consecutive exclusions flagged | ${stats.instrumentation.rooms.exclusionFlags.avoidableConsecutiveExclusions} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
@@ -1690,6 +1936,28 @@ async function main() {
     process.exit(1);
   }
 
+  const resolvedProviderManifest = args.providerManifest
+    ? resolveProviderManifest(args.providerManifest)
+    : undefined;
+  const providerRuntimes = resolvedProviderManifest
+    ? createLlmProviderRuntimesFromEnv(
+        resolvedProviderManifest,
+        process.env,
+        {
+          timeout: args.llmTimeoutMs,
+          flexProcessing: args.flex,
+        },
+      )
+    : undefined;
+  if (resolvedProviderManifest && !providerRuntimes) {
+    console.error(
+      "Error: one or more sealed provider manifest entries are not configured.",
+    );
+    process.exit(1);
+  }
+
+  // Agent and House dispatch through providerRuntimes when a manifest is sealed.
+  // The legacy constructor client is used only when no adapter-backed runtime exists.
   const openai = llmConfig.client;
   const modelRuntime = catalogModelRuntime ?? resolveLegacySimulationModel(args, llmConfig.providerProfileId);
   args.model = modelRuntime.modelId;
@@ -1731,8 +1999,7 @@ async function main() {
   } else {
     console.log("House MC summaries: off.");
   }
-  if (args.enableStrategicReflections === true) console.log("Strategic reflection capture enabled: hidden reflection agent_turn records will be written to turns JSONL.");
-  if (args.richProducer === true) console.log("Rich producer mode enabled: House Strategy Bible, long-form summaries, producer briefs, and bounded diary sessions will be captured.");
+  if (args.richProducer === true) console.log("Rich producer mode enabled: House long-form narration and bounded diary sessions will be captured.");
   else if (args.enableDiary === true) console.log("Diary mode enabled: bounded diary sessions will run in simulation config.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
@@ -1741,7 +2008,6 @@ async function main() {
   // Simulation config: no timers (agents respond as fast as they can)
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
-    enableStrategicReflections: args.enableStrategicReflections ?? false,
     richProducer: args.richProducer ?? false,
     enableDiary: args.enableDiary ?? false,
     maxRounds: args.maxRounds,
@@ -1770,9 +2036,21 @@ async function main() {
   for (let g = 1; g <= args.games; g++) {
     console.log(`--- Game ${g}/${args.games} ---`);
     const startTime = Date.now();
+    const localGameId: UUID = randomUUID();
+    const localOwnerEpoch = `local-simulation:${runTimestamp}:${g}`;
+    const providerAttemptsPath = join(batchDir, `game-${g}-provider-attempts.json`);
+    const providerJournal = createLocalProviderExecutionJournal({
+      gameId: localGameId,
+      ownerEpoch: localOwnerEpoch,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
+      onChange: (artifact) => writeFileSync(providerAttemptsPath, JSON.stringify(artifact, null, 2)),
+    });
+    writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
-    const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
+    const toolChoiceMode = providerRuntimes?.[0]?.toolChoiceMode
+      ?? modelRuntime.preferredToolChoiceMode
+      ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
     const recallPlanReceipts = new RecallPlanReceiptAggregate();
     const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
@@ -1780,7 +2058,17 @@ async function main() {
       // Safe structural aggregate only — never the full private-trace payload (R16/R17).
       recallPlanReceipts.add(trace.recallPlanReceipt);
     };
-    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary, privateTraceSink);
+    const agents = selectCast(
+      args.players,
+      args.personas,
+      openai,
+      modelRuntime,
+      toolChoiceMode,
+      openAIReasoningSummary,
+      privateTraceSink,
+      providerJournal.hooks,
+      providerRuntimes ?? undefined,
+    );
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1799,9 +2087,12 @@ async function main() {
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      providerExecutionHooks: providerJournal.hooks,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
     });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer, {
+      gameId: localGameId,
       maxRoundsMode: "exact",
     });
     const transcriptPath = join(batchDir, `game-${g}.txt`);
@@ -1824,16 +2115,13 @@ async function main() {
       reasoningPolicy: modelRuntime.reasoningPolicy,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
-      enableStrategicReflections: args.enableStrategicReflections ?? false,
       houseSummaries: args.houseSummaries,
       richProducer: args.richProducer ?? false,
       enableDiary: args.enableDiary ?? false,
       openAIReasoningSummary: openAIReasoningSummary ?? "off",
       houseProducer: {
         enableHouseRoundSummaries: simConfig.enableHouseRoundSummaries ?? true,
-        enableHouseStrategyBible: simConfig.enableHouseStrategyBible ?? false,
         enableHouseLongFormSummaries: simConfig.enableHouseLongFormSummaries ?? false,
-        enableHouseProducerBriefs: simConfig.enableHouseProducerBriefs ?? false,
         diaryRoomAfterPhases: simConfig.diaryRoomAfterPhases ?? [],
       },
       transcriptPath,
@@ -1874,11 +2162,18 @@ async function main() {
       const durationMs = Date.now() - startTime;
 
       const eliminationOrder = result.eliminationOrder;
-      const endgameType = extractEndgameType(result.transcript);
+      const canonicalEvents = runner.getCanonicalEvents();
+      const endgameType = classifyCanonicalEndgame(canonicalEvents);
 
       const gameTotalUsage = gameTracker.getTotalUsage();
       const perAgentUsage = gameTracker.getAllUsage();
-      const instrumentation = instrumentGame(result.transcript, perAgentUsage, playerNameById);
+      const instrumentation = instrumentGame(
+        result.transcript,
+        perAgentUsage,
+        playerNameById,
+        runner.houseSummaryPhaseTelemetry,
+        canonicalEvents,
+      );
       const gameResult: GameResult = {
         gameNumber: g,
         status: "completed",
@@ -1926,7 +2221,7 @@ async function main() {
             metadata,
             result: gameResult,
             transcript: result.transcript,
-            canonicalEvents: runner.getCanonicalEvents(),
+            canonicalEvents,
           },
           null,
           2,
@@ -1938,8 +2233,15 @@ async function main() {
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
       const transcript = [...runner.transcriptLog];
+      const canonicalEvents = runner.getCanonicalEvents();
       const perAgentUsage = gameTracker.getAllUsage();
-      const instrumentation = instrumentGame(transcript, perAgentUsage, playerNameById);
+      const instrumentation = instrumentGame(
+        transcript,
+        perAgentUsage,
+        playerNameById,
+        runner.houseSummaryPhaseTelemetry,
+        canonicalEvents,
+      );
       const gameResult: GameResult = {
         gameNumber: g,
         status: "failed",

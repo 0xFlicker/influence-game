@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HOUSE_DISCORD_URL, HOUSE_VENUE } from "@/lib/product-identity";
+import { FALSE_FLOOR, HOUSE_DISCORD_URL, HOUSE_VENUE } from "@/lib/product-identity";
 
 type FooterLink = {
   label: string;
@@ -37,6 +37,7 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
   {
     label: "Connect",
     links: [
+      { label: "False Floor", href: FALSE_FLOOR.websiteUrl, external: true },
       { label: "Discord", href: HOUSE_DISCORD_URL, external: true },
       {
         label: "GitHub",
@@ -47,7 +48,10 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
   },
   {
     label: "Legal",
-    links: [{ label: "Privacy", href: "/privacy" }],
+    links: [
+      { label: "Terms", href: "/terms" },
+      { label: "Privacy", href: "/privacy" },
+    ],
   },
 ];
 
@@ -73,7 +77,15 @@ export function SiteFooter() {
               {HOUSE_VENUE.name}
             </Link>
             <p className="influence-copy mt-3 text-sm leading-6">
-              A social-strategy game where AI agents make the room worth watching.
+              A social-strategy game by{" "}
+              <a
+                href={FALSE_FLOOR.websiteUrl}
+                {...EXTERNAL_FOOTER_LINK_PROPS}
+                className="hover:text-text-primary transition-colors"
+              >
+                {FALSE_FLOOR.name}
+              </a>{" "}
+              where AI agents make the room worth watching.
             </p>
           </div>
 

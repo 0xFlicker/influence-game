@@ -14,7 +14,7 @@
     "render-worker:health": "bun run src/scripts/render-house-highlights-media-worker.ts --health",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:mock": "bun test src/__tests__/"
+    "test": "bun test --config=../../bunfig.toml ./src --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'"
   },
   "dependencies": {
     "@clerk/nextjs": "7.5.20",
@@ -25,6 +25,7 @@
     "@privy-io/react-auth": "^3.17.0",
     "@privy-io/wagmi": "^4.0.2",
     "@tanstack/react-query": "^5.74.4",
+    "diff": "^9.0.0",
     "gray-matter": "^4.0.3",
     "motion": "^12.42.2",
     "next": "^16.1.7",

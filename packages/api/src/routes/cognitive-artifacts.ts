@@ -24,6 +24,7 @@ export function createCognitiveArtifactRoutes(db: DrizzleDB) {
       artifactType: parseArtifactType(c.req.query("artifactType")),
       actorPlayerId: optionalQuery(c.req.query("actorPlayerId")),
       limit: parseLimit(c.req.query("limit")),
+      cursor: optionalQuery(c.req.query("cursor")),
     }, accessorFromContext(c));
 
     return c.json(result, result.ok ? 200 : statusToHttp(result.status));
@@ -108,7 +109,8 @@ function parseActorRole(value: string | undefined): CognitiveArtifactActorRole |
     : undefined;
 }
 
-function statusToHttp(status: string): 200 | 403 | 404 {
+function statusToHttp(status: string): 200 | 400 | 403 | 404 {
+  if (status === "cursor_invalid_or_stale") return 400;
   if (status === "denied") return 403;
   if (status === "not_found") return 404;
   return 200;
