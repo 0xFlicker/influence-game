@@ -150,7 +150,6 @@ export function AgentForm({
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [personaExpanded, setPersonaExpanded] = useState(false);
-  const [identityToolsExpanded, setIdentityToolsExpanded] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
@@ -454,7 +453,7 @@ export function AgentForm({
       )}
 
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-8 xl:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside className="influence-panel order-2 rounded-2xl p-5 sm:p-6 lg:order-none lg:sticky lg:top-24">
+        <aside className="influence-panel order-1 rounded-2xl p-5 sm:p-6 lg:order-none lg:sticky lg:top-24">
           <div className="flex flex-col items-center">
             <AvatarUpload currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={setExplicitAvatarUrl} onUploadingChange={setUploading} size="32" />
             {(portraitStarting || portraitPending || boundPortraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
@@ -480,17 +479,7 @@ export function AgentForm({
               {validationErrors.gender && <p id="agent-gender-error" className="mt-1 text-xs text-red-300">{validationErrors.gender}</p>}
             </fieldset>
 
-            <button
-              type="button"
-              aria-expanded={identityToolsExpanded}
-              onClick={() => setIdentityToolsExpanded((expanded) => !expanded)}
-              className="influence-selection-card flex min-h-11 w-full items-center justify-between rounded-lg px-3 text-left text-sm text-text-primary lg:hidden"
-            >
-              <span>Persona &amp; AI tools</span>
-              <span className="text-white/40" aria-hidden="true">{identityToolsExpanded ? "−" : "+"}</span>
-            </button>
-
-            <div className={`${identityToolsExpanded ? "space-y-5" : "hidden"} lg:block lg:space-y-5`}>
+            <div className="space-y-5">
               <div>
                 <p className="influence-section-title mb-2">Base persona</p>
                 <button type="button" aria-expanded={personaExpanded} onClick={() => setPersonaExpanded((expanded) => !expanded)} className="influence-selection-card flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left">
@@ -531,7 +520,7 @@ export function AgentForm({
         </aside>
 
         <main className="contents min-w-0 lg:block lg:space-y-6">
-          <section className="influence-panel order-1 rounded-2xl p-5 sm:p-6">
+          <section className="influence-panel order-2 rounded-2xl p-5 sm:p-6">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>

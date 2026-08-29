@@ -22,6 +22,10 @@ import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./ag
 
 export type AgentCreateFlow = "manage" | "join_game" | "daily_free";
 
+export function AgentCreateRulesLink() {
+  return <> <Link href="/rules" className="influence-link">Read the Rules</Link> before setting their strategy.</>;
+}
+
 export function AgentCreateContent({
   flow = "manage",
   gameId,
@@ -139,7 +143,9 @@ export function AgentCreateContent({
           <Link href="/dashboard/agents" className="transition-colors hover:text-text-primary">Agents</Link>
         </nav>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">{context.title}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">{context.description}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
+          {context.description}<AgentCreateRulesLink />
+        </p>
       </header>
       <AgentForm
         draftScope={`create:${flow}:${gameId ?? "none"}`}

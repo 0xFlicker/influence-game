@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
     return [
       {
         "source": "/.well-known/farcaster.json",
-        "destination": "https://api.farcaster.xyz/miniapps/hosted-manifest/019fe25e-e9b2-ce0f-716a-f5f1995c1ff0",
+        "destination": "https://api.farcaster.xyz/miniapps/hosted-manifest/01a04c08-27ae-dfc0-8377-9082f82a2536",
         "permanent": false
       }
     ]

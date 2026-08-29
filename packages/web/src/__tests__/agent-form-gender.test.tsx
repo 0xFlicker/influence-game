@@ -68,6 +68,17 @@ describe("AgentForm", () => {
     expect(html).toContain("lg:min-h-80");
   });
 
+  test("keeps the core Agent controls ahead of Strategy and never collapses Persona or AI tools", () => {
+    const html = renderForm();
+
+    expect(html).toContain("order-1 rounded-2xl");
+    expect(html).toContain("order-2 rounded-2xl");
+    expect(html.indexOf('id="agent-name"')).toBeLessThan(html.indexOf('id="agent-strategyStyle"'));
+    expect(html).toContain("Base persona");
+    expect(html).toContain("AI profile help");
+    expect(html).not.toContain("Persona &amp; AI tools");
+  });
+
   test("starts a review edit from the proposal and keeps the baseline visible", () => {
     const html = renderForm({
       initial: {

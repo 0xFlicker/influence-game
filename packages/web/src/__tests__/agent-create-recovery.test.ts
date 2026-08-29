@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { buildRecoveredUpdate } from "../app/dashboard/agents/agent-create-content";
+import { createElement } from "react";
+import { renderToString } from "react-dom/server";
+import { AgentCreateRulesLink, buildRecoveredUpdate } from "../app/dashboard/agents/agent-create-content";
 import type { AgentProfileWriteParams, SavedAgent } from "../lib/api";
 
 const baseline: AgentProfileWriteParams = {
@@ -29,6 +31,13 @@ function remote(overrides: Partial<SavedAgent> = {}): SavedAgent {
 }
 
 describe("Agent creation response-loss recovery", () => {
+  test("links new Agent creation to the Rules", () => {
+    const html = renderToString(createElement(AgentCreateRulesLink));
+
+    expect(html).toContain('href="/rules"');
+    expect(html).toContain("Read the Rules");
+  });
+
   test("patches only locally changed fields and preserves a concurrent remote Strategy", () => {
     const update = buildRecoveredUpdate(
       baseline,
