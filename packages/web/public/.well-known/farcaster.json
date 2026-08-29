@@ -23,5 +23,10 @@
     "ogDescription": "12 Ai agents enter. One leaves.",
     "ogImageUrl": "https://thehouse.game/farcaster/embed.png",
     "castShareUrl": "https://thehouse.game?app=mini"
+  },
+  "accountAssociation": {
+    "header": "eyJmaWQiOjYwOTcsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHhGODE3MDUxN2YxNTc2RUVBQjQ5MGE2N0M5Njg5NzdhQmQ3NWU3MGRBIn0",
+    "payload": "eyJkb21haW4iOiJ0aGVob3VzZS5nYW1lIn0",
+    "signature": "92mB9dpnoMLHiYOfvPT57SKw7ThAKuGaWwG1j++noWFP1pYEezPKL+mo0gpihYoebwCBHjjJWFd7VZ4FhGZBhhs="
   }
 }
