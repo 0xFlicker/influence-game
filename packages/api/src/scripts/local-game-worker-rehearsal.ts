@@ -10,13 +10,17 @@ const LOCAL_PORT = "54320";
 const DEV_DATABASE_NAME = "influence_dev";
 const DOPPLER_PROJECT = "social-strategy-agent";
 const DOPPLER_CONFIG = "dev";
-const WORKER_ACKNOWLEDGEMENT = "adopt_existing_dev_games";
 
 type RunnableGame = {
   gameId: string;
   slug: string;
   status: string;
   activeOwnerProcessId: string | null;
+};
+
+type FixtureRecord = {
+  id: string;
+  createdById: string | null;
 };
 
 export function assertDevelopmentDatabaseUrl(value: string | undefined): URL {
@@ -70,11 +74,15 @@ export function assertFixtureIsolation(
   }
 }
 
-export function assertDevWorkerAcknowledgement(
-  env: Record<string, string | undefined> = process.env,
+export function assertRecordedFixture(
+  fixture: FixtureRecord | undefined,
+  marker: string | undefined,
 ): void {
-  if (env.REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT !== WORKER_ACKNOWLEDGEMENT) {
-    throw new Error(`Set REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT=${WORKER_ACKNOWLEDGEMENT} only after reviewing preflight output`);
+  if (!marker?.startsWith("local-worker-rehearsal-")) {
+    throw new Error("REHEARSAL_FIXTURE_MARKER must be the unique marker emitted by fixture creation");
+  }
+  if (!fixture || fixture.createdById !== marker) {
+    throw new Error("Recorded rehearsal fixture does not match REHEARSAL_FIXTURE_MARKER");
   }
 }
 
@@ -121,6 +129,7 @@ async function listRunnableGames(databaseUrl: string): Promise<RunnableGame[]> {
 async function preflight(fixtureGameId = process.env.REHEARSAL_FIXTURE_GAME_ID) {
   const { databaseUrl, identity } = config();
   readRehearsalAdminAddress();
+  const db = createDB(databaseUrl);
   const games = await listRunnableGames(databaseUrl);
   console.log(JSON.stringify({
     doppler: { project: identity.project, config: identity.config },
@@ -129,6 +138,13 @@ async function preflight(fixtureGameId = process.env.REHEARSAL_FIXTURE_GAME_ID) 
     fixtureGameId: fixtureGameId ?? null,
   }));
   assertFixtureIsolation(games, fixtureGameId);
+  if (fixtureGameId !== undefined) {
+    const fixture = (await db.select({
+      id: schema.games.id,
+      createdById: schema.games.createdById,
+    }).from(schema.games).where(eq(schema.games.id, fixtureGameId)))[0];
+    assertRecordedFixture(fixture, process.env.REHEARSAL_FIXTURE_MARKER);
+  }
 }
 
 function runtimeEnv(databaseUrl: string, role: "gateway" | "game-worker", port: string) {
@@ -146,7 +162,6 @@ async function serve(role: "gateway" | "game-worker") {
   const port = role === "gateway" ? "3100" : process.env.REHEARSAL_WORKER_PORT ?? "3101";
   if (role === "game-worker") {
     await preflight(required("REHEARSAL_FIXTURE_GAME_ID"));
-    assertDevWorkerAcknowledgement();
   }
   const child = spawn("bun", ["run", "src/index.ts"], {
     stdio: "inherit",

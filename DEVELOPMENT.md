@@ -600,7 +600,7 @@ API origin, and filesystem upload directory. `dev:api` is a non-claiming
 gateway. `bun run dev:game-worker` is deliberately limited to the fixture-only
 development rehearsal; follow the
 [local worker cutover checklist](docs/deployment/local-game-worker-cutover-checklist.md)
-for its empty-inventory preflight and acknowledgement. The render worker has no
+for its empty-inventory preflight and fixture-only guard. The render worker has no
 listening port; it polls the API and is required for admin trailer jobs to
 advance beyond `Queued`. Use the corresponding `*:service` scripts only when
 the shell or container already supplies its environment.

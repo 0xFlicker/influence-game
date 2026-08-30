@@ -66,35 +66,41 @@ export REHEARSAL_FIXTURE_GAME_ID="$(bun run rehearsal -- fixture)"
 Expected: gateway health reports `runtimeRole: "gateway"`. Fixture creation
 reruns the empty-inventory guard, creates a unique
 `local-worker-rehearsal-<uuid>` user marker, and returns only the new game ID
-on stdout. It uses the normal development provider/runtime configuration—no
-mock runner is silently enabled. Treat this as an intentional development-data
-write and record both the marker (stderr) and `REHEARSAL_FIXTURE_GAME_ID`.
+on stdout. Copy the emitted `fixtureMarker` value from stderr into terminal C:
+
+```bash
+export REHEARSAL_FIXTURE_MARKER='local-worker-rehearsal-<uuid-from-fixture-output>'
+```
+
+It uses the normal development provider/runtime configuration—no mock runner is
+silently enabled. Treat this as an intentional development-data write and
+record both the marker and `REHEARSAL_FIXTURE_GAME_ID`.
 
 - [ ] Gateway role and the unique fixture identity recorded.
 - [ ] Fixture start is accepted with no worker claim.
 
-### 3. Acknowledge and start the fixture-only worker
+### 3. Prove fixture isolation and start the worker
 
 In terminal C, rerun preflight with the selected fixture:
 
 ```bash
 bun run rehearsal -- preflight
-export REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT=adopt_existing_dev_games
 ```
 
 In terminal B:
 
 ```bash
 REHEARSAL_FIXTURE_GAME_ID="$REHEARSAL_FIXTURE_GAME_ID" \
-REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT="$REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT" \
+REHEARSAL_FIXTURE_MARKER="$REHEARSAL_FIXTURE_MARKER" \
 bun run dev:game-worker
 ```
 
 The worker repeats the inventory immediately before startup. It exits if any
 other runnable game or active owner appeared after preflight, if the fixture ID
-is absent, or if the acknowledgement is absent. The acknowledgement applies
-only to the fixture after that successful guard; it is not permission to adopt
-other development work.
+is absent, if any runnable row does not belong to the recorded fixture, or if
+the fixture's recorded creator does not exactly match
+`REHEARSAL_FIXTURE_MARKER`. It never has a switch or acknowledgement that
+permits adopting pre-existing work.
 
 In terminal C:
 
@@ -107,7 +113,7 @@ Expected: worker health reports `runtimeRole: "game-worker"`; the fixture
 advances; and contention returns `game_owned` without replacing the healthy
 owner epoch.
 
-- [ ] Fixture-only worker preflight and acknowledgement recorded.
+- [ ] Fixture-only worker preflight recorded.
 - [ ] Healthy-owner contention rejection recorded.
 
 ### 4. Acquire drain and record the authenticated receipt
@@ -141,7 +147,7 @@ In terminal D:
 ```bash
 REHEARSAL_WORKER_PORT=3102 \
 REHEARSAL_FIXTURE_GAME_ID="$REHEARSAL_FIXTURE_GAME_ID" \
-REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT=adopt_existing_dev_games \
+REHEARSAL_FIXTURE_MARKER="$REHEARSAL_FIXTURE_MARKER" \
 bun run dev:game-worker
 ```
 

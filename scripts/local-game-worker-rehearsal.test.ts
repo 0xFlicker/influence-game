@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   assertDevelopmentDatabaseUrl,
   assertDevelopmentDopplerEnvironment,
-  assertDevWorkerAcknowledgement,
   assertFixtureIsolation,
+  assertRecordedFixture,
   assertRehearsalHealth,
   readRehearsalAdminAddress,
 } from "../packages/api/src/scripts/local-game-worker-rehearsal";
@@ -28,13 +28,15 @@ describe("local game-worker rehearsal guards", () => {
     expect(() => readRehearsalAdminAddress({ ...devEnvironment, ADMIN_ADDRESS: undefined })).toThrow("ADMIN_ADDRESS");
   });
 
-  test("refuses unrelated runnable work and requires an explicit worker acknowledgement", () => {
+  test("refuses unrelated runnable work and permits only the recorded fixture", () => {
     const unrelated = [{ gameId: "other-game", slug: "other-game", status: "in_progress", activeOwnerProcessId: null }];
     expect(() => assertFixtureIsolation(unrelated, undefined)).toThrow("unrelated runnable games");
     expect(() => assertFixtureIsolation(unrelated, "fixture-game")).toThrow("unrelated runnable games");
     expect(() => assertFixtureIsolation([{ ...unrelated[0]!, gameId: "fixture-game" }], "fixture-game")).not.toThrow();
-    expect(() => assertDevWorkerAcknowledgement({})).toThrow("REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT");
-    expect(() => assertDevWorkerAcknowledgement({ REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT: "adopt_existing_dev_games" })).not.toThrow();
+    const marker = "local-worker-rehearsal-123";
+    expect(() => assertRecordedFixture({ id: "fixture-game", createdById: marker }, marker)).not.toThrow();
+    expect(() => assertRecordedFixture({ id: "fixture-game", createdById: "someone-else" }, marker)).toThrow("Recorded rehearsal fixture");
+    expect(() => assertRecordedFixture({ id: "fixture-game", createdById: marker }, undefined)).toThrow("REHEARSAL_FIXTURE_MARKER");
   });
 
   test("proves the API runtimeRole rather than an invented role field", () => {

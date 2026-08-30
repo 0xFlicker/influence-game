@@ -190,9 +190,8 @@ The game worker runs the same API image on `http://127.0.0.1:3002` by default, w
 
 `bun run dev:api` is always a non-claiming gateway. The game-worker command is
 reserved for the documented fixture-only development rehearsal: it requires an
-empty runnable-game/owner preflight, a selected fixture, and an explicit
-acknowledgement before it can adopt anything. Never point an ad-hoc local game
-worker at staging or production data.
+empty runnable-game/owner preflight and a selected fixture before it can adopt
+anything. Never point an ad-hoc local game worker at staging or production data.
 
 **Terminal 3 -- Start the web frontend:**
 

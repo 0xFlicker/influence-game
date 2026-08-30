@@ -41,10 +41,9 @@ bun run dev:game-worker
 bun run dev:render-worker
 ```
 
-The game-worker helper is intentionally guarded. It requires a selected fixture,
-a successful development-database inventory, and an explicit acknowledgement;
-use the rehearsal checklist rather than starting it against ordinary development
-work.
+The game-worker helper is intentionally guarded. It requires a selected fixture
+and a successful development-database inventory; use the rehearsal checklist
+rather than starting it against ordinary development work.
 
 Tests normally execute routes/services without starting a runtime role. Any
 runtime-start integration test must name its role: gateway tests prove no
