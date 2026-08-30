@@ -1,190 +1,180 @@
 # LOCAL WORKER CUTOVER CHECKLIST
 
-Use this short checklist for a **local-only** rehearsal of the gateway and
-dedicated game-worker cutover. The fuller background and troubleshooting guide
-is [game-worker operations](game-worker-operations.md).
+This is a **source-process rehearsal** of gateway/worker roles, durable leases,
+and drain acknowledgement against the existing local development database. It
+is not Docker, image, staging, production, or deployment evidence. Validate
+container images and the colored worker lifecycle in the Linode IaC checklist.
 
-> **Hard stop:** use only `127.0.0.1:54320` databases named
-> `influence_rehearsal_*`. Never use Doppler, shared development, staging, or
-> production credentials, databases, deployment tokens, hosts, or cloud
-> controls. This checklist does not authorize a merge or deployment.
+> **Hard stop:** every command below uses Doppler
+> `social-strategy-agent/dev`, whose documented database is loopback
+> `127.0.0.1:54320/influence_dev`. The helper prints only project/config and
+> database host/port/name—never credentials. It refuses any other Doppler
+> selection or database. It never creates, drops, migrates, truncates, or
+> terminates database connections.
+
+> **No unrelated work:** preflight fails if it finds any waiting, in-progress,
+> suspended, or actively owned game that is not the selected fixture. Do not
+> bypass that failure. This prevents the rehearsal worker from adopting or
+> mutating an existing development game.
 
 ## Prerequisites
 
-- Bun dependencies are installed and local PostgreSQL is listening on
-  `127.0.0.1:54320`.
-- Use three terminals whose shells retain the variables below: gateway (A), old
-  worker (B), and commands/evidence (C). Use a fourth terminal for the
-  replacement worker.
-- Pick a unique, lowercase database suffix if another rehearsal is running.
+- Doppler is authenticated for `social-strategy-agent/dev`; do not export or
+  copy `JWT_SECRET`, `ADMIN_ADDRESS`, Privy credentials, or a database URL.
+  The configured development secrets are injected by `bun run rehearsal`.
+- Local PostgreSQL is listening on `127.0.0.1:54320`.
+- Use three terminals: gateway (A), worker (B), and commands/evidence (C). A
+  fourth terminal is needed for replacement-worker recovery.
+
+`ADMIN_ADDRESS` remains required by API startup and RBAC seeding. The helper's
+`readRehearsalAdminAddress` reads that non-displayed value from Doppler dev; it
+does not invent or print a rehearsal wallet.
 
 ## Checklist
 
-### 1. Create isolated databases
+### 1. Inventory the selected development environment
 
-In terminal C, set throwaway local-only values and create the isolated
-databases. Repeat these exports in every terminal that starts a gateway or
-worker (or source the same local-only shell setup there):
+In terminal C:
 
 ```bash
-export REHEARSAL_URL=postgresql://influence:influence@127.0.0.1:54320/influence_rehearsal_manual
-export REHEARSAL_TEST_URL=postgresql://influence:influence@127.0.0.1:54320/influence_rehearsal_manual_tests
-export JWT_SECRET=rehearsal-jwt-secret
-export ADMIN_ADDRESS=0x1234567890123456789012345678901234567890
-export PRIVY_APP_ID=rehearsal PRIVY_APP_SECRET=rehearsal
-export MANAGED_AUTH_MODE=disabled INFLUENCE_API_TEST_MOCK_RUNNER=true
-export INFLUENCE_STORAGE_BACKEND=disabled POSTGAME_MEDIA_WORKER_TOKEN=rehearsal-worker
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts setup
+bun run rehearsal -- preflight
 ```
 
-Expected: setup creates and migrates only the two named `influence_rehearsal_*`
-databases. Stop if the URL or database name differs.
+Expected: JSON identifies `social-strategy-agent`, `dev`, and
+`127.0.0.1:54320/influence_dev`, then exits successfully only when the runnable
+inventory is empty. If it lists a game or active owner, stop. The developer
+database already contains unrelated work and this rehearsal must not run.
 
-- [ ] Isolated setup succeeded.
+- [ ] Doppler/dev and loopback database identity recorded.
+- [ ] Runnable-game and active-owner inventory is empty.
 
-### 2. Prove the old gateway accepts but never claims
+### 2. Start the non-claiming gateway and create one marked fixture
 
 In terminal A:
 
 ```bash
-DATABASE_URL="$REHEARSAL_URL" bun run dev:gateway
+bun run dev:gateway
 ```
 
 In terminal C:
 
 ```bash
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:gateway
-export REHEARSAL_GAME_ID="$(bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts fixture)"
+bun run rehearsal -- health:gateway
+export REHEARSAL_FIXTURE_GAME_ID="$(bun run rehearsal -- fixture)"
 ```
 
-Expected: health returns HTTP 200 with `runtimeRole: "gateway"`; fixture prints a
-game ID and the gateway reports the game in progress. Before any worker starts,
-there is no worker adoption/claim log for that game.
+Expected: gateway health reports `runtimeRole: "gateway"`. Fixture creation
+reruns the empty-inventory guard, creates a unique
+`local-worker-rehearsal-<uuid>` user marker, and returns only the new game ID
+on stdout. It uses the normal development provider/runtime configuration—no
+mock runner is silently enabled. Treat this as an intentional development-data
+write and record both the marker (stderr) and `REHEARSAL_FIXTURE_GAME_ID`.
 
-- [ ] Gateway role proved and fixture game ID recorded.
-- [ ] Start was accepted without a worker claim.
+- [ ] Gateway role and the unique fixture identity recorded.
+- [ ] Fixture start is accepted with no worker claim.
 
-### 3. Start the old worker, advance, and prove healthy-owner exclusion
+### 3. Acknowledge and start the fixture-only worker
+
+In terminal C, rerun preflight with the selected fixture:
+
+```bash
+bun run rehearsal -- preflight
+export REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT=adopt_existing_dev_games
+```
 
 In terminal B:
 
 ```bash
-export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-old-worker-digest"
-INFLUENCE_API_IMAGE_DIGEST="$REHEARSAL_API_IMAGE_DIGEST" DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
+REHEARSAL_FIXTURE_GAME_ID="$REHEARSAL_FIXTURE_GAME_ID" \
+REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT="$REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT" \
+bun run dev:game-worker
 ```
+
+The worker repeats the inventory immediately before startup. It exits if any
+other runnable game or active owner appeared after preflight, if the fixture ID
+is absent, or if the acknowledgement is absent. The acknowledgement applies
+only to the fixture after that successful guard; it is not permission to adopt
+other development work.
 
 In terminal C:
 
 ```bash
-export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-old-worker-digest"
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:worker
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts contention
+bun run rehearsal -- health:worker
+bun run rehearsal -- contention
 ```
 
-Expected: worker health returns HTTP 200 with `runtimeRole: "game-worker"` and
-the exact `releaseControl.imageDigest` exported above; terminal B shows the game
-being adopted and committed work advancing. `contention`
-reports a rejected contender with `code: "game_owned"` (HTTP 409), without
-replacing the healthy owner epoch.
+Expected: worker health reports `runtimeRole: "game-worker"`; the fixture
+advances; and contention returns `game_owned` without replacing the healthy
+owner epoch.
 
-- [ ] Old worker role, adoption, and advancement recorded.
+- [ ] Fixture-only worker preflight and acknowledgement recorded.
 - [ ] Healthy-owner contention rejection recorded.
 
-### 4. Acquire local drain and capture the old-worker receipt
+### 4. Acquire drain and record the authenticated receipt
 
 In terminal C:
 
 ```bash
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts drain:acquire
+bun run rehearsal -- drain:acquire
 export REHEARSAL_LEASE_ID='replace-with-lease-id-from-output'
 export REHEARSAL_FENCE='replace-with-fencing-token-from-output'
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts drain:status
+bun run rehearsal -- drain:status
 ```
 
-Expected: the authenticated worker receipt reports top-level `state: "drained"`,
-the same `observedLease.id` and `observedLease.fencingToken`, a non-empty
-`claimsStoppedAt`, and `ownedGameCount: 0`. A global active-game count alone is
-not sufficient. Replace each quoted placeholder above before running the
-status command. Keep the old worker serving this authenticated receipt while
-the normal two-second worker scan observes the global lease and drains it.
-Do not send SIGTERM (or run the worker down command) to trigger drain: SIGTERM
-starts API shutdown and ends the time in which the receipt can be polled.
+Expected: the receipt has top-level `state: "drained"`, matching
+`observedLease.id` and `observedLease.fencingToken`, a non-empty
+`claimsStoppedAt`, and `ownedGameCount: 0`. Keep the old worker alive while
+polling. Do not use SIGTERM to trigger drain: source shutdown removes the HTTP
+surface before a controller can record the receipt.
 
-- [ ] Lease ID and fencing token recorded.
-- [ ] Old-worker drained receipt with the matching fence recorded.
+### 5. Stop the old worker, release admission, and start the replacement
 
-### 5. Stop old worker, release admission, and start replacement
-
-Only after the matching drained receipt is recorded, stop the worker that
-terminal B started. The required order is: acquire admission -> poll every old
-worker's authenticated receipt -> stop old worker -> release admission ->
-start replacement. Never reverse the receipt and stop steps.
+After recording the drained receipt, stop the foreground worker in terminal B
+with Ctrl-C. Then in terminal C:
 
 ```bash
-bun run dev:game-worker:down
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts drain:release
+bun run rehearsal -- drain:release
 ```
 
-`dev:game-worker:down` signals only the PID tracked by the companion local
-launcher; Ctrl-C in terminal B is also valid. Do not use `pkill`, port-kill
-commands, or any broad process command.
-
-In terminal D, start the replacement on a different local port:
+In terminal D:
 
 ```bash
-export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-accepted-candidate-digest"
-GAME_WORKER_PORT=3102 INFLUENCE_API_IMAGE_DIGEST="$REHEARSAL_API_IMAGE_DIGEST" DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
+REHEARSAL_WORKER_PORT=3102 \
+REHEARSAL_FIXTURE_GAME_ID="$REHEARSAL_FIXTURE_GAME_ID" \
+REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT=adopt_existing_dev_games \
+bun run dev:game-worker
 ```
 
 In terminal C:
 
 ```bash
-export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-accepted-candidate-digest"
-export REHEARSAL_WORKER_PORT=3102
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:worker
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts recovery
+REHEARSAL_WORKER_PORT=3102 bun run rehearsal -- health:worker
+bun run rehearsal -- recovery
 ```
 
-Expected: the replacement health receipt proves `runtimeRole: "game-worker"`
-and the exact accepted candidate digest before recovery. It then adopts only
-released or expired work, has a new `process_id` and owner epoch, and recovery
-reports a successful reconciliation. It must not steal a healthy owner.
+Expected: only the selected fixture moves to a new owner epoch. The helper
+rechecks the isolation inventory before release and recovery.
 
-- [ ] Old worker stopped only through its local lifecycle control.
-- [ ] Admission released and replacement recovery recorded.
-- [ ] New owner identity/epoch and healthy-owner fence recorded.
+### 6. Validate and retain evidence
 
-### 6. Check paused/rewound viewer reconnect retention
-
-Run the focused existing playback check in terminal C:
+Run the focused provider-free checks:
 
 ```bash
+bun test scripts/local-game-worker-rehearsal.test.ts
 bun test packages/web/src/__tests__/format-presentation-director.test.ts
 ```
 
-Expected: the test passes, proving a paused/rewound viewer retains its cue
-when reconnect adds a newer tail.
+Record the preflight JSON, fixture marker and ID, owner epochs, lease fence,
+drain receipt, contention result, recovery result, and test output. Stop the
+gateway and replacement worker with Ctrl-C.
 
-- [ ] Viewer reconnect result recorded.
+There is deliberately **no database cleanup command**. Fixture records remain
+in `influence_dev`; deleting them safely requires an explicit, referentially
+complete cleanup procedure and is out of scope for this rehearsal.
 
-### 7. Collect evidence and clean up safely
+## Release order
 
-Record the game ID, old and replacement `process_id`/owner epoch, lease ID,
-fencing token, drained receipt JSON, contention result, recovery result, and
-viewer-test output with the PR or local rehearsal notes. These are local
-contract evidence only.
-
-Stop terminal A with Ctrl-C, then stop the tracked replacement worker and drop
-only the exact rehearsal databases:
-
-```bash
-bun run dev:game-worker:down
-bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts cleanup
-```
-
-Expected: the guarded cleanup removes only the two `influence_rehearsal_*`
-databases named in step 1. If the guard rejects a URL, leave it rejected and
-inspect the value; never bypass it.
-
-- [ ] Gateway and replacement worker stopped.
-- [ ] Guarded cleanup succeeded.
+Do not merge Influence PR #129 until the worker-aware colored-flow PR is green,
+reviewed, and merged to `linode-iac/main` without deploying. Then merge this
+app PR, validate staging through the updated IaC, and seek explicit operator
+approval before production.

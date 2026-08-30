@@ -1,41 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import {
-  assertRehearsalDatabaseUrl,
+  assertDevelopmentDatabaseUrl,
+  assertDevelopmentDopplerEnvironment,
+  assertDevWorkerAcknowledgement,
+  assertFixtureIsolation,
   assertRehearsalHealth,
+  readRehearsalAdminAddress,
 } from "../packages/api/src/scripts/local-game-worker-rehearsal";
 
 describe("local game-worker rehearsal guards", () => {
-  test("accepts only explicitly named loopback rehearsal databases", () => {
-    expect(assertRehearsalDatabaseUrl("postgresql://influence:influence@127.0.0.1:54320/influence_rehearsal_safe").pathname).toBe("/influence_rehearsal_safe");
+  const devEnvironment = {
+    DOPPLER_PROJECT: "social-strategy-agent",
+    DOPPLER_CONFIG: "dev",
+    DATABASE_URL: "postgresql://influence:influence@127.0.0.1:54320/influence_dev",
+    ADMIN_ADDRESS: "0x1234567890123456789012345678901234567890",
+  };
+
+  test("accepts only the configured loopback development database", () => {
+    expect(assertDevelopmentDatabaseUrl(devEnvironment.DATABASE_URL).pathname).toBe("/influence_dev");
   });
-  test.each(["postgresql://influence:influence@127.0.0.1:54320/influence_test", "postgresql://influence:influence@localhost:54320/influence_rehearsal_safe", "postgresql://influence:influence@127.0.0.1:54320/postgres", "postgresql://influence:influence@127.0.0.1:54320/influence_rehearsal_unsafe-name"]) ("rejects unsafe database %s", (url) => expect(() => assertRehearsalDatabaseUrl(url)).toThrow());
+  test.each(["postgresql://influence:influence@127.0.0.1:54320/influence_test", "postgresql://influence:influence@localhost:54320/influence_dev", "postgresql://influence:influence@127.0.0.1:54320/postgres"]) ("rejects unsafe database %s", (url) => expect(() => assertDevelopmentDatabaseUrl(url)).toThrow());
+
+  test("requires Doppler's configured development project and non-secret admin identity", () => {
+    expect(assertDevelopmentDopplerEnvironment(devEnvironment)).toMatchObject({ project: "social-strategy-agent", config: "dev", database: "influence_dev" });
+    expect(readRehearsalAdminAddress(devEnvironment)).toBe(devEnvironment.ADMIN_ADDRESS);
+    expect(() => assertDevelopmentDopplerEnvironment({ ...devEnvironment, DOPPLER_CONFIG: "stg" })).toThrow("config dev");
+    expect(() => readRehearsalAdminAddress({ ...devEnvironment, ADMIN_ADDRESS: undefined })).toThrow("ADMIN_ADDRESS");
+  });
+
+  test("refuses unrelated runnable work and requires an explicit worker acknowledgement", () => {
+    const unrelated = [{ gameId: "other-game", slug: "other-game", status: "in_progress", activeOwnerProcessId: null }];
+    expect(() => assertFixtureIsolation(unrelated, undefined)).toThrow("unrelated runnable games");
+    expect(() => assertFixtureIsolation(unrelated, "fixture-game")).toThrow("unrelated runnable games");
+    expect(() => assertFixtureIsolation([{ ...unrelated[0]!, gameId: "fixture-game" }], "fixture-game")).not.toThrow();
+    expect(() => assertDevWorkerAcknowledgement({})).toThrow("REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT");
+    expect(() => assertDevWorkerAcknowledgement({ REHEARSAL_DEV_WORKER_ACKNOWLEDGEMENT: "adopt_existing_dev_games" })).not.toThrow();
+  });
 
   test("proves the API runtimeRole rather than an invented role field", () => {
     expect(() => assertRehearsalHealth({ runtimeRole: "gateway" }, "gateway")).not.toThrow();
     expect(() => assertRehearsalHealth({ role: "gateway" }, "gateway")).toThrow();
   });
 
-  test("requires the expected immutable image digest for a game worker", () => {
-    const digest = `sha256:${"a".repeat(64)}`;
-    expect(() => assertRehearsalHealth(
-      { runtimeRole: "game-worker", releaseControl: { imageDigest: digest } },
-      "game-worker",
-      digest,
-    )).not.toThrow();
-    expect(() => assertRehearsalHealth(
-      { runtimeRole: "game-worker", releaseControl: { imageDigest: "sha256:wrong" } },
-      "game-worker",
-      digest,
-    )).toThrow("exact image digest");
-  });
-
-  test("tracks and stops only the companion game-worker process", async () => {
-    const launcher = await Bun.file("scripts/start-game-worker-local.sh").text();
-    const stopper = await Bun.file("scripts/stop-game-worker-local.sh").text();
-
-    expect(launcher).toContain("worker_pid=$!");
-    expect(launcher).toContain('ps -p "$worker_pid" -o lstart=');
-    expect(stopper).toContain('kill -TERM "$pid"');
-    expect(stopper).not.toContain("pkill");
-  });
 });

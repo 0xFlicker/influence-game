@@ -181,12 +181,18 @@ The gateway runs on `http://127.0.0.1:3000` by default. It connects to a local P
 **Terminal 2 -- Start a game worker:**
 
 ```bash
-INFLUENCE_GAME_WORKER=1 bun run dev:game-worker
+# Follow docs/deployment/local-game-worker-cutover-checklist.md.
+# This command refuses to start unless its fixture-only guards have passed.
+bun run dev:game-worker
 ```
 
 The game worker runs the same API image on `http://127.0.0.1:3002` by default, with `INFLUENCE_API_ROLE=game-worker`. Multiple game workers may run at once: each durable game has one renewable `game_run_owners` lease, so a healthy owner is never displaced. During a release drain, game workers stop claiming new games; a graceful worker shutdown aborts at the committed-turn boundary and releases its owned games for another worker to resume. The private trace env must be present in every game worker before it starts a game.
 
-The `INFLUENCE_GAME_WORKER=1` prefix is intentional: `bun run dev:api` is always a non-claiming gateway, and the game-worker command refuses to run without that explicit acknowledgement. Never point an ad-hoc local game worker at staging or production data.
+`bun run dev:api` is always a non-claiming gateway. The game-worker command is
+reserved for the documented fixture-only development rehearsal: it requires an
+empty runnable-game/owner preflight, a selected fixture, and an explicit
+acknowledgement before it can adopt anything. Never point an ad-hoc local game
+worker at staging or production data.
 
 **Terminal 3 -- Start the web frontend:**
 
