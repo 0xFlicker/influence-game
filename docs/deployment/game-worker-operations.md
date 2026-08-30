@@ -161,7 +161,7 @@ through terminal A:
 ```bash
 bun run dev:game-worker:down
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts drain:release
-REHEARSAL_WORKER_PORT=3102 DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
+GAME_WORKER_PORT=3102 DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
 ```
 
 Expected evidence: the replacement has a different `process_id` and new owner
