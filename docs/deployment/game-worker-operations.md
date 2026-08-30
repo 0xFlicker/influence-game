@@ -57,6 +57,9 @@ intentionally local-only: it uses a new PostgreSQL database, loopback ports,
 mock game agents, and locally minted test tokens. It is **not** a deployment
 procedure or evidence that staging or production is safe.
 
+For the concise human-executable sequence, use the
+[LOCAL WORKER CUTOVER CHECKLIST](local-game-worker-cutover-checklist.md).
+
 > **Hard stop:** never point `DATABASE_URL` or `TEST_DATABASE_URL` below at a
 > shared development, staging, or production database. Do not use Doppler,
 > a shared service URL, a real provider credential, or a deployment controller
