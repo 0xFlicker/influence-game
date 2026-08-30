@@ -6,10 +6,17 @@ if [[ "${INFLUENCE_GAME_WORKER:-}" != "1" ]]; then
   echo "Run: INFLUENCE_GAME_WORKER=1 bun run dev:game-worker" >&2
   exit 1
 fi
+if [[ "${DATABASE_URL:-}" != postgresql://*@127.0.0.1:54320/influence_rehearsal_* ]]; then
+  echo "Refusing worker start: DATABASE_URL must be an explicit local influence_rehearsal_* database." >&2
+  exit 1
+fi
 
-exec doppler run --project social-strategy-agent --config dev -- \
-  env "PORT=${GAME_WORKER_PORT:-3002}" \
-  INFLUENCE_API_ROLE=game-worker \
-  "POSTGAME_MEDIA_WORKER_TOKEN=${POSTGAME_MEDIA_WORKER_TOKEN:-local-render-worker}" \
-  "POSTGAME_MEDIA_PUBLIC_BASE_URL=${POSTGAME_MEDIA_PUBLIC_BASE_URL:-http://127.0.0.1:3000}" \
+PID_FILE="${INFLUENCE_GAME_WORKER_PID_FILE:-${TMPDIR:-/tmp}/influence-game-worker-local.pid}"
+if [[ -e "$PID_FILE" ]]; then echo "Refusing worker start: PID record already exists: $PID_FILE" >&2; exit 1; fi
+printf '%s %s\n' "$$" "$(ps -p $$ -o lstart=)" > "$PID_FILE"
+cleanup() { rm -f "$PID_FILE"; }
+trap cleanup EXIT INT TERM
+
+env PORT="${GAME_WORKER_PORT:-3101}" INFLUENCE_API_ROLE=game-worker \
+  POSTGAME_MEDIA_PUBLIC_BASE_URL="http://127.0.0.1:${GAME_WORKER_PORT:-3101}" \
   bun run dev:api:service
