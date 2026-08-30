@@ -135,8 +135,16 @@ surface before a controller can record the receipt.
 
 ### 5. Stop the old worker, release admission, and start the replacement
 
-After recording the drained receipt, stop the foreground worker in terminal B
-with Ctrl-C. Then in terminal C:
+After recording the drained receipt, stop only the exact worker that the
+launcher recorded for port 3101. In terminal C:
+
+```bash
+bun run dev:game-worker:down
+```
+
+This validates the PID's recorded start time and `bun run src/index.ts` command
+before it sends SIGTERM; it never uses a port kill, `pkill`, or a broad process
+match. A stale record is removed without signaling a process. Then:
 
 ```bash
 bun run rehearsal -- drain:release
@@ -172,7 +180,11 @@ bun test packages/web/src/__tests__/format-presentation-director.test.ts
 
 Record the preflight JSON, fixture marker and ID, owner epochs, lease fence,
 drain receipt, contention result, recovery result, and test output. Stop the
-gateway and replacement worker with Ctrl-C.
+gateway with Ctrl-C; stop the replacement with its isolated record:
+
+```bash
+REHEARSAL_WORKER_PORT=3102 bun run dev:game-worker:down
+```
 
 There is deliberately **no database cleanup command**. Fixture records remain
 in `influence_dev`; deleting them safely requires an explicit, referentially

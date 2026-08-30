@@ -1,5 +1,9 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { eq, inArray } from "drizzle-orm";
 import { createDB, schema } from "../db/index.js";
 import { createDeploymentControlToken, createSessionToken } from "../middleware/auth.js";
@@ -22,6 +26,26 @@ type FixtureRecord = {
   id: string;
   createdById: string | null;
 };
+
+type WorkerPidRecord = {
+  pid: number;
+  port: number;
+  processStart: string;
+};
+
+type WorkerProcessDetails = {
+  processStart: string;
+  command: string;
+};
+
+type WorkerStopDependencies = {
+  readRecord: () => Promise<string>;
+  removeRecord: () => Promise<void>;
+  inspectProcess: (pid: number) => Promise<WorkerProcessDetails | null>;
+  signal: (pid: number, signal: NodeJS.Signals) => void;
+};
+
+const execFileAsync = promisify(execFile);
 
 export function assertDevelopmentDatabaseUrl(value: string | undefined): URL {
   if (!value) throw new Error("DATABASE_URL must be injected by Doppler dev");
@@ -84,6 +108,95 @@ export function assertRecordedFixture(
   if (!fixture || fixture.createdById !== marker) {
     throw new Error("Recorded rehearsal fixture does not match REHEARSAL_FIXTURE_MARKER");
   }
+}
+
+export function readWorkerPort(value = process.env.REHEARSAL_WORKER_PORT ?? "3101"): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error("REHEARSAL_WORKER_PORT must be a local unprivileged TCP port");
+  }
+  return port;
+}
+
+export function workerPidFile(port: number): string {
+  return join(tmpdir(), `influence-game-worker-rehearsal-${port}.json`);
+}
+
+export function parseWorkerPidRecord(value: string, expectedPort: number): WorkerPidRecord {
+  const record = JSON.parse(value) as Partial<WorkerPidRecord>;
+  if (
+    typeof record.pid !== "number" || !Number.isSafeInteger(record.pid) || record.pid <= 1
+    || record.port !== expectedPort
+    || typeof record.processStart !== "string" || record.processStart.length === 0
+  ) {
+    throw new Error("Worker PID record is invalid for the selected rehearsal port");
+  }
+  return record as WorkerPidRecord;
+}
+
+export function assertRecordedWorkerProcess(
+  record: WorkerPidRecord,
+  process: WorkerProcessDetails | null,
+): void {
+  if (!process || process.processStart !== record.processStart) {
+    throw new Error("Recorded worker PID is stale or has been reused");
+  }
+  if (!process.command.includes("bun") || !process.command.includes("src/index.ts")) {
+    throw new Error("Recorded PID is not the rehearsal API worker process");
+  }
+}
+
+async function inspectWorkerProcess(pid: number): Promise<WorkerProcessDetails | null> {
+  try {
+    const [{ stdout: processStart }, { stdout: command }] = await Promise.all([
+      execFileAsync("ps", ["-p", String(pid), "-o", "lstart="]),
+      execFileAsync("ps", ["-p", String(pid), "-o", "command="]),
+    ]);
+    const normalizedStart = processStart.trim();
+    const normalizedCommand = command.trim();
+    return normalizedStart && normalizedCommand
+      ? { processStart: normalizedStart, command: normalizedCommand }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function stopRecordedWorker(
+  port: number,
+  dependencies: WorkerStopDependencies = {
+    readRecord: () => readFile(workerPidFile(port), "utf8"),
+    removeRecord: () => rm(workerPidFile(port), { force: true }),
+    inspectProcess: inspectWorkerProcess,
+    signal: process.kill,
+  },
+): Promise<"missing" | "stale" | "stopped"> {
+  let record: WorkerPidRecord;
+  try {
+    record = parseWorkerPidRecord(await dependencies.readRecord(), port);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+    throw error;
+  }
+  const process = await dependencies.inspectProcess(record.pid);
+  if (!process || process.processStart !== record.processStart) {
+    await dependencies.removeRecord();
+    return "stale";
+  }
+  assertRecordedWorkerProcess(record, process);
+  dependencies.signal(record.pid, "SIGTERM");
+  await dependencies.removeRecord();
+  return "stopped";
+}
+
+async function assertWorkerPidFileAbsent(port: number): Promise<void> {
+  try {
+    await readFile(workerPidFile(port), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(`A rehearsal worker record already exists for port ${port}; run bun run dev:game-worker:down first`);
 }
 
 function config() {
@@ -159,15 +272,37 @@ function runtimeEnv(databaseUrl: string, role: "gateway" | "game-worker", port: 
 
 async function serve(role: "gateway" | "game-worker") {
   const { databaseUrl } = config();
-  const port = role === "gateway" ? "3100" : process.env.REHEARSAL_WORKER_PORT ?? "3101";
+  const port = role === "gateway" ? 3100 : readWorkerPort();
   if (role === "game-worker") {
     await preflight(required("REHEARSAL_FIXTURE_GAME_ID"));
+    await assertWorkerPidFileAbsent(port);
   }
   const child = spawn("bun", ["run", "src/index.ts"], {
     stdio: "inherit",
-    env: runtimeEnv(databaseUrl, role, port),
+    env: runtimeEnv(databaseUrl, role, String(port)),
   });
-  process.exitCode = await new Promise<number>((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
+  if (role !== "game-worker" || child.pid === undefined) {
+    process.exitCode = await new Promise<number>((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
+    return;
+  }
+  const details = await inspectWorkerProcess(child.pid);
+  if (!details) {
+    child.kill("SIGTERM");
+    throw new Error("Could not record the started rehearsal worker PID");
+  }
+  const pidFile = workerPidFile(port);
+  try {
+    await writeFile(pidFile, JSON.stringify({ pid: child.pid, port, processStart: details.processStart }), { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    child.kill("SIGTERM");
+    throw error;
+  }
+  try {
+    process.exitCode = await new Promise<number>((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
+  } finally {
+    const recorded = await readFile(pidFile, "utf8").catch(() => null);
+    if (recorded && parseWorkerPidRecord(recorded, port).pid === child.pid) await rm(pidFile, { force: true });
+  }
 }
 
 export function assertRehearsalHealth(
@@ -178,12 +313,24 @@ export function assertRehearsalHealth(
 }
 
 async function health(role: "gateway" | "game-worker") {
-  const port = role === "gateway" ? "3100" : process.env.REHEARSAL_WORKER_PORT ?? "3101";
+  const port = role === "gateway" ? 3100 : readWorkerPort();
   const response = await fetch(`http://127.0.0.1:${port}/api/health`);
   const body = await response.json() as { runtimeRole?: string };
   if (!response.ok) throw new Error(`expected ${role} health response`);
   assertRehearsalHealth(body, role);
   console.log(JSON.stringify(body));
+}
+
+async function stopWorker() {
+  const port = readWorkerPort();
+  const result = await stopRecordedWorker(port);
+  if (result === "missing") {
+    console.log(`No recorded rehearsal worker exists on port ${port}.`);
+  } else if (result === "stale") {
+    console.log(`Removed stale rehearsal worker record for port ${port} without signaling a process.`);
+  } else {
+    console.log(`Sent SIGTERM only to the recorded rehearsal worker on port ${port}.`);
+  }
 }
 
 async function fixture() {
@@ -281,6 +428,7 @@ if (import.meta.main) {
     preflight,
     gateway: () => serve("gateway"),
     worker: () => serve("game-worker"),
+    "worker:down": stopWorker,
     "health:gateway": () => health("gateway"),
     "health:worker": () => health("game-worker"),
     fixture,
