@@ -52,6 +52,13 @@ dedicated test database.
 
 ## End-to-end local game-worker rehearsal
 
+> **Source-process scope only:** the local gateway/worker commands in this
+> document exercise role separation, leases, drain acknowledgement, and
+> recovery from source. Any `INFLUENCE_API_IMAGE_DIGEST` value shown in a local
+> health response is injected metadata; it does not prove a built image,
+> container lifecycle, or release artifact. Validate Docker images and the
+> colored worker lifecycle through the Linode IaC checklist.
+
 Use this runbook to rehearse the gateway/worker boundary on one machine. It is
 intentionally local-only: it uses a new PostgreSQL database, loopback ports,
 mock game agents, and locally minted test tokens. It is **not** a deployment
@@ -232,6 +239,23 @@ Those local artifacts demonstrate the contract only; they never authorize a
 merge, deployment, or host/cloud mutation.
 
 ## Staging and production rolling cutover
+
+## Mandatory merge order for PR #129
+
+**Do not merge app PR #129 before the worker-aware Linode IaC colored-flow PR
+is green, reviewed, and merged to `linode-iac/main`.** The app Dockerfile
+defaults to the non-claiming gateway role. Merging the app first would build a
+candidate and dispatch staging through IaC that may not yet provision a
+dedicated game-worker plane, leaving no game execution authority.
+
+The required order is:
+
+1. Review, greenlight, and merge the worker-aware Linode IaC PR to
+   `linode-iac/main`; this step does not deploy.
+2. Merge Influence PR #129. Its candidate build then dispatches staging through
+   that updated IaC flow.
+3. Validate staging.
+4. Proceed to production only after explicit operator approval.
 
 The repository supplies the runtime behavior; the release controller in
 `linode-iac` owns orchestration, image selection, migration execution, and
