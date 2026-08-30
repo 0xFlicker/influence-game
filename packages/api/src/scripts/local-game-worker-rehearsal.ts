@@ -50,7 +50,37 @@ async function serve(role: "gateway" | "game-worker") {
   process.exitCode = await new Promise<number>((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 }
 
-async function health(role: "gateway" | "game-worker") { const port = role === "gateway" ? "3100" : process.env.REHEARSAL_WORKER_PORT ?? "3101"; const response = await fetch(`http://127.0.0.1:${port}/api/health`); const body = await response.json() as { role?: string }; if (!response.ok || body.role !== role) throw new Error(`expected ${role} health response`); console.log(JSON.stringify(body)); }
+export function assertRehearsalHealth(
+  body: {
+    runtimeRole?: string;
+    releaseControl?: { imageDigest?: string | null };
+  },
+  expectedRole: "gateway" | "game-worker",
+  expectedImageDigest?: string,
+): void {
+  if (body.runtimeRole !== expectedRole) {
+    throw new Error(`expected ${expectedRole} health response`);
+  }
+  if (expectedImageDigest !== undefined && body.releaseControl?.imageDigest !== expectedImageDigest) {
+    throw new Error(`expected ${expectedRole} health response with exact image digest`);
+  }
+}
+
+async function health(role: "gateway" | "game-worker") {
+  const port = role === "gateway" ? "3100" : process.env.REHEARSAL_WORKER_PORT ?? "3101";
+  const response = await fetch(`http://127.0.0.1:${port}/api/health`);
+  const body = await response.json() as {
+    runtimeRole?: string;
+    releaseControl?: { imageDigest?: string | null };
+  };
+  if (!response.ok) throw new Error(`expected ${role} health response`);
+  assertRehearsalHealth(
+    body,
+    role,
+    role === "game-worker" ? process.env.REHEARSAL_API_IMAGE_DIGEST : undefined,
+  );
+  console.log(JSON.stringify(body));
+}
 
 async function fixture() {
   const c = config(); const db = createDB(c.rehearsal); const admin = "rehearsal-admin";

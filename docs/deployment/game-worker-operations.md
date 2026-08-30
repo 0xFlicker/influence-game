@@ -101,7 +101,7 @@ DATABASE_URL="$REHEARSAL_URL" bun run dev:gateway
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:gateway
 ```
 
-Expected evidence: HTTP 200 and a health payload whose runtime role is
+Expected evidence: HTTP 200 and a health payload whose `runtimeRole` is
 `gateway`. There must be no game worker startup/adoption log line.
 
 Seed a disposable admin and mint a local session token:
@@ -127,7 +127,7 @@ DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:worker
 ```
 
-Expected evidence: HTTP 200 with role `game-worker`; startup reports one
+Expected evidence: HTTP 200 with `runtimeRole` `game-worker`; startup reports one
 adopted in-progress game; `game_run_owners` has one `active` row with a
 worker `process_id`; and `game_execution_states.committed_turn_sequence` is
 greater than zero. Attempt a claim using a second worker identity while that
@@ -155,6 +155,19 @@ Poll the final GET until it returns top-level `state: "drained"`, matching
 `claimsStoppedAt`, and `ownedGameCount: 0`. Also confirm the prior active game
 owner is `expired` or released. `activeGameCount: 0` alone is insufficient:
 the authenticated receipt from *this worker* is the admission proof.
+
+> **Signal ordering is a controller contract:** the worker observes the global
+> admission lease on its normal two-second scan and remains queryable while the
+> controller polls this receipt. Do not use SIGTERM as the drain trigger. The
+> controller must collect matching per-worker `drained` acknowledgements before
+> it signals or stops any old worker; SIGTERM begins API shutdown and removes
+> the polling surface.
+
+> **First conversion is separate:** a legacy combined API/worker process has
+> no dedicated worker receipt after it has been stopped. Its conversion must
+> use a fail-closed IaC bootstrap that establishes a supported worker before
+> the ordinary per-worker handoff; never treat an empty worker list after a
+> legacy restart as proof that no claimant existed.
 
 ### 5. Replacement recovery after release
 
@@ -234,10 +247,7 @@ process lifecycle. A safe game-worker release is:
 3. Acquire the existing deployment-admission lease and enter `draining`.
    Gateways reject new game starts and game workers stop claiming new work. Do
    not force-expire healthy game owners.
-4. Give old game workers their configured graceful-stop window. On shutdown a
-   worker stops scans, aborts at a committed-turn boundary, and releases its
-   own leases. It must not strand a game behind a healthy-owner takeover.
-5. Query each old game worker's authenticated
+4. Query each old game worker's authenticated
    `GET /api/internal/deployment-control/game-worker-drain-status` endpoint.
    Proceed only when that specific worker reports `state: "drained"`, the
    current deployment lease as `observedLease`, `claimsStoppedAt`, and
@@ -248,6 +258,10 @@ process lifecycle. A safe game-worker release is:
    acknowledgements. New workers then scan and claim only unowned, released,
    or genuinely expired games. A previous worker that was killed or
    partitioned remains fenced by its owner epoch.
+5. Only after every old worker receipt is recorded, give old game workers their
+   configured graceful-stop window. On shutdown a worker stops scans, aborts at
+   a committed-turn boundary, and releases its own leases. It must not strand a
+   game behind a healthy-owner takeover.
 6. Roll gateways independently; they remain non-claiming throughout. Replace
    render workers through their separate media-worker procedure, not this
    game-worker drain.

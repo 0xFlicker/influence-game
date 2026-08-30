@@ -4,8 +4,8 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
 /**
- * Gateways serve commands, reads, and websocket delivery. Only this role
- * starts the durable-game adoption and execution loops. The per-game lease in
+ * Gateways serve commands, reads, and websocket delivery. Only the game-worker
+ * role starts durable-game adoption and execution loops. The per-game lease in
  * game_run_owners, rather than a global worker lease, arbitrates workers.
  */
 export type ApiRuntimeRole = "gateway" | "game-worker";

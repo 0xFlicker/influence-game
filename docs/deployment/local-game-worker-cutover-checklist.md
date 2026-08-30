@@ -57,7 +57,7 @@ bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:gat
 export REHEARSAL_GAME_ID="$(bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts fixture)"
 ```
 
-Expected: health returns HTTP 200 with `role: "gateway"`; fixture prints a
+Expected: health returns HTTP 200 with `runtimeRole: "gateway"`; fixture prints a
 game ID and the gateway reports the game in progress. Before any worker starts,
 there is no worker adoption/claim log for that game.
 
@@ -69,18 +69,21 @@ there is no worker adoption/claim log for that game.
 In terminal B:
 
 ```bash
-DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
+export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-old-worker-digest"
+INFLUENCE_API_IMAGE_DIGEST="$REHEARSAL_API_IMAGE_DIGEST" DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
 ```
 
 In terminal C:
 
 ```bash
+export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-old-worker-digest"
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:worker
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts contention
 ```
 
-Expected: worker health returns HTTP 200 with `role: "game-worker"`; terminal
-B shows the game being adopted and committed work advancing. `contention`
+Expected: worker health returns HTTP 200 with `runtimeRole: "game-worker"` and
+the exact `releaseControl.imageDigest` exported above; terminal B shows the game
+being adopted and committed work advancing. `contention`
 reports a rejected contender with `code: "game_owned"` (HTTP 409), without
 replacing the healthy owner epoch.
 
@@ -102,14 +105,20 @@ Expected: the authenticated worker receipt reports top-level `state: "drained"`,
 the same `observedLease.id` and `observedLease.fencingToken`, a non-empty
 `claimsStoppedAt`, and `ownedGameCount: 0`. A global active-game count alone is
 not sufficient. Replace each quoted placeholder above before running the
-status command.
+status command. Keep the old worker serving this authenticated receipt while
+the normal two-second worker scan observes the global lease and drains it.
+Do not send SIGTERM (or run the worker down command) to trigger drain: SIGTERM
+starts API shutdown and ends the time in which the receipt can be polled.
 
 - [ ] Lease ID and fencing token recorded.
 - [ ] Old-worker drained receipt with the matching fence recorded.
 
 ### 5. Stop old worker, release admission, and start replacement
 
-After the drained receipt, stop the worker that terminal B started:
+Only after the matching drained receipt is recorded, stop the worker that
+terminal B started. The required order is: acquire admission -> poll every old
+worker's authenticated receipt -> stop old worker -> release admission ->
+start replacement. Never reverse the receipt and stop steps.
 
 ```bash
 bun run dev:game-worker:down
@@ -123,18 +132,23 @@ commands, or any broad process command.
 In terminal D, start the replacement on a different local port:
 
 ```bash
-GAME_WORKER_PORT=3102 DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
+export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-accepted-candidate-digest"
+GAME_WORKER_PORT=3102 INFLUENCE_API_IMAGE_DIGEST="$REHEARSAL_API_IMAGE_DIGEST" DATABASE_URL="$REHEARSAL_URL" bun run dev:game-worker
 ```
 
 In terminal C:
 
 ```bash
+export REHEARSAL_API_IMAGE_DIGEST="sha256:replace-with-the-exact-accepted-candidate-digest"
+export REHEARSAL_WORKER_PORT=3102
+bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts health:worker
 bun run --cwd packages/api src/scripts/local-game-worker-rehearsal.ts recovery
 ```
 
-Expected: the replacement adopts only released or expired work, has a new
-`process_id` and owner epoch, and recovery reports a successful reconciliation.
-It must not steal a healthy owner.
+Expected: the replacement health receipt proves `runtimeRole: "game-worker"`
+and the exact accepted candidate digest before recovery. It then adopts only
+released or expired work, has a new `process_id` and owner epoch, and recovery
+reports a successful reconciliation. It must not steal a healthy owner.
 
 - [ ] Old worker stopped only through its local lifecycle control.
 - [ ] Admission released and replacement recovery recorded.
