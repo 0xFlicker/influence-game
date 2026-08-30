@@ -89,6 +89,7 @@ describe("runtime startup mode", () => {
     expect(runtime.canClaimWork()).toBeTrue();
     expect(runtime.getStatus().runtimeState).toBe("active");
   });
+
 });
 
 describe("fence-aware runtime activation", () => {

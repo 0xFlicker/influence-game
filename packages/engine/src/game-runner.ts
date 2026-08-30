@@ -86,6 +86,7 @@ import type {
   GameExecutionCursorV1,
   GameTurnIntentV1,
 } from "./durable-game-turn";
+import { durableProviderSemanticCoordinateForSubcall } from "./durable-game-turn";
 import {
   buildTurnCommitDraft,
   capturePlayerContinuity,
@@ -1265,6 +1266,7 @@ export class GameRunner {
       intent.providerSubcalls.filter(
         (subcall) => subcall.actorId !== null && boundProviderActorIds.has(subcall.actorId),
       ),
+      intent.turnId,
     );
     const actorCoordinate = this.actorCoordinateFromDurableSnapshot(base);
     const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
@@ -1370,16 +1372,31 @@ export class GameRunner {
       agent.setDurableProviderTurnBinding({
         turnId: intent.turnId,
         subcallSlot: subcall.slot,
-        logicalCallId: subcall.logicalCallId,
+        semanticCoordinate: structuredClone(
+          durableProviderSemanticCoordinateForSubcall(intent.turnId, subcall),
+        ),
       });
       boundAgents.push(agent);
       boundProviderActorIds.add(subcall.actorId);
     }
+    this.houseInterviewer.setDurableProviderTurnBindings?.(
+      intent.providerSubcalls
+        .filter((subcall) => subcall.actorId === null)
+        .map((subcall) => ({
+          action: subcall.action,
+          turnId: intent.turnId,
+          subcallSlot: subcall.slot,
+          semanticCoordinate: structuredClone(
+            durableProviderSemanticCoordinateForSubcall(intent.turnId, subcall),
+          ),
+        })),
+    );
     let scratch: ReturnType<GameRunner["createDurableScratch"]>;
     try {
       scratch = this.createDurableScratch(intent, boundProviderActorIds);
     } catch (error) {
       for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+      this.houseInterviewer.setDurableProviderTurnBindings?.([]);
       throw error;
     }
     let effects: StagedTurnEffects;
@@ -1403,6 +1420,7 @@ export class GameRunner {
     } finally {
       scratch.stop();
       for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+      this.houseInterviewer.setDurableProviderTurnBindings?.([]);
     }
     const draft = buildTurnCommitDraft({
       base,
@@ -1757,6 +1775,11 @@ export class GameRunner {
           action: "two-names-initial-mingle",
           actorIds: this.gameState.getAlivePlayerIds(),
           handles: ["initial_names"],
+          providerActions: [
+            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
+            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
+            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
+          ],
         }, async (ctx, scratchActor) => {
           await runTwoNamesMingleWindow(ctx, scratchActor, "initial_names");
           return {
@@ -1818,6 +1841,11 @@ export class GameRunner {
           action: "two-names-final-mingle",
           actorIds: this.gameState.getAlivePlayerIds(),
           handles: ["final_names"],
+          providerActions: [
+            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
+            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
+            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
+          ],
         }, async (ctx, scratchActor) => {
           await runTwoNamesMingleWindow(ctx, scratchActor, "final_names");
           scratchActor.send({ type: "PHASE_COMPLETE" });

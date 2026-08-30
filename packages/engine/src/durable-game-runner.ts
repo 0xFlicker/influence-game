@@ -1,5 +1,8 @@
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { CanonicalGameEvent } from "./canonical-events";
+import {
+  durableProviderSemanticCoordinateForSubcall,
+} from "./durable-game-turn";
 import type {
   DurableJsonObject,
   GameExecutionCursorV1,
@@ -25,6 +28,7 @@ import {
 } from "./strategy-state";
 import type { UUID } from "./types";
 import { projectViewerDecisionEvent } from "./viewer-decision-events";
+import { durableProviderLogicalCallId } from "./provider-execution";
 
 export interface DurableTurnIntentInput {
   branch: GameTurnBranchKindV1;
@@ -126,14 +130,28 @@ export function createDurableTurnIntent(
     targetIds: [...(input.targetIds ?? [])],
     handles: [...(input.handles ?? [])],
     participantIds: [...(input.participantIds ?? actorIds)],
-    providerSubcalls: (input.providerActions ?? []).map((call, index) => ({
-      version: 1,
-      slot: index + 1,
-      logicalCallId: `${turnId}:provider:${index + 1}`,
-      actorId: call.actorId,
-      action: call.action,
-      contractId: call.contractId,
-    })),
+    providerSubcalls: (input.providerActions ?? []).map((call, index) => {
+      const slot = index + 1;
+      const semanticCoordinate = {
+        version: 1 as const,
+        kind: "durable_turn" as const,
+        turnId,
+        subcallSlot: slot,
+      };
+      return {
+        version: 1 as const,
+        slot,
+        logicalCallId: durableProviderLogicalCallId({
+          gameId: execution.gameId,
+          turnId,
+          subcallSlot: slot,
+        }),
+        semanticCoordinate,
+        actorId: call.actorId,
+        action: call.action,
+        contractId: call.contractId,
+      };
+    }),
   };
 }
 
@@ -166,6 +184,7 @@ function stagedAgent(
   agent: IAgent,
   initial: PlayerContinuityCapsule | null,
   providerBindings: readonly GameTurnIntentV1["providerSubcalls"][number][],
+  providerTurnId: string | null,
   acceptedProviderCallIds: Set<string>,
 ): { agent: IAgent; readCapsule: () => PlayerContinuityCapsule | null } {
   let capsule = initial ? structuredClone(initial) : null;
@@ -236,13 +255,13 @@ function stagedAgent(
       if (!STAGED_AGENT_METHODS.has(property)) return value.bind(target);
       return (...args: unknown[]) => {
         const providerBinding = providerBindings[providerBindingIndex++] ?? null;
+        const semanticCoordinate = providerBinding && providerTurnId
+          ? durableProviderSemanticCoordinateForSubcall(providerTurnId, providerBinding)
+          : null;
         target.setDurableProviderTurnBinding?.(providerBinding ? {
-          turnId: providerBinding.logicalCallId.slice(
-            0,
-            providerBinding.logicalCallId.lastIndexOf(":provider:"),
-          ),
+          turnId: semanticCoordinate!.turnId,
           subcallSlot: providerBinding.slot,
-          logicalCallId: providerBinding.logicalCallId,
+          semanticCoordinate: structuredClone(semanticCoordinate!),
         } : null);
         return Promise.resolve(Reflect.apply(value, proxy, args)).then((result: unknown) => {
           if (providerBinding && providerResultWasAccepted(result)) {
@@ -263,6 +282,7 @@ export function createStagedAgents(
   agents: ReadonlyMap<UUID, IAgent>,
   continuity: readonly PlayerContinuityCapsule[],
   providerSubcalls: readonly GameTurnIntentV1["providerSubcalls"][number][] = [],
+  providerTurnId: string | null = null,
 ): {
   agents: Map<UUID, IAgent>;
   readContinuity: () => PlayerContinuityCapsule[];
@@ -284,6 +304,7 @@ export function createStagedAgents(
       agent,
       capsules.get(id) ?? null,
       providerBindingsByActor.get(id) ?? [],
+      providerTurnId,
       acceptedProviderCallIds,
     );
     staged.set(id, wrapped.agent);

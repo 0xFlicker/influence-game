@@ -1,7 +1,7 @@
 # Two Names Viewer Choreography
 
-**Status:** Visual direction for implementation  
-**Prototype:** [`two-names-viewer-ui.html`](./two-names-viewer-ui.html)  
+**Status:** Visual direction for implementation
+**Prototype:** [`two-names-viewer-ui.html`](./two-names-viewer-ui.html)
 **Parent plan:** [`../plans/2026-08-28-001-feat-two-names-format-plan.md`](../plans/2026-08-28-001-feat-two-names-format-plan.md)
 
 ## Experience thesis

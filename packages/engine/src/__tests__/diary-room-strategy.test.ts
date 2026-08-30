@@ -280,7 +280,10 @@ describe("post-eviction diary compact strategy", () => {
       return Object.fromEntries(
         house.questionContexts.map((context) => [
           context.agentName,
-          context.providerInterviewOrdinal,
+          {
+            sessionEventSequence: context.sessionEventSequence,
+            playerId: context.agentId,
+          },
         ]),
       );
     };
@@ -292,7 +295,7 @@ describe("post-eviction diary compact strategy", () => {
     );
     const afterReconstruction = await runInterviews(reconstructedState);
 
-    expect(new Set(Object.values(beforeReconstruction))).toHaveLength(2);
+    expect(new Set(Object.values(beforeReconstruction).map((value) => JSON.stringify(value)))).toHaveLength(2);
     expect(afterReconstruction).toEqual(beforeReconstruction);
   });
 

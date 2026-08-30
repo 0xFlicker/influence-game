@@ -9,6 +9,7 @@ import {
 } from "../provider-adapters";
 import type { ModelInvocation } from "../model-invocation";
 import { modelCatalogEntryById } from "../model-catalog";
+import { Phase } from "../types";
 import {
   ProviderAcceptedValueIntegrityError,
   ProviderAttemptError,
@@ -128,7 +129,7 @@ async function executeVoteInvocation(
     .startCall({
       actor: { name: "Dax", role: "player" },
       action: voteArtifact.action,
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
     });
   const result = await executeModelInvocation({
     call,
@@ -436,7 +437,7 @@ describe("provider-native adapters", () => {
     }).startCall({
       actor: { name: "House", role: "house" },
       action: targetArtifact.action,
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
     });
     const result = await executeModelInvocation({
       call,
@@ -551,7 +552,7 @@ describe("provider-native adapters", () => {
     const call = new ProviderExecutionCoordinator().startCall({
       actor: { name: "Dax", role: "player" },
       action: "vote",
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
     });
 
     const result = await executeModelInvocation({
@@ -632,7 +633,7 @@ describe("provider-native adapters", () => {
     const call = coordinator.startCall({
       actor: { name: "Dax", role: "player" },
       action: "vote",
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
     });
 
     const result = await executeModelInvocation({
@@ -727,7 +728,7 @@ describe("provider-native adapters", () => {
     const call = new ProviderExecutionCoordinator({ wait: async () => {} }).startCall({
       actor: { name: "Dax", role: "player" },
       action: "vote",
-      logicalCallOrdinal: 2,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 0, canonicalEventSequence: 0, callSlot: 2 },
     });
 
     const result = await executeModelInvocation({

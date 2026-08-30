@@ -40,6 +40,7 @@ import type {
   GameTurnCommitResultV1,
   GameTurnIntentV1,
 } from "./durable-game-turn";
+import type { ProviderSemanticCoordinateV1 } from "./provider-execution";
 export type { TokenCostCursor };
 export type {
   ProviderAttemptFailureKind,
@@ -52,6 +53,7 @@ export type {
   ProviderAttemptUsageFacts,
   ProviderExecutionHooks,
   ProviderLogicalCallCoordinate,
+  ProviderSemanticCoordinateV1,
   ProviderPreparedRequest,
   SanitizedProviderRequestEvidence,
   SanitizedProviderResponseEvidence,
@@ -522,8 +524,8 @@ export interface PrivateDecisionTraceContext {
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
   round?: number;
-  /** Durable phase-owned ordinal for repeated calls at this actor/action boundary. */
-  logicalCallOrdinal?: number;
+  /** Closed semantic identity for the provider call represented by this trace. */
+  semanticCoordinate?: ProviderSemanticCoordinateV1;
   boundary?: PrivateDecisionTraceBoundary;
   /**
    * Structural-only Recall Plan receipt for this call (KTD5 / R16).
@@ -1276,7 +1278,7 @@ export interface IAgent {
 export interface DurableProviderTurnBinding {
   turnId: string;
   subcallSlot: number;
-  logicalCallId: string;
+  semanticCoordinate: Extract<ProviderSemanticCoordinateV1, { kind: "durable_turn" }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1327,8 +1329,10 @@ export interface PhaseContext {
   gameId: UUID;
   round: number;
   phase: Phase;
-  /** Durable phase-owned ordinal for repeated provider calls at this boundary. */
-  providerLogicalCallOrdinal?: number;
+  /** Event boundary used by phase-call provider semantic coordinates. */
+  providerCallBoundaryEventSequence?: number;
+  /** Explicit semantic coordinate for non-generic provider turns such as diary exchanges. */
+  providerSemanticCoordinate?: ProviderSemanticCoordinateV1;
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;

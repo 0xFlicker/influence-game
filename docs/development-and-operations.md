@@ -163,22 +163,32 @@ For API-backed durable runs, owner-backed games can write private decision trace
 
 The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private content S3 writer/read path end to end. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
-### 3. Run the full stack (API + Web + Trailer Worker)
+### 3. Run the full stack (Gateway + Game Worker + Web + Render Worker)
 
 The root development scripts inject the Doppler `dev` config and agree on the
 local API URL, websocket URL, trailer-worker token, and public media origin.
 Run each service in its own terminal from the repository root.
 
-**Terminal 1 -- Start the API server:**
+**Terminal 1 -- Start the gateway API server:**
 
 ```bash
 bun run s3:bootstrap
 bun run dev:api
 ```
 
-The API runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320). The private trace env must be present in the API process before a game starts; restart the API after sourcing `.env.private-trace.local` or trace manifests will not be written.
+The gateway runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320), serves commands, reads, and WebSockets, and never adopts or advances durable games.
 
-**Terminal 2 -- Start the web frontend:**
+**Terminal 2 -- Start a game worker:**
+
+```bash
+INFLUENCE_GAME_WORKER=1 bun run dev:game-worker
+```
+
+The game worker runs the same API image on `http://127.0.0.1:3002` by default, with `INFLUENCE_API_ROLE=game-worker`. Multiple game workers may run at once: each durable game has one renewable `game_run_owners` lease, so a healthy owner is never displaced. During a release drain, game workers stop claiming new games; a graceful worker shutdown aborts at the committed-turn boundary and releases its owned games for another worker to resume. The private trace env must be present in every game worker before it starts a game.
+
+The `INFLUENCE_GAME_WORKER=1` prefix is intentional: `bun run dev:api` is always a non-claiming gateway, and the game-worker command refuses to run without that explicit acknowledgement. Never point an ad-hoc local game worker at staging or production data.
+
+**Terminal 3 -- Start the web frontend:**
 
 ```bash
 bun run dev:web
@@ -188,22 +198,27 @@ The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtim
 
 When no browser API or websocket origin is configured yet, the web client uses same-origin `/api/*` and `/ws/*` paths. Never ship a loopback (`127.0.0.1` or `localhost`) browser fallback: current Chromium versions treat that as access to apps on the visitor's device.
 
-**Terminal 3 -- Start the House Highlights render worker:**
+**Terminal 4 -- Start the House Highlights render worker:**
 
 ```bash
 bun run dev:render-worker
 ```
 
-The worker is a long-running, single-concurrency poller. It renders queued
+The render worker is a long-running, single-concurrency poller. It renders queued
 completed-game trailers with music, uploads the immutable media bundle through
 the API, and then waits for more work. Without this process, admin trailer jobs
 remain `Queued`. Stop it with `Ctrl-C`; interrupted leases are reclaimed after
 their API-owned timeout.
 
+The render worker has its own media-job claim and heartbeat protocol. It is not
+a game worker and does not acquire, renew, drain, or resume durable game leases.
+
 The user-facing scripts wrap Doppler themselves. Their lower-level counterparts
 (`dev:api:service`, `dev:web:service`, and `dev:render-worker:service`) skip
 Doppler and are intended for already-configured shells and deployment tooling.
 Do not wrap `bun run dev:api` or `bun run dev:web` in another `doppler run`.
+
+For staging and production role topology and the rolling game-worker drain/handoff order, see [game worker operations](deployment/game-worker-operations.md). That document intentionally stops at the application contract: the `linode-iac` release controller remains responsible for invoking it and for process termination grace.
 
 **Then:**
 

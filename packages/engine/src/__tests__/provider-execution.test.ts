@@ -6,8 +6,11 @@ import {
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
+  assertProviderSemanticCoordinate,
+  canonicalProviderSemanticCoordinate,
   classifyResponsesTerminalOutcome,
   createProviderEvidenceFetch,
+  providerSemanticCoordinateHash,
   sanitizeProviderEvidence,
   type ProviderAttemptRecord,
   type ProviderLogicalCallCoordinate,
@@ -20,10 +23,82 @@ const coordinate: ProviderLogicalCallCoordinate = {
   action: "vote",
   round: 2,
   phase: Phase.VOTE,
-  logicalCallOrdinal: 1,
+  semantic: {
+    version: 1,
+    kind: "phase_call",
+    phase: Phase.VOTE,
+    round: 2,
+    canonicalEventSequence: 1,
+    callSlot: 1,
+  },
 };
 
 describe("ProviderExecutionCoordinator", () => {
+  it("canonically hashes closed semantic coordinates and rejects malformed variants", () => {
+    const diary = {
+      version: 1 as const,
+      kind: "diary_exchange" as const,
+      sessionEventSequence: 19,
+      playerId: "atlas-id",
+      exchangeOrdinal: 2,
+    };
+    const sameDiary = {
+      playerId: "atlas-id",
+      exchangeOrdinal: 2,
+      kind: "diary_exchange" as const,
+      sessionEventSequence: 19,
+      version: 1 as const,
+    };
+    const adjacentDiary = { ...diary, exchangeOrdinal: 3 };
+
+    expect(canonicalProviderSemanticCoordinate(sameDiary)).toBe(
+      canonicalProviderSemanticCoordinate(diary),
+    );
+    expect(providerSemanticCoordinateHash(sameDiary)).toBe(
+      providerSemanticCoordinateHash(diary),
+    );
+    expect(providerSemanticCoordinateHash(adjacentDiary)).not.toBe(
+      providerSemanticCoordinateHash(diary),
+    );
+    expect(() => assertProviderSemanticCoordinate({
+      version: 2,
+      kind: "diary_exchange",
+      sessionEventSequence: 19,
+      playerId: "atlas-id",
+      exchangeOrdinal: 2,
+    } as never)).toThrow("version must be 1");
+    expect(() => assertProviderSemanticCoordinate({
+      version: 1,
+      kind: "unknown",
+    } as never)).toThrow("kind is invalid");
+    expect(() => assertProviderSemanticCoordinate({
+      version: 1,
+      kind: "diary_exchange",
+      sessionEventSequence: 19,
+      playerId: "atlas-id",
+      exchangeOrdinal: 0,
+    } as never)).toThrow("exchangeOrdinal must be a positive safe integer");
+    for (const closedCoordinate of [
+      {
+        version: 1,
+        kind: "phase_call",
+        phase: Phase.VOTE,
+        round: 2,
+        canonicalEventSequence: 1,
+        callSlot: 1,
+      },
+      diary,
+      { version: 1, kind: "alliance_huddle", scheduleId: "schedule-1", exchangeOrdinal: 1 },
+      { version: 1, kind: "durable_turn", turnId: "turn-1", subcallSlot: 1 },
+      { version: 1, kind: "provider_health", providerProfileId: "katana", revision: 1 },
+    ] as const) {
+      expect(() => assertProviderSemanticCoordinate({
+        ...closedCoordinate,
+        untrustedExtra: true,
+      } as never)).toThrow("fields are not exact");
+    }
+  });
+
   it("returns a durably accepted manifest value without allocating or dispatching", async () => {
     let allocations = 0;
     let dispatches = 0;
@@ -215,7 +290,14 @@ describe("ProviderExecutionCoordinator", () => {
 
     const second = await coordinator.startCall({
       ...coordinate,
-      logicalCallOrdinal: 2,
+      semantic: {
+        version: 1,
+        kind: "phase_call",
+        phase: Phase.VOTE,
+        round: 2,
+        canonicalEventSequence: 1,
+        callSlot: 2,
+      },
     }).executeManifest({
       entries: [
         entry("openai:gpt-primary", { ok: true }),

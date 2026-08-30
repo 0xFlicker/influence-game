@@ -20,7 +20,6 @@ import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
 import {
-  pairProviderLogicalCallOrdinals,
   providerAcceptedDecisionId,
   ProviderAttemptError,
   ProviderExecutionCoordinator,
@@ -78,6 +77,7 @@ import type {
   PrivateDecisionTraceToolCall,
   PrivateTraceSink,
   PhaseContext,
+  DurableProviderTurnBinding,
 } from "./game-runner.types";
 
 interface HouseStructuredDecoder<TValue> {
@@ -121,8 +121,8 @@ export interface DiaryRoomContext {
   precedingPhase: Phase;
   /** Current round number */
   round: number;
-  /** Stable one-based roster ordinal for this interview session. */
-  providerInterviewOrdinal: number;
+  /** Canonical event boundary at which this interview session was scheduled. */
+  sessionEventSequence: number;
   /** The agent being interviewed */
   agentId: UUID;
   agentName: string;
@@ -219,8 +219,7 @@ export interface HouseAllianceHuddleOutcomeContext {
   round: number;
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
-  /** Stable one-based position in the engine's deterministic schedule for this phase. */
-  providerLogicalCallOrdinal: number;
+  scheduleId: string;
   alliance: {
     id: UUID;
     name: string;
@@ -265,6 +264,8 @@ const HOUSE_FOLLOW_UP_SCHEMA: Record<string, unknown> = {
 };
 
 export interface IHouseInterviewer {
+  /** Bind generic House provider calls to the planned durable turn that owns them. */
+  setDurableProviderTurnBindings?(bindings: readonly HouseProviderTurnBinding[]): void;
   /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
   /** Select scarce proposer access from candidates remaining in the game. The engine validates and repairs output. */
@@ -286,6 +287,10 @@ export interface IHouseInterviewer {
     context: DiaryRoomContext,
     conversationSoFar: Array<{ question: string; answer: string }>,
   ): Promise<FollowUpResult>;
+}
+
+export interface HouseProviderTurnBinding extends DurableProviderTurnBinding {
+  action: string;
 }
 
 export interface LLMHouseInterviewerOptions {
@@ -842,6 +847,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly responseProviderAttemptId = new WeakMap<object, string>();
   private readonly responseProviderOutcome = new WeakMap<object, ProviderModelOutcome>();
   private tokenTracker: TokenTracker | null = null;
+  private durableProviderTurnBindings = new Map<string, DurableProviderTurnBinding>();
 
   constructor(provider: OpenAI | LlmProviderAdapter, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
     this.model = model;
@@ -880,9 +886,23 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.tokenTracker = tracker;
   }
 
+  setDurableProviderTurnBindings(bindings: readonly HouseProviderTurnBinding[]): void {
+    this.durableProviderTurnBindings = new Map(
+      bindings.map(({ action, ...binding }) => [action, structuredClone(binding)]),
+    );
+  }
+
   private startProviderCall(
     context: PrivateDecisionTraceContext,
   ): ProviderLogicalCallExecution {
+    const semantic = context.semanticCoordinate ?? {
+      version: 1 as const,
+      kind: "phase_call" as const,
+      phase: context.phase ?? Phase.INIT,
+      round: context.round ?? 0,
+      canonicalEventSequence: context.boundary?.currentEventSequence ?? 0,
+      callSlot: 1,
+    };
     return this.providerExecution.startCall({
       ...(context.gameId && { gameId: context.gameId }),
       ...(context.ownerEpoch && { ownerEpoch: context.ownerEpoch }),
@@ -890,7 +910,13 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       action: context.action,
       ...(context.phase && { phase: context.phase }),
       ...(context.round !== undefined && { round: context.round }),
-      logicalCallOrdinal: context.logicalCallOrdinal ?? 1,
+      semantic,
+      ...(semantic.kind === "durable_turn" && {
+        durableTurn: {
+          turnId: semantic.turnId,
+          subcallSlot: semantic.subcallSlot,
+        },
+      }),
     });
   }
 
@@ -1035,8 +1061,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     action: string,
     round: number,
     phase: Phase,
-    logicalCallOrdinal = 1,
+    callSlot = 1,
   ): PrivateDecisionTraceContext {
+    const durableBinding = this.durableProviderTurnBindings.get(action);
     return {
       ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
       ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
@@ -1047,7 +1074,14 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       },
       phase,
       round,
-      logicalCallOrdinal,
+      semanticCoordinate: durableBinding?.semanticCoordinate ?? {
+        version: 1,
+        kind: "phase_call",
+        phase,
+        round,
+        canonicalEventSequence: 0,
+        callSlot,
+      },
     };
   }
 
@@ -1056,15 +1090,21 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     context: DiaryRoomContext,
     exchangeOrdinal = 1,
   ): PrivateDecisionTraceContext {
-    return this.privateTraceContext(
+    return {
+      ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
+      ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
       action,
-      context.round,
-      Phase.DIARY_ROOM,
-      pairProviderLogicalCallOrdinals(
-        context.providerInterviewOrdinal,
+      actor: { name: "The House", role: "house" },
+      phase: Phase.DIARY_ROOM,
+      round: context.round,
+      semanticCoordinate: {
+        version: 1,
+        kind: "diary_exchange",
+        sessionEventSequence: context.sessionEventSequence,
+        playerId: context.agentId,
         exchangeOrdinal,
-      ),
-    );
+      },
+    };
   }
 
   private static privateTraceMessages(
@@ -1773,12 +1813,20 @@ Respond with JSON only.`;
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const traceContext = this.privateTraceContext(
-        "house-alliance-huddle-outcome",
-        context.round,
-        context.phase,
-        context.providerLogicalCallOrdinal,
-      );
+      const traceContext: PrivateDecisionTraceContext = {
+        ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
+        ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
+        action: "house-alliance-huddle-outcome",
+        actor: { name: "The House", role: "house" },
+        phase: context.phase,
+        round: context.round,
+        semanticCoordinate: {
+          version: 1,
+          kind: "alliance_huddle",
+          scheduleId: context.scheduleId,
+          exchangeOrdinal: 1,
+        },
+      };
       const { value, response } = await this.callHouseJsonSchema({
         action: "house-alliance-huddle-outcome",
         source: "House/alliance-huddle-outcome",

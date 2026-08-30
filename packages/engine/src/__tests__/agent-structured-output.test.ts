@@ -1280,7 +1280,7 @@ describe("InfluenceAgent structured output mode", () => {
   });
 
   it("reconstructs the same phase-owned provider coordinate without reusing the next boundary", async () => {
-    const run = async (logicalCallOrdinal: number) => {
+    const run = async (providerCallBoundaryEventSequence: number) => {
       const attempts: ProviderAttemptRecord[] = [];
       const agent = new InfluenceAgent(
         "atlas-id",
@@ -1299,7 +1299,7 @@ describe("InfluenceAgent structured output mode", () => {
       agent.onGameStart("game-1", makeContext().alivePlayers);
       await agent.getVotes({
         ...makeContext(Phase.VOTE),
-        providerLogicalCallOrdinal: logicalCallOrdinal,
+        providerCallBoundaryEventSequence,
       });
       return attempts[0]!.coordinate;
     };
@@ -1310,7 +1310,10 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(afterReconstruction).toEqual(beforeReconstruction);
     expect(nextBoundary).not.toEqual(beforeReconstruction);
-    expect(nextBoundary.logicalCallOrdinal).toBe(8);
+    expect(nextBoundary.semantic).toMatchObject({
+      kind: "phase_call",
+      canonicalEventSequence: 8,
+    });
   });
 
   it("journals agent-tool player references as domain IDs and replays the same decision receipt", async () => {
@@ -5749,7 +5752,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 6,
-      providerInterviewOrdinal: 1,
+      sessionEventSequence: 1,
       agentId: "wren-id",
       agentName: "Wren",
       playerKnowledge: {
@@ -5785,7 +5788,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 3,
-      providerInterviewOrdinal: 1,
+      sessionEventSequence: 1,
       agentId: "finn-id",
       agentName: "Finn",
       playerKnowledge: {
@@ -5944,7 +5947,14 @@ describe("InfluenceAgent structured output mode", () => {
         action: "introduction",
         phase: Phase.INTRODUCTION,
         round: 1,
-        logicalCallOrdinal: 1,
+        semantic: {
+          version: 1,
+          kind: "phase_call",
+          phase: Phase.INTRODUCTION,
+          round: 1,
+          canonicalEventSequence: 0,
+          callSlot: 1,
+        },
       },
       attemptOrdinal: 1,
       attemptId: "attempt-private-evidence",
