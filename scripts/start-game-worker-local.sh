@@ -17,6 +17,6 @@ printf '%s %s\n' "$$" "$(ps -p $$ -o lstart=)" > "$PID_FILE"
 cleanup() { rm -f "$PID_FILE"; }
 trap cleanup EXIT INT TERM
 
-env PORT="${GAME_WORKER_PORT:-3101}" INFLUENCE_API_ROLE=game-worker \
-  POSTGAME_MEDIA_PUBLIC_BASE_URL="http://127.0.0.1:${GAME_WORKER_PORT:-3101}" \
+env PORT="${REHEARSAL_WORKER_PORT:-3101}" INFLUENCE_API_ROLE=game-worker \
+  POSTGAME_MEDIA_PUBLIC_BASE_URL="http://127.0.0.1:${REHEARSAL_WORKER_PORT:-3101}" \
   bun run dev:api:service
