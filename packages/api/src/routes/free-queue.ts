@@ -89,10 +89,7 @@ function getNextFreeGameTime(): string {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createFreeQueueRoutes(
-  db: DrizzleDB,
-  _dependencies: Record<string, never> = {},
-) {
+export function createFreeQueueRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
 
   // -------------------------------------------------------------------------

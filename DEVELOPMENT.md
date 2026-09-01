@@ -597,13 +597,13 @@ bun run dev:render-worker
 Run those `dev:*` commands in separate terminals. They wrap Doppler's
 `social-strategy-agent/dev` config themselves and share the local trailer token,
 API origin, and filesystem upload directory. `dev:api` is a non-claiming
-gateway. `bun run dev:game-worker` is deliberately limited to the fixture-only
-development rehearsal; follow the
-[local worker cutover checklist](docs/deployment/local-game-worker-cutover-checklist.md)
-for its empty-inventory preflight and fixture-only guard. The render worker has no
-listening port; it polls the API and is required for admin trailer jobs to
-advance beyond `Queued`. Use the corresponding `*:service` scripts only when
-the shell or container already supplies its environment.
+gateway. `bun run dev:game-worker` directly starts a claiming worker on port
+3002 against the same development database; use `PORT=3003` for another worker
+on the same machine and stop workers with Ctrl-C. Per-game owner leases prevent
+two workers from committing the same game. The render worker has no listening
+port; it polls the API and is required for admin trailer jobs to advance beyond
+`Queued`. Use the corresponding `*:service` scripts only when the shell or
+container already supplies its environment.
 
 The private trace env has to be loaded into the API process before a game starts. If the API was already running, restart it after sourcing `.env.private-trace.local`; the trace writer is best-effort and gameplay can complete without private trace manifests when these vars are missing.
 

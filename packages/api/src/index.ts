@@ -299,7 +299,6 @@ async function startBackgroundRuntime(context: {
       ),
     );
   } catch (error) {
-    await gameExecutionWorker?.stop();
     if (activeGameExecutionWorker === gameExecutionWorker) activeGameExecutionWorker = null;
     throw error;
   }
@@ -483,7 +482,6 @@ async function finishBackgroundRuntimeStartup(
       await providerAttemptReconciliation.stop();
       await ownerLearningFailureReconciliation.stop();
       await ownerLearningWorker?.stop();
-      await gameExecutionWorker?.stop();
       if (activeGameExecutionWorker === gameExecutionWorker) activeGameExecutionWorker = null;
     },
   };

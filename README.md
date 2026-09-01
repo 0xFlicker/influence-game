@@ -97,7 +97,7 @@ flowchart LR
 - Public source: [https://github.com/0xFlicker/influence-game](https://github.com/0xFlicker/influence-game)
 - Portfolio selected-work entry: [https://www.flick.ing/~/projects#the-house](https://www.flick.ing/~/projects#the-house)
 - Detailed setup, simulation, MCP, deployment, and operations notes: [docs/development-and-operations.md](docs/development-and-operations.md)
-- Local-only gateway/game-worker cutover checklist: [docs/deployment/local-game-worker-cutover-checklist.md](docs/deployment/local-game-worker-cutover-checklist.md)
+- Gateway/game-worker operation and release ordering: [docs/deployment/game-worker-operations.md](docs/deployment/game-worker-operations.md)
 - Render-worker deployment contract: [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md)
 - MCP/OAuth production notes: [docs/game-mcp-production-oauth.md](docs/game-mcp-production-oauth.md)
 - Layered identity rollout and reviewer acceptance: [docs/authentication/layered-identity-rollout.md](docs/authentication/layered-identity-rollout.md)

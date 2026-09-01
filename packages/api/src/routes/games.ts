@@ -113,10 +113,7 @@ function publicErrorInfo(
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
 
-export function createGameRoutes(
-  db: DrizzleDB,
-  _dependencies: Record<string, never> = {},
-) {
+export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
 
   // -------------------------------------------------------------------------

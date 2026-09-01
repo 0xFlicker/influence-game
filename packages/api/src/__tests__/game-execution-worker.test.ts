@@ -18,15 +18,13 @@ describe("game worker boundary", () => {
       .toThrow("INFLUENCE_API_ROLE must be gateway or game-worker");
   });
 
-  test("gives concurrent game workers distinct process identities without a global lease", async () => {
+  test("gives concurrent game workers distinct process identities without a global lease", () => {
     const first = startGameExecutionWorkerRuntime();
     const second = startGameExecutionWorkerRuntime();
     expect(first.workerId).not.toBe(second.workerId);
-    await first.stop();
-    await second.stop();
   });
 
-  test("backs off repeated local startup failures without disabling unrelated claims", async () => {
+  test("backs off repeated local startup failures without disabling unrelated claims", () => {
     const worker = startGameExecutionWorkerRuntime();
     expect(worker.canAttemptGameStart("game-a")).toBeTrue();
     worker.recordGameStartFailed("game-a");
@@ -34,7 +32,6 @@ describe("game worker boundary", () => {
     expect(worker.canAttemptGameStart("game-b")).toBeTrue();
     worker.recordGameStartSucceeded("game-a");
     expect(worker.canAttemptGameStart("game-a")).toBeTrue();
-    await worker.stop();
   });
 
   test("acknowledges drain only after its own durable leases are gone", async () => {
@@ -61,10 +58,9 @@ describe("game worker boundary", () => {
     const waiting = await acknowledgeGameWorkerDrain(db, worker, lease, async () => {});
     expect(waiting).toMatchObject({
       state: "draining",
-      observedLease: lease,
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
       claimsStoppedAt: expect.any(String),
       ownedGameCount: 1,
-      releasedAt: null,
     });
     expect(worker.canClaimGames()).toBeFalse();
 
@@ -73,12 +69,9 @@ describe("game worker boundary", () => {
     const drained = await acknowledgeGameWorkerDrain(db, worker, lease, async () => {});
     expect(drained).toMatchObject({
       state: "drained",
-      observedLease: lease,
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
       ownedGameCount: 0,
-      releasedAt: expect.any(String),
-      lastError: null,
     });
-    await worker.stop();
   });
 
   test("remains non-claiming and retries a failed drain acknowledgement", async () => {
@@ -94,8 +87,8 @@ describe("game worker boundary", () => {
     })).rejects.toThrow("durable owner query unavailable");
     expect(worker.getDrainStatus()).toMatchObject({
       state: "draining",
-      observedLease: lease,
-      lastError: "durable owner query unavailable",
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
+      ownedGameCount: null,
     });
     expect(worker.canClaimGames()).toBeFalse();
 
@@ -104,11 +97,9 @@ describe("game worker boundary", () => {
       async () => 0,
     )).resolves.toMatchObject({
       state: "drained",
-      observedLease: { ...lease, phase: "validating" },
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
       ownedGameCount: 0,
-      lastError: null,
     });
-    await worker.stop();
   });
 
   test("resumes claims only after the deployment admission has reopened", async () => {
@@ -138,13 +129,12 @@ describe("game worker boundary", () => {
     await worker.acknowledgeDrain(secondLease, async () => 0);
     expect(worker.getDrainStatus()).toMatchObject({
       state: "drained",
-      observedLease: secondLease,
+      observedLease: { id: secondLease.id, fencingToken: secondLease.fencingToken },
       ownedGameCount: 0,
     });
-    await worker.stop();
   });
 
-  test("reacknowledges a later deployment fence instead of returning stale drain proof", async () => {
+  test("reacknowledges a later deployment fence instead of returning a stale status", async () => {
     const worker = startGameExecutionWorkerRuntime();
     const firstLease = { id: randomUUID(), fencingToken: 4, phase: "draining" as const };
     const secondLease = { id: randomUUID(), fencingToken: 5, phase: "validating" as const };
@@ -154,10 +144,9 @@ describe("game worker boundary", () => {
 
     expect(second).toMatchObject({
       state: "drained",
-      observedLease: secondLease,
+      observedLease: { id: secondLease.id, fencingToken: secondLease.fencingToken },
       claimsStoppedAt: expect.any(String),
       ownedGameCount: 0,
     });
-    await worker.stop();
   });
 });

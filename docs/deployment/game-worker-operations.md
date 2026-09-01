@@ -1,143 +1,63 @@
 # Game Worker Operations
 
-Influence has three distinct runtime roles:
+Influence runs the API in two explicit roles:
 
-- **Gateway**: serves HTTP reads and commands plus WebSocket delivery. It is
-  non-claiming and must run with `INFLUENCE_API_ROLE=gateway` (the image
-  default).
-- **Game worker**: runs the same API image with
-  `INFLUENCE_API_ROLE=game-worker`. It is the only role that may adopt, resume,
-  or advance durable games.
-- **Render worker**: uses the separate render-worker image and its existing
-  postgame-media claim/heartbeat protocol. It never acquires game-run leases.
+- `gateway` serves HTTP and WebSocket traffic and never claims durable games.
+- `game-worker` claims, resumes, and advances durable games without receiving public traffic.
 
-## Durable execution contract
-
-Game workers are interchangeable. A worker identity is process-local, but
-execution authority is a renewable, fenced `game_run_owners` lease for one
-game. Multiple game workers may therefore advance different games at once. A
-worker may claim only a game with no active owner, a released owner, or an
-expired owner. It must not displace a healthy owner.
-
-The gateway accepts a start command only after ordinary readiness checks and
-records the game as ready for a game worker. It does not acquire an execution
-lease or run a turn. This makes an accidental local gateway or an additional
-API replica safe against durable-game takeover.
-
-`INFLUENCE_API_ROLE` is deliberately closed: use `gateway` or `game-worker`.
-An invalid value fails process startup. The API image defaults to `gateway`;
-production configuration must opt in explicitly for each game-worker replica.
+Render workers remain a separate service with their existing media-job lease.
 
 ## Local development
 
+Run each process in its own terminal:
+
 ```bash
-# Safe, non-claiming API gateway
-bun run dev:gateway
-
-# Fixture-only durable executor; see the rehearsal checklist for required guards
+bun run dev:api
 bun run dev:game-worker
-
-# Independent postgame renderer
 bun run dev:render-worker
 ```
 
-The game-worker helper is intentionally guarded. It requires a selected fixture
-and a successful development-database inventory; use the rehearsal checklist
-rather than starting it against ordinary development work.
+`bun run dev:game-worker` directly starts the ordinary game-worker runtime on
+port 3002 against the Doppler `dev` database. It has no acknowledgement flag,
+fixture registry, or companion shutdown command. Stop it with Ctrl-C. To run a
+second worker on the same machine, choose another port:
 
-Tests normally execute routes/services without starting a runtime role. Any
-runtime-start integration test must name its role: gateway tests prove no
-adoption, and game-worker tests prove claim/recovery behavior against a
-dedicated test database.
+```bash
+PORT=3003 bun run dev:game-worker
+```
 
-## End-to-end local game-worker rehearsal
+Two workers may run at once. Each durable game has one renewable, fenced
+`game_run_owners` lease, so only the current owner may commit progress. The
+command can process any runnable game in the configured development database;
+do not point it at staging or production data.
 
-> **Source-process scope only:** the local gateway/worker commands in this
-> document exercise role separation, leases, drain acknowledgement, and
-> recovery from source. Any `INFLUENCE_API_IMAGE_DIGEST` value shown in a local
-> health response is injected metadata; it does not prove a built image,
-> container lifecycle, or release artifact. Validate Docker images and the
-> colored worker lifecycle through the Linode IaC checklist.
+## Release ordering
 
-The sole source-process procedure is the
-[LOCAL WORKER CUTOVER CHECKLIST](local-game-worker-cutover-checklist.md). It
-runs with the existing Doppler development configuration only after an empty
-runnable-game/owner inventory, creates one uniquely marked fixture, and
-rechecks that fixture-only boundary immediately before worker startup. It does
-not create, drop, truncate, migrate, or clean up databases, and it has no
-provider mock or invented secret path.
+Merge the worker-aware `linode-iac` PR before this application PR. The API image
+defaults to the non-claiming gateway role, so the dedicated worker plane must
+exist before that image reaches staging.
 
-The source rehearsal demonstrates application-role and lease behavior only. It
-does not validate a Docker image, deployment controller, staging, or
-production. The worker-aware Linode IaC checklist owns that evidence.
+The release controller owns the cutover:
 
-## Staging and production rolling cutover
+1. Start the candidate gateway without a render or game worker.
+2. Acquire the existing deployment-admission lease. Gateways reject new game
+   starts and workers stop claiming new games.
+3. Poll every running old game worker's authenticated
+   `/api/internal/deployment-control/game-worker-drain-status` endpoint. Each
+   response must contain the current lease ID and fencing token, a non-empty
+   `claimsStoppedAt`, and `ownedGameCount: 0`.
+4. Stop the old game-worker unit and confirm no old worker remains running.
+5. Fully stop the old render worker before starting its replacement, then
+   retire the old application color.
+6. Start the replacement game worker from the qualified API digest and verify
+   its replica count, image, role, health, token isolation, and private network.
+7. Reopen admission only after the replacement worker is verified.
 
-## Mandatory merge order for PR #129
+Drain responses are process-local coordination data. The controller discards
+them after validation; they are not receipts, hashes, or accepted-release
+evidence. The production journal records only the idempotent
+`game_worker_stopped` and `game_worker_started` checkpoints.
 
-**Do not merge app PR #129 before the worker-aware Linode IaC colored-flow PR
-is green, reviewed, and merged to `linode-iac/main`.** The app Dockerfile
-defaults to the non-claiming gateway role. Merging the app first would build a
-candidate and dispatch staging through IaC that may not yet provision a
-dedicated game-worker plane, leaving no game execution authority.
-
-The required order is:
-
-1. Review, greenlight, and merge the worker-aware Linode IaC PR to
-   `linode-iac/main`; this step does not deploy.
-2. Merge Influence PR #129. Its candidate build then dispatches staging through
-   that updated IaC flow.
-3. Validate staging.
-4. Proceed to production only after explicit operator approval.
-
-The repository supplies the runtime behavior; the release controller in
-`linode-iac` owns orchestration, image selection, migration execution, and
-process lifecycle. A safe game-worker release is:
-
-1. Build and validate the API image and migrations. Keep gateways on the
-   default `INFLUENCE_API_ROLE=gateway`; do not route public traffic to a game
-   worker.
-2. Start the new game-worker replica(s) with the exact accepted image,
-   `INFLUENCE_API_ROLE=game-worker`, the current durable-contract
-   configuration, and no public listener/routing requirement. They can become
-   ready while old workers remain healthy.
-3. Acquire the existing deployment-admission lease and enter `draining`.
-   Gateways reject new game starts and game workers stop claiming new work. Do
-   not force-expire healthy game owners.
-4. Query each old game worker's authenticated
-   `GET /api/internal/deployment-control/game-worker-drain-status` endpoint.
-   Proceed only when that specific worker reports `state: "drained"`, the
-   current deployment lease as `observedLease`, `claimsStoppedAt`, and
-   `ownedGameCount: 0`. This is distinct from the global
-   deployment-admission `activeGameCount`: zero global games alone does not
-   prove that a worker observed the drain or stopped claiming. Advance the
-   validation/switch phases and complete the lease only after those worker
-   acknowledgements. New workers then scan and claim only unowned, released,
-   or genuinely expired games. A previous worker that was killed or
-   partitioned remains fenced by its owner epoch.
-5. Only after every old worker receipt is recorded, give old game workers their
-   configured graceful-stop window. On shutdown a worker stops scans, aborts at
-   a committed-turn boundary, and releases its own leases. It must not strand a
-   game behind a healthy-owner takeover.
-6. Roll gateways independently; they remain non-claiming throughout. Replace
-   render workers through their separate media-worker procedure, not this
-   game-worker drain.
-
-The external controller must enforce an orderly signal/termination grace that
-is long enough for an in-flight provider attempt to reach its durable boundary,
-wait for the deployment-admission drain proof, and pass the exact image and
-migration identity to runtime activation. Application code cannot make a
-hard-killed process release its lease, cannot provision worker replicas, and
-cannot prevent a database outage; the lease expiry/fencing path covers those
-failure cases without healthy-owner eviction.
-
-## Hosting constraints
-
-Gateways can be deployed independently of game workers, including in a
-serverless or horizontally scaled topology, provided every gateway reaches the
-same Postgres database and WebSocket clients reconnect to a gateway that reads
-the durable publication stream. Game workers need a long-running process,
-database connectivity, graceful signals, and a stable interval for lease
-renewal/recovery scans. They should not be deployed as short-lived request
-handlers. Render workers have their own long-running Chromium/ffmpeg resource
-requirements and remain a separate capacity concern.
+Staging uses the same runtime split but keeps its existing linear deploy: stop
+the old dedicated worker, restart the gateway/web/render stack, then start and
+verify the replacement worker.

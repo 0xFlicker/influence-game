@@ -378,7 +378,6 @@ describe("deployment controller API", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expect.objectContaining({
       state: "claiming",
-      workerId: worker.workerId,
       observedLease: null,
       ownedGameCount: null,
     }));
@@ -390,12 +389,10 @@ describe("deployment controller API", () => {
     });
     expect(await drained.json()).toEqual(expect.objectContaining({
       state: "drained",
-      observedLease: lease,
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
       claimsStoppedAt: expect.any(String),
       ownedGameCount: 0,
-      releasedAt: expect.any(String),
     }));
-    await worker.stop();
   });
 
   test("accepts only the explicit service token type, audience, subject, and permission", async () => {

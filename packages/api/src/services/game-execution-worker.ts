@@ -22,7 +22,6 @@ export type GameExecutionWorkerRuntime = {
     drainOwnedGames: () => Promise<number>,
   ): Promise<GameWorkerDrainStatus>;
   getDrainStatus(): GameWorkerDrainStatus;
-  stop(): Promise<void>;
 };
 
 export type GameWorkerDrainLease = {
@@ -32,15 +31,10 @@ export type GameWorkerDrainLease = {
 };
 
 export type GameWorkerDrainStatus = {
-  protocolVersion: 1;
-  workerId: string;
   state: "claiming" | "draining" | "drained";
-  observedLease: GameWorkerDrainLease | null;
-  observedAt: string | null;
+  observedLease: Pick<GameWorkerDrainLease, "id" | "fencingToken"> | null;
   claimsStoppedAt: string | null;
   ownedGameCount: number | null;
-  releasedAt: string | null;
-  lastError: string | null;
 };
 
 export function readApiRuntimeRole(
@@ -54,15 +48,10 @@ export function readApiRuntimeRole(
 export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
   const workerId = randomUUID();
   let state: GameWorkerDrainStatus = {
-    protocolVersion: 1,
-    workerId,
     state: "claiming",
     observedLease: null,
-    observedAt: null,
     claimsStoppedAt: null,
     ownedGameCount: null,
-    releasedAt: null,
-    lastError: null,
   };
   let draining: Promise<GameWorkerDrainStatus> | null = null;
   const failedStarts = new Map<string, { attempts: number; retryAt: number }>();
@@ -84,49 +73,32 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
     resumeClaimingAfterAdmissionReopens: () => {
       if (state.state === "claiming") return;
       state = {
-        protocolVersion: 1,
-        workerId,
         state: "claiming",
         observedLease: null,
-        observedAt: null,
         claimsStoppedAt: null,
         ownedGameCount: null,
-        releasedAt: null,
-        lastError: null,
       };
     },
     acknowledgeDrain: async (lease, drainOwnedGames) => {
       if (state.state === "claiming") {
         const now = new Date().toISOString();
         state = {
-          ...state,
           state: "draining",
-          observedLease: { ...lease },
-          observedAt: now,
+          observedLease: { id: lease.id, fencingToken: lease.fencingToken },
           claimsStoppedAt: now,
-          lastError: null,
+          ownedGameCount: null,
         };
       } else if (
         state.observedLease?.id === lease.id
         && state.observedLease.fencingToken === lease.fencingToken
       ) {
-        // A deployment can advance from draining to validating while this
-        // worker is finishing its last durable boundary. The acknowledgement
-        // remains tied to the same fence, but reports the current phase.
-        state = { ...state, observedLease: { ...lease } };
+        // Keep the same acknowledgement while this fence advances phases.
       } else {
-        // A worker may remain alive after acknowledging a prior deployment.
-        // A later controller fence needs a fresh acknowledgement, never a
-        // stale proof for the previous release.
         state = {
-          ...state,
           state: "draining",
-          observedLease: { ...lease },
-          observedAt: new Date().toISOString(),
-          claimsStoppedAt: state.claimsStoppedAt ?? new Date().toISOString(),
+          observedLease: { id: lease.id, fencingToken: lease.fencingToken },
+          claimsStoppedAt: new Date().toISOString(),
           ownedGameCount: null,
-          releasedAt: null,
-          lastError: null,
         };
       }
       if (state.state === "drained") return snapshot();
@@ -138,16 +110,10 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
               ...state,
               state: ownedGameCount === 0 ? "drained" : "draining",
               ownedGameCount,
-              releasedAt: ownedGameCount === 0 ? new Date().toISOString() : null,
-              lastError: null,
             };
             return snapshot();
           } catch (error) {
-            state = {
-              ...state,
-              state: "draining",
-              lastError: error instanceof Error ? error.message : String(error),
-            };
+            state = { ...state, state: "draining", ownedGameCount: null };
             throw error;
           } finally {
             draining = null;
@@ -157,7 +123,6 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
       return draining;
     },
     getDrainStatus: snapshot,
-    async stop() {},
   };
 }
 
