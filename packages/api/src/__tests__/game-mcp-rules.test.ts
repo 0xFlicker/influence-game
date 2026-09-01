@@ -52,14 +52,15 @@ describe("game MCP rules catalog", () => {
     expect(formats?.body).toContain("The Short List");
     expect(formats?.body).toContain("Highest Count");
     expect(formats?.body).toContain("Safety Bounce");
+    expect(formats?.body).toContain("Two Names");
     expect(formats?.body).toContain("Empowerment is not immunity");
     expect(formats?.body).toContain("sealed");
-    expect(formats?.body).toContain("pointers are public");
-    expect(formats?.body).toContain("every remaining player casts a sealed ballot targeting the vulnerable pool");
+    expect(formats?.body).toContain("Safety Bounce pointers");
+    expect(formats?.body).toContain("are public as their canonical events commit");
+    expect(formats?.body).toContain("sealed vulnerable-pool vote");
+    expect(formats?.body).toContain("everyone except Empowered and the two finalists");
     expect(formats?.body).toContain("sealed only from in-game agent context");
-    expect(formats?.body).toContain(
-      "sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality",
-    );
+    expect(formats?.body).toContain("sealed only from in-game agent context");
     expect(formats?.body).toContain("immediately after durable record");
     expect(formats?.body).not.toContain("sealed until reveal");
     expect(JSON.stringify(formats)).not.toMatch(/Save-or-Eliminate|Vote Bomb|Majority Elimination/);

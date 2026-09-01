@@ -30,9 +30,9 @@ The unsafe shape is to add independent retry or fallback logic to each player an
 
 Route player and House calls through one coordinator. Give every logical call stable game/owner/actor/action coordinates, allocate each attempt ordinal durably, reserve before dispatch, disable hidden transport retries, classify the outcome, and journal the terminal result.
 
-When one phase legitimately schedules the same action more than once, derive a stable logical-call ordinal from the phase's deterministic schedule and include it in the coordinate. Do not let repeated House calls fall back to a shared default ordinal: accepted-result replay would then let a later call consume an earlier call's value.
+When one phase legitimately schedules the same action more than once, give the call a closed, versioned semantic coordinate. A phase call carries its canonical event boundary and call slot; a diary exchange carries its session event boundary, player ID, and exchange ordinal; a House huddle carries its durable schedule ID; a turn-scoped call carries its durable turn ID and subcall slot. Do not let repeated calls fall back to a shared default coordinate: accepted-result replay would then let a later call consume an earlier call's value.
 
-Treat that ordinal as a positive JavaScript safe integer throughout the persistence contract. Deterministic tuple pairing can exceed PostgreSQL's signed 32-bit range even in an ordinary game, so `provider_logical_calls.logical_call_ordinal` must remain a `bigint` mapped in number mode rather than an `integer`.
+Canonically serialize and hash that coordinate before deriving the logical-call ID. The journal persists the structured coordinate and its hash as immutable identity. A historical numeric column may remain nullable during an expand-contract rollout, but it is inert: no active writer, reader, or replay path may use it as an authority. Do not pack semantic dimensions into a number.
 
 The coordinator owns attempt mechanics and manifest traversal. It does not decide legal game actions. Optional speech may return typed absence; required actions still delegate to the phase that owns the current legal target set.
 
@@ -143,7 +143,7 @@ indeterminate dispatch after crash
   -> one canonical gameplay effect
 ```
 
-Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, distinct deterministic coordinates for repeated same-action calls, persistence beyond the signed 32-bit ordinal range, provider-to-domain normalization and replay validation, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
+Regression coverage should pin transport retry suppression, refusal traversal, reset-to-primary on the next logical call, atomic final-budget consumption, accepted replay without redispatch, canonical serialization/hash stability, distinct deterministic semantic coordinates for repeated same-action calls, malformed/unknown-coordinate rejection, provider-to-domain normalization and replay validation, canonical linkage, stale-owner rejection, evidence degradation/reconciliation, exact non-429 evidence, aggregate 429s, optional absence, legal required fallbacks, breaker classification/concurrency, probe fencing, authorization, inert rendering, bounded byte continuation, no-store behavior, and no-N+1 summaries.
 
 ## Related
 

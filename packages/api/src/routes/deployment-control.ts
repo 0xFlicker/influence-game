@@ -15,6 +15,7 @@ import {
   heartbeatDeploymentAdmissionLease,
   type DeploymentAdmissionErrorCode,
 } from "../services/deployment-admission.js";
+import type { GameWorkerDrainStatus } from "../services/game-execution-worker.js";
 import type { RuntimeActivationController } from "../services/runtime-activation.js";
 
 const PHASES = new Set<DeploymentAdmissionPhase>([
@@ -27,7 +28,10 @@ const PHASES = new Set<DeploymentAdmissionPhase>([
 
 export function createDeploymentControlRoutes(
   db: DrizzleDB,
-  options: { runtimeActivation?: RuntimeActivationController } = {},
+  options: {
+    runtimeActivation?: RuntimeActivationController;
+    gameWorkerDrainStatus?: () => GameWorkerDrainStatus | null;
+  } = {},
 ) {
   const app = new Hono<DeploymentControlAuthEnv>();
   app.use("/api/internal/deployment-control/*", requireDeploymentControlAuth());
@@ -72,6 +76,18 @@ export function createDeploymentControlRoutes(
         retryable: true,
       }, 503);
     }
+  });
+
+  app.get("/api/internal/deployment-control/game-worker-drain-status", (c) => {
+    const status = options.gameWorkerDrainStatus?.() ?? null;
+    if (!status) {
+      return c.json({
+        error: "This API runtime is not an active game worker",
+        code: "game_worker_not_running",
+        retryable: false,
+      }, 409);
+    }
+    return c.json(status);
   });
 
   app.post("/api/internal/deployment-control/leases/:leaseId/heartbeat", async (c) => {

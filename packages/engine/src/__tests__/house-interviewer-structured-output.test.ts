@@ -238,7 +238,7 @@ function makeDiaryContext(
   return {
     precedingPhase: Phase.VOTE,
     round: 2,
-    providerInterviewOrdinal: 1,
+    sessionEventSequence: 1,
     agentId: "atlas-id",
     agentName: "Atlas",
     playerKnowledge: {
@@ -434,7 +434,7 @@ function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
     round: 2,
     phase: Phase.FORMAT_MINGLE,
     window: "format" as const,
-    providerLogicalCallOrdinal: 1,
+    scheduleId: "schedule-glass-1",
     alliance: {
       id: "alliance-glass",
       name: "Glass Table",
@@ -675,26 +675,34 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
         providerExecutionHooks: {
           onTerminal: (record) => {
             attempts.push(record);
-            return { acceptedAttemptId: `accepted-huddle-${record.coordinate.logicalCallOrdinal}` };
+            return { acceptedAttemptId: `accepted-huddle-${record.coordinate.semantic.kind === "alliance_huddle" ? record.coordinate.semantic.scheduleId : ""}` };
           },
         },
       },
     );
-    const contexts = [1, 2].map((providerLogicalCallOrdinal) => ({
+    const contexts = [1, 2].map((scheduleOrdinal) => ({
       ...makeHuddleOutcomeContext(),
-      providerLogicalCallOrdinal,
+      scheduleId: `schedule-glass-${scheduleOrdinal}`,
     }));
     const liveResults: HouseAllianceHuddleOutcomeResult[] = [];
     for (const context of contexts) liveResults.push(await liveHouse.summarizeAllianceHuddle(context));
 
-    expect(attempts.map((attempt) => attempt.coordinate.logicalCallOrdinal)).toEqual([1, 2]);
+    expect(attempts.map((attempt) => attempt.coordinate.semantic)).toEqual([
+      { version: 1, kind: "alliance_huddle", scheduleId: "schedule-glass-1", exchangeOrdinal: 1 },
+      { version: 1, kind: "alliance_huddle", scheduleId: "schedule-glass-2", exchangeOrdinal: 1 },
+    ]);
     expect(liveResults.map((result) => result.plan)).toEqual([
       "First alliance plan.",
       "Second alliance plan.",
     ]);
 
-    const acceptedByOrdinal = new Map(
-      attempts.map((attempt) => [attempt.coordinate.logicalCallOrdinal, attempt.acceptedValue]),
+    const acceptedByScheduleId = new Map(
+      attempts.map((attempt) => [
+        attempt.coordinate.semantic.kind === "alliance_huddle"
+          ? attempt.coordinate.semantic.scheduleId
+          : "",
+        attempt.acceptedValue,
+      ]),
     );
     const replayRequests: Array<Record<string, unknown>> = [];
     const replayHouse = new LLMHouseInterviewer(
@@ -703,12 +711,14 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
       {
         providerExecutionHooks: {
           onReadAccepted: (coordinate) => ({
-            attemptId: `accepted-huddle-${coordinate.logicalCallOrdinal}`,
+            attemptId: `accepted-huddle-${coordinate.semantic.kind === "alliance_huddle" ? coordinate.semantic.scheduleId : ""}`,
             attemptOrdinal: 1,
             catalogId: attempts.find(
-              (attempt) => attempt.coordinate.logicalCallOrdinal === coordinate.logicalCallOrdinal,
+              (attempt) => attempt.coordinate.semantic.kind === "alliance_huddle"
+                && coordinate.semantic.kind === "alliance_huddle"
+                && attempt.coordinate.semantic.scheduleId === coordinate.semantic.scheduleId,
             )?.preparedRequest.catalogId,
-            value: structuredClone(acceptedByOrdinal.get(coordinate.logicalCallOrdinal)),
+            value: structuredClone(acceptedByScheduleId.get(coordinate.semantic.kind === "alliance_huddle" ? coordinate.semantic.scheduleId : "")),
           }),
         },
       },
@@ -862,6 +872,51 @@ describe("House alliance proposer selection", () => {
 });
 
 describe("LLMHouseInterviewer structured Mingle assignment", () => {
+  it("uses the planned durable subcall for each Two Names Mingle window", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: assignmentContent() }, { content: assignmentContent() }]),
+      "test-model",
+      { providerExecutionHooks: { onTerminal: (record) => { attempts.push(record); } } },
+    );
+
+    house.setDurableProviderTurnBindings([{
+      action: "house-mingle-assignment",
+      turnId: "game-1:turn:12",
+      subcallSlot: 1,
+      semanticCoordinate: {
+        version: 1,
+        kind: "durable_turn",
+        turnId: "game-1:turn:12",
+        subcallSlot: 1,
+      },
+    }]);
+    await house.assignMingleRooms(makeAssignmentContext());
+
+    house.setDurableProviderTurnBindings([{
+      action: "house-mingle-assignment",
+      turnId: "game-1:turn:14",
+      subcallSlot: 1,
+      semanticCoordinate: {
+        version: 1,
+        kind: "durable_turn",
+        turnId: "game-1:turn:14",
+        subcallSlot: 1,
+      },
+    }]);
+    await house.assignMingleRooms(makeAssignmentContext());
+
+    expect(attempts.map((attempt) => attempt.coordinate.semantic)).toEqual([
+      { version: 1, kind: "durable_turn", turnId: "game-1:turn:12", subcallSlot: 1 },
+      { version: 1, kind: "durable_turn", turnId: "game-1:turn:14", subcallSlot: 1 },
+    ]);
+    expect(attempts.map((attempt) => attempt.coordinate.durableTurn)).toEqual([
+      { turnId: "game-1:turn:12", subcallSlot: 1 },
+      { turnId: "game-1:turn:14", subcallSlot: 1 },
+    ]);
+  });
+
   it("requests strict JSON schema output for room assignments", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
@@ -1341,11 +1396,11 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       const contexts = [
         makeDiaryContext({
           agentName: "Atlas",
-          providerInterviewOrdinal: 1,
+          sessionEventSequence: 1,
         }),
         makeDiaryContext({
           agentName: "Nyx",
-          providerInterviewOrdinal: 2,
+          sessionEventSequence: 2,
         }),
       ];
 
@@ -1362,7 +1417,9 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
           action,
           attempts
             .filter((attempt) => attempt.coordinate.action === action)
-            .map((attempt) => attempt.coordinate.logicalCallOrdinal)
+            .map((attempt) => attempt.coordinate.semantic.kind === "diary_exchange"
+              ? attempt.coordinate.semantic.sessionEventSequence
+              : 0)
             .sort((left, right) => left - right),
         ]),
       );

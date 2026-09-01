@@ -96,6 +96,12 @@ describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)",
       "format-majority-elimination-ballot",
       "format-even-votes-ballot",
       "format-restricted-history-ballot",
+      "format-two-names-initial-names",
+      "format-two-names-override",
+      "format-two-names-replacement",
+      "format-two-names-ballot",
+      "format-two-names-tiebreak",
+      "format-two-names-plea",
       "bounce-pointer",
       "format-safety-bounce-vote",
       "format-tiebreak",
@@ -805,6 +811,187 @@ describe("sealed-elim agent decision surface", () => {
   });
 });
 
+describe("Two Names agent decision surface", () => {
+  const context: PhaseContext = {
+    ...makeContext(Phase.FORMAT_RESOLVE),
+    alivePlayers: [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "nyx-id", name: "Nyx" },
+      { id: "sage-id", name: "Sage" },
+    ],
+    empoweredId: "atlas-id",
+    formatPressure: {
+      empoweredId: "atlas-id",
+      empoweredName: "Atlas",
+      offeredFormats: ["two_names", "vote_bomb"],
+      selectedFormat: "two_names",
+      ruleSheetSummary: ruleSheetForFormat("two_names"),
+    },
+  };
+
+  it("gives MockAgent a complete deterministic legal contract", async () => {
+    const agent = new MockAgent("atlas-id", "Atlas");
+    const initial = await agent.getTwoNamesInitialNames(
+      context,
+      ["mira-id", "vera-id", "nyx-id", "sage-id"],
+    );
+    const override = await agent.getTwoNamesOverride(
+      context,
+      [initial.firstNomineeId, initial.secondNomineeId],
+    );
+    const replacement = await agent.getTwoNamesReplacement(context, ["nyx-id", "sage-id"]);
+    const ballot = await agent.getTwoNamesBallot(context, ["mira-id", "vera-id"]);
+    const tiebreak = await agent.breakTwoNamesTie(context, ["mira-id", "vera-id"]);
+    const plea = await agent.getTwoNamesPlea(context, ["atlas-id", "mira-id"]);
+
+    expect(initial).toMatchObject({ firstNomineeId: "mira-id", secondNomineeId: "vera-id" });
+    expect(override).toMatchObject({ action: "decline", removedNomineeId: null });
+    expect(replacement.targetId).toBe("nyx-id");
+    expect(ballot.targetId).toBe("mira-id");
+    expect(tiebreak.targetId).toBe("mira-id");
+    expect(plea.message).toContain("Atlas");
+  });
+
+  it("uses distinct strict tools and exact request-local choices", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "two_names_initial_names",
+          args: { thinking: "Name the pair.", first: "Mira", second: "Vera", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_override",
+          args: { thinking: "Use it.", useOverride: true, removed: "Vera", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_replacement",
+          args: { thinking: "Bring in Nyx.", target: "Nyx", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_ballot",
+          args: { thinking: "Exit Mira.", target: "Mira", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_tiebreak",
+          args: { thinking: "Break against Nyx.", target: "Nyx", strategyDelta: null },
+        },
+      ]),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      { privateTraceSink: (trace) => { traces.push(trace); } },
+    );
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    expect(await agent.getTwoNamesInitialNames(
+      context,
+      ["mira-id", "vera-id", "nyx-id", "sage-id"],
+    )).toMatchObject({ firstNomineeId: "mira-id", secondNomineeId: "vera-id" });
+    expect(await agent.getTwoNamesOverride(context, ["mira-id", "vera-id"]))
+      .toMatchObject({ action: "use", removedNomineeId: "vera-id" });
+    expect(await agent.getTwoNamesReplacement(context, ["nyx-id", "sage-id"]))
+      .toMatchObject({ targetId: "nyx-id" });
+    expect(await agent.getTwoNamesBallot(context, ["mira-id", "nyx-id"]))
+      .toMatchObject({ targetId: "mira-id" });
+    expect(await agent.breakTwoNamesTie(context, ["mira-id", "nyx-id"]))
+      .toMatchObject({ targetId: "nyx-id" });
+
+    expect(traces.map((trace) => trace.action)).toEqual([
+      "format-two-names-initial-names",
+      "format-two-names-override",
+      "format-two-names-replacement",
+      "format-two-names-ballot",
+      "format-two-names-tiebreak",
+    ]);
+    const tools = requests.map((request) => (request.tools as Array<{
+      function: { name: string; strict?: boolean; parameters?: { additionalProperties?: boolean } };
+    }>)[0]!.function);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "two_names_initial_names",
+      "two_names_override",
+      "two_names_replacement",
+      "two_names_ballot",
+      "two_names_tiebreak",
+    ]);
+    for (const tool of tools) {
+      expect(tool.strict).toBe(true);
+      expect(tool.parameters?.additionalProperties).toBe(false);
+    }
+  });
+
+  it("rejects duplicate names, inconsistent Override fields, and illegal targets before tracing", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "two_names_initial_names",
+          args: { thinking: "Duplicate.", first: "Mira", second: "Mira", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_override",
+          args: { thinking: "Contradict.", useOverride: false, removed: "Mira", strategyDelta: null },
+        },
+        {
+          toolName: "two_names_ballot",
+          args: { thinking: "Illegal.", target: "Sage", strategyDelta: null },
+        },
+      ]),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        structuredCallMaxAttempts: 1,
+        privateTraceSink: (trace) => { traces.push(trace); },
+      },
+    );
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const errors = [
+      await rejectedProviderAttempt(agent.getTwoNamesInitialNames(
+        context,
+        ["mira-id", "vera-id", "nyx-id", "sage-id"],
+      )),
+      await rejectedProviderAttempt(agent.getTwoNamesOverride(context, ["mira-id", "vera-id"])),
+      await rejectedProviderAttempt(agent.getTwoNamesBallot(context, ["mira-id", "vera-id"])),
+    ];
+    expect(errors.map((error) => error.record.outcome.kind)).toEqual([
+      "malformed_output",
+      "malformed_output",
+      "malformed_output",
+    ]);
+    expect(traces).toEqual([]);
+  });
+
+  it("leaves exhausted required decisions for phase-owned fallback", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    await expect(agent.getTwoNamesInitialNames(
+      context,
+      ["mira-id", "vera-id", "nyx-id", "sage-id"],
+    )).rejects.toBeInstanceOf(ProviderAttemptError);
+    expect(requests).toHaveLength(2);
+  });
+});
+
 describe("InfluenceAgent structured output mode", () => {
   it("records an explicit null ordinary delta as no change", async () => {
     const requests: Array<Record<string, unknown>> = [];
@@ -1093,7 +1280,7 @@ describe("InfluenceAgent structured output mode", () => {
   });
 
   it("reconstructs the same phase-owned provider coordinate without reusing the next boundary", async () => {
-    const run = async (logicalCallOrdinal: number) => {
+    const run = async (providerCallBoundaryEventSequence: number) => {
       const attempts: ProviderAttemptRecord[] = [];
       const agent = new InfluenceAgent(
         "atlas-id",
@@ -1112,7 +1299,7 @@ describe("InfluenceAgent structured output mode", () => {
       agent.onGameStart("game-1", makeContext().alivePlayers);
       await agent.getVotes({
         ...makeContext(Phase.VOTE),
-        providerLogicalCallOrdinal: logicalCallOrdinal,
+        providerCallBoundaryEventSequence,
       });
       return attempts[0]!.coordinate;
     };
@@ -1123,7 +1310,10 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(afterReconstruction).toEqual(beforeReconstruction);
     expect(nextBoundary).not.toEqual(beforeReconstruction);
-    expect(nextBoundary.logicalCallOrdinal).toBe(8);
+    expect(nextBoundary.semantic).toMatchObject({
+      kind: "phase_call",
+      canonicalEventSequence: 8,
+    });
   });
 
   it("journals agent-tool player references as domain IDs and replays the same decision receipt", async () => {
@@ -5562,7 +5752,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 6,
-      providerInterviewOrdinal: 1,
+      sessionEventSequence: 1,
       agentId: "wren-id",
       agentName: "Wren",
       playerKnowledge: {
@@ -5598,7 +5788,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 3,
-      providerInterviewOrdinal: 1,
+      sessionEventSequence: 1,
       agentId: "finn-id",
       agentName: "Finn",
       playerKnowledge: {
@@ -5757,7 +5947,14 @@ describe("InfluenceAgent structured output mode", () => {
         action: "introduction",
         phase: Phase.INTRODUCTION,
         round: 1,
-        logicalCallOrdinal: 1,
+        semantic: {
+          version: 1,
+          kind: "phase_call",
+          phase: Phase.INTRODUCTION,
+          round: 1,
+          canonicalEventSequence: 0,
+          callSlot: 1,
+        },
       },
       attemptOrdinal: 1,
       attemptId: "attempt-private-evidence",

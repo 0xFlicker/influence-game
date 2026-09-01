@@ -40,12 +40,10 @@ import {
   pickArchetypes,
 } from "@influence/engine";
 import {
-  startGame,
-  tryReturnZeroEventOwnerFailureToWaiting,
   validateGameStartReadiness,
 } from "../services/game-lifecycle.js";
 import {
-  acquireGameRunOwner,
+  requestGameStart,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -91,12 +89,8 @@ function getNextFreeGameTime(): string {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createFreeQueueRoutes(
-  db: DrizzleDB,
-  dependencies: { startGame?: typeof startGame } = {},
-) {
+export function createFreeQueueRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
-  const startOwnedGame = dependencies.startGame ?? startGame;
 
   // -------------------------------------------------------------------------
   // GET /api/free-queue — queue status
@@ -547,35 +541,9 @@ export function createFreeQueueRoutes(
           : 500);
     }
 
-    const owner = await acquireGameRunOwner(db, game.id);
-    if (!owner.ok) {
-      return c.json(gameOwnerClaimErrorBody(owner), owner.statusCode);
-    }
-    await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_started");
-
-    let startupError: string | undefined;
-    try {
-      const result = await startOwnedGame(db, game.id, owner.claim.ownerEpoch);
-      startupError = result.error;
-    } catch (error) {
-      startupError = error instanceof Error ? error.message : String(error);
-    }
-    if (startupError) {
-      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
-        db,
-        game.id,
-        owner.claim.ownerEpoch,
-        startupError,
-      );
-      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
-        console.warn("[free-queue] Startup failure roster requires repair", {
-          gameId: game.id,
-          ...cleanup.cleanup.reconciliationError,
-        });
-      }
-      await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");
-      return c.json({ error: startupError }, 500);
-    }
+    const requested = await requestGameStart(db, game.id);
+    if (!requested.ok) return c.json(gameOwnerClaimErrorBody(requested), requested.statusCode);
+    await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_start_requested");
 
     return c.json({
       started: true,

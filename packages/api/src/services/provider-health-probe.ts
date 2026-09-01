@@ -237,7 +237,12 @@ async function runLiveProviderHealthProbe(
     actor: { id: lease.owner, name: lease.owner, role: "system" },
     action: "provider_health_probe",
     phase: Phase.LOBBY,
-    logicalCallOrdinal: lease.revision,
+    semantic: {
+      version: 1,
+      kind: "provider_health",
+      providerProfileId: target.providerProfileId,
+      revision: lease.revision,
+    },
   });
   try {
     await executeModelInvocation({
@@ -289,7 +294,12 @@ function syntheticProbeEvidence(
       actor: { id: lease.owner, name: lease.owner, role: "system" },
       action: "provider_health_probe",
       phase: Phase.LOBBY,
-      logicalCallOrdinal: lease.revision,
+      semantic: {
+        version: 1,
+        kind: "provider_health",
+        providerProfileId: target.providerProfileId,
+        revision: lease.revision,
+      },
     },
     attemptOrdinal: 1,
     attemptId: randomUUID(),

@@ -4,6 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
+  FORMAT_PRESENTATION_METADATA,
+  LAUNCH_FORMAT_IDS,
+  type LaunchFormatId,
+} from "@influence/engine/format-presentation-metadata";
+import {
+  canFormatAppearInStandardRounds,
+  isFormatEligibleForSelection,
+} from "@influence/engine/format-selection-policy";
+import {
   createGame,
   getProviderModels,
   type CreateGameParams,
@@ -41,6 +50,26 @@ const PERSONAS: {
 ];
 
 const ALL_PERSONA_KEYS = PERSONAS.map((p) => p.key);
+
+const FORMAT_OPTIONS = LAUNCH_FORMAT_IDS.map((id) => FORMAT_PRESENTATION_METADATA[id]);
+
+function minimumStartingPlayers(formatId: LaunchFormatId) {
+  return CREATE_GAME_PLAYER_COUNTS.find((playerCount) => (
+    canFormatAppearInStandardRounds(formatId, playerCount)
+  ));
+}
+
+function hasOpeningFormat(
+  formatIds: readonly LaunchFormatId[],
+  playerCount: CreateGameParams["playerCount"],
+) {
+  return formatIds.some((formatId) => (
+    isFormatEligibleForSelection(formatId, {
+      round: 1,
+      livingPlayerCount: playerCount,
+    })
+  ));
+}
 
 type GameModelOption = Pick<
   ProviderModelInventoryEntry,
@@ -171,6 +200,7 @@ export function moveProviderRouteEntry(
 
 interface FormState {
   playerCount: CreateGameParams["playerCount"];
+  formatManifest: LaunchFormatId[];
   providerRoute: ProviderRouteEntry[];
   personaPool: PersonaKey[];
   fillStrategy: "random" | "balanced";
@@ -182,6 +212,7 @@ interface FormState {
 
 const DEFAULT_STATE: FormState = {
   playerCount: 6,
+  formatManifest: [...LAUNCH_FORMAT_IDS],
   providerRoute: DEFAULT_PROVIDER_MANIFEST.map(providerRouteEntry),
   personaPool: [...ALL_PERSONA_KEYS],
   fillStrategy: "balanced",
@@ -247,6 +278,143 @@ function SectionCard({ title, children }: { title: string; children: React.React
         {title}
       </h3>
       <div className="space-y-4">{children}</div>
+    </div>
+  );
+}
+
+function FormatManifestEditor({
+  selectedIds,
+  playerCount,
+  onChange,
+}: {
+  selectedIds: LaunchFormatId[];
+  playerCount: CreateGameParams["playerCount"];
+  onChange: (formatIds: LaunchFormatId[]) => void;
+}) {
+  const selected = new Set(selectedIds);
+  const openingFormatSelected = hasOpeningFormat(selectedIds, playerCount);
+
+  function toggle(formatId: LaunchFormatId) {
+    const next = new Set(selectedIds);
+    if (next.has(formatId)) {
+      if (next.size === 1) return;
+      next.delete(formatId);
+    } else {
+      next.add(formatId);
+    }
+    onChange(LAUNCH_FORMAT_IDS.filter((id) => next.has(id)));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-white">Format rotation</p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
+            This rotation is sealed with the game. When only one selected format is eligible,
+            it runs automatically; when two or more are eligible, Empowered is offered two choices.
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="tabular-nums text-white/35">
+            {selectedIds.length}/{FORMAT_OPTIONS.length} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => onChange([...LAUNCH_FORMAT_IDS])}
+            disabled={selectedIds.length === FORMAT_OPTIONS.length}
+            className="text-indigo-300 transition-colors hover:text-indigo-200 disabled:cursor-default disabled:text-white/25"
+          >
+            Select all
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="grid gap-3 md:grid-cols-2"
+        role="group"
+        aria-label="Round formats"
+      >
+        {FORMAT_OPTIONS.map((format) => {
+          const isSelected = selected.has(format.id);
+          const minimumPlayers = minimumStartingPlayers(format.id);
+          const hasPlayerConstraint = minimumPlayers !== undefined
+            && minimumPlayers > CREATE_GAME_PLAYER_COUNTS[0];
+          const canAppear = canFormatAppearInStandardRounds(format.id, playerCount);
+          const canRunAlone = isFormatEligibleForSelection(format.id, {
+            round: 1,
+            livingPlayerCount: playerCount,
+          });
+          const descriptionId = `format-${format.id}-description`;
+
+          return (
+            <div
+              key={format.id}
+              className={`rounded-xl border p-4 transition-colors ${
+                isSelected
+                  ? "border-indigo-500/55 bg-indigo-500/[0.08]"
+                  : "border-white/10 bg-white/[0.02] hover:border-white/20"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  aria-label={format.displayName}
+                  aria-describedby={descriptionId}
+                  onClick={() => toggle(format.id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-xs ${
+                      isSelected
+                        ? "border-indigo-400 bg-indigo-500 text-white"
+                        : "border-white/20 bg-black/20 text-transparent"
+                    }`}
+                  >
+                    ✓
+                  </span>
+                  <span className="min-w-0">
+                    <span className={isSelected ? "font-medium text-white" : "font-medium text-white/60"}>
+                      {format.displayName}
+                    </span>
+                    {hasPlayerConstraint && (
+                      <span className={`ml-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                        canAppear
+                          ? "border-indigo-400/25 bg-indigo-400/10 text-indigo-200"
+                          : "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                      }`}>
+                        {canAppear ? `${minimumPlayers}+ players` : `Unavailable with ${playerCount} players`}
+                      </span>
+                    )}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Only ${format.displayName}`}
+                  onClick={() => canRunAlone && onChange([format.id])}
+                  disabled={!canRunAlone || (selectedIds.length === 1 && isSelected)}
+                  title={canRunAlone ? `Use only ${format.displayName}` : "Requires another format for the opening rounds"}
+                  className="shrink-0 rounded-md border border-white/10 px-2 py-1 text-[11px] text-white/45 transition-colors hover:border-indigo-400/40 hover:text-indigo-200 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  Only
+                </button>
+              </div>
+              <p id={descriptionId} className="mt-3 text-xs leading-5 text-white/40">
+                {format.conciseRules}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {!openingFormatSelected && (
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100" role="alert">
+          Select at least one format available in the opening round. Restricted History can join the rotation later, but cannot run alone.
+        </p>
+      )}
     </div>
   );
 }
@@ -594,6 +762,10 @@ export function CreateGameForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!hasOpeningFormat(form.formatManifest, form.playerCount)) {
+      setError("Select at least one format available in the opening round.");
+      return;
+    }
     if (form.personaPool.length < 2) {
       setError("Select at least 2 personas.");
       return;
@@ -661,6 +833,15 @@ export function CreateGameForm() {
             label: String(n),
           }))}
           onChange={(v) => set("playerCount", parseInt(v) as FormState["playerCount"])}
+        />
+      </SectionCard>
+
+      {/* Round formats */}
+      <SectionCard title="Round formats">
+        <FormatManifestEditor
+          selectedIds={form.formatManifest}
+          playerCount={form.playerCount}
+          onChange={(formatManifest) => set("formatManifest", formatManifest)}
         />
       </SectionCard>
 

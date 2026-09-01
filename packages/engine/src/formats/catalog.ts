@@ -5,9 +5,12 @@
  * metadata deliberately remains in its browser-safe leaf module.
  */
 import {
-  LAUNCH_FORMAT_IDS,
   type LaunchFormatId,
 } from "../format-presentation-metadata";
+import {
+  FORMAT_SELECTION_METADATA,
+  isFormatEligibleForSelection,
+} from "../format-selection-policy";
 import type { UUID } from "../types";
 import {
   computeMajorityEliminationTallies,
@@ -43,6 +46,16 @@ import {
   isLegalVoteBombBallot,
   resolveVoteBomb,
 } from "./vote-bomb";
+import {
+  computeTwoNamesTallies,
+  isLegalTwoNamesBallot,
+  isLegalTwoNamesInitialPair,
+  resolveTwoNames,
+  twoNamesOrdinaryVoterIds,
+  twoNamesOverrideCandidates,
+  twoNamesRemovalChoices,
+  twoNamesReplacementCandidates,
+} from "./two-names";
 
 export type SealedElimFormatId =
   | "vote_bomb"
@@ -140,16 +153,84 @@ export interface PublicChainRegistration {
   presentation: { handler: "safety_bounce" };
 }
 
+export interface TwoNamesRegistration {
+  id: "two_names";
+  capability: "two_names";
+  availableFromRound: number;
+  minimumLivingPlayers: 5;
+  initialNames: {
+    isLegal: typeof isLegalTwoNamesInitialPair;
+  };
+  override: {
+    candidates: typeof twoNamesOverrideCandidates;
+    removalChoices: typeof twoNamesRemovalChoices;
+    replacementCandidates: typeof twoNamesReplacementCandidates;
+  };
+  ballot: {
+    eligibleVoterIds: typeof twoNamesOrdinaryVoterIds;
+    isLegal: typeof isLegalTwoNamesBallot;
+    score: typeof computeTwoNamesTallies;
+    resolve: typeof resolveTwoNames;
+  };
+  decision: {
+    handler: "two_names";
+    initialNames: {
+      agentMethod: "getTwoNamesInitialNames";
+      toolName: "two_names_initial_names";
+      traceAction: "format-two-names-initial-names";
+      invalidReason: "invalid_two_names_initial_names";
+      fallbackText: "Use the first legal pair in canonical roster order.";
+    };
+    override: {
+      agentMethod: "getTwoNamesOverride";
+      toolName: "two_names_override";
+      traceAction: "format-two-names-override";
+      invalidReason: "invalid_two_names_override";
+      fallbackText: "Decline Override.";
+    };
+    replacement: {
+      agentMethod: "getTwoNamesReplacement";
+      toolName: "two_names_replacement";
+      traceAction: "format-two-names-replacement";
+      invalidReason: "invalid_two_names_replacement";
+      fallbackText: "Use the first legal replacement in canonical roster order.";
+    };
+    ballot: {
+      agentMethod: "getTwoNamesBallot";
+      toolName: "two_names_ballot";
+      traceAction: "format-two-names-ballot";
+      invalidReason: "invalid_two_names_ballot";
+      fallbackText: "Vote for the first final nominee in canonical pair order.";
+    };
+    tiebreak: {
+      agentMethod: "breakTwoNamesTie";
+      toolName: "two_names_tiebreak";
+      traceAction: "format-two-names-tiebreak";
+      invalidReason: "invalid_two_names_tiebreak";
+      fallbackText: "Eliminate the first final nominee in canonical pair order.";
+    };
+    plea: {
+      agentMethod: "getTwoNamesPlea";
+      traceAction: "format-two-names-plea";
+    };
+  };
+  aggregate: { capability: "two_names" };
+  presentation: { handler: "two_names" };
+}
+
 export type FormatRegistration =
   | SealedElimRegistration
   | SealedPolarityRegistration
-  | PublicChainRegistration;
+  | PublicChainRegistration
+  | TwoNamesRegistration;
 
 export type FormatRegistrationFor<TId extends LaunchFormatId> =
   TId extends "save_or_eliminate"
     ? SealedPolarityRegistration
     : TId extends "safety_bounce"
       ? PublicChainRegistration
+      : TId extends "two_names"
+        ? TwoNamesRegistration
       : TId extends SealedElimFormatId
         ? SealedElimRegistration<TId>
         : never;
@@ -182,7 +263,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   save_or_eliminate: {
     id: "save_or_eliminate",
     capability: "sealed_polarity",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.save_or_eliminate.availableFromRound,
     handler: "save_or_eliminate",
     resolve: resolveSaveOrEliminate,
     isLegalBallot: isLegalSaveOrEliminateBallot,
@@ -196,7 +277,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   vote_bomb: {
     id: "vote_bomb",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.vote_bomb.availableFromRound,
     ballotParticipation: "required",
     score: voteBombScore,
     resolve: resolveVoteBomb,
@@ -222,7 +303,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   safety_bounce: {
     id: "safety_bounce",
     capability: "public_chain",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.safety_bounce.availableFromRound,
     handler: "safety_bounce",
     resolveVote: resolveSafetyBounceVote,
     isLegalVote: isLegalSafetyBounceVote,
@@ -233,7 +314,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   majority_elimination: {
     id: "majority_elimination",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.majority_elimination.availableFromRound,
     ballotParticipation: "required",
     score: computeMajorityEliminationTallies,
     resolve: resolveMajorityElimination,
@@ -259,7 +340,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   even_votes: {
     id: "even_votes",
     capability: "sealed_elim",
-    availableFromRound: 1,
+    availableFromRound: FORMAT_SELECTION_METADATA.even_votes.availableFromRound,
     ballotParticipation: "required",
     score: computeEvenVotesTallies,
     resolve: resolveEvenVotes,
@@ -285,7 +366,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   restricted_history: {
     id: "restricted_history",
     capability: "sealed_elim",
-    availableFromRound: 3,
+    availableFromRound: FORMAT_SELECTION_METADATA.restricted_history.availableFromRound,
     ballotParticipation: "forfeit_if_no_legal_target",
     score: computeRestrictedHistoryTallies,
     resolve: resolveRestrictedHistory,
@@ -308,11 +389,82 @@ export const FORMAT_CATALOG: FormatCatalog = {
       zeroVoteTreatment: "eligible",
     },
   },
+  two_names: {
+    id: "two_names",
+    capability: "two_names",
+    availableFromRound: FORMAT_SELECTION_METADATA.two_names.availableFromRound,
+    minimumLivingPlayers:
+      FORMAT_SELECTION_METADATA.two_names.minimumLivingPlayers,
+    initialNames: {
+      isLegal: isLegalTwoNamesInitialPair,
+    },
+    override: {
+      candidates: twoNamesOverrideCandidates,
+      removalChoices: twoNamesRemovalChoices,
+      replacementCandidates: twoNamesReplacementCandidates,
+    },
+    ballot: {
+      eligibleVoterIds: twoNamesOrdinaryVoterIds,
+      isLegal: isLegalTwoNamesBallot,
+      score: computeTwoNamesTallies,
+      resolve: resolveTwoNames,
+    },
+    decision: {
+      handler: "two_names",
+      initialNames: {
+        agentMethod: "getTwoNamesInitialNames",
+        toolName: "two_names_initial_names",
+        traceAction: "format-two-names-initial-names",
+        invalidReason: "invalid_two_names_initial_names",
+        fallbackText: "Use the first legal pair in canonical roster order.",
+      },
+      override: {
+        agentMethod: "getTwoNamesOverride",
+        toolName: "two_names_override",
+        traceAction: "format-two-names-override",
+        invalidReason: "invalid_two_names_override",
+        fallbackText: "Decline Override.",
+      },
+      replacement: {
+        agentMethod: "getTwoNamesReplacement",
+        toolName: "two_names_replacement",
+        traceAction: "format-two-names-replacement",
+        invalidReason: "invalid_two_names_replacement",
+        fallbackText: "Use the first legal replacement in canonical roster order.",
+      },
+      ballot: {
+        agentMethod: "getTwoNamesBallot",
+        toolName: "two_names_ballot",
+        traceAction: "format-two-names-ballot",
+        invalidReason: "invalid_two_names_ballot",
+        fallbackText: "Vote for the first final nominee in canonical pair order.",
+      },
+      tiebreak: {
+        agentMethod: "breakTwoNamesTie",
+        toolName: "two_names_tiebreak",
+        traceAction: "format-two-names-tiebreak",
+        invalidReason: "invalid_two_names_tiebreak",
+        fallbackText: "Eliminate the first final nominee in canonical pair order.",
+      },
+      plea: {
+        agentMethod: "getTwoNamesPlea",
+        traceAction: "format-two-names-plea",
+      },
+    },
+    aggregate: { capability: "two_names" },
+    presentation: { handler: "two_names" },
+  },
 };
 
 /** Ordered omission default for live games. */
 export const DEFAULT_FORMAT_MANIFEST: readonly LaunchFormatId[] = [
-  ...LAUNCH_FORMAT_IDS,
+  "save_or_eliminate",
+  "vote_bomb",
+  "safety_bounce",
+  "majority_elimination",
+  "even_votes",
+  "restricted_history",
+  "two_names",
 ];
 
 /** Formats available to games created before manifests were persisted. */
@@ -351,16 +503,24 @@ export function resolveFormatManifest(value: unknown): LaunchFormatId[] {
   return resolved;
 }
 
-export function formatsAvailableInRound(
+export interface FormatSelectionContext {
+  round: number;
+  livingIds: readonly UUID[];
+}
+
+export function formatsAvailableForSelection(
   manifest: readonly LaunchFormatId[],
-  round: number,
+  context: FormatSelectionContext,
 ): LaunchFormatId[] {
-  if (!Number.isInteger(round) || round < 1) {
-    throw new Error(`Format round must be a positive integer: ${round}`);
+  if (!Number.isInteger(context.round) || context.round < 1) {
+    throw new Error(`Format round must be a positive integer: ${context.round}`);
   }
-  return resolveFormatManifest(manifest).filter(
-    (formatId) => FORMAT_CATALOG[formatId].availableFromRound <= round,
-  );
+  return resolveFormatManifest(manifest).filter((formatId) => {
+    return isFormatEligibleForSelection(formatId, {
+      round: context.round,
+      livingPlayerCount: context.livingIds.length,
+    });
+  });
 }
 
 export function getFormatRegistration<TId extends LaunchFormatId>(

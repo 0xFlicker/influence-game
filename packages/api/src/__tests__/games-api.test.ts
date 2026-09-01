@@ -765,6 +765,7 @@ describe("Game REST API", () => {
         "majority_elimination",
         "even_votes",
         "restricted_history",
+        "two_names",
       ]);
     });
 
@@ -1950,13 +1951,7 @@ describe("Game REST API", () => {
         actor: "release-operator",
       });
       if (!acquired.ok) throw new Error(acquired.error);
-      let startupCalls = 0;
-      const admissionAwareApp = new Hono().route("/", createGameRoutes(db, {
-        startGame: async () => {
-          startupCalls += 1;
-          return {};
-        },
-      }));
+      const admissionAwareApp = new Hono().route("/", createGameRoutes(db));
 
       const blocked = await admissionAwareApp.request(
         `/api/games/${id}/start`,
@@ -1968,7 +1963,6 @@ describe("Game REST API", () => {
         code: "deployment_admission_closed",
         retryable: true,
       });
-      expect(startupCalls).toBe(0);
       expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0])
         .toMatchObject({ status: "waiting", startedAt: null });
       expect(await db.select().from(schema.gameRunOwners)
@@ -1987,7 +1981,6 @@ describe("Game REST API", () => {
         authPost(adminToken),
       );
       expect(retried.status).toBe(200);
-      expect(startupCalls).toBe(1);
     });
 
     test("returns typed roster-freeze failures to start clients", async () => {
@@ -2060,38 +2053,22 @@ describe("Game REST API", () => {
       }
     });
 
-    test("unwinds the exact zero-event owner when synchronous runner startup fails", async () => {
+    test("queues a start command without acquiring a durable owner", async () => {
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `StartupPlayer${i}`, userToken);
       }
-      const failingApp = new Hono().route("/", createGameRoutes(db, {
-        startGame: async () => {
-          throw new Error("Injected runner startup failure");
-        },
-      }));
+      const requestApp = new Hono().route("/", createGameRoutes(db));
 
-      const failed = await failingApp.request(`/api/games/${id}/start`, authPost(adminToken));
+      const requested = await requestApp.request(`/api/games/${id}/start`, authPost(adminToken));
 
-      expect(failed.status).toBe(500);
-      expect((await failed.json()) as { error: string }).toMatchObject({
-        error: expect.any(String),
-      });
+      expect(requested.status).toBe(200);
       expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0])
-        .toMatchObject({ status: "waiting", startedAt: null });
+        .toMatchObject({ status: "in_progress", startedAt: expect.any(String) });
       expect(await db.select().from(schema.gameEvents)
         .where(eq(schema.gameEvents.gameId, id))).toHaveLength(0);
       expect(await db.select().from(schema.gameRunOwners)
-        .where(eq(schema.gameRunOwners.gameId, id))).toEqual([
-        expect.objectContaining({
-          status: "closed",
-          kernelHealth: "degraded",
-        }),
-      ]);
-
-      const retried = await app.request(`/api/games/${id}/start`, authPost(adminToken));
-      expect(retried.status).toBe(200);
-      expect(await retried.json()).toMatchObject({ status: "in_progress" });
+        .where(eq(schema.gameRunOwners.gameId, id))).toHaveLength(0);
     });
 
     test("rejects start with five players", async () => {

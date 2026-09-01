@@ -28,12 +28,10 @@ import {
 } from "../middleware/auth.js";
 import {
   abortGame,
-  startGame,
-  tryReturnZeroEventOwnerFailureToWaiting,
   validateGameStartReadiness,
 } from "../services/game-lifecycle.js";
 import {
-  acquireGameRunOwner,
+  requestGameStart,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -115,12 +113,8 @@ function publicErrorInfo(
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
 
-export function createGameRoutes(
-  db: DrizzleDB,
-  dependencies: { startGame?: typeof startGame } = {},
-) {
+export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
-  const startOwnedGame = dependencies.startGame ?? startGame;
 
   // -------------------------------------------------------------------------
   // POST /api/games — create a new game
@@ -712,38 +706,9 @@ export function createGameRoutes(
           : 500);
     }
 
-    const owner = await acquireGameRunOwner(db, gameId);
-    if (!owner.ok) {
-      return c.json(gameOwnerClaimErrorBody(owner), owner.statusCode);
-    }
-    await tryRefreshGameWatchStateSummary(db, gameId, "game_started");
-
-    // Await startGame to catch configuration errors (missing API key, etc.)
-    // before returning success to the client. The actual game execution
-    // (runGameAsync) runs in the background after this returns.
-    let startupError: string | undefined;
-    try {
-      const result = await startOwnedGame(db, gameId, owner.claim.ownerEpoch);
-      startupError = result.error;
-    } catch (error) {
-      startupError = error instanceof Error ? error.message : String(error);
-    }
-    if (startupError) {
-      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
-        db,
-        gameId,
-        owner.claim.ownerEpoch,
-        startupError,
-      );
-      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
-        console.warn("[games] Startup failure roster requires repair", {
-          gameId,
-          ...cleanup.cleanup.reconciliationError,
-        });
-      }
-      await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");
-      return c.json({ error: startupError }, 500);
-    }
+    const requested = await requestGameStart(db, gameId);
+    if (!requested.ok) return c.json(gameOwnerClaimErrorBody(requested), requested.statusCode);
+    await tryRefreshGameWatchStateSummary(db, gameId, "game_start_requested");
 
     return c.json({ status: "in_progress", players: currentPlayers.length });
   });

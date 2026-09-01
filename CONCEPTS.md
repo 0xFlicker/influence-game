@@ -129,11 +129,11 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
+The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, Restricted History, and Two Names.
 
 ## Round format
 
-The active exit (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
+The active exit (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, Restricted History, and Two Names.
 
 ## Format catalog
 
@@ -141,7 +141,7 @@ The registered set of round formats The House may offer under the format kernel.
 
 ## Format manifest
 
-The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the six-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game, while catalog admission rules may narrow the legal cards for a particular round. If exactly one card is available that round it auto-selects without a menu or empowered pick call. A manifest containing only later-round cards is invalid because round 1 would have no legal format. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the seven-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game, while catalog admission rules may narrow the legal cards for a particular round. If exactly one card is available that round it auto-selects without a menu or empowered pick call. A manifest containing only later-round cards is invalid because round 1 would have no legal format. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
 
 ## Format menu
 
@@ -174,6 +174,10 @@ A default catalog round format where each alive agent casts one sealed non-self 
 ## Restricted History
 
 A default catalog round format admitted only from round 3 onward. Each alive agent casts one sealed elimination vote, but cannot target a living player they targeted with an elimination-direction format ballot in an earlier round. SAVE ballots do not consume target history. A player with no legal non-self target canonically forfeits their ballot. Highest total is eliminated and the empowered player breaks a highest-total tie.
+
+## Two Names
+
+A staged round format available with at least five living agents. Empowered publicly names two non-Empowered agents, then The House draws an Override holder from the full living roster. The holder may decline or remove one name; when a name is removed, Empowered chooses a legal replacement and the changed pair receives a second full Format Mingle. The two final nominees receive ordered plea opportunities, then every living agent except Empowered and the finalists casts a sealed vote between them. Plurality eliminates one finalist and Empowered breaks an exact tie. The initial pair, Override result, final pair, speeches, ballots, and resolution are canonical facts rather than transcript-derived claims.
 
 ## Operator
 

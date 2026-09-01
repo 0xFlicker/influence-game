@@ -92,6 +92,10 @@ export type SpectacleMessagePhase = "typing" | "revealing" | "done";
 export interface FormatPresentationRosterPlayer {
   id: string;
   name: string;
+  persona?: string;
+  personaKey?: string;
+  avatarUrl?: string;
+  currentAgent?: GamePlayer["currentAgent"];
 }
 
 export type FormatPresentationBallot =
@@ -122,6 +126,19 @@ export interface SafetyBouncePresentationSnapshot {
   benchPlayerIds: string[];
 }
 
+export interface TwoNamesPresentationSnapshot {
+  empoweredId: string | null;
+  initialNomineeIds: [string, string] | null;
+  overrideHolderId: string | null;
+  overrideAction: "declined" | "used" | null;
+  removedNomineeId: string | null;
+  replacementNomineeId: string | null;
+  finalistPlayerIds: [string, string] | null;
+  completedMingleWindows: Array<"initial_names" | "final_names">;
+  pleaCount: number;
+  ballotsSealed: number;
+}
+
 export type FormatResolutionPresentation =
   Extract<ViewerDecisionEvent, { type: "format.resolved" }>["payload"];
 
@@ -134,6 +151,7 @@ export interface FormatPresentationSnapshot {
   offeredFormatIds: [LaunchFormatId, LaunchFormatId] | null;
   activeFormatId: LaunchFormatId | null;
   safetyBounce: SafetyBouncePresentationSnapshot | null;
+  twoNames?: TwoNamesPresentationSnapshot | null;
   resolution: FormatResolutionPresentation | null;
   revealedBallots: FormatPresentationBallot[];
   eliminatedId: string | null;
@@ -171,6 +189,52 @@ export type FormatPresentationCue =
   | (FormatPresentationCueBase & {
       kind: "safety_bounce_started";
       starterId: string;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_empowered_intro";
+      empoweredId: string;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_initial_names";
+      empoweredId: string;
+      nomineeIds: [string, string];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_override_draw";
+      overrideHolderId: string;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_mingle_complete";
+      window: "initial_names" | "final_names";
+      finalistPlayerIds: [string, string];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_override_declined";
+      overrideHolderId: string;
+      finalistPlayerIds: [string, string];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_override_removed";
+      overrideHolderId: string;
+      removedNomineeId: string;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_replacement";
+      empoweredId: string;
+      replacementNomineeId: string;
+      finalistPlayerIds: [string, string];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_plea";
+      speakerId: string;
+      ordinal: 0 | 1;
+      status: "accepted" | "absent";
+      text: string | null;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "two_names_ballots_sealing";
+      sealedCount: number;
+      eligibleCount: number;
     })
   | (FormatPresentationCueBase & {
       kind: "safety_bounce_pointer";

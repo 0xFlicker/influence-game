@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add Custom Format"
+  short_description: "Build a durable custom Influence format"
+  default_prompt: "Use $add-custom-format to add and prove a new custom Influence round format."

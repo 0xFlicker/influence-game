@@ -402,13 +402,7 @@ describe("free queue season admission", () => {
       actor: "release-operator",
     });
     if (!acquired.ok) throw new Error(acquired.error);
-    let startupCalls = 0;
-    const admissionAwareApp = new Hono().route("/", createFreeQueueRoutes(db, {
-      startGame: async () => {
-        startupCalls += 1;
-        return {};
-      },
-    }));
+    const admissionAwareApp = new Hono().route("/", createFreeQueueRoutes(db));
 
     const blocked = await admissionAwareApp.request(
       `/api/free-queue/start?gameId=${drawn.gameId}`,
@@ -420,7 +414,6 @@ describe("free queue season admission", () => {
       code: "deployment_admission_closed",
       retryable: true,
     });
-    expect(startupCalls).toBe(0);
     expect((await db.select().from(schema.games)
       .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
       status: "waiting",
@@ -442,7 +435,6 @@ describe("free queue season admission", () => {
       { method: "POST", headers: { Authorization: `Bearer ${token}` } },
     );
     expect(retried.status).toBe(200);
-    expect(startupCalls).toBe(1);
     await abortAllGames();
   });
 
@@ -580,7 +572,7 @@ describe("free queue season admission", () => {
     }
   });
 
-  test("unwinds a claimed Daily Free owner after synchronous runner startup failure", async () => {
+  test("queues a Daily Free start without acquiring a durable owner", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "startup-operator");
     await createQueuedAgent(db, "startup-a", "Aster Startup");
@@ -598,37 +590,20 @@ describe("free queue season admission", () => {
       },
     });
     const drawn = await draw.json() as { gameId: string };
-    const failingApp = new Hono().route("/", createFreeQueueRoutes(db, {
-      startGame: async () => {
-        throw new Error("Injected runner startup failure");
-      },
-    }));
+    const requestApp = new Hono().route("/", createFreeQueueRoutes(db));
 
-    const failed = await failingApp.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
+    const requested = await requestApp.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    expect(failed.status).toBe(500);
-    expect(await failed.json()).toMatchObject({ error: expect.any(String) });
+    expect(requested.status).toBe(200);
     expect((await db.select().from(schema.games)
-      .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
-      status: "waiting",
-      startedAt: null,
-    });
+      .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({ status: "in_progress" });
     expect(await db.select().from(schema.gameEvents)
       .where(eq(schema.gameEvents.gameId, drawn.gameId))).toHaveLength(0);
     expect(await db.select().from(schema.gameRunOwners)
-      .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toEqual([
-      expect.objectContaining({ status: "closed", kernelHealth: "degraded" }),
-    ]);
-
-    const retried = await app.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(retried.status).toBe(200);
-    expect(await retried.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+      .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toHaveLength(0);
     await abortAllGames();
   });
 

@@ -74,6 +74,7 @@ describe("release migration identity", () => {
       "0070_durable_game_turns.sql",
       "0071_durable_game_turn_pacing.sql",
       "0072_provider_logical_call_ordinal_bigint.sql",
+      "0075_provider_semantic_coordinates.sql",
     ].map((file) => path.resolve(import.meta.dir, "../../drizzle", file));
     for (const migration of migrations) {
       expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);

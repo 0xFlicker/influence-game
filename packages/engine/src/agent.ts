@@ -38,6 +38,9 @@ import type {
   StrategicDecisionMetadata,
   StrategicLens,
   TargetDecision,
+  TwoNamesInitialNamesDecision,
+  TwoNamesOverrideDecision,
+  TwoNamesTargetDecision,
   PlayerContinuityCapsule,
   ProviderReasoningSummary,
 } from "./game-runner";
@@ -67,6 +70,7 @@ import type {
 } from "./types";
 import {
   displayNameForFormat,
+  getFormatRegistration,
   isLaunchFormatId,
   pickFormatFromMenu,
   type LaunchFormatId,
@@ -75,6 +79,9 @@ import {
 import {
   FULL_STRATEGY_REQUIRED,
   FULL_STRATEGY_TOOL_PROPERTIES,
+  buildTwoNamesInitialNamesTool,
+  buildTwoNamesOverrideTool,
+  buildTwoNamesTargetTool,
   runSealedElimTargetDecision,
   STRATEGIC_DECISION_REQUIRED,
   STRATEGIC_DECISION_TOOL_PROPERTIES,
@@ -1622,6 +1629,12 @@ export const AGENT_TOOL_SEMANTIC_ACTION_IDS = [
   "format-majority-elimination-ballot",
   "format-even-votes-ballot",
   "format-restricted-history-ballot",
+  "format-two-names-initial-names",
+  "format-two-names-override",
+  "format-two-names-replacement",
+  "format-two-names-ballot",
+  "format-two-names-tiebreak",
+  "format-two-names-plea",
   "bounce-pointer",
   "format-safety-bounce-vote",
   "format-tiebreak",
@@ -1837,6 +1850,23 @@ function playerIdFieldDecoder<
 
 type ExitVoteProviderValue = PlayerNameDecision<"target">;
 type ExitVoteDomainValue = PlayerIdDecision<"eliminate">;
+
+type TwoNamesInitialProviderValue = AgentToolStrategyFields & {
+  first: string;
+  second: string;
+};
+type TwoNamesInitialDomainValue = AgentToolStrategyFields & {
+  firstNomineeId: UUID;
+  secondNomineeId: UUID;
+};
+type TwoNamesOverrideProviderValue = AgentToolStrategyFields & {
+  useOverride: boolean;
+  removed: string | null;
+};
+type TwoNamesOverrideDomainValue = AgentToolStrategyFields & (
+  | { action: "decline"; removedNomineeId: null }
+  | { action: "use"; removedNomineeId: UUID }
+);
 
 /** Provider vocabulary uses target/exit while accepted replay keeps the canonical eliminate field. */
 function exitVoteDecoder(
@@ -2092,9 +2122,23 @@ export class InfluenceAgent implements IAgent {
       action: trace?.action ?? options?.action ?? "unknown",
       ...(trace?.phase && { phase: trace.phase }),
       ...(trace?.round !== undefined && { round: trace.round }),
-      logicalCallOrdinal: trace?.logicalCallOrdinal ?? 1,
+      semantic: this.durableProviderTurnBinding?.semanticCoordinate
+        ?? trace?.semanticCoordinate
+        ?? {
+          version: 1,
+          kind: "phase_call",
+          phase: trace?.phase ?? Phase.INIT,
+          round: trace?.round ?? 0,
+          canonicalEventSequence: trace?.boundary?.currentEventSequence ?? 0,
+          callSlot: 1,
+        },
       ...(this.durableProviderTurnBinding
-        ? { durableTurn: structuredClone(this.durableProviderTurnBinding) }
+        ? {
+            durableTurn: {
+              turnId: this.durableProviderTurnBinding.turnId,
+              subcallSlot: this.durableProviderTurnBinding.subcallSlot,
+            },
+          }
         : {}),
     });
   }
@@ -2351,11 +2395,17 @@ export class InfluenceAgent implements IAgent {
       },
       phase: ctx.phase,
       round: ctx.round,
-      logicalCallOrdinal:
-        (ctx.lobbySubRound !== undefined ? ctx.lobbySubRound + 1 : undefined)
-        ?? ctx.mingleBeat
-        ?? ctx.providerLogicalCallOrdinal
-        ?? 1,
+      semanticCoordinate: ctx.providerSemanticCoordinate ?? {
+        version: 1,
+        kind: "phase_call",
+        phase: ctx.phase,
+        round: ctx.round,
+        canonicalEventSequence: ctx.providerCallBoundaryEventSequence ?? 0,
+        callSlot:
+          (ctx.lobbySubRound !== undefined ? ctx.lobbySubRound + 1 : undefined)
+          ?? ctx.mingleBeat
+          ?? 1,
+      },
       recallPlanReceipt,
     };
   }
@@ -4510,6 +4560,333 @@ Use the save_or_exit_ballot tool.`;
     return this.getSealedElimBallot(ctx, legalTargetIds, "restricted_history");
   }
 
+  async getTwoNamesInitialNames(
+    ctx: PhaseContext,
+    legalNomineeIds: UUID[],
+  ): Promise<TwoNamesInitialNamesDecision> {
+    const registration = getFormatRegistration("two_names");
+    const legalNominees = formatPlayersForIds(ctx, legalNomineeIds);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Two Names — Initial Nominations
+${supplementalActiveFormatRule(ctx, "two_names")}
+
+You are Empowered. Publicly nominate exactly two distinct contestants. You may nominate yourself.
+Legal nominees: ${legalNominees.map((player) => player.name).join(", ")}
+
+The order is public reveal order. Use the ${registration.decision.initialNames.toolName} tool.`;
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const decodeProvider = (
+      value: TwoNamesInitialProviderValue,
+    ): StructuredDomainDecodeResult<TwoNamesInitialDomainValue> => {
+      const firstIssue = requireExactPlayerName(value.first, legalNominees, "first");
+      if (firstIssue) return { status: "invalid", message: firstIssue };
+      const secondIssue = requireExactPlayerName(value.second, legalNominees, "second");
+      if (secondIssue) return { status: "invalid", message: secondIssue };
+      const first = findByName(legalNominees, value.first)!;
+      const second = findByName(legalNominees, value.second)!;
+      if (first.id === second.id) {
+        return { status: "invalid", message: "first and second must name distinct legal players." };
+      }
+      const { first: _first, second: _second, ...rest } = value;
+      return {
+        status: "valid",
+        value: {
+          ...rest,
+          firstNomineeId: first.id,
+          secondNomineeId: second.id,
+        },
+      };
+    };
+    const result = await this.callTool<TwoNamesInitialProviderValue, TwoNamesInitialDomainValue>(
+      prompt,
+      buildTwoNamesInitialNamesTool(legalNominees.map((player) => player.name)),
+      mappedAgentToolSemanticDecoder(
+        registration.decision.initialNames.traceAction,
+        decodeProvider,
+        (value, providerSchema) => {
+          const domainSchema = schemaWithPlayerIdField(providerSchema, "first", legalNominees);
+          renameStructuredSchemaProperty(domainSchema, "first", "firstNomineeId");
+          const secondSchema = schemaWithPlayerIdField(domainSchema, "second", legalNominees);
+          renameStructuredSchemaProperty(secondSchema, "second", "secondNomineeId");
+          const exact = validateExactStructuredValue(
+            secondSchema,
+            value,
+            `Accepted agent tool ${registration.decision.initialNames.traceAction}`,
+          );
+          if (exact.status === "invalid") return exact;
+          const domain = value as TwoNamesInitialDomainValue;
+          const first = legalNominees.find((player) => player.id === domain.firstNomineeId);
+          const second = legalNominees.find((player) => player.id === domain.secondNomineeId);
+          if (!first || !second || first.id === second.id) {
+            return { status: "invalid", message: "Accepted Two Names nominees must be distinct legal player IDs." };
+          }
+          return canonicalMappedAcceptedValue(
+            value,
+            `Accepted agent tool ${registration.decision.initialNames.traceAction}`,
+            () => {
+              const { firstNomineeId: _firstNomineeId, secondNomineeId: _secondNomineeId, ...rest } = domain;
+              return { status: "valid", value: { ...rest, first: first.name, second: second.name } };
+            },
+            decodeProvider,
+          );
+        },
+      ),
+      140,
+      sys,
+      this.traceOptions(ctx, {
+        action: registration.decision.initialNames.traceAction,
+        reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+        reasoningEffort: "low",
+      }),
+    );
+    const metadata = this.strategicDecisionMetadata(
+      result,
+      registration.decision.initialNames.traceAction,
+    );
+    return {
+      firstNomineeId: result.firstNomineeId,
+      secondNomineeId: result.secondNomineeId,
+      thinking: result.thinking,
+      reasoningContext: result.reasoningContext,
+      ...metadata,
+      ...formatDecisionProvenance(true, registration.decision.initialNames.invalidReason),
+    };
+  }
+
+  async getTwoNamesOverride(
+    ctx: PhaseContext,
+    initialNomineeIds: [UUID, UUID],
+  ): Promise<TwoNamesOverrideDecision> {
+    const registration = getFormatRegistration("two_names");
+    const nominees = formatPlayersForIds(ctx, initialNomineeIds);
+    if (nominees.length !== 2) throw new Error("Two Names Override requires two living nominees.");
+    const prompt = this.buildUserPrompt(ctx) + `
+## Two Names — Override
+${supplementalActiveFormatRule(ctx, "two_names")}
+
+You hold Override. Either decline and keep both nominees, or remove exactly one nominee.
+Current nominees: ${nominees.map((player) => player.name).join(", ")}
+
+If you use Override, Empowered will immediately name a legal replacement. Use the ${registration.decision.override.toolName} tool.`;
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const decodeProvider = (
+      value: TwoNamesOverrideProviderValue,
+    ): StructuredDomainDecodeResult<TwoNamesOverrideDomainValue> => {
+      if (!value.useOverride) {
+        if (value.removed !== null) {
+          return { status: "invalid", message: "removed must be null when Override is declined." };
+        }
+        const { useOverride: _useOverride, removed: _removed, ...rest } = value;
+        return { status: "valid", value: { ...rest, action: "decline", removedNomineeId: null } };
+      }
+      const issue = requireExactPlayerName(value.removed, nominees, "removed");
+      if (issue) return { status: "invalid", message: issue };
+      const removed = findByName(nominees, value.removed)!;
+      const { useOverride: _useOverride, removed: _removed, ...rest } = value;
+      return { status: "valid", value: { ...rest, action: "use", removedNomineeId: removed.id } };
+    };
+    const result = await this.callTool<TwoNamesOverrideProviderValue, TwoNamesOverrideDomainValue>(
+      prompt,
+      buildTwoNamesOverrideTool([nominees[0]!.name, nominees[1]!.name]),
+      mappedAgentToolSemanticDecoder(
+        registration.decision.override.traceAction,
+        decodeProvider,
+        (value, providerSchema) => {
+          const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+          const properties = domainSchema.properties as Record<string, unknown>;
+          delete properties.useOverride;
+          delete properties.removed;
+          properties.action = { type: "string", enum: ["decline", "use"] };
+          properties.removedNomineeId = {
+            type: ["string", "null"],
+            enum: [nominees[0]!.id, nominees[1]!.id, null],
+          };
+          domainSchema.required = (domainSchema.required as string[])
+            .filter((field) => field !== "useOverride" && field !== "removed")
+            .concat("action", "removedNomineeId");
+          const exact = validateExactStructuredValue(
+            domainSchema,
+            value,
+            `Accepted agent tool ${registration.decision.override.traceAction}`,
+          );
+          if (exact.status === "invalid") return exact;
+          const domain = value as TwoNamesOverrideDomainValue;
+          const consistent = domain.action === "decline"
+            ? domain.removedNomineeId === null
+            : nominees.some((player) => player.id === domain.removedNomineeId);
+          if (!consistent) {
+            return { status: "invalid", message: "Accepted Override action and removed nominee are inconsistent." };
+          }
+          return canonicalMappedAcceptedValue(
+            value,
+            `Accepted agent tool ${registration.decision.override.traceAction}`,
+            () => {
+              const { action: _action, removedNomineeId: _removedNomineeId, ...rest } = domain;
+              const removed = domain.action === "use"
+                ? nominees.find((player) => player.id === domain.removedNomineeId)!.name
+                : null;
+              return {
+                status: "valid",
+                value: { ...rest, useOverride: domain.action === "use", removed },
+              };
+            },
+            decodeProvider,
+          );
+        },
+      ),
+      120,
+      sys,
+      this.traceOptions(ctx, {
+        action: registration.decision.override.traceAction,
+        reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+        reasoningEffort: "low",
+      }),
+    );
+    const metadata = this.strategicDecisionMetadata(result, registration.decision.override.traceAction);
+    return {
+      action: result.action,
+      removedNomineeId: result.removedNomineeId,
+      thinking: result.thinking,
+      reasoningContext: result.reasoningContext,
+      ...metadata,
+      ...formatDecisionProvenance(true, registration.decision.override.invalidReason),
+    } as TwoNamesOverrideDecision;
+  }
+
+  private async getTwoNamesTargetDecision(
+    ctx: PhaseContext,
+    legalTargetIds: readonly UUID[],
+    action: "replacement" | "ballot" | "tiebreak",
+  ): Promise<TwoNamesTargetDecision> {
+    const registration = getFormatRegistration("two_names");
+    const descriptor = registration.decision[action];
+    const legalTargets = formatPlayersForIds(ctx, legalTargetIds);
+    const heading = action === "replacement"
+      ? "Replacement Nominee"
+      : action === "ballot"
+        ? "Sealed Exit Ballot"
+        : "Empowered Tiebreak";
+    const instruction = action === "replacement"
+      ? "Choose exactly one legal replacement nominee."
+      : action === "ballot"
+        ? "Vote privately for exactly one final nominee to exit."
+        : "Choose exactly one tied final nominee to exit.";
+    const prompt = this.buildUserPrompt(ctx) + `
+## Two Names — ${heading}
+${supplementalActiveFormatRule(ctx, "two_names")}
+
+${instruction}
+Legal choices: ${legalTargets.map((player) => player.name).join(", ")}
+
+Use the ${descriptor.toolName} tool.`;
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const decodeProvider = (
+      value: PlayerNameDecision<"target">,
+    ): StructuredDomainDecodeResult<PlayerIdDecision<"targetId">> => {
+      const issue = requireExactPlayerName(value.target, legalTargets, "target");
+      if (issue) return { status: "invalid", message: issue };
+      const { target: _target, ...rest } = value;
+      return { status: "valid", value: { ...rest, targetId: findByName(legalTargets, value.target)!.id } };
+    };
+    const result = await this.callTool<PlayerNameDecision<"target">, PlayerIdDecision<"targetId">>(
+      prompt,
+      buildTwoNamesTargetTool(action, legalTargets.map((player) => player.name)),
+      mappedAgentToolSemanticDecoder(
+        descriptor.traceAction,
+        decodeProvider,
+        (value, providerSchema) => {
+          const domainSchema = schemaWithPlayerIdField(providerSchema, "target", legalTargets);
+          renameStructuredSchemaProperty(domainSchema, "target", "targetId");
+          const exact = validateExactStructuredValue(
+            domainSchema,
+            value,
+            `Accepted agent tool ${descriptor.traceAction}`,
+          );
+          if (exact.status === "invalid") return exact;
+          const domain = value as PlayerIdDecision<"targetId">;
+          const player = legalTargets.find((candidate) => candidate.id === domain.targetId);
+          if (!player) return { status: "invalid", message: "targetId references an ineligible player." };
+          return canonicalMappedAcceptedValue(
+            value,
+            `Accepted agent tool ${descriptor.traceAction}`,
+            () => {
+              const { targetId: _targetId, ...rest } = domain;
+              return { status: "valid", value: { ...rest, target: player.name } };
+            },
+            decodeProvider,
+          );
+        },
+      ),
+      120,
+      sys,
+      this.traceOptions(ctx, {
+        action: descriptor.traceAction,
+        reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+        reasoningEffort: "low",
+      }),
+    );
+    const metadata = this.strategicDecisionMetadata(result, descriptor.traceAction);
+    return {
+      targetId: result.targetId,
+      thinking: result.thinking,
+      reasoningContext: result.reasoningContext,
+      ...metadata,
+      ...formatDecisionProvenance(true, descriptor.invalidReason),
+    };
+  }
+
+  async getTwoNamesReplacement(
+    ctx: PhaseContext,
+    legalReplacementIds: UUID[],
+  ): Promise<TwoNamesTargetDecision> {
+    return this.getTwoNamesTargetDecision(ctx, legalReplacementIds, "replacement");
+  }
+
+  async getTwoNamesBallot(
+    ctx: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision> {
+    return this.getTwoNamesTargetDecision(ctx, finalistIds, "ballot");
+  }
+
+  async breakTwoNamesTie(
+    ctx: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision> {
+    return this.getTwoNamesTargetDecision(ctx, finalistIds, "tiebreak");
+  }
+
+  async getTwoNamesPlea(
+    ctx: PhaseContext,
+    finalistIds: [UUID, UUID],
+    options?: AgentCallOptions,
+  ): Promise<AgentResponse> {
+    const registration = getFormatRegistration("two_names");
+    const finalists = formatPlayersForIds(ctx, finalistIds);
+    if (!finalists.some((player) => player.id === ctx.selfId)) {
+      throw new Error("Only a final Two Names nominee may make a plea.");
+    }
+    const opponent = finalists.find((player) => player.id !== ctx.selfId);
+    if (!opponent) throw new Error("Two Names plea requires two living finalists.");
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Two Names — Public Plea
+${supplementalActiveFormatRule(ctx, "two_names")}
+
+You are one of the final nominees. Make a direct public case for why the other players should keep you over ${opponent.name}.
+Keep it to 2-3 sentences. Do not invent votes or hidden information.`;
+    return this.callLLMWithThinking(
+      prompt,
+      200,
+      sys,
+      this.traceOptions(ctx, {
+        action: registration.decision.plea.traceAction,
+        reasoningEffort: "medium",
+        signal: options?.signal,
+      }),
+    );
+  }
+
   async getBouncePointer(
     ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
@@ -5962,6 +6339,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     "format-majority-elimination-ballot",
     "format-even-votes-ballot",
     "format-restricted-history-ballot",
+    "format-two-names-initial-names",
+    "format-two-names-override",
+    "format-two-names-replacement",
+    "format-two-names-ballot",
+    "format-two-names-tiebreak",
+    "format-two-names-plea",
     "bounce-pointer",
     "format-safety-bounce-vote",
     "format-tiebreak",

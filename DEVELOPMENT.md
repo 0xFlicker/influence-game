@@ -453,7 +453,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --model <lm-studio-model-id> --llm-timeout-sec 300
 ```
 
-Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. New games omit the optional manifest by default and freeze all six formats: Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE` on two-card rounds; no standard-round Power/Council elimination; exercised `format-pick`, `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; each exited player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. The Short List must preserve zero-safe/fewest-positive reasoning; Highest Count must use highest-total reasoning; Even Votes must reason about parity, zero-as-even, and the all-odd empowered fallback; Restricted History must exclude prior EXIT targets, preserve prior SAVE targets, and remain unavailable in rounds 1–2. For Safety Bounce, explicitly confirm that every SAFE actor understands its target becomes VULNERABLE and every VULNERABLE actor understands its target becomes SAFE; contradictory reasoning fails the check even when `response.classification` is canonically correct. Random two-card rounds do not prove catalog coverage: append `--formats <canonical-id>` for a separate bounded one-format run when a round-1-eligible card needs proof. That run must emit `format.selected` without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Restricted History requires a round-3 bounded run with at least one round-1-eligible companion format; a Restricted-History-only manifest is invalid. Two or more currently available ids retain the normal two-card menu. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default. Summary `endgameType`, stage-event counts, accepted jury-question counts, and accepted jury-ballot counts come from `game-1-events.jsonl`; transcript/House banner copy cannot change them. Canonical simulation IDs remain `save_or_eliminate`, `vote_bomb`, and `majority_elimination`; provider and MCP surfaces use `save_or_exit`, `short_list`, and `highest_count`.
+Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. New games omit the optional manifest by default and freeze all seven formats: Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, Restricted History, and Two Names. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE` on two-card rounds; no standard-round Power/Council elimination; exercised format decisions have useful thinking and `decisionSource: "llm"`; each exited player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. Two Names proof requires at least five living players and must show canonical nominations, Override decline or atomic use-plus-replacement, one or two keyed Mingles as appropriate, two plea outcomes, only eligible ordinary ballots, and an Empowered tie-break only on an exact tie. Random two-card rounds do not prove catalog coverage: append `--formats <canonical-id>` for a separate bounded one-format run when a round-1-eligible card needs proof. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. Whole-game timeout is off by default. Canonical simulation IDs remain durable event authority; provider and MCP surfaces use their current product vocabulary.
 
 The fuller checklist and triage live in `docs/local-model-evaluation.md`.
 
@@ -594,10 +594,14 @@ bun run dev:web
 bun run dev:render-worker
 ```
 
-Run those three `dev:*` commands in separate terminals. They wrap Doppler's
+Run those `dev:*` commands in separate terminals. They wrap Doppler's
 `social-strategy-agent/dev` config themselves and share the local trailer token,
-API origin, and filesystem upload directory. The worker has no listening port;
-it polls the API and is required for admin trailer jobs to advance beyond
+API origin, and filesystem upload directory. `dev:api` is a non-claiming
+gateway. `bun run dev:game-worker` directly starts a claiming worker on port
+3002 against the same development database; use `PORT=3003` for another worker
+on the same machine and stop workers with Ctrl-C. Per-game owner leases prevent
+two workers from committing the same game. The render worker has no listening
+port; it polls the API and is required for admin trailer jobs to advance beyond
 `Queued`. Use the corresponding `*:service` scripts only when the shell or
 container already supplies its environment.
 
@@ -696,9 +700,9 @@ Use `--force` at the end of the same command only for a full repair refresh.
 
 ### Statefulness Risk
 
-Current API games execute as atomic durable logical turns. A normal local API reload adopts each unfinished `in_progress` game under a fresh owner epoch and continues from its committed XState snapshot and typed cursor. Scratch canonical events, transcript rows, player continuity, House summary/notebook state, and viewer publications commit together; accepted provider values can replay without repeating an accepted game effect. Do not cancel, rewind, or drain an active game for an ordinary reload. A supported pre-logical-turn game is cut over once from its exact validated checkpoint without changing its canonical event log.
+Current API games execute as atomic durable logical turns. The gateway is non-claiming: only a dedicated game worker may acquire or renew a per-game owner epoch and continue an unfinished `in_progress` game from its committed XState snapshot and typed cursor. Scratch canonical events, transcript rows, player continuity, House summary/notebook state, and viewer publications commit together; accepted provider values can replay without repeating an accepted game effect. Do not cancel, rewind, or force-expire a healthy active game for an ordinary gateway reload. A supported pre-logical-turn game is cut over once from its exact validated checkpoint without changing its canonical event log.
 
-Checkpoint capsules and hydration passports remain forensic data for historical runs. They are not selected by current runtime startup. Historical gameplay without logical-turn authority and corrupt/contradictory durable rows are not automatically repaired. Multi-worker execution also remains out of scope even though owner epochs fence stale writers. Treat `docs/statefulness-plan.md` as the exact operating contract.
+Checkpoint capsules and hydration passports remain forensic data for historical runs. They are not selected by current runtime startup. Historical gameplay without logical-turn authority and corrupt/contradictory durable rows are not automatically repaired. Multiple game workers are supported through per-game owner epochs; they may run distinct games concurrently but never share one game. Treat `docs/deployment/game-worker-operations.md` as the runtime operating contract.
 
 ## Pre-Commit Checklist
 

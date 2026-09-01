@@ -28,7 +28,7 @@ afterEach(() => {
   activeWindow = null;
 });
 
-describe("new game provider route", () => {
+describe("new game form", () => {
   test("shows Primary and fallbacks with approved models and Adaptive reasoning", async () => {
     installDom();
     globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
@@ -83,6 +83,82 @@ describe("new game provider route", () => {
       { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
       { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
     ]);
+    expect(createBody.formatManifest).toEqual([
+      "save_or_eliminate",
+      "vote_bomb",
+      "safety_bounce",
+      "majority_elimination",
+      "even_votes",
+      "restricted_history",
+      "two_names",
+    ]);
+  });
+
+  test("selects a single format and submits it as the frozen rotation", async () => {
+    installDom();
+    const createBodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (request, init) => {
+      if (String(request).endsWith("/api/provider-models")) {
+        return jsonResponse(providerInventory());
+      }
+      createBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ id: "game-1", slug: "bright-coral-moon" }, 201);
+    }) as typeof fetch;
+
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(7));
+    expect(mounted.getAllByRole("checkbox").every((checkbox) => (
+      checkbox.getAttribute("aria-checked") === "true"
+    ))).toBe(true);
+
+    fireEvent.click(mounted.getByRole("button", { name: "Only Highest Count" }));
+    expect(mounted.getByText("1/7 selected")).not.toBeNull();
+    fireEvent.click(mounted.getByRole("checkbox", { name: "Highest Count" }));
+    expect(mounted.getByText("1/7 selected")).not.toBeNull();
+    fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
+
+    await waitFor(() => expect(pushed).toEqual(["/games/bright-coral-moon"]));
+    expect(createBodies[0]?.formatManifest).toEqual(["majority_elimination"]);
+  });
+
+  test("explains Restricted History eligibility from the selected player count", async () => {
+    installDom();
+    globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
+
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getByText("Unavailable with 6 players")).not.toBeNull());
+    expect(
+      (mounted.getByRole("button", { name: "Only Restricted History" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    fireEvent.click(mounted.getByRole("button", { name: "8" }));
+    expect(mounted.getByText("8+ players")).not.toBeNull();
+  });
+
+  test("requires an opening-round format when Restricted History is the only selection", async () => {
+    installDom();
+    let createRequestCount = 0;
+    globalThis.fetch = (async (request) => {
+      if (String(request).endsWith("/api/provider-models")) {
+        return jsonResponse(providerInventory());
+      }
+      createRequestCount += 1;
+      return jsonResponse({ id: "game-1", slug: "bright-coral-moon" }, 201);
+    }) as typeof fetch;
+
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(7));
+    fireEvent.click(mounted.getByRole("button", { name: "Only Save-or-Exit" }));
+    fireEvent.click(mounted.getByRole("checkbox", { name: "Restricted History" }));
+    fireEvent.click(mounted.getByRole("checkbox", { name: "Save-or-Exit" }));
+
+    expect(mounted.getByRole("alert").textContent).toContain(
+      "Select at least one format available in the opening round",
+    );
+    fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
+    expect(createRequestCount).toBe(0);
+    expect(pushed).toEqual([]);
   });
 
   test("does not add unconfigured fallback providers to a new game's default route", async () => {

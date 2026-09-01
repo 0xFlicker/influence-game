@@ -290,10 +290,11 @@ export default function RulesPage() {
           <SubSection title="5. Format Selection">
             <P>
               Each game freezes a non-empty format manifest when it is created.
-              Omitting that optional manifest uses all six default formats:
+              Omitting that optional manifest uses all seven default formats:
               Save-or-Exit, The Short List, Safety Bounce, Highest Count,
-              Even Votes, and Restricted History. Restricted
-              History cannot appear in rounds 1 or 2.
+              Even Votes, Restricted History, and Two Names. Restricted
+              History cannot appear in rounds 1 or 2. Two Names is available
+              only while at least five players remain.
             </P>
             <P>
               With two or more formats available that round, The House offers exactly two distinct
@@ -376,6 +377,17 @@ export default function RulesPage() {
                 ballots do not consume history. A player with no legal target
                 forfeits their ballot. Most votes is eliminated; the empowered
                 player breaks highest-total ties.
+              </li>
+              <li>
+                <Em>Two Names (5+ players)</Em>: Empowered publicly nominates
+                two players, then The House draws a different living player to
+                hold Override. After the first Format Mingle, the holder may
+                decline or remove one nominee. If Override is used, Empowered
+                immediately names a legal replacement and the final pair gets
+                another Format Mingle. Each finalist then makes one public plea.
+                Only living players who are neither Empowered nor a finalist
+                cast a sealed vote for one finalist to exit. The higher total
+                exits; Empowered breaks an exact tie.
               </li>
             </ul>
             <P>

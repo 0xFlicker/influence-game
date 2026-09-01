@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import type { ProviderProfileId } from "./model-catalog";
-import type { Phase, UUID } from "./types";
+import { Phase, type UUID } from "./types";
 
 export const PROVIDER_ATTEMPT_HEADER = "x-influence-provider-attempt-id";
 const INTERNAL_TRANSPORT_HEADERS = new Set([
@@ -30,6 +30,41 @@ export type ProviderAttemptFailureKind =
   | "wrong_tool"
   | "undecodable_structured_output";
 
+export type ProviderSemanticCoordinateV1 =
+  | {
+      version: 1;
+      kind: "phase_call";
+      phase: Phase;
+      round: number;
+      canonicalEventSequence: number;
+      callSlot: number;
+    }
+  | {
+      version: 1;
+      kind: "diary_exchange";
+      sessionEventSequence: number;
+      playerId: UUID;
+      exchangeOrdinal: number;
+    }
+  | {
+      version: 1;
+      kind: "alliance_huddle";
+      scheduleId: string;
+      exchangeOrdinal: number;
+    }
+  | {
+      version: 1;
+      kind: "durable_turn";
+      turnId: string;
+      subcallSlot: number;
+    }
+  | {
+      version: 1;
+      kind: "provider_health";
+      providerProfileId: string;
+      revision: number;
+    };
+
 export interface ProviderLogicalCallCoordinate {
   gameId?: UUID;
   ownerEpoch?: string;
@@ -41,37 +76,152 @@ export interface ProviderLogicalCallCoordinate {
   action: string;
   phase?: Phase;
   round?: number;
-  /** Phase-owned ordinal for calls sharing the same actor/action boundary. */
-  logicalCallOrdinal: number;
+  /** Closed, versioned semantic identity for this one logical provider call. */
+  semantic: ProviderSemanticCoordinateV1;
   /** Planned durable turn identity. Present only while a turn-scoped call is active. */
   durableTurn?: {
     turnId: string;
     subcallSlot: number;
-    logicalCallId: string;
   };
 }
 
-export function pairProviderLogicalCallOrdinals(
-  leftOrdinal: number,
-  rightOrdinal: number,
-): number {
-  if (
-    !Number.isSafeInteger(leftOrdinal) ||
-    leftOrdinal < 1 ||
-    !Number.isSafeInteger(rightOrdinal) ||
-    rightOrdinal < 1
-  ) {
-    throw new Error("Provider logical-call ordinals must be positive safe integers");
+export function canonicalProviderSemanticCoordinate(
+  coordinate: ProviderSemanticCoordinateV1,
+): string {
+  assertProviderSemanticCoordinate(coordinate);
+  switch (coordinate.kind) {
+    case "phase_call":
+      return JSON.stringify({
+        version: 1,
+        kind: coordinate.kind,
+        phase: coordinate.phase,
+        round: coordinate.round,
+        canonicalEventSequence: coordinate.canonicalEventSequence,
+        callSlot: coordinate.callSlot,
+      });
+    case "diary_exchange":
+      return JSON.stringify({
+        version: 1,
+        kind: coordinate.kind,
+        sessionEventSequence: coordinate.sessionEventSequence,
+        playerId: coordinate.playerId,
+        exchangeOrdinal: coordinate.exchangeOrdinal,
+      });
+    case "alliance_huddle":
+      return JSON.stringify({
+        version: 1,
+        kind: coordinate.kind,
+        scheduleId: coordinate.scheduleId,
+        exchangeOrdinal: coordinate.exchangeOrdinal,
+      });
+    case "durable_turn":
+      return JSON.stringify({
+        version: 1,
+        kind: coordinate.kind,
+        turnId: coordinate.turnId,
+        subcallSlot: coordinate.subcallSlot,
+      });
+    case "provider_health":
+      return JSON.stringify({
+        version: 1,
+        kind: coordinate.kind,
+        providerProfileId: coordinate.providerProfileId,
+        revision: coordinate.revision,
+      });
   }
+}
 
-  const leftIndex = leftOrdinal - 1;
-  const rightIndex = rightOrdinal - 1;
-  const diagonal = leftIndex + rightIndex;
-  const paired = (diagonal * (diagonal + 1)) / 2 + rightIndex + 1;
-  if (!Number.isSafeInteger(paired)) {
-    throw new Error("Provider logical-call coordinate exceeds safe integer range");
+export function providerSemanticCoordinateHash(
+  coordinate: ProviderSemanticCoordinateV1,
+): string {
+  return `sha256:${createHash("sha256")
+    .update(canonicalProviderSemanticCoordinate(coordinate))
+    .digest("hex")}`;
+}
+
+export function durableProviderLogicalCallId(input: {
+  gameId: string;
+  turnId: string;
+  subcallSlot: number;
+}): string {
+  const semantic: ProviderSemanticCoordinateV1 = {
+    version: 1,
+    kind: "durable_turn",
+    turnId: input.turnId,
+    subcallSlot: input.subcallSlot,
+  };
+  return `sha256:${createHash("sha256").update(JSON.stringify({
+    domain: "influence.provider.logical-call.v2",
+    gameId: input.gameId,
+    semantic: canonicalProviderSemanticCoordinate(semantic),
+  })).digest("hex")}`;
+}
+
+export function assertProviderSemanticCoordinate(
+  coordinate: ProviderSemanticCoordinateV1,
+): void {
+  const exactFields = (fields: readonly string[]) => {
+    if (!coordinate || typeof coordinate !== "object") {
+      throw new Error("Provider semantic coordinate must be an object");
+    }
+    const actual = Object.keys(coordinate).sort();
+    const expected = [...fields].sort();
+    if (actual.length !== expected.length || actual.some((field, index) => field !== expected[index])) {
+      throw new Error("Provider semantic coordinate fields are not exact");
+    }
+  };
+  const positiveInteger = (value: unknown, field: string) => {
+    if (!Number.isSafeInteger(value) || (value as number) < 1) {
+      throw new Error(`Provider semantic coordinate ${field} must be a positive safe integer`);
+    }
+  };
+  const nonNegativeInteger = (value: unknown, field: string) => {
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+      throw new Error(`Provider semantic coordinate ${field} must be a non-negative safe integer`);
+    }
+  };
+  const nonBlank = (value: unknown, field: string) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      throw new Error(`Provider semantic coordinate ${field} must be a non-blank string`);
+    }
+  };
+  if (!coordinate || coordinate.version !== 1) {
+    throw new Error("Provider semantic coordinate version must be 1");
   }
-  return paired;
+  switch (coordinate.kind) {
+    case "phase_call":
+      exactFields(["version", "kind", "phase", "round", "canonicalEventSequence", "callSlot"]);
+      if (!Object.values(Phase).includes(coordinate.phase)) {
+        throw new Error("Provider semantic coordinate phase_call phase is invalid");
+      }
+      nonNegativeInteger(coordinate.round, "round");
+      nonNegativeInteger(coordinate.canonicalEventSequence, "canonicalEventSequence");
+      positiveInteger(coordinate.callSlot, "callSlot");
+      return;
+    case "diary_exchange":
+      exactFields(["version", "kind", "sessionEventSequence", "playerId", "exchangeOrdinal"]);
+      nonNegativeInteger(coordinate.sessionEventSequence, "sessionEventSequence");
+      nonBlank(coordinate.playerId, "playerId");
+      positiveInteger(coordinate.exchangeOrdinal, "exchangeOrdinal");
+      return;
+    case "alliance_huddle":
+      exactFields(["version", "kind", "scheduleId", "exchangeOrdinal"]);
+      nonBlank(coordinate.scheduleId, "scheduleId");
+      positiveInteger(coordinate.exchangeOrdinal, "exchangeOrdinal");
+      return;
+    case "durable_turn":
+      exactFields(["version", "kind", "turnId", "subcallSlot"]);
+      nonBlank(coordinate.turnId, "turnId");
+      positiveInteger(coordinate.subcallSlot, "subcallSlot");
+      return;
+    case "provider_health":
+      exactFields(["version", "kind", "providerProfileId", "revision"]);
+      nonBlank(coordinate.providerProfileId, "providerProfileId");
+      positiveInteger(coordinate.revision, "revision");
+      return;
+    default:
+      throw new Error("Provider semantic coordinate kind is invalid");
+  }
 }
 
 export interface ProviderPreparedRequest {

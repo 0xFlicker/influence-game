@@ -35,7 +35,7 @@ import {
 import { resolveFormatManifest } from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseGameplaySummaryContext, HouseGameplaySummaryResult, HouseSummaryKind, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseGameplaySummaryContext, HouseGameplaySummaryResult, HouseSummaryKind, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, TwoNamesInitialNamesDecision, TwoNamesOverrideDecision, TwoNamesTargetDecision } from "./game-runner.types";
 export type {
   HouseNarrativeTurnContext,
   HouseSummaryAttemptResult,
@@ -86,6 +86,7 @@ import type {
   GameExecutionCursorV1,
   GameTurnIntentV1,
 } from "./durable-game-turn";
+import { durableProviderSemanticCoordinateForSubcall } from "./durable-game-turn";
 import {
   buildTurnCommitDraft,
   capturePlayerContinuity,
@@ -159,6 +160,16 @@ import {
   resolveEmpowerRevote,
   tallyEmpowerVote,
 } from "./phases/vote";
+import {
+  runTwoNamesBallots,
+  runTwoNamesMingleWindow,
+  runTwoNamesOverrideTransition,
+  runTwoNamesPlea,
+  runTwoNamesResolution,
+  runTwoNamesSetup,
+} from "./phases/two-names";
+import { projectTwoNamesRound } from "./formats/two-names-events";
+import { resolveTwoNames } from "./formats/two-names";
 
 // ---------------------------------------------------------------------------
 // Game Runner
@@ -1255,6 +1266,7 @@ export class GameRunner {
       intent.providerSubcalls.filter(
         (subcall) => subcall.actorId !== null && boundProviderActorIds.has(subcall.actorId),
       ),
+      intent.turnId,
     );
     const actorCoordinate = this.actorCoordinateFromDurableSnapshot(base);
     const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
@@ -1360,16 +1372,31 @@ export class GameRunner {
       agent.setDurableProviderTurnBinding({
         turnId: intent.turnId,
         subcallSlot: subcall.slot,
-        logicalCallId: subcall.logicalCallId,
+        semanticCoordinate: structuredClone(
+          durableProviderSemanticCoordinateForSubcall(intent.turnId, subcall),
+        ),
       });
       boundAgents.push(agent);
       boundProviderActorIds.add(subcall.actorId);
     }
+    this.houseInterviewer.setDurableProviderTurnBindings?.(
+      intent.providerSubcalls
+        .filter((subcall) => subcall.actorId === null)
+        .map((subcall) => ({
+          action: subcall.action,
+          turnId: intent.turnId,
+          subcallSlot: subcall.slot,
+          semanticCoordinate: structuredClone(
+            durableProviderSemanticCoordinateForSubcall(intent.turnId, subcall),
+          ),
+        })),
+    );
     let scratch: ReturnType<GameRunner["createDurableScratch"]>;
     try {
       scratch = this.createDurableScratch(intent, boundProviderActorIds);
     } catch (error) {
       for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+      this.houseInterviewer.setDurableProviderTurnBindings?.([]);
       throw error;
     }
     let effects: StagedTurnEffects;
@@ -1393,6 +1420,7 @@ export class GameRunner {
     } finally {
       scratch.stop();
       for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
+      this.houseInterviewer.setDurableProviderTurnBindings?.([]);
     }
     const draft = buildTurnCommitDraft({
       base,
@@ -1706,7 +1734,127 @@ export class GameRunner {
           }],
         }, async (ctx, scratchActor) => {
           await runFormatPickPhase(ctx, scratchActor);
-          return { version: 1, kind: "phase_enter", actor: "format_mingle" };
+          return ctx.formatKernelState.selectedFormat === "two_names"
+            ? {
+                version: 1,
+                kind: "two_names",
+                progress: { version: 1, stage: "setup", pleaIndex: 0 },
+              }
+            : { version: 1, kind: "phase_enter", actor: "format_mingle" };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "setup") {
+        const empoweredId = this.gameState.empoweredId;
+        if (!empoweredId) throw new Error("Two Names setup cursor has no Empowered player");
+        await this.executeDurableTurn({
+          branch: "single_provider",
+          action: "two-names-setup",
+          actorIds: [empoweredId],
+          targetIds: this.gameState.getAlivePlayerIds().filter((id) => id !== empoweredId),
+          providerActions: [{
+            actorId: empoweredId,
+            action: "format-two-names-initial-names",
+            contractId: "agent-two-names-initial-names-v1",
+          }],
+        }, async (ctx) => {
+          await runTwoNamesSetup(ctx);
+          return {
+            version: 1,
+            kind: "two_names",
+            progress: { version: 1, stage: "initial_mingle", pleaIndex: 0 },
+          };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "initial_mingle") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "two-names-initial-mingle",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          handles: ["initial_names"],
+          providerActions: [
+            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
+            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
+            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
+          ],
+        }, async (ctx, scratchActor) => {
+          await runTwoNamesMingleWindow(ctx, scratchActor, "initial_names");
+          return {
+            version: 1,
+            kind: "two_names",
+            progress: { version: 1, stage: "override", pleaIndex: 0 },
+          };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "override") {
+        const current = projectTwoNamesRound(
+          this.gameState.getCanonicalEvents(),
+          this.gameState.round,
+          this.gameState.getAlivePlayerIds(),
+        );
+        if (!current?.overrideHolderId) throw new Error("Two Names Override cursor is missing its holder");
+        await this.executeDurableTurn({
+          branch: "single_provider",
+          action: "two-names-override-transition",
+          actorIds: [...new Set([current.overrideHolderId, current.empoweredId])],
+          targetIds: current.initialNomineeIds ? [...current.initialNomineeIds] : [],
+          providerActions: [
+            {
+              actorId: current.overrideHolderId,
+              action: "format-two-names-override",
+              contractId: "agent-two-names-override-v1",
+            },
+            {
+              actorId: current.empoweredId,
+              action: "format-two-names-replacement",
+              contractId: "agent-two-names-replacement-v1",
+            },
+          ],
+        }, async (ctx, scratchActor) => {
+          const outcome = await runTwoNamesOverrideTransition(ctx);
+          if (outcome === "used") {
+            return {
+              version: 1,
+              kind: "two_names",
+              progress: { version: 1, stage: "final_mingle", pleaIndex: 0 },
+            };
+          }
+          scratchActor.send({ type: "PHASE_COMPLETE" });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return {
+            version: 1,
+            kind: "two_names",
+            progress: { version: 1, stage: "plea", pleaIndex: 0 },
+          };
+        });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "final_mingle") {
+        await this.executeDurableTurn({
+          branch: "engine",
+          action: "two-names-final-mingle",
+          actorIds: this.gameState.getAlivePlayerIds(),
+          handles: ["final_names"],
+          providerActions: [
+            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
+            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
+            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
+          ],
+        }, async (ctx, scratchActor) => {
+          await runTwoNamesMingleWindow(ctx, scratchActor, "final_names");
+          scratchActor.send({ type: "PHASE_COMPLETE" });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          return {
+            version: 1,
+            kind: "two_names",
+            progress: { version: 1, stage: "plea", pleaIndex: 0 },
+          };
         });
         continue;
       }
@@ -1725,6 +1873,120 @@ export class GameRunner {
             throw new Error("Format Mingle did not advance its scratch actor to format_resolve");
           }
           return { version: 1, kind: "phase_enter", actor: "format_resolve" };
+        });
+        continue;
+      }
+
+      if (phase === "format_resolve" && cursor.kind === "two_names" && cursor.progress.stage === "plea") {
+        const current = projectTwoNamesRound(
+          this.gameState.getCanonicalEvents(),
+          this.gameState.round,
+          this.gameState.getAlivePlayerIds(),
+        );
+        if (cursor.progress.pleaIndex > 1) {
+          throw new Error("Two Names plea cursor is missing its ordered finalist");
+        }
+        const ordinal = cursor.progress.pleaIndex as 0 | 1;
+        const finalistId = current?.finalistPlayerIds?.[ordinal];
+        if (!finalistId) throw new Error("Two Names plea cursor is missing its ordered finalist");
+        await this.executeDurableTurn({
+          branch: "single_provider",
+          action: `two-names-plea-${ordinal + 1}`,
+          actorIds: [finalistId],
+          providerActions: [{
+            actorId: finalistId,
+            action: "format-two-names-plea",
+            contractId: "agent-two-names-plea-v1",
+          }],
+        }, async (ctx) => {
+          await runTwoNamesPlea(ctx, ordinal);
+          return ordinal === 0
+            ? {
+                version: 1,
+                kind: "two_names",
+                progress: { version: 1, stage: "plea", pleaIndex: 1 },
+              }
+            : {
+                version: 1,
+                kind: "two_names",
+                progress: { version: 1, stage: "ballots", pleaIndex: 2 },
+              };
+        });
+        continue;
+      }
+
+      if (phase === "format_resolve" && cursor.kind === "two_names" && cursor.progress.stage === "ballots") {
+        const current = projectTwoNamesRound(
+          this.gameState.getCanonicalEvents(),
+          this.gameState.round,
+          this.gameState.getAlivePlayerIds(),
+        );
+        if (!current?.finalistPlayerIds) throw new Error("Two Names ballot cursor is missing finalists");
+        await this.executeDurableTurn({
+          branch: "parallel_provider_batch",
+          action: "two-names-ballots",
+          actorIds: current.eligibleVoterIds,
+          targetIds: [...current.finalistPlayerIds],
+          providerActions: current.eligibleVoterIds.map((actorId) => ({
+            actorId,
+            action: "format-two-names-ballot",
+            contractId: "agent-two-names-ballot-v1",
+          })),
+        }, async (ctx) => {
+          await runTwoNamesBallots(ctx);
+          const accepted = projectTwoNamesRound(
+            ctx.gameState.getCanonicalEvents(),
+            ctx.gameState.round,
+            ctx.gameState.getAlivePlayerIds(),
+          );
+          if (!accepted?.finalistPlayerIds) throw new Error("Two Names ballots did not preserve finalists");
+          const outcome = resolveTwoNames(
+            accepted.finalistPlayerIds,
+            accepted.eligibleVoterIds,
+            accepted.ballots,
+          );
+          return {
+            version: 1,
+            kind: "two_names",
+            progress: {
+              version: 1,
+              stage: outcome.kind === "tie" ? "tiebreak" : "resolve",
+              pleaIndex: 2,
+            },
+          };
+        });
+        continue;
+      }
+
+      if (
+        phase === "format_resolve"
+        && cursor.kind === "two_names"
+        && (cursor.progress.stage === "tiebreak" || cursor.progress.stage === "resolve")
+      ) {
+        const current = projectTwoNamesRound(
+          this.gameState.getCanonicalEvents(),
+          this.gameState.round,
+          this.gameState.getAlivePlayerIds(),
+        );
+        if (!current?.finalistPlayerIds) throw new Error("Two Names resolution cursor is missing finalists");
+        const tied = cursor.progress.stage === "tiebreak";
+        await this.executeDurableTurn({
+          branch: tied ? "single_provider" : "engine",
+          action: tied ? "two-names-tiebreak-and-resolve" : "two-names-resolve",
+          actorIds: [current.empoweredId],
+          targetIds: [...current.finalistPlayerIds],
+          providerActions: tied ? [{
+            actorId: current.empoweredId,
+            action: "format-two-names-tiebreak",
+            contractId: "agent-two-names-tiebreak-v1",
+          }] : [],
+          houseBeat: this.requireHouseBeat("format_resolve"),
+        }, async (ctx, scratchActor) => {
+          await runTwoNamesResolution(ctx, scratchActor);
+          if (this.config.diaryRoomAfterPhases?.includes(Phase.FORMAT_RESOLVE)) {
+            await ctx.diaryRoom.runDiaryRoom(Phase.FORMAT_RESOLVE);
+          }
+          return this.cursorAfterFormatResolve(scratchActor);
         });
         continue;
       }
@@ -1961,8 +2223,10 @@ export class GameRunner {
         await runFormatPickPhase(prc, actor);
       } else if (state === "format_mingle") {
         await runFormatMinglePhase(prc, actor, { completePhase: false });
-        await runAllianceFormationPhase(prc);
-        await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
+        if (prc.formatKernelState.selectedFormat !== "two_names") {
+          await runAllianceFormationPhase(prc);
+          await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
+        }
       } else if (state === "format_resolve") {
         await runFormatResolvePhase(prc, actor);
         await this.runConfiguredDiaryRoom(Phase.FORMAT_RESOLVE);

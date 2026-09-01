@@ -18,6 +18,7 @@ describe("format surface vocabulary", () => {
     expect(formatSurfaceId("save_or_eliminate")).toBe("save_or_exit");
     expect(formatSurfaceId("vote_bomb")).toBe("short_list");
     expect(formatSurfaceId("majority_elimination")).toBe("highest_count");
+    expect(formatSurfaceId("two_names")).toBe("two_names");
   });
 
   it("maps current surface ids back to canonical authority and rejects unknown ids", () => {

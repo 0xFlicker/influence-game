@@ -20,6 +20,7 @@ import {
   revokeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
+import { startGameExecutionWorkerRuntime } from "../services/game-execution-worker.js";
 import { runPendingDeploymentRecoveryReconciliation } from "../services/deployment-recovery-reconciliation.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -346,6 +347,54 @@ describe("deployment admission lease", () => {
 });
 
 describe("deployment controller API", () => {
+  test("reports a specific game worker's drain acknowledgement instead of global game count", async () => {
+    process.env.JWT_SECRET = "deployment-admission-test-secret";
+    const db = await setupTestDB();
+    const gatewayApp = new Hono();
+    gatewayApp.route("/", createDeploymentControlRoutes(db));
+    const token = await createDeploymentControlToken("6h");
+    const unavailable = await gatewayApp.request(
+      "/api/internal/deployment-control/game-worker-drain-status",
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toEqual({
+      error: "This API runtime is not an active game worker",
+      code: "game_worker_not_running",
+      retryable: false,
+    });
+
+    const worker = startGameExecutionWorkerRuntime();
+    const app = new Hono();
+    app.route("/", createDeploymentControlRoutes(db, {
+      gameWorkerDrainStatus: () => worker.getDrainStatus(),
+    }));
+
+    expect((await app.request("/api/internal/deployment-control/game-worker-drain-status")).status).toBe(401);
+    const response = await app.request("/api/internal/deployment-control/game-worker-drain-status", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(expect.objectContaining({
+      state: "claiming",
+      observedLease: null,
+      ownedGameCount: null,
+    }));
+
+    const lease = { id: randomUUID(), fencingToken: 4, phase: "draining" as const };
+    await worker.acknowledgeDrain(lease, async () => 0);
+    const drained = await app.request("/api/internal/deployment-control/game-worker-drain-status", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(await drained.json()).toEqual(expect.objectContaining({
+      state: "drained",
+      observedLease: { id: lease.id, fencingToken: lease.fencingToken },
+      claimsStoppedAt: expect.any(String),
+      ownedGameCount: 0,
+    }));
+  });
+
   test("accepts only the explicit service token type, audience, subject, and permission", async () => {
     process.env.JWT_SECRET = "deployment-admission-test-secret";
     const db = await setupTestDB();

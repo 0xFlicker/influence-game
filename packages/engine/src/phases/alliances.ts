@@ -648,7 +648,6 @@ async function completeHuddleSession(
   phase: AllianceHuddlePhase,
   alliance: AllianceRecord,
   schedule: AllianceHuddleScheduleRecord,
-  providerLogicalCallOrdinal: number,
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
@@ -763,7 +762,7 @@ async function completeHuddleSession(
     round: schedule.round,
     phase,
     window: schedule.window,
-    providerLogicalCallOrdinal,
+    scheduleId: schedule.id,
     alliance: {
       id: alliance.id,
       name: alliance.name,
@@ -957,7 +956,9 @@ export async function runAllianceHuddleWindow(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
   phase: AllianceHuddlePhase,
+  options: { completePhase?: boolean } = {},
 ): Promise<void> {
+  const completePhase = options.completePhase ?? true;
   const label = phase === Phase.FORMAT_MINGLE
     ? "POST-FORMAT ALLIANCE HUDDLES"
     : phase === Phase.PRE_VOTE_HUDDLE
@@ -971,8 +972,10 @@ export async function runAllianceHuddleWindow(
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
   const window = huddleWindowForPhase(phase);
   if (eligible.length === 0) {
-    actor.send({ type: "PHASE_COMPLETE" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (completePhase) {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     return;
   }
   const eligibleById = new Map(eligible.map((alliance) => [alliance.id, alliance]));
@@ -1033,7 +1036,7 @@ export async function runAllianceHuddleWindow(
         ?? "The House did not grant this alliance huddle time in the current scarce window.",
     }));
 
-  for (const [scheduledIndex, { alliance, rationale, pass }] of scheduled.entries()) {
+  for (const { alliance, rationale, pass } of scheduled) {
     const schedule = huddleScheduleRecord({
       alliance,
       window,
@@ -1046,7 +1049,7 @@ export async function runAllianceHuddleWindow(
     await assertCanAcceptCommit(ctx);
     ctx.gameState.recordAllianceHuddleSchedule(schedule);
     emitHuddleScheduleTurn(ctx, phase, schedule);
-    await completeHuddleSession(ctx, phase, alliance, schedule, scheduledIndex + 1);
+    await completeHuddleSession(ctx, phase, alliance, schedule);
   }
 
   for (const { alliance, rationale } of skipped) {
@@ -1064,6 +1067,8 @@ export async function runAllianceHuddleWindow(
     emitHuddleScheduleTurn(ctx, phase, schedule);
   }
 
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (completePhase) {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }

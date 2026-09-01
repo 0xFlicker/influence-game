@@ -32,6 +32,113 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
+  it("runs an explicit Two Names decline round through setup, one Mingle, pleas, ballots, and resolution", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        mingleSessionsPerRound: 1,
+        formatManifest: ["two_names"],
+      },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const setup = canonical.find((event) => event.type === "format.two_names_setup");
+    const decline = canonical.find((event) => event.type === "format.two_names_override_declined");
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    expect(setup).toBeDefined();
+    expect(decline).toBeDefined();
+    expect(canonical.filter((event) => event.type === "format.two_names_mingle_completed"))
+      .toEqual([expect.objectContaining({ payload: expect.objectContaining({ window: "initial_names" }) })]);
+    expect(canonical.filter((event) => event.type === "format.two_names_plea_recorded")).toHaveLength(2);
+    expect(canonical.filter(
+      (event) => event.type === "format.ballot_cast" && event.payload.formatId === "two_names",
+    )).toHaveLength(2);
+    expect(resolution).toMatchObject({
+      payloadVersion: 2,
+      payload: {
+        formatId: "two_names",
+        aggregate: {
+          capability: "two_names",
+          overrideAction: "declined",
+          eligibleVoterIds: expect.any(Array),
+          totals: expect.any(Object),
+        },
+      },
+    });
+  });
+
+  it("commits same-player Override use and replacement together, then runs the final-names Mingle", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const [empowered, firstNamed, secondNamed, replacement] = agents;
+    if (!empowered || !firstNamed || !secondNamed || !replacement) throw new Error("expected agents");
+    empowered.getTwoNamesOverride = async () => ({
+      action: "use",
+      removedNomineeId: firstNamed.id,
+      thinking: "use Override",
+      decisionSource: "llm",
+      fallbackReason: null,
+    });
+    empowered.getTwoNamesReplacement = async () => ({
+      targetId: replacement.id,
+      thinking: "name replacement",
+      decisionSource: "llm",
+      fallbackReason: null,
+    });
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        mingleSessionsPerRound: 1,
+        formatManifest: ["two_names"],
+      },
+      undefined,
+      { maxRoundsMode: "exact", random: () => 0 },
+    );
+
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const usedIndex = canonical.findIndex((event) => event.type === "format.two_names_override_used");
+    expect(usedIndex).toBeGreaterThan(0);
+    expect(canonical[usedIndex + 1]).toMatchObject({
+      type: "format.two_names_replacement_named",
+      payload: {
+        empoweredId: empowered.id,
+        replacementNomineeId: replacement.id,
+        finalistPlayerIds: [replacement.id, secondNamed.id],
+      },
+    });
+    expect(canonical.filter((event) => event.type === "format.two_names_mingle_completed").map(
+      (event) => event.type === "format.two_names_mingle_completed" ? event.payload.window : null,
+    )).toEqual(["initial_names", "final_names"]);
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    expect(resolution).toMatchObject({
+      payload: {
+        aggregate: {
+          capability: "two_names",
+          overrideHolderId: empowered.id,
+          overrideAction: "used",
+          removedNomineeId: firstNamed.id,
+          replacementNomineeId: replacement.id,
+          finalistPlayerIds: [replacement.id, secondNamed.id],
+          eligibleVoterIds: [firstNamed.id, agents[4]!.id],
+        },
+      },
+    });
+  });
+
   it("auto-selects a one-format manifest without a fake empowered pick", async () => {
     const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
     let pickCalls = 0;

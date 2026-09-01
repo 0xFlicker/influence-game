@@ -40,6 +40,7 @@ import type {
   GameTurnCommitResultV1,
   GameTurnIntentV1,
 } from "./durable-game-turn";
+import type { ProviderSemanticCoordinateV1 } from "./provider-execution";
 export type { TokenCostCursor };
 export type {
   ProviderAttemptFailureKind,
@@ -52,6 +53,7 @@ export type {
   ProviderAttemptUsageFacts,
   ProviderExecutionHooks,
   ProviderLogicalCallCoordinate,
+  ProviderSemanticCoordinateV1,
   ProviderPreparedRequest,
   SanitizedProviderRequestEvidence,
   SanitizedProviderResponseEvidence,
@@ -522,8 +524,8 @@ export interface PrivateDecisionTraceContext {
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
   round?: number;
-  /** Durable phase-owned ordinal for repeated calls at this actor/action boundary. */
-  logicalCallOrdinal?: number;
+  /** Closed semantic identity for the provider call represented by this trace. */
+  semanticCoordinate?: ProviderSemanticCoordinateV1;
   boundary?: PrivateDecisionTraceBoundary;
   /**
    * Structural-only Recall Plan receipt for this call (KTD5 / R16).
@@ -983,11 +985,34 @@ export type FormatDecisionFallbackReason =
   | "invalid_restricted_history_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
-  | "invalid_format_tiebreak_target";
+  | "invalid_format_tiebreak_target"
+  | "invalid_two_names_initial_names"
+  | "invalid_two_names_override"
+  | "invalid_two_names_replacement"
+  | "invalid_two_names_ballot"
+  | "invalid_two_names_tiebreak";
 
 export type FormatDecisionProvenance =
   | { decisionSource: "llm"; fallbackReason: null }
   | { decisionSource: "fallback"; fallbackReason: FormatDecisionFallbackReason };
+
+export type TwoNamesDecisionMetadata = FormatDecisionProvenance
+  & StrategicDecisionMetadata
+  & { thinking?: string; reasoningContext?: string };
+
+export type TwoNamesInitialNamesDecision = TwoNamesDecisionMetadata & {
+  firstNomineeId: UUID;
+  secondNomineeId: UUID;
+};
+
+export type TwoNamesOverrideDecision = TwoNamesDecisionMetadata & (
+  | { action: "decline"; removedNomineeId: null }
+  | { action: "use"; removedNomineeId: UUID }
+);
+
+export type TwoNamesTargetDecision = TwoNamesDecisionMetadata & {
+  targetId: UUID;
+};
 
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
@@ -1149,6 +1174,31 @@ export interface IAgent {
     context: PhaseContext,
     legalTargetIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getTwoNamesInitialNames?(
+    context: PhaseContext,
+    legalNomineeIds: UUID[],
+  ): Promise<TwoNamesInitialNamesDecision>;
+  getTwoNamesOverride?(
+    context: PhaseContext,
+    initialNomineeIds: [UUID, UUID],
+  ): Promise<TwoNamesOverrideDecision>;
+  getTwoNamesReplacement?(
+    context: PhaseContext,
+    legalReplacementIds: UUID[],
+  ): Promise<TwoNamesTargetDecision>;
+  getTwoNamesBallot?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision>;
+  breakTwoNamesTie?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+  ): Promise<TwoNamesTargetDecision>;
+  getTwoNamesPlea?(
+    context: PhaseContext,
+    finalistIds: [UUID, UUID],
+    options?: AgentCallOptions,
+  ): Promise<AgentResponse>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
@@ -1228,7 +1278,7 @@ export interface IAgent {
 export interface DurableProviderTurnBinding {
   turnId: string;
   subcallSlot: number;
-  logicalCallId: string;
+  semanticCoordinate: Extract<ProviderSemanticCoordinateV1, { kind: "durable_turn" }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1279,8 +1329,10 @@ export interface PhaseContext {
   gameId: UUID;
   round: number;
   phase: Phase;
-  /** Durable phase-owned ordinal for repeated provider calls at this boundary. */
-  providerLogicalCallOrdinal?: number;
+  /** Event boundary used by phase-call provider semantic coordinates. */
+  providerCallBoundaryEventSequence?: number;
+  /** Explicit semantic coordinate for non-generic provider turns such as diary exchanges. */
+  providerSemanticCoordinate?: ProviderSemanticCoordinateV1;
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;
