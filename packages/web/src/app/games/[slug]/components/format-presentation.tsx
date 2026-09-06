@@ -6,7 +6,7 @@ import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
-import { TwoNamesRoleAnchors, TwoNamesStage } from "./two-names-stage";
+import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage } from "./two-names-stage";
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 
 export function FormatPresentation({
@@ -95,7 +95,15 @@ export function FormatPresentation({
   }
 
   if (cue.kind.startsWith("two_names_")) {
-    return <TwoNamesStage cue={cue as Parameters<typeof TwoNamesStage>[0]["cue"]} roster={roster} />;
+    return <TwoNamesStage cue={cue as Parameters<typeof TwoNamesStage>[0]["cue"]} roster={roster} currentStateEntry={currentStateEntry} />;
+  }
+
+  if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.resolution?.aggregate.capability === "two_names") {
+    return (
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
+        <TwoNamesVoteStage cue={cue} roster={roster} />
+      </PresentationShell>
+    );
   }
 
   if (cue.kind === "format_aggregate") {

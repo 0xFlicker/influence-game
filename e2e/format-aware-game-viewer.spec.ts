@@ -123,6 +123,78 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) {
+    for (const mobile of [false, true]) {
+      test(`Two Names ${scenarioId} keeps names, long pleas and tally legible ${mobile ? "mobile reduced motion" : "desktop"}`, async ({ page }, testInfo) => {
+        await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+        await page.emulateMedia({ reducedMotion: mobile ? "reduce" : "no-preference" });
+        const slug = `display-${scenarioId}`;
+        await installDeterministicFormatGame(page, { slug, scenarioId, status: "completed" });
+        await page.goto(viewerUrl(`/games/${slug}/replay`));
+        // The local Next dev badge otherwise covers the mobile playback dock.
+        await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
+        const next = async () => page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true }).click();
+        const seek = async (kind: string) => {
+          const stage = page.locator(`[data-format-cue="${kind}"]`);
+          for (let i = 0; i < 30; i++) {
+            if (await stage.count()) return stage;
+            await next();
+          }
+          throw new Error(`Missing Two Names stage ${kind}`);
+        };
+        const initial = await seek("two_names_initial_names");
+        await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
+        await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
+        await expect(initial).toContainText("Atlas nominates:");
+        // Re-enter while playing: exercise animation completion, then seek back while paused.
+        await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+        await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
+        await expect(initial).toBeVisible({ timeout: 8_000 });
+        await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
+        await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
+        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
+        await page.screenshot({ path: testInfo.outputPath("nominees.png") });
+        if (scenarioId === "two_names_used_tie") {
+          const removed = await seek("two_names_override_removed");
+          await expect(removed.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "0.28");
+          await expect(removed.locator('[data-nominee-id="rex"]')).toHaveCount(0);
+          const replacement = await seek("two_names_replacement");
+          await expect(replacement.locator('[data-nominee-id="rex"]')).toHaveCSS("opacity", "1");
+        } else {
+          const declined = await seek("two_names_override_declined");
+          await expect(declined.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
+          await expect(declined.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
+        }
+        const plea = await seek("two_names_plea");
+        const quote = plea.getByRole("blockquote");
+        await expect(quote).toContainText("Judge the commitments I have actually kept");
+        const bounds = await quote.evaluate((element) => {
+          const stage = element.closest('section')!.getBoundingClientRect();
+          const rect = element.getBoundingClientRect();
+          return { fits: rect.bottom <= stage.bottom && rect.top >= stage.top, height: rect.height, overflow: getComputedStyle(element).overflowY };
+        });
+        expect(bounds.fits).toBe(true);
+        expect(bounds.height).toBeGreaterThan(40);
+        expect(bounds.overflow).toBe("auto");
+        await expect(page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true })).toBeInViewport();
+        await page.screenshot({ path: testInfo.outputPath("long-plea.png") });
+        const sealing = await seek("two_names_ballots_sealing");
+        await expect(sealing.locator("[data-nominee-id]")).toHaveCount(2);
+        await expect(sealing).not.toContainText("Exit votes");
+        const roll = await seek("format_roll_call");
+        const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
+        await expect(roll.getByLabel(`${first}: 1 exit vote`, { exact: true })).toBeVisible();
+        await expect(roll.getByLabel("Echo: 0 exit votes", { exact: true })).toBeVisible();
+        await next();
+        const result = await seek("format_aggregate");
+        await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
+        await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();
+        await page.screenshot({ path: testInfo.outputPath("result.png") });
+      });
+    }
+  }
+
   for (const entry of FORMAT_BROWSER_MATRIX) {
     test(`${entry.formatName} (${entry.scenarioId}) hydrates live current state and retains completed replay/results`, async ({
       page,

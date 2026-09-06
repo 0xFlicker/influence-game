@@ -90,7 +90,7 @@ The interactive prototype follows the Override-used tie branch because it contai
 
 ## Motion language
 
-All animation is authored through the existing presentation director and Motion controls. CSS or Motion may animate only `transform` and `opacity`; layout state changes use layout projection rather than animating dimensions.
+All animation is authored through the existing presentation director and Motion controls. Nominee cards and portrait reveals rest visible in markup; the director owns transient entrance opacity, completes it on seek/cleanup, and skips entrances on paused manual entry or reconnect. CSS or Motion may animate only `transform` and `opacity`; layout state changes use layout projection rather than animating dimensions.
 
 - **Heavy entrance:** `cubic-bezier(0.16, 1, 0.3, 1)`, 800–1100ms.
 - **State crossfade:** `cubic-bezier(0.32, 0.72, 0, 1)`, 450–700ms.
@@ -124,7 +124,7 @@ Live reconnect prioritizes trustworthy synchronization over replaying missed dra
 - Below 768px, remove card rotation and overlap. The pair remains two columns when both names are the point; all other layouts collapse to one column.
 - Power anchors remain at the top corners after reveal without consuming a full status row. During Mingles, the existing compact sidebar/cast area carries the role tags.
 - Nominee names use one visible line with an accessible full label; the pair gets priority over descriptive copy.
-- Plea portrait moves above the quotation. Ballot finalists remain side by side with the sealed state above them.
+- Plea identity uses a compact portrait/name header above a full-width quotation. The quotation scrolls within the available theater height and remains keyboard focusable; it never expands the stage past the playback dock. Ballot finalists remain side by side with the sealed state above them.
 - The viewer's existing compact header and playback dock remain sticky; only theater content scrolls.
 - Minimum interactive target is 44px for prototype and replay controls.
 

@@ -211,6 +211,19 @@ export function usePresentationDirector({
     const currentStateEntry = scope.current.querySelector(
       '[data-presentation-current-entry="true"]',
     );
+    // Semantic content rests visible. Only the director owns entrance effects,
+    // so cancellation, seeking and Strict Mode cannot strand hidden cards.
+    if (!currentStateEntry && director.getSnapshot().isPlaying) {
+      scope.current.querySelectorAll<HTMLElement>("[data-two-names-reveal]").forEach((element) => {
+        const index = Number(element.dataset.dossierIndex ?? 0);
+        const dossier = element.dataset.twoNamesReveal === "dossier";
+        const control = animate(element, reducedMotion
+          ? { opacity: [0, 1] }
+          : { opacity: [0, 1], y: [18, 0], rotateY: [dossier ? (index === 0 ? -22 : 22) : 0, 0] },
+        { duration: reducedMotion ? 0.2 : 0.8, delay: dossier && !reducedMotion ? index * 0.18 : 0, ease: [0.16, 1, 0.3, 1] }) as RetainedMotionControl;
+        track(control);
+      });
+    }
     if (
       !reducedMotion
       && !currentStateEntry

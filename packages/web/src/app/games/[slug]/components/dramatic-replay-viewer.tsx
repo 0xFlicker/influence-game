@@ -602,7 +602,9 @@ function DramaticReplayTheater({
   const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
   const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
-  const usesFullHeightContent = isChatStyleScene || isOverviewScene || isOpenWhisperScene;
+  const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
+  const usesFullHeightContent = isChatStyleScene || isOverviewScene || isOpenWhisperScene
+    || formatCue?.kind === "two_names_plea";
 
   // Messages visible in current scene's chat feed (for chat-style phases)
   const chatFeedMessages = useMemo(() => {
@@ -1160,10 +1162,10 @@ function DramaticReplayTheater({
         className={`flex-1 min-h-0 flex ${
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
-            : "items-center overflow-y-auto overscroll-y-contain"
-        } justify-center px-4 md:px-8 py-4 md:py-8`}
+            : `${isTwoNamesPresentation ? "items-start" : "items-center"} overflow-y-auto overscroll-y-contain`
+        } justify-center ${isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full min-h-0 ${isTwoNamesPresentation && !usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
@@ -1173,7 +1175,7 @@ function DramaticReplayTheater({
             </div>
           ) : null}
           {formatCue && (
-            <div className="min-h-0 flex-1">
+            <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}

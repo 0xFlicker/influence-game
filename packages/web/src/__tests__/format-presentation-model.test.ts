@@ -212,9 +212,9 @@ describe("format presentation compiler", () => {
       "two_names_plea",
       "two_names_ballots_sealing",
       "two_names_ballots_sealing",
+      "format_roll_call",
+      "format_roll_call",
       "format_aggregate",
-      "format_roll_call",
-      "format_roll_call",
       "format_tiebreak",
       "format_elimination",
     ]);

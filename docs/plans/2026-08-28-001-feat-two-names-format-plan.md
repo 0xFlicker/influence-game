@@ -16,6 +16,12 @@ The two social windows reuse the current Mingle, alliance, and huddle implementa
 
 Verification completed with the provider-free baseline, the PostgreSQL-owned baseline, repository typecheck/lint, focused durable/canonical/viewer/fact tests, and a local browser pass over the nomination, Override draw, removal, and replacement transitions. No paid provider run, deployment, or production mutation was performed.
 
+### September 6 display corrections
+
+The completed `odd-rose-spark` review exposed invisible nominee cards, overflowing long pleas, and a missing Two Names aggregate renderer. The display correction moves entrance animations under the presentation director with visible resting markup, bounds long plea text inside the theater, and gives Two Names finalist totals a dedicated renderer. Roll call reveals only its accepted receipt prefix before the final result/tie cue. Browser coverage includes decline/clear and replacement/tie branches at desktop and 390px reduced motion, using a realistic long plea.
+
+The separate finding that ordinary Mingle prompts omit current Two Names board facts remains open; this display pass does not establish informed agent behavior or full merge readiness.
+
 ## Summary
 
 Add Two Names as a distinct format-kernel capability with an authoritative initial nominee pair, random Override holder, optional replacement branch, one or two full Mingles, ordered final pleas, sealed voting by eligible non-nominees restricted to the final pair, and an Empowered tie-break. Ship the engine, durable execution, canonical readers, agent surfaces, viewer choreography, results, simulation, and documentation as one coherent contract.

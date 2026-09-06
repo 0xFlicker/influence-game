@@ -168,7 +168,7 @@ export function applyResolution(input: {
     canonicalSequence: decision.sequence,
     resolution: payload,
   };
-  cues.push({
+  const aggregateCue: Extract<FormatPresentationCue, { kind: "format_aggregate" }> = {
     source: "format",
     key: cueKey(gameId, decision.sequence, "aggregate"),
     canonicalSequence: decision.sequence,
@@ -182,7 +182,8 @@ export function applyResolution(input: {
     ballotPresentationStatus: automaticSoleVulnerable
       ? "not_applicable"
       : "revealed",
-  });
+  };
+  if (payload.aggregate.capability !== "two_names") cues.push(aggregateCue);
 
   const orderedBallots = automaticSoleVulnerable
     ? []
@@ -212,6 +213,10 @@ export function applyResolution(input: {
       rollCallCount: orderedBallots.length,
       pacing,
     });
+  }
+
+  if (payload.aggregate.capability === "two_names") {
+    cues.push({ ...aggregateCue, before: cloneSnapshot(snapshot), after: cloneSnapshot(snapshot) });
   }
 
   if (payload.tiebreakerId) {
