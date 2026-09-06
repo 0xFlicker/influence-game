@@ -333,6 +333,9 @@ function MingleMap({
                 type="button"
                 aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
                 aria-pressed={selected}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectRoom(room.roomId);
@@ -368,9 +371,19 @@ function MingleMap({
             const state = roomStateLabel(room);
             const hot = !selected && room.messages.length > 0;
             return (
-              <div
+              <button
                 key={room.roomId}
-                className={`min-h-32 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
+                type="button"
+                aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
+                aria-pressed={selected}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectRoom(room.roomId);
+                }}
+                className={`min-h-32 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
                   selected
                     ? "border-purple-300/70 bg-purple-500/15"
                     : hot
@@ -378,16 +391,7 @@ function MingleMap({
                       : "border-white/10 bg-white/[0.035] hover:border-purple-300/35"
                 }`}
               >
-                <button
-                  type="button"
-                  aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
-                  aria-pressed={selected}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectRoom(room.roomId);
-                  }}
-                  className="flex min-h-11 w-full items-start justify-between gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70"
-                >
+                <div className="flex min-h-11 w-full items-start justify-between gap-2">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
                       {roomDisplayLabel(room)}
@@ -400,7 +404,7 @@ function MingleMap({
                     </span>
                     <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
                   </div>
-                </button>
+                </div>
                 <div className="mt-4">
                   <RoomAvatarRow room={room} players={players} size="6" />
                 </div>
@@ -416,7 +420,7 @@ function MingleMap({
                     />
                   ))}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

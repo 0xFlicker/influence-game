@@ -187,6 +187,7 @@ The current path should converge on `MINGLE` / Mingle terminology. Legacy Whispe
 - **Test scenarios:**
   - Given a current live event with phase `MINGLE`, the web message parser preserves the phase and Mingle scope.
   - Given the current game phase is `MINGLE`, the dedicated room view renders Mingle map/feed labels.
+  - Each map square is one room-selection button, including its static avatars and padding. Enter/Space select the focused room without triggering replay shortcuts.
   - Given phase constants are enumerated, `MINGLE` has labels, room type mapping, and CSS data-phase support.
   - Covers AE3. Given an old test fixture still references `WHISPER`, it is either explicitly legacy or removed from the current-view test suite.
 - **Verification:** Web tests pass with `MINGLE` as the current phase and no current-facing UI assertions depend on `WHISPER`.
