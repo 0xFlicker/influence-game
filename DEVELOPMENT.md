@@ -590,16 +590,19 @@ Run the local browser stack with explicit Doppler dev config:
 ```bash
 bun run s3:bootstrap
 bun run dev:api
+INFLUENCE_GAME_WORKER=1 bun run dev:game-worker
 bun run dev:web
 bun run dev:render-worker
 ```
 
-Run those three `dev:*` commands in separate terminals. They wrap Doppler's
+Run those four `dev:*` commands in separate terminals. They wrap Doppler's
 `social-strategy-agent/dev` config themselves and share the local trailer token,
-API origin, and filesystem upload directory. The worker has no listening port;
-it polls the API and is required for admin trailer jobs to advance beyond
-`Queued`. Use the corresponding `*:service` scripts only when the shell or
-container already supplies its environment.
+API origin, and filesystem upload directory. `dev:api` is a non-claiming
+gateway; the game worker requires the explicit `INFLUENCE_GAME_WORKER=1`
+acknowledgement before it may adopt or advance durable games. The render worker
+has no listening port; it polls the API and is required for admin trailer jobs
+to advance beyond `Queued`. Use the corresponding `*:service` scripts only
+when the shell or container already supplies its environment.
 
 The private trace env has to be loaded into the API process before a game starts. If the API was already running, restart it after sourcing `.env.private-trace.local`; the trace writer is best-effort and gameplay can complete without private trace manifests when these vars are missing.
 
@@ -696,9 +699,9 @@ Use `--force` at the end of the same command only for a full repair refresh.
 
 ### Statefulness Risk
 
-Current API games execute as atomic durable logical turns. A normal local API reload adopts each unfinished `in_progress` game under a fresh owner epoch and continues from its committed XState snapshot and typed cursor. Scratch canonical events, transcript rows, player continuity, House summary/notebook state, and viewer publications commit together; accepted provider values can replay without repeating an accepted game effect. Do not cancel, rewind, or drain an active game for an ordinary reload. A supported pre-logical-turn game is cut over once from its exact validated checkpoint without changing its canonical event log.
+Current API games execute as atomic durable logical turns. The gateway is non-claiming: only a dedicated game worker may acquire or renew a per-game owner epoch and continue an unfinished `in_progress` game from its committed XState snapshot and typed cursor. Scratch canonical events, transcript rows, player continuity, House summary/notebook state, and viewer publications commit together; accepted provider values can replay without repeating an accepted game effect. Do not cancel, rewind, or force-expire a healthy active game for an ordinary gateway reload. A supported pre-logical-turn game is cut over once from its exact validated checkpoint without changing its canonical event log.
 
-Checkpoint capsules and hydration passports remain forensic data for historical runs. They are not selected by current runtime startup. Historical gameplay without logical-turn authority and corrupt/contradictory durable rows are not automatically repaired. Multi-worker execution also remains out of scope even though owner epochs fence stale writers. Treat `docs/statefulness-plan.md` as the exact operating contract.
+Checkpoint capsules and hydration passports remain forensic data for historical runs. They are not selected by current runtime startup. Historical gameplay without logical-turn authority and corrupt/contradictory durable rows are not automatically repaired. Multiple game workers are supported through per-game owner epochs; they may run distinct games concurrently but never share one game. Treat `docs/deployment/game-worker-operations.md` as the runtime operating contract.
 
 ## Pre-Commit Checklist
 

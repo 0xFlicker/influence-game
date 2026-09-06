@@ -772,14 +772,14 @@ export function createLocalProviderExecutionJournal(input: {
   const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
   const usedCallsByCatalog = new Map<string, number>();
   const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
-    domain: "influence.provider.logical-call.v1",
+    domain: "influence.provider.logical-call.v2",
     coordinate: {
       gameId: input.gameId,
       actor: intent.coordinate.actor,
       action: intent.coordinate.action,
       phase: intent.coordinate.phase,
       round: intent.coordinate.round,
-      logicalCallOrdinal: intent.coordinate.logicalCallOrdinal,
+      semantic: intent.coordinate.semantic,
     },
   });
   const attemptId = (intent: ProviderAttemptIntent) => simulationHash({

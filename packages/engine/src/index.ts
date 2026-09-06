@@ -698,10 +698,17 @@ export type {
   ProviderExecutionHooks,
   ProviderTerminalReceipt,
   ProviderLogicalCallCoordinate,
+  ProviderSemanticCoordinateV1,
   ProviderPreparedRequest,
   ProviderUnavailableKind,
   SanitizedProviderRequestEvidence,
   SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export {
+  assertProviderSemanticCoordinate,
+  canonicalProviderSemanticCoordinate,
+  durableProviderLogicalCallId,
+  providerSemanticCoordinateHash,
 } from "./provider-execution";
 export {
   MODEL_CATALOG,

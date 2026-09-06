@@ -1370,7 +1370,7 @@ export class GameRunner {
       agent.setDurableProviderTurnBinding({
         turnId: intent.turnId,
         subcallSlot: subcall.slot,
-        logicalCallId: subcall.logicalCallId,
+        semanticCoordinate: structuredClone(subcall.semanticCoordinate),
       });
       boundAgents.push(agent);
       boundProviderActorIds.add(subcall.actorId);

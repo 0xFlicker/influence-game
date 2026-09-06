@@ -2122,9 +2122,23 @@ export class InfluenceAgent implements IAgent {
       action: trace?.action ?? options?.action ?? "unknown",
       ...(trace?.phase && { phase: trace.phase }),
       ...(trace?.round !== undefined && { round: trace.round }),
-      logicalCallOrdinal: trace?.logicalCallOrdinal ?? 1,
+      semantic: this.durableProviderTurnBinding?.semanticCoordinate
+        ?? trace?.semanticCoordinate
+        ?? {
+          version: 1,
+          kind: "phase_call",
+          phase: trace?.phase ?? Phase.INIT,
+          round: trace?.round ?? 0,
+          canonicalEventSequence: trace?.boundary?.currentEventSequence ?? 0,
+          callSlot: 1,
+        },
       ...(this.durableProviderTurnBinding
-        ? { durableTurn: structuredClone(this.durableProviderTurnBinding) }
+        ? {
+            durableTurn: {
+              turnId: this.durableProviderTurnBinding.turnId,
+              subcallSlot: this.durableProviderTurnBinding.subcallSlot,
+            },
+          }
         : {}),
     });
   }
@@ -2381,11 +2395,17 @@ export class InfluenceAgent implements IAgent {
       },
       phase: ctx.phase,
       round: ctx.round,
-      logicalCallOrdinal:
-        (ctx.lobbySubRound !== undefined ? ctx.lobbySubRound + 1 : undefined)
-        ?? ctx.mingleBeat
-        ?? ctx.providerLogicalCallOrdinal
-        ?? 1,
+      semanticCoordinate: ctx.providerSemanticCoordinate ?? {
+        version: 1,
+        kind: "phase_call",
+        phase: ctx.phase,
+        round: ctx.round,
+        canonicalEventSequence: ctx.providerCallBoundaryEventSequence ?? 0,
+        callSlot:
+          (ctx.lobbySubRound !== undefined ? ctx.lobbySubRound + 1 : undefined)
+          ?? ctx.mingleBeat
+          ?? 1,
+      },
       recallPlanReceipt,
     };
   }

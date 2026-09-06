@@ -134,10 +134,10 @@ describe("named alliance huddle windows", () => {
 
     const scheduleTurns: Array<{ decision: unknown; allianceId: unknown }> = [];
     const huddleTurns: string[] = [];
-    const houseOutcomeOrdinals: number[] = [];
+    const houseOutcomeScheduleIds: string[] = [];
     const summarizeAllianceHuddle = ctx.houseInterviewer.summarizeAllianceHuddle.bind(ctx.houseInterviewer);
     ctx.houseInterviewer.summarizeAllianceHuddle = async (context) => {
-      houseOutcomeOrdinals.push(context.providerLogicalCallOrdinal);
+      houseOutcomeScheduleIds.push(context.scheduleId);
       return summarizeAllianceHuddle(context);
     };
     logger.setStreamListener((event) => {
@@ -187,7 +187,8 @@ describe("named alliance huddle windows", () => {
       expect(entry.dialogueContext?.sessionAudiencePlayerIds?.length).toBe(2);
     }
     expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(2);
-    expect(houseOutcomeOrdinals).toEqual([1, 2]);
+    expect(houseOutcomeScheduleIds).toHaveLength(2);
+    expect(new Set(houseOutcomeScheduleIds).size).toBe(2);
     expect(gameState.getAllianceHuddleOutcomes()[0]).toMatchObject({
       facts: expect.any(Array),
       participantPlayerIds: ["alice", "bob"],
@@ -334,7 +335,7 @@ describe("named alliance huddle windows", () => {
     activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
     activatePair(gameState, "alliance-cd", "lineage-cd", "version-cd", "charlie", "dana");
     const baseHouse = ctx.houseInterviewer;
-    const houseOutcomeOrdinals: number[] = [];
+    const houseOutcomeScheduleIds: string[] = [];
     ctx.houseInterviewer = {
       ...baseHouse,
       planAllianceHuddles: async () => ({
@@ -347,7 +348,7 @@ describe("named alliance huddle windows", () => {
         rationale: "The House tried to spend the scarce huddle window.",
       }),
       summarizeAllianceHuddle: async (context) => {
-        houseOutcomeOrdinals.push(context.providerLogicalCallOrdinal);
+        houseOutcomeScheduleIds.push(context.scheduleId);
         return baseHouse.summarizeAllianceHuddle(context);
       },
     } as PhaseRunnerContext["houseInterviewer"];
@@ -371,7 +372,8 @@ describe("named alliance huddle windows", () => {
     ]);
     expect(huddleTurns).toEqual(["alice", "bob", "charlie", "dana", "alice", "bob"]);
     expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(3);
-    expect(houseOutcomeOrdinals).toEqual([1, 2, 3]);
+    expect(houseOutcomeScheduleIds).toHaveLength(3);
+    expect(new Set(houseOutcomeScheduleIds).size).toBe(3);
   });
 
   it("closes universal alliances before huddle eligibility", async () => {

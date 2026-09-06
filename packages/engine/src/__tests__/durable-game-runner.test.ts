@@ -13,6 +13,7 @@ import {
 } from "../durable-game-turn";
 import { GameRunner } from "../game-runner";
 import { TemplateHouseInterviewer } from "../house-interviewer";
+import { durableProviderLogicalCallId } from "../provider-execution";
 import type {
   DurableGameTurnCommittedV1,
   DurableGameTurnInitializationV1,
@@ -527,6 +528,36 @@ describe("GameRunner durable logical turns", () => {
       { slot: 1, actorId: setup.payload.overrideHolderId, action: "format-two-names-override" },
       { slot: 2, actorId: empowered.id, action: "format-two-names-replacement" },
     ]);
+    expect(transitionIntent?.providerSubcalls).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        slot: 1,
+        semanticCoordinate: {
+          version: 1,
+          kind: "durable_turn",
+          turnId: transitionIntent?.turnId,
+          subcallSlot: 1,
+        },
+        logicalCallId: durableProviderLogicalCallId({
+          gameId: transitionIntent?.gameId ?? "",
+          turnId: transitionIntent?.turnId ?? "",
+          subcallSlot: 1,
+        }),
+      }),
+      expect.objectContaining({
+        slot: 2,
+        semanticCoordinate: {
+          version: 1,
+          kind: "durable_turn",
+          turnId: transitionIntent?.turnId,
+          subcallSlot: 2,
+        },
+        logicalCallId: durableProviderLogicalCallId({
+          gameId: transitionIntent?.gameId ?? "",
+          turnId: transitionIntent?.turnId ?? "",
+          subcallSlot: 2,
+        }),
+      }),
+    ]));
     expect(transition?.canonicalEvents.map((event) => event.type)).toEqual([
       "format.two_names_override_used",
       "format.two_names_replacement_named",

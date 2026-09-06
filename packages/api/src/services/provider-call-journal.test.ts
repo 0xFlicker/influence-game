@@ -7,6 +7,7 @@ import {
   ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
   createProviderEvidenceFetch,
+  durableProviderLogicalCallId,
   providerAcceptedDecisionId,
   type GameTurnIntentV1,
   type ProviderAttemptIntent,
@@ -96,7 +97,14 @@ function makeIntent(
       action: "vote",
       phase: Phase.VOTE,
       round: 2,
-      logicalCallOrdinal: 3,
+      semantic: {
+        version: 1,
+        kind: "phase_call",
+        phase: Phase.VOTE,
+        round: 2,
+        canonicalEventSequence: 3,
+        callSlot: 1,
+      },
     },
     attemptOrdinal,
     attemptId: `transport-${gameId}-${attemptOrdinal}`,
@@ -156,11 +164,20 @@ async function insertPlannedDurableTurn(
     gameId: string;
     ownerEpoch: string;
     turnId?: string;
-    logicalCallId?: string;
   },
 ): Promise<NonNullable<ProviderAttemptIntent["coordinate"]["durableTurn"]>> {
   const turnId = input.turnId ?? `turn:${input.gameId}`;
-  const logicalCallId = input.logicalCallId ?? `logical:${input.gameId}`;
+  const semanticCoordinate = {
+    version: 1 as const,
+    kind: "durable_turn" as const,
+    turnId,
+    subcallSlot: 1,
+  };
+  const logicalCallId = durableProviderLogicalCallId({
+    gameId: input.gameId,
+    turnId,
+    subcallSlot: 1,
+  });
   const intent: GameTurnIntentV1 = {
     version: 1,
     gameId: input.gameId,
@@ -184,6 +201,7 @@ async function insertPlannedDurableTurn(
       version: 1,
       slot: 1,
       logicalCallId,
+      semanticCoordinate,
       actorId: "atlas-id",
       action: "vote",
       contractId: "agent-vote-v1",
@@ -200,7 +218,7 @@ async function insertPlannedDurableTurn(
     intent,
     intentHash: sha256StableJson(intent),
   });
-  return { turnId, subcallSlot: 1, logicalCallId };
+  return { turnId, subcallSlot: 1 };
 }
 
 function bindDurableTurn(
@@ -209,7 +227,11 @@ function bindDurableTurn(
 ): ProviderAttemptIntent {
   return {
     ...intent,
-    coordinate: { ...intent.coordinate, durableTurn },
+    coordinate: {
+      ...intent.coordinate,
+      semantic: { version: 1 as const, kind: "durable_turn" as const, turnId: durableTurn.turnId, subcallSlot: durableTurn.subcallSlot },
+      durableTurn,
+    },
   };
 }
 
@@ -250,7 +272,7 @@ describe("provider call journal", () => {
       actorId: "atlas-id",
       action: "vote",
       round: 2,
-      logicalCallOrdinal: 3,
+      semanticCoordinate: expect.objectContaining({ kind: "phase_call", canonicalEventSequence: 3 }),
     });
     expect(attempts).toHaveLength(1);
     expect(attempts[0]).toMatchObject({
@@ -261,24 +283,37 @@ describe("provider call journal", () => {
     });
   });
 
-  test("persists safe logical-call ordinals beyond the signed integer range", async () => {
+  test("persists a semantic coordinate without packed numeric ordinals", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
-    const logicalCallOrdinal = 3_619_941_329;
     const baseIntent = makeIntent(gameId, ownerEpoch);
     const intent: ProviderAttemptIntent = {
       ...baseIntent,
       coordinate: {
         ...baseIntent.coordinate,
-        logicalCallOrdinal,
+        semantic: {
+          version: 1,
+          kind: "diary_exchange",
+          sessionEventSequence: 4,
+          playerId: "atlas-id",
+          exchangeOrdinal: 2,
+        },
       },
     };
 
     await allocateAndReserve(hooks, intent);
 
     expect((await db.select().from(schema.providerLogicalCalls))[0])
-      .toMatchObject({ logicalCallOrdinal });
+      .toMatchObject({
+        semanticCoordinate: {
+          version: 1,
+          kind: "diary_exchange",
+          sessionEventSequence: 4,
+          playerId: "atlas-id",
+          exchangeOrdinal: 2,
+        },
+      });
   });
 
   test("persists the exact planned durable subcall binding before dispatch", async () => {
@@ -290,7 +325,7 @@ describe("provider call journal", () => {
 
     expect(await hooks.onAllocateAttemptOrdinal?.(intent.coordinate)).toBe(1);
     expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
-      id: durableTurn.logicalCallId,
+      id: durableProviderLogicalCallId({ gameId, turnId: durableTurn.turnId, subcallSlot: 1 }),
       gameId,
       actorId: "atlas-id",
       action: "vote",
@@ -299,7 +334,7 @@ describe("provider call journal", () => {
     });
     await hooks.onReserve?.(intent);
     expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
-      logicalCallId: durableTurn.logicalCallId,
+      logicalCallId: durableProviderLogicalCallId({ gameId, turnId: durableTurn.turnId, subcallSlot: 1 }),
       status: "reserved",
     });
   });
@@ -318,14 +353,16 @@ describe("provider call journal", () => {
       action: "lobby",
     }, {
       ...intent.coordinate,
+      semantic: { version: 1 as const, kind: "durable_turn" as const, turnId: durableTurn.turnId, subcallSlot: 2 },
       durableTurn: { ...durableTurn, subcallSlot: 2 },
     }, {
       ...intent.coordinate,
-      durableTurn: { ...durableTurn, logicalCallId: "logical:unplanned" },
+      semantic: { version: 1 as const, kind: "durable_turn" as const, turnId: "turn:unplanned", subcallSlot: 1 },
+      durableTurn: { ...durableTurn, turnId: "turn:unplanned" },
     }];
     for (const coordinate of invalidCoordinates) {
       await expect(hooks.onAllocateAttemptOrdinal?.(coordinate)).rejects.toThrow(
-        "does not match its planned intent",
+        /was not planned|does not match its planned intent/,
       );
     }
     expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(0);
@@ -509,7 +546,7 @@ describe("provider call journal", () => {
       ...makeIntent(gameId, ownerEpoch),
       coordinate: {
         ...makeIntent(gameId, ownerEpoch).coordinate,
-        logicalCallOrdinal: 4,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 3, callSlot: 2 },
       },
       attemptId: `transport-${gameId}-second-call`,
     };
@@ -556,7 +593,7 @@ describe("provider call journal", () => {
       ...makeIntent(gameId, ownerEpoch),
       coordinate: {
         ...makeIntent(gameId, ownerEpoch).coordinate,
-        logicalCallOrdinal: 4,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 3, callSlot: 2 },
       },
       attemptId: `transport-${gameId}-already-reserved`,
     };
@@ -576,7 +613,7 @@ describe("provider call journal", () => {
       ...makeIntent(gameId, ownerEpoch),
       coordinate: {
         ...makeIntent(gameId, ownerEpoch).coordinate,
-        logicalCallOrdinal: 5,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 3, callSlot: 3 },
       },
       attemptId: `transport-${gameId}-future`,
     };

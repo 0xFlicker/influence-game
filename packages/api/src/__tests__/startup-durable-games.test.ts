@@ -20,6 +20,7 @@ describe("durable game startup adoption", () => {
   test("continues an in-progress game from its committed cursor", async () => {
     const db = await setupTestDB();
     const fixture = await insertDurableInProgressGame(db, "ready");
+    await expireActiveOwner(db, fixture.gameId);
     const starts: Array<{ gameId: string; ownerEpoch: string; turnSequence: number }> = [];
 
     const result = await adoptInProgressDurableGamesOnStartup(db, {
@@ -56,6 +57,7 @@ describe("durable game startup adoption", () => {
   test("a local construction failure relinquishes ownership without suspending", async () => {
     const db = await setupTestDB();
     const fixture = await insertDurableInProgressGame(db, "ready");
+    await expireActiveOwner(db, fixture.gameId);
 
     const result = await adoptInProgressDurableGamesOnStartup(db, {
       start: () => {
@@ -93,6 +95,7 @@ describe("durable game startup adoption", () => {
     await db.insert(schema.gameTranscriptStates).values(
       initialGameTranscriptStateValues(gameId),
     );
+    await expireActiveOwner(db, gameId);
     const starts: Array<{ gameId: string; ownerEpoch: string; executionState: null }> = [];
 
     const result = await adoptInProgressDurableGamesOnStartup(db, {
@@ -118,7 +121,7 @@ describe("durable game startup adoption", () => {
     expect(owners.find((owner) => owner.ownerEpoch === priorOwnerEpoch))
       .toMatchObject({
         status: "expired",
-        failureReason: "process_restarted_before_initialization",
+        failureReason: "worker_lease_expired_before_initialization",
       });
     expect(owners.find((owner) => owner.ownerEpoch === starts[0]!.ownerEpoch))
       .toMatchObject({ status: "active", processId: "replacement-starter" });
@@ -158,6 +161,7 @@ describe("durable game startup adoption", () => {
       ownerEpoch: priorOwnerEpoch,
       checkpoint: { ...capsule, transcriptReplay: { version: 2, entries: [] } },
     })).toEqual({ ok: true });
+    await expireActiveOwner(db, gameId);
 
     let adoptedOwnerEpoch: string | null = null;
     const result = await adoptInProgressDurableGamesOnStartup(db, {
@@ -233,6 +237,7 @@ describe("durable game startup adoption", () => {
   test("adopts terminal execution so the durable start path can settle it", async () => {
     const db = await setupTestDB();
     const terminal = await insertDurableInProgressGame(db, "terminal");
+    await expireActiveOwner(db, terminal.gameId);
     const starts: Array<{ gameId: string; status: GameExecutionStatusV1 }> = [];
 
     const result = await adoptInProgressDurableGamesOnStartup(db, {
@@ -313,4 +318,10 @@ async function insertInProgressGame(db: DrizzleDB): Promise<string> {
     startedAt: new Date().toISOString(),
   });
   return gameId;
+}
+
+async function expireActiveOwner(db: DrizzleDB, gameId: string): Promise<void> {
+  await db.update(schema.gameRunOwners).set({
+    expiresAt: new Date(Date.now() - 1_000).toISOString(),
+  }).where(eq(schema.gameRunOwners.gameId, gameId));
 }

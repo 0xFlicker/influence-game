@@ -16,7 +16,7 @@ function intent(attemptOrdinal: number): ProviderAttemptIntent {
       action: "vote",
       phase: Phase.VOTE,
       round: 2,
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 0, callSlot: 1 },
     },
     attemptOrdinal,
     attemptId: `transport-${attemptOrdinal}`,
@@ -141,7 +141,7 @@ describe("local provider attempt journal", () => {
       ...intent(attemptOrdinal),
       coordinate: {
         ...intent(attemptOrdinal).coordinate,
-        logicalCallOrdinal: attemptOrdinal,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 0, callSlot: attemptOrdinal },
       },
       preparedRequest: {
         transport: "chat_completions",

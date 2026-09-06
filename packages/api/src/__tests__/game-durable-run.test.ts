@@ -595,6 +595,7 @@ describe("durable run inspection read model", () => {
           version: 1,
           slot: 1,
           logicalCallId: "PRIVATE_LOGICAL_CALL",
+          semanticCoordinate: { version: 1, kind: "durable_turn", turnId: "PRIVATE_INTENT_TURN", subcallSlot: 1 },
           actorId: "PRIVATE_INTENT_ACTOR",
           action: "lobby_speech",
           contractId: "PRIVATE_CONTRACT_ID",

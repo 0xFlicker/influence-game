@@ -202,7 +202,7 @@ describe("presentation director", () => {
     expect(director.getSnapshot().cursor).toBe(1);
   });
 
-  it("snaps reconnect hydration to the latest complete cue and animates only higher sequences", () => {
+  it("preserves the active semantic cue across reconnect hydration", () => {
     const clock = new FakeClock();
     const director = createPresentationDirector({ clock });
     director.load([cue("game:10", 10), cue("game:12", 12)]);
@@ -210,9 +210,9 @@ describe("presentation director", () => {
     director.reconnect([cue("game:10", 10), cue("game:12", 12), cue("game:20", 20)]);
 
     expect(director.getSnapshot()).toMatchObject({
-      cursor: 2,
-      activeKey: "game:20",
-      canonicalSequence: 20,
+      cursor: 0,
+      activeKey: "game:10",
+      canonicalSequence: 10,
       hydrationWatermark: 20,
       isPlaying: true,
     });
@@ -227,7 +227,26 @@ describe("presentation director", () => {
     ]);
     expect(clock.timers.size).toBe(1);
     clock.tick(1_000);
-    expect(director.getSnapshot().canonicalSequence).toBe(22);
+    expect(director.getSnapshot().canonicalSequence).toBe(12);
+  });
+
+  it("keeps a manually paused rewound cue when reconnect adds a newer tail", () => {
+    const director = createPresentationDirector();
+    director.load([cue("game:10", 10), cue("game:12", 12), cue("game:14", 14)]);
+    director.seek(1);
+
+    director.reconnect([
+      cue("game:10", 10),
+      cue("game:12", 12),
+      cue("game:14", 14),
+      cue("game:20", 20),
+    ]);
+
+    expect(director.getSnapshot()).toMatchObject({
+      activeKey: "game:12",
+      canonicalSequence: 12,
+      isPlaying: false,
+    });
   });
 
   it("retains unseen social cues anchored at the hydration watermark", () => {

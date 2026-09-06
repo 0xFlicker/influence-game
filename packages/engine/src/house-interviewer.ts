@@ -20,7 +20,6 @@ import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
 import {
-  pairProviderLogicalCallOrdinals,
   providerAcceptedDecisionId,
   ProviderAttemptError,
   ProviderExecutionCoordinator,
@@ -121,8 +120,8 @@ export interface DiaryRoomContext {
   precedingPhase: Phase;
   /** Current round number */
   round: number;
-  /** Stable one-based roster ordinal for this interview session. */
-  providerInterviewOrdinal: number;
+  /** Canonical event boundary at which this interview session was scheduled. */
+  sessionEventSequence: number;
   /** The agent being interviewed */
   agentId: UUID;
   agentName: string;
@@ -219,8 +218,7 @@ export interface HouseAllianceHuddleOutcomeContext {
   round: number;
   phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
-  /** Stable one-based position in the engine's deterministic schedule for this phase. */
-  providerLogicalCallOrdinal: number;
+  scheduleId: string;
   alliance: {
     id: UUID;
     name: string;
@@ -890,7 +888,14 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       action: context.action,
       ...(context.phase && { phase: context.phase }),
       ...(context.round !== undefined && { round: context.round }),
-      logicalCallOrdinal: context.logicalCallOrdinal ?? 1,
+      semantic: context.semanticCoordinate ?? {
+        version: 1,
+        kind: "phase_call",
+        phase: context.phase ?? Phase.INIT,
+        round: context.round ?? 0,
+        canonicalEventSequence: context.boundary?.currentEventSequence ?? 0,
+        callSlot: 1,
+      },
     });
   }
 
@@ -1035,7 +1040,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     action: string,
     round: number,
     phase: Phase,
-    logicalCallOrdinal = 1,
+    callSlot = 1,
   ): PrivateDecisionTraceContext {
     return {
       ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
@@ -1047,7 +1052,14 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       },
       phase,
       round,
-      logicalCallOrdinal,
+      semanticCoordinate: {
+        version: 1,
+        kind: "phase_call",
+        phase,
+        round,
+        canonicalEventSequence: 0,
+        callSlot,
+      },
     };
   }
 
@@ -1056,15 +1068,21 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     context: DiaryRoomContext,
     exchangeOrdinal = 1,
   ): PrivateDecisionTraceContext {
-    return this.privateTraceContext(
+    return {
+      ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
+      ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
       action,
-      context.round,
-      Phase.DIARY_ROOM,
-      pairProviderLogicalCallOrdinals(
-        context.providerInterviewOrdinal,
+      actor: { name: "The House", role: "house" },
+      phase: Phase.DIARY_ROOM,
+      round: context.round,
+      semanticCoordinate: {
+        version: 1,
+        kind: "diary_exchange",
+        sessionEventSequence: context.sessionEventSequence,
+        playerId: context.agentId,
         exchangeOrdinal,
-      ),
-    );
+      },
+    };
   }
 
   private static privateTraceMessages(
@@ -1773,12 +1791,20 @@ Respond with JSON only.`;
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const traceContext = this.privateTraceContext(
-        "house-alliance-huddle-outcome",
-        context.round,
-        context.phase,
-        context.providerLogicalCallOrdinal,
-      );
+      const traceContext: PrivateDecisionTraceContext = {
+        ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
+        ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
+        action: "house-alliance-huddle-outcome",
+        actor: { name: "The House", role: "house" },
+        phase: context.phase,
+        round: context.round,
+        semanticCoordinate: {
+          version: 1,
+          kind: "alliance_huddle",
+          scheduleId: context.scheduleId,
+          exchangeOrdinal: 1,
+        },
+      };
       const { value, response } = await this.callHouseJsonSchema({
         action: "house-alliance-huddle-outcome",
         source: "House/alliance-huddle-outcome",

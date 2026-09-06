@@ -52,6 +52,12 @@ function intent(): GameTurnIntentV1 {
       version: 1,
       slot: 1,
       logicalCallId: "logical-1",
+      semanticCoordinate: {
+        version: 1,
+        kind: "durable_turn",
+        turnId: "turn-1",
+        subcallSlot: 1,
+      },
       actorId: "atlas",
       action: "introduce",
       contractId: "agent-introduction-v1",

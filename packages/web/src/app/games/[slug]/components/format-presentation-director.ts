@@ -503,12 +503,18 @@ export class PresentationDirector {
   reconnect(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
-    const cursor = Math.max(0, canonical.length - 1);
+    const activeKey = this.state.cues[this.state.cursor]?.key;
+    const retainedCursor = activeKey
+      ? canonical.findIndex((cue) => cue.key === activeKey)
+      : -1;
+    const cursor = retainedCursor >= 0
+      ? retainedCursor
+      : Math.max(0, canonical.length - 1);
     const watermark = highestCanonicalSequence(canonical);
     this.clearTimer();
     this.apply({ type: "hydrate", cues: canonical, cursor, watermark });
-    this.remainingBaseMs = 0;
-    this.waitingAtHydrationWatermark = true;
+    this.remainingBaseMs = retainedCursor >= 0 ? this.activeDurationMs() : 0;
+    this.waitingAtHydrationWatermark = retainedCursor < 0;
   }
 
   resetRound(cues: readonly PresentationCue[]): void {

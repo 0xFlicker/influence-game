@@ -25,6 +25,7 @@ import {
 } from "./strategy-state";
 import type { UUID } from "./types";
 import { projectViewerDecisionEvent } from "./viewer-decision-events";
+import { durableProviderLogicalCallId } from "./provider-execution";
 
 export interface DurableTurnIntentInput {
   branch: GameTurnBranchKindV1;
@@ -126,14 +127,28 @@ export function createDurableTurnIntent(
     targetIds: [...(input.targetIds ?? [])],
     handles: [...(input.handles ?? [])],
     participantIds: [...(input.participantIds ?? actorIds)],
-    providerSubcalls: (input.providerActions ?? []).map((call, index) => ({
-      version: 1,
-      slot: index + 1,
-      logicalCallId: `${turnId}:provider:${index + 1}`,
-      actorId: call.actorId,
-      action: call.action,
-      contractId: call.contractId,
-    })),
+    providerSubcalls: (input.providerActions ?? []).map((call, index) => {
+      const slot = index + 1;
+      const semanticCoordinate = {
+        version: 1 as const,
+        kind: "durable_turn" as const,
+        turnId,
+        subcallSlot: slot,
+      };
+      return {
+        version: 1 as const,
+        slot,
+        logicalCallId: durableProviderLogicalCallId({
+          gameId: execution.gameId,
+          turnId,
+          subcallSlot: slot,
+        }),
+        semanticCoordinate,
+        actorId: call.actorId,
+        action: call.action,
+        contractId: call.contractId,
+      };
+    }),
   };
 }
 
@@ -237,12 +252,9 @@ function stagedAgent(
       return (...args: unknown[]) => {
         const providerBinding = providerBindings[providerBindingIndex++] ?? null;
         target.setDurableProviderTurnBinding?.(providerBinding ? {
-          turnId: providerBinding.logicalCallId.slice(
-            0,
-            providerBinding.logicalCallId.lastIndexOf(":provider:"),
-          ),
+          turnId: providerBinding.semanticCoordinate.turnId,
           subcallSlot: providerBinding.slot,
-          logicalCallId: providerBinding.logicalCallId,
+          semanticCoordinate: structuredClone(providerBinding.semanticCoordinate),
         } : null);
         return Promise.resolve(Reflect.apply(value, proxy, args)).then((result: unknown) => {
           if (providerBinding && providerResultWasAccepted(result)) {

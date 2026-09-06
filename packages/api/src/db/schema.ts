@@ -1708,7 +1708,7 @@ export type ProviderHealthEventKind =
   | "probe_succeeded"
   | "probe_failed";
 
-/** One stable phase-owned logical call. Its id is a deterministic coordinate hash. */
+/** One stable semantic logical call. Its id is a deterministic coordinate hash. */
 export const providerLogicalCalls = pgTable("provider_logical_calls", {
   id: text("id").primaryKey(),
   gameId: text("game_id")
@@ -1720,7 +1720,8 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   action: text("action").notNull(),
   phase: text("phase"),
   round: integer("round"),
-  logicalCallOrdinal: bigint("logical_call_ordinal", { mode: "number" }).notNull(),
+  semanticCoordinate: jsonb("semantic_coordinate").$type<unknown>().notNull(),
+  semanticCoordinateHash: text("semantic_coordinate_hash").notNull(),
   nextAttemptOrdinal: integer("next_attempt_ordinal").notNull().default(1),
   rateLimitCount: integer("rate_limit_count").notNull().default(0),
   rateLimitOutcome: text("rate_limit_outcome").$type<ProviderCallRateLimitOutcome>(),
@@ -1754,10 +1755,7 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
     "provider_logical_calls_actor_role_check",
     sql`${table.actorRole} IN ('player', 'juror', 'house', 'system', 'producer')`,
   ),
-  check(
-    "provider_logical_calls_ordinal_check",
-    sql`${table.logicalCallOrdinal} > 0 AND ${table.nextAttemptOrdinal} > 0`,
-  ),
+  check("provider_logical_calls_ordinal_check", sql`${table.nextAttemptOrdinal} > 0`),
   check(
     "provider_logical_calls_round_check",
     sql`${table.round} IS NULL OR ${table.round} >= 0`,
