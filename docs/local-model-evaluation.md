@@ -1,5 +1,7 @@
 # Local Model Evaluation
 
+Two Names restart checks must preserve distinct semantic coordinates for initial and final Mingle, including alliance proposal/version IDs and huddle schedule/session IDs. Those IDs derive from canonical boundaries so accepted provider results replay without new dispatch or collapsing the two windows. Inspect `--chatty` output together with canonical events and provider-journal evidence; prose alone is not restart proof. Keep direct House calls and typed contracts, with no `as any`. For gateway/worker drain and the existing Doppler dev database checklist, see [game worker operations](deployment/game-worker-operations.md).
+
 ## Purpose
 
 Use this workflow to test LM Studio or another OpenAI-compatible local model server against real Influence simulations. The goal is not only "does it finish?" The useful signal is whether games are enjoyable to watch and whether agents show real strategy: remembered promises, targeted Mingle-room conversations, named-alliance coordination, huddle follow-through, vote reasoning, alliance continuity, and dramatic but coherent social play.

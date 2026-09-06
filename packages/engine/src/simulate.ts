@@ -47,6 +47,10 @@
  * Restricted History requires round 3 plus a round-1-eligible companion format.
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
+ * Its two Mingle windows retain separate semantic provider coordinates;
+ * alliance proposal/version and huddle schedule/session IDs derive from the
+ * canonical event boundary so accepted calls retain identity after API restart.
+ * Continue using direct House calls and typed contracts; do not add `as any`.
  * See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:

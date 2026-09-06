@@ -1,5 +1,7 @@
 # Reasoning & Transcript Observability
 
+Two Names restart checks must preserve distinct semantic coordinates for initial and final Mingle, including alliance proposal/version IDs and huddle schedule/session IDs. Those IDs derive from canonical boundaries so accepted provider results replay without new dispatch or collapsing the two windows. Inspect `--chatty` output together with canonical events and provider-journal evidence; prose alone is not restart proof. Keep direct House calls and typed contracts, with no `as any`. For gateway/worker drain and the existing Doppler dev database checklist, see [game worker operations](deployment/game-worker-operations.md).
+
 These rules and patterns apply to the game engine (`packages/engine`) for surfacing agent internal reasoning during simulations, particularly for Mingle workflows and decision phases.
 
 ## Purpose

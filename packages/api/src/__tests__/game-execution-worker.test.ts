@@ -55,7 +55,7 @@ describe("game worker boundary", () => {
       phase: "draining" as const,
     };
 
-    const waiting = await acknowledgeGameWorkerDrain(db, worker, lease, async () => {});
+    const waiting = await acknowledgeGameWorkerDrain(db, worker, lease);
     expect(waiting).toMatchObject({
       state: "draining",
       observedLease: { id: lease.id, fencingToken: lease.fencingToken },
@@ -64,9 +64,16 @@ describe("game worker boundary", () => {
     });
     expect(worker.canClaimGames()).toBeFalse();
 
+    // Observing the drain must not turn a live game into resumable abandoned
+    // work. The current owner remains free to heartbeat and finish it.
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0]?.status).toBe("in_progress");
+    expect((await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId)))[0]?.status).toBe("active");
+
     await db.update(schema.gameRunOwners).set({ status: "closed" })
       .where(eq(schema.gameRunOwners.gameId, gameId));
-    const drained = await acknowledgeGameWorkerDrain(db, worker, lease, async () => {});
+    const drained = await acknowledgeGameWorkerDrain(db, worker, { ...lease, phase: "accepting" });
     expect(drained).toMatchObject({
       state: "drained",
       observedLease: { id: lease.id, fencingToken: lease.fencingToken },
@@ -147,6 +154,26 @@ describe("game worker boundary", () => {
       observedLease: { id: secondLease.id, fencingToken: secondLease.fencingToken },
       claimsStoppedAt: expect.any(String),
       ownedGameCount: 0,
+    });
+  });
+
+  test("an old ownership read cannot drain a newer fence or reclosed admission", async () => {
+    const worker = startGameExecutionWorkerRuntime();
+    const firstLease = { id: randomUUID(), fencingToken: 4, phase: "draining" as const };
+    const secondLease = { id: randomUUID(), fencingToken: 5, phase: "accepting" as const };
+    let finishRead!: (count: number) => void;
+    const pending = worker.acknowledgeDrain(firstLease, () => new Promise<number>((resolve) => {
+      finishRead = resolve;
+    }));
+    worker.resumeClaimingAfterAdmissionReopens();
+    await worker.acknowledgeDrain(secondLease, async () => 1);
+    finishRead(0);
+    await pending;
+    expect(worker.getDrainStatus()).toMatchObject({
+      version: 1,
+      state: "draining",
+      observedLease: { id: secondLease.id, fencingToken: 5 },
+      ownedGameCount: 1,
     });
   });
 });

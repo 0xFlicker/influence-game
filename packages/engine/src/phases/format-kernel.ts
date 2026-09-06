@@ -23,6 +23,7 @@ import {
   type SaveOrEliminateBallot,
   type SealedElimRegistration,
 } from "../formats";
+import { completeFormatRound } from "./format-round-completion";
 import {
   buildFormatPressureProjection,
   formatPressureSummary,
@@ -430,38 +431,7 @@ export async function runFormatResolvePhase(
     voteDisclosure: elimination.voteDisclosure,
   });
 
-  await assertCanAcceptCommit(ctx);
-  gameState.recordRoundResult(
-    {
-      round: gameState.round,
-      empoweredId,
-      exposeScores: {},
-      candidates: null,
-      powerAction: null,
-      powerTarget: null,
-      eliminated: eliminatedId,
-      formatId,
-      formatMethod: formatId,
-    },
-    Phase.FORMAT_RESOLVE,
-  );
-
-  logger.logSystem(
-    `${gameState.getPlayerName(eliminatedId)} exited under ${displayNameForFormat(formatId)}`,
-    Phase.FORMAT_RESOLVE,
-  );
-
-  setFormatPressure(ctx, null);
-  state.offeredFormats = null;
-  state.selectedFormat = null;
-
-  actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
-  actor.send({
-    type: "UPDATE_ALIVE_PLAYERS",
-    aliveIds: gameState.getAlivePlayerIds(),
-  });
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((r) => setTimeout(r, 0));
+  await completeFormatRound(ctx, actor, formatId, empoweredId, eliminatedId);
 }
 
 async function resolveSaveOrEliminateRound(

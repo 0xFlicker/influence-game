@@ -16,6 +16,7 @@ import { Phase, type UUID } from "../types";
 import type { AgentResponse, StrategicDecisionMetadata } from "../game-runner.types";
 import { runAllianceFormationPhase, runAllianceHuddleWindow } from "./alliances";
 import { handleElimination } from "./elimination";
+import { completeFormatRound } from "./format-round-completion";
 import { runMinglePhase } from "./mingle";
 import {
   agentTurnSourcePointer,
@@ -612,8 +613,7 @@ export async function runTwoNamesResolution(
       votesReceived: score.totals[eliminatedId] ?? 0,
     },
   });
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await completeFormatRound(ctx, actor, "two_names", current.empoweredId, eliminatedId);
 }
 
 export async function runTwoNamesFormatMingle(

@@ -104,6 +104,59 @@ class RespondingHuddleAgent extends MockAgent {
 }
 
 describe("named alliance huddle windows", () => {
+  it("keeps both format windows distinct and replays the same provider schedule identities", async () => {
+    const run = async () => {
+      const { gameState, actor, ctx } = createHuddleHarness();
+      activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
+      const providerScheduleIds: string[] = [];
+      const summarize = ctx.houseInterviewer.summarizeAllianceHuddle.bind(ctx.houseInterviewer);
+      ctx.houseInterviewer.summarizeAllianceHuddle = async (context) => {
+        providerScheduleIds.push(context.scheduleId);
+        return summarize(context);
+      };
+      await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
+      await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
+      const outcomes = gameState.getAllianceHuddleOutcomes();
+      expect(outcomes).toHaveLength(2);
+      expect(new Set(outcomes.map((outcome) => outcome.id)).size).toBe(2);
+      expect(new Set(providerScheduleIds).size).toBe(2);
+      expect(gameState.getAlliance("alliance-ab")?.huddleOutcomeIds).toHaveLength(2);
+      return { providerScheduleIds, sessionIds: outcomes.map((outcome) => outcome.sessionId) };
+    };
+    expect(await run()).toEqual(await run());
+  });
+
+  it("reconstructs proposal, counter, and amendment identities from canonical boundaries", () => {
+    const first = createHuddleHarness().gameState;
+    const restored = GameState.fromCanonicalEvents(first.getCanonicalEvents());
+    const run = (state: GameState) => {
+      const proposal = state.recordAllianceProposal({
+        proposerId: "alice", name: "Pair", memberIds: ["alice", "bob"],
+        purpose: "Coordinate this window.", timebox: null,
+      });
+      const lineage = state.getAllianceProposalLineages()[0]!;
+      const counter = state.recordAllianceCounter({
+        lineageId: lineage.id, proposerId: "bob", name: "Pair", memberIds: ["alice", "bob"],
+        purpose: "Counter plan.", timebox: null,
+      });
+      if (!counter) throw new Error("expected counter");
+      state.recordAllianceResponse({ lineageId: lineage.id, versionId: counter.versionId,
+        playerId: "alice", response: "accepted" });
+      const amendment = state.recordAllianceAmendment({
+        allianceId: lineage.allianceId, proposerId: "alice", name: "Pair",
+        memberIds: ["alice", "bob"], purpose: "Amended plan.", timebox: null,
+      });
+      expect(proposal.versionId).not.toBe(counter.versionId);
+      expect(counter.versionId).not.toBe(amendment.versionId);
+      return state.getAllianceProposalLineages();
+    };
+    const normalize = (lineages: ReturnType<typeof run>) => lineages.map((lineage) => ({
+      id: lineage.id, allianceId: lineage.allianceId,
+      versionIds: lineage.versions.map((version) => version.versionId),
+    }));
+    expect(normalize(run(first))).toEqual(normalize(run(restored)));
+  });
+
   it("derives stable session and fact IDs for accepted response replay", async () => {
     const run = async () => {
       const { gameState, actor, ctx } = createHuddleHarness();

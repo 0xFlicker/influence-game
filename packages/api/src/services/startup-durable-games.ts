@@ -78,6 +78,9 @@ export async function adoptInProgressDurableGamesOnStartup(
     upgradeFrom?: SupportedRecoveryResumeInput,
   ): Promise<void> => {
     try {
+      // A signal can arrive while the ownership transaction is in flight.
+      // Release that claim through the normal failure path before construction.
+      options.signal?.throwIfAborted();
       await options.start({
         gameId,
         ownerEpoch: claim.ownerEpoch,

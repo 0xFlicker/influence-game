@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { Phase } from "../types";
 import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
-import { createUUID } from "../game-state";
 import type {
   HouseAllianceProposerCandidate,
   HouseAllianceProposerSelectionResult,
@@ -547,6 +546,8 @@ function huddleCandidate(ctx: PhaseRunnerContext, alliance: AllianceRecord, wind
 }
 
 function huddleScheduleRecord(params: {
+  gameId: UUID;
+  windowEventSequence: number;
   alliance: AllianceRecord;
   window: AllianceHuddleWindow;
   round: number;
@@ -556,7 +557,16 @@ function huddleScheduleRecord(params: {
   rationale: string;
 }): AllianceHuddleScheduleRecord {
   return {
-    id: createUUID(),
+    id: deterministicHuddleId([
+      "alliance-huddle-schedule-v1",
+      params.gameId,
+      params.windowEventSequence,
+      params.round,
+      params.window,
+      params.alliance.id,
+      params.pass,
+      params.decision,
+    ]),
     allianceId: params.alliance.id,
     window: params.window,
     round: params.round,
@@ -656,11 +666,7 @@ async function completeHuddleSession(
   // rows carry alliance/schedule/session IDs plus exact session-time audience.
   const sessionId = deterministicHuddleId([
     "alliance-huddle-session-v1",
-    ctx.gameState.gameId,
-    schedule.round,
-    schedule.window,
-    alliance.id,
-    schedule.pass,
+    schedule.id,
   ]);
   const huddle: AllianceHuddlePromptContext = {
     sessionId,
@@ -971,6 +977,9 @@ export async function runAllianceHuddleWindow(
   const eligible = ctx.gameState.getHuddleEligibleAlliances();
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
   const window = huddleWindowForPhase(phase);
+  // Capture the canonical boundary once, before any schedule/provider result.
+  // It survives scratch-turn replay and separates repeated format windows.
+  const windowEventSequence = ctx.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
   if (eligible.length === 0) {
     if (completePhase) {
       actor.send({ type: "PHASE_COMPLETE" });
@@ -1038,6 +1047,8 @@ export async function runAllianceHuddleWindow(
 
   for (const { alliance, rationale, pass } of scheduled) {
     const schedule = huddleScheduleRecord({
+      gameId: ctx.gameState.gameId,
+      windowEventSequence,
       alliance,
       window,
       round: ctx.gameState.round,
@@ -1054,6 +1065,8 @@ export async function runAllianceHuddleWindow(
 
   for (const { alliance, rationale } of skipped) {
     const schedule = huddleScheduleRecord({
+      gameId: ctx.gameState.gameId,
+      windowEventSequence,
       alliance,
       window,
       round: ctx.gameState.round,

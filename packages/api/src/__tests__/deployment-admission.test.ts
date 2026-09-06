@@ -34,6 +34,39 @@ const PROVENANCE = {
 };
 
 describe("deployment admission lease", () => {
+  test("unowned queued starts survive a release while active ownership blocks switching", async () => {
+    const db = await setupTestDB();
+    const queuedId = await insertWaitingGame(db);
+    await db.update(schema.games).set({ status: "in_progress" })
+      .where(eq(schema.games.id, queuedId));
+    const runningId = await insertWaitingGame(db);
+    const owner = await acquireGameRunOwner(db, runningId);
+    if (!owner.ok) throw new Error(owner.error);
+    const acquired = await acquireDeploymentAdmissionLease(db, PROVENANCE);
+    if (!acquired.ok) throw new Error(acquired.error);
+    const fence = { leaseId: acquired.lease.id, fencingToken: acquired.lease.fencingToken };
+    expect(await getDeploymentAdmissionStatus(db)).toMatchObject({
+      activeGameCount: 2, activeGameOwnerCount: 1,
+    });
+    expect((await advanceDeploymentAdmissionPhase(db, {
+      ...fence, expectedPhase: "draining", nextPhase: "validating",
+    })).ok).toBeTrue();
+    expect(await advanceDeploymentAdmissionPhase(db, {
+      ...fence, expectedPhase: "validating", nextPhase: "switching",
+    })).toMatchObject({ ok: false, code: "active_games_remaining" });
+    await db.update(schema.gameRunOwners).set({ status: "closed" })
+      .where(eq(schema.gameRunOwners.gameId, runningId));
+    await db.update(schema.games).set({ status: "completed" })
+      .where(eq(schema.games.id, runningId));
+    expect(await getDeploymentAdmissionStatus(db)).toMatchObject({
+      activeGameCount: 1, activeGameOwnerCount: 0,
+    });
+    expect((await advanceDeploymentAdmissionPhase(db, {
+      ...fence, expectedPhase: "validating", nextPhase: "switching",
+    })).ok).toBeTrue();
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, queuedId)))[0]?.status).toBe("in_progress");
+  });
   test("records canonical Privy and Clerk operator identities during Resume", async () => {
     for (const revokedBy of ["did:privy:existing-user", "user_clerk"]) {
       const db = await setupTestDB();
@@ -227,6 +260,8 @@ describe("deployment admission lease", () => {
       .where(eq(schema.deploymentRecoveryReconciliations.leaseId, first.lease.id)))[0])
       .toMatchObject({ status: "pending", attempts: 0 });
     expect((await acquireGameRunOwner(db, firstGameId)).ok).toBeTrue();
+    await db.update(schema.gameRunOwners).set({ status: "closed" })
+      .where(eq(schema.gameRunOwners.gameId, firstGameId));
     await db.update(schema.games).set({ status: "completed" })
       .where(eq(schema.games.id, firstGameId));
 
@@ -302,11 +337,10 @@ describe("deployment admission lease", () => {
     expect((await acquireGameRunOwner(db, secondGameId)).ok).toBeTrue();
   });
 
-  test("the switching CAS fails when a durable active game exists", async () => {
+  test("the switching CAS fails when an active game owner exists", async () => {
     const db = await setupTestDB();
     const gameId = await insertWaitingGame(db);
-    await db.update(schema.games).set({ status: "in_progress" })
-      .where(eq(schema.games.id, gameId));
+    expect((await acquireGameRunOwner(db, gameId)).ok).toBeTrue();
     const acquired = await acquireDeploymentAdmissionLease(db, PROVENANCE);
     if (!acquired.ok) throw new Error(acquired.error);
     await advanceDeploymentAdmissionPhase(db, {
@@ -376,23 +410,26 @@ describe("deployment controller API", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expect.objectContaining({
+    expect(await response.json()).toEqual({
+      version: 1,
       state: "claiming",
       observedLease: null,
+      claimsStoppedAt: null,
       ownedGameCount: null,
-    }));
+    });
 
     const lease = { id: randomUUID(), fencingToken: 4, phase: "draining" as const };
     await worker.acknowledgeDrain(lease, async () => 0);
     const drained = await app.request("/api/internal/deployment-control/game-worker-drain-status", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(await drained.json()).toEqual(expect.objectContaining({
+    expect(await drained.json()).toEqual({
+      version: 1,
       state: "drained",
       observedLease: { id: lease.id, fencingToken: lease.fencingToken },
       claimsStoppedAt: expect.any(String),
       ownedGameCount: 0,
-    }));
+    });
   });
 
   test("accepts only the explicit service token type, audience, subject, and permission", async () => {

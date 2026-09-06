@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import type { DeploymentAdmissionPhase } from "../db/schema.js";
 
 /**
  * Gateways serve commands, reads, and websocket delivery. Only the game-worker
@@ -19,7 +20,7 @@ export type GameExecutionWorkerRuntime = {
   resumeClaimingAfterAdmissionReopens(): void;
   acknowledgeDrain(
     lease: GameWorkerDrainLease,
-    drainOwnedGames: () => Promise<number>,
+    countOwnedGames: () => Promise<number>,
   ): Promise<GameWorkerDrainStatus>;
   getDrainStatus(): GameWorkerDrainStatus;
 };
@@ -27,10 +28,11 @@ export type GameExecutionWorkerRuntime = {
 export type GameWorkerDrainLease = {
   id: string;
   fencingToken: number;
-  phase: "draining" | "validating";
+  phase: DeploymentAdmissionPhase;
 };
 
 export type GameWorkerDrainStatus = {
+  version: 1;
   state: "claiming" | "draining" | "drained";
   observedLease: Pick<GameWorkerDrainLease, "id" | "fencingToken"> | null;
   claimsStoppedAt: string | null;
@@ -48,12 +50,12 @@ export function readApiRuntimeRole(
 export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
   const workerId = randomUUID();
   let state: GameWorkerDrainStatus = {
+    version: 1,
     state: "claiming",
     observedLease: null,
     claimsStoppedAt: null,
     ownedGameCount: null,
   };
-  let draining: Promise<GameWorkerDrainStatus> | null = null;
   const failedStarts = new Map<string, { attempts: number; retryAt: number }>();
 
   const snapshot = (): GameWorkerDrainStatus => structuredClone(state);
@@ -73,16 +75,18 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
     resumeClaimingAfterAdmissionReopens: () => {
       if (state.state === "claiming") return;
       state = {
+        version: 1,
         state: "claiming",
         observedLease: null,
         claimsStoppedAt: null,
         ownedGameCount: null,
       };
     },
-    acknowledgeDrain: async (lease, drainOwnedGames) => {
+    acknowledgeDrain: async (lease, countOwnedGames) => {
       if (state.state === "claiming") {
         const now = new Date().toISOString();
         state = {
+          version: 1,
           state: "draining",
           observedLease: { id: lease.id, fencingToken: lease.fencingToken },
           claimsStoppedAt: now,
@@ -95,6 +99,7 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
         // Keep the same acknowledgement while this fence advances phases.
       } else {
         state = {
+          version: 1,
           state: "draining",
           observedLease: { id: lease.id, fencingToken: lease.fencingToken },
           claimsStoppedAt: new Date().toISOString(),
@@ -102,42 +107,40 @@ export function startGameExecutionWorkerRuntime(): GameExecutionWorkerRuntime {
         };
       }
       if (state.state === "drained") return snapshot();
-      if (!draining) {
-        draining = (async () => {
-          try {
-            const ownedGameCount = await drainOwnedGames();
-            state = {
-              ...state,
-              state: ownedGameCount === 0 ? "drained" : "draining",
-              ownedGameCount,
-            };
-            return snapshot();
-          } catch (error) {
-            state = { ...state, state: "draining", ownedGameCount: null };
-            throw error;
-          } finally {
-            draining = null;
-          }
-        })();
+      const observedState = state;
+      try {
+        const ownedGameCount = await countOwnedGames();
+        // Admission can reopen or advance to a new fence while the DB read
+        // is pending. An old read must never acknowledge that newer state.
+        if (state === observedState) {
+          state = {
+            ...state,
+            state: ownedGameCount === 0 ? "drained" : "draining",
+            ownedGameCount,
+          };
+        }
+      } catch (error) {
+        if (state === observedState) {
+          state = { ...state, state: "draining", ownedGameCount: null };
+        }
+        throw error;
       }
-      return draining;
+      return snapshot();
     },
     getDrainStatus: snapshot,
   };
 }
 
 /**
- * Acknowledges one observed global drain only after this worker has stopped
- * local execution and the durable lease table confirms it owns no game.
+ * Stop claims while owned games continue to completion. A drain only observes
+ * ownership; it must never abort execution or relinquish an active game's lease.
  */
 export async function acknowledgeGameWorkerDrain(
   db: DrizzleDB,
   runtime: GameExecutionWorkerRuntime,
   lease: GameWorkerDrainLease,
-  releaseOwnedGames: () => Promise<void>,
 ): Promise<GameWorkerDrainStatus> {
   return runtime.acknowledgeDrain(lease, async () => {
-    await releaseOwnedGames();
     const activeOwners = await db.select({ id: schema.gameRunOwners.id })
       .from(schema.gameRunOwners)
       .where(and(

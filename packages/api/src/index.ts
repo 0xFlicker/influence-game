@@ -331,7 +331,10 @@ async function finishBackgroundRuntimeStartup(
   // classify, claim, or recover durable game ownership. Lease completion
   // atomically enqueues the same DB-backed recovery reconciliation consumed
   // below after admission reopens.
-  const adoptDurableGames = async () => {
+  let stopping = false;
+  const scanDurableGames = async () => {
+    if (stopping) return { attempted: 0, recovered: 0, skipped: [] };
+    assertNotAborted();
     if (!gameExecutionWorker) {
       throw new Error("Durable game adoption requires INFLUENCE_API_ROLE=game-worker");
     }
@@ -346,7 +349,7 @@ async function finishBackgroundRuntimeStartup(
       gameExecutionWorker.resumeClaimingAfterAdmissionReopens();
       console.info("[game-worker] Deployment admission reopened; durable claims resumed");
     }
-    if (admission.lease?.phase === "draining" || admission.lease?.phase === "validating") {
+    if (admission.lease) {
       const drainStatus = await acknowledgeGameWorkerDrain(
         db,
         gameExecutionWorker,
@@ -355,7 +358,6 @@ async function finishBackgroundRuntimeStartup(
           fencingToken: admission.lease.fencingToken,
           phase: admission.lease.phase,
         },
-        abortAllGames,
       );
       console.info(
         `[game-worker] Drain ${drainStatus.state}; local active leases ${drainStatus.ownedGameCount ?? "unknown"}`,
@@ -377,6 +379,8 @@ async function finishBackgroundRuntimeStartup(
       onStartSucceeded: gameExecutionWorker.recordGameStartSucceeded,
       onStartFailed: gameExecutionWorker.recordGameStartFailed,
       start: async ({ gameId, ownerEpoch, upgradeFrom }) => {
+        assertNotAborted();
+        if (stopping) throw new Error("Game worker is stopping");
         const started = await startGame(db, gameId, ownerEpoch, {
           ...(upgradeFrom && { durableUpgradeFrom: upgradeFrom }),
         });
@@ -391,6 +395,13 @@ async function finishBackgroundRuntimeStartup(
         reason: entry.detail ? `${entry.reason}: ${entry.detail}` : entry.reason,
       })),
     };
+  };
+  // Both timers and terminal reconciliation share one scan. Shutdown waits for
+  // claims/construction to settle before aborting the registered game set.
+  let executionScan: ReturnType<typeof scanDurableGames> | null = null;
+  const adoptDurableGames = () => {
+    executionScan ??= scanDurableGames().finally(() => { executionScan = null; });
+    return executionScan;
   };
   if (!activationFence && gameExecutionWorker) {
     assertNotAborted();
@@ -456,9 +467,9 @@ async function finishBackgroundRuntimeStartup(
   };
   if (gameExecutionWorker) await reconcilePendingRecovery();
   assertNotAborted();
-  const gamePublicationRuntime = await startDueGamePublicationRuntime(db, {
-    broadcast: broadcastGamePublication,
-  });
+  const gamePublicationRuntime = apiRuntimeRole === "gateway"
+    ? await startDueGamePublicationRuntime(db, { broadcast: broadcastGamePublication })
+    : null;
   const reconciliationTimer = gameExecutionWorker
     ? setInterval(() => { void reconcilePendingRecovery(); }, 5_000)
     : null;
@@ -474,11 +485,17 @@ async function finishBackgroundRuntimeStartup(
 
   return {
     async stop() {
+      stopping = true;
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);
+      if (executionScan) {
+        try { await executionScan; } catch (error) {
+          console.warn("[game-worker] Scan ended during shutdown", error);
+        }
+      }
       if (gameExecutionWorker) await abortAllGames();
       providerHealthProbeRuntime?.stop();
-      await gamePublicationRuntime.stop();
+      await gamePublicationRuntime?.stop();
       await providerAttemptReconciliation.stop();
       await ownerLearningFailureReconciliation.stop();
       await ownerLearningWorker?.stop();

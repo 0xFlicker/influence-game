@@ -596,7 +596,7 @@ bun run dev:render-worker
 
 Run those `dev:*` commands in separate terminals. They wrap Doppler's
 `social-strategy-agent/dev` config themselves and share the local trailer token,
-API origin, and filesystem upload directory. `dev:api` is a non-claiming
+API origin, and filesystem upload directory. `dev:gateway` (also `dev:api`) is a non-claiming
 gateway. `bun run dev:game-worker` directly starts a claiming worker on port
 3002 against the same development database; use `PORT=3003` for another worker
 on the same machine and stop workers with Ctrl-C. Per-game owner leases prevent

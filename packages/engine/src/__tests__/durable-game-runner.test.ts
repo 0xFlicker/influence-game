@@ -582,6 +582,58 @@ describe("GameRunner durable logical turns", () => {
     )).toHaveLength(1);
   });
 
+  it.each(["two-names-initial-mingle", "two-names-final-mingle"])(
+    "reconstructs %s after decisions finish but before canonical commit",
+    async (action) => {
+      const store = new MemoryDurableTurnStore();
+      const ids = Array.from({ length: 5 }, () => createUUID());
+      const names = ["Alpha", "Beta", "Gamma", "Delta", "Echo"];
+      const config = { ...TEST_GAME_CONFIG, maxRounds: 1, minPlayers: 5,
+        mingleSessionsPerRound: 1, formatManifest: ["two_names" as const] };
+      const agents = () => ids.map((id, index) => {
+        const agent = new MockAgent(id, names[index]!);
+        agent.getTwoNamesOverride = async (_ctx, pair) => ({
+          action: "use", removedNomineeId: pair[0], decisionSource: "llm", fallbackReason: null,
+        });
+        agent.getAllianceAction = async (_ctx, opportunity) => opportunity.kind === "response"
+          ? { action: "accept", lineageId: opportunity.lineageId, versionId: opportunity.versionId }
+          : { action: "propose", name: `${agent.name} pair`,
+              memberNames: [agent.name, names[(index + 1) % names.length]!], purpose: "Hold the line." };
+        return agent;
+      });
+      let failedDraft: GameTurnCommitDraftV1 | null = null;
+      let failedIntent: GameTurnIntentV1 | null = null;
+      store.beforeCommit = async (draft) => {
+        const intent = store.plannedIntentForAction(action);
+        if (intent?.turnId !== draft.turnId) return;
+        failedDraft = structuredClone(draft);
+        failedIntent = structuredClone(intent);
+        throw new Error("crash after Mingle decisions before commit");
+      };
+      const failedRunner = new GameRunner(agents(), config, undefined, {
+        durableTurnStore: store, maxRoundsMode: "exact",
+      });
+      await expect(failedRunner.run()).rejects.toThrow("crash after Mingle decisions before commit");
+      expect(failedDraft).not.toBeNull();
+      expect(store.committedActions).not.toContain(action);
+      store.beforeCommit = undefined;
+      const resumedRunner = new GameRunner(agents(), config, undefined, {
+        gameId: store.snapshot!.execution.gameId, durableTurnStore: store, maxRoundsMode: "exact",
+      });
+      await resumedRunner.run();
+      const committed = store.committedDrafts[store.committedActions.indexOf(action)]!;
+      const stableEvents = (draft: GameTurnCommitDraftV1) => JSON.parse(JSON.stringify(
+        draft.canonicalEvents,
+        (key, value: unknown) => ["timestamp", "createdAt", "completedAt", "updatedAt", "resolvedAt", "startedAt"].includes(key) ? undefined : value,
+      ));
+      expect(stableEvents(committed)).toEqual(stableEvents(failedDraft!));
+      expect(store.plannedIntentForAction(action)).toEqual(failedIntent!);
+      expect(store.committedActions.filter((entry) => entry === action)).toHaveLength(1);
+      expect(committed.canonicalEvents.some((event) => event.type === "alliance.huddle_outcome_recorded"))
+        .toBeTrue();
+    },
+  );
+
   it("uses the durable turn seed for replay-stable endgame random tiebreaks", () => {
     const ids = Array.from({ length: 4 }, () => createUUID());
     const base = new GameState(ids.map((id, index) => ({ id, name: ENDGAME_NAMES[index]! })));

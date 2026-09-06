@@ -6,7 +6,7 @@
  * Pure TypeScript — no xstate, no ElizaOS.
  */
 
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { CanonicalEventLog, type CanonicalEventListener, type CanonicalEventSubscriptionOptions } from "./canonical-event-log";
 import type {
   CanonicalEventSource,
@@ -797,14 +797,22 @@ export class GameState {
     );
   }
 
+  private allianceMutationId(kind: "alliance" | "lineage" | "version"): UUID {
+    const digest = createHash("sha256").update(JSON.stringify([
+      "alliance-mutation-v1", this.gameId,
+      this.canonicalEvents.list().at(-1)?.sequence ?? 0, kind,
+    ])).digest("hex");
+    return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+  }
+
   recordAllianceProposal(
     input: AllianceProposalInput,
     options: AllianceMutationOptions = {},
   ): AllianceProposalVersion {
     const phase = this.assertAllianceMutationPhase(options);
-    const allianceId = input.allianceId ?? createUUID();
-    const lineageId = input.lineageId ?? createUUID();
-    const versionId = input.versionId ?? createUUID();
+    const allianceId = input.allianceId ?? this.allianceMutationId("alliance");
+    const lineageId = input.lineageId ?? this.allianceMutationId("lineage");
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this._allianceProposalLineages.has(lineageId)) {
       throw new Error(`Alliance proposal lineage already exists: ${lineageId}`);
     }
@@ -856,8 +864,8 @@ export class GameState {
     if (!alliance || alliance.status !== "active") {
       throw new Error(`Alliance amendment requires an active alliance: ${input.allianceId}`);
     }
-    const lineageId = input.lineageId ?? createUUID();
-    const versionId = input.versionId ?? createUUID();
+    const lineageId = input.lineageId ?? this.allianceMutationId("lineage");
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this._allianceProposalLineages.has(lineageId)) {
       throw new Error(`Alliance amendment lineage already exists: ${lineageId}`);
     }
@@ -977,7 +985,7 @@ export class GameState {
 
     const terms = this.normalizeAllianceTerms(input);
     this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, existing.allianceId);
-    const versionId = input.versionId ?? createUUID();
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this.findAllianceVersion(existing, versionId)) {
       throw new Error(`Alliance proposal version already exists: ${versionId}`);
     }

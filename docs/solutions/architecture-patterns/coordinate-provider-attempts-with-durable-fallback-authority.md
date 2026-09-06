@@ -34,6 +34,8 @@ When one phase legitimately schedules the same action more than once, give the c
 
 Canonically serialize and hash that coordinate before deriving the logical-call ID. The journal persists the structured coordinate and its hash as immutable identity. A historical numeric column may remain nullable during an expand-contract rollout, but it is inert: no active writer, reader, or replay path may use it as an authority. Do not pack semantic dimensions into a number.
 
+Every ID inside a semantic coordinate or accepted provider result must also survive scratch-turn reconstruction. Alliance proposal, lineage, and version IDs derive from the canonical event boundary; huddle schedule IDs include the window boundary and session IDs derive from that schedule. This keeps Two Names' initial and final Mingle outcomes distinct while replaying each accepted House/agent call under its original identity. Random IDs allocated inside an uncommitted turn must not feed later provider identity or decision references.
+
 The coordinator owns attempt mechanics and manifest traversal. It does not decide legal game actions. Optional speech may return typed absence; required actions still delegate to the phase that owns the current legal target set.
 
 ```ts

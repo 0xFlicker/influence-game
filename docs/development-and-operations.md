@@ -184,7 +184,7 @@ The gateway runs on `http://127.0.0.1:3000` by default. It connects to a local P
 bun run dev:game-worker
 ```
 
-The game worker runs the same API image on `http://127.0.0.1:3002` by default, with `INFLUENCE_API_ROLE=game-worker`. Multiple game workers may run at once: each durable game has one renewable `game_run_owners` lease, so a healthy owner is never displaced. During a release drain, game workers stop claiming new games; a graceful worker shutdown aborts at the committed-turn boundary and releases its owned games for another worker to resume. The private trace env must be present in every game worker before it starts a game.
+The game worker runs the same API image on `http://127.0.0.1:3002` by default, with `INFLUENCE_API_ROLE=game-worker`. Multiple game workers may run at once: each durable game has one renewable `game_run_owners` lease, so a healthy owner is never displaced. During a release drain, new claims stop while owned games finish normally; the version 1 drain response reports drained only after zero ownership. A separate Ctrl-C/process shutdown aborts at the committed-turn boundary and releases owned games for durable resumption. Shutdown waits for in-flight claim/construction before stopping the final registered game set. The private trace env must be present in every game worker before it starts a game.
 
 `bun run dev:api` is always a non-claiming gateway. `bun run dev:game-worker`
 directly starts a claiming worker against the development database. A second
