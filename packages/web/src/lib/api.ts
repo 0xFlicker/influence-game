@@ -2606,6 +2606,9 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  /** Durable live publication identity and catch-up classification. */
+  publicationSequence?: number;
+  liveCatchUp?: boolean;
   id: number;
   gameId: string;
   round: number;
@@ -2732,7 +2735,7 @@ export type WsGameEvent =
 /** Viewer reducer input after the WebSocket hook unwraps durable publications. */
 export type WsViewerEvent =
   | Exclude<WsGameEvent, WsPublicationEvent>
-  | WsPublicationPayload;
+  | (WsPublicationPayload & { publicationSequence?: number; liveCatchUp?: boolean });
 
 // ---------------------------------------------------------------------------
 // Game detail API calls

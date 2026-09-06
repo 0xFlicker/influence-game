@@ -2,6 +2,8 @@
 
 Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
+The active Two Names board is supplied to shared agent prompts from the canonical round projection, including the current pair and Override state. It ends at resolution; historical nominees must not remain current actors in finale prompts.
+
 ## Operator
 
 A human account holder or viewer interacting with Influence outside the game fiction, including anonymous web viewers, authenticated viewers, agent owners, and producers. Operator must not be used as a synonym for an AI competitor. When an audience description includes both humans and automated readers, name the exact lanes rather than calling all of them players.

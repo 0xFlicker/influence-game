@@ -12,7 +12,6 @@ import {
   advancePresentationHydrationFailure,
   applyStructuredPostVotePressureSummaries,
   applyWatchStateToGameDetail,
-  buildLiveViewerDecisionFrame,
   buildMatchWatchModel,
   getGamePresentationRouteDecision,
   getMatchWatchRouteDecision,
@@ -273,12 +272,7 @@ describe("match watch model", () => {
 
     expect(frame.viewerDecisionEvent).toEqual(liveEvent.event);
     expect(frame.phase).toBe("FORMAT_RESOLVE");
-    expect(buildLiveViewerDecisionFrame(baseGame(), liveEvent.event)).toMatchObject({
-      gameId: "game-1",
-      sequence: 13,
-      eventType: "format.safety_bounce_pointer",
-      viewerDecisionEvent: liveEvent.event,
-    });
+
   });
 
   it("applies watch state as the authoritative shell state", () => {

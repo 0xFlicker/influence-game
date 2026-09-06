@@ -26,6 +26,8 @@ export async function installDeterministicFormatGame(
     scenarioId: FormatKernelViewerScenarioId;
     status: DeterministicGameStatus;
     initialDecisionCount?: number;
+    historicalCatchUp?: boolean;
+    frameResponseDelayMs?: number;
   },
 ): Promise<{
   sockets: WebSocketRoute[];
@@ -47,6 +49,7 @@ export async function installDeterministicFormatGame(
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/replay-watch-frames")) {
       const afterSequence = Number(url.searchParams.get("afterSequence") ?? 0);
+      if (options.frameResponseDelayMs) await new Promise((resolve) => setTimeout(resolve, options.frameResponseDelayMs));
       await fulfillJson(
         route,
         buildDeterministicFormatFrames(
@@ -72,8 +75,17 @@ export async function installDeterministicFormatGame(
     (socket) => {
       sockets.push(socket);
       setTimeout(() => {
+        let publicationSequence = 0;
+        if (options.historicalCatchUp) {
+          const publish = (payload: unknown) => socket.send(JSON.stringify({
+            type: "publication", gameId: options.slug, publicationSequence: ++publicationSequence, turnSequence: 1, payload,
+          }));
+          publish({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: scenario.roster[0]!.id, scope: "public", text: "Historical introduction must not restart live playback.", timestamp: 1 } });
+          for (const event of currentDecisions()) publish({ type: "viewer_decision_event", gameId: options.slug, event });
+        }
         socket.send(JSON.stringify({
           type: "watch_state",
+          throughPublicationSequence: publicationSequence,
           state: currentGame().watchState,
         }));
       }, 25);

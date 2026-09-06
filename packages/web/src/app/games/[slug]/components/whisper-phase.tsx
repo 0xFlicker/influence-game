@@ -557,7 +557,7 @@ export function OpenWhisperRoomsView({
       <div className="flex min-w-0 items-baseline gap-2 lg:gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-purple-200/80 lg:text-[11px] lg:tracking-[0.26em]">MINGLE</p>
         <p className="truncate text-[9px] uppercase tracking-[0.14em] text-white/35 lg:text-[10px] lg:tracking-[0.16em]">
-          Turn {activeBeat} of {Math.max(beats.length, 1)}
+          Turn {activeBeat}
         </p>
       </div>
       <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] lg:px-2.5 lg:py-1 lg:text-[10px] lg:tracking-[0.16em] ${

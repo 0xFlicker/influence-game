@@ -149,7 +149,7 @@ describe("presentation director", () => {
     director.play();
     clock.tick(400);
     director.pause();
-    director.append([cue("game:16", 16)]);
+    director.append([cue("game:10", 10), cue("game:12", 12), cue("game:14", 14), cue("game:16", 16)]);
     clock.tick(10_000);
 
     expect(director.getSnapshot()).toMatchObject({
@@ -218,10 +218,11 @@ describe("presentation director", () => {
     });
     expect(clock.timers.size).toBe(0);
 
-    director.append([cue("game:18", 18), cue("game:20", 20), cue("game:22", 22)]);
+    director.append([cue("game:10", 10), cue("game:12", 12), cue("game:18", 18), cue("game:20", 20), cue("game:22", 22)]);
     expect(director.getSnapshot().cueKeys).toEqual([
       "game:10",
       "game:12",
+      "game:18",
       "game:20",
       "game:22",
     ]);
@@ -253,7 +254,7 @@ describe("presentation director", () => {
     const director = createPresentationDirector();
     director.reconnect([cue("game:20", 20)]);
 
-    director.append([cue("social:20", 20, 1, "classic")]);
+    director.append([cue("game:20", 20), cue("social:20", 20, 1, "classic")]);
 
     expect(director.getSnapshot().cueKeys).toEqual([
       "game:20",
@@ -267,7 +268,7 @@ describe("presentation director", () => {
     director.reconnect([cue("game:10", 10)]);
     director.play();
 
-    director.append([cue("game:12", 12)]);
+    director.append([cue("game:10", 10), cue("game:12", 12)]);
     expect(director.getSnapshot()).toMatchObject({
       activeKey: "game:12",
       isPlaying: true,
@@ -283,7 +284,7 @@ describe("presentation director", () => {
     });
     expect(clock.timers.size).toBe(0);
 
-    director.append([cue("game:14", 14)]);
+    director.append([cue("game:10", 10), cue("game:12", 12), cue("game:14", 14)]);
     expect(director.getSnapshot()).toMatchObject({
       activeKey: "game:14",
       isPlaying: true,
@@ -297,11 +298,11 @@ describe("presentation director", () => {
     const director = createPresentationDirector({ clock, followTail: true });
     director.reconnect([cue("game:10", 10)]);
     director.play();
-    director.append([cue("game:12", 12)]);
+    director.append([cue("game:10", 10), cue("game:12", 12)]);
     clock.tick(1_000);
 
     director.pause();
-    director.append([cue("game:14", 14)]);
+    director.append([cue("game:10", 10), cue("game:12", 12), cue("game:14", 14)]);
     expect(director.getSnapshot()).toMatchObject({
       activeKey: "game:12",
       cursor: 1,
@@ -401,4 +402,42 @@ describe("presentation director", () => {
     director.dispose();
     expect(clock.timers.size).toBe(0);
   });
+});
+
+// Catch-up is history, not a fresh action after the current live scene.
+describe("live historical reconciliation", () => {
+  it("backfills introductions before the current cue without resuming or rewinding", () => {
+    const director = createPresentationDirector({ clock: new FakeClock(), followTail: true });
+    const current = cue("round3:selection", 146, 3);
+    director.reconnect([current]);
+    director.play();
+    const introduction = { ...cue("intro", 2, 0, "classic"), liveCatchUp: true };
+    director.append([introduction, current]);
+    expect(director.getSnapshot()).toMatchObject({ activeKey: current.key, cursor: 1, isPlaying: true });
+    const next = cue("round3:plea", 189, 3);
+    director.append([introduction, current, next]);
+    expect(director.getSnapshot().activeKey).toBe(next.key);
+  });
+
+  it("preserves paused position and refreshes scene indexes when history is inserted", () => {
+    const director = createPresentationDirector({ clock: new FakeClock(), followTail: true });
+    const current = cue("mingle", 146, 3, "classic");
+    director.load([current]);
+    const refreshed = { ...current, sceneIndex: 2 };
+    director.append([cue("intro", 2, 0, "classic"), refreshed]);
+    expect(director.getSnapshot()).toMatchObject({ activeKey: current.key, cursor: 1, isPlaying: false });
+    expect(director.getActiveCue()).toMatchObject({ sceneIndex: 2 });
+  });
+});
+
+it("resumes a new live cue buffered while paused at the initial hydration boundary", () => {
+  const director = createPresentationDirector({ clock: new FakeClock(), followTail: true });
+  const current = cue("current", 100);
+  director.reconnect([current]);
+  director.play();
+  director.pause();
+  director.append([current, cue("new", 101)]);
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "current", isPlaying: false });
+  director.play();
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "new", isPlaying: true });
 });

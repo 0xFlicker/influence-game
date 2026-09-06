@@ -123,6 +123,46 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("Two Names reconnect preserves an explicit pause while newer results arrive", async ({ page }) => {
+    const slug = "catchup-two-names-paused";
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const fixture = await installDeterministicFormatGame(page, {
+      slug, scenarioId: "two_names_declined", status: "in_progress",
+      initialDecisionCount: scenario.decisions.length - 1,
+      historicalCatchUp: true, frameResponseDelayMs: 300,
+    });
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect(page.locator("[data-format-cue]").first()).toBeVisible();
+    await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
+    fixture.setDecisionCount(scenario.decisions.length);
+    fixture.sockets.at(-1)!.close({ code: 1001, reason: "test reconnect" });
+    await expect.poll(() => fixture.sockets.length).toBe(2);
+    await expect(page.getByRole("button", { name: "▶ Play", exact: true })).toBeVisible();
+    await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "▶ Play", exact: true }).click();
+    await expect(page.locator('[data-format-cue="format_roll_call"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
+  });
+
+  for (const frameResponseDelayMs of [0, 500]) {
+    test(`Two Names live catch-up preserves current round with frame delay ${frameResponseDelayMs}`, async ({ page }) => {
+      const slug = `catchup-two-names-${frameResponseDelayMs}`;
+      await installDeterministicFormatGame(page, {
+        slug, scenarioId: "two_names_declined", status: "in_progress",
+        historicalCatchUp: true, frameResponseDelayMs,
+      });
+      await page.goto(viewerUrl(`/games/${slug}`));
+      await expect(page.locator('[data-format-cue="format_elimination"]')).toBeVisible();
+      await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
+      await page.reload();
+      await expect(page.locator('[data-format-cue="format_elimination"]')).toBeVisible();
+      await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
+    });
+  }
+
   for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) {
     for (const mobile of [false, true]) {
       test(`Two Names ${scenarioId} keeps names, long pleas and tally legible ${mobile ? "mobile reduced motion" : "desktop"}`, async ({ page }, testInfo) => {

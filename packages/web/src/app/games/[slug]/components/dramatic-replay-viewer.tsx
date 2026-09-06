@@ -175,7 +175,8 @@ function buildClassicPresentationCues(
 
       return stages.map(({ stage, durationMs }) => ({
         source: "classic" as const,
-        key: `classic:${scene.id}:${messageIndex}:${message.id}:${stage}`,
+        liveCatchUp: message.liveCatchUp,
+        key: `classic:${message.id}:${stage}`,
         canonicalSequence,
         round: scene.round,
         phase: scene.phase,
@@ -421,7 +422,6 @@ function DramaticReplayTheater({
   const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
   const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
   const resumeAfterTransitionRef = useRef(false);
-  const resumeAfterReconnectRef = useRef(false);
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -481,7 +481,7 @@ function DramaticReplayTheater({
     if (
       live
       && (
-        presentationHydrationStatus === "reconnecting"
+        presentationHydrationStatus !== "ready"
         || reconnectHydrationPendingRef.current
       )
     ) {
@@ -526,9 +526,6 @@ function DramaticReplayTheater({
   useEffect(() => {
     if (!live) return;
     if (presentationHydrationStatus === "reconnecting") {
-      if (directorSnapshot.isPlaying) {
-        resumeAfterReconnectRef.current = true;
-      }
       reconnectHydrationPendingRef.current = true;
       return;
     }
@@ -541,9 +538,8 @@ function DramaticReplayTheater({
     }
 
     const shouldResume =
-      directorSnapshot.isPlaying || resumeAfterReconnectRef.current;
+      directorSnapshot.isPlaying;
     reconnectHydrationPendingRef.current = false;
-    resumeAfterReconnectRef.current = false;
     director.reconnect(presentationCues);
     if (shouldResume) director.play();
   }, [
@@ -840,7 +836,6 @@ function DramaticReplayTheater({
   const pausePresentation = useCallback(() => {
     // An explicit audience pause wins over automatic transition/reconnect resume.
     resumeAfterTransitionRef.current = false;
-    resumeAfterReconnectRef.current = false;
     director.pause();
   }, [director]);
 

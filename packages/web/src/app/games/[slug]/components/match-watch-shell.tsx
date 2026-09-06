@@ -69,10 +69,10 @@ export function MatchWatchShell({
     () =>
       applyStructuredPostVotePressureSummaries({
         messages,
-        replayFrames: live ? [] : replayFrames,
+        replayFrames,
         watchState: game.watchState,
       }),
-    [game.watchState, live, messages, replayFrames],
+    [game.watchState, messages, replayFrames],
   );
   const handlePlaybackStateChange = useCallback((state: MatchWatchPlaybackState) => {
     setPlaybackState((current) => {
@@ -88,8 +88,8 @@ export function MatchWatchShell({
         live,
         connStatus,
         selectedPlayerId,
-        playbackState: live ? null : playbackState,
-        replayFrames: live ? [] : replayFrames,
+        playbackState,
+        replayFrames,
       }),
     [game, displayMessages, live, connStatus, selectedPlayerId, playbackState, replayFrames],
   );

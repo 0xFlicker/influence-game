@@ -402,32 +402,29 @@ export class PresentationDirector {
   append(cues: readonly PresentationCue[]): void {
     if (this.disposed || cues.length === 0) return;
     const existingKeys = new Set(this.state.cues.map((cue) => cue.key));
+    const activeKey = this.getActiveCue()?.key;
+    const incoming = canonicalizeCues(cues);
+    // Reconcile the complete chronological timeline, including backfilled history.
+    const nextCues = incoming;
+    if (activeKey && !nextCues.some((cue) => cue.key === activeKey)) return;
+    let nextCursor = Math.max(0, nextCues.findIndex((cue) => cue.key === activeKey));
     const watermark = this.state.hydrationWatermark;
-    const additions = canonicalizeCues(cues).filter((cue) => {
-      if (existingKeys.has(cue.key)) return false;
-      return cue.source === "classic"
-        || cue.canonicalSequence === null
-        || watermark === null
-        || cue.canonicalSequence > watermark;
-    });
-    if (additions.length === 0) return;
-
-    const nextCues = canonicalizeCues([...this.state.cues, ...additions]);
-    let nextCursor = this.state.cursor;
-    if (this.waitingAtHydrationWatermark) {
-      const firstNewKey = additions[0]!.key;
-      nextCursor = nextCues.findIndex((cue) => cue.key === firstNewKey);
+    const firstNewIndex = nextCues.findIndex((cue, index) =>
+      index > nextCursor
+      && !existingKeys.has(cue.key)
+      && !(cue.source === "classic" && cue.liveCatchUp)
+      && (watermark === null || cue.canonicalSequence === null
+        || cue.canonicalSequence > watermark
+        || (cue.source === "classic" && cue.canonicalSequence === watermark)),
+    );
+    if (firstNewIndex >= 0 && this.state.isPlaying
+      && (this.waitingAtHydrationWatermark || this.state.waitingAtTail)) {
+      nextCursor = firstNewIndex;
       this.waitingAtHydrationWatermark = false;
       this.remainingBaseMs = cueDurationMs(nextCues[nextCursor]);
-    } else if (this.state.waitingAtTail && this.state.isPlaying) {
-      const firstNewKey = additions[0]!.key;
-      nextCursor = nextCues.findIndex((cue) => cue.key === firstNewKey);
-      this.remainingBaseMs = cueDurationMs(nextCues[nextCursor]);
-    }
-    this.apply({ type: "append", cues: nextCues, cursor: nextCursor });
-    if (this.state.waitingAtTail && this.state.isPlaying) {
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     }
+    this.apply({ type: "append", cues: nextCues, cursor: nextCursor });
     this.ensureTimer();
   }
 
@@ -439,6 +436,15 @@ export class PresentationDirector {
         this.animation.resume();
       } else {
         this.hasPlayed = true;
+      }
+    }
+    if (this.waitingAtHydrationWatermark) {
+      const next = this.state.cues.findIndex((cue, index) => index > this.state.cursor
+        && !(cue.source === "classic" && cue.liveCatchUp));
+      if (next >= 0) {
+        this.waitingAtHydrationWatermark = false;
+        this.apply({ type: "set_cursor", cursor: next });
+        this.remainingBaseMs = this.activeDurationMs();
       }
     }
     if (

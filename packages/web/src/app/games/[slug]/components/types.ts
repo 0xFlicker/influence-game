@@ -268,6 +268,8 @@ export type FormatPresentationCue =
     });
 
 export interface ClassicPresentationCue {
+  /** Historical dialogue is navigable but must not resume live playback. */
+  liveCatchUp?: boolean;
   source: "classic";
   key: string;
   canonicalSequence: number | null;
