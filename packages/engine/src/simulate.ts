@@ -60,6 +60,11 @@
  * run. Unsaved editor drafts and Owner Learning before/after presentation never
  * enter simulation context; review proposals affect play only after they are saved.
  *
+ * Two Names prompts carry canonical initial/current nominees and Override state for
+ * every social decision; only the Empowered initial nomination has no selected pair.
+ * Inspect fresh outgoing prompts for this contract, not historical transcript prose.
+ * Keep direct House calls and no `as any` in simulation integrations.
+ *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "FORMAT LOCKED: ...", "Y format ballot: ...") with the agent's
  * hidden `thinking` (bright white) and model-side reasoning evidence (bright cyan)

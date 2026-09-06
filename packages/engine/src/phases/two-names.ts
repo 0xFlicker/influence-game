@@ -263,7 +263,7 @@ export async function runTwoNamesOverrideTransition(
     empoweredId,
     Phase.FORMAT_MINGLE,
     "strategic_decision",
-    { empoweredId },
+    { empoweredId, twoNamesReplacementRemovedId: removedNomineeId },
   );
   let replacementId = deterministicEngineFallback(
     legalReplacementIds,

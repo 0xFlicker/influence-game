@@ -1325,6 +1325,20 @@ export interface RestrictedHistoryLegalityProjection {
   legalTargetNames: string[];
 }
 
+/** Public current-round facts; never includes private ballots or unrevealed tallies. */
+export interface TwoNamesBoard {
+  empoweredId: UUID;
+  initialNomineeIds: [UUID, UUID] | null;
+  currentNomineeIds: UUID[];
+  overrideHolderId: UUID | null;
+  overrideAction: "declined" | "used" | null;
+  removedNomineeId: UUID | null;
+  replacementNomineeId: UUID | null;
+  replacementPending: boolean;
+  pairFinal: boolean;
+  eligibleVoterIds: UUID[];
+}
+
 export interface PhaseContext {
   gameId: UUID;
   round: number;
@@ -1345,6 +1359,7 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Current format menu, locked rules, and public Safety Bounce board. */
   formatPressure?: FormatPressureProjection;
+  twoNamesBoard?: TwoNamesBoard;
   /** Actor-specific Restricted History exclusions and current legal targets. */
   restrictedHistoryLegality?: RestrictedHistoryLegalityProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */

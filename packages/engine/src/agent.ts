@@ -4570,7 +4570,7 @@ Use the save_or_exit_ballot tool.`;
 ## Two Names — Initial Nominations
 ${supplementalActiveFormatRule(ctx, "two_names")}
 
-You are Empowered. Publicly nominate exactly two distinct contestants. You may nominate yourself.
+You are Empowered. Publicly nominate exactly two distinct contestants. You may not nominate yourself.
 Legal nominees: ${legalNominees.map((player) => player.name).join(", ")}
 
 The order is public reveal order. Use the ${registration.decision.initialNames.toolName} tool.`;
@@ -5543,6 +5543,19 @@ IMPORTANT: Treat remaining contestants as the only current game actors for messa
       ? `${ctx.endgameStage}${ctx.finalists ? `; finalists ${ctx.finalists.map((id) => playerNameById.get(id) ?? id).join(" vs ")}` : ""}`
       : "not in endgame";
 
+    const twoNames = ctx.twoNamesBoard;
+    const names = (ids: readonly UUID[]) => ids.map((id) => playerNameById.get(id) ?? id).join(" and ");
+    const twoNamesSection = !twoNames ? "" : !twoNames.initialNomineeIds
+      ? "- Two Names: no pair has been selected. You are Empowered and must select the initial nominees.\n"
+      : `- Two Names initial nominees: ${names(twoNames.initialNomineeIds)}
+- Two Names current nominees: ${names(twoNames.currentNomineeIds)}
+- Two Names Empowered: ${names([twoNames.empoweredId])}
+- Override holder: ${names(twoNames.overrideHolderId ? [twoNames.overrideHolderId] : [])}
+- Override decision: ${twoNames.replacementPending ? "use selected for this pending replacement decision; not yet committed" : twoNames.overrideAction ?? "pending"}
+${twoNames.removedNomineeId ? `- Removed nominee: ${names([twoNames.removedNomineeId])}\n` : ""}${twoNames.replacementNomineeId ? `- Replacement nominee: ${names([twoNames.replacementNomineeId])}\n` : ""}- Pair status: ${twoNames.replacementPending ? "replacement pending; Empowered must name the second nominee" : twoNames.pairFinal ? "final" : "initial nominations; Override pending"}
+- Ordinary exit voters${twoNames.pairFinal ? "" : " if this pair becomes final"}: ${twoNames.replacementPending ? "determined after replacement" : names(twoNames.eligibleVoterIds) || "none"}. Empowered breaks a tie instead of casting an ordinary ballot.
+`;
+
     return `## Current Board Contract
 Canonical current-board facts override private strategy, House summaries, vote history, and public transcript for live-state interpretation. They do not rewrite history.
 - Remaining contestants: ${aliveNames.join(", ") || "none"}
@@ -5550,7 +5563,7 @@ Canonical current-board facts override private strategy, House summaries, vote h
 - Current phase: ${ctx.phase}
 - Current empowered player: ${isEndgame ? "none; endgame has no active empowerment" : currentEmpoweredName ?? "none yet this round"}
 - Active shields right now: ${activeShieldNames.length > 0 ? activeShieldNames.join(", ") : "none"}
-${classicCouncilStatusLine}- Latest resolved exit: ${latestEliminated}
+${twoNamesSection}${classicCouncilStatusLine}- Latest resolved exit: ${latestEliminated}
 - Current endgame status: ${endgameStatus}
 - Active jurors: ${activeJuryNames.length > 0 ? activeJuryNames.join(", ") : "none"}
 - Exited contestants who are not jurors: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}

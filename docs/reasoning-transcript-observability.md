@@ -611,3 +611,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `Recall Plan`, `reasoningContext`, `chatty` mode, House-authored narrative beats, the private narrative notebook, long-form summaries, and the `callTool` reasoning augmentation.
 - `packages/engine/src/context-recall-plan.ts`, `prompt-reuse.ts` (`RecallPlanReceiptAggregate`) — pure compiler, structural receipts, and safe simulation aggregate.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.
+
+### Two Names board context
+
+Every agent call after initial nominations and before resolution receives the current round's canonical Two Names board: initial and current nominees, Empowered, Override holder and decision, pair finality, and ordinary-voter eligibility. The active board is removed after resolution and in endgame. Mingle and alliance prompts share this board; transcript prose does not establish nominations. Only the Empowered initial nomination request may say no pair is selected. The replacement request labels the pending removal explicitly until Override and replacement commit together. Provider-free outgoing-prompt regressions exercise this contract; old game dialogue cannot prove updated prompt behavior. Continue using direct House calls and no `as any` in simulation integrations.
