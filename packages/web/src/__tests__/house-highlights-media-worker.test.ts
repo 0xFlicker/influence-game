@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
@@ -20,6 +20,7 @@ import {
   parseHouseHighlightsMediaWorkerArgs,
   readHouseHighlightsMediaWorkerStartupMode,
   runHouseHighlightsMediaWorker,
+  runHouseHighlightsMediaWorkerAttempt,
   runHouseHighlightsMediaWorkerOnce,
   writeHouseHighlightsMediaWorkerDrainAcknowledgement,
   withWorkerReachableAssetUrls,
@@ -182,6 +183,130 @@ describe("House Highlights media worker bundle", () => {
     expect(sleeps).toEqual([10]);
     expect(errors).toEqual(["poll_failed:worker_api_request_failed"]);
     expect(errors.join(" ")).not.toContain("secret.example");
+  });
+
+  it("isolates renderer signal handlers from parent drain and waits for attempt exit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-signal-isolation-"));
+    const childScript = join(root, "attempt.ts");
+    const readyFile = join(root, "ready");
+    const releaseFile = join(root, "release");
+    await writeFile(childScript, `
+      process.on("SIGTERM", () => process.exit(42));
+      await Bun.write(${JSON.stringify(readyFile)}, "ready");
+      while (!await Bun.file(${JSON.stringify(releaseFile)}).exists()) await Bun.sleep(10);
+      process.exit(0);
+    `);
+    const drainController = new HouseHighlightsMediaWorkerDrainController();
+    let attempts = 0;
+    let completed = false;
+    const loop = runHouseHighlightsMediaWorker(houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://unused", POSTGAME_MEDIA_WORKER_TOKEN: "test",
+    }), fetch, {
+      drainController,
+      runOnceImpl: async () => {
+        attempts += 1;
+        await runHouseHighlightsMediaWorkerAttempt(childScript);
+      },
+    }).then(() => { completed = true; });
+    try {
+      const deadline = Date.now() + 5_000;
+      while (!await Bun.file(readyFile).exists()) {
+        if (Date.now() > deadline) throw new Error("render child did not start");
+        await Bun.sleep(10);
+      }
+      // Same entry point used by the parent's SIGTERM listener. The renderer
+      // lives in another process, so its destructive listener is not invoked.
+      drainController.requestDrain("SIGTERM");
+      expect(completed).toBe(false);
+      await Bun.write(releaseFile, "finish");
+      await loop;
+      expect(completed).toBe(true);
+      expect(attempts).toBe(1);
+    } finally {
+      drainController.requestDrain("SIGTERM");
+      await Bun.write(releaseFile, "finish");
+      await loop;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an attempt process failure instead of treating it as a completed job", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-attempt-failed-"));
+    const script = join(root, "failed.ts");
+    try {
+      await writeFile(script, "process.exit(23);\n");
+      await expect(runHouseHighlightsMediaWorkerAttempt(script)).rejects.toThrow("render_attempt_exit_23");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("drains the poll CLI on SIGTERM while waiting for its active child", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-cli-drain-"));
+    const acknowledgement = join(root, "drain-ack.json");
+    const release = Promise.withResolvers<void>();
+    let requests = 0;
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async () => {
+      requests += 1;
+      await release.promise;
+      return Response.json({ claim: null });
+    } });
+    const parent = Bun.spawn([process.execPath,
+      join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts")], {
+      env: { ...process.env, POSTGAME_MEDIA_API_URL: `http://127.0.0.1:${server.port}`,
+        POSTGAME_MEDIA_WORKER_TOKEN: "test", POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+        POSTGAME_MEDIA_TEMP_DIR: root, POSTGAME_MEDIA_DRAIN_ACK_FILE: acknowledgement,
+        POSTGAME_MEDIA_STARTUP_MODE: "active" },
+      stdout: "pipe", stderr: "pipe",
+    });
+    const deadline = Date.now() + 3_000;
+    const timeout = setTimeout(() => parent.kill("SIGKILL"), 3_500);
+    try {
+      while (requests === 0) {
+        if (Date.now() > deadline) throw new Error("render child did not claim");
+        await Bun.sleep(10);
+      }
+      parent.kill("SIGTERM");
+      while (!await Bun.file(acknowledgement).exists()) {
+        if (Date.now() > deadline) throw new Error("parent did not acknowledge SIGTERM");
+        await Bun.sleep(10);
+      }
+      expect(await Bun.file(acknowledgement).json()).toMatchObject({ signal: "SIGTERM", claimInFlight: true });
+      expect(parent.exitCode).toBeNull();
+      release.resolve();
+      expect(await parent.exited).toBe(0);
+      expect(requests).toBe(1);
+    } finally {
+      release.resolve();
+      clearTimeout(timeout);
+      parent.kill();
+      await parent.exited;
+      server.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("exits the once CLI after cleanup even with a retained renderer handle", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-cli-exit-"));
+    const preload = join(root, "retained-handle.ts");
+    await writeFile(preload, "setInterval(() => {}, 1000);\n");
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ claim: null }) });
+    const child = Bun.spawn([process.execPath, "--preload", preload,
+      join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts"), "--once"], {
+      env: { ...process.env, POSTGAME_MEDIA_API_URL: `http://127.0.0.1:${server.port}`,
+        POSTGAME_MEDIA_WORKER_TOKEN: "test", POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+        POSTGAME_MEDIA_TEMP_DIR: root },
+      stdout: "pipe", stderr: "pipe",
+    });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 3_000);
+    try {
+      expect(await child.exited).toBe(0);
+    } finally {
+      clearTimeout(timeout);
+      child.kill();
+      server.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("acknowledges an idle drain and exits without another claim", async () => {

@@ -190,7 +190,7 @@ export interface HouseHighlightsMediaWorkerLoopOptions {
   random?: () => number;
   onError?: (code: string) => void;
   drainController?: HouseHighlightsMediaWorkerDrainController;
-  runOnceImpl?: () => Promise<"idle" | "completed" | "waiting_music" | "failed">;
+  runOnceImpl?: () => Promise<unknown>;
 }
 
 export async function runHouseHighlightsMediaWorker(
@@ -223,6 +223,25 @@ export async function runHouseHighlightsMediaWorker(
     if (iteration + 1 < maxIterations) await drainController.waitForPollDelay(delayMs, options.sleepImpl);
   }
   await drainController.waitForAcknowledgement();
+}
+
+/**
+ * Keep Remotion's process-wide signal handlers outside the polling parent.
+ * The parent drains admission while the child finishes its one claimed job.
+ */
+export async function runHouseHighlightsMediaWorkerAttempt(
+  scriptPath = import.meta.path,
+): Promise<void> {
+  const child = spawn(process.execPath, [scriptPath, "--once"], {
+    stdio: "inherit",
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`render_attempt_exit_${signal ?? code}`));
+    });
+  });
 }
 
 export async function writeHouseHighlightsMediaWorkerDrainAcknowledgement(
@@ -561,7 +580,10 @@ if (import.meta.main) {
         while (!drainController.claimDisabled) await drainController.waitForPollDelay(config.pollIntervalMs);
         await drainController.waitForAcknowledgement();
       } else {
-        await runHouseHighlightsMediaWorker(config, fetch, { drainController });
+        await runHouseHighlightsMediaWorker(config, fetch, {
+          drainController,
+          runOnceImpl: () => runHouseHighlightsMediaWorkerAttempt(),
+        });
       }
       return;
     }
@@ -569,5 +591,8 @@ if (import.meta.main) {
     if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
     console.log(mode === "smoke" ? "Smoke render completed." : result);
   };
-  run().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
+  // Completion means finalize/failure reporting, temporary cleanup and drain
+  // acknowledgement have settled. Do not let renderer-owned handles keep this
+  // CLI process alive; Remotion's exit handlers retire its browser children.
+  run().then(() => process.exit(0)).catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
 }
