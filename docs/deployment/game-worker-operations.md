@@ -246,3 +246,23 @@ color is irreversibly retired, recovery finishes the candidate rather than
 reviving an old combined runner beside a new worker. No old/new game or render
 worker generations overlap. Real qualified-image Linux/systemd rehearsal remains
 separate from local source, test, and Compose-parser checks.
+
+### Render worker process drain
+
+The render-worker polling parent owns SIGTERM/SIGINT drain handling. Each poll
+attempt runs the existing `--once` command in a child process, so Remotion's
+process-wide signal handlers cannot kill an active browser when the parent is
+asked to drain. The parent disables new claims, waits for that attempt to exit,
+and finishes its acknowledgement. The CLI exits explicitly only after its
+awaited work and temporary-file cleanup complete; renderer-owned handles must
+not keep a completed worker alive indefinitely.
+
+On 2026-09-07, staging's `zero-teal-cove` video was published while deployment
+still waited for the render process to exit. A drain SIGTERM also reached
+Remotion's browser handler and triggered a browser-crash retry. The job was
+already `ready`, so the operator-authorized stop unblocked the deployment.
+A successful media publication and a healthy container do not prove drain
+completion. Verification must include operating-system process exit, not just
+return from the polling loop. Local subprocess tests cover signal isolation and
+CLI exit with a retained handle; the next deployed active-render drain remains
+live operational proof.
