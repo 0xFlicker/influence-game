@@ -220,6 +220,17 @@ Missing signing configuration or failed authentication stops the deploy before
 admission closes. Keep the generated JWT out of logs and application runtime
 environment files. Production credential delivery is unchanged.
 
+Lease provenance preserves the workflow actor's exact GitHub login, including
+the `[bot]` suffix for GitHub App dispatchers. Migration
+`0076_deployment_bot_actors` widens the matching database constraint without
+rewriting existing leases. A bot actor still requires the
+same controller JWT, fixed source repository, exact candidate, and workflow run
+identity. When upgrading an API that rejects bot logins, the first staging
+dispatch must be initiated by a human GitHub account using the exact candidate
+release evidence; that lets the existing validator admit the upgrade. Start a
+new `workflow_dispatch`: [GitHub preserves the original actor on a rerun](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context).
+Do not strip the bot suffix or substitute a fabricated actor.
+
 Staging closes and heartbeats admission, drains the old worker generation (or
 legacy combined runner), drains and stops the old render worker, stops the old
 application stack, starts the new gateway/web/render stack, starts and verifies

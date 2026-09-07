@@ -604,7 +604,7 @@ function validateProvenance(provenance: DeploymentAdmissionProvenance): Deployme
     || provenance.workflowRunId < 1
     || !Number.isSafeInteger(provenance.workflowRunAttempt)
     || provenance.workflowRunAttempt < 1
-    || !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(provenance.actor)
+    || !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/.test(provenance.actor)
   ) {
     return failure("invalid_provenance", "Deployment lease provenance is invalid", false);
   }
