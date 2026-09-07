@@ -183,7 +183,7 @@ export async function verifySessionToken(
   }
 }
 
-/** Mint a scoped non-human release-controller token for Doppler delivery. */
+/** Mint a scoped non-human release-controller token for host-only use. */
 export async function createDeploymentControlToken(
   expiresIn: string | number = "90d",
 ): Promise<string> {
