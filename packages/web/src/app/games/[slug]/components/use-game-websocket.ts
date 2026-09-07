@@ -5,7 +5,6 @@ import {
   getAuthToken,
   type WsGameEvent,
   type WsPublicationEvent,
-  type WsPublicationPayload,
   type WsViewerEvent,
 } from "@/lib/api";
 import type { ConnStatus } from "./types";
@@ -47,7 +46,7 @@ export class GamePublicationBuffer {
     return this.appliedSequence;
   }
 
-  accept(event: WsPublicationEvent): WsPublicationPayload[] {
+  accept(event: WsPublicationEvent): WsPublicationEvent[] {
     if (event.gameId !== this.gameId) return [];
     if (!Number.isSafeInteger(event.publicationSequence) || event.publicationSequence < 1) {
       return [];
@@ -64,16 +63,50 @@ export class GamePublicationBuffer {
       return [];
     }
     this.pending.set(event.publicationSequence, event);
-    const ready: WsPublicationPayload[] = [];
+    const ready: WsPublicationEvent[] = [];
     while (true) {
       const nextSequence = this.appliedSequence + 1;
       const next = this.pending.get(nextSequence);
       if (!next) break;
       this.pending.delete(nextSequence);
       this.appliedSequence = nextSequence;
-      ready.push(next.payload);
+      ready.push(next);
     }
     return ready;
+  }
+}
+
+/** Holds the reconnect suffix until its snapshot boundary is contiguous. */
+export class GamePublicationCatchUp {
+  private pending: WsPublicationEvent[] = [];
+  private snapshot: Extract<WsGameEvent, { type: "watch_state" }> | null = null;
+  ready = false;
+
+  constructor(private readonly buffer: GamePublicationBuffer) {}
+
+  begin(): void { this.ready = false; this.snapshot = null; }
+
+  accept(event: WsGameEvent): WsViewerEvent[] {
+    if (event.type === "publication") {
+      const publications = this.buffer.accept(event);
+      if (this.ready) return publications.map((entry) => this.payload(entry, false));
+      this.pending.push(...publications);
+    } else if (event.type === "watch_state" && !this.ready) {
+      this.snapshot = event;
+    } else return [event];
+
+    if (!this.snapshot || this.buffer.cursor < this.snapshot.throughPublicationSequence) return [];
+    const snapshot = this.snapshot;
+    const events: WsViewerEvent[] = [snapshot, ...this.pending.map((entry) =>
+      this.payload(entry, entry.publicationSequence <= snapshot.throughPublicationSequence))];
+    this.pending = [];
+    this.snapshot = null;
+    this.ready = true;
+    return events;
+  }
+
+  private payload(event: WsPublicationEvent, liveCatchUp: boolean): WsViewerEvent {
+    return { ...event.payload, publicationSequence: event.publicationSequence, liveCatchUp };
   }
 }
 
@@ -99,6 +132,7 @@ export function useGameWebSocket(
     let cancelled = false;
     let retryDelay = 1000;
     let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    const catchUp = new GamePublicationCatchUp(publicationBuffer);
 
     function connect() {
       if (cancelled) return;
@@ -112,13 +146,14 @@ export function useGameWebSocket(
       if (token) {
         url.searchParams.set("token", token);
       }
+      catchUp.begin();
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
       setStatus("connecting");
 
       ws.onopen = () => {
         retryDelay = 1000;
-        setStatus("live");
+        // The connection is ready only after its catch-up snapshot arrives.
       };
 
       ws.onclose = () => {
@@ -141,13 +176,8 @@ export function useGameWebSocket(
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data as string) as WsGameEvent;
-          if (data.type === "publication") {
-            for (const payload of publicationBuffer.accept(data)) {
-              onEventRef.current(payload);
-            }
-            return;
-          }
-          onEventRef.current(data);
+          for (const event of catchUp.accept(data)) onEventRef.current(event);
+          if (catchUp.ready) setStatus("live");
         } catch (err) {
           console.warn(`[useGameWebSocket] Malformed WebSocket frame for game ${canonicalGameId}:`, err, ev.data);
         }

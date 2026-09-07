@@ -4,6 +4,7 @@ import {
   validateGameExecutionStateV1,
   validateGameTurnCommitDraftV1,
   validateGameTurnIntentV1,
+  durableProviderSemanticCoordinateForSubcall,
   type GameExecutionStateV1,
   type GameTurnCommitDraftV1,
   type GameTurnIntentV1,
@@ -52,6 +53,12 @@ function intent(): GameTurnIntentV1 {
       version: 1,
       slot: 1,
       logicalCallId: "logical-1",
+      semanticCoordinate: {
+        version: 1,
+        kind: "durable_turn",
+        turnId: "turn-1",
+        subcallSlot: 1,
+      },
       actorId: "atlas",
       action: "introduce",
       contractId: "agent-introduction-v1",
@@ -108,6 +115,21 @@ describe("durable game turn contracts", () => {
     expect(validateGameExecutionStateV1(state())).toEqual({ ok: true, errors: [] });
     expect(validateGameTurnIntentV1(intent())).toEqual({ ok: true, errors: [] });
     expect(validateGameTurnCommitDraftV1(draft())).toEqual({ ok: true, errors: [] });
+  });
+
+  test("derives the immutable semantic coordinate for a pre-R33 planned subcall", () => {
+    const legacy = intent();
+    delete legacy.providerSubcalls[0]!.semanticCoordinate;
+    expect(validateGameTurnIntentV1(legacy)).toEqual({ ok: true, errors: [] });
+    expect(durableProviderSemanticCoordinateForSubcall(
+      legacy.turnId,
+      legacy.providerSubcalls[0]!,
+    )).toEqual({
+      version: 1,
+      kind: "durable_turn",
+      turnId: legacy.turnId,
+      subcallSlot: 1,
+    });
   });
 
   test("rejects the former arbitrary phase/step/data cursor escape hatch", () => {

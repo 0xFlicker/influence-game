@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import {
   assertCanonicalGameEvent,
   assertGameExecutionStateV1,
@@ -6,6 +6,7 @@ import {
   assertGameTurnIntentV1,
   projectViewerDecisionEvent,
   validateCanonicalGameEvent,
+  validateTwoNamesCanonicalPrefixes,
   type CanonicalGameEvent,
   type CommittedCanonicalEventV1,
   type GameExecutionStateV1,
@@ -526,6 +527,20 @@ export async function commitGameTurn(
 
     const committedAt = new Date().toISOString();
     const canonicalEvents = materializeCanonicalEvents(params.draft, committedAt);
+    const persistedEventRows = await tx.select({ envelope: schema.gameEvents.envelope })
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, params.draft.gameId))
+      .orderBy(asc(schema.gameEvents.sequence));
+    const lifecycle = validateTwoNamesCanonicalPrefixes([
+      ...persistedEventRows.map((row) => row.envelope as unknown as CanonicalGameEvent),
+      ...canonicalEvents.map((event) => event.event),
+    ]);
+    if (!lifecycle.ok) {
+      throw new GameTurnCommitError(
+        "execution_state_conflict",
+        `Invalid Two Names canonical lifecycle: ${lifecycle.errors.join("; ")}`,
+      );
+    }
     const eventHeadSequence = params.draft.expectedBaseHeads.eventSequence + canonicalEvents.length;
     const eventHeadHash = canonicalEvents.at(-1)?.eventHash ?? params.draft.expectedBaseHeads.eventHash;
     const transcript = materializeCommittedTranscriptEntries(params.draft, committedAt);

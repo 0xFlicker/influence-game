@@ -11,7 +11,6 @@ import type {
   PhaseKey,
   PlayerState,
   TranscriptEntry,
-  ViewerDecisionEvent,
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
 import type { WatchConnStatus } from "./types";
@@ -331,28 +330,6 @@ export function mergeGameWatchReplayFrames(
   return unchanged ? current : frames;
 }
 
-export function buildLiveViewerDecisionFrame(
-  game: GameDetail,
-  event: ViewerDecisionEvent,
-): GameWatchReplayFrame {
-  const players = game.watchState?.players ?? game.players.map((player) => ({
-    ...player,
-    currentAgent: player.currentAgent ?? null,
-  }));
-  return {
-    schemaVersion: 3,
-    gameId: game.id,
-    slug: game.slug,
-    sequence: event.sequence,
-    eventType: event.type,
-    timestamp: Date.parse(event.timestamp),
-    round: event.round,
-    phase: event.phase as PhaseKey,
-    players,
-    counts: deriveMatchWatchCountsFromPlayers(players),
-    viewerDecisionEvent: event,
-  };
-}
 
 export function advancePresentationHydrationFailure(
   state: PresentationHydrationState,

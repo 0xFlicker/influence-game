@@ -36,7 +36,7 @@ import { createPublicPlayerRoutes } from "./routes/public-players.js";
 import { createDeploymentControlRoutes } from "./routes/deployment-control.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
-import { isGameRunning, startGame } from "./services/game-lifecycle.js";
+import { abortAllGames, isGameRunning, startGame } from "./services/game-lifecycle.js";
 import { adoptInProgressDurableGamesOnStartup } from "./services/startup-durable-games.js";
 import { preparePendingCompletionSettlementsOnStartup } from "./services/game-completion-settlement.js";
 import { reconcileCompletedPostgameMedia } from "./services/postgame-media-coordinator.js";
@@ -66,6 +66,7 @@ import {
   ownerLearningGenerationEnabled,
 } from "./services/owner-learning-public.js";
 import {
+  getDeploymentAdmissionStatus,
   validateDeploymentAdmissionActivationFence,
 } from "./services/deployment-admission.js";
 import { runPendingDeploymentRecoveryReconciliation } from "./services/deployment-recovery-reconciliation.js";
@@ -80,6 +81,13 @@ import {
   type AcceptedRuntimeIdentity,
   type RuntimeStartupMode,
 } from "./services/runtime-activation.js";
+import {
+  acknowledgeGameWorkerDrain,
+  readApiRuntimeRole,
+  startGameExecutionWorkerRuntime,
+  type ApiRuntimeRole,
+  type GameExecutionWorkerRuntime,
+} from "./services/game-execution-worker.js";
 import { listenBeforeRuntimeInitialization } from "./services/listening-runtime.js";
 import {
   createServerShutdownController,
@@ -109,6 +117,8 @@ const REQUIRED_ENV = [
 
 let managedAuthMode: ManagedAuthMode;
 let runtimeStartupMode: RuntimeStartupMode;
+let apiRuntimeRole: ApiRuntimeRole;
+let activeGameExecutionWorker: GameExecutionWorkerRuntime | null = null;
 try {
   managedAuthMode = readManagedAuthMode();
 } catch (error) {
@@ -123,6 +133,15 @@ try {
 } catch (error) {
   console.error(
     `\n  Runtime startup configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
+try {
+  apiRuntimeRole = readApiRuntimeRole();
+} catch (error) {
+  console.error(
+    `\n  API runtime role configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }
@@ -253,23 +272,36 @@ async function startBackgroundRuntime(context: {
   const activationFence = context.fence;
   const assertNotAborted = () => context.signal.throwIfAborted();
   assertNotAborted();
+  const gameExecutionWorker = apiRuntimeRole === "game-worker"
+    ? startGameExecutionWorkerRuntime()
+    : null;
+  activeGameExecutionWorker = gameExecutionWorker;
+  if (gameExecutionWorker) {
+    console.info(`[game-worker] Started durable execution worker ${gameExecutionWorker.workerId}`);
+  }
   await seedRBAC(db);
   assertNotAborted();
   // startBackgroundRuntime is invoked only for the active process or after a
   // validation candidate passes durable acceptance. Merely activating a
   // private candidate never starts this shared-state sweep.
-  const providerAttemptReconciliation =
-    await startProviderAttemptReconciliationRuntime(db, {
-      signal: context.signal,
-    });
-  return finishRuntimeStartupWithProviderAttemptReconciliation(
-    providerAttemptReconciliation,
-    () => finishBackgroundRuntimeStartup(
-      context,
-      activationFence,
+  try {
+    const providerAttemptReconciliation =
+      await startProviderAttemptReconciliationRuntime(db, {
+        signal: context.signal,
+      });
+    return await finishRuntimeStartupWithProviderAttemptReconciliation(
       providerAttemptReconciliation,
-    ),
-  );
+      () => finishBackgroundRuntimeStartup(
+        context,
+        activationFence,
+        providerAttemptReconciliation,
+        gameExecutionWorker,
+      ),
+    );
+  } catch (error) {
+    if (activeGameExecutionWorker === gameExecutionWorker) activeGameExecutionWorker = null;
+    throw error;
+  }
 }
 
 async function finishBackgroundRuntimeStartup(
@@ -281,6 +313,7 @@ async function finishBackgroundRuntimeStartup(
   providerAttemptReconciliation: Awaited<
     ReturnType<typeof startProviderAttemptReconciliationRuntime>
   >,
+  gameExecutionWorker: GameExecutionWorkerRuntime | null,
 ) {
   const assertNotAborted = () => context.signal.throwIfAborted();
   assertNotAborted();
@@ -298,11 +331,56 @@ async function finishBackgroundRuntimeStartup(
   // classify, claim, or recover durable game ownership. Lease completion
   // atomically enqueues the same DB-backed recovery reconciliation consumed
   // below after admission reopens.
-  const adoptDurableGames = async () => {
+  let stopping = false;
+  const scanDurableGames = async () => {
+    if (stopping) return { attempted: 0, recovered: 0, skipped: [] };
+    assertNotAborted();
+    if (!gameExecutionWorker) {
+      throw new Error("Durable game adoption requires INFLUENCE_API_ROLE=game-worker");
+    }
+    let admission;
+    try {
+      admission = await getDeploymentAdmissionStatus(db);
+    } catch {
+      console.warn("[game-worker] Deployment admission check unavailable; durable adoption paused");
+      return { attempted: 0, recovered: 0, skipped: [] };
+    }
+    if (!admission.lease && !gameExecutionWorker.canClaimGames()) {
+      gameExecutionWorker.resumeClaimingAfterAdmissionReopens();
+      console.info("[game-worker] Deployment admission reopened; durable claims resumed");
+    }
+    if (admission.lease) {
+      const drainStatus = await acknowledgeGameWorkerDrain(
+        db,
+        gameExecutionWorker,
+        {
+          id: admission.lease.id,
+          fencingToken: admission.lease.fencingToken,
+          phase: admission.lease.phase,
+        },
+      );
+      console.info(
+        `[game-worker] Drain ${drainStatus.state}; local active leases ${drainStatus.ownedGameCount ?? "unknown"}`,
+      );
+      return { attempted: 0, recovered: 0, skipped: [] };
+    }
+    // A draining worker must keep reconciling its own durable owner rows
+    // until the acknowledgement can truthfully become drained. It remains
+    // non-claiming throughout; this is not a recovery scan.
+    if (!gameExecutionWorker.canClaimGames()) {
+      return { attempted: 0, recovered: 0, skipped: [] };
+    }
+    if (admission.admissionBlocked) return { attempted: 0, recovered: 0, skipped: [] };
     const result = await adoptInProgressDurableGamesOnStartup(db, {
       signal: context.signal,
+      processId: gameExecutionWorker.workerId,
       isAlreadyRunning: isGameRunning,
+      canAttemptStart: gameExecutionWorker.canAttemptGameStart,
+      onStartSucceeded: gameExecutionWorker.recordGameStartSucceeded,
+      onStartFailed: gameExecutionWorker.recordGameStartFailed,
       start: async ({ gameId, ownerEpoch, upgradeFrom }) => {
+        assertNotAborted();
+        if (stopping) throw new Error("Game worker is stopping");
         const started = await startGame(db, gameId, ownerEpoch, {
           ...(upgradeFrom && { durableUpgradeFrom: upgradeFrom }),
         });
@@ -318,7 +396,14 @@ async function finishBackgroundRuntimeStartup(
       })),
     };
   };
-  if (!activationFence) {
+  // Both timers and terminal reconciliation share one scan. Shutdown waits for
+  // claims/construction to settle before aborting the registered game set.
+  let executionScan: ReturnType<typeof scanDurableGames> | null = null;
+  const adoptDurableGames = () => {
+    executionScan ??= scanDurableGames().finally(() => { executionScan = null; });
+    return executionScan;
+  };
+  if (!activationFence && gameExecutionWorker) {
     assertNotAborted();
     const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
     assertNotAborted();
@@ -380,24 +465,41 @@ async function finishBackgroundRuntimeStartup(
       if (!context.signal.aborted) console.warn("[startup] Deployment recovery reconciliation deferred", error);
     }
   };
-  await reconcilePendingRecovery();
+  if (gameExecutionWorker) await reconcilePendingRecovery();
   assertNotAborted();
-  const gamePublicationRuntime = await startDueGamePublicationRuntime(db, {
-    broadcast: broadcastGamePublication,
-  });
-  const reconciliationTimer = setInterval(() => {
-    void reconcilePendingRecovery();
-  }, 5_000);
-  reconciliationTimer.unref();
+  const gamePublicationRuntime = apiRuntimeRole === "gateway"
+    ? await startDueGamePublicationRuntime(db, { broadcast: broadcastGamePublication })
+    : null;
+  const reconciliationTimer = gameExecutionWorker
+    ? setInterval(() => { void reconcilePendingRecovery(); }, 5_000)
+    : null;
+  reconciliationTimer?.unref();
+  const executionScanTimer = gameExecutionWorker
+    ? setInterval(() => {
+      void adoptDurableGames().catch((error) => {
+        if (!context.signal.aborted) console.warn("[game-worker] Durable game scan deferred", error);
+      });
+    }, 2_000)
+    : null;
+  executionScanTimer?.unref();
 
   return {
     async stop() {
-      clearInterval(reconciliationTimer);
+      stopping = true;
+      if (reconciliationTimer) clearInterval(reconciliationTimer);
+      if (executionScanTimer) clearInterval(executionScanTimer);
+      if (executionScan) {
+        try { await executionScan; } catch (error) {
+          console.warn("[game-worker] Scan ended during shutdown", error);
+        }
+      }
+      if (gameExecutionWorker) await abortAllGames();
       providerHealthProbeRuntime?.stop();
-      await gamePublicationRuntime.stop();
+      await gamePublicationRuntime?.stop();
       await providerAttemptReconciliation.stop();
       await ownerLearningFailureReconciliation.stop();
       await ownerLearningWorker?.stop();
+      if (activeGameExecutionWorker === gameExecutionWorker) activeGameExecutionWorker = null;
     },
   };
 }
@@ -432,6 +534,7 @@ const healthResponse = () => ({
     migrationSet: releaseMigrationSet,
     imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
   },
+  runtimeRole: apiRuntimeRole,
   timestamp: new Date().toISOString(),
 });
 app.get("/health", (c) => c.json(healthResponse()));
@@ -490,7 +593,10 @@ const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db, {
 });
 app.route("/", postgameMediaWorkerRoutes);
 
-const deploymentControlRoutes = createDeploymentControlRoutes(db, { runtimeActivation });
+const deploymentControlRoutes = createDeploymentControlRoutes(db, {
+  runtimeActivation,
+  gameWorkerDrainStatus: () => activeGameExecutionWorker?.getDrainStatus() ?? null,
+});
 app.route("/", deploymentControlRoutes);
 
 // Public watch intelligence routes

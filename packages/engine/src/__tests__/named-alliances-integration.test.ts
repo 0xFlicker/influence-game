@@ -20,6 +20,7 @@ const TEST_CONFIG: GameConfig = {
   mingleSessionsPerRound: 1,
   diaryRoomAfterPhases: [],
   maxDiaryFollowUps: 0,
+  formatManifest: ["vote_bomb", "save_or_eliminate"],
 };
 
 function createAgents() {

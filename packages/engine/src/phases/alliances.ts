@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { Phase } from "../types";
 import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
-import { createUUID } from "../game-state";
 import type {
   HouseAllianceProposerCandidate,
   HouseAllianceProposerSelectionResult,
@@ -547,6 +546,8 @@ function huddleCandidate(ctx: PhaseRunnerContext, alliance: AllianceRecord, wind
 }
 
 function huddleScheduleRecord(params: {
+  gameId: UUID;
+  windowEventSequence: number;
   alliance: AllianceRecord;
   window: AllianceHuddleWindow;
   round: number;
@@ -556,7 +557,16 @@ function huddleScheduleRecord(params: {
   rationale: string;
 }): AllianceHuddleScheduleRecord {
   return {
-    id: createUUID(),
+    id: deterministicHuddleId([
+      "alliance-huddle-schedule-v1",
+      params.gameId,
+      params.windowEventSequence,
+      params.round,
+      params.window,
+      params.alliance.id,
+      params.pass,
+      params.decision,
+    ]),
     allianceId: params.alliance.id,
     window: params.window,
     round: params.round,
@@ -648,7 +658,6 @@ async function completeHuddleSession(
   phase: AllianceHuddlePhase,
   alliance: AllianceRecord,
   schedule: AllianceHuddleScheduleRecord,
-  providerLogicalCallOrdinal: number,
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
@@ -657,11 +666,7 @@ async function completeHuddleSession(
   // rows carry alliance/schedule/session IDs plus exact session-time audience.
   const sessionId = deterministicHuddleId([
     "alliance-huddle-session-v1",
-    ctx.gameState.gameId,
-    schedule.round,
-    schedule.window,
-    alliance.id,
-    schedule.pass,
+    schedule.id,
   ]);
   const huddle: AllianceHuddlePromptContext = {
     sessionId,
@@ -763,7 +768,7 @@ async function completeHuddleSession(
     round: schedule.round,
     phase,
     window: schedule.window,
-    providerLogicalCallOrdinal,
+    scheduleId: schedule.id,
     alliance: {
       id: alliance.id,
       name: alliance.name,
@@ -957,7 +962,9 @@ export async function runAllianceHuddleWindow(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
   phase: AllianceHuddlePhase,
+  options: { completePhase?: boolean } = {},
 ): Promise<void> {
+  const completePhase = options.completePhase ?? true;
   const label = phase === Phase.FORMAT_MINGLE
     ? "POST-FORMAT ALLIANCE HUDDLES"
     : phase === Phase.PRE_VOTE_HUDDLE
@@ -970,9 +977,14 @@ export async function runAllianceHuddleWindow(
   const eligible = ctx.gameState.getHuddleEligibleAlliances();
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
   const window = huddleWindowForPhase(phase);
+  // Capture the canonical boundary once, before any schedule/provider result.
+  // It survives scratch-turn replay and separates repeated format windows.
+  const windowEventSequence = ctx.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
   if (eligible.length === 0) {
-    actor.send({ type: "PHASE_COMPLETE" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (completePhase) {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     return;
   }
   const eligibleById = new Map(eligible.map((alliance) => [alliance.id, alliance]));
@@ -1033,8 +1045,10 @@ export async function runAllianceHuddleWindow(
         ?? "The House did not grant this alliance huddle time in the current scarce window.",
     }));
 
-  for (const [scheduledIndex, { alliance, rationale, pass }] of scheduled.entries()) {
+  for (const { alliance, rationale, pass } of scheduled) {
     const schedule = huddleScheduleRecord({
+      gameId: ctx.gameState.gameId,
+      windowEventSequence,
       alliance,
       window,
       round: ctx.gameState.round,
@@ -1046,11 +1060,13 @@ export async function runAllianceHuddleWindow(
     await assertCanAcceptCommit(ctx);
     ctx.gameState.recordAllianceHuddleSchedule(schedule);
     emitHuddleScheduleTurn(ctx, phase, schedule);
-    await completeHuddleSession(ctx, phase, alliance, schedule, scheduledIndex + 1);
+    await completeHuddleSession(ctx, phase, alliance, schedule);
   }
 
   for (const { alliance, rationale } of skipped) {
     const schedule = huddleScheduleRecord({
+      gameId: ctx.gameState.gameId,
+      windowEventSequence,
       alliance,
       window,
       round: ctx.gameState.round,
@@ -1064,6 +1080,8 @@ export async function runAllianceHuddleWindow(
     emitHuddleScheduleTurn(ctx, phase, schedule);
   }
 
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  if (completePhase) {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }

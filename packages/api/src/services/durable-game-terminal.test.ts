@@ -190,6 +190,11 @@ describe("durable game terminal settlement", () => {
       scanned: 0,
       readyGameIds: [],
     });
+    // The crashed worker no longer renews its per-game lease. A healthy owner
+    // must never be displaced merely because another worker starts up.
+    await db.update(schema.gameRunOwners).set({
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    }).where(eq(schema.gameRunOwners.gameId, fixture.gameId));
     const result = await adoptInProgressDurableGamesOnStartup(db, {
       processId: "post-capture-restart",
       start: async ({ gameId, ownerEpoch }) => {
@@ -417,7 +422,8 @@ async function createTerminalFixture(
     action: "jury_vote",
     phase: Phase.JURY_VOTE,
     round: 4,
-    logicalCallOrdinal: 1,
+    semanticCoordinate: { version: 1, kind: "phase_call", phase: Phase.JURY_VOTE, round: 4, canonicalEventSequence: 1, callSlot: 1 },
+    semanticCoordinateHash: "sha256:jury-vote-provider-call",
   });
   await db.insert(schema.providerCallAttempts).values({
     id: attemptId,

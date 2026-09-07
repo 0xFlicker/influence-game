@@ -40,7 +40,6 @@ import { useGameWebSocket } from "./components/use-game-websocket";
 import {
   advancePresentationHydrationFailure,
   applyWatchStateToGameDetail,
-  buildLiveViewerDecisionFrame,
   getGamePresentationRouteDecision,
   getMatchWatchRouteDecision,
   mergeGameWatchReplayFrames,
@@ -103,6 +102,7 @@ export function GameViewer({
     (sequence, frame) => Math.max(sequence, frame.sequence),
     0,
   );
+  const presentationRequestVersionRef = useRef(0);
   const presentationHydrationRequestRef = useRef<{
     afterSequence: number;
     controller: AbortController;
@@ -197,15 +197,9 @@ export function GameViewer({
         ?? incoming[0]?.gameId
         ?? gameRef.current?.id
         ?? gameId;
-      setReplayFrames((current) => {
-        const frames = mergeGameWatchReplayFrames(
-          current,
-          incoming,
-          canonicalGameId,
-        );
-        replayFramesRef.current = frames;
-        return frames;
-      });
+      const frames = mergeGameWatchReplayFrames(replayFramesRef.current, incoming, canonicalGameId);
+      replayFramesRef.current = frames;
+      setReplayFrames(frames);
     },
     [gameId],
   );
@@ -218,30 +212,26 @@ export function GameViewer({
       afterSequence: number;
       preserveScreen: boolean;
     }): Promise<boolean> => {
+      presentationRequestVersionRef.current += 1;
       const activeRequest = presentationHydrationRequestRef.current;
-      if (
-        activeRequest?.afterSequence === afterSequence
-        && !activeRequest.controller.signal.aborted
-      ) {
-        return activeRequest.promise;
-      }
-      activeRequest?.controller.abort();
-      presentationHydrationRequestRef.current = null;
+      if (activeRequest && !activeRequest.controller.signal.aborted) return activeRequest.promise;
 
       const controller = new AbortController();
       let hydrationState: PresentationHydrationState = {
         status: preserveScreen ? "reconnecting" : "loading",
         retryCount: 0,
       };
-      setPresentationHydration(hydrationState);
+      if (!preserveScreen) setPresentationHydration(hydrationState);
 
       const promise = (async (): Promise<boolean> => {
+        let cursor = afterSequence;
         while (!controller.signal.aborted) {
+          const requestVersion = presentationRequestVersionRef.current;
           try {
             const incoming = await withPresentationHydrationDeadline(
               controller.signal,
               (signal) => getGameReplayWatchFrames(gameId, {
-                ...(afterSequence > 0 ? { afterSequence } : {}),
+                ...(cursor > 0 ? { afterSequence: cursor } : {}),
                 presentationOnly: true,
                 signal,
               }),
@@ -251,6 +241,8 @@ export function GameViewer({
               incoming,
               gameRef.current?.id ?? incoming[0]?.gameId,
             );
+            cursor = replayFramesRef.current.at(-1)?.sequence ?? cursor;
+            if (requestVersion !== presentationRequestVersionRef.current) continue;
             setPresentationHydration({
               status: "ready",
               retryCount: hydrationState.retryCount,
@@ -695,13 +687,14 @@ export function GameViewer({
           ) {
             break;
           }
-          retainReplayFrames(
-            [buildLiveViewerDecisionFrame(currentGame, ev.event)],
-            ev.gameId,
-          );
+          void hydratePresentationFrames({
+            afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0,
+            preserveScreen: replayFramesRef.current.length > 0,
+          });
           break;
         }
         case "phase_change": {
+          if (ev.liveCatchUp) break;
           const prevPhase = currentPhaseRef.current;
           currentPhaseRef.current = ev.phase as PhaseKey;
           // When entering REVEAL: reset reveal panel for new round
@@ -760,8 +753,16 @@ export function GameViewer({
           break;
         }
         case "message": {
-          const id = msgIdRef.current--;
-          const msg = wsEntryToTranscriptEntry(ev.entry, gameId, id);
+          const id = ev.publicationSequence !== undefined ? -ev.publicationSequence : msgIdRef.current--;
+          const msg = {
+            ...wsEntryToTranscriptEntry(ev.entry, gameId, id),
+            publicationSequence: ev.publicationSequence,
+            liveCatchUp: ev.liveCatchUp,
+          };
+          if (ev.liveCatchUp) {
+            setMessages((current) => current.some((entry) => entry.id === id) ? current : [...current, msg]);
+            break;
+          }
           // If this is the first public message from a player awaiting last-words,
           // mark it and remove them from the awaiting set.
           if (
@@ -800,11 +801,11 @@ export function GameViewer({
           break;
         }
         case "player_eliminated":
-          // Register this player as awaiting their last-words message
-          awaitingLastWordsRef.current.add(ev.playerId);
           // Track elimination round for badge display
           eliminatedRoundsRef.current.set(ev.playerId, ev.round);
           setEliminatedRounds(new Map(eliminatedRoundsRef.current));
+          if (ev.liveCatchUp) break;
+          awaitingLastWordsRef.current.add(ev.playerId);
           // Mobile: badge Players tab when not viewing it
           if (mobileTabRef.current !== "players") {
             setNewEliminationsCount((n) => n + 1);
@@ -814,6 +815,7 @@ export function GameViewer({
           audioCue.zone("drama");
           break;
         case "game_over":
+          if (ev.liveCatchUp) break;
           audioCue.sting("winner_announced");
           audioCue.zone("resolution");
           break;
@@ -839,7 +841,6 @@ export function GameViewer({
     [
       gameId,
       hydratePresentationFrames,
-      retainReplayFrames,
     ],
   );
 
@@ -1061,7 +1062,9 @@ export function GameViewer({
           replayFrames={replayFrames}
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
-          presentationHydrationStatus={presentationHydration.status}
+          presentationHydrationStatus={matchWatchDecision.mode === "live" && wsStatus !== "live"
+            ? (wsStatus === "connecting" ? "loading" : "reconnecting")
+            : presentationHydration.status}
           startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}
         />
         {gamePresentation.incomplete && (

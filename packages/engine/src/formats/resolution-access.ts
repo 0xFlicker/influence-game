@@ -27,6 +27,19 @@ function cloneAggregate(aggregate: FormatResolutionAggregate): FormatResolutionA
       eliminateReceived: { ...aggregate.eliminateReceived },
     };
   }
+  if (aggregate.capability === "two_names") {
+    return {
+      capability: "two_names",
+      initialNomineeIds: [...aggregate.initialNomineeIds],
+      overrideHolderId: aggregate.overrideHolderId,
+      overrideAction: aggregate.overrideAction,
+      removedNomineeId: aggregate.removedNomineeId,
+      replacementNomineeId: aggregate.replacementNomineeId,
+      finalistPlayerIds: [...aggregate.finalistPlayerIds],
+      eligibleVoterIds: [...aggregate.eligibleVoterIds],
+      totals: { ...aggregate.totals },
+    };
+  }
   return {
     capability: "public_chain",
     starterId: aggregate.starterId,

@@ -464,6 +464,7 @@ export {
   assertGameExecutionStateV1,
   assertGameTurnCommitDraftV1,
   assertGameTurnIntentV1,
+  durableProviderSemanticCoordinateForSubcall,
   validateGameExecutionStateV1,
   validateGameTurnCommitDraftV1,
   validateGameTurnIntentV1,
@@ -536,10 +537,28 @@ export {
   displayNameForFormat,
 } from "./formats";
 export {
+  projectTwoNamesRound,
+  validateTwoNamesCanonicalPrefixes,
+  type TwoNamesLifecycleStage,
+  type TwoNamesRoundProjection,
+} from "./formats/two-names-events";
+export {
   FORMAT_PRESENTATION_METADATA,
   formatPresentationMetadata,
 } from "./format-presentation-metadata";
-export type { LaunchFormatPresentationMetadata } from "./format-presentation-metadata";
+export type {
+  LaunchFormatPresentationMetadata,
+} from "./format-presentation-metadata";
+export {
+  ENDGAME_STARTING_PLAYER_COUNT,
+  FORMAT_SELECTION_METADATA,
+  canFormatAppearInStandardRounds,
+  isFormatEligibleForSelection,
+} from "./format-selection-policy";
+export type {
+  FormatSelectionEligibilityContext,
+  FormatSelectionMetadata,
+} from "./format-selection-policy";
 export {
   FORMAT_SURFACE_IDS,
   canonicalFormatIdForSurface,
@@ -680,10 +699,17 @@ export type {
   ProviderExecutionHooks,
   ProviderTerminalReceipt,
   ProviderLogicalCallCoordinate,
+  ProviderSemanticCoordinateV1,
   ProviderPreparedRequest,
   ProviderUnavailableKind,
   SanitizedProviderRequestEvidence,
   SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export {
+  assertProviderSemanticCoordinate,
+  canonicalProviderSemanticCoordinate,
+  durableProviderLogicalCallId,
+  providerSemanticCoordinateHash,
 } from "./provider-execution";
 export {
   MODEL_CATALOG,

@@ -2431,6 +2431,9 @@ describe("Full game - endgame integration", () => {
     maxRounds: 10,
     minPlayers: 5,
     maxPlayers: 12,
+    // This test asserts the 6 -> 4 Reckoning path. A single sealed-elimination
+    // format prevents the rotating live catalog from skipping it.
+    formatManifest: ["vote_bomb"],
   };
 
   it("4-player game completes with endgame phases", async () => {

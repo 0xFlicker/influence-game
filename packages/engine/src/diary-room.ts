@@ -19,7 +19,6 @@ import type {
 } from "./game-runner.types";
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
-import { pairProviderLogicalCallOrdinals } from "./provider-execution";
 import { isProviderFallbackEligible } from "./provider-execution";
 
 export class DiaryRoom {
@@ -146,7 +145,7 @@ export class DiaryRoom {
     const agent = this.agents.get(playerId)!;
     const label = isJuror ? `${playerName} (juror)` : playerName;
     const houseLabel = isJuror ? `House -> ${playerName} (juror)` : `House -> ${playerName}`;
-    const providerInterviewOrdinal = this.providerInterviewOrdinal(playerId);
+    const sessionEventSequence = this.sessionEventSequence();
     const phaseContext = this.contextBuilder.buildPhaseContext(
       playerId,
       Phase.DIARY_ROOM,
@@ -161,7 +160,7 @@ export class DiaryRoom {
       precedingPhase,
       playerId,
       playerName,
-      providerInterviewOrdinal,
+      sessionEventSequence,
       agent,
       isJuror,
       phaseContext,
@@ -174,7 +173,13 @@ export class DiaryRoom {
     this.logger.logDiary(houseLabel, firstQuestion, undefined, undefined, playerId);
 
     const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
-    ctx.providerLogicalCallOrdinal = 1;
+    ctx.providerSemanticCoordinate = {
+      version: 1,
+      kind: "diary_exchange",
+      sessionEventSequence,
+      playerId,
+      exchangeOrdinal: 1,
+    };
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
     if (firstResponse.providerAbsence) return;
     await this.beforeAcceptedCommit?.();
@@ -226,7 +231,13 @@ export class DiaryRoom {
       this.logger.logDiary(houseLabel, result.question, undefined, undefined, playerId);
 
       const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
-      followUpContext.providerLogicalCallOrdinal = i + 1;
+      followUpContext.providerSemanticCoordinate = {
+        version: 1,
+        kind: "diary_exchange",
+        sessionEventSequence,
+        playerId,
+        exchangeOrdinal: i + 1,
+      };
       const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
       if (followUpResponse.providerAbsence) break;
       await this.beforeAcceptedCommit?.();
@@ -344,7 +355,7 @@ export class DiaryRoom {
     precedingPhase: Phase,
     agentId: UUID,
     agentName: string,
-    providerInterviewOrdinal: number,
+    sessionEventSequence: number,
     agent: IAgent,
     isJuror: boolean,
     phaseContext: PhaseContext,
@@ -361,7 +372,7 @@ export class DiaryRoom {
     return {
       precedingPhase,
       round: this.gameState.round,
-      providerInterviewOrdinal,
+      sessionEventSequence,
       agentId,
       agentName,
       playerKnowledge,
@@ -369,19 +380,8 @@ export class DiaryRoom {
     };
   }
 
-  private providerInterviewOrdinal(playerId: UUID): number {
-    const allPlayers = this.gameState.getAllPlayers();
-    const playerOrdinal =
-      allPlayers.findIndex((player) => player.id === playerId) + 1;
-    if (playerOrdinal < 1) {
-      throw new Error(`Diary interview player ${playerId} is not in the game roster`);
-    }
-    const sessionBoundaryOrdinal =
-      (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
-    return pairProviderLogicalCallOrdinals(
-      sessionBoundaryOrdinal,
-      playerOrdinal,
-    );
+  private sessionEventSequence(): number {
+    return (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
   }
 
 }

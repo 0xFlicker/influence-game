@@ -6,7 +6,7 @@ import {
   computeSaveOrEliminateNets,
   formatResolutionAggregate,
   getFormatRegistration,
-  formatsAvailableInRound,
+  formatsAvailableForSelection,
   LEGACY_FORMAT_MANIFEST,
   restrictedHistoryLegalTargets,
   type FormatEliminationResolution,
@@ -41,6 +41,12 @@ export type ViewerDecisionEventType =
   | "vote.empowered_set"
   | "format.menu_offered"
   | "format.selected"
+  | "format.two_names_setup"
+  | "format.two_names_mingle_completed"
+  | "format.two_names_override_declined"
+  | "format.two_names_override_used"
+  | "format.two_names_replacement_named"
+  | "format.two_names_plea_recorded"
   | "format.ballot_cast"
   | "format.ballot_forfeited"
   | "format.safety_bounce_started"
@@ -85,6 +91,36 @@ export type ViewerDecisionEvent =
       { empoweredId: UUID; offeredFormatIds: [LaunchFormatId, LaunchFormatId] }
     >
   | ViewerDecisionEventBase<"format.selected", { empoweredId: UUID; formatId: LaunchFormatId }>
+  | ViewerDecisionEventBase<
+      "format.two_names_setup",
+      { empoweredId: UUID; initialNomineeIds: [UUID, UUID]; overrideHolderId: UUID }
+    >
+  | ViewerDecisionEventBase<
+      "format.two_names_mingle_completed",
+      { window: "initial_names" | "final_names"; finalistPlayerIds: [UUID, UUID] }
+    >
+  | ViewerDecisionEventBase<
+      "format.two_names_override_declined",
+      { overrideHolderId: UUID; finalistPlayerIds: [UUID, UUID] }
+    >
+  | ViewerDecisionEventBase<
+      "format.two_names_override_used",
+      { overrideHolderId: UUID; removedNomineeId: UUID }
+    >
+  | ViewerDecisionEventBase<
+      "format.two_names_replacement_named",
+      { empoweredId: UUID; replacementNomineeId: UUID; finalistPlayerIds: [UUID, UUID] }
+    >
+  | ViewerDecisionEventBase<
+      "format.two_names_plea_recorded",
+      {
+        speakerId: UUID;
+        ordinal: 0 | 1;
+        status: "accepted" | "absent";
+        text: string | null;
+        absenceReason: "provider_unavailable" | null;
+      }
+    >
   | ViewerDecisionEventBase<
       "format.ballot_cast",
       { formatId: LaunchFormatId; voterId: UUID; targetId: UUID; polarity: "save" | "eliminate" | null }
@@ -138,6 +174,12 @@ const VIEWER_DECISION_EVENT_TYPES = new Set<string>([
   "vote.empowered_set",
   "format.menu_offered",
   "format.selected",
+  "format.two_names_setup",
+  "format.two_names_mingle_completed",
+  "format.two_names_override_declined",
+  "format.two_names_override_used",
+  "format.two_names_replacement_named",
+  "format.two_names_plea_recorded",
   "format.ballot_cast",
   "format.ballot_forfeited",
   "format.safety_bounce_started",
@@ -273,6 +315,59 @@ export function projectViewerDecisionEvent(
         ...base,
         type: event.type,
         payload: { empoweredId: event.payload.empoweredId, formatId: event.payload.formatId },
+      };
+    case "format.two_names_setup":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          empoweredId: event.payload.empoweredId,
+          initialNomineeIds: [...event.payload.initialNomineeIds],
+          overrideHolderId: event.payload.overrideHolderId,
+        },
+      };
+    case "format.two_names_mingle_completed":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          window: event.payload.window,
+          finalistPlayerIds: [...event.payload.finalistPlayerIds],
+        },
+      };
+    case "format.two_names_override_declined":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          overrideHolderId: event.payload.overrideHolderId,
+          finalistPlayerIds: [...event.payload.finalistPlayerIds],
+        },
+      };
+    case "format.two_names_override_used":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          overrideHolderId: event.payload.overrideHolderId,
+          removedNomineeId: event.payload.removedNomineeId,
+        },
+      };
+    case "format.two_names_replacement_named":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          empoweredId: event.payload.empoweredId,
+          replacementNomineeId: event.payload.replacementNomineeId,
+          finalistPlayerIds: [...event.payload.finalistPlayerIds],
+        },
+      };
+    case "format.two_names_plea_recorded":
+      return {
+        ...base,
+        type: event.type,
+        payload: { ...event.payload },
       };
     case "format.ballot_cast":
       return {
@@ -416,6 +511,7 @@ export function projectFormatBallotPresentation(
       selected,
       options.formatManifest ?? roster?.payload.formatManifest,
       options.round,
+      options.eligibleVoterIds,
     )
   ) {
     return ballotPresentation("unavailable");
@@ -494,18 +590,22 @@ function selectionMatchesMenuOrManifest(
   selected: Extract<CanonicalGameEvent, { type: "format.selected" }>,
   formatManifest: readonly LaunchFormatId[] | undefined,
   round: number,
+  livingIds: readonly UUID[],
 ): boolean {
   if (menus.length === 1) {
-    const available = formatsAvailableInRound(
+    const available = formatsAvailableForSelection(
       formatManifest ?? LEGACY_FORMAT_MANIFEST,
-      round,
+      { round, livingIds },
     );
     return menus[0]!.payload.offeredFormatIds.every((formatId) =>
       available.includes(formatId)
     ) && menuMatchesSelection(menus[0]!, selected);
   }
   if (menus.length !== 0 || !formatManifest) return false;
-  const available = formatsAvailableInRound(formatManifest, round);
+  const available = formatsAvailableForSelection(formatManifest, {
+    round,
+    livingIds,
+  });
   return available.length === 1 && available[0] === selected.payload.formatId;
 }
 

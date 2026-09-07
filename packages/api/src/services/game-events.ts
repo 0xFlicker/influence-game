@@ -1,8 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import {
   providerAcceptedDecisionId,
   validateCanonicalGameEvent,
+  validateTwoNamesCanonicalPrefixes,
   type CanonicalGameEvent,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -81,6 +82,18 @@ export async function appendGameEvents(
           ? [[providerAcceptedDecisionId(call.acceptedAttemptId), call.id] as const]
           : []),
       );
+      const existingEventRows = await tx.select({ envelope: schema.gameEvents.envelope })
+        .from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, params.gameId))
+        .orderBy(asc(schema.gameEvents.sequence));
+      const prospectiveEvents = [
+        ...existingEventRows.map((row) => row.envelope as unknown as CanonicalGameEvent),
+        ...params.events.filter((event) => event.sequence > owner.lastPersistedEventSequence),
+      ];
+      const lifecycle = validateTwoNamesCanonicalPrefixes(prospectiveEvents);
+      if (!lifecycle.ok) {
+        throw new Error(`Invalid Two Names canonical lifecycle: ${lifecycle.errors.join("; ")}`);
+      }
 
       for (const event of params.events) {
         validateEnvelopeMetadata(params.gameId, event);

@@ -6,7 +6,7 @@
  * Pure TypeScript — no xstate, no ElizaOS.
  */
 
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { CanonicalEventLog, type CanonicalEventListener, type CanonicalEventSubscriptionOptions } from "./canonical-event-log";
 import type {
   CanonicalEventSource,
@@ -797,14 +797,22 @@ export class GameState {
     );
   }
 
+  private allianceMutationId(kind: "alliance" | "lineage" | "version"): UUID {
+    const digest = createHash("sha256").update(JSON.stringify([
+      "alliance-mutation-v1", this.gameId,
+      this.canonicalEvents.list().at(-1)?.sequence ?? 0, kind,
+    ])).digest("hex");
+    return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+  }
+
   recordAllianceProposal(
     input: AllianceProposalInput,
     options: AllianceMutationOptions = {},
   ): AllianceProposalVersion {
     const phase = this.assertAllianceMutationPhase(options);
-    const allianceId = input.allianceId ?? createUUID();
-    const lineageId = input.lineageId ?? createUUID();
-    const versionId = input.versionId ?? createUUID();
+    const allianceId = input.allianceId ?? this.allianceMutationId("alliance");
+    const lineageId = input.lineageId ?? this.allianceMutationId("lineage");
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this._allianceProposalLineages.has(lineageId)) {
       throw new Error(`Alliance proposal lineage already exists: ${lineageId}`);
     }
@@ -856,8 +864,8 @@ export class GameState {
     if (!alliance || alliance.status !== "active") {
       throw new Error(`Alliance amendment requires an active alliance: ${input.allianceId}`);
     }
-    const lineageId = input.lineageId ?? createUUID();
-    const versionId = input.versionId ?? createUUID();
+    const lineageId = input.lineageId ?? this.allianceMutationId("lineage");
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this._allianceProposalLineages.has(lineageId)) {
       throw new Error(`Alliance amendment lineage already exists: ${lineageId}`);
     }
@@ -977,7 +985,7 @@ export class GameState {
 
     const terms = this.normalizeAllianceTerms(input);
     this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, existing.allianceId);
-    const versionId = input.versionId ?? createUUID();
+    const versionId = input.versionId ?? this.allianceMutationId("version");
     if (this.findAllianceVersion(existing, versionId)) {
       throw new Error(`Alliance proposal version already exists: ${versionId}`);
     }
@@ -2223,6 +2231,103 @@ export class GameState {
     });
   }
 
+  recordTwoNamesSetup(
+    setup: {
+      empoweredId: UUID;
+      initialNomineeIds: [UUID, UUID];
+      overrideHolderId: UUID;
+    },
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_setup", {
+      empoweredId: setup.empoweredId,
+      initialNomineeIds: [...setup.initialNomineeIds],
+      overrideHolderId: setup.overrideHolderId,
+    }, {
+      phase: Phase.FORMAT_PICK,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
+  recordTwoNamesMingleCompleted(
+    window: "initial_names" | "final_names",
+    finalistPlayerIds: [UUID, UUID],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_mingle_completed", {
+      window,
+      finalistPlayerIds: [...finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+    });
+  }
+
+  recordTwoNamesOverrideDeclined(
+    overrideHolderId: UUID,
+    finalistPlayerIds: [UUID, UUID],
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_override_declined", {
+      overrideHolderId,
+      finalistPlayerIds: [...finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
+  /** Durable callers commit both returned events in one logical turn. */
+  recordTwoNamesOverrideUsed(
+    transition: {
+      overrideHolderId: UUID;
+      removedNomineeId: UUID;
+      empoweredId: UUID;
+      replacementNomineeId: UUID;
+      finalistPlayerIds: [UUID, UUID];
+    },
+    pointers: {
+      override: CanonicalSourcePointer[];
+      replacement: CanonicalSourcePointer[];
+    },
+  ): void {
+    this.appendCanonicalEvent("format.two_names_override_used", {
+      overrideHolderId: transition.overrideHolderId,
+      removedNomineeId: transition.removedNomineeId,
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers: pointers.override,
+    });
+    this.appendCanonicalEvent("format.two_names_replacement_named", {
+      empoweredId: transition.empoweredId,
+      replacementNomineeId: transition.replacementNomineeId,
+      finalistPlayerIds: [...transition.finalistPlayerIds],
+    }, {
+      phase: Phase.FORMAT_MINGLE,
+      visibility: "public",
+      sourcePointers: pointers.replacement,
+    });
+  }
+
+  recordTwoNamesPlea(
+    plea: {
+      speakerId: UUID;
+      ordinal: 0 | 1;
+      status: "accepted" | "absent";
+      text: string | null;
+      absenceReason: "provider_unavailable" | null;
+    },
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent("format.two_names_plea_recorded", { ...plea }, {
+      phase: Phase.FORMAT_RESOLVE,
+      visibility: "public",
+      sourcePointers,
+    });
+  }
+
   /**
    * Raw producer envelope for an accepted format ballot. Viewer surfaces project
    * its sanitized voter-to-target fact; source pointers remain producer-only.
@@ -2312,13 +2417,25 @@ export class GameState {
               savesReceived: { ...resolution.aggregate.savesReceived },
               eliminateReceived: { ...resolution.aggregate.eliminateReceived },
             }
-          : {
-              capability: "public_chain" as const,
-              starterId: resolution.aggregate.starterId,
-              safePlayerIds: [...resolution.aggregate.safePlayerIds],
-              vulnerablePlayerIds: [...resolution.aggregate.vulnerablePlayerIds],
-              voteTotals: { ...resolution.aggregate.voteTotals },
-            },
+          : resolution.aggregate.capability === "two_names"
+            ? {
+                capability: "two_names" as const,
+                initialNomineeIds: [...resolution.aggregate.initialNomineeIds],
+                overrideHolderId: resolution.aggregate.overrideHolderId,
+                overrideAction: resolution.aggregate.overrideAction,
+                removedNomineeId: resolution.aggregate.removedNomineeId,
+                replacementNomineeId: resolution.aggregate.replacementNomineeId,
+                finalistPlayerIds: [...resolution.aggregate.finalistPlayerIds],
+                eligibleVoterIds: [...resolution.aggregate.eligibleVoterIds],
+                totals: { ...resolution.aggregate.totals },
+              }
+            : {
+                capability: "public_chain" as const,
+                starterId: resolution.aggregate.starterId,
+                safePlayerIds: [...resolution.aggregate.safePlayerIds],
+                vulnerablePlayerIds: [...resolution.aggregate.vulnerablePlayerIds],
+                voteTotals: { ...resolution.aggregate.voteTotals },
+              },
     }, {
       phase: Phase.FORMAT_RESOLVE,
       visibility: "public",

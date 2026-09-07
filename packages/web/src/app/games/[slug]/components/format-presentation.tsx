@@ -6,6 +6,7 @@ import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
+import { TwoNamesRoleAnchors, TwoNamesStage, TwoNamesVoteStage } from "./two-names-stage";
 import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 
 export function FormatPresentation({
@@ -83,7 +84,7 @@ export function FormatPresentation({
     || cue.kind === "safety_bounce_pointer"
   ) {
     return (
-      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <SafetyBounceStage
           cue={cue}
           roster={roster}
@@ -93,9 +94,21 @@ export function FormatPresentation({
     );
   }
 
+  if (cue.kind.startsWith("two_names_")) {
+    return <TwoNamesStage cue={cue as Parameters<typeof TwoNamesStage>[0]["cue"]} roster={roster} currentStateEntry={currentStateEntry} />;
+  }
+
+  if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.resolution?.aggregate.capability === "two_names") {
+    return (
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
+        <TwoNamesVoteStage cue={cue} roster={roster} />
+      </PresentationShell>
+    );
+  }
+
   if (cue.kind === "format_aggregate") {
     return (
-      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <FormatResolutionStage cue={cue} roster={roster} />
       </PresentationShell>
     );
@@ -103,7 +116,7 @@ export function FormatPresentation({
 
   if (cue.kind === "format_roll_call") {
     return (
-      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <FormatBallotReveal cue={cue} roster={roster} />
       </PresentationShell>
     );
@@ -111,7 +124,7 @@ export function FormatPresentation({
 
   if (cue.kind === "format_tiebreak") {
     return (
-      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <section
           data-format-cue="format_tiebreak"
           className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-center"
@@ -133,7 +146,7 @@ export function FormatPresentation({
 
   if (cue.kind === "format_elimination") {
     return (
-      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+      <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <section
           data-format-cue="format_elimination"
           data-resolution-kind={cue.resolutionKind}
@@ -160,6 +173,7 @@ export function FormatPresentation({
 function PresentationShell({
   cue,
   children,
+  roster,
   currentStateEntry,
 }: {
   cue: Exclude<
@@ -167,6 +181,7 @@ function PresentationShell({
     { kind: "empowered_tally" | "format_menu" | "format_selected" }
   >;
   children: ReactNode;
+  roster: readonly FormatPresentationRosterPlayer[];
   currentStateEntry: boolean;
 }) {
   return (
@@ -177,6 +192,9 @@ function PresentationShell({
     >
       {cue.after.activeFormatId ? (
         <ActiveFormatLabel formatId={cue.after.activeFormatId} />
+      ) : null}
+      {cue.after.activeFormatId === "two_names" ? (
+        <TwoNamesRoleAnchors cue={cue} roster={roster} />
       ) : null}
       {children}
     </div>

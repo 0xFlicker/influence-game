@@ -70,6 +70,7 @@ export type DeploymentAdmissionStatus = {
   admissionBlocked: boolean;
   lease: DeploymentAdmissionLease | null;
   activeGameCount: number;
+  activeGameOwnerCount: number;
   activeGames: Array<{
     id: string;
     slug: string;
@@ -201,9 +202,8 @@ export async function advanceDeploymentAdmissionPhase(
         return failure("stale_lease", "The deployment lease phase changed", false);
       }
       if (input.nextPhase === "switching") {
-        const activeGames = await loadActiveGames(tx);
-        if (activeGames.length > 0) {
-          return failure("active_games_remaining", "Active games remain inside the deployment drain", true);
+        if (await countActiveGameOwners(tx) > 0) {
+          return failure("active_games_remaining", "Active game owners remain inside the deployment drain", true);
         }
       }
 
@@ -382,6 +382,7 @@ export async function getDeploymentAdmissionStatus(
       admissionBlocked: lease !== null,
       lease: lease ? projectLease(lease) : null,
       activeGameCount: activeGames.length,
+      activeGameOwnerCount: await countActiveGameOwners(tx),
       activeGames,
     };
   });
@@ -544,6 +545,13 @@ async function databaseTimes(tx: DrizzleTransaction): Promise<{
     operationalExpiry: row.operational_expiry,
     absoluteDeadline: row.absolute_deadline,
   };
+}
+
+async function countActiveGameOwners(tx: DrizzleTransaction): Promise<number> {
+  const [row] = await tx.select({ count: sql<number>`count(*)::int` })
+    .from(schema.gameRunOwners)
+    .where(eq(schema.gameRunOwners.status, "active"));
+  return row!.count;
 }
 
 async function loadActiveGames(tx: DrizzleTransaction): Promise<DeploymentAdmissionStatus["activeGames"]> {

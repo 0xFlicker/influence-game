@@ -88,7 +88,7 @@ describe("server shutdown", () => {
     expect(harness.exits).toEqual([0]);
   });
 
-  test("one signal stops admission and the worker before gracefully draining the server", async () => {
+  test("SIGTERM starts shutdown before a worker can be polled for drain proof", async () => {
     const harness = createHarness();
 
     const shutdown = harness.controller.requestShutdown("SIGTERM");

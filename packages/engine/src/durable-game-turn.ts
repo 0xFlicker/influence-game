@@ -17,6 +17,7 @@ import type {
 } from "./game-runner.types";
 import type { LaunchFormatId } from "./formats";
 import { Phase, type AllianceHuddleFactAtom } from "./types";
+import type { ProviderSemanticCoordinateV1 } from "./provider-execution";
 
 export const DURABLE_GAME_TURN_CONTRACT_VERSION = 1 as const;
 
@@ -161,6 +162,22 @@ export interface FormatProgressV1 {
   tiedPlayerIds: string[];
 }
 
+export type TwoNamesProgressStageV1 =
+  | "setup"
+  | "initial_mingle"
+  | "override"
+  | "final_mingle"
+  | "plea"
+  | "ballots"
+  | "tiebreak"
+  | "resolve";
+
+export interface TwoNamesProgressV1 {
+  version: 1;
+  stage: TwoNamesProgressStageV1;
+  pleaIndex: 0 | 1 | 2;
+}
+
 export type DiaryInterviewRoleV1 = "player" | "juror" | "finalist";
 export type DiaryInterviewStatusV1 =
   | "question"
@@ -206,6 +223,7 @@ export type GameExecutionCursorV1 =
   | { version: 1; kind: "alliance"; progress: AllianceProgressV1 }
   | { version: 1; kind: "huddle"; progress: HuddleProgressV1 }
   | { version: 1; kind: "format"; progress: FormatProgressV1 }
+  | { version: 1; kind: "two_names"; progress: TwoNamesProgressV1 }
   | { version: 1; kind: "diary"; progress: DiaryProgressV1 }
   | { version: 1; kind: "rules"; operation: RulesOperationV1 }
   | { version: 1; kind: "house"; operation: HouseOperationV1 }
@@ -260,6 +278,12 @@ export interface GameTurnProviderSubcallV1 {
   version: typeof DURABLE_GAME_TURN_CONTRACT_VERSION;
   slot: number;
   logicalCallId: string;
+  /**
+   * Present on all newly planned turns. Planned turns written before R33 omit
+   * this field; their coordinate is derived from the immutable turn id + slot
+   * by durableProviderSemanticCoordinateForSubcall during recovery.
+   */
+  semanticCoordinate?: Extract<ProviderSemanticCoordinateV1, { kind: "durable_turn" }>;
   actorId: string | null;
   action: string;
   contractId: string;
@@ -613,6 +637,10 @@ function validateCursor(value: unknown): string[] {
       if (!exactRecord(value, ["version", "kind", "progress"])) return ["format cursor fields are not exact"];
       errors.push(...validateFormatProgress(value.progress));
       break;
+    case "two_names":
+      if (!exactRecord(value, ["version", "kind", "progress"])) return ["Two Names cursor fields are not exact"];
+      errors.push(...validateTwoNamesProgress(value.progress));
+      break;
     case "diary":
       if (!exactRecord(value, ["version", "kind", "progress"])) return ["diary cursor fields are not exact"];
       errors.push(...validateDiaryProgress(value.progress));
@@ -775,6 +803,28 @@ function validateFormatProgress(value: unknown): string[] {
   return errors;
 }
 
+function validateTwoNamesProgress(value: unknown): string[] {
+  if (!exactRecord(value, ["version", "stage", "pleaIndex"])) {
+    return ["Two Names progress fields are not exact"];
+  }
+  const errors: string[] = [];
+  if (value.version !== 1) errors.push("Two Names progress version must be 1");
+  if (
+    value.stage !== "setup"
+    && value.stage !== "initial_mingle"
+    && value.stage !== "override"
+    && value.stage !== "final_mingle"
+    && value.stage !== "plea"
+    && value.stage !== "ballots"
+    && value.stage !== "tiebreak"
+    && value.stage !== "resolve"
+  ) errors.push("Two Names progress stage is invalid");
+  if (value.pleaIndex !== 0 && value.pleaIndex !== 1 && value.pleaIndex !== 2) {
+    errors.push("Two Names pleaIndex must be 0, 1, or 2");
+  }
+  return errors;
+}
+
 function validateDiaryProgress(value: unknown): string[] {
   if (!exactRecord(value, ["version", "precedingPhase", "interviews"])) return ["diary progress fields are not exact"];
   const errors: string[] = [];
@@ -846,17 +896,50 @@ function validateBranch(value: unknown): string[] {
 }
 
 function validateProviderSubcall(value: unknown, index: number): string[] {
-  if (!exactRecord(value, ["version", "slot", "logicalCallId", "actorId", "action", "contractId"])) {
+  if (!exactRecord(value, ["version", "slot", "logicalCallId", "actorId", "action", "contractId"])
+    && !exactRecord(value, ["version", "slot", "logicalCallId", "semanticCoordinate", "actorId", "action", "contractId"])) {
     return [`providerSubcalls[${index}] fields are not exact`];
   }
   const errors: string[] = [];
   if (value.version !== 1) errors.push(`providerSubcalls[${index}].version must be 1`);
   requirePositiveInteger(value.slot, `providerSubcalls[${index}].slot`, errors);
   requireString(value.logicalCallId, `providerSubcalls[${index}].logicalCallId`, errors);
+  if ("semanticCoordinate" in value) {
+    if (!isDurableTurnSemanticCoordinate(value.semanticCoordinate)) {
+      errors.push(`providerSubcalls[${index}].semanticCoordinate must be an exact durable-turn coordinate`);
+    } else if (value.semanticCoordinate.subcallSlot !== value.slot) {
+      errors.push(`providerSubcalls[${index}].semanticCoordinate.subcallSlot must equal slot`);
+    }
+  }
   if (value.actorId !== null) requireString(value.actorId, `providerSubcalls[${index}].actorId`, errors);
   requireString(value.action, `providerSubcalls[${index}].action`, errors);
   requireString(value.contractId, `providerSubcalls[${index}].contractId`, errors);
   return errors;
+}
+
+/** Resolves the deterministic coordinate for both current and pre-R33 planned turns. */
+export function durableProviderSemanticCoordinateForSubcall(
+  turnId: string,
+  subcall: Pick<GameTurnProviderSubcallV1, "slot" | "semanticCoordinate">,
+): Extract<ProviderSemanticCoordinateV1, { kind: "durable_turn" }> {
+  return subcall.semanticCoordinate ?? {
+    version: 1,
+    kind: "durable_turn",
+    turnId,
+    subcallSlot: subcall.slot,
+  };
+}
+
+function isDurableTurnSemanticCoordinate(
+  value: unknown,
+): value is Extract<ProviderSemanticCoordinateV1, { kind: "durable_turn" }> {
+  if (!exactRecord(value, ["version", "kind", "turnId", "subcallSlot"])) return false;
+  return value.version === 1
+    && value.kind === "durable_turn"
+    && typeof value.turnId === "string"
+    && value.turnId.trim().length > 0
+    && Number.isSafeInteger(value.subcallSlot)
+    && (value.subcallSlot as number) > 0;
 }
 
 function validateNextExecution(value: unknown, gameId: string | null): string[] {

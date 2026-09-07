@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
+import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import {
   FORMAT_PRESENTATION_METADATA,
   type LaunchFormatId,
@@ -19,6 +21,33 @@ const roster: FormatPresentationRosterPlayer[] = [
 ];
 
 describe("FormatPresentation", () => {
+  it("keeps Two Names visible at rest and reveals only the current ballot prefix before the result", () => {
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const compiled = compileFormatPresentationPrefix({ gameId: "two-names", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb"] });
+    expect(compiled.diagnostic).toBeNull();
+    const render = (kind: FormatPresentationCue["kind"]) => {
+      const cue = compiled.cues.find((entry) => entry.kind === kind);
+      if (!cue) throw new Error(`Missing ${kind}`);
+      return withoutReactMarkers(renderToString(<FormatPresentation cue={cue} roster={scenario.roster} currentStateEntry={false} />));
+    };
+    const nominees = render("two_names_initial_names");
+    expect(nominees).toContain("Lyra");
+    expect(nominees).toContain("Echo");
+    expect(nominees).not.toContain("opacity:0");
+    const sealed = render("two_names_ballots_sealing");
+    expect(sealed).toContain("Lyra");
+    expect(sealed).toContain("Echo");
+    expect(sealed).not.toContain("exit votes");
+    const roll = render("format_roll_call");
+    expect(roll).toContain('aria-label="Lyra: 1 exit vote"');
+    expect(roll).toContain('aria-label="Echo: 0 exit votes"');
+    expect(roll).not.toContain("Result locked");
+    const result = render("format_aggregate");
+    expect(result).toContain("Result locked");
+    expect(result).toContain('aria-label="Lyra: 2 exit votes"');
+    expect(result).toContain('aria-label="Echo: 0 exit votes"');
+  });
+
   it("renders only the Empowered aggregate and roster-ordered named receipts", () => {
     const html = renderToString(
       <FormatPresentation

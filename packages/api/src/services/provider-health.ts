@@ -674,7 +674,8 @@ function assertProbeEvidence(
 ): void {
   if (
     evidence.coordinate.action !== "provider_health_probe"
-    || evidence.coordinate.logicalCallOrdinal !== lease.revision
+    || evidence.coordinate.semantic.kind !== "provider_health"
+    || evidence.coordinate.semantic.revision !== lease.revision
     || evidence.coordinate.actor.id !== lease.owner
   ) {
     throw new Error("Provider health probe evidence does not match its lease");

@@ -163,6 +163,26 @@ export interface RevealedSafetyBounceFacts {
   voteTotals: RevealedVoteCount[];
 }
 
+export interface RevealedTwoNamesPlea {
+  speaker: RevealedPlayerRef;
+  ordinal: 0 | 1;
+  status: "accepted" | "absent";
+  text: string | null;
+}
+
+export interface RevealedTwoNamesFacts {
+  initialNominees: [RevealedPlayerRef, RevealedPlayerRef] | null;
+  overrideHolder: RevealedPlayerRef | null;
+  overrideAction: "declined" | "used" | null;
+  removedNominee: RevealedPlayerRef | null;
+  replacementNominee: RevealedPlayerRef | null;
+  finalists: [RevealedPlayerRef, RevealedPlayerRef] | null;
+  completedMingleWindows: Array<"initial_names" | "final_names">;
+  pleas: RevealedTwoNamesPlea[];
+  eligibleVoters: RevealedPlayerRef[];
+  totals: RevealedVoteCount[];
+}
+
 /** Public format facts for format-kernel rounds. */
 export interface RevealedFormatFacts {
   status: RevealedFactsStatus;
@@ -180,6 +200,8 @@ export interface RevealedFormatFacts {
   /** Added with Restricted History; absent only from older serialized fixtures. */
   restrictedHistory?: RevealedRestrictedHistoryFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
+  /** Added with Two Names; absent only from older serialized fixtures. */
+  twoNames?: RevealedTwoNamesFacts | null;
   /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
   acceptedBallots: RevealedFormatBallotEntry[];
   /** Resolution-gated, canonical roster-ordered presentation roll call. */
@@ -550,6 +572,64 @@ function buildFormatFacts(
           .map((event) => playerRef(projection, event.payload.voterId)),
       }
     : null;
+  const twoNamesSetup = latestEvent(events, "format.two_names_setup");
+  const twoNamesDeclined = latestEvent(events, "format.two_names_override_declined");
+  const twoNamesUsed = latestEvent(events, "format.two_names_override_used");
+  const twoNamesReplacement = latestEvent(events, "format.two_names_replacement_named");
+  const twoNamesAggregate = aggregate?.capability === "two_names" ? aggregate : null;
+  const twoNamesFinalistIds = twoNamesReplacement?.payload.finalistPlayerIds
+    ?? twoNamesDeclined?.payload.finalistPlayerIds
+    ?? twoNamesAggregate?.finalistPlayerIds
+    ?? null;
+  const twoNames = selectedFormatId === "two_names" || twoNamesSetup || twoNamesAggregate
+    ? {
+        initialNominees: twoNamesSetup
+          ? ([
+              playerRef(projection, twoNamesSetup.payload.initialNomineeIds[0]),
+              playerRef(projection, twoNamesSetup.payload.initialNomineeIds[1]),
+            ] as [RevealedPlayerRef, RevealedPlayerRef])
+          : null,
+        overrideHolder: refOrNull(
+          projection,
+          twoNamesSetup?.payload.overrideHolderId ?? twoNamesAggregate?.overrideHolderId ?? null,
+        ),
+        overrideAction: twoNamesDeclined
+          ? "declined" as const
+          : twoNamesUsed
+            ? "used" as const
+            : twoNamesAggregate?.overrideAction ?? null,
+        removedNominee: refOrNull(
+          projection,
+          twoNamesUsed?.payload.removedNomineeId ?? twoNamesAggregate?.removedNomineeId ?? null,
+        ),
+        replacementNominee: refOrNull(
+          projection,
+          twoNamesReplacement?.payload.replacementNomineeId
+            ?? twoNamesAggregate?.replacementNomineeId
+            ?? null,
+        ),
+        finalists: twoNamesFinalistIds
+          ? ([
+              playerRef(projection, twoNamesFinalistIds[0]),
+              playerRef(projection, twoNamesFinalistIds[1]),
+            ] as [RevealedPlayerRef, RevealedPlayerRef])
+          : null,
+        completedMingleWindows: eventsOfType(events, "format.two_names_mingle_completed")
+          .map((event) => event.payload.window),
+        pleas: eventsOfType(events, "format.two_names_plea_recorded").map((event) => ({
+          speaker: playerRef(projection, event.payload.speakerId),
+          ordinal: event.payload.ordinal,
+          status: event.payload.status,
+          text: event.payload.text,
+        })),
+        eligibleVoters: (twoNamesAggregate?.eligibleVoterIds ?? []).map(
+          (id) => playerRef(projection, id),
+        ),
+        totals: twoNamesAggregate
+          ? countsToVoteCounts(twoNamesAggregate.totals, projection)
+          : [],
+      }
+    : null;
 
   const eliminatedId = resolved?.payload.eliminatedId ?? null;
   const rawTiedIds = resolved?.payload.tiedPlayerIds ?? [];
@@ -564,12 +644,13 @@ function buildFormatFacts(
       ? []
       : rawTiedIds;
   const acceptedBallots = buildAcceptedFormatBallots(events, projection);
-  const eligibleVoterIds = projection.playerOrder.filter((playerId) =>
-    projection.players[playerId]?.status === PlayerStatus.ALIVE
-    || events.some(
-      (event) => event.type === "player.eliminated" && event.payload.playerId === playerId,
-    )
-  );
+  const eligibleVoterIds = twoNamesAggregate?.eligibleVoterIds
+    ?? projection.playerOrder.filter((playerId) =>
+      projection.players[playerId]?.status === PlayerStatus.ALIVE
+      || events.some(
+        (event) => event.type === "player.eliminated" && event.payload.playerId === playerId,
+      )
+    );
   const projectedPresentation = projectFormatBallotPresentation({
     events,
     round: events[0]?.round ?? 0,
@@ -611,6 +692,7 @@ function buildFormatFacts(
     evenVotes,
     restrictedHistory,
     safetyBounce,
+    twoNames,
     acceptedBallots,
     ballotPresentation,
   };
@@ -874,6 +956,7 @@ function emptyFormat(
     evenVotes: null,
     restrictedHistory: null,
     safetyBounce: null,
+    twoNames: null,
     acceptedBallots: [],
     ballotPresentation: {
       status: status === "unavailable" || status === "not_yet_flushed"

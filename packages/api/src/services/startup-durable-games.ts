@@ -25,6 +25,7 @@ export type StartAdoptedDurableGame = (
 
 export type DurableGameStartupSkipReason =
   | "already_running"
+  | "start_backoff"
   | "missing_execution_state"
   | "repair_required"
   | "adoption_conflict"
@@ -52,6 +53,9 @@ export async function adoptInProgressDurableGamesOnStartup(
     signal?: AbortSignal;
     processId?: string;
     isAlreadyRunning?: (gameId: string) => boolean;
+    canAttemptStart?: (gameId: string) => boolean;
+    onStartSucceeded?: (gameId: string) => void;
+    onStartFailed?: (gameId: string) => void;
   },
 ): Promise<DurableGameStartupResult> {
   const rows = await db.select({
@@ -74,6 +78,9 @@ export async function adoptInProgressDurableGamesOnStartup(
     upgradeFrom?: SupportedRecoveryResumeInput,
   ): Promise<void> => {
     try {
+      // A signal can arrive while the ownership transaction is in flight.
+      // Release that claim through the normal failure path before construction.
+      options.signal?.throwIfAborted();
       await options.start({
         gameId,
         ownerEpoch: claim.ownerEpoch,
@@ -82,6 +89,7 @@ export async function adoptInProgressDurableGamesOnStartup(
         ...(options.signal && { signal: options.signal }),
       });
       adopted.push(gameId);
+      options.onStartSucceeded?.(gameId);
     } catch (error) {
       await relinquishDurableGameRunOwner(
         db,
@@ -94,12 +102,17 @@ export async function adoptInProgressDurableGamesOnStartup(
         reason: "start_failed",
         detail: error instanceof Error ? error.message : String(error),
       });
+      options.onStartFailed?.(gameId);
     }
   };
   for (const row of rows) {
     options.signal?.throwIfAborted();
     if (options.isAlreadyRunning?.(row.gameId)) {
       skipped.push({ gameId: row.gameId, reason: "already_running" });
+      continue;
+    }
+    if (options.canAttemptStart && !options.canAttemptStart(row.gameId)) {
+      skipped.push({ gameId: row.gameId, reason: "start_backoff" });
       continue;
     }
     if (!row.executionGameId) {

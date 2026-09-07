@@ -188,6 +188,11 @@ export type DurableRunExecutionCursorSummary =
       selectedFormatId: string | null;
     }
   | {
+      kind: "two_names";
+      coordinate: "two_names";
+      stage: string;
+    }
+  | {
       kind: "diary";
       precedingPhase: string;
       interviewCount: number;
@@ -672,6 +677,12 @@ function summarizeExecutionCursor(
         kind: cursor.kind,
         stage: cursor.progress.stage,
         selectedFormatId: cursor.progress.selectedFormatId,
+      };
+    case "two_names":
+      return {
+        kind: cursor.kind,
+        coordinate: "two_names",
+        stage: cursor.progress.stage,
       };
     case "diary":
       return {

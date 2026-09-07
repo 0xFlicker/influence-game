@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import {
   isSupportedCanonicalPayloadVersion,
   validateCanonicalGameEvent,
+  validateTwoNamesCanonicalPrefixes,
   type CanonicalGameEvent,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -15,6 +16,7 @@ export type PersistedEventDiagnosticCode =
   | "hash_mismatch"
   | "invalid_envelope"
   | "metadata_mismatch"
+  | "lifecycle_invalid"
   | "sequence_gap"
   | "unsupported_payload_version"
   | "wrong_game";
@@ -221,6 +223,18 @@ export function validatePersistedGameEventRows(
       createdAt: row.createdAt,
     });
     expectedSequence += 1;
+  }
+
+  if (diagnostics.length === 0 && events.length > 0) {
+    const lifecycle = validateTwoNamesCanonicalPrefixes(events.map((event) => event.envelope));
+    if (!lifecycle.ok) {
+      const row = rows.at(-1)!;
+      diagnostics.push(buildDiagnostic(row, {
+        code: "lifecycle_invalid",
+        message: lifecycle.errors.join("; "),
+      }));
+      events.pop();
+    }
   }
 
   return finishRead(gameId, rows, events, diagnostics);

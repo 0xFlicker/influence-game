@@ -935,6 +935,8 @@ function publicDiagnosticMessage(code: GameWatchDiagnosticCode): string {
       return "The persisted event log contains an invalid event envelope.";
     case "metadata_mismatch":
       return "The persisted event log metadata does not match its event envelope.";
+    case "lifecycle_invalid":
+      return "The persisted event log contains a contradictory format lifecycle.";
     case "projection_replay_failed":
       return "The persisted projection could not replay the trusted event prefix.";
     case "sequence_gap":

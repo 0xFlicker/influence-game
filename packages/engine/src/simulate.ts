@@ -41,10 +41,16 @@
  * Require FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE on two-card rounds,
  * model-authored format actions (`decisionSource: "llm"` with useful thinking),
  * no fallback, and no default Power/Council elimination. Omission uses the
- * frozen six-format default. For proof of one round-1-eligible card, append
+ * frozen seven-format default. For proof of one round-1-eligible card, append
  * `--formats <id>` and require FORMAT LOCKED -> FORMAT RESOLVE with no
  * format.menu_offered event, format-pick turn, or empowered pick model call.
  * Restricted History requires round 3 plus a round-1-eligible companion format.
+ * Two Names requires at least five living players and proves nominations,
+ * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
+ * Its two Mingle windows retain separate semantic provider coordinates;
+ * alliance proposal/version and huddle schedule/session IDs derive from the
+ * canonical event boundary so accepted calls retain identity after API restart.
+ * Continue using direct House calls and typed contracts; do not add `as any`.
  * See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
@@ -53,6 +59,11 @@
  * Simulations consume the final persisted Agent Profile strategy supplied to the
  * run. Unsaved editor drafts and Owner Learning before/after presentation never
  * enter simulation context; review proposals affect play only after they are saved.
+ *
+ * Two Names prompts carry canonical initial/current nominees and Override state for
+ * every social decision; only the Empowered initial nomination has no selected pair.
+ * Inspect fresh outgoing prompts for this contract, not historical transcript prose.
+ * Keep direct House calls and no `as any` in simulation integrations.
  *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "FORMAT LOCKED: ...", "Y format ballot: ...") with the agent's
@@ -138,10 +149,12 @@
  * context is intentionally narrower than operator transport: sanitized accepted
  * ballot mappings are readable there immediately after durable record, while
  * viewer named Roll Call presentation remains resolution-gated. Together the format
- * records expose nine typed agent decisions: pickRoundFormat,
+ * records expose typed agent decisions including pickRoundFormat,
  * getSaveOrEliminateBallot, getVoteBombBallot, getMajorityEliminationBallot,
  * getEvenVotesBallot, getRestrictedHistoryBallot,
- * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
+ * getBouncePointer, getSafetyBounceVote, breakFormatEliminationTie,
+ * getTwoNamesInitialNames, getTwoNamesOverride, getTwoNamesReplacement,
+ * getTwoNamesPlea, getTwoNamesBallot, and breakTwoNamesTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
  * prompts render the acting player's computed status and the exact consequence:
@@ -768,14 +781,14 @@ export function createLocalProviderExecutionJournal(input: {
   const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
   const usedCallsByCatalog = new Map<string, number>();
   const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
-    domain: "influence.provider.logical-call.v1",
+    domain: "influence.provider.logical-call.v2",
     coordinate: {
       gameId: input.gameId,
       actor: intent.coordinate.actor,
       action: intent.coordinate.action,
       phase: intent.coordinate.phase,
       round: intent.coordinate.round,
-      logicalCallOrdinal: intent.coordinate.logicalCallOrdinal,
+      semantic: intent.coordinate.semantic,
     },
   });
   const attemptId = (intent: ProviderAttemptIntent) => simulationHash({

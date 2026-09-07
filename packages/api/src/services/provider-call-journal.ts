@@ -2,6 +2,11 @@ import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
   assertGameTurnIntentV1,
+  assertProviderSemanticCoordinate,
+  canonicalProviderSemanticCoordinate,
+  durableProviderLogicalCallId,
+  durableProviderSemanticCoordinateForSubcall,
+  providerSemanticCoordinateHash,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   resolveProviderManifestFromGameConfig,
@@ -96,16 +101,22 @@ function logicalCallId(
   coordinate: ProviderLogicalCallCoordinate,
   options: Pick<CreateApiProviderExecutionHooksOptions, "gameId">,
 ): string {
-  if (coordinate.durableTurn) return coordinate.durableTurn.logicalCallId;
+  if (coordinate.semantic.kind === "durable_turn") {
+    return durableProviderLogicalCallId({
+      gameId: options.gameId,
+      turnId: coordinate.semantic.turnId,
+      subcallSlot: coordinate.semantic.subcallSlot,
+    });
+  }
   return sha256StableJson({
-    domain: "influence.provider.logical-call.v1",
+    domain: "influence.provider.logical-call.v2",
     coordinate: {
       gameId: options.gameId,
       actor: coordinate.actor,
       action: coordinate.action,
       phase: coordinate.phase,
       round: coordinate.round,
-      logicalCallOrdinal: coordinate.logicalCallOrdinal,
+      semantic: canonicalProviderSemanticCoordinate(coordinate.semantic),
     },
   });
 }
@@ -141,15 +152,27 @@ function assertCoordinate(
   if (intent.coordinate.ownerEpoch !== undefined && intent.coordinate.ownerEpoch !== options.ownerEpoch) {
     throw new Error("Provider attempt owner epoch does not match journal authority");
   }
+  assertProviderSemanticCoordinate(intent.coordinate.semantic);
   const durableTurn = intent.coordinate.durableTurn;
-  if (!durableTurn) return;
+  if (!durableTurn) {
+    if (intent.coordinate.semantic.kind === "durable_turn") {
+      throw new Error("Durable provider semantic coordinate requires a turn binding");
+    }
+    return;
+  }
   if (
     durableTurn.turnId.trim().length === 0
-    || durableTurn.logicalCallId.trim().length === 0
     || !Number.isSafeInteger(durableTurn.subcallSlot)
     || durableTurn.subcallSlot < 1
   ) {
     throw new Error("Provider durable turn coordinate is invalid");
+  }
+  if (
+    intent.coordinate.semantic.kind !== "durable_turn"
+    || intent.coordinate.semantic.turnId !== durableTurn.turnId
+    || intent.coordinate.semantic.subcallSlot !== durableTurn.subcallSlot
+  ) {
+    throw new Error("Provider durable turn binding must match its semantic coordinate");
   }
 }
 
@@ -165,9 +188,38 @@ function logicalCallIdentity(
     action: coordinate.action,
     phase: coordinate.phase,
     round: coordinate.round,
-    logicalCallOrdinal: coordinate.logicalCallOrdinal,
+    semanticCoordinate: coordinate.semantic,
+    semanticCoordinateHash: providerSemanticCoordinateHash(coordinate.semantic),
     gameTurnId: coordinate.durableTurn?.turnId,
     gameTurnSubcallSlot: coordinate.durableTurn?.subcallSlot,
+  };
+}
+
+function logicalCallIdentityFromRow(row: LogicalCallRow): Record<string, unknown> {
+  const semanticCoordinate = row.semanticCoordinate ?? (
+    row.gameTurnId && row.gameTurnSubcallSlot
+      ? durableProviderSemanticCoordinateForSubcall(row.gameTurnId, {
+        slot: row.gameTurnSubcallSlot,
+      })
+      : null
+  );
+  const semanticCoordinateHash = row.semanticCoordinateHash ?? (
+    semanticCoordinate === null
+      ? null
+      : providerSemanticCoordinateHash(semanticCoordinate as Parameters<typeof providerSemanticCoordinateHash>[0])
+  );
+  return {
+    gameId: row.gameId,
+    actorId: row.actorId ?? undefined,
+    actorName: row.actorName,
+    actorRole: row.actorRole,
+    action: row.action,
+    phase: row.phase ?? undefined,
+    round: row.round ?? undefined,
+    semanticCoordinate,
+    semanticCoordinateHash,
+    gameTurnId: row.gameTurnId ?? undefined,
+    gameTurnSubcallSlot: row.gameTurnSubcallSlot ?? undefined,
   };
 }
 
@@ -201,9 +253,19 @@ async function assertDurableTurnSubcall(
     throw new Error("Provider durable turn intent failed its integrity check");
   }
   const subcall = turn.intent.providerSubcalls.find((entry) => entry.slot === binding.subcallSlot);
+  const subcallSemanticCoordinate = durableProviderSemanticCoordinateForSubcall(
+    turn.intent.turnId,
+    subcall ?? { slot: binding.subcallSlot },
+  );
+  const expectedLogicalCallId = durableProviderLogicalCallId({
+    gameId: options.gameId,
+    turnId: binding.turnId,
+    subcallSlot: binding.subcallSlot,
+  });
   if (
     !subcall
-    || subcall.logicalCallId !== binding.logicalCallId
+    || subcall.logicalCallId !== expectedLogicalCallId
+    || canonicalProviderSemanticCoordinate(subcallSemanticCoordinate) !== canonicalProviderSemanticCoordinate(coordinate.semantic)
     || subcall.actorId !== (coordinate.actor.id ?? null)
     || subcall.action !== coordinate.action
   ) {
@@ -325,7 +387,8 @@ async function allocateAttemptOrdinal(
       action: coordinate.action,
       phase: coordinate.phase,
       round: coordinate.round,
-      logicalCallOrdinal: coordinate.logicalCallOrdinal,
+      semanticCoordinate: coordinate.semantic,
+      semanticCoordinateHash: providerSemanticCoordinateHash(coordinate.semantic),
       gameTurnId: coordinate.durableTurn?.turnId,
       gameTurnSubcallSlot: coordinate.durableTurn?.subcallSlot,
       updatedAt: now,
@@ -333,18 +396,8 @@ async function allocateAttemptOrdinal(
 
     const existing = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];
-    if (!existing || stableJson({
-      gameId: existing.gameId,
-      actorId: existing.actorId ?? undefined,
-      actorName: existing.actorName,
-      actorRole: existing.actorRole,
-      action: existing.action,
-      phase: existing.phase ?? undefined,
-      round: existing.round ?? undefined,
-      logicalCallOrdinal: existing.logicalCallOrdinal,
-      gameTurnId: existing.gameTurnId ?? undefined,
-      gameTurnSubcallSlot: existing.gameTurnSubcallSlot ?? undefined,
-    }) !== stableJson(logicalCallIdentity(coordinate, options.gameId))) {
+    if (!existing || stableJson(logicalCallIdentityFromRow(existing))
+      !== stableJson(logicalCallIdentity(coordinate, options.gameId))) {
       throw new Error("Provider logical call id has conflicting immutable identity");
     }
 
@@ -395,18 +448,8 @@ async function reserveAttempt(
     if (intent.attemptOrdinal >= existingCall.nextAttemptOrdinal) {
       throw new Error("Provider attempt ordinal was not durably allocated");
     }
-    if (stableJson({
-      gameId: existingCall.gameId,
-      actorId: existingCall.actorId ?? undefined,
-      actorName: existingCall.actorName,
-      actorRole: existingCall.actorRole,
-      action: existingCall.action,
-      phase: existingCall.phase ?? undefined,
-      round: existingCall.round ?? undefined,
-      logicalCallOrdinal: existingCall.logicalCallOrdinal,
-      gameTurnId: existingCall.gameTurnId ?? undefined,
-      gameTurnSubcallSlot: existingCall.gameTurnSubcallSlot ?? undefined,
-    }) !== stableJson(logicalCallIdentity(intent.coordinate, options.gameId))) {
+    if (stableJson(logicalCallIdentityFromRow(existingCall))
+      !== stableJson(logicalCallIdentity(intent.coordinate, options.gameId))) {
       throw new Error("Provider attempt coordinate conflicts with its logical call identity");
     }
 

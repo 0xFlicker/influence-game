@@ -206,7 +206,7 @@ function diaryHouseContext(): DiaryRoomContext {
   return {
     precedingPhase: Phase.COUNCIL,
     round: 2,
-    providerInterviewOrdinal: 1,
+    sessionEventSequence: 1,
     agentId: PLAYER_IDS.ada,
     agentName: "Ada",
     playerKnowledge: diaryAgentContext("cache-isolated-at-runtime"),
@@ -223,7 +223,7 @@ function diaryAgentContext(gameId: UUID): PhaseContext {
     gameId,
     round: 2,
     phase: Phase.DIARY_ROOM,
-    providerLogicalCallOrdinal: 1,
+    providerCallBoundaryEventSequence: 1,
     selfId: PLAYER_IDS.ada,
     selfName: "Ada",
     alivePlayers: [
@@ -284,7 +284,7 @@ function diarySemanticInput(kind: "substantive" | "evasive"): JsonValue {
     houseContext: {
       precedingPhase: houseContext.precedingPhase,
       round: houseContext.round,
-      providerInterviewOrdinal: houseContext.providerInterviewOrdinal,
+      sessionEventSequence: houseContext.sessionEventSequence,
       agentName: houseContext.agentName,
       playerKnowledge: {
         selfId: houseContext.playerKnowledge.selfId,
@@ -583,7 +583,7 @@ function judgmentContext(gameId: UUID, actor: "juror" | "finalist"): PhaseContex
     gameId,
     round: 6,
     phase: Phase.JURY_QUESTIONS,
-    providerLogicalCallOrdinal: 1,
+    providerCallBoundaryEventSequence: 1,
     selfId: isJuror ? PLAYER_IDS.sage : PLAYER_IDS.vera,
     selfName: isJuror ? "Sage" : "Vera",
     alivePlayers: [
@@ -721,7 +721,7 @@ function diaryScenario(kind: "substantive" | "evasive"): RuntimeScenario {
           "contestant_followup_answer",
           "structured",
           () => agent.getDiaryEntry(
-            { ...agentContext, providerLogicalCallOrdinal: 2 },
+            { ...agentContext, providerCallBoundaryEventSequence: 2 },
             DIARY_SUBSTANTIVE.fixedFollowUpQuestion,
             [{
               question: DIARY_SUBSTANTIVE.fixedFirstQuestion,

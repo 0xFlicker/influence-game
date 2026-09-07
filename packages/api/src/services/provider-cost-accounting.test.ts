@@ -992,7 +992,8 @@ describe("provider cost accounting", () => {
       action: "vote",
       phase: Phase.VOTE,
       round: 2,
-      logicalCallOrdinal: 1,
+      semanticCoordinate: { version: 1, kind: "phase_call", phase: Phase.VOTE, round: 2, canonicalEventSequence: 1, callSlot: 1 },
+      semanticCoordinateHash: "sha256:cost-provider-call",
       nextAttemptOrdinal: 2,
     });
     await db.insert(schema.providerCallAttempts).values({

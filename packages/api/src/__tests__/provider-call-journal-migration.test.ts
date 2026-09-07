@@ -20,8 +20,8 @@ const BUDGET_INDEX_MIGRATION_PATH = new URL(
   "../../drizzle/0063_provider_call_attempts_game_catalog_index.sql",
   import.meta.url,
 );
-const ORDINAL_WIDENING_MIGRATION_PATH = new URL(
-  "../../drizzle/0072_provider_logical_call_ordinal_bigint.sql",
+const SEMANTIC_COORDINATE_MIGRATION_PATH = new URL(
+  "../../drizzle/0075_provider_semantic_coordinates.sql",
   import.meta.url,
 );
 
@@ -228,7 +228,7 @@ describe("provider call journal migration", () => {
     }
   });
 
-  test("widens populated logical-call ordinals beyond the signed integer range", async () => {
+  test("moves populated journals to nullable legacy ordinals and semantic-coordinate storage", async () => {
     const db = await setupTestDB();
     const testSchema = `provider_journal_bigint_${randomUUID().replaceAll("-", "")}`;
     await createPopulatedFixture(db, testSchema);
@@ -241,21 +241,25 @@ describe("provider call journal migration", () => {
         ) VALUES ('logical-wide', 'game-1', 'The House', 'house', 'house-question', 1)
       `));
 
-      await applyScopedMigration(db, testSchema, ORDINAL_WIDENING_MIGRATION_PATH);
-      await db.execute(sql.raw(`
-        UPDATE "${testSchema}"."provider_logical_calls"
-        SET "logical_call_ordinal" = 3619941329
-        WHERE "id" = 'logical-wide'
+      await applyScopedMigration(db, testSchema, SEMANTIC_COORDINATE_MIGRATION_PATH);
+      const columns = await db.execute<{
+        column_name: string;
+        is_nullable: string;
+      }>(sql.raw(`
+        SELECT "column_name", "is_nullable"
+        FROM information_schema.columns
+        WHERE "table_schema" = '${testSchema}'
+          AND "table_name" = 'provider_logical_calls'
+          AND "column_name" IN (
+            'logical_call_ordinal', 'semantic_coordinate', 'semantic_coordinate_hash'
+          )
+        ORDER BY "column_name"
       `));
-
-      const rows = await db.execute<{ id: string; logical_call_ordinal: string }>(sql.raw(`
-        SELECT "id", "logical_call_ordinal"::text AS "logical_call_ordinal"
-        FROM "${testSchema}"."provider_logical_calls"
-      `));
-      expect(rows[0]).toEqual({
-        id: "logical-wide",
-        logical_call_ordinal: "3619941329",
-      });
+      expect([...columns]).toEqual([
+        { column_name: "logical_call_ordinal", is_nullable: "YES" },
+        { column_name: "semantic_coordinate", is_nullable: "YES" },
+        { column_name: "semantic_coordinate_hash", is_nullable: "YES" },
+      ]);
     } finally {
       await db.execute(sql.raw(`DROP SCHEMA "${testSchema}" CASCADE`));
     }

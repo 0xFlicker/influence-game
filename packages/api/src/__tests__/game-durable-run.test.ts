@@ -27,6 +27,8 @@ import {
   startGame,
 } from "../services/game-lifecycle.js";
 import { adoptInProgressDurableGamesOnStartup } from "../services/startup-durable-games.js";
+import { acquireDeploymentAdmissionLease } from "../services/deployment-admission.js";
+import { acknowledgeGameWorkerDrain, startGameExecutionWorkerRuntime } from "../services/game-execution-worker.js";
 import {
   handleClose,
   handleOpen,
@@ -250,11 +252,13 @@ describe("durable run inspection read model", () => {
     setServer({ publish() {} });
   });
 
-  test("completes an API game from committed logical turns and publications", async () => {
+  test("finishes an owned Two Names game normally during release drain", async () => {
+    const worker = startGameExecutionWorkerRuntime();
     const gameId = await insertGame(db, {
       status: "waiting",
       config: {
         maxRounds: 5,
+        formatManifest: ["two_names"],
         modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         visibility: "private",
         viewerMode: "speedrun",
@@ -281,7 +285,7 @@ describe("durable run inspection read model", () => {
       })),
     );
 
-    const owner = await acquireGameRunOwner(db, gameId);
+    const owner = await acquireGameRunOwner(db, gameId, { processId: worker.workerId });
     expect(owner.ok).toBeTrue();
     if (!owner.ok) throw new Error(owner.error);
 
@@ -297,6 +301,17 @@ describe("durable run inspection read model", () => {
       const startResult = await startGame(db, gameId, owner.claim.ownerEpoch);
       expect(startResult.error).toBeUndefined();
 
+      const admission = await acquireDeploymentAdmissionLease(db, {
+        candidateSha: "1".repeat(40), sourceRepository: "0xFlicker/linode-iac",
+        workflowRunId: 123, workflowRunAttempt: 1, actor: "test-release-controller",
+      });
+      if (!admission.ok) throw new Error(admission.error);
+      expect(await acknowledgeGameWorkerDrain(db, worker, admission.lease)).toMatchObject({
+        version: 1, state: "draining", ownedGameCount: 1,
+      });
+      expect(worker.canClaimGames()).toBeFalse();
+      expect(isGameRunning(gameId)).toBeTrue();
+
       const inspection = await waitForCompletedDurableInspection(db, gameId);
 
       expect(inspection.game.status).toBe("completed");
@@ -307,6 +322,13 @@ describe("durable run inspection read model", () => {
       });
       expect(inspection.completionSettlement).not.toHaveProperty("payload");
       expect(inspection.kernel.owner?.status).toBe("closed");
+      const owners = await db.select().from(schema.gameRunOwners)
+        .where(eq(schema.gameRunOwners.gameId, gameId));
+      expect(owners).toHaveLength(1);
+      expect(owners[0]?.ownerEpoch).toBe(owner.claim.ownerEpoch);
+      expect(await acknowledgeGameWorkerDrain(db, worker, admission.lease)).toMatchObject({
+        version: 1, state: "drained", ownedGameCount: 0,
+      });
       expect(inspection.execution).toMatchObject({
         authority: {
           status: "terminal",
@@ -595,6 +617,7 @@ describe("durable run inspection read model", () => {
           version: 1,
           slot: 1,
           logicalCallId: "PRIVATE_LOGICAL_CALL",
+          semanticCoordinate: { version: 1, kind: "durable_turn", turnId: "PRIVATE_INTENT_TURN", subcallSlot: 1 },
           actorId: "PRIVATE_INTENT_ACTOR",
           action: "lobby_speech",
           contractId: "PRIVATE_CONTRACT_ID",

@@ -602,7 +602,7 @@ describe("atomic game owner claim and roster freeze", () => {
     expect((await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0)).ok).toBeTrue();
   });
 
-  test("adopts the committed execution cursor without suspending the game", async () => {
+  test("refuses to displace a healthy game-worker lease", async () => {
     const fixture = await createRatedWaitingFixture();
     const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
     expect(original.ok).toBeTrue();
@@ -613,31 +613,94 @@ describe("atomic game owner claim and roster freeze", () => {
       processId: "reloaded-api",
     });
 
-    expect(adopted.ok).toBeTrue();
-    if (!adopted.ok) throw new Error(adopted.error);
-    expect(adopted.claim.ownerEpoch).not.toBe(original.claim.ownerEpoch);
-    expect(adopted.claim.executionState).toMatchObject({
-      gameId: fixture.gameId,
-      ownerEpoch: adopted.claim.ownerEpoch,
-      status: "ready",
-      heads: {
-        turnSequence: 0,
-        eventSequence: 0,
-        dialogueSequence: 0,
-        publicationSequence: 0,
-      },
-      cursor: { kind: "phase_enter", actor: "introduction" },
-    });
+    expect(adopted).toMatchObject({ ok: false, code: "game_owned" });
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({
       status: "in_progress",
       endedAt: null,
     });
     const owners = await fixture.db.select().from(schema.gameRunOwners)
       .where(eq(schema.gameRunOwners.gameId, fixture.gameId));
-    expect(owners.find((owner) => owner.ownerEpoch === original.claim.ownerEpoch)?.status)
-      .toBe("expired");
+    expect(owners).toEqual([expect.objectContaining({
+      ownerEpoch: original.claim.ownerEpoch,
+      status: "active",
+    })]);
+  });
+
+  test("reclaims a game only after the failed worker lease has expired", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    if (!original.ok) throw new Error(original.error);
+    await insertExecutionState(fixture.db, fixture.gameId, original.claim.ownerEpoch);
+    await fixture.db.update(schema.gameRunOwners).set({
+      expiresAt: new Date(Date.now() - 1_000).toISOString(),
+    }).where(eq(schema.gameRunOwners.ownerEpoch, original.claim.ownerEpoch));
+
+    const adopted = await adoptDurableGameRunOwner(fixture.db, fixture.gameId, {
+      processId: "replacement-game-worker",
+    });
+    expect(adopted.ok).toBeTrue();
+    if (!adopted.ok) throw new Error(adopted.error);
+    expect(adopted.claim.ownerEpoch).not.toBe(original.claim.ownerEpoch);
+    const owners = await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId));
+    expect(owners.find((owner) => owner.ownerEpoch === original.claim.ownerEpoch))
+      .toMatchObject({ status: "expired", failureReason: "worker_lease_expired" });
     expect(owners.find((owner) => owner.ownerEpoch === adopted.claim.ownerEpoch))
-      .toMatchObject({ status: "active", processId: "reloaded-api" });
+      .toMatchObject({ status: "active", processId: "replacement-game-worker" });
+  });
+
+  test("does not adopt a released game after deployment draining begins", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    if (!original.ok) throw new Error(original.error);
+    await insertExecutionState(fixture.db, fixture.gameId, original.claim.ownerEpoch);
+    expect(await relinquishDurableGameRunOwner(
+      fixture.db,
+      fixture.gameId,
+      original.claim.ownerEpoch,
+    )).toBeTrue();
+    const lease = await acquireDeploymentAdmissionLease(fixture.db, {
+      candidateSha: "d".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 700,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    expect(lease.ok).toBeTrue();
+
+    expect(await adoptDurableGameRunOwner(fixture.db, fixture.gameId, {
+      processId: "replacement-game-worker",
+    })).toMatchObject({
+      ok: false,
+      code: "deployment_admission_closed",
+      statusCode: 409,
+    });
+    expect((await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId)))
+      .filter((owner) => owner.status === "active")).toHaveLength(0);
+  });
+
+  test("allows concurrent game workers to hold different game leases", async () => {
+    const first = await createRatedWaitingFixture();
+    const secondGameId = await insertGame(first.db, {
+      slug: `concurrent-game-${randomUUID()}`,
+    });
+    await first.db.insert(schema.gamePlayers).values([
+      houseSeat("concurrent-house-a", secondGameId, "House Ember"),
+      houseSeat("concurrent-house-b", secondGameId, "House Cinder"),
+    ]);
+    const [firstOwner, secondOwner] = await Promise.all([
+      acquireGameRunOwner(first.db, first.gameId, { processId: "game-worker-a" }),
+      acquireGameRunOwner(first.db, secondGameId, { processId: "game-worker-b" }),
+    ]);
+    expect(firstOwner).toMatchObject({ ok: true, claim: { ownerEpoch: expect.any(String) } });
+    expect(secondOwner).toMatchObject({ ok: true, claim: { ownerEpoch: expect.any(String) } });
+    const owners = await first.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.status, "active"));
+    expect(owners).toEqual(expect.arrayContaining([
+      expect.objectContaining({ gameId: first.gameId, processId: "game-worker-a" }),
+      expect.objectContaining({ gameId: secondGameId, processId: "game-worker-b" }),
+    ]));
   });
 
   test("relinquishes after a committed turn and remains adoptable in progress", async () => {

@@ -19,6 +19,7 @@ describe("format presentation metadata", () => {
       "majority_elimination",
       "even_votes",
       "restricted_history",
+      "two_names",
     ]);
     expect(formatPresentationMetadata("save_or_eliminate")).toMatchObject({
       id: "save_or_eliminate",
@@ -48,6 +49,16 @@ describe("format presentation metadata", () => {
     });
     expect(formatPresentationMetadata("even_votes").ruleSheet).toContain(
       "including zero",
+    );
+    expect(formatPresentationMetadata("two_names")).toMatchObject({
+      id: "two_names",
+      displayName: "Two Names",
+    });
+    expect(formatPresentationMetadata("two_names").ruleSheet).toContain(
+      "Override",
+    );
+    expect(formatPresentationMetadata("two_names").ruleSheet).toContain(
+      "final nominees",
     );
     expect(formatPresentationMetadata("even_votes").ruleSheet).toContain(
       "every remaining contestant has an odd total",

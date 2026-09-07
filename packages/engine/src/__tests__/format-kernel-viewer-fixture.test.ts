@@ -32,6 +32,8 @@ describe("format-kernel viewer fixture family", () => {
       "even_votes_tie",
       "safety_bounce_tie",
       "safety_bounce_sole_vulnerable",
+      "two_names_declined",
+      "two_names_used_tie",
       "terminal_menu",
       "terminal_selection",
       "terminal_classification",

@@ -10,7 +10,7 @@ import type { CanonicalGameEvent } from "./canonical-events";
 import { buildFormatPressureProjection } from "./format-pressure";
 import {
   LEGACY_FORMAT_MANIFEST,
-  formatsAvailableInRound,
+  formatsAvailableForSelection,
   isLaunchFormatId,
   resolveFormatManifest,
   type LaunchFormatId,
@@ -58,6 +58,26 @@ function eventsInRound(
   return events.filter((event) => event.round === round);
 }
 
+function livingPlayerIdsAtSequence(
+  events: readonly CanonicalGameEvent[],
+  throughSequence = Number.POSITIVE_INFINITY,
+): UUID[] {
+  const roster = events.find((event) => event.type === "game.roster_initialized");
+  if (!roster || roster.type !== "game.roster_initialized") return [];
+  const living = new Set(
+    roster.payload.players
+      .filter((player) => player.status === "alive")
+      .map((player) => player.id),
+  );
+  for (const event of events) {
+    if (event.sequence > throughSequence) break;
+    if (event.type === "player.eliminated") living.delete(event.payload.playerId);
+  }
+  return roster.payload.players
+    .map((player) => player.id)
+    .filter((playerId) => living.has(playerId));
+}
+
 /** Resolve the empowered player for a specific round from canonical events. */
 export function resolveEmpoweredIdForRound(
   events: readonly CanonicalGameEvent[],
@@ -99,7 +119,10 @@ function historicalLastSelectedFormat(
     if (event.type === "format.selected") {
       if (
         !isLaunchFormatId(event.payload.formatId)
-        || !formatsAvailableInRound(manifest, event.round).includes(event.payload.formatId)
+        || !formatsAvailableForSelection(manifest, {
+          round: event.round,
+          livingIds: livingPlayerIdsAtSequence(events, event.sequence),
+        }).includes(event.payload.formatId)
       ) {
         throw new Error(`Canonical format selection is outside the frozen manifest: ${event.payload.formatId}`);
       }
@@ -151,7 +174,14 @@ export function validateFormatResumePrerequisites(
 
   const roundEvents = eventsInRound(canonicalEvents, round);
   const formatManifest = formatManifestFromCanonicalEvents(canonicalEvents);
-  const availableFormats = formatsAvailableInRound(formatManifest, round);
+  const selection = roundEvents.find((event) => event.type === "format.selected");
+  const availableFormats = formatsAvailableForSelection(formatManifest, {
+    round,
+    livingIds: livingPlayerIdsAtSequence(
+      canonicalEvents,
+      selection?.sequence,
+    ),
+  });
   const menus = roundEvents.filter((event) => event.type === "format.menu_offered");
   const selections = roundEvents.filter((event) => event.type === "format.selected");
   const resolutionFacts = roundEvents.filter((event) =>
@@ -178,14 +208,14 @@ export function validateFormatResumePrerequisites(
     if (menus.length > 0) return `${actorCoordinate}_unexpected_menu_offered`;
     if (selections.length === 0) return `${actorCoordinate}_missing_format_selected`;
     if (selections.length > 1) return `${actorCoordinate}_duplicate_format_selected`;
-    const selection = selections[0];
-    if (!selection || selection.type !== "format.selected") {
+    const selectedEvent = selections[0];
+    if (!selectedEvent || selectedEvent.type !== "format.selected") {
       return `${actorCoordinate}_missing_format_selected`;
     }
-    if (selection.payload.empoweredId !== empoweredId) {
+    if (selectedEvent.payload.empoweredId !== empoweredId) {
       return `${actorCoordinate}_selection_empowered_mismatch`;
     }
-    if (selection.payload.formatId !== onlyFormat) {
+    if (selectedEvent.payload.formatId !== onlyFormat) {
       return `${actorCoordinate}_selection_outside_manifest`;
     }
     if (actorCoordinate === "format_pick") {
@@ -229,17 +259,17 @@ export function validateFormatResumePrerequisites(
 
   if (selections.length === 0) return `${actorCoordinate}_missing_format_selected`;
   if (selections.length > 1) return `${actorCoordinate}_duplicate_format_selected`;
-  const selection = selections[0];
-  if (!selection || selection.type !== "format.selected") {
+  const selectedEvent = selections[0];
+  if (!selectedEvent || selectedEvent.type !== "format.selected") {
     return `${actorCoordinate}_missing_format_selected`;
   }
-  if (selection.payload.empoweredId !== empoweredId) {
+  if (selectedEvent.payload.empoweredId !== empoweredId) {
     return `${actorCoordinate}_selection_empowered_mismatch`;
   }
-  if (!isLaunchFormatId(selection.payload.formatId)) {
+  if (!isLaunchFormatId(selectedEvent.payload.formatId)) {
     return `${actorCoordinate}_invalid_selected_format`;
   }
-  if (!offeredFormats.includes(selection.payload.formatId)) {
+  if (!offeredFormats.includes(selectedEvent.payload.formatId)) {
     return `${actorCoordinate}_selection_not_in_menu`;
   }
 
@@ -288,13 +318,20 @@ export function buildFormatKernelStateForResume(params: {
 
   const formatManifest = formatManifestFromCanonicalEvents(params.canonicalEvents);
   const round = currentRoundNumber(params.canonicalEvents);
-  const availableFormats = formatsAvailableInRound(formatManifest, round);
+  const roundEvents = eventsInRound(params.canonicalEvents, round);
+  const selection = roundEvents.find((event) => event.type === "format.selected");
+  const availableFormats = formatsAvailableForSelection(formatManifest, {
+    round,
+    livingIds: livingPlayerIdsAtSequence(
+      params.canonicalEvents,
+      selection?.sequence,
+    ),
+  });
   if (availableFormats.length === 1) {
-    const selection = eventsInRound(params.canonicalEvents, round)
-      .find((event) => event.type === "format.selected");
-    if (!selection || selection.type !== "format.selected") return emptyActive;
+    const selectedEvent = roundEvents.find((event) => event.type === "format.selected");
+    if (!selectedEvent || selectedEvent.type !== "format.selected") return emptyActive;
     const selectedFormat = availableFormats[0]!;
-    const empoweredId = selection.payload.empoweredId;
+    const empoweredId = selectedEvent.payload.empoweredId;
     return {
       offeredFormats: null,
       selectedFormat,
@@ -308,7 +345,6 @@ export function buildFormatKernelStateForResume(params: {
     };
   }
 
-  const roundEvents = eventsInRound(params.canonicalEvents, round);
   const menu = roundEvents.find((event) => event.type === "format.menu_offered");
   if (!menu || menu.type !== "format.menu_offered") {
     return emptyActive;
@@ -335,14 +371,14 @@ export function buildFormatKernelStateForResume(params: {
     };
   }
 
-  const selection = roundEvents.find((event) => event.type === "format.selected");
-  if (!selection || selection.type !== "format.selected") {
+  const selectedEvent = roundEvents.find((event) => event.type === "format.selected");
+  if (!selectedEvent || selectedEvent.type !== "format.selected") {
     return emptyActive;
   }
-  if (!isLaunchFormatId(selection.payload.formatId)) {
+  if (!isLaunchFormatId(selectedEvent.payload.formatId)) {
     return emptyActive;
   }
-  const selectedFormat = selection.payload.formatId;
+  const selectedFormat = selectedEvent.payload.formatId;
 
   return {
     offeredFormats,

@@ -773,4 +773,101 @@ describe("buildRevealedRoundFacts", () => {
     expect(json).not.toContain("sourcePointers");
     expect(json).not.toContain("private-trace-source-pointer");
   });
+
+  it("reveals the complete Two Names role, branch, plea, voter, and tally facts", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+        { id: "erin", name: "Erin" },
+      ],
+      { gameId: "game-two-names-facts", now: fixedClock() },
+    );
+    state.startRound();
+    state.setEmpowered("alice");
+    state.recordFormatSelected("alice", "two_names");
+    state.recordTwoNamesSetup({
+      empoweredId: "alice",
+      initialNomineeIds: ["bob", "charlie"],
+      overrideHolderId: "dave",
+    });
+    state.recordTwoNamesMingleCompleted("initial_names", ["bob", "charlie"]);
+    state.recordTwoNamesOverrideUsed({
+      overrideHolderId: "dave",
+      removedNomineeId: "bob",
+      empoweredId: "alice",
+      replacementNomineeId: "erin",
+      finalistPlayerIds: ["erin", "charlie"],
+    }, { override: [], replacement: [] });
+    state.recordTwoNamesMingleCompleted("final_names", ["erin", "charlie"]);
+    state.recordTwoNamesPlea({
+      speakerId: "erin",
+      ordinal: 0,
+      status: "accepted",
+      text: "Keep me for the game I can still play.",
+      absenceReason: null,
+    });
+    state.recordTwoNamesPlea({
+      speakerId: "charlie",
+      ordinal: 1,
+      status: "absent",
+      text: null,
+      absenceReason: "provider_unavailable",
+    });
+    state.recordFormatBallot({ formatId: "two_names", voterId: "bob", targetId: "erin" });
+    state.recordFormatBallot({ formatId: "two_names", voterId: "dave", targetId: "charlie" });
+    state.recordFormatResolution({
+      formatId: "two_names",
+      empoweredId: "alice",
+      eliminatedId: "erin",
+      resolutionKind: "clear",
+      tiedPlayerIds: ["erin", "charlie"],
+      tiebreakerId: "alice",
+      aggregate: {
+        capability: "two_names",
+        initialNomineeIds: ["bob", "charlie"],
+        overrideHolderId: "dave",
+        overrideAction: "used",
+        removedNomineeId: "bob",
+        replacementNomineeId: "erin",
+        finalistPlayerIds: ["erin", "charlie"],
+        eligibleVoterIds: ["bob", "dave"],
+        totals: { erin: 1, charlie: 1 },
+      },
+    });
+
+    const read = buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 });
+
+    expect(read.availability.canonicalFactsStatus).toBe("available");
+    expect(read.roundFacts.format.twoNames).toEqual({
+      initialNominees: [{ id: "bob", name: "Bob" }, { id: "charlie", name: "Charlie" }],
+      overrideHolder: { id: "dave", name: "Dave" },
+      overrideAction: "used",
+      removedNominee: { id: "bob", name: "Bob" },
+      replacementNominee: { id: "erin", name: "Erin" },
+      finalists: [{ id: "erin", name: "Erin" }, { id: "charlie", name: "Charlie" }],
+      completedMingleWindows: ["initial_names", "final_names"],
+      pleas: [
+        {
+          speaker: { id: "erin", name: "Erin" },
+          ordinal: 0,
+          status: "accepted",
+          text: "Keep me for the game I can still play.",
+        },
+        {
+          speaker: { id: "charlie", name: "Charlie" },
+          ordinal: 1,
+          status: "absent",
+          text: null,
+        },
+      ],
+      eligibleVoters: [{ id: "bob", name: "Bob" }, { id: "dave", name: "Dave" }],
+      totals: [
+        { player: { id: "charlie", name: "Charlie" }, votes: 1 },
+        { player: { id: "erin", name: "Erin" }, votes: 1 },
+      ],
+    });
+  });
 });

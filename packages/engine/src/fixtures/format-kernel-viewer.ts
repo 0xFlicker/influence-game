@@ -20,6 +20,8 @@ export const FORMAT_KERNEL_VIEWER_SCENARIO_IDS = [
   "even_votes_tie",
   "safety_bounce_tie",
   "safety_bounce_sole_vulnerable",
+  "two_names_declined",
+  "two_names_used_tie",
   "terminal_menu",
   "terminal_selection",
   "terminal_classification",
@@ -68,6 +70,9 @@ export function createFormatKernelViewerScenario(
   const safetyBounce = createSafetyBounceViewerDecisions();
 
   switch (id) {
+    case "two_names_declined":
+    case "two_names_used_tie":
+      return createTwoNamesScenario(id);
     case "save_or_eliminate_clear":
       return scenario(id, roster, saveOrEliminate, {
         status: "ready",
@@ -636,6 +641,44 @@ export function createSoleVulnerableSafetyBounceViewerDecisions(): ViewerDecisio
       },
     }),
   ];
+}
+
+function createTwoNamesScenario(id: "two_names_declined" | "two_names_used_tie"): FormatKernelViewerScenario {
+  const used = id === "two_names_used_tie";
+  const pair: [string, string] = [used ? "rex" : "lyra", "echo"];
+  const voters = used ? ["lyra", "nova"] : ["rex", "nova"];
+  const decisions: ViewerDecisionEvent[] = [
+    viewerDecision(0, Phase.FORMAT_MENU, "format.menu_offered", { empoweredId: "atlas", offeredFormatIds: ["two_names", "vote_bomb"] }),
+    viewerDecision(1, Phase.FORMAT_PICK, "format.selected", { empoweredId: "atlas", formatId: "two_names" }),
+    viewerDecision(2, Phase.FORMAT_PICK, "format.two_names_setup", { empoweredId: "atlas", initialNomineeIds: ["lyra", "echo"], overrideHolderId: "atlas" }),
+    viewerDecision(3, Phase.FORMAT_MINGLE, "format.two_names_mingle_completed", { window: "initial_names", finalistPlayerIds: ["lyra", "echo"] }),
+    ...(used ? [
+      viewerDecision(4, Phase.FORMAT_MINGLE, "format.two_names_override_used", { overrideHolderId: "atlas", removedNomineeId: "lyra" }),
+      viewerDecision(5, Phase.FORMAT_MINGLE, "format.two_names_replacement_named", { empoweredId: "atlas", replacementNomineeId: "rex", finalistPlayerIds: pair }),
+      viewerDecision(6, Phase.FORMAT_MINGLE, "format.two_names_mingle_completed", { window: "final_names", finalistPlayerIds: pair }),
+    ] : [viewerDecision(4, Phase.FORMAT_MINGLE, "format.two_names_override_declined", { overrideHolderId: "atlas", finalistPlayerIds: pair })]),
+    viewerDecision(7, Phase.FORMAT_RESOLVE, "format.two_names_plea_recorded", {
+      speakerId: pair[0], ordinal: 0, status: "accepted", absenceReason: null,
+      text: "Keep me because the case against me is built on a theory about what I might do, not a concrete move I’ve made—I’ve been direct and consistent with everyone here. My opponent’s defense asks you to treat disagreement as an organized attack; weigh observable behavior instead, and keep the person who will compete openly rather than turn suspicion into certainty. I have put my reasoning on the table and will keep asking hard questions before the next decision. Judge the commitments I have actually kept, and give me the chance to show you what those commitments mean.",
+    }),
+    viewerDecision(8, Phase.FORMAT_RESOLVE, "format.two_names_plea_recorded", { speakerId: pair[1], ordinal: 1, status: "absent", text: null, absenceReason: "provider_unavailable" }),
+    viewerDecision(9, Phase.FORMAT_RESOLVE, "format.ballot_cast", { formatId: "two_names", voterId: voters[0]!, targetId: pair[0], polarity: null }),
+    viewerDecision(10, Phase.FORMAT_RESOLVE, "format.ballot_cast", { formatId: "two_names", voterId: voters[1]!, targetId: used ? pair[1] : pair[0], polarity: null }),
+    viewerDecision(11, Phase.FORMAT_RESOLVE, "format.resolved", {
+      formatId: "two_names", empoweredId: "atlas", eliminatedId: pair[0], resolutionKind: used ? "auto" : "clear",
+      tiedPlayerIds: used ? pair : [pair[0]], tiebreakerId: used ? "atlas" : null,
+      aggregate: {
+        capability: "two_names", initialNomineeIds: ["lyra", "echo"], overrideHolderId: "atlas",
+        overrideAction: used ? "used" : "declined", removedNomineeId: used ? "lyra" : null,
+        replacementNomineeId: used ? "rex" : null, finalistPlayerIds: pair, eligibleVoterIds: voters,
+        totals: { [pair[0]]: used ? 1 : 2, [pair[1]]: used ? 1 : 0 },
+      },
+    }),
+  ];
+  return scenario(id, [...FORMAT_KERNEL_VIEWER_ROSTER, { id: "nova", name: "Nova" }], decisions.map((decision) => ({ ...decision, sequence: decision.sequence + 1 })), {
+    status: "ready", selectedFormatId: "two_names", resolutionKind: used ? "auto" : "clear", eliminatedId: pair[0],
+    tiebreakerId: used ? "atlas" : null, ballotPresentation: "revealed",
+  });
 }
 
 function scenario(

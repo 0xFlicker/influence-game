@@ -526,6 +526,13 @@
       "when": 1787943000000,
       "tag": "0074_farcaster_auth_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1787943600000,
+      "tag": "0075_provider_semantic_coordinates",
+      "breakpoints": true
     }
   ]
 }

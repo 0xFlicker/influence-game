@@ -10,6 +10,7 @@ import {
 } from "../provider-adapters";
 import { ProviderExecutionCoordinator } from "../provider-execution";
 import { createExactStructuredOutputArtifact } from "../structured-output";
+import { Phase } from "../types";
 
 const MODEL_TIMEOUT_MS = 120_000;
 
@@ -203,7 +204,7 @@ async function execute(
     .startCall({
       actor: { name: "Live acceptance", role: "house" },
       action: "provider-native-acceptance",
-      logicalCallOrdinal: 1,
+      semantic: { version: 1, kind: "phase_call", phase: Phase.INIT, round: 0, canonicalEventSequence: 0, callSlot: 1 },
     });
   return executeModelInvocation({
     call,

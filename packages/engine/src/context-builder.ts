@@ -63,9 +63,12 @@ import {
 } from "./formats/restricted-history";
 import type { CanonicalGameEvent } from "./canonical-events";
 import { displayNameForFormat } from "./format-presentation-metadata";
+import { projectTwoNamesRound } from "./formats/two-names-events";
+import { twoNamesOrdinaryVoterIds } from "./formats/two-names";
 import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
 export type PhaseContextBuildExtra = {
+  twoNamesReplacementRemovedId?: UUID;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
   postVotePressure?: PostVotePressureProjection | null;
@@ -354,6 +357,20 @@ export class ContextBuilder {
         return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.map(displayNameForFormat).join(" vs ")}.`;
       case "format.selected":
         return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${displayNameForFormat(event.payload.formatId)}.`;
+      case "format.two_names_setup":
+        return `${prefix}: ${this.name(event.payload.empoweredId)} nominated ${this.formatPlayerList(event.payload.initialNomineeIds)}; Override belongs to ${this.name(event.payload.overrideHolderId)}.`;
+      case "format.two_names_mingle_completed":
+        return `${prefix}: Two Names ${event.payload.window} Mingle completed with ${this.formatPlayerList(event.payload.finalistPlayerIds)} named.`;
+      case "format.two_names_override_declined":
+        return `${prefix}: ${this.name(event.payload.overrideHolderId)} declined Override; ${this.formatPlayerList(event.payload.finalistPlayerIds)} remain named.`;
+      case "format.two_names_override_used":
+        return `${prefix}: ${this.name(event.payload.overrideHolderId)} used Override to remove ${this.name(event.payload.removedNomineeId)}.`;
+      case "format.two_names_replacement_named":
+        return `${prefix}: ${this.name(event.payload.empoweredId)} named ${this.name(event.payload.replacementNomineeId)} as the replacement; finalists are ${this.formatPlayerList(event.payload.finalistPlayerIds)}.`;
+      case "format.two_names_plea_recorded":
+        return event.payload.status === "accepted"
+          ? `${prefix}: ${this.name(event.payload.speakerId)} made a Two Names plea: "${event.payload.text}"`
+          : `${prefix}: ${this.name(event.payload.speakerId)} submitted no Two Names plea.`;
       case "format.ballot_cast": {
         const polarity = event.payload.polarity === "save" ? "SAVE" : "EXIT";
         const target = this.name(event.payload.targetId);
@@ -805,16 +822,52 @@ export class ContextBuilder {
     };
   }
 
+  private buildTwoNamesBoard(
+    agentId: UUID,
+    phase: Phase,
+    pendingRemoval?: UUID,
+  ): PhaseContext["twoNamesBoard"] {
+    if (this.gameState.endgameStage) return undefined;
+    const events = this.gameState.getCanonicalEvents();
+    const round = this.gameState.round;
+    const selection = events.find((event) => event.round === round
+      && event.type === "format.selected" && event.payload.formatId === "two_names");
+    if (!selection) return undefined;
+    const roster = events.find((event) => event.type === "game.roster_initialized");
+    if (!roster || roster.type !== "game.roster_initialized") throw new Error("Two Names context requires canonical roster");
+    const livingIds = roster.payload.players.map((player) => player.id).filter((id) =>
+      !events.some((event) => event.sequence < selection.sequence
+        && event.type === "player.eliminated" && event.payload.playerId === id));
+    const board = projectTwoNamesRound(events, round, livingIds)!;
+    if (board.stage === "resolved") return undefined;
+    if (!board.initialNomineeIds && (agentId !== board.empoweredId || phase !== Phase.FORMAT_PICK)) {
+      throw new Error("Two Names context requires recorded nominees outside the Empowered initial nomination decision");
+    }
+    if (pendingRemoval && (!board.initialNomineeIds?.includes(pendingRemoval)
+      || board.overrideAction !== null || agentId !== board.empoweredId
+      || phase !== Phase.FORMAT_MINGLE || board.stage !== "initial_mingle_complete")) {
+      throw new Error("Invalid pending Two Names replacement context");
+    }
+    const pair = board.finalistPlayerIds ?? board.initialNomineeIds;
+    return {
+      empoweredId: board.empoweredId,
+      initialNomineeIds: board.initialNomineeIds,
+      currentNomineeIds: pendingRemoval ? pair!.filter((id) => id !== pendingRemoval) : pair ?? [],
+      overrideHolderId: board.overrideHolderId,
+      overrideAction: board.overrideAction,
+      removedNomineeId: pendingRemoval ?? board.removedNomineeId,
+      replacementNomineeId: board.replacementNomineeId,
+      replacementPending: pendingRemoval !== undefined,
+      pairFinal: board.finalistPlayerIds !== null,
+      eligibleVoterIds: pair && !pendingRemoval
+        ? twoNamesOrdinaryVoterIds(livingIds, board.empoweredId, pair) : [],
+    };
+  }
+
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
-    extra?: {
-      empoweredId?: UUID;
-      councilCandidates?: [UUID, UUID];
-      postVotePressure?: PostVotePressureProjection | null;
-      formatPressure?: FormatPressureProjection | null;
-      eliminationContext?: PhaseContext["eliminationContext"];
-    },
+    extra?: PhaseContextBuildExtra,
     isEliminated?: boolean,
     roomInfo?: {
       roomCount?: number;
@@ -826,7 +879,7 @@ export class ContextBuilder {
     },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
-    const providerLogicalCallOrdinal =
+    const providerCallBoundaryEventSequence =
       (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
 
     const roomAllocations = roomInfo?.includeRoomAllocations && this.currentRoomAllocations.length > 0
@@ -845,7 +898,7 @@ export class ContextBuilder {
       gameId: this.gameState.gameId,
       round: this.gameState.round,
       phase,
-      providerLogicalCallOrdinal,
+      providerCallBoundaryEventSequence,
       selfId: agentId,
       selfName: player.name,
       alivePlayers: this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name, shielded: p.shielded })),
@@ -859,6 +912,7 @@ export class ContextBuilder {
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
       formatPressure,
+      twoNamesBoard: this.buildTwoNamesBoard(agentId, phase, extra?.twoNamesReplacementRemovedId),
       restrictedHistoryLegality: this.buildRestrictedHistoryLegality(agentId, formatPressure),
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       gameEventRecord: this.buildGameEventRecord(agentId),

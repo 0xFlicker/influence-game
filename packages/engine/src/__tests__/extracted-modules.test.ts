@@ -179,15 +179,15 @@ describe("ContextBuilder", () => {
     expect(ctx.isEliminated).toBe(false);
   });
 
-  it("reconstructs the same phase-owned provider ordinal from the canonical head", () => {
+  it("reconstructs the same phase-call semantic boundary from the canonical head", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const before = builder.buildPhaseContext(alice.id, Phase.VOTE);
     const reconstructed = new ContextBuilder(gs, logger, mingleInbox, 5)
       .buildPhaseContext(alice.id, Phase.VOTE);
 
-    expect(before.providerLogicalCallOrdinal).toBeGreaterThan(0);
-    expect(reconstructed.providerLogicalCallOrdinal).toBe(
-      before.providerLogicalCallOrdinal,
+    expect(before.providerCallBoundaryEventSequence).toBeGreaterThan(0);
+    expect(reconstructed.providerCallBoundaryEventSequence).toBe(
+      before.providerCallBoundaryEventSequence,
     );
   });
 
