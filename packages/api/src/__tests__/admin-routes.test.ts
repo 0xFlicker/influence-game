@@ -1493,7 +1493,7 @@ describe("admin route RBAC", () => {
     });
   });
 
-  test("auto-suffixes conflicting imported profiles without rewriting historical persona", async () => {
+  test.each(["Atlas", "null", " NULL ", "undefined", " UNDEFINED "])("auto-suffixes reserved imported profile %s without rewriting historical persona", async (reservedName) => {
     const existingOwner = await createUser(
       db,
       "0xexisting0000000000000000000000000000000001",
@@ -1502,12 +1502,12 @@ describe("admin route RBAC", () => {
     await db.insert(schema.agentProfiles).values({
       id: "existing-atlas-two",
       userId: existingOwner,
-      name: "Atlas II",
+      name: `${reservedName.trim()} II`,
       personality: "Already owns the first available suffix.",
     });
 
     const persona = JSON.stringify({
-      name: "Atlas",
+      name: reservedName,
       personality: "Historical imported behavior.",
     });
     const response = await app.request("/api/admin/import-game", {
@@ -1545,7 +1545,7 @@ describe("admin route RBAC", () => {
             agentProfile: {
               id: "source-import-profile",
               userId: "source-import-user",
-              name: "Atlas",
+              name: reservedName,
               personality: "Historical imported behavior.",
             },
           },
@@ -1561,7 +1561,7 @@ describe("admin route RBAC", () => {
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, "source-import-profile"));
-    expect(profile?.name).toBe("Atlas III");
+    expect(profile?.name).toBe(`${reservedName.trim()} III`);
     const [seat] = await db
       .select()
       .from(schema.gamePlayers)

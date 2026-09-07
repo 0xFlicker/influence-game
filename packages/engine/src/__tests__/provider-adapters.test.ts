@@ -757,3 +757,62 @@ describe("provider-native adapters", () => {
     expect(seenSignals[0]).not.toBe(seenSignals[1]);
   });
 });
+
+
+describe("nullable normalization across native transports", () => {
+  it.each(["responses-tool", "responses-structured", "chat-tool", "chat-json-schema-tool", "chat-structured"])(
+    "normalizes within the attempt and preserves native evidence for %s", async (mode) => {
+      const artifact = createExactStructuredOutputArtifact<{ target: string | null }, { target: string | null }>({
+        action: "test.null-target.v1", name: "null_target",
+        schema: { type: "object", additionalProperties: false, required: ["target"], properties: {
+          target: { type: ["string", "null"], enum: ["Atlas", null] },
+        } },
+        acceptedValueUsesProviderSchema: true,
+        decodeProviderPayload: (value) => ({ status: "valid", value }),
+        decodeAcceptedValue: (value) => ({ status: "valid", value: value as { target: string | null } }),
+      });
+      const isResponses = mode.startsWith("responses");
+      const isTool = mode.endsWith("tool");
+      const usesToolCall = isTool && mode !== "chat-json-schema-tool";
+      const raw = '{"target":"null"}';
+      const native = isResponses ? {
+        id: "resp_null", object: "response", status: "completed",
+        output: usesToolCall ? [{ type: "function_call", id: "fc_1", call_id: "call_1", name: artifact.name, arguments: raw }]
+          : [{ type: "message", id: "msg_1", role: "assistant", status: "completed", content: [{ type: "output_text", text: raw, annotations: [] }] }],
+      } : {
+        id: "chat_null", choices: [{ finish_reason: usesToolCall ? "tool_calls" : "stop", message: {
+          role: "assistant", content: usesToolCall ? null : raw,
+          ...(usesToolCall && { tool_calls: [{ id: "call_1", type: "function", function: { name: artifact.name, arguments: raw } }] }),
+        } }],
+      };
+      const before = structuredClone(native);
+      const client = {
+        responses: { create: async () => native },
+        chat: { completions: { create: async () => native } },
+      } as unknown as OpenAI;
+      const provider = runtime(isResponses ? "openai:gpt-5.6-luna" : "katana:grok-4-5", client);
+      provider.toolChoiceMode = mode === "chat-json-schema-tool" ? "json_schema" : "named";
+      const records: ProviderAttemptRecord[] = [];
+      const call = new ProviderExecutionCoordinator({ wait: async () => {}, hooks: {
+        onTerminal: (record) => { records.push(record); },
+      } }).startCall({
+        actor: { name: "Atlas", role: "player" }, action: artifact.action,
+        semantic: { version: 1, kind: "phase_call", phase: Phase.MINGLE, round: 0, canonicalEventSequence: 0, callSlot: 1 },
+      });
+      const result = await executeModelInvocation({
+        call, runtimes: [provider], maxAttempts: 1,
+        invocation: { messages: [{ role: "user", content: "Choose no target." }], outputTokenLimit: 256,
+          result: isTool ? { kind: "tool", artifact, choice: { name: artifact.name }, allowParallel: false }
+            : { kind: "structured", artifact },
+        },
+        validate: (_outcome, decoded) => decoded?.target === null
+          ? { status: "usable", value: decoded }
+          : { status: "unusable", kind: "malformed_output", message: "target must be absent" },
+      });
+      expect(result.value).toEqual({ target: null });
+      expect(records.map((record) => record.outcome.kind)).toEqual(["usable"]);
+      expect(result.liveOutcome?.nativeResponse).toEqual(before);
+      expect(native).toEqual(before);
+    },
+  );
+});

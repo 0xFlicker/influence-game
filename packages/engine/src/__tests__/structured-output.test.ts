@@ -355,3 +355,94 @@ describe("exact structured output", () => {
     });
   });
 });
+
+
+describe("nullable provider values", () => {
+  function artifact(schema: Record<string, unknown>) {
+    return createExactStructuredOutputArtifact<unknown, unknown>({
+      action: "test.nullable.v1", name: "nullable", schema,
+      acceptedValueUsesProviderSchema: true,
+      decodeProviderPayload: (value) => ({ status: "valid", value }),
+      decodeAcceptedValue: (value) => ({ status: "valid", value }),
+    });
+  }
+  const nullable = { type: ["string", "null"], enum: ["Blair", null] };
+  const schema = {
+    type: "object", additionalProperties: false, required: ["target", "prose", "nested"],
+    properties: {
+      target: nullable,
+      prose: { type: "string" },
+      nested: { type: "array", items: { anyOf: [
+        { type: "object", additionalProperties: false, required: ["kind", "target"], properties: {
+          kind: { type: "string", const: "optional" }, target: nullable,
+        } },
+        { type: "object", additionalProperties: false, required: ["kind", "target"], properties: {
+          kind: { type: "string", const: "required" }, target: { type: "string" },
+        } },
+      ] } },
+    },
+  };
+  it("normalizes declared nested nullable fields without changing raw evidence or required prose", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const raw = { target: "null", prose: "null", nested: [
+      { kind: "optional", target: "null" }, { kind: "required", target: "null" },
+    ] };
+    const before = structuredClone(raw);
+    expect(registry.decodeProviderPayload(artifact(schema), raw)).toEqual({
+      status: "valid", value: { target: null, prose: "null", nested: [
+        { kind: "optional", target: null }, { kind: "required", target: "null" },
+      ] },
+    });
+    expect(raw).toEqual(before);
+  });
+  it("keeps null and valid names, rejecting variants, omissions, and extra fields", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const contract = artifact(schema);
+    for (const target of [null, "Blair"]) {
+      expect(registry.decodeProviderPayload(contract, { target, prose: "null is undefined", nested: [] }))
+        .toMatchObject({ status: "valid", value: { target, prose: "null is undefined" } });
+    }
+    for (const target of ["NULL", " null ", "undefined", "Unknown", undefined]) {
+      expect(registry.decodeProviderPayload(contract, { target, prose: "unchanged", nested: [] }))
+        .toMatchObject({ status: "invalid", kind: "schema_mismatch" });
+    }
+    expect(registry.decodeProviderPayload(contract, { target: "null", prose: "ok", nested: [], extra: "null" }))
+      .toMatchObject({ status: "invalid", kind: "schema_mismatch" });
+  });
+  it("does not coerce journal replay or a nullable type whose enum excludes null", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    expect(registry.decodeAcceptedValue(artifact(schema), { target: "null", prose: "ok", nested: [] }))
+      .toMatchObject({ status: "invalid", kind: "schema_mismatch" });
+    expect(registry.decodeProviderPayload(artifact({ type: ["string", "null"], enum: ["null"] }), "null"))
+      .toEqual({ status: "valid", value: "null" });
+  });
+  it("preserves ambiguous union meanings and still runs domain validation", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const variant = (target: Record<string, unknown>) => ({
+      type: "object", additionalProperties: false, required: ["target"], properties: { target },
+    });
+    expect(registry.decodeProviderPayload(artifact({ anyOf: [variant(nullable), variant({ type: "string" })] }), { target: "null" }))
+      .toEqual({ status: "valid", value: { target: "null" } });
+    const contract = createExactStructuredOutputArtifact<unknown, never>({
+      action: "test.null-semantics.v1", name: "null_semantics", schema: nullable,
+      decodeProviderPayload: (value) => ({ status: "invalid", message: value === null ? "must choose a target now" : "unknown target" }),
+      decodeAcceptedValue: () => ({ status: "invalid", message: "invalid replay" }),
+    });
+    expect(registry.decodeProviderPayload(contract, "null"))
+      .toMatchObject({ status: "invalid", kind: "semantic_mismatch", message: "must choose a target now" });
+  });
+  it("selects the matching discriminated branch even when its nullable field also accepts strings", () => {
+    const registry = new ExactStructuredOutputRegistry();
+    const variant = (kind: string, target: Record<string, unknown>) => ({
+      type: "object", additionalProperties: false, required: ["kind", "target"], properties: {
+        kind: { type: "string", const: kind }, target,
+      },
+    });
+    const contract = artifact({ anyOf: [
+      variant("optional", { type: ["string", "null"] }),
+      variant("required", { type: "string" }),
+    ] });
+    expect(registry.decodeProviderPayload(contract, { kind: "optional", target: "null" }))
+      .toEqual({ status: "valid", value: { kind: "optional", target: null } });
+  });
+});

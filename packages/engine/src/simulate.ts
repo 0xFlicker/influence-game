@@ -50,6 +50,9 @@
  * Its two Mingle windows retain separate semantic provider coordinates;
  * alliance proposal/version and huddle schedule/session IDs derive from the
  * canonical event boundary so accepted calls retain identity after API restart.
+ * Nullable structured fields normalize exact provider `"null"` before validation;
+ * raw evidence stays intact. Compare raw and accepted targets in --chatty proof;
+ * case/whitespace variants and "undefined" are not normalized.
  * Continue using direct House calls and typed contracts; do not add `as any`.
  * See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.

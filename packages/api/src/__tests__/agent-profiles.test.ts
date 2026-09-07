@@ -325,7 +325,7 @@ describe("Agent Profile API", () => {
       }, tokenB));
       expect(first.status).toBe(201);
 
-      for (const name of ["  EMBER COMPASS  ", " atlas "]) {
+      for (const name of ["  EMBER COMPASS  ", " atlas ", "null", " NULL ", "undefined", " UNDEFINED "]) {
         const res = await app.request("/api/agent-profiles", jsonReq({
           name,
           personality: "Must use a distinct global identity.",

@@ -74,6 +74,56 @@ const ajv = new Ajv({
 
 const compiledValidators = new WeakMap<object, ValidateFunction>();
 const compiledShapeValidators = new WeakMap<object, ValidateFunction>();
+const providerNormalizers = new WeakMap<object, (value: unknown) => unknown>();
+
+/** Compile the declared nullable positions; never infer nullability from prose. */
+export function compileProviderNormalizer(schema: Record<string, unknown>): (value: unknown) => unknown {
+  const validate = ajv.compile(schema);
+  const alternatives = ["anyOf", "oneOf"].flatMap((keyword) =>
+    Array.isArray(schema[keyword]) ? schema[keyword] as Record<string, unknown>[] : []);
+  const branches = alternatives.map((branch) => ({
+    normalize: compileProviderNormalizer(branch),
+    validate: ajv.compile(branch),
+  }));
+  const explicitlyNullable = schema.type === "null"
+    || (Array.isArray(schema.type) && schema.type.includes("null"))
+    || schema.const === null
+    || (Array.isArray(schema.enum) && schema.enum.includes(null))
+    || branches.some(({ normalize }) => normalize("null") === null);
+  const acceptsNull = explicitlyNullable && validate(null);
+  const properties = schema.properties && typeof schema.properties === "object"
+    ? new Map(Object.entries(schema.properties).map(([key, child]) =>
+      [key, compileProviderNormalizer(child as Record<string, unknown>)]))
+    : new Map<string, (value: unknown) => unknown>();
+  const items = schema.items && typeof schema.items === "object" && !Array.isArray(schema.items)
+    ? compileProviderNormalizer(schema.items as Record<string, unknown>)
+    : undefined;
+
+  return (value) => {
+    if (value === "null" && acceptsNull) return null;
+    let candidate = value;
+    if (Array.isArray(value) && items) {
+      candidate = value.map(items);
+    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      candidate = Object.fromEntries(Object.entries(value).map(([key, child]) => {
+        const normalize = properties.get(key);
+        return [key, normalize ? normalize(child) : child];
+      }));
+    }
+    if (branches.length === 0) return candidate;
+    // A union may give the same field different meanings. Only normalize a
+    // branch that satisfies the entire node, and preserve ambiguous results.
+    const validCandidates = branches.flatMap((branch) => {
+      const normalized = branch.normalize(candidate);
+      return branch.validate(normalized) && validate(normalized) ? [normalized] : [];
+    });
+    if (validCandidates.length === 0) return candidate;
+    const first = validCandidates[0];
+    return validCandidates.every((entry) => JSON.stringify(entry) === JSON.stringify(first))
+      ? first
+      : candidate;
+  };
+}
 
 function deepFreeze<T>(value: T): T {
   if (value !== null && typeof value === "object") {
@@ -111,6 +161,7 @@ export function createExactStructuredOutputArtifact<TProviderPayload, TValue>(
     acceptedValueUsesProviderSchema: input.acceptedValueUsesProviderSchema ?? false,
   });
   compiledValidators.set(artifact, ajv.compile(schema));
+  providerNormalizers.set(artifact, compileProviderNormalizer(schema));
   return artifact;
 }
 
@@ -210,7 +261,9 @@ export class ExactStructuredOutputRegistry {
     artifact: ExactStructuredOutputArtifact<TValue>,
     payload: unknown,
   ): ExactStructuredOutputResult<TValue> {
-    return this.decodeSemantic(artifact, payload, "provider");
+    const normalize = providerNormalizers.get(artifact);
+    if (!normalize) throw new Error("Structured output artifact was not created by createExactStructuredOutputArtifact().");
+    return this.decodeSemantic(artifact, normalize(payload), "provider");
   }
 
   decodeAcceptedValue<TValue>(
