@@ -53,7 +53,7 @@ export interface CompactV2Page {
   filters?: Record<string, unknown>;
   readThrough: unknown;
   correlationSummary: NarrativeCorrelationSummary;
-  limitations?: Array<{ code: string; message: string }>;
+  limitations: Array<{ code: string; message: string }>;
   contentTrust: typeof NARRATIVE_CONTENT_TRUST;
   notBoardAuthority: true;
   groups: CompactV2Group[];
@@ -202,6 +202,7 @@ export function encodeCompactV2Page(input: {
     detail: input.detail,
     readThrough: input.readThrough,
     correlationSummary: input.correlationSummary,
+    limitations: input.limitations ?? [],
     contentTrust: NARRATIVE_CONTENT_TRUST,
     notBoardAuthority: true,
     groups,
@@ -213,9 +214,6 @@ export function encodeCompactV2Page(input: {
 
   if (input.access) page.access = input.access;
   if (input.filters) page.filters = omitNulls(input.filters);
-  if (input.limitations && input.limitations.length > 0) {
-    page.limitations = input.limitations;
-  }
 
   return page;
 }

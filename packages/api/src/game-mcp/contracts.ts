@@ -1941,6 +1941,7 @@ const matchNarrativeOkSchemaV2 = closedObject(
     "detail",
     "readThrough",
     "correlationSummary",
+    "limitations",
     "contentTrust",
     "notBoardAuthority",
     "groups",
@@ -1951,7 +1952,16 @@ const matchNarrativeOkSchemaV2 = closedObject(
   {
     ...matchNarrativePageSharedProps,
     schemaVersion: { type: "number", const: 2 },
-    // access/filters/limitations optional under compact omit-nulls encoder.
+    // Compact-v2 omits nullable metadata, but always reports limitations.
+    game: { ...matchNarrativePageSharedProps.game, required: ["id", "slug", "status"] },
+    access: {
+      ...matchNarrativePageSharedProps.access,
+      required: ["surface", "privateLaneAuthorized"],
+    },
+    filters: {
+      ...matchNarrativePageSharedProps.filters,
+      required: ["preset", "detail", "schemaVersion", "includeUnpaired"],
+    },
     groups: { type: "array", items: compactV2GroupSchema },
   },
 );
@@ -2307,10 +2317,9 @@ export function assertMatchNarrativePageResult(
         "schemaVersion",
         "game",
         "surface",
-        "access",
+        ...(record.schemaVersion === 2 ? [] : ["access", "filters"]),
         "preset",
         "detail",
-        "filters",
         "readThrough",
         "correlationSummary",
         "limitations",
