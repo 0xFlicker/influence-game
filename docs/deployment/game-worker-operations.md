@@ -209,6 +209,17 @@ Merge the worker-aware IaC change before the app change so the non-claiming API
 image has a dedicated worker when it reaches staging. This document does not
 perform or authorize a merge or deployment.
 
+Staging issues its controller credential automatically on every deployment.
+The candidate API image includes `dist/mint-deployment-control-token.js`, which
+uses the existing scoped JWT signer with a six-hour lifetime. IaC runs it in an
+isolated container with only the environment's `JWT_SECRET`, captures stdout
+privately, verifies authenticated status against the running API, and atomically
+refreshes the root-only worker `control.env` before draining old workers. There
+is no manually provisioned staging `DEPLOYMENT_CONTROL_TOKEN` in Doppler.
+Missing signing configuration or failed authentication stops the deploy before
+admission closes. Keep the generated JWT out of logs and application runtime
+environment files. Production credential delivery is unchanged.
+
 Staging closes and heartbeats admission, drains the old worker generation (or
 legacy combined runner), drains and stops the old render worker, stops the old
 application stack, starts the new gateway/web/render stack, starts and verifies
