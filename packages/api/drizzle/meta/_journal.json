@@ -533,6 +533,13 @@
       "when": 1787943600000,
       "tag": "0075_provider_semantic_coordinates",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1788800243166,
+      "tag": "0076_deployment_bot_actors",
+      "breakpoints": true
     }
   ]
 }

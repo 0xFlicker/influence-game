@@ -483,6 +483,34 @@ describe("deployment controller API", () => {
     }
   });
 
+  test("accepts the GitHub App dispatcher login and preserves exact lease provenance", async () => {
+    process.env.JWT_SECRET = "deployment-admission-test-secret";
+    const db = await setupTestDB();
+    const app = new Hono();
+    app.route("/", createDeploymentControlRoutes(db));
+    const token = await createDeploymentControlToken("6h");
+    const provenance = { ...PROVENANCE, actor: "flick-ai-dev[bot]", workflowRunId: 34144644421 };
+
+    for (const actor of ["[bot]", "flick-ai-dev[BOT]", "flick-ai-dev[bot][bot]", "flick-ai-dev[bot]\n", "flick_ai_dev[bot]"]) {
+      const response = await app.request("/api/internal/deployment-control/leases", controllerPost(token, {
+        ...provenance, actor,
+      }));
+      expect(response.status).toBe(400);
+    }
+    const wrongRepository = await app.request("/api/internal/deployment-control/leases", controllerPost(token, {
+      ...provenance, sourceRepository: "another/repository",
+    }));
+    expect(wrongRepository.status).toBe(400);
+    expect(await db.select().from(schema.deploymentAdmissionLeases)).toHaveLength(0);
+
+    const created = await app.request("/api/internal/deployment-control/leases", controllerPost(token, provenance));
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ lease: provenance });
+    expect(await db.select().from(schema.deploymentAdmissionLeases)).toEqual([
+      expect.objectContaining(provenance),
+    ]);
+  });
+
   test("validates provenance before creating a lease and exposes the durable active set", async () => {
     process.env.JWT_SECRET = "deployment-admission-test-secret";
     const db = await setupTestDB();
