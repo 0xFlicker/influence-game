@@ -16,6 +16,25 @@ require_literal() {
 }
 
 require_literal "$ci_workflow" "release manifest aggregation job" "release-manifest:"
+# Parse the job dependencies so a matching string elsewhere cannot satisfy this gate.
+bun -e '
+const workflow = Bun.YAML.parse(await Bun.file(process.argv[1]).text());
+const required = {
+  "release-manifest": ["check", "provider-free", "api-postgres", "docker-build-push"],
+  "trigger-deploy": ["release-manifest"],
+};
+for (const [name, dependencies] of Object.entries(required)) {
+  const job = workflow.jobs[name];
+  const needs = Array.isArray(job?.needs) ? job.needs : [job?.needs];
+  if (dependencies.some((dependency) => !needs.includes(dependency))) {
+    throw new Error(`${name} must depend on successful ${dependencies.join(", ")}`);
+  }
+  if (/\b(?:always|failure|cancelled)\s*\(/.test(job.if ?? "")) {
+    throw new Error(`${name} must not override successful dependency gating`);
+  }
+}
+' "$ci_workflow"
+
 require_literal "$ci_workflow" "release-image scope job" "release-scope:"
 require_literal "$ci_workflow" "manual release override" 'github.event_name == '\''workflow_dispatch'\'''
 require_literal "$ci_workflow" "release input comparison" 'git diff --quiet "$comparison_base" "$GITHUB_SHA" --'

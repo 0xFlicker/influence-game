@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { setApiBase } from "../lib/api";
 
@@ -21,8 +23,10 @@ const originalNavigator = globalThis.navigator;
 const originalLocalStorage = globalThis.localStorage;
 let activeWindow: HappyDOMWindow | null = null;
 
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  // React can leave a scheduled passive-effect callback after synchronous unmount.
+  // Flush it while window still exists, before restoring the surrounding test globals.
+  await act(async () => { cleanup(); });
   allowed = true;
   globalThis.fetch = originalFetch;
   setApiBase("");
@@ -32,9 +36,27 @@ afterEach(() => {
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: originalLocalStorage });
   activeWindow?.close();
   activeWindow = null;
+  // Let any leaked scheduler callback run now so teardown regressions fail this suite.
+  await settlePromises();
 });
 
 describe("admin deployment admission", () => {
+  test("drains pending passive effects before releasing its DOM", () => {
+    installDom();
+    let requests = 0;
+    globalThis.fetch = (async () => {
+      requests += 1;
+      return jsonResponse(inactiveStatus());
+    }) as unknown as typeof fetch;
+
+    // Reproduce a commit outside act, as an asynchronous API response can cause.
+    // React schedules passive work even if the root is immediately unmounted.
+    const root = createRoot(document.createElement("div"));
+    flushSync(() => root.render(<AdminDeploymentAdmission />));
+    root.unmount();
+    expect(requests).toBe(1);
+  });
+
   test("does not render or request status without the dedicated permission", async () => {
     installDom();
     allowed = false;

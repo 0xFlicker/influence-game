@@ -45,7 +45,7 @@ The `CI` workflow exposes stable sibling conclusions:
 | `Provider-free tests` | `bun run test:provider-free` |
 | `API / PostgreSQL tests` | `bun run test:postgres` |
 
-The provider-free and API/PostgreSQL jobs use no repository secrets and are safe for fork pull requests. The `Build PR` pre-deploy check reruns the same deterministic commands before an authorized ephemeral image build. No deployment, image, or staging topology is changed by this test split.
+The provider-free and API/PostgreSQL jobs use no repository secrets and are safe for fork pull requests. The `Build PR` pre-deploy check reruns the same deterministic commands before an authorized ephemeral image build. On `main`, image builds may run alongside tests, but release-manifest publication requires successful `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all image builds. Staging dispatch depends on that manifest, so a failed, canceled, or skipped required check cannot deploy the candidate. Browser Coverage remains a separate non-blocking workflow. `scripts/test-e2e-candidate-contract.sh` validates these job dependencies.
 
 ## Browser Coverage
 

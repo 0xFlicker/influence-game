@@ -253,7 +253,8 @@ jobs:
 
   release-manifest:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    needs: docker-build-push
+    # Images may build in parallel, but only a fully verified candidate is releasable.
+    needs: [check, provider-free, api-postgres, docker-build-push]
     runs-on: ubuntu-latest
     permissions:
       contents: read
