@@ -2,7 +2,7 @@
 
 Generated: 2026-06-21
 
-Last audited against `main`: 2026-07-24
+Last audited against `main`: 2026-09-07 (post-production-release reconciliation; source inspection, not a new full runtime audit)
 
 Last format-kernel review follow-ups added: 2026-07-25
 
@@ -57,42 +57,36 @@ Status legend:
 - `ready`: good candidate for near-term planning.
 - `implementation_complete/runtime_proof_pending`: implementation and automated proof landed; one explicit live validation gate remains before `closed`.
 - `implementation_complete/operator_rollout_pending`: implementation and automated proof landed; one explicit repository or operational configuration step remains before `closed`.
+- `verification_audit_pending`: substantial implementation exists; reconcile current behavior and tests with the original requirement before scheduling code or claiming closure.
 - `future`: coherent, but should not be in the active queue unless the pain becomes visible.
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
 ## Ready Backlog
 
-Items are ordered by current priority.
+Near-term order: R31 response-contract repair; R20 required-check configuration; R23 current-game strategy proof; R34 nullable-field policy. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
 
-### R33. Replace packed provider-call ordinals with structured coordinates
 
-- Status: `implementation_complete/operator_rollout_pending`
+### R31. Make producer match narrative satisfy its declared response schema
+
+- Status: `implementation_complete/runtime_proof_pending` (local PR implementation; not yet merged)
 - Priority: **high**
-- Sources: staging game `punk-blue-silver`; `packages/engine/src/provider-execution.ts`, `packages/engine/src/diary-room.ts`, `packages/engine/src/house-interviewer.ts`, `packages/api/src/services/provider-call-journal.ts`, and `packages/api/src/db/schema.ts`.
-- Signal: diary-room House calls currently encode `(canonical event boundary, player ordinal, exchange ordinal)` by applying Cantor pairing twice. That deterministic packing preserves replay identity, but it grows roughly with the fourth power of the event sequence: staging game `punk-blue-silver` produced logical-call ordinal `3619941329` during Round 5 and exceeded the journal's original PostgreSQL `integer` column. Widening the column to `bigint` repairs that immediate storage failure, but numeric magnitude remains an accidental property of coordinate encoding rather than a domain requirement.
-- Required direction: make the logical call's typed, structured coordinate authoritative. Give each call site a stable discriminant and explicit bounded components, serialize the coordinate canonically, and derive the existing deterministic logical-call ID from that serialized value. Persist enough structured identity to verify hash matches and diagnose replay conflicts. Do not combine coordinate dimensions into one numeric ordinal, allocate identity from process-local call order, parse an ID back into gameplay facts, or maintain parallel numeric and structured authorities.
-- Durability boundary: the same semantic coordinate must derive the same logical-call ID before and after restart, while different players, exchanges, phases, rounds, and durable-turn subcall slots remain distinct. Accepted-result replay, immutable reservation identity, provider attempt ordering, game-turn bindings, producer evidence, and canonical commit behavior must remain unchanged.
-- Validation path: deterministic unit cases prove canonical serialization and ID stability across key order and restart; adjacent coordinate components never collide; large event sequences do not create packed-number growth or lose identity; and malformed, unknown-version, or hash-mismatched coordinates fail clearly. DB-backed recovery tests interrupt before reservation, after reservation, after accepted provider output, and after canonical commit, then prove exactly one semantic call and one accepted result survive adoption without redispatch.
-- Implemented direction: provider execution now validates a closed V1 coordinate union and canonically serializes/hashes it before deriving logical-call IDs. Diary calls use session boundary + player + exchange, huddles use schedule IDs, phase calls use event boundary + slot, durable subcalls use planned turn + slot, and the journal persists semantic coordinate/hash as immutable identity. The retired numeric column is nullable legacy storage only; no active writer, reader, or replay path uses it. Remaining operator step: deploy migration `0075_provider_semantic_coordinates` through the normal release controller before treating old numeric rows as historical-only evidence.
+- Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
+- Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
+- Pre-fix source confirmation (2026-09-07): `encodeCompactV2Page` omits empty `limitations`; the published v2 schema permits omission, while `assertMatchNarrativePageResult` requires `limitations`, `access`, and `filters` without distinguishing versions. `matchNarrativeContent` invokes that assertion before returning MCP content. Reconcile encoder, published schema, and runtime validator together; audit all compact optional fields, not just the first reported error. This audit did not repeat the authenticated production read.
+- Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
+- Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
+- Implemented fix: compact v2 always emits `limitations`, including an empty array. Its published schema reflects omitted nullable metadata in game/access/filter objects; runtime validation permits optional v2 access/filters while retaining v1 requirements. Regression coverage exercises real encoded pages through MCP and validates the advertised output schema; DB-backed narrative pages retain privacy and cursor coverage.
+- Runtime proof: repeat the authenticated read against a completed current-meta game and receive an `ok: true` grouped all-seat narrative page with explicit limitations, rather than a server-side result-validation error. This is a read-only proof and requires no new provider-backed game.
 
-### R32. Remove prose-parsing escape hatches from structured model turns
+### R20. Complete CI test discovery without paid or external side effects
 
-- Status: `closed`
+- Status: `implementation_complete/operator_rollout_pending` (implementation merged 2026-08-20 in PR #117)
 - Priority: **high**
-- Sources: production `malformed_output: malformed_house_followup` investigation and the 2026-08-26 audit of `packages/engine/src/agent.ts`, `packages/engine/src/house-interviewer.ts`, `packages/engine/src/context-builder.ts`, `packages/engine/src/accepted-formal-speech.ts`, and `packages/engine/src/simulate.ts`.
-- Signal: the House follow-up fix exposed the same architectural leak in several nearby paths: provider-native structure is requested at the turn boundary, but permissive validation or downstream prose parsing can still accept malformed content, manufacture default-filled success, or reconstruct typed facts from display strings. This makes provider failures look like valid agent output and lets presentation conventions quietly become data contracts.
-- Implemented direction: player and House control-flow turns use exact provider-native tools or strict JSON schemas with semantic decoding inside the provider-attempt boundary. Malformed structured output cannot downgrade into accepted dialogue, update continuity, or mutate strategy. Judgment history and simulation result classification derive from canonical events rather than display wrappers or House text.
-- House narrative decision: House creative prose is allowed to describe, interpret, and connect game facts. One material cadence call returns nullable `publicSummary` and `privateNarrativeNotebook`; accepted public bytes are displayed unchanged, and a non-null notebook atomically replaces one bounded private showrunner snapshot. The creative lane contains no model-authored claims, aliases, receipts, fact-read action, semantic grading, or deterministic renderer. Long-form copy uses the same notebook and omniscient context; Strategy Bible and producer-brief calls are removed.
-- Information firewall: the omniscient House may see and narratively reveal diary answers, sealed decisions, and private conversations to human viewers. AI contestant diary and Judgment prompts use only actor-scoped public/participated/owned context plus that player's prior diary Q&A. They never receive House summaries, the House notebook, operator traces, or other players' private material.
-- Durability and recovery: `HouseNarrativeContinuityV2` commits recent public beats and the private notebook in the same durable logical turn as their dialogue and viewer-publication references. Provider refusal or exhaustion emits no fabricated summary and preserves the previous notebook under the bounded pending-delta policy. Normal process reload adopts the committed turn frontier; it does not require a deployment drain or a phase-coordinate allowlist.
-- Validation: `bun run test`, `bun run test:postgres`, and `bun run check` pass. The authorized current-provider comparison accepted all six authored summary samples in one call each and showed materially stronger promise/consequence continuity. The bounded full game carried a coherent multi-round House arc; refusals and timeouts emitted no fabricated prose. The local report at `.local-uploads/r32-provider-surfaces/house-narrative-comparison.md` records visible examples, calls, tokens, known cost, latency, failures, and the two narrow follow-up fixes without semantic hashes, source attestations, or automatic factual grades.
-
-### R21. Agentic, selective-fact House summaries at phase cadence
-
-- Status: `closed` (superseded by R32's House-authored narrative contract)
-- Priority: **high**
-- Sources: `packages/engine/src/house-summary-frontier.ts`, `packages/engine/src/house-interviewer.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/scripts/evaluate-house-summary-cadence.ts`, and `docs/plans/2026-08-19-001-refactor-agentic-house-summary-cadence-plan.md`.
-- Superseding decision: the selective-fact design prevented the House from authoring the connective narration the product needs while spending calls/tokens on model-generated attestations with no authoritative game consumer. R32 removed its aliases, fact store/read loop, claims, receipts, renderers, and separate producer memories. The cadence scheduler, bounded direct context, nonfatal failure policy, engine-owned provider telemetry, and canonical/projection authority remain.
+- Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
+- Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
+- Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
+- Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
+- Remaining operator step: reconfirmed through the active GitHub ruleset on 2026-09-07, the active `main` ruleset still requires only `check`. Add `Provider-free tests` and `API / PostgreSQL tests` after observing them on the exact protected `main` commit; keep Browser Coverage visible but non-required. Until that ruleset update lands, the plan remains `active` and R20 is not `closed`.
 
 ### R23. Exceptional, actionable compact strategy diffs
 
@@ -107,86 +101,55 @@ Items are ordered by current priority.
 - Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
 - Remaining proof: the reviewed production game predates literal-null normalization and the merged head. Keep R23 open until one authenticated current-meta API-backed game proves materially useful retained deltas and the exact no-change boundary without strategy leakage or provider retries.
 
-### R31. Make producer match narrative satisfy its declared response schema
+### R34. Normalize literal null only for nullable structured response fields
 
 - Status: `ready`
-- Priority: **high**
-- Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
-- Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
-- Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
-- Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
-- Runtime proof: repeat the authenticated read against a completed current-meta game and receive an `ok: true` grouped all-seat narrative page with explicit limitations, rather than a server-side result-validation error. This is a read-only proof and requires no new provider-backed game.
+- Priority: **medium**
+- Source: a valid Mingle turn was rejected with `gotoPlayerName must be null or one remaining non-self contestant` because the model returned `"null"` instead of JSON `null`.
+- Current behavior: compact strategy already recognizes exact literal `"null"` as no change; Mingle target validation treats it as a contestant name. No consistent schema-aware policy has been established.
+- Required direction: define one shared policy for converting exact literal `"null"` to JSON `null` only where the invocation explicitly permits null. Apply it inside the structured provider-attempt acceptance boundary, followed by full schema and semantic validation. Preserve raw provider evidence. Do not rewrite prose, required strings, arbitrary nested strings, missing fields, or malformed JSON; do not turn `"undefined"` into null by implication.
+- Name policy: reserve contestant names `null` and `undefined` under the existing normalized-name authority for new names and renames. Audit existing conflicting names before deciding remediation; do not silently rename historical game seats.
+- Validation path: nullable target accepts JSON null and exact string `"null"`; valid contestant names remain valid; required names and invalid targets still fail; ordinary prose containing these words is unchanged; nested nullable fields follow their declared schema; provider adapters share the same policy; name creation/rename enforces reserved names. Explicitly decide whitespace/case variants rather than accepting them accidentally.
+- Scope: queue/planning approval only; this entry does not change runtime behavior or relax the existing strict structured-output contract.
 
 ### R27. Complete failed-provider request evidence for producer debugging
 
-- Status: `ready`
+- Status: `verification_audit_pending`
 - Priority: **high**
+- Current audit (2026-09-07): provider execution already captures `rawRequest` and transport failure evidence; journal tests verify persisted request evidence and exclusion of authorization headers. Audit local artifacts and producer retrieval against the full original evidence contract before adding storage. Preserve diagnostic payloads while keeping credentials out of evidence; the old blanket unredacted wording must not authorize credential retention.
 - Sources: the failed local `gpt-5.6-luna` simulation batch from 2026-08-21, `packages/engine/src/agent.ts`, simulation artifact writing, API-backed private decision evidence, and producer game-debugging reads.
-- Signal: an OpenAI Responses request was rejected with HTTP 400 after Round 1, but the saved simulation contained neither the rejected request nor its provider request ID or complete error response. The same gap prevents a producer from inspecting an equivalent failure after API-backed gameplay. Aggregate token, prompt-reuse, and recall receipts cannot explain why a specific provider request failed.
+- Historical signal: an OpenAI Responses request was rejected with HTTP 400 after Round 1, but the saved simulation contained neither the rejected request nor its provider request ID or complete error response. The same gap prevents a producer from inspecting an equivalent failure after API-backed gameplay. Aggregate token, prompt-reuse, and recall receipts cannot explain why a specific provider request failed.
 - Required evidence contract: preserve the complete failed request exactly as submitted, including system and user prompts, strategy context, dialogue context, reasoning settings, schemas and tools, provider/model configuration, and request parameters. Preserve the complete provider error response and headers exactly as received, including the provider request ID. Attach game, round, phase, action, actor, attempt, and timestamps. Do not replace the request or error with a hash, summary, sanitized receipt, reduced field set, or redacted producer view.
 - Storage and access: local simulations write the complete evidence into their batch artifacts. API-backed games store the complete evidence through the existing private gameplay-evidence authority and make it retrievable by the producer. Public/player events, transcripts, and viewer APIs remain separate from producer evidence.
 - Validation path: deterministic failed Responses and Chat Completions requests round-trip every request field, error field, header, and request ID byte-for-byte; simulation artifacts retain the evidence after a failed or recovered call; API-backed tests prove producer retrieval for the correct game and reject non-producer access; successful requests and canonical gameplay remain unchanged.
-- Suggested slice: first persist and retrieve one failed ordinary-speech Responses request end to end in both a local batch and an API-backed game, using the same complete evidence schema. Then cover structured tool calls, retry attempts, and other providers without weakening the evidence contract.
+- Original suggested slice (reconcile before implementation): first persist and retrieve one failed ordinary-speech Responses request end to end in both a local batch and an API-backed game, using the same complete evidence schema. Then cover structured tool calls, retry attempts, and other providers without weakening the evidence contract.
 
 ### R28. Eliminate synthetic `[No response]` gameplay outputs
 
-- Status: `ready`
+- Status: `verification_audit_pending`
 - Priority: **high**
+- Current audit (2026-09-07): no literal `[No response]` remains in package TypeScript/TSX sources. Typed provider exhaustion and House malformed-output/no-fabricated-prose tests already exist. The removal request is stale; remaining work is to map former failure paths to current phase policies and coverage. Absence of the literal alone does not prove all failure semantics.
 - Sources: every provider adapter, agent decision method, House narration path, phase runner, retry path, and transcript/publication seam that constructs, returns, accepts, or publishes the literal `[No response]` after a provider failure, timeout, empty result, or malformed result.
-- Signal: `[No response]` is fabricated prose. When it is returned through a normal player or House response type, downstream code can mistake an absent or failed model result for dialogue that the agent actually produced. Retrying a request, skipping optional speech, failing a required decision, and applying a legal deterministic decision fallback are materially different outcomes and must not collapse into the same synthetic text.
+- Historical signal: `[No response]` is fabricated prose. When it is returned through a normal player or House response type, downstream code can mistake an absent or failed model result for dialogue that the agent actually produced. Retrying a request, skipping optional speech, failing a required decision, and applying a legal deterministic decision fallback are materially different outcomes and must not collapse into the same synthetic text.
 - Required direction: inventory and remove every synthetic `[No response]` path. Represent provider rejection, timeout/network failure, auth or configuration failure, successful-but-empty output, malformed or undecodable structured output, and cancellation as explicit typed outcomes with their original failure provenance. The phase policy—not the provider adapter—decides whether a given outcome retries, skips optional speech, or aborts the action/game. No synthetic placeholder may be published as player speech, House narration, transcript dialogue, or an accepted decision.
 - Decision integrity: optional speech may be absent without inventing dialogue. Required structured decisions must either succeed or use an explicit, deterministic, rules-legal fallback whose provenance is recorded as a fallback rather than model output. Failed or absent calls must not create or update strategy, commitments, diary content, or other agent-authored state.
 - Runtime parity: apply the same semantics to local simulations and API-backed gameplay, including Responses, Chat Completions, local OpenAI-compatible providers, House calls, tool/structured-output calls, and retry exhaustion. Keep this item separate from R27: R27 preserves complete producer-debugging evidence; R28 defines gameplay behavior after a call does not yield usable model output.
 - Validation path: deterministic coverage enumerates every former constructor and consumer of `[No response]`; asserts the literal never appears in turns, transcript rows, House events, public events, decisions, strategy state, or simulation text; and proves the intended retry, optional-speech skip, required-decision fallback, cancellation, and fatal-failure semantics in both simulation and API-backed execution.
-- Suggested slice: begin with ordinary player speech across Responses and Chat Completions, replacing string fallback with a typed absent/failed result through the real phase runner and proving that the phase continues without publishing fake dialogue. Then migrate structured decisions, House narration, local-provider retries, and remaining literal consumers until a repository-wide assertion shows no synthetic gameplay output remains.
+- Original suggested slice (reconcile before implementation): begin with ordinary player speech across Responses and Chat Completions, replacing string fallback with a typed absent/failed result through the real phase runner and proving that the phase continues without publishing fake dialogue. Then migrate structured decisions, House narration, local-provider retries, and remaining literal consumers until a repository-wide assertion shows no synthetic gameplay output remains.
 
 ### R29. Game-sealed provider fallback manifest
 
-- Status: `ready`
+- Status: `verification_audit_pending`
 - Priority: **high**
+- Current audit (2026-09-07): sealed manifests already exist in migration `0059_sealed_provider_manifest`, the simulator, daily-provider configuration, and `ProviderExecution` manifest traversal, including fallback budgets and durable accepted results. Reconcile these implementations and qualification tests with the current requirement; do not implement a second manifest/coordinator. A fresh paid qualification run is not authorized by this queue edit.
 - Sources: repeated hosted OpenAI `invalid_prompt` rejections during local `gpt-5.6-luna` games; the existing model catalog and provider profiles in `packages/engine/src/model-catalog.ts`; provider construction in `packages/engine/src/llm-client.ts` and `packages/api/src/services/game-lifecycle.ts`; simulation launch/configuration; R27 failed-request evidence; and R28 typed provider-failure outcomes.
-- Signal: a game currently seals one model/provider selection. A nonretryable provider refusal during required gameplay can therefore fail or suspend an otherwise healthy game even when another configured, game-ready provider could execute the same logical call. In the observed evening sample, two of four local games ended on OpenAI HTTP 400 `invalid_prompt` responses after substantial prior paid gameplay, while equivalent failures appear uncommon but possible across the larger live-game history.
+- Historical signal: a game currently seals one model/provider selection. A nonretryable provider refusal during required gameplay can therefore fail or suspend an otherwise healthy game even when another configured, game-ready provider could execute the same logical call. In the observed evening sample, two of four local games ended on OpenAI HTTP 400 `invalid_prompt` responses after substantial prior paid gameplay, while equivalent failures appear uncommon but possible across the larger live-game history.
 - Required direction: replace the single game model selection with an ordered, bounded provider manifest sealed into the game before it starts. The unattended Daily default is `openai:gpt-5.6-luna` followed by `katana:glm-5-2` and `katana:grok-4-5`; exact entries must retain Influence speech, structured-decision, and tool compatibility, with current price—not response speed—governing the fallback choice. Validate every entry's provider credentials and compatibility before admitting the game. Local simulation and API-backed gameplay must execute the same manifest.
 - Failover semantics: one logical gameplay call starts at the primary manifest entry. A typed, nonretryable provider refusal such as OpenAI `invalid_prompt` must not resend the unchanged request to that provider; it advances once to the next compatible manifest entry. Existing bounded same-provider handling for genuinely retryable capacity or transport failures completes before provider failover. Successful primary calls never contact a fallback. Exhausting the manifest returns one explicit typed call failure to the phase policy defined by R28.
 - Gameplay integrity: failover preserves the actor, action, canonical boundary, player memory, strategy state, authorized evidence, semantic prompt content, output contract, and acceptance rules. Provider adapters may translate only the transport/schema envelope required by the selected model's declared capabilities. They must not replay already accepted actions, restart the phase, weaken validation, fabricate dialogue, or parse transcript prose into authority. Exactly one accepted result may commit for the logical call.
 - Durability and observability: persist the sealed manifest and current logical-call attempt chain through the provider journal and durable logical turns. Record every provider attempt, fallback reason, request/response identity, usage, service tier, latency, and actual or estimated cost as producer evidence, using R27's complete failure evidence rather than a parallel reduced receipt. Public dialogue may identify the producing agent but must not expose provider credentials or private failure evidence.
 - Validation path: deterministic Responses-to-Katana and Chat-Completions-to-Katana tests prove an OpenAI `invalid_prompt` receives no unchanged OpenAI retry, the next provider receives exactly one semantically equivalent request, and one result commits once. Additional cases prove primary success makes zero fallback calls; retryable 429/transport handling remains bounded; incompatible or unavailable manifest entries fail admission before paid gameplay; all-provider failure stays typed and non-synthetic; recovery resumes the same manifest/attempt boundary without duplicate effects; and per-provider/per-game accounting reconciles every attempted call.
-- Suggested slice: first validate and catalog `katana:grok-4-5` and `katana:glm-5-2`, then support the sealed three-entry manifest `openai:gpt-5.6-luna` → `katana:glm-5-2` → `katana:grok-4-5` for ordinary player speech in both the simulator and API lifecycle. Drive an exact captured OpenAI `invalid_prompt` into one Katana request, publish only the validated fallback speech, preserve every provider evidence record, and prove the primary-success zero-fallback path. Expand to structured decisions and House calls only after that end-to-end slice is green.
-
-### R15. Format-kernel phase-boundary startup recovery
-
-- Status: `closed`
-- Priority: **high** (reopened 2026-08-04 after a live local failure; resolved 2026-08-19)
-- Sources: local game `free-blue-wire`; historical checkpoint selector `packages/api/src/services/game-recovery-support.ts`; current `packages/engine/src/game-runner.ts`, `packages/engine/src/durable-game-runner.ts`, `packages/api/src/services/game-turn-commit.ts`, and `packages/api/src/__tests__/game-durable-run.test.ts`; plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
-- Finding: durable inspection showed that one healthy owner appended events 63-78 after the event-62 `FORMAT_RESOLVE` checkpoint and sealed the event-78 `LOBBY` checkpoint. A competing API launch then ran startup orphan classification before its `Bun.serve` call discovered `EADDRINUSE`, so it fenced that still-live owner as `startup_orphaned`. The event-78 post-round lobby is intentionally not a supported resume boundary, and the older event-62 checkpoint was no longer at the event head, leaving the game correctly fail-closed after the erroneous suspension.
-- Superseding resolution: current games no longer recover from selected format phase checkpoints. Every format phase runs as one or more atomic logical turns with a committed XState snapshot, typed cursor, deterministic seed, canonical/dialogue effects, continuity, provider-call bindings, and viewer publications. Startup adopts that frontier directly, so interruption before a turn commit repeats the same planned work and interruption after commit advances from the committed result. Listener-first activation still prevents a private validation candidate from claiming live game ownership.
-- Automated proof: engine tests stop before and after Format Mingle/Resolve commits and reproduce the exact Safety Bounce draft from the persisted seed. The DB-backed lifecycle test interrupts a current game, adopts the same ID under a new owner, preserves one roster initialization and contiguous committed turns, and reaches normal completion. Listener-first startup still prevents a losing process from mutating live ownership.
-- Runtime proof boundary: the historical `free-blue-wire` rows establish the causal durable shape; the closure proof is deterministic DB/API lifecycle automation, not a new provider-backed live game or an operating-system two-process rehearsal.
-
-### R20. Complete CI test discovery without paid or external side effects
-
-- Status: `implementation_complete/operator_rollout_pending` (implementation merged 2026-08-20 in PR #117)
-- Priority: **high**
-- Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
-- Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
-- Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
-- Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
-- Remaining operator step: as verified on 2026-08-25, the active `main` ruleset still requires only `check`. Add `Provider-free tests` and `API / PostgreSQL tests` after observing them on the exact protected `main` commit; keep Browser Coverage visible but non-required. Until that ruleset update lands, the plan remains `active` and R20 is not `closed`.
-
-### R12. Player Strategy Thread durable continuity
-
-- Status: `closed`
-- Priority: **high** (resolved 2026-07-26)
-- Consolidates: plans C4, brainstorms B5, continuity audit on 2026-07-26, and the superseding logical-turn runtime.
-- Sources: `packages/engine/src/agent.ts`, `packages/engine/src/player-continuity.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/durable-game-runner.ts`, and `packages/api/src/services/game-turn-commit.ts`.
-- Resolution: every logical turn executes against staged player continuity and atomically commits the next versioned capsule with canonical/dialogue effects and the typed cursor. Reload restores the committed capsules into fresh agents and scrubs eliminated players; `PgMemoryStore` remains non-authoritative operational storage and is never merged into execution authority. Transcript prose and public/MCP reads remain outside continuity authority.
-
-### R16. Atomic House narrative continuity
-
-- Status: `closed`
-- Priority: **high** (resolved 2026-07-26)
-- Sources: `packages/engine/src/game-runner.ts`, `packages/engine/src/house-summary-frontier.ts`, `packages/api/src/services/game-turn-commit.ts`, and `packages/api/src/services/game-publications.ts`.
-- Resolution: House cadence now runs inside phase scratch execution. Accepted public copy, its transcript row, recent beat history, and the opaque private notebook commit in one logical turn before viewer release. `null` notebook output preserves the prior snapshot; failed output mutates neither. Startup loads the committed `HouseNarrativeContinuityV2` directly, while player prompts remain behind the information firewall.
+- Original suggested slice (reconcile before implementation): first validate and catalog `katana:grok-4-5` and `katana:glm-5-2`, then support the sealed three-entry manifest `openai:gpt-5.6-luna` → `katana:glm-5-2` → `katana:grok-4-5` for ordinary player speech in both the simulator and API lifecycle. Drive an exact captured OpenAI `invalid_prompt` into one Katana request, publish only the validated fallback speech, preserve every provider evidence record, and prove the primary-success zero-fallback path. Expand to structured decisions and House calls only after that end-to-end slice is green.
 
 ### R5. Producer-visible decision fallback and repair ledger
 
@@ -197,16 +160,6 @@ Items are ordered by current priority.
 - Concrete seam: agent fallback paths, vote/revote target validation, cognitive artifact diagnostics, and producer-safe postgame analysis.
 - Validation path: run a model that emits invalid/empty vote targets; verify the canonical game still advances, while the admin/producer surface clearly shows fallback count, repaired fields, original invalid value, fallback reason, and affected agent/action/round.
 - Suggested slice: persist a bounded producer-only ledger containing action, actor, round, original invalid value, chosen repair, reason, and model. Summarize it through existing producer analysis instead of polluting player-facing canonical events or coupling it to cost accounting.
-
-### R13. Accepted-action trace-to-event correlation
-
-- Status: `closed`
-- Consolidates: match-narrative token-efficiency plan U5 and live local-game evidence from `jade-black-mist`.
-- Sources: `docs/plans/2026-07-25-001-fix-accepted-action-trace-correlation-plan.md`, the accepted-action registry, API reconciliation/read models, and DB-backed privacy/correlation tests.
-- Implemented: fresh per-call receipts cover the direct accepted-action inventory without consulting `getLastPrivateDecisionId()`; post-append reconciliation stamps manifest, cognition, and prompt-reuse rows; producer manifests/narrative expose exact navigation; non-producer event/transcript/watch/results lanes remove private pointers. Reconciliation is forward-only, idempotent, retryable, conflict-aware, and non-fatal. Historical backfill remains deliberately absent.
-- Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
-- Resolution: deployed API game `mad-slate-apple` (completed 2026-07-29) provides the live format-kernel proof: its trusted 562-event prefix has 249 eligible accepted decisions, all 249 linked, with zero unresolved/missing/conflicting captures. Trace manifests carry both `decisionId` and final `eventSequence` (through 559); prompt-reuse coverage remains honestly `partial` for 1,405 intentionally unlinked non-action traces, while its accepted-action watermark advances to 559. The game does not exercise classic Power/Council actions, but those remain covered by the engine and DB-backed integration suite; no further R13 work is warranted.
-- Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
 
 ### R17. Watch-shell accessibility baseline
 
@@ -257,39 +210,16 @@ Items are ordered by current priority.
 - Concrete seam: avatar generation request claiming, API startup recovery, stale-processing detection, draft request discovery, and provider request idempotency.
 - Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
-
-### R10. Honest avatar-generation status degradation
-
-- Status: `closed`
-- Consolidates: Standing Daily Agent implementation review finding #9.
-- Sources: `packages/web/src/components/avatar-generation-activity.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`
-- Resolution: repeated status-read failures preserve the last provider status and surface a distinct `Portrait status unavailable` state with manual refresh. They no longer manufacture a terminal generation failure.
-- Concrete seam: avatar completion UI state, activity polling, retry affordances, and provider-versus-status error copy.
-- Validation path: force three consecutive status API failures while the provider request remains pending, then recover the API; verify the UI reports status as temporarily unavailable, never claims generation failed, and eventually displays the completed portrait.
-- Suggested slice: introduce a separate status-unavailable/degraded state with bounded backoff and manual refresh. Preserve the last known provider status instead of manufacturing a terminal failure.
-
-### R11. Bounded draft-avatar polling and create recovery
-
-- Status: `closed`
-- Consolidates: Standing Daily Agent implementation review finding #10.
-- Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
-- Resolution: draft polling uses bounded backoff and a manual status refresh, and portrait generation no longer disables Agent creation or update. A pending draft request attaches to the saved profile transactionally and completes against that profile in the background.
-- Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
-- Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
-- Implemented slice: the editor persists its request ID with the local draft, save attaches that request without waiting, explicit uploads retain precedence, and creation retries reuse a per-owner idempotency key.
-
 ## Future / Watchlist
 
-### D1. Multi-process execution ownership and observer delivery
+### D1. Additional multi-instance execution and observer scaling
 
 - Status: `future`
-- Consolidates: plans C3, part of brainstorms B2, and former W5 horizontal scaling locks/pub/sub.
-- Sources: `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`, `docs/statefulness-plan.md:173-235`
-- Signal: single-process startup recovery and owner heartbeats now protect accepted commits, but active execution and Bun websocket publish/subscribe remain process-local.
-- Concrete seam: game owner rows, lease freshness, graceful shutdown, lifecycle execution locks, and cross-instance observer delivery.
-- Validation path: graceful shutdown, owner-expiry, multi-worker claim contention, restart-orchestrator, and cross-instance observer-delivery tests.
-- Promotion trigger: multiple API/worker processes become real or deploys need graceful drain and observer routing beyond one process.
-- Suggested slice if promoted: establish Postgres-backed single-owner execution before adding distributed websocket delivery. Add Redis or another pub/sub layer only when multi-instance observers require it.
+- Current resolution (2026-09-07): the original single-process premise is obsolete. Production now runs a dedicated game worker separately from the non-claiming gateway. Postgres game ownership, lease/fence enforcement, durable publications, gateway publication polling, and fenced release handoff are implemented. The first production conversion succeeded in run [34148346124](https://github.com/0xFlicker/linode-iac/actions/runs/34148346124).
+- Sources: `packages/api/src/services/game-execution-worker.ts`, `packages/api/src/services/game-publications.ts`, `docs/deployment/game-worker-operations.md`.
+- Remaining scope: capacity and failure proof for additional simultaneously serving gateways/workers; the successful initial deployment is not a multi-instance load or failure rehearsal.
+- Promotion trigger: measured capacity pressure or an actual requirement to add instances.
+- Validation path if promoted: concurrent worker contention, owner expiry, observer delivery through independent gateways, reconnect catch-up, and rollout behavior under load. Reuse existing Postgres ownership and durable publication authority; add another transport only for demonstrated need.
 
 ### W1. GameWatchState summary repair scheduling
 
@@ -417,9 +347,10 @@ Items are ordered by current priority.
 
 ### W17. Extract format decision surfaces from InfluenceAgent
 
-- Status: `future`
+- Status: `verification_audit_pending`
 - Consolidates: format-kernel code review finding #16 (manual class).
-- Decision (2026-07-25): **do with the next launch format** — not a standalone refactor while the launch trio is stable. Extract shared helpers as part of adding the fourth format so tool wiring lands once.
+- Current audit (2026-09-07): Two Names has shipped, so the new-format trigger occurred. A shared `runSealedElimTargetDecision` helper is already used by `InfluenceAgent`; inspect remaining duplication before deciding whether any further extraction is useful.
+- Historical decision (2026-07-25): **do with the next launch format** — not a standalone refactor while the launch trio is stable. Extract shared helpers as part of adding the fourth format so tool wiring lands once.
 - Sources: `packages/engine/src/agent.ts` (format pick / SoE / Vote Bomb / bounce / tiebreak tools and methods), `packages/engine/src/phases/format-kernel.ts`, ce-code-review on `feat/sequester-format-kernel`.
 - Signal: five format decision surfaces copy the same validate → tool-call → fallback → `decisionSource`/`fallbackReason` pattern into a very large `agent.ts`, raising merge conflict cost and making a fourth launch format multi-site edits.
 - Concrete seam: new module (e.g. `agent-format-decisions.ts` or `formats/agent-surface.ts`) for tool schemas + shared decision runner; thin `InfluenceAgent` delegates; MockAgent and structured-output tests unchanged for tool IDs.
@@ -438,6 +369,94 @@ Items are ordered by current priority.
 - Suggested slice if promoted: preserve dual-shape omit rules (`power`/`council` absent on format kernel) and sealed-ballot access scoping; add a multi-round format fixture as a cost/regression guard.
 
 ## Closed / Removed
+
+### R32. Remove prose-parsing escape hatches from structured model turns
+
+- Status: `closed`
+- Priority: **high**
+- Sources: production `malformed_output: malformed_house_followup` investigation and the 2026-08-26 audit of `packages/engine/src/agent.ts`, `packages/engine/src/house-interviewer.ts`, `packages/engine/src/context-builder.ts`, `packages/engine/src/accepted-formal-speech.ts`, and `packages/engine/src/simulate.ts`.
+- Signal: the House follow-up fix exposed the same architectural leak in several nearby paths: provider-native structure is requested at the turn boundary, but permissive validation or downstream prose parsing can still accept malformed content, manufacture default-filled success, or reconstruct typed facts from display strings. This makes provider failures look like valid agent output and lets presentation conventions quietly become data contracts.
+- Implemented direction: player and House control-flow turns use exact provider-native tools or strict JSON schemas with semantic decoding inside the provider-attempt boundary. Malformed structured output cannot downgrade into accepted dialogue, update continuity, or mutate strategy. Judgment history and simulation result classification derive from canonical events rather than display wrappers or House text.
+- House narrative decision: House creative prose is allowed to describe, interpret, and connect game facts. One material cadence call returns nullable `publicSummary` and `privateNarrativeNotebook`; accepted public bytes are displayed unchanged, and a non-null notebook atomically replaces one bounded private showrunner snapshot. The creative lane contains no model-authored claims, aliases, receipts, fact-read action, semantic grading, or deterministic renderer. Long-form copy uses the same notebook and omniscient context; Strategy Bible and producer-brief calls are removed.
+- Information firewall: the omniscient House may see and narratively reveal diary answers, sealed decisions, and private conversations to human viewers. AI contestant diary and Judgment prompts use only actor-scoped public/participated/owned context plus that player's prior diary Q&A. They never receive House summaries, the House notebook, operator traces, or other players' private material.
+- Durability and recovery: `HouseNarrativeContinuityV2` commits recent public beats and the private notebook in the same durable logical turn as their dialogue and viewer-publication references. Provider refusal or exhaustion emits no fabricated summary and preserves the previous notebook under the bounded pending-delta policy. Normal process reload adopts the committed turn frontier; it does not require a deployment drain or a phase-coordinate allowlist.
+- Validation: `bun run test`, `bun run test:postgres`, and `bun run check` pass. The authorized current-provider comparison accepted all six authored summary samples in one call each and showed materially stronger promise/consequence continuity. The bounded full game carried a coherent multi-round House arc; refusals and timeouts emitted no fabricated prose. The local report at `.local-uploads/r32-provider-surfaces/house-narrative-comparison.md` records visible examples, calls, tokens, known cost, latency, failures, and the two narrow follow-up fixes without semantic hashes, source attestations, or automatic factual grades.
+
+### R21. Agentic, selective-fact House summaries at phase cadence
+
+- Status: `closed` (superseded by R32's House-authored narrative contract)
+- Priority: **high**
+- Sources: `packages/engine/src/house-summary-frontier.ts`, `packages/engine/src/house-interviewer.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/scripts/evaluate-house-summary-cadence.ts`, and `docs/plans/2026-08-19-001-refactor-agentic-house-summary-cadence-plan.md`.
+- Superseding decision: the selective-fact design prevented the House from authoring the connective narration the product needs while spending calls/tokens on model-generated attestations with no authoritative game consumer. R32 removed its aliases, fact store/read loop, claims, receipts, renderers, and separate producer memories. The cadence scheduler, bounded direct context, nonfatal failure policy, engine-owned provider telemetry, and canonical/projection authority remain.
+
+### R15. Format-kernel phase-boundary startup recovery
+
+- Status: `closed`
+- Priority: **high** (reopened 2026-08-04 after a live local failure; resolved 2026-08-19)
+- Sources: local game `free-blue-wire`; historical checkpoint selector `packages/api/src/services/game-recovery-support.ts`; current `packages/engine/src/game-runner.ts`, `packages/engine/src/durable-game-runner.ts`, `packages/api/src/services/game-turn-commit.ts`, and `packages/api/src/__tests__/game-durable-run.test.ts`; plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
+- Finding: durable inspection showed that one healthy owner appended events 63-78 after the event-62 `FORMAT_RESOLVE` checkpoint and sealed the event-78 `LOBBY` checkpoint. A competing API launch then ran startup orphan classification before its `Bun.serve` call discovered `EADDRINUSE`, so it fenced that still-live owner as `startup_orphaned`. The event-78 post-round lobby is intentionally not a supported resume boundary, and the older event-62 checkpoint was no longer at the event head, leaving the game correctly fail-closed after the erroneous suspension.
+- Superseding resolution: current games no longer recover from selected format phase checkpoints. Every format phase runs as one or more atomic logical turns with a committed XState snapshot, typed cursor, deterministic seed, canonical/dialogue effects, continuity, provider-call bindings, and viewer publications. Startup adopts that frontier directly, so interruption before a turn commit repeats the same planned work and interruption after commit advances from the committed result. Listener-first activation still prevents a private validation candidate from claiming live game ownership.
+- Automated proof: engine tests stop before and after Format Mingle/Resolve commits and reproduce the exact Safety Bounce draft from the persisted seed. The DB-backed lifecycle test interrupts a current game, adopts the same ID under a new owner, preserves one roster initialization and contiguous committed turns, and reaches normal completion. Listener-first startup still prevents a losing process from mutating live ownership.
+- Runtime proof boundary: the historical `free-blue-wire` rows establish the causal durable shape; the closure proof is deterministic DB/API lifecycle automation, not a new provider-backed live game or an operating-system two-process rehearsal.
+
+### R12. Player Strategy Thread durable continuity
+
+- Status: `closed`
+- Priority: **high** (resolved 2026-07-26)
+- Consolidates: plans C4, brainstorms B5, continuity audit on 2026-07-26, and the superseding logical-turn runtime.
+- Sources: `packages/engine/src/agent.ts`, `packages/engine/src/player-continuity.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/durable-game-runner.ts`, and `packages/api/src/services/game-turn-commit.ts`.
+- Resolution: every logical turn executes against staged player continuity and atomically commits the next versioned capsule with canonical/dialogue effects and the typed cursor. Reload restores the committed capsules into fresh agents and scrubs eliminated players; `PgMemoryStore` remains non-authoritative operational storage and is never merged into execution authority. Transcript prose and public/MCP reads remain outside continuity authority.
+
+### R16. Atomic House narrative continuity
+
+- Status: `closed`
+- Priority: **high** (resolved 2026-07-26)
+- Sources: `packages/engine/src/game-runner.ts`, `packages/engine/src/house-summary-frontier.ts`, `packages/api/src/services/game-turn-commit.ts`, and `packages/api/src/services/game-publications.ts`.
+- Resolution: House cadence now runs inside phase scratch execution. Accepted public copy, its transcript row, recent beat history, and the opaque private notebook commit in one logical turn before viewer release. `null` notebook output preserves the prior snapshot; failed output mutates neither. Startup loads the committed `HouseNarrativeContinuityV2` directly, while player prompts remain behind the information firewall.
+
+### R13. Accepted-action trace-to-event correlation
+
+- Status: `closed`
+- Consolidates: match-narrative token-efficiency plan U5 and live local-game evidence from `jade-black-mist`.
+- Sources: `docs/plans/2026-07-25-001-fix-accepted-action-trace-correlation-plan.md`, the accepted-action registry, API reconciliation/read models, and DB-backed privacy/correlation tests.
+- Implemented: fresh per-call receipts cover the direct accepted-action inventory without consulting `getLastPrivateDecisionId()`; post-append reconciliation stamps manifest, cognition, and prompt-reuse rows; producer manifests/narrative expose exact navigation; non-producer event/transcript/watch/results lanes remove private pointers. Reconciliation is forward-only, idempotent, retryable, conflict-aware, and non-fatal. Historical backfill remains deliberately absent.
+- Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
+- Resolution: deployed API game `mad-slate-apple` (completed 2026-07-29) provides the live format-kernel proof: its trusted 562-event prefix has 249 eligible accepted decisions, all 249 linked, with zero unresolved/missing/conflicting captures. Trace manifests carry both `decisionId` and final `eventSequence` (through 559); prompt-reuse coverage remains honestly `partial` for 1,405 intentionally unlinked non-action traces, while its accepted-action watermark advances to 559. The game does not exercise classic Power/Council actions, but those remain covered by the engine and DB-backed integration suite; no further R13 work is warranted.
+- Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
+
+### R10. Honest avatar-generation status degradation
+
+- Status: `closed`
+- Consolidates: Standing Daily Agent implementation review finding #9.
+- Sources: `packages/web/src/components/avatar-generation-activity.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`
+- Resolution: repeated status-read failures preserve the last provider status and surface a distinct `Portrait status unavailable` state with manual refresh. They no longer manufacture a terminal generation failure.
+- Concrete seam: avatar completion UI state, activity polling, retry affordances, and provider-versus-status error copy.
+- Validation path: force three consecutive status API failures while the provider request remains pending, then recover the API; verify the UI reports status as temporarily unavailable, never claims generation failed, and eventually displays the completed portrait.
+- Suggested slice: introduce a separate status-unavailable/degraded state with bounded backoff and manual refresh. Preserve the last known provider status instead of manufacturing a terminal failure.
+
+### R11. Bounded draft-avatar polling and create recovery
+
+- Status: `closed`
+- Consolidates: Standing Daily Agent implementation review finding #10.
+- Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
+- Resolution: draft polling uses bounded backoff and a manual status refresh, and portrait generation no longer disables Agent creation or update. A pending draft request attaches to the saved profile transactionally and completes against that profile in the background.
+- Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
+- Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
+- Implemented slice: the editor persists its request ID with the local draft, save attaches that request without waiting, explicit uploads retain precedence, and creation retries reuse a per-owner idempotency key.
+
+
+
+### R33. Replace packed provider-call ordinals with structured coordinates
+
+- Status: `closed`
+- Priority: **high**
+- Sources: staging game `punk-blue-silver`; `packages/engine/src/provider-execution.ts`, `packages/engine/src/diary-room.ts`, `packages/engine/src/house-interviewer.ts`, `packages/api/src/services/provider-call-journal.ts`, and `packages/api/src/db/schema.ts`.
+- Signal: diary-room House calls currently encode `(canonical event boundary, player ordinal, exchange ordinal)` by applying Cantor pairing twice. That deterministic packing preserves replay identity, but it grows roughly with the fourth power of the event sequence: staging game `punk-blue-silver` produced logical-call ordinal `3619941329` during Round 5 and exceeded the journal's original PostgreSQL `integer` column. Widening the column to `bigint` repairs that immediate storage failure, but numeric magnitude remains an accidental property of coordinate encoding rather than a domain requirement.
+- Required direction: make the logical call's typed, structured coordinate authoritative. Give each call site a stable discriminant and explicit bounded components, serialize the coordinate canonically, and derive the existing deterministic logical-call ID from that serialized value. Persist enough structured identity to verify hash matches and diagnose replay conflicts. Do not combine coordinate dimensions into one numeric ordinal, allocate identity from process-local call order, parse an ID back into gameplay facts, or maintain parallel numeric and structured authorities.
+- Durability boundary: the same semantic coordinate must derive the same logical-call ID before and after restart, while different players, exchanges, phases, rounds, and durable-turn subcall slots remain distinct. Accepted-result replay, immutable reservation identity, provider attempt ordering, game-turn bindings, producer evidence, and canonical commit behavior must remain unchanged.
+- Validation path: deterministic unit cases prove canonical serialization and ID stability across key order and restart; adjacent coordinate components never collide; large event sequences do not create packed-number growth or lose identity; and malformed, unknown-version, or hash-mismatched coordinates fail clearly. DB-backed recovery tests interrupt before reservation, after reservation, after accepted provider output, and after canonical commit, then prove exactly one semantic call and one accepted result survive adoption without redispatch.
+- Implemented direction: provider execution now validates a closed V1 coordinate union and canonically serializes/hashes it before deriving logical-call IDs. Diary calls use session boundary + player + exchange, huddles use schedule IDs, phase calls use event boundary + slot, durable subcalls use planned turn + slot, and the journal persists semantic coordinate/hash as immutable identity. The retired numeric column is nullable legacy storage only; no active writer, reader, or replay path uses it. Rollout completed: candidate `ee1c8534` deployed through staging run [34147396416](https://github.com/0xFlicker/linode-iac/actions/runs/34147396416) and production run [34148346124](https://github.com/0xFlicker/linode-iac/actions/runs/34148346124), including migration `0075_provider_semantic_coordinates`; production accepted the candidate migration set and reported the exact active commit on 2026-09-07.
+
 
 - R22 House-selected alliance proposer opportunities: implemented by PR #116. One compact House selection now grants exact `ceil(alive / 4)` proposer access with deterministic repair, selected-only proposer calls, private producer rationale, and an unchanged agent-authored alliance transaction. Its current-meta comparison reduced normalized alliance-opportunity calls by 52.9%, tokens by 62.9%, and estimated spend by about 62% while retaining canonical alliance and huddle usefulness evidence.
 - R24 producer cognition/trace cursor pagination: implemented by PR #114 with opaque snapshot-bound cursors, honest producer-analysis page metadata, tamper/game/subject isolation, equal-timestamp and concurrent-append stability, and terminal count proof. Ranged trace-content reads and raw storage remain unchanged.
