@@ -1,7 +1,7 @@
 ---
 title: "test: Discover complete provider-free tests with optional browser coverage"
 type: test
-status: active
+status: completed
 date: 2026-08-16
 origin: docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md
 ---
