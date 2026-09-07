@@ -63,7 +63,7 @@ Status legend:
 
 ## Ready Backlog
 
-Near-term order: R34 nullable-field policy; R23 current-game strategy proof in parallel. R31 runtime verification and R20 required-check configuration are complete. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
+Near-term order: R34 nullable-field policy. R23 is closed with occasional repetition accepted; R31 runtime verification and R20 required-check configuration are complete. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
 
 
 ### R31. Make producer match narrative satisfy its declared response schema
@@ -90,19 +90,19 @@ Near-term order: R34 nullable-field policy; R23 current-game strategy proof in p
 
 ### R23. Exceptional, actionable compact strategy diffs
 
-- Status: `implementation_complete/runtime_proof_pending` (implementation merged 2026-08-21 in PR #113)
+- Status: `closed` (PR #113 implemented; user accepted observed repetition on 2026-09-07)
 - Priority: **high**
 - Sources: production game `used-lilac-ash`, `packages/engine/src/strategy-state.ts`, `packages/engine/src/agent.ts`, `docs/reasoning-transcript-observability.md`, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
 - Signal: the compact strategy lifecycle and mechanical validation behaved correctly in the reviewed game, but agents emitted strategy candidates across many ordinary Mingle, alliance-action, and huddle turns even when the text mostly restated the current posture. Frequent low-information deltas consume output tokens and make material changes harder for producers and future prompts to distinguish.
 - Product decision: keep `strategyDelta` optional and make omission the expected result when the current strategy still applies. A delta should record a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; it should not summarize the action, repeat the baseline, narrate unchanged intent, or prove that the agent considered strategy.
 - Authority boundary: strategy remains private, fallible cognition. Deltas never become canonical game facts, alliance obligations, or evidence that an agent must vote a particular way. Malformed or rejected strategy metadata must remain independent from acceptance of an otherwise legal gameplay action.
 - Concrete seam: shared strategic-decision guidance, tool-field descriptions, compact-strategy application diagnostics, prompt scenario fixtures, and producer strategy-result reads.
-- Validation path: focused scenario fixtures distinguish material changes from restatements and prove null/omitted deltas leave strategy unchanged. A current-meta API-backed game reports non-null, accepted, rejected, and no-change strategy candidates plus output tokens by action family; human review verifies retained deltas are materially useful without requiring alliance compliance or penalizing valid pivots.
+- Closure basis: implementation and live evidence demonstrate useful pivots and null no-change behavior. Some redundant updates are tolerated; eliminating repetition or proving a subjective reduction is not a release requirement.
 - Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
 - Runtime audit (2026-09-07): completed staging `zero-teal-cove` yielded 286 proposals: 137 substantive deltas, 27 required replacement baselines, 121 JSON nulls, and one exact literal `"null"`. Luna round-5 decision `a53659b6-24d9-5ed3-8a4b-1ecc68639372` links to canonical event 245; next-request prior-epoch revision 28 preserves the same baseline/refinement, proving the literal-null no-change boundary.
-- Remaining quality issue: Echo round-4 traces `87610632-c1ec-438b-a4a2-4feeac6bcdd4` and `fedac58c-6dfe-4784-82ea-d48c5c9c8936` show a rephrased Override contingency retained alongside the existing one. Useful target pivots also exist; high emission frequency alone is not the failure criterion. Keep R23 open.
-- Remaining measurement gaps: producer strategy artifacts expose proposals without application outcomes, so exact accepted/rejected/no-change totals are unavailable. All 21 exposed failure traces were timeouts, while accounting reports 59 failed calls; comprehensive retry attribution is unproven. Producer-authorized access does not prove cross-owner isolation.
-- Next scoped follow-up: expose private strategy application receipts correlated to decisions (status, typed reason, revision before/after), then test the observed unchanged-contingency case alongside genuine target/commitment pivots. Preserve gameplay/strategy independence; do not infer canonical state or enforce materiality through prose similarity. Re-audit a newer completed game before closure; no paid run was started for this audit.
+- Accepted limitation: Echo round-4 traces `87610632-c1ec-438b-a4a2-4feeac6bcdd4` and `fedac58c-6dfe-4784-82ea-d48c5c9c8936` show a rephrased Override contingency retained alongside the existing one. Useful target pivots also exist. The user accepted occasional repetition rather than adding another quality gate.
+- Evidence limits (not closure blockers): producer strategy artifacts expose proposals without application outcomes, so exact accepted/rejected/no-change totals are unavailable. All 21 exposed failure traces were timeouts, while accounting reports 59 failed calls; comprehensive retry attribution is unproven. Producer-authorized access does not prove cross-owner isolation.
+- Revisit only if repetition demonstrably crowds out useful context, increases costs materially, or harms gameplay. No application-receipt expansion, additional LLM gate, or prompt experiment is required for closure. No paid run was started for this audit.
 
 ### R34. Normalize literal null only for nullable structured response fields
 
