@@ -9,6 +9,7 @@ import {
   INFLUENCE_MCP_APP_RESOURCE_URI,
   createInfluenceMcpAppResourceContent,
 } from "../game-mcp/app-resource.js";
+import { encodeCompactV2Page } from "../services/match-narrative-compact-v2.js";
 import { assertMatchNarrativePageResult } from "../game-mcp/contracts.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -3099,6 +3100,60 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         message: "Unknown or unauthorized MCP tool",
       });
       expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+    }
+  });
+
+  test("returns encoded producer narrative pages through the MCP output contract", async () => {
+    for (const nextCursor of [null, "opaque-next-page"]) {
+      for (const limitations of [[], [{ code: "partial", message: "Partial capture" }]]) {
+        const page = encodeCompactV2Page({
+          game: { id: "game-1", slug: "completed-game", status: "completed" },
+          surface: "producer",
+          access: { surface: "producer", privateLaneAuthorized: true },
+          preset: "strategic",
+          detail: "compact",
+          filters: {
+            preset: "strategic", detail: "compact", schemaVersion: 2,
+            includeUnpaired: false, playerId: null,
+          },
+          readThrough: {
+            transcript: { mode: "completed_terminal", throughEntrySequence: 0,
+              throughLegacyTimestamp: null, throughLegacyId: null },
+            cognition: { mode: "empty", throughCreatedAt: null, throughId: null },
+          },
+          correlationSummary: {
+            exact: 0, exactCrossLane: 0, idStampedSingleton: 0, inferred: 0,
+            uncorrelated: 0, paired: 0, unpaired: 0, unpairedOmitted: 0,
+          },
+          limitations,
+          groups: [],
+          nextCursor,
+          nextCursorKind: nextCursor === null ? null : "page",
+        });
+        const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+          readProducerMatchNarrative: async () => page,
+        }));
+        const response = await server.handle({
+          jsonrpc: "2.0", id: "compact-narrative", method: "tools/call",
+          params: { name: "read_producer_match_narrative", arguments: { gameIdOrSlug: "game-1" } },
+        }, PRODUCER_AUTH);
+        expect(response?.error).toBeUndefined();
+        const result = response?.result as { structuredContent: unknown };
+        expect(result.structuredContent).toMatchObject({ ok: true, limitations, nextCursor });
+        const tools = await listToolDescriptors(server, PRODUCER_AUTH);
+        const outputSchema = tools.find((tool) => tool.name === "read_producer_match_narrative")!.outputSchema;
+        expectMatchesJsonSchema(result.structuredContent, outputSchema);
+        const { access: _access, filters: _filters, ...withoutOptionalMetadata } = page;
+        expect(() => assertMatchNarrativePageResult(withoutOptionalMetadata)).not.toThrow();
+        expectMatchesJsonSchema(withoutOptionalMetadata, outputSchema);
+        const { limitations: _limitations, ...withoutLimitations } = page;
+        expect(() => assertMatchNarrativePageResult(withoutLimitations)).toThrow(/limitations is required/);
+        expect(() => expectMatchesJsonSchema(withoutLimitations, outputSchema)).toThrow();
+        expect(() => expectMatchesJsonSchema({ ...page, limitations: "none" }, outputSchema)).toThrow();
+        expect(() => assertMatchNarrativePageResult({
+          ...withoutOptionalMetadata, schemaVersion: 1,
+        })).toThrow(/access is required/);
+      }
     }
   });
 

@@ -9,6 +9,7 @@ import {
   decodeMatchNarrativeCursor,
   issueMatchNarrativeCursor,
 } from "../services/match-read-cursor.js";
+import { assertMatchNarrativePageResult } from "../game-mcp/contracts.js";
 import { readMatchNarrativePage } from "../services/match-narrative-read-model.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "../services/private-trace-writer.js";
@@ -91,6 +92,8 @@ describe("match-narrative-read-model dual surface", () => {
     );
     expect(page.ok).toBe(true);
     if (!page.ok) return;
+    assertMatchNarrativePageResult(page);
+    expect(page.limitations).toEqual([]);
 
     expect(page.surface).toBe("producer");
     expect(page.notBoardAuthority).toBe(true);
@@ -451,6 +454,7 @@ describe("match-narrative-read-model dual surface", () => {
     );
     expect(page1.ok).toBe(true);
     if (!page1.ok) return;
+    assertMatchNarrativePageResult(page1);
     expect(page1.nextCursor).toBeTruthy();
     expect(page1.nextCursorKind).toBe("page");
     expect(page1.nextCursor?.startsWith("mr2.")).toBe(true);
@@ -475,6 +479,7 @@ describe("match-narrative-read-model dual surface", () => {
     );
     expect(page2.ok).toBe(true);
     if (!page2.ok) return;
+    assertMatchNarrativePageResult(page2);
     expect(page2.filters?.schemaVersion).toBe(2);
     expect(page2.filters?.includeUnpaired).toBe(true);
     expect(page2.filters?.preset).toBe("dialogue_only");
