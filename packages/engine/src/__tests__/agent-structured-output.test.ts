@@ -1049,7 +1049,7 @@ describe("InfluenceAgent structured output mode", () => {
     const result = resolveActionStrategyCandidate(agent, votes, true);
 
     expect(votes.empowerTarget).toBe("mira-id");
-    expect(votes.strategyDelta).toBe("null");
+    expect(votes.strategyDelta).toBeNull();
     expect(votes.strategyCandidateProposed).toBeUndefined();
     expect(requests).toHaveLength(1);
     expect(result).toMatchObject({
@@ -4279,7 +4279,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(turn.factAtoms).toEqual(factAtoms);
   });
 
-  it("uses hidden Mingle intent in turn prompts without requiring target naming", async () => {
+  it.each([null, "null"])("uses hidden Mingle intent with nullable target %j", async (gotoPlayerName) => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -4293,7 +4293,7 @@ describe("InfluenceAgent structured output mode", () => {
           message: null,
           noReply: true,
           gotoRoomId: null,
-          gotoPlayerName: null,
+          gotoPlayerName,
           coordinationFact: null,
           noProposal: true,
           strategyDelta: null,

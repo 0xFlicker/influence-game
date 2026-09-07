@@ -4,7 +4,7 @@ import type {
   FlexTransportDispatchIntent,
   FlexTransportTerminalOutcome,
 } from "@influence/engine";
-import { validateExactStructuredValue } from "@influence/engine";
+import { compileProviderNormalizer, validateExactStructuredValue } from "@influence/engine";
 import { and, asc, desc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -1992,7 +1992,9 @@ export async function runClaimedOwnerLearningReview(
             reusableStagedResponseCallId = reservation.callId;
           }
           await enterPhase("output_validation");
-          const decodedOutput = decodeOwnerLearningProviderOutput(response);
+          const decodedOutput = compileProviderNormalizer(turn.responseSchema)(
+            decodeOwnerLearningProviderOutput(response),
+          );
           observedCall.decodedOutput = decodedOutput;
           const exactOutput = validateExactStructuredValue(
             turn.responseSchema,

@@ -1,7 +1,11 @@
-import { HOUSE_AGENT_NAMES } from "@influence/engine";
 import { sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import {
+  isReservedAgentProfileName,
+  normalizeAgentProfileName,
+  RESERVED_AGENT_PROFILE_NAMES,
+} from "./agent-profile-names.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
@@ -22,7 +26,7 @@ export async function lockAndLoadImportedAgentProfileNameNamespace(
   return {
     existingProfileIds: new Set(profiles.map((profile) => profile.id)),
     occupiedNames: new Set([
-      ...HOUSE_AGENT_NAMES.map(normalizeAgentProfileName),
+      ...RESERVED_AGENT_PROFILE_NAMES,
       ...profiles.map((profile) => normalizeAgentProfileName(profile.name)),
     ]),
   };
@@ -36,7 +40,7 @@ export function allocateImportedAgentProfileName(
     ? requestedName.trim().slice(0, MAX_AGENT_PROFILE_NAME_LENGTH).trimEnd()
     : "Imported Agent";
   const normalizedBaseName = normalizeAgentProfileName(baseName);
-  if (!occupiedNames.has(normalizedBaseName)) {
+  if (!isReservedAgentProfileName(baseName) && !occupiedNames.has(normalizedBaseName)) {
     occupiedNames.add(normalizedBaseName);
     return baseName;
   }
@@ -54,10 +58,6 @@ export function allocateImportedAgentProfileName(
   }
 
   throw new Error(`Could not allocate a unique imported agent name for ${baseName}`);
-}
-
-function normalizeAgentProfileName(name: string): string {
-  return name.trim().toLowerCase();
 }
 
 function toRomanNumeral(value: number): string {

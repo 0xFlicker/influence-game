@@ -659,6 +659,7 @@ export {
 export {
   ExactStructuredOutputRegistry,
   createExactStructuredOutputArtifact,
+  compileProviderNormalizer,
   exactStructuredOutputRegistry,
   validateExactStructuredValue,
 } from "./structured-output";

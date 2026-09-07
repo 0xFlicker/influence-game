@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { isReservedHouseAgentName } from "@influence/engine";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -47,6 +46,7 @@ import {
 } from "./owner-learning-resolution.js";
 import { abortActiveOwnerLearningReview } from "./owner-learning-worker.js";
 import { sha256StableJson } from "./stable-hash.js";
+import { isReservedAgentProfileName } from "./agent-profile-names.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
@@ -1529,7 +1529,7 @@ function invalidArchetypeError(): AgentProfileManagementError {
 }
 
 function assertAgentNameNotReserved(name: string): void {
-  if (isReservedHouseAgentName(name)) throw agentNameTakenError();
+  if (isReservedAgentProfileName(name)) throw agentNameTakenError();
 }
 
 function mapAgentNameConstraintError(error: unknown): unknown {

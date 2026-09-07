@@ -312,7 +312,7 @@ describe("agent profile management service", () => {
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
-  test("rejects renaming a saved profile to a House-catalog name", async () => {
+  test("rejects renaming a saved profile to reserved House and null sentinel names", async () => {
     await insertAgent(db, {
       id: "rename-candidate",
       userId: USER_A_ID,
@@ -321,14 +321,16 @@ describe("agent profile management service", () => {
       personaKey: "strategic",
     });
 
-    await expect(updateOwnedAgent(db, { userId: USER_A_ID }, {
-      agentId: "rename-candidate",
-      displayName: "atlas",
-    })).rejects.toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      message: "That agent name is already in use. Choose another name.",
-    } satisfies Partial<AgentProfileManagementError>);
+    for (const displayName of ["atlas", "null", " NULL ", "undefined", " UNDEFINED "]) {
+      await expect(updateOwnedAgent(db, { userId: USER_A_ID }, {
+        agentId: "rename-candidate",
+        displayName,
+      })).rejects.toMatchObject({
+        code: "agent_name_taken",
+        statusCode: 409,
+        message: "That agent name is already in use. Choose another name.",
+      } satisfies Partial<AgentProfileManagementError>);
+    }
     const [persisted] = await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, "rename-candidate"));
     expect(persisted?.name).toBe("Silver Current");

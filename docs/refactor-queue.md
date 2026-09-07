@@ -2,7 +2,7 @@
 
 Generated: 2026-06-21
 
-Last audited against `main`: 2026-09-07 (post-production-release reconciliation; source inspection, not a new full runtime audit)
+Last audited against `main`: 2026-09-07 (R20 live ruleset verification; R23/R31 staging evidence audit; R34 implementation and local validation)
 
 Last format-kernel review follow-ups added: 2026-07-25
 
@@ -63,12 +63,12 @@ Status legend:
 
 ## Ready Backlog
 
-Near-term order: R31 response-contract repair; R20 required-check configuration; R23 current-game strategy proof; R34 nullable-field policy. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
+Near-term order: R34 nullable-field policy; R23 current-game strategy proof in parallel. R31 runtime verification and R20 required-check configuration are complete. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
 
 
 ### R31. Make producer match narrative satisfy its declared response schema
 
-- Status: `implementation_complete/runtime_proof_pending` (local PR implementation; not yet merged)
+- Status: `closed` (PR #135 merged; staging runtime proof completed 2026-09-07)
 - Priority: **high**
 - Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
 - Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
@@ -76,17 +76,17 @@ Near-term order: R31 response-contract repair; R20 required-check configuration;
 - Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
 - Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
 - Implemented fix: compact v2 always emits `limitations`, including an empty array. Its published schema reflects omitted nullable metadata in game/access/filter objects; runtime validation permits optional v2 access/filters while retaining v1 requirements. Regression coverage exercises real encoded pages through MCP and validates the advertised output schema; DB-backed narrative pages retain privacy and cursor coverage.
-- Runtime proof: repeat the authenticated read against a completed current-meta game and receive an `ok: true` grouped all-seat narrative page with explicit limitations, rather than a server-side result-validation error. This is a read-only proof and requires no new provider-backed game.
+- Runtime proof (2026-09-07): authenticated staging `zero-teal-cove` read with schema v2, `full_cognition`, and full detail completed all 11 pages / 506 groups through the terminal page, each with `ok: true` and explicit `limitations: []`. No new provider-backed game was started.
 
 ### R20. Complete CI test discovery without paid or external side effects
 
-- Status: `implementation_complete/operator_rollout_pending` (implementation merged 2026-08-20 in PR #117)
+- Status: `closed` (PR #117 implementation; required-check ruleset updated 2026-09-07)
 - Priority: **high**
 - Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
 - Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
 - Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
 - Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
-- Remaining operator step: reconfirmed through the active GitHub ruleset on 2026-09-07, the active `main` ruleset still requires only `check`. Add `Provider-free tests` and `API / PostgreSQL tests` after observing them on the exact protected `main` commit; keep Browser Coverage visible but non-required. Until that ruleset update lands, the plan remains `active` and R20 is not `closed`.
+- Operator proof (2026-09-07): all three checks passed on exact `main` commit `bc087190a04b89dba5d999d68602af295de5cbc2`. Active ruleset `20924439` now requires `check`, `Provider-free tests`, and `API / PostgreSQL tests`, each bound to GitHub Actions app `15368`. All other ruleset settings were preserved; Browser Coverage remains visible and non-required.
 
 ### R23. Exceptional, actionable compact strategy diffs
 
@@ -99,18 +99,23 @@ Near-term order: R31 response-contract repair; R20 required-check configuration;
 - Concrete seam: shared strategic-decision guidance, tool-field descriptions, compact-strategy application diagnostics, prompt scenario fixtures, and producer strategy-result reads.
 - Validation path: focused scenario fixtures distinguish material changes from restatements and prove null/omitted deltas leave strategy unchanged. A current-meta API-backed game reports non-null, accepted, rejected, and no-change strategy candidates plus output tokens by action family; human review verifies retained deltas are materially useful without requiring alliance compliance or penalizing valid pivots.
 - Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
-- Remaining proof: the reviewed production game predates literal-null normalization and the merged head. Keep R23 open until one authenticated current-meta API-backed game proves materially useful retained deltas and the exact no-change boundary without strategy leakage or provider retries.
+- Runtime audit (2026-09-07): completed staging `zero-teal-cove` yielded 286 proposals: 137 substantive deltas, 27 required replacement baselines, 121 JSON nulls, and one exact literal `"null"`. Luna round-5 decision `a53659b6-24d9-5ed3-8a4b-1ecc68639372` links to canonical event 245; next-request prior-epoch revision 28 preserves the same baseline/refinement, proving the literal-null no-change boundary.
+- Remaining quality issue: Echo round-4 traces `87610632-c1ec-438b-a4a2-4feeac6bcdd4` and `fedac58c-6dfe-4784-82ea-d48c5c9c8936` show a rephrased Override contingency retained alongside the existing one. Useful target pivots also exist; high emission frequency alone is not the failure criterion. Keep R23 open.
+- Remaining measurement gaps: producer strategy artifacts expose proposals without application outcomes, so exact accepted/rejected/no-change totals are unavailable. All 21 exposed failure traces were timeouts, while accounting reports 59 failed calls; comprehensive retry attribution is unproven. Producer-authorized access does not prove cross-owner isolation.
+- Next scoped follow-up: expose private strategy application receipts correlated to decisions (status, typed reason, revision before/after), then test the observed unchanged-contingency case alongside genuine target/commitment pivots. Preserve gameplay/strategy independence; do not infer canonical state or enforce materiality through prose similarity. Re-audit a newer completed game before closure; no paid run was started for this audit.
 
 ### R34. Normalize literal null only for nullable structured response fields
 
-- Status: `ready`
+- Status: `implementation_complete/runtime_proof_pending`
 - Priority: **medium**
 - Source: a valid Mingle turn was rejected with `gotoPlayerName must be null or one remaining non-self contestant` because the model returned `"null"` instead of JSON `null`.
 - Current behavior: compact strategy already recognizes exact literal `"null"` as no change; Mingle target validation treats it as a contestant name. No consistent schema-aware policy has been established.
 - Required direction: define one shared policy for converting exact literal `"null"` to JSON `null` only where the invocation explicitly permits null. Apply it inside the structured provider-attempt acceptance boundary, followed by full schema and semantic validation. Preserve raw provider evidence. Do not rewrite prose, required strings, arbitrary nested strings, missing fields, or malformed JSON; do not turn `"undefined"` into null by implication.
 - Name policy: reserve contestant names `null` and `undefined` under the existing normalized-name authority for new names and renames. Audit existing conflicting names before deciding remediation; do not silently rename historical game seats.
 - Validation path: nullable target accepts JSON null and exact string `"null"`; valid contestant names remain valid; required names and invalid targets still fail; ordinary prose containing these words is unchanged; nested nullable fields follow their declared schema; provider adapters share the same policy; name creation/rename enforces reserved names. Explicitly decide whitespace/case variants rather than accepting them accidentally.
-- Scope: queue/planning approval only; this entry does not change runtime behavior or relax the existing strict structured-output contract.
+- Implementation: the shared schema normalizer runs in the game structured-output registry and Owner Learning output-acceptance path before schema/semantic validation, preserving raw responses and accepted replay. The Prompt Thread experiment broker continues returning raw provider responses. Only exact lowercase `"null"` converts; whitespace/case variants and `"undefined"` do not. Create/rename uses the shared normalized-name authority to reserve both sentinel names; imports use existing suffix allocation for a new profile without changing historical seats. Existing strategy-state literal-null no-change behavior remains for historical accepted values.
+- Name audit (2026-09-07): read-only staging and production queries found zero conflicting normalized names in agent profiles or historical game seats; no historical records were changed.
+- Verification: focused provider-free coverage exercises all native transport paths, actual Mingle nullable targets, nested unions, schema/semantic failures, unchanged raw evidence, and strict replay. Full checks and deployed verification are tracked in the implementation PR.
 
 ### R27. Complete failed-provider request evidence for producer debugging
 

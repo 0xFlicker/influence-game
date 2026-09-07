@@ -295,6 +295,72 @@ describe("owner learning worker durability", () => {
     });
   });
 
+  test.each(["output", "outputText"])("normalizes nullable provider fields before Owner Learning acceptance without rewriting raw %s", async (mode) => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const outputs = [
+      { provisionalThemes: [], selectedMomentHandles: [], findings: [], finalResult: "null" },
+      { provisionalThemes: [], selectedMomentHandles: [], findings: [], finalResult: {
+        diagnosis: "The guidance explicitly discusses null and undefined.",
+        analysisTrack: "evidence_rich",
+        strategyHealthClassification: "null",
+        recommendations: [],
+        proposal: "null",
+        noChange: { rationale: "No repeated strategic defect appears." },
+      } },
+    ];
+    const before = structuredClone(outputs);
+    let invocations = 0;
+    const provider: OwnerLearningProvider = {
+      async invoke(request) {
+        const output = outputs[invocations++];
+        if (!output) throw new Error("Unexpected extra provider call");
+        await request.observer.onDispatchIntent({
+          transportOrdinal: 1, attemptedTier: "flex",
+          dispatchedAtMs: Date.parse("2026-08-04T03:01:01.000Z"),
+        });
+        await request.observer.onTerminalOutcome({
+          transportOrdinal: 1, attemptedTier: "flex", httpStatus: 200, latencyMs: 100,
+          completedAtMs: Date.parse("2026-08-04T03:01:01.100Z"),
+        });
+        return {
+          ...successfulProviderTurn(mode === "output" ? output : undefined),
+          ...(mode === "outputText" && { outputText: JSON.stringify(output) }),
+        };
+      },
+    };
+    expect(await runClaimedOwnerLearningReview(db, claim, {
+      provider,
+      projector: async (_db, selection) => fakeOwnerLearningProjection(
+        selection, new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      ),
+      now: () => new Date("2026-08-04T03:01:02.000Z"),
+    })).toBe(true);
+    expect(invocations).toBe(2);
+    expect(outputs).toEqual(before);
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review.analysisStatus).toBe("no_change");
+    expect(review.result).toMatchObject({
+      diagnosis: "The guidance explicitly discusses null and undefined.",
+      noChange: { rationale: "No repeated strategic defect appears." },
+    });
+    const calls = await db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId)).orderBy(asc(schema.agentLearningReviewCalls.ordinal));
+    expect(calls.map((call) => call.state)).toEqual(["succeeded", "succeeded"]);
+    for (const [index, call] of calls.entries()) {
+      const ledger = JSON.parse(call.responseEvidenceBody!) as {
+        evidence: { providerResponse: { output?: unknown; outputText?: string } };
+      };
+      const raw = ledger.evidence.providerResponse;
+      expect(mode === "output" ? raw.output : JSON.parse(raw.outputText!)).toEqual(before[index]);
+    }
+  });
+
   test("recovers a post-response finalization failure locally without another provider request", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
