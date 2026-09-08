@@ -32,7 +32,7 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
-  it("runs an explicit Two Names decline round through setup, one Mingle, pleas, ballots, and resolution", async () => {
+  it.each([0, 0.25, 0.5, 0.75, 0.999999])("excludes Empowered from a Two Names draw at %s and completes the decline round", async (draw) => {
     const agents = ["A", "B", "C", "D", "E"].map(
       (name) => new MockAgent(createUUID(), name),
     );
@@ -45,7 +45,7 @@ describe("Format kernel integration (MockAgent)", () => {
         formatManifest: ["two_names"],
       },
       undefined,
-      { maxRoundsMode: "exact" },
+      { maxRoundsMode: "exact", random: () => draw },
     );
 
     await runner.run();
@@ -54,7 +54,8 @@ describe("Format kernel integration (MockAgent)", () => {
     const setup = canonical.find((event) => event.type === "format.two_names_setup");
     const decline = canonical.find((event) => event.type === "format.two_names_override_declined");
     const resolution = canonical.find((event) => event.type === "format.resolved");
-    expect(setup).toBeDefined();
+    if (!setup || setup.type !== "format.two_names_setup") throw new Error("expected Two Names setup");
+    expect(setup.payload.overrideHolderId).not.toBe(setup.payload.empoweredId);
     expect(decline).toBeDefined();
     expect(canonical.filter((event) => event.type === "format.two_names_mingle_completed"))
       .toEqual([expect.objectContaining({ payload: expect.objectContaining({ window: "initial_names" }) })]);
@@ -76,13 +77,13 @@ describe("Format kernel integration (MockAgent)", () => {
     });
   });
 
-  it("commits same-player Override use and replacement together, then runs the final-names Mingle", async () => {
+  it("lets a nominee save themself with Override, then runs replacement and final-names Mingle", async () => {
     const agents = ["A", "B", "C", "D", "E"].map(
       (name) => new MockAgent(createUUID(), name),
     );
     const [empowered, firstNamed, secondNamed, replacement] = agents;
     if (!empowered || !firstNamed || !secondNamed || !replacement) throw new Error("expected agents");
-    empowered.getTwoNamesOverride = async () => ({
+    firstNamed.getTwoNamesOverride = async () => ({
       action: "use",
       removedNomineeId: firstNamed.id,
       thinking: "use Override",
@@ -128,7 +129,7 @@ describe("Format kernel integration (MockAgent)", () => {
       payload: {
         aggregate: {
           capability: "two_names",
-          overrideHolderId: empowered.id,
+          overrideHolderId: firstNamed.id,
           overrideAction: "used",
           removedNomineeId: firstNamed.id,
           replacementNomineeId: replacement.id,

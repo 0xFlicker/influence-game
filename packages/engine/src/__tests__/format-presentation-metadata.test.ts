@@ -55,7 +55,7 @@ describe("format presentation metadata", () => {
       displayName: "Two Names",
     });
     expect(formatPresentationMetadata("two_names").ruleSheet).toContain(
-      "Override",
+      "Empowered cannot hold Override",
     );
     expect(formatPresentationMetadata("two_names").ruleSheet).toContain(
       "final nominees",

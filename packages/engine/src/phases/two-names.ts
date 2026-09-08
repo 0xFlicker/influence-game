@@ -7,6 +7,7 @@ import {
   isLegalTwoNamesInitialPair,
   resolveTwoNames,
   twoNamesReplacementCandidates,
+  twoNamesOverrideCandidates,
   type TwoNamesPair,
 } from "../formats";
 import { projectTwoNamesRound } from "../formats/two-names-events";
@@ -126,11 +127,12 @@ export async function runTwoNamesSetup(ctx: PhaseRunnerContext): Promise<void> {
       };
     }
   }
+  const overrideCandidates = twoNamesOverrideCandidates(livingIds, empoweredId);
   const drawIndex = Math.min(
-    livingIds.length - 1,
-    Math.floor((ctx.random?.() ?? 0) * livingIds.length),
+    overrideCandidates.length - 1,
+    Math.floor((ctx.random?.() ?? 0) * overrideCandidates.length),
   );
-  const overrideHolderId = livingIds[drawIndex]!;
+  const overrideHolderId = overrideCandidates[drawIndex]!;
   await assertCanAcceptCommit(ctx);
   gameState.recordTwoNamesSetup(
     { empoweredId, initialNomineeIds: nomineeIds, overrideHolderId },

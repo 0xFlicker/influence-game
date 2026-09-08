@@ -47,6 +47,7 @@
  * Restricted History requires round 3 plus a round-1-eligible companion format.
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
+ * New Override draws exclude Empowered; both nominees remain eligible.
  * Its two Mingle windows retain separate semantic provider coordinates;
  * alliance proposal/version and huddle schedule/session IDs derive from the
  * canonical event boundary so accepted calls retain identity after API restart.

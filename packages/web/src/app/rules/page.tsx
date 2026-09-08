@@ -380,8 +380,8 @@ export default function RulesPage() {
               </li>
               <li>
                 <Em>Two Names (5+ players)</Em>: Empowered publicly nominates
-                two players, then The House draws any living player to
-                hold Override. After the first Format Mingle, the holder may
+                two players, then The House draws a living player other than
+                Empowered to hold Override. Either nominee is eligible. After the first Format Mingle, the holder may
                 decline or remove one nominee. If Override is used, Empowered
                 immediately names a legal replacement and the final pair gets
                 another Format Mingle. Each finalist then makes one public plea.

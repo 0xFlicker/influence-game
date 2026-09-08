@@ -59,9 +59,9 @@ export const FORMAT_PRESENTATION_METADATA = {
     id: "two_names",
     displayName: "Two Names",
     conciseRules:
-      "Empowered names two contestants. A random Override holder may replace one name, then eligible contestants vote between the final pair. Empowered breaks a tie.",
+      "Empowered names two contestants. A random non-Empowered Override holder may remove one name, then eligible contestants vote between the final pair. Empowered breaks a tie.",
     ruleSheet:
-      "Empowered names two distinct living contestants, then the House draws one living Override holder. After the first Mingle, the holder may leave the names unchanged or remove one nominee; if used, Empowered names a legal replacement and a second Mingle follows. The two final nominees make ordered public pleas. Every living contestant except Empowered and the final nominees casts one sealed ballot for a final nominee. The higher total exits; Empowered chooses between the final nominees on an exact tie.",
+      "Empowered names two distinct living contestants, then the House draws one Override holder from the other living contestants, including either nominee. Empowered cannot hold Override. After the first Mingle, the holder may leave the names unchanged or remove one nominee; if used, Empowered names a legal replacement and a second Mingle follows. The two final nominees make ordered public pleas. Every living contestant except Empowered and the final nominees casts one sealed ballot for a final nominee. The higher total exits; Empowered chooses between the final nominees on an exact tie.",
   },
 } as const;
 
