@@ -53,6 +53,7 @@ describe("game MCP rules catalog", () => {
     expect(formats?.body).toContain("Highest Count");
     expect(formats?.body).toContain("Safety Bounce");
     expect(formats?.body).toContain("Two Names");
+    expect(formats?.body).toContain("living players other than Empowered (including either nominee)");
     expect(formats?.body).toContain("Empowerment is not immunity");
     expect(formats?.body).toContain("sealed");
     expect(formats?.body).toContain("Safety Bounce pointers");

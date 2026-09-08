@@ -173,7 +173,12 @@ describe("two names", () => {
     expect(isLegalTwoNamesInitialPair(["b", "b"], "a", living)).toBe(false);
     expect(isLegalTwoNamesInitialPair(["a", "b"], "a", living)).toBe(false);
     expect(isLegalTwoNamesInitialPair(["b", "z"], "a", living)).toBe(false);
-    expect(twoNamesOverrideCandidates(living)).toEqual(living);
+    expect(twoNamesOverrideCandidates(living, "a")).toEqual(["b", "c", "d", "e"]);
+    for (const empoweredId of living) {
+      const candidates = twoNamesOverrideCandidates(living, empoweredId);
+      expect(candidates).toEqual(living.filter((id) => id !== empoweredId));
+      expect(candidates).not.toContain(empoweredId);
+    }
     expect(twoNamesRemovalChoices(["b", "c"])).toEqual(["b", "c"]);
 
     expect(twoNamesReplacementCandidates({

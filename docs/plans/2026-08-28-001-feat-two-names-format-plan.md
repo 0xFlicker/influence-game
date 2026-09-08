@@ -47,7 +47,7 @@ Forcing that sequence through `sealed_elim` would weaken its voter and target in
 ### Nomination and Override lifecycle
 
 - R4. Empowered selects exactly two distinct living non-Empowered players as the initial names.
-- R5. The House draws one Override holder from the full living roster, including Empowered and both initial names, using rules-owned deterministic randomness and records the accepted holder canonically.
+- R5. The House draws one Override holder from the living roster excluding Empowered, with both initial names eligible, using rules-owned deterministic randomness and records the accepted holder canonically.
 - R6. Run the first full Format Mingle only after the initial names and Override holder are known to agents and viewers.
 - R7. The Override holder either declines or removes exactly one initial name; a named holder may remove themself.
 - R8. When Override is used, Empowered selects one living replacement other than Empowered, the Override holder, the removed nominee, or the retained nominee.

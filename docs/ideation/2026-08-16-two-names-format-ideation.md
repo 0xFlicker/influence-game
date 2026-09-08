@@ -18,7 +18,7 @@ The two-name version is the first target. A three-name version with an additiona
 1. The existing empowered vote remains unchanged.
 2. If the Empowered player selects **Two Names**, they remain **Empowered**; the format does not introduce a second power-role label or election.
 3. Empowered publicly submits two living players as the initial names.
-4. The House publicly draws one **Override holder** at random from all living players, including Empowered and both initial names.
+4. The House publicly draws one **Override holder** at random from living players other than Empowered, including both initial names.
 5. The first Mingle occurs after the two names and Override holder are known. The named players can seek safety, the Override holder can be lobbied, and Empowered can plan a possible replacement.
 6. The Override holder may remove either name or decline to use the Override. A named Override holder may remove themself.
 7. If the Override is used, Empowered immediately submits a replacement name.

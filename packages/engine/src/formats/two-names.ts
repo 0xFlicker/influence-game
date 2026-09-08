@@ -30,8 +30,9 @@ export function isLegalTwoNamesInitialPair(
 
 export function twoNamesOverrideCandidates(
   livingIds: readonly UUID[],
+  empoweredId: UUID,
 ): UUID[] {
-  return [...livingIds];
+  return livingIds.filter((playerId) => playerId !== empoweredId);
 }
 
 export function twoNamesRemovalChoices(
