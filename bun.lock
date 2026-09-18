@@ -60,6 +60,18 @@
         "typescript": "^5.8.3",
       },
     },
+    "packages/made-for-video": {
+      "name": "@influence/made-for-video",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@typescript-eslint/eslint-plugin": "^8.57.1",
+        "@typescript-eslint/parser": "^8.57.1",
+        "bun-types": "^1.3.10",
+        "eslint": "^10.0.3",
+        "typescript": "^5.8.3",
+      },
+    },
     "packages/prompt-lab-protocol": {
       "name": "@influence/prompt-lab-protocol",
       "version": "0.1.0",
@@ -395,6 +407,8 @@
     "@influence/api": ["@influence/api@workspace:packages/api"],
 
     "@influence/engine": ["@influence/engine@workspace:packages/engine"],
+
+    "@influence/made-for-video": ["@influence/made-for-video@workspace:packages/made-for-video"],
 
     "@influence/prompt-lab-protocol": ["@influence/prompt-lab-protocol@workspace:packages/prompt-lab-protocol"],
 

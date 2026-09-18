@@ -1,0 +1,23 @@
+{
+  "name": "@influence/made-for-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private producer workflows for turning House games into cinematic video studies",
+  "scripts": {
+    "export:producer": "bun run src/export-producer-transcript.ts",
+    "game-candidates": "bun run src/game-candidates.ts",
+    "scene-candidates": "bun run src/scene-candidates.ts",
+    "katana": "bun run src/katana-video.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.57.1",
+    "bun-types": "^1.3.10",
+    "eslint": "^10.0.3",
+    "typescript": "^5.8.3"
+  }
+}

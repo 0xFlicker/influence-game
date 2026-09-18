@@ -1,0 +1,11 @@
+# Raw producer exports may contain private thinking and strategy artifacts.
+captures/
+
+# Local image/video inputs, generated frames, render logs, and final cuts.
+inputs/
+renders/
+work/
+.work/
+
+# Build products.
+dist/
