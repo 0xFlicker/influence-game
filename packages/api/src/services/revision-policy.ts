@@ -4,7 +4,7 @@ import {
   type CompetitionRating,
 } from "./season-policy.js";
 
-export const REVISION_POLICY_VERSION = "agent-revision-v2";
+export const REVISION_POLICY_VERSION = "agent-revision-v3";
 
 export type RevisionMagnitude = "none" | "initial" | "small" | "material" | "execution";
 
@@ -13,6 +13,7 @@ export interface EffectiveAgentRuntimeSnapshot {
   personality: string;
   backstory: string | null;
   strategyInstructions: string | null;
+  performanceInstructions?: string | null;
   personaKey: string | null;
   model: string;
   providerProfileId: string;
@@ -50,7 +51,7 @@ export interface RevisionRecalibration {
 
 const SMALL_TEXT_DISTANCE = 0.15;
 const MATERIAL_TEXT_DISTANCE = 0.35;
-const BEHAVIOR_TEXT_FIELDS = ["personality", "backstory", "strategyInstructions"] as const;
+const BEHAVIOR_TEXT_FIELDS = ["personality", "backstory", "strategyInstructions", "performanceInstructions"] as const;
 const EXECUTION_FIELDS = [
   "model",
   "providerProfileId",
@@ -68,6 +69,7 @@ export function canonicalizeEffectiveRuntimeSnapshot(
     personality: canonicalText(snapshot.personality),
     backstory: canonicalNullableText(snapshot.backstory),
     strategyInstructions: canonicalNullableText(snapshot.strategyInstructions),
+    performanceInstructions: canonicalNullableText(snapshot.performanceInstructions ?? null),
     personaKey: canonicalNullableText(snapshot.personaKey),
     model: snapshot.model.trim(),
     providerProfileId: snapshot.providerProfileId.trim(),
@@ -87,6 +89,7 @@ export function fingerprintEffectiveRuntimeSnapshot(
     personality: canonical.personality,
     backstory: canonical.backstory,
     strategyInstructions: canonical.strategyInstructions,
+    performanceInstructions: canonical.performanceInstructions,
     personaKey: canonical.personaKey,
     model: canonical.model,
     providerProfileId: canonical.providerProfileId,

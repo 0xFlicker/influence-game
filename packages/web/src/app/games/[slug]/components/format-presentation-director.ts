@@ -383,6 +383,13 @@ export class PresentationDirector {
     return this.state.cues[this.state.cursor] ?? null;
   }
 
+  /** Base presentation time for timed overlays; freezes on pause and follows playback speed. */
+  getElapsedBaseMs(): number {
+    const duration = this.activeDurationMs();
+    const elapsed = this.timerId === null ? 0 : Math.max(0, this.clock.now() - this.scheduledAt) * this.state.speed;
+    return Math.max(0, Math.min(duration, duration - this.remainingBaseMs + elapsed));
+  }
+
   load(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);

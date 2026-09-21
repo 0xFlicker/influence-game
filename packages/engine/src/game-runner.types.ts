@@ -704,6 +704,7 @@ export type CompactStrategyApplicationResult =
   | CompactStrategyRejected;
 
 export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
+  cue?: import("./visual-mode").PerformanceCue | null;
   /**
    * Engine-only marker that this response came from a model-authored strategic
    * surface even when the offered strategy field was omitted. Provider and
@@ -1340,6 +1341,11 @@ export interface TwoNamesBoard {
 }
 
 export interface PhaseContext {
+  /** Present only for games explicitly created in Visual Mode. */
+  visual?: {
+    performanceInstructions: string;
+    room?: import("./visual-mode").AgentVisualContext;
+  };
   gameId: UUID;
   round: number;
   phase: Phase;

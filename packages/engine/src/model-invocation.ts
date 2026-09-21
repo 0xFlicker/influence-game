@@ -14,9 +14,17 @@ import type { ExactStructuredOutputArtifact } from "./structured-output";
 export interface ModelInvocationMessage {
   role: "system" | "developer" | "user" | "assistant" | "tool";
   content: string | null;
+  /** Image attachments are accepted only on user messages and by vision-capable models. */
+  images?: readonly ModelInvocationImage[];
   name?: string;
   toolCallId?: string;
   toolCalls?: readonly ModelInvocationToolCall[];
+}
+
+export interface ModelInvocationImage {
+  /** Trusted asset URL or an inline image data URL; never model-authored. */
+  url: string;
+  detail: "low" | "high" | "auto";
 }
 
 export interface ModelInvocationToolCall {

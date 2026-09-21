@@ -294,6 +294,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         personaKey: body.personaKey,
         gender: body.gender,
         avatarUrl: body.avatarUrl,
+        fullBodyReferenceUrl: body.fullBodyReferenceUrl,
+        performanceInstructions: body.performanceInstructions,
         creationRequestId: body.creationRequestId,
       });
       if (result.profile.avatarUrl || result.avatarCompletion) {
@@ -528,6 +530,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         personaKey: body.personaKey,
         gender: body.gender,
         avatarUrl: body.avatarUrl,
+        fullBodyReferenceUrl: body.fullBodyReferenceUrl,
+        performanceInstructions: body.performanceInstructions,
         sourceReviewId: body.sourceReviewId,
         expectedRevisionId: body.expectedRevisionId,
       });

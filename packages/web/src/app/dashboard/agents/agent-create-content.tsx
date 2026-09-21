@@ -182,7 +182,7 @@ export function buildRecoveredUpdate(
   remote: SavedAgent,
 ): UpdateAgentParams {
   const update: UpdateAgentParams = {};
-  const fields = ["name", "personality", "backstory", "strategyStyle", "personaKey", "gender", "avatarUrl"] as const;
+  const fields = ["name", "personality", "backstory", "strategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl"] as const;
   for (const field of fields) {
     const baseValue = comparableValue(baseline[field]);
     const localValue = comparableValue(local[field]);

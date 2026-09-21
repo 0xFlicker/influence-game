@@ -1,12 +1,15 @@
 {
   "name": "@influence/engine",
   "version": "0.8.1",
-  "description": "Influence game engine — core game logic, state machine, agents",
+  "description": "Influence game engine \u2014 core game logic, state machine, agents",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./visual-mode": "./src/visual-mode.ts",
+    "./visual-localization": "./src/visual-localization.ts",
+    "./visual-speech": "./src/visual-speech.ts",
     "./alliance-huddle-outcome": "./src/alliance-huddle-outcome.ts",
     "./agent-profile-contract": "./src/agent-profile-contract.ts",
     "./format-rules": "./src/format-rules.ts",
@@ -17,7 +20,8 @@
     "./prompt-thread-worker": "./src/prompt-thread-worker.ts",
     "./model-defaults": "./src/model-defaults.ts",
     "./viewer-presentation": "./src/viewer-decision-events.ts",
-    "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts"
+    "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts",
+    "./visual-scene-plan": "./src/visual-scene-plan.ts"
   },
   "scripts": {
     "simulate": "doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts",

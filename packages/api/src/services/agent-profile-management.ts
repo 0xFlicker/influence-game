@@ -70,6 +70,8 @@ const CREATE_AGENT_FIELDS = new Set([
   "strategyStyle",
   "gender",
   "avatarUrl",
+  "fullBodyReferenceUrl",
+  "performanceInstructions",
 ]);
 
 const UPDATE_AGENT_FIELDS = new Set([
@@ -81,6 +83,8 @@ const UPDATE_AGENT_FIELDS = new Set([
   "strategyStyle",
   "gender",
   "avatarUrl",
+  "fullBodyReferenceUrl",
+  "performanceInstructions",
   "sourceReviewId",
 ]);
 
@@ -168,6 +172,8 @@ export interface CreateAgentProfileMutationInput {
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
+  fullBodyReferenceUrl?: unknown;
+  performanceInstructions?: unknown;
   creationRequestId?: unknown;
 }
 
@@ -179,6 +185,8 @@ export interface UpdateAgentProfileMutationInput {
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
+  fullBodyReferenceUrl?: unknown;
+  performanceInstructions?: unknown;
   sourceReviewId?: unknown;
   expectedRevisionId?: unknown;
 }
@@ -244,6 +252,8 @@ export interface AgentSummary {
   strategyStyle: string | null;
   gender: AgentGender | null;
   avatarUrl: string | null;
+  fullBodyReferenceUrl: string | null;
+  performanceInstructions: string | null;
   stats: AgentStatsSummary;
   rating: AccountRatingSummary;
   currentRevision: AgentCurrentRevisionSummary | null;
@@ -414,6 +424,11 @@ function prepareAgentProfileCreate(
   if (!avatarUrl.ok) {
     throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
   }
+  const fullBodyReference = normalizeAgentAvatarUrlInput(input.fullBodyReferenceUrl, context.publicBaseUrl);
+  if (!fullBodyReference.ok) throw new AgentProfileManagementError("invalid_agent_input", `Invalid full-body reference: ${fullBodyReference.error}`, 400);
+  const fullBodyReferenceUrl = fullBodyReference.value ?? null;
+  const performanceInstructions = input.performanceInstructions === undefined ? null
+    : optionalStringField(input.performanceInstructions, "performanceInstructions", AGENT_PROFILE_LIMITS.performanceInstructions);
 
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -436,6 +451,8 @@ function prepareAgentProfileCreate(
         personaKey,
         gender,
         avatarUrl: avatarUrl.value ?? null,
+        fullBodyReferenceUrl,
+        performanceInstructions,
         avatarGenerationRequestId: context.avatarGenerationRequestId ?? null,
       })
     : null;
@@ -451,6 +468,8 @@ function prepareAgentProfileCreate(
     personaKey,
     gender,
     avatarUrl: avatarUrl.value ?? null,
+    fullBodyReferenceUrl,
+    performanceInstructions,
     gamesPlayed: 0,
     gamesWon: 0,
     createdAt: now,
@@ -870,6 +889,14 @@ function prepareAgentProfileUpdates(
   if (input.strategyStyle !== undefined) {
     updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   }
+  if (input.performanceInstructions !== undefined) {
+    updates.performanceInstructions = optionalStringField(input.performanceInstructions, "performanceInstructions", AGENT_PROFILE_LIMITS.performanceInstructions);
+  }
+  if (input.fullBodyReferenceUrl !== undefined) {
+    const reference = normalizeAgentAvatarUrlInput(input.fullBodyReferenceUrl, context.publicBaseUrl);
+    if (!reference.ok) throw new AgentProfileManagementError("invalid_agent_input", `Invalid full-body reference: ${reference.error}`, 400);
+    updates.fullBodyReferenceUrl = reference.value ?? null;
+  }
   if (input.personaKey !== undefined) {
     updates.personaKey = input.personaKey === null ? null : optionalArchetype(input.personaKey);
   }
@@ -897,7 +924,9 @@ function mutableAgentProfileChanged(left: AgentProfileRow, right: AgentProfileRo
     || left.strategyStyle !== right.strategyStyle
     || left.personaKey !== right.personaKey
     || left.gender !== right.gender
-    || left.avatarUrl !== right.avatarUrl;
+    || left.avatarUrl !== right.avatarUrl
+    || left.fullBodyReferenceUrl !== right.fullBodyReferenceUrl
+    || left.performanceInstructions !== right.performanceInstructions;
 }
 
 function profileMutationRead(
@@ -1034,6 +1063,8 @@ export async function createOwnedAgent(
     personaKey: archetype,
     gender: input.gender,
     avatarUrl: avatarUrl.value,
+    fullBodyReferenceUrl: input.fullBodyReferenceUrl,
+    performanceInstructions: input.performanceInstructions,
   });
   const { profile } = mutation;
 
@@ -1082,6 +1113,8 @@ export async function updateOwnedAgent(
   const agentId = requiredStringField(input.agentId, "agentId", 200);
   const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
   const updates: UpdateAgentProfileMutationInput = {};
+  if (input.fullBodyReferenceUrl !== undefined) updates.fullBodyReferenceUrl = input.fullBodyReferenceUrl;
+  if (input.performanceInstructions !== undefined) updates.performanceInstructions = input.performanceInstructions;
 
   if (input.displayName !== undefined) {
     updates.name = requiredStringField(input.displayName, "displayName", MAX_AGENT_DISPLAY_NAME_LENGTH);
@@ -1377,6 +1410,8 @@ function serializeAgent(
     strategyStyle: profile.strategyStyle,
     gender: profile.gender,
     avatarUrl: profile.avatarUrl,
+    fullBodyReferenceUrl: profile.fullBodyReferenceUrl,
+    performanceInstructions: profile.performanceInstructions,
     stats: {
       gamesPlayed: profile.gamesPlayed,
       wins: profile.gamesWon,

@@ -15,7 +15,7 @@ const originalEvent = globalThis.Event;
 const originalInputEvent = globalThis.InputEvent;
 const auth = { account: { id: "user-1" } } as InfluenceAuthState;
 const draftScope = "review:agent-1:review-1";
-const draftKey = `influence:agent-editor:1:user-1:${draftScope}`;
+const draftKey = `influence:agent-editor:2:user-1:${draftScope}`;
 const proposal = "Coordinate one primary vote and one fallback.";
 const draftStrategy = "Delay commitment and preserve three incompatible options.";
 
@@ -34,7 +34,7 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "Event", { configurable: true, value: domWindow.Event });
   Object.defineProperty(globalThis, "InputEvent", { configurable: true, value: domWindow.InputEvent });
   domWindow.sessionStorage.setItem(draftKey, JSON.stringify({
-    version: 1,
+    version: 2,
     savedAt: "2026-08-28T20:00:00.000Z",
     creationRequestId: "11111111-1111-4111-8111-111111111111",
     base: snapshot(proposal),
@@ -119,6 +119,8 @@ function snapshot(strategyStyle: string) {
     personaKey: "diplomat",
     gender: "non-binary",
     explicitAvatarUrl: "/avatars/arden.png",
+    performanceInstructions: "",
+    fullBodyReferenceUrl: null,
   };
 }
 

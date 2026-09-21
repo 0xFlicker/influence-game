@@ -3,6 +3,8 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Visual cue and image-input contracts are under development; this CLI does not
+ * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).
  *
  * Usage:
  *   bun run simulate

@@ -519,3 +519,13 @@ cd packages/api && bun run db:seed
 - [Agent Guide](AGENTS.md) -- repo-specific agent operating context
 - [Development Guide](DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
 - [Local Model Evaluation](docs/local-model-evaluation.md) -- LM Studio and local simulation workflow
+
+### Visual Mode implementation lane
+
+The Visual Mode branch currently contains durable rendering services and presentation components; game creation and runtime orchestration are still in development. See [Visual Mode](visual-mode.md) for current coverage. Do not enable visual games by directly editing persisted game configuration.
+
+`visual_render_operations` identifies immutable paid-work inputs. `visual_render_attempts` records each provider dispatch and retains receipts, image bytes or localization results. `visual_artifacts` holds immutable game-scoped pixels, and `visual_scenes` binds plans and accepted artifacts to presentation boundaries. Provider calls run outside database transactions.
+
+A reserved attempt without a receipt is uncertain after a restart. Do not delete its row or automatically repeat the call. Reconcile provider evidence and actual cost through `reconcileVisualAttempt`, then explicitly retry the failed operation generation through `retryVisualRender`. Both preserve history; late completions from prior generations are rejected. Scene recovery is separate (`retryVisualScene`) and cannot bypass uncertain paid-attempt recovery. These are service functions pending operator API/tool integration.
+
+Accounting currently distinguishes recorded cost, unpriced attempts and uncertain attempts. Automatic provider receipt pricing remains to implement; a null cost does not mean zero. Do not report the known-cost subtotal alone as total game spend.

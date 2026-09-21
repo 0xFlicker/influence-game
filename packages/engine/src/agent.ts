@@ -6,6 +6,8 @@
  */
 
 import { createHash, randomUUID } from "crypto";
+import { PERFORMANCE_CUE_SCHEMA, PERFORMANCE_CUE_GUIDANCE, decodePerformanceCue } from "./performance-cue";
+import { assertVisualAnchors, latestSceneCues, visualRoomForPhase } from "./visual-mode";
 import type OpenAI from "openai";
 import type {
   ChatCompletionTool,
@@ -1532,6 +1534,7 @@ function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] |
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
   const decisionId = normalizeNullableString(record.decisionId);
   return {
+    ...(Object.prototype.hasOwnProperty.call(record, "cue") ? { cue: decodePerformanceCue(record.cue) } : {}),
     ...(Object.prototype.hasOwnProperty.call(record, "strategyDelta")
       ? { strategyDelta: record.strategyDelta }
       : {}),
@@ -1601,7 +1604,13 @@ export interface InfluenceAgentOptions {
   providerManifest?: readonly LlmProviderRuntime[];
 }
 
+const VISUAL_CONVERSATION_ACTIONS = new Set([
+  "lobby", "room-message", "mingle-turn", "accusation", "tribunal-defense",
+  "opening-statement", "jury-question", "jury-answer", "closing-argument", "plea",
+]);
+
 type LlmCallOptions = {
+  visual?: PhaseContext["visual"];
   action?: string;
   reasoningOverhead?: number;
   reasoningEffort?: ModelReasoningEffort;
@@ -2412,8 +2421,26 @@ export class InfluenceAgent implements IAgent {
 
   private traceOptions(ctx: PhaseContext, options: LlmCallOptions): LlmCallOptions {
     const action = options.action ?? "unknown";
+    let visual = ctx.visual;
+    if (visual?.room) {
+      const roomId = VISUAL_CONVERSATION_ACTIONS.has(action)
+        ? visualRoomForPhase(ctx.phase, ctx.currentRoomId, ctx.endgameStage) : null;
+      if (!roomId) {
+        visual = { performanceInstructions: visual.performanceInstructions };
+      } else {
+        const scene = visual.room.scene;
+        if (scene.roomId !== roomId || !scene.participantIds.includes(ctx.selfId)) throw new Error("Visual context does not match the agent's room");
+        const visibleIds = roomId.startsWith("mingle-")
+          ? ctx.alivePlayers.filter((player) => ctx.roomMates?.includes(player.name)).map((player) => player.id)
+          : [...ctx.alivePlayers.map((player) => player.id), ...(roomId === "finals" ? (ctx.jury ?? []).map((member) => member.playerId) : [])];
+        if (scene.participantIds.some((id) => !visibleIds.includes(id))) throw new Error("Visual scene includes an occupant outside the agent's visible audience");
+        assertVisualAnchors(scene.anchors, scene.participantIds);
+        visual = { ...visual, room: { scene, cues: latestSceneCues(scene, visual.room.cues) } };
+      }
+    }
     return {
       ...options,
+      ...(visual && { visual }),
       privateTrace: options.privateTrace ?? this.privateTraceContext(ctx, action),
     };
   }
@@ -3466,7 +3493,8 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       if (result.pass) return null;
       const msg = result.message?.trim();
       if (!msg) return null;
-      return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext };
+      return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext,
+        ...normalizeStrategicDecisionMetadata(result) };
     } catch (error) {
       if (error instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(error);
@@ -6418,10 +6446,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       properties: {
         ...properties,
         ...(fragment?.properties ?? {}),
+        ...(options?.visual && { cue: PERFORMANCE_CUE_SCHEMA }),
       },
       required: [
         ...required,
         ...(requireStrategy ? fragment?.required ?? [] : []),
+        ...(options?.visual ? ["cue"] : []),
       ],
     };
   }
@@ -6489,7 +6519,11 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
     return {
-      messages,
+      messages: options?.visual ? [...messages, {
+        role: "user" as const,
+        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
+        ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
+      }] : messages,
       result,
       outputTokenLimit: effectiveMaxTokens,
       ...(effort || summary ? {
@@ -6590,12 +6624,18 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
           : requireNonEmptyString(record.strategyDelta, "strategyDelta");
       if (strategyIssue) return { status: "invalid", message: strategyIssue };
     }
+    let cue: import("./visual-mode").PerformanceCue | null | undefined;
+    if (options?.visual) {
+      try { cue = decodePerformanceCue(record.cue); }
+      catch (error) { return { status: "invalid", message: error instanceof Error ? error.message : "Invalid performance cue" }; }
+    }
     const metadata = normalizeStrategicDecisionMetadata(record);
     return {
       status: "valid",
       value: this.normalizeAgentResponseForCall({
         thinking: record.thinking,
         message: record.message.trim(),
+        ...(options?.visual && { cue }),
         ...metadata,
       }, options, metadata),
     };
@@ -6613,6 +6653,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const allowed = new Set([
       "thinking",
       "message",
+      ...(options?.visual ? ["cue"] : []),
       ...(boundary === "action_repair" ? ["strategy"] : boundary ? ["strategyDelta"] : []),
     ]);
     const unsupported = Object.keys(record).find((key) => !allowed.has(key));
@@ -6688,7 +6729,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         Record<string, unknown>,
         AgentResponse
       >({
-        action: `agent-response.${options?.action ?? "message"}.v1`,
+        action: `agent-response.${options?.action ?? "message"}.${options?.visual ? "visual." : ""}v1`,
         name: responseFormat.json_schema.name,
         schema: responseFormat.json_schema.schema,
         decodeProviderPayload: (payload) =>
@@ -6813,20 +6854,36 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const domainSchema = structuredClone(
       (requestTool.function.parameters ?? {}) as Record<string, unknown>,
     );
+    if (options?.visual) {
+      const properties = domainSchema.properties as Record<string, unknown>;
+      delete properties.cue;
+      domainSchema.required = (domainSchema.required as string[]).filter((key) => key !== "cue");
+    }
+    const decodeWithCue = <T,>(value: unknown, decode: (value: unknown) => StructuredDomainDecodeResult<T>): StructuredDomainDecodeResult<T> => {
+      if (!options?.visual) return decode(value);
+      if (!value || typeof value !== "object" || Array.isArray(value)) return { status: "invalid", message: "Visual turn must be an object" };
+      const { cue: rawCue, ...domain } = value as Record<string, unknown>;
+      let cue: import("./visual-mode").PerformanceCue | null;
+      try { cue = decodePerformanceCue(rawCue); }
+      catch (error) { return { status: "invalid", message: error instanceof Error ? error.message : "Invalid performance cue" }; }
+      const decoded = decode(domain);
+      if (decoded.status === "invalid") return decoded;
+      return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
+    };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
-      action: `agent-tool.${action}.v1`,
+      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v1`,
       name: requestTool.function.name,
       schema: (requestTool.function.parameters ?? {}) as Record<string, unknown>,
       acceptedValueUsesProviderSchema: false,
       decodeProviderPayload: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;
-        return semanticDecoder.decodeProvider(value);
+        return decodeWithCue(value, (payload) => semanticDecoder.decodeProvider(payload as TProviderValue));
       },
       decodeAcceptedValue: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;
-        return semanticDecoder.decodeAccepted(value, domainSchema);
+        return decodeWithCue(value, (payload) => semanticDecoder.decodeAccepted(payload, domainSchema));
       },
     });
     const providerCall = this.startProviderCall(options);

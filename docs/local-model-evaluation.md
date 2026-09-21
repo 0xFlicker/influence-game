@@ -8,6 +8,12 @@ Use this workflow to test LM Studio or another OpenAI-compatible local model ser
 
 ## Provider Configuration
 
+The native model-message contract supports user image attachments only for explicitly
+verified image-capable catalog entries: OpenAI Luna and Katana Grok 4.6. Unknown or
+text-only entries reject image-bearing invocations rather than dropping attachments.
+This is transport support; the in-progress [Visual Mode](visual-mode.md) integration
+is not yet exposed as a simulator or game-creation option.
+
 The engine and API read LLM provider settings through a shared OpenAI-compatible client helper.
 
 | Variable | Default | Notes |

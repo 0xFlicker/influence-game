@@ -1971,6 +1971,8 @@ export interface SavedAgent {
   personaKey: PersonaKey | null;
   gender?: AgentGender | null;
   avatarUrl: string | null;
+  fullBodyReferenceUrl?: string | null;
+  performanceInstructions?: string | null;
   gamesPlayed: number;
   gamesWon: number;
   profileRevisionId?: string | null;
@@ -2020,6 +2022,8 @@ export interface AgentProfileWriteParams {
   personaKey?: PersonaKey;
   gender: AgentGender;
   avatarUrl?: string;
+  fullBodyReferenceUrl?: string | null;
+  performanceInstructions?: string;
   avatarGenerationRequestId?: string;
 }
 

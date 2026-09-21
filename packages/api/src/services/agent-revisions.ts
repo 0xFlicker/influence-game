@@ -24,6 +24,7 @@ export interface AgentProfileRevisionSource {
   personality: string;
   backstory: string | null;
   strategyStyle: string | null;
+  performanceInstructions?: string | null;
   personaKey: string | null;
 }
 
@@ -63,6 +64,7 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
     personality: profile.personality,
     backstory: profile.backstory,
     strategyInstructions: profile.strategyStyle,
+    performanceInstructions: profile.performanceInstructions ?? null,
     personaKey: profile.personaKey,
     model: resolved.modelId,
     providerProfileId: resolved.providerProfile.id,
@@ -298,6 +300,7 @@ async function insertRevision(
       personality: input.effectiveRuntimeSnapshot.personality,
       backstory: input.effectiveRuntimeSnapshot.backstory,
       strategyInstructions: input.effectiveRuntimeSnapshot.strategyInstructions,
+      performanceInstructions: input.effectiveRuntimeSnapshot.performanceInstructions ?? null,
       personaKey: input.effectiveRuntimeSnapshot.personaKey,
     },
     effectiveRuntimeSnapshot: Object.fromEntries(Object.entries(input.effectiveRuntimeSnapshot)),
@@ -322,6 +325,7 @@ function parseEffectiveRuntimeSnapshot(value: Record<string, unknown>): Effectiv
     personality: value.personality as string,
     backstory: nullableString(value.backstory),
     strategyInstructions: nullableString(value.strategyInstructions),
+    performanceInstructions: nullableString(value.performanceInstructions),
     personaKey: nullableString(value.personaKey),
     model: value.model as string,
     providerProfileId: value.providerProfileId as string,

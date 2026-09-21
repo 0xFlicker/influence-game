@@ -11,6 +11,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   doublePrecision,
   foreignKey,
   index,
@@ -400,6 +401,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   currentRevisionId: text("current_revision_id")
     .references((): AnyPgColumn => agentRevisions.id, { onDelete: "restrict" }),
   avatarUrl: text("avatar_url"),
+  fullBodyReferenceUrl: text("full_body_reference_url"),
+  performanceInstructions: text("performance_instructions"),
   gamesPlayed: integer("games_played").notNull().default(0),
   gamesWon: integer("games_won").notNull().default(0),
   createdAt: text("created_at")
@@ -3433,4 +3436,69 @@ export const agentLearningEvents = pgTable("agent_learning_events", {
     )
   `),
   check("agent_learning_events_payload_check", sql`jsonb_typeof(${table.payload}) = 'object'`),
+]);
+
+// Paid visual requests retain their pixels and receipts atomically. These are
+// source artifacts; public scene publication is a separate verified operation.
+const visualBytes = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+export const visualRenderOperations = pgTable("visual_render_operations", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  operationKey: text("operation_key").notNull(),
+  inputHash: text("input_hash").notNull(),
+  generation: integer("generation").notNull().default(1),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [unique("visual_render_operations_key_unique").on(table.gameId, table.operationKey)]);
+
+export const visualRenderAttempts = pgTable("visual_render_attempts", {
+  id: text("id").primaryKey(),
+  operationId: text("operation_id").notNull().references(() => visualRenderOperations.id, { onDelete: "cascade" }),
+  generation: integer("generation").notNull(),
+  provider: text("provider").notNull().$type<"openai" | "xai">(),
+  model: text("model").notNull(),
+  requestHash: text("request_hash").notNull(),
+  receipt: jsonb("receipt").$type<import("../services/visual-image-provider.js").VisualImageReceipt>(),
+  image: visualBytes("image"),
+  imageHash: text("image_hash"),
+  localization: jsonb("localization").$type<import("@influence/engine/visual-localization").VisualLocalization>(),
+  /** Null means not yet priced; it must never be reported as zero spend. */
+  costMicrousd: bigint("cost_microusd", { mode: "number" }),
+  reconciliation: jsonb("reconciliation").$type<{ operatorId: string; note: string; at: string }>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  finishedAt: text("finished_at"),
+}, (table) => [
+  unique("visual_render_attempts_dispatch_unique").on(table.operationId, table.generation, table.provider),
+  check("visual_render_attempts_generation_check", sql`${table.generation} > 0`),
+  check("visual_render_attempts_provider_check", sql`${table.provider} IN ('openai', 'xai')`),
+  check("visual_render_attempts_image_check", sql`(${table.image} IS NULL) = (${table.imageHash} IS NULL)`),
+  check("visual_render_attempts_cost_check", sql`${table.costMicrousd} IS NULL OR ${table.costMicrousd} >= 0`),
+]);
+
+export const visualArtifacts = pgTable("visual_artifacts", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  contentHash: text("content_hash").notNull(),
+  image: visualBytes("image").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [unique("visual_artifacts_content_unique").on(table.gameId, table.contentHash)]);
+
+export const visualScenes = pgTable("visual_scenes", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  roomId: text("room_id").notNull().$type<import("@influence/engine/visual-mode").VisualRoomId>(),
+  boundarySequence: integer("boundary_sequence").notNull(),
+  plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
+  planHash: text("plan_hash").notNull(),
+  status: text("status").notNull().$type<"preparing" | "ready" | "failed">().default("preparing"),
+  imageArtifactId: text("image_artifact_id").references(() => visualArtifacts.id),
+  annotatedArtifactId: text("annotated_artifact_id").references(() => visualArtifacts.id),
+  anchors: jsonb("anchors").$type<import("@influence/engine/visual-mode").VisualPlayerAnchor[]>(),
+  failure: text("failure"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  unique("visual_scenes_boundary_unique").on(table.gameId, table.roomId, table.boundarySequence),
+  check("visual_scenes_status_check", sql`${table.status} IN ('preparing', 'ready', 'failed')`),
+  check("visual_scenes_ready_check", sql`${table.status} <> 'ready' OR (${table.imageArtifactId} IS NOT NULL AND ${table.annotatedArtifactId} IS NOT NULL AND ${table.anchors} IS NOT NULL)`),
 ]);

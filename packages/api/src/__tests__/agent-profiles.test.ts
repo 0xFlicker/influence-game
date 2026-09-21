@@ -159,6 +159,39 @@ describe("Agent Profile API", () => {
     ({ app, db, tokenA, tokenB } = await setupApp());
   });
 
+  test("persists visual profile fields and protects performance edits from stale saves", async () => {
+    const create = await app.request("/api/agent-profiles", jsonReq({
+      name: "Visual Maris", personality: "A patient mediator.",
+      fullBodyReferenceUrl: "https://example.com/maris-full.png",
+      performanceInstructions: "Upright posture, quiet delivery, deliberate open-handed gestures.",
+    }, tokenA));
+    expect(create.status).toBe(201);
+    const original = await create.json() as { id: string; profileRevisionId: string };
+    const updated = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
+      performanceInstructions: "Relaxed posture. Speaks softly, pauses before answering, avoids eye contact when nervous.",
+      expectedRevisionId: original.profileRevisionId,
+    }, tokenA, "PATCH"));
+    expect(updated.status).toBe(200);
+    const value = await updated.json() as { profileRevisionId: string; fullBodyReferenceUrl: string };
+    expect(value.fullBodyReferenceUrl).toBe("https://example.com/maris-full.png");
+    expect(value.profileRevisionId).not.toBe(original.profileRevisionId);
+    const stale = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
+      performanceInstructions: "Old tab instructions", expectedRevisionId: original.profileRevisionId,
+    }, tokenA, "PATCH"));
+    expect(stale.status).toBe(409);
+    const foreign = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({ fullBodyReferenceUrl: null }, tokenB, "PATCH"));
+    expect(foreign.status).toBe(404);
+  });
+
+  test("rejects overlong or non-text visual performance instructions", async () => {
+    for (const performanceInstructions of ["x".repeat(2001), { behavior: "bad shape" }]) {
+      const response = await app.request("/api/agent-profiles", jsonReq({
+        name: "Visual Maris", personality: "A patient mediator.", performanceInstructions,
+      }, tokenA));
+      expect(response.status).toBe(400);
+    }
+  });
+
   // =========================================================================
   // Auth enforcement
   // =========================================================================

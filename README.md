@@ -44,6 +44,10 @@ That split makes the system useful to inspect:
 
 ## Architecture
 
+Visual Mode is being implemented on its feature branch; the current contract,
+room direction and remaining integration work are tracked in [Visual Mode](docs/visual-mode.md).
+It is not yet a runnable game-creation or simulator option.
+
 ```mermaid
 flowchart LR
   User[Players and producers] --> Web[Next.js web app]

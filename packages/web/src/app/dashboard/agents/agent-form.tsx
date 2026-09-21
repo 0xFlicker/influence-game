@@ -23,7 +23,7 @@ import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 2;
 
 export interface StrategyComparison {
   baseline: string;
@@ -46,13 +46,15 @@ interface EditorSnapshot {
   backstory: string;
   personality: string;
   strategyStyle: string;
+  performanceInstructions: string;
+  fullBodyReferenceUrl: string | null;
   personaKey: PersonaKey | null;
   gender: AgentGender | "";
   explicitAvatarUrl?: string;
 }
 
 interface StoredEditorDraft {
-  version: 1;
+  version: 2;
   savedAt: string;
   base: EditorSnapshot;
   current: EditorSnapshot;
@@ -87,6 +89,8 @@ function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
     && left.backstory === right.backstory
     && left.personality === right.personality
     && left.strategyStyle === right.strategyStyle
+    && left.performanceInstructions === right.performanceInstructions
+    && left.fullBodyReferenceUrl === right.fullBodyReferenceUrl
     && left.personaKey === right.personaKey
     && left.gender === right.gender
     && left.explicitAvatarUrl === right.explicitAvatarUrl;
@@ -130,6 +134,8 @@ export function AgentForm({
     backstory: initial?.backstory ?? "",
     personality: initial?.personality ?? "",
     strategyStyle: initialStrategy,
+    performanceInstructions: initial?.performanceInstructions ?? "",
+    fullBodyReferenceUrl: initial?.fullBodyReferenceUrl ?? null,
     personaKey: initialPersona,
     gender: initial?.gender ?? "",
     explicitAvatarUrl: initial?.avatarUrl ?? undefined,
@@ -139,6 +145,8 @@ export function AgentForm({
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
   const [personality, setPersonality] = useState(initialSnapshot.personality);
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
+  const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
+  const [fullBodyReferenceUrl, setFullBodyReferenceUrl] = useState(initialSnapshot.fullBodyReferenceUrl);
   const [personaKey, setPersonaKey] = useState<PersonaKey | null>(initialSnapshot.personaKey);
   const [gender, setGender] = useState<AgentGender | "">(initialSnapshot.gender);
   const [explicitAvatarUrl, setExplicitAvatarUrl] = useState<string | undefined>(initialSnapshot.explicitAvatarUrl);
@@ -147,7 +155,9 @@ export function AgentForm({
   const [creationRequestId, setCreationRequestId] = useState(createRequestId);
   const [profileGenerating, setProfileGenerating] = useState(false);
   const [portraitStarting, setPortraitStarting] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [portraitUploading, setUploading] = useState(false);
+  const [fullBodyUploading, setFullBodyUploading] = useState(false);
+  const uploading = portraitUploading || fullBodyUploading;
   const [submitting, setSubmitting] = useState(false);
   const [personaExpanded, setPersonaExpanded] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -177,10 +187,12 @@ export function AgentForm({
     backstory,
     personality,
     strategyStyle,
+    performanceInstructions,
+    fullBodyReferenceUrl,
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle]);
+  }), [backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const draftStorageKey = account?.id
     ? `influence:agent-editor:${DRAFT_VERSION}:${account.id}:${draftScope}`
@@ -285,6 +297,8 @@ export function AgentForm({
     setBackstory(pendingRestore.current.backstory);
     setPersonality(pendingRestore.current.personality);
     setStrategyStyle(pendingRestore.current.strategyStyle);
+    setPerformanceInstructions(pendingRestore.current.performanceInstructions);
+    setFullBodyReferenceUrl(pendingRestore.current.fullBodyReferenceUrl);
     setPersonaKey(pendingRestore.current.personaKey);
     setGender(pendingRestore.current.gender);
     setExplicitAvatarUrl(pendingRestore.current.explicitAvatarUrl);
@@ -397,6 +411,8 @@ export function AgentForm({
         personality: personality.trim(),
         backstory: backstory.trim(),
         strategyStyle: strategyStyle.trim(),
+        performanceInstructions: performanceInstructions.trim(),
+        fullBodyReferenceUrl,
         personaKey: personaKey ?? undefined,
         gender: gender as AgentGender,
         avatarUrl: explicitAvatarUrl === initial?.avatarUrl ? undefined : explicitAvatarUrl,
@@ -550,6 +566,15 @@ export function AgentForm({
           <section className="influence-panel order-4 rounded-2xl p-5 sm:p-6">
             <div className="flex items-end justify-between gap-4"><div><label htmlFor="agent-backstory" className="text-base font-semibold text-text-primary">Backstory <span className="text-sm font-normal text-white/35">optional</span></label><p id="agent-backstory-help" className="mt-1 text-sm leading-6 text-white/45">The history and motivation behind the Agent.</p></div><span className="font-mono text-xs tabular-nums text-white/40">{backstory.length}/{AGENT_PROFILE_LIMITS.backstory}</span></div>
             <GrowingTextarea id="agent-backstory" value={backstory} onChange={(event) => setBackstory(event.target.value)} placeholder="Where did this Agent come from, and what drives them?" maxLength={AGENT_PROFILE_LIMITS.backstory} aria-describedby="agent-backstory-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
+          </section>
+          <section className="influence-panel order-5 rounded-2xl p-5 sm:p-6">
+            <label htmlFor="agent-performance" className="text-base font-semibold text-text-primary">Character performance</label>
+            <p id="agent-performance-help" className="mt-1 text-sm leading-6 text-white/45">How your character carries themselves: posture, gestures, mannerisms, movement and vocal delivery.</p>
+            <GrowingTextarea id="agent-performance" value={performanceInstructions} onChange={(event) => setPerformanceInstructions(event.target.value)} maxLength={AGENT_PROFILE_LIMITS.performanceInstructions} aria-describedby="agent-performance-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
+            <div className="mt-5">
+              <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
+              <AvatarUpload currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={setFullBodyReferenceUrl} onUploadingChange={setFullBodyUploading} presentation="full-body" />
+            </div>
           </section>
         </main>
       </div>

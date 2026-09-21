@@ -7051,3 +7051,53 @@ describe("Two Names canonical prompt board", () => {
     }
   });
 });
+
+describe("Visual Mode performance cues", () => {
+  const cue = { behavior: "Opens both hands.", delivery: "Calm and measured.", intendedAction: "" };
+  function visualAgent(payload: string, requests: Array<Record<string, unknown>>) {
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, payload), "gpt-5.6-luna");
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    return agent;
+  }
+  it("accepts a structured observable cue alongside speech without changing game strategy", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = visualAgent(JSON.stringify({ thinking: "Make a good introduction.", message: "Good to meet you.", strategyDelta: null, cue }), requests);
+    const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "Use restrained open-handed gestures." } });
+    expect(result.message).toBe("Good to meet you.");
+    expect(result.cue).toEqual(cue);
+    expect(result.strategyDelta).toBeNull();
+    expect(requests).toHaveLength(1);
+  });
+  it("rejects another room's occupants before dispatching image input", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = visualAgent("{}", requests);
+    const ctx: PhaseContext = { ...makeContext(Phase.MINGLE), currentRoomId: 1, roomMates: ["Atlas", "Mira"], visual: {
+      performanceInstructions: "Quiet",
+      room: { scene: { id: "scene-1", roomId: "mingle-1", version: 1, imageUrl: "https://example.com/clean.png", annotatedImageUrl: "https://example.com/numbered.png",
+        participantIds: ["atlas-id", "vera-id"], anchors: ["atlas-id", "vera-id"].map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear", head: { x: index * 0.2, y: 0.2, width: 0.1, height: 0.1 } })) }, cues: [] },
+    } };
+    await expect(agent.sendRoomMessage(ctx, ["Atlas", "Mira"])).rejects.toThrow("visible audience");
+    expect(requests).toHaveLength(0);
+  });
+  it("keeps diary cues but omits room imagery even when the enclosing phase is Lobby", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = visualAgent(JSON.stringify({ thinking: "Reflect.", message: "I am listening carefully.", strategyDelta: null, cue }), requests);
+    const result = await agent.getDiaryEntry({ ...makeContext(Phase.LOBBY), visual: {
+      performanceInstructions: "Quiet delivery.", room: { scene: { id: "room-scene", roomId: "lobby", version: 1,
+        imageUrl: "https://example.com/clean.png", annotatedImageUrl: "https://example.com/private-room.png", participantIds: [], anchors: [] }, cues: [] },
+    } }, "How do you feel?");
+    expect(result.cue).toEqual(cue);
+    expect(requests).toHaveLength(1);
+    expect(JSON.stringify(requests)).not.toContain("private-room.png");
+  });
+  it("does not accept malformed cue fields as successful visual speech", async () => {
+    for (const invalid of [{}, { ...cue, hiddenStrategy: "secret" }, { ...cue, behavior: 12 }, undefined]) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = visualAgent(JSON.stringify({ thinking: "test", message: "Must not be accepted.", strategyDelta: null, cue: invalid }), requests);
+      const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "Quiet delivery." } });
+      expect(result.providerAbsence?.kind).toBe("provider_exhausted");
+      expect(result.message).toBe("");
+      expect(requests).toHaveLength(2);
+    }
+  });
+});

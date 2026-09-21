@@ -70,7 +70,7 @@ describe("Dual Crown schema", () => {
       ordinal: 1,
       trigger: "initial_backfill",
       magnitude: "initial",
-      revisionPolicyVersion: "agent-revision-v2",
+      revisionPolicyVersion: "agent-revision-v3",
     });
     expect(revisions[0]!.effectiveRuntimeSnapshot).toMatchObject({
       model: "gpt-5.6-luna",

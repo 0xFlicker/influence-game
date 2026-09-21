@@ -702,3 +702,15 @@ A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` 
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries model-side reasoning evidence when available (via `as T & { reasoningContext?: string }` intersections only — never `as any`). For local models this is native `reasoningContext`; for hosted OpenAI Responses calls it can be a labeled provider summary display. Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.
+
+## Visual scene plan and accepted scene
+
+An optional Visual Mode scene plan stages a canonical set of participants against a versioned room background and frozen character references. Intended furniture positions guide generation; observed head anchors come from verification of the final pixels. A plan is not an accepted scene until every participant is localized clearly. Scene versions bind to presentation boundaries. Returning to an unchanged arrangement reuses accepted artifacts, and empty rooms reuse their background. Performance cues inform subsequent required renders but do not invalidate scenes or execute game actions.
+
+## Visual paid-attempt journal
+
+A durable reservation written before image generation or localization leaves the process. Receipt, generated pixels or verified localization are retained atomically. A missing response or a server failure leaves a potentially charged attempt requiring reconciliation before a same-operation retry. Provider fallback is a separate recorded attempt. Unpriced work is reported separately from known spend; missing price information is never represented as a free request.
+
+## Timed visual speech
+
+One visible speech bubble per displayed room or portrait beat, with duration proportional to accepted message length. Its lifetime follows the presentation clock, including pause, speed changes and seeking. Room selection does not restart expired bubbles. Speech cannot be anchored to a different scene version, and anonymous speech has no identity anchor.

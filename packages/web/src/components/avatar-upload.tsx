@@ -14,6 +14,7 @@ interface AvatarUploadProps {
   onUploaded: (publicUrl: string) => void;
   onUploadingChange?: (uploading: boolean) => void;
   size?: "16" | "32";
+  presentation?: "portrait" | "full-body";
 }
 
 export function AvatarUpload({
@@ -23,6 +24,7 @@ export function AvatarUpload({
   onUploaded,
   onUploadingChange,
   size = "16",
+  presentation = "portrait",
 }: AvatarUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const localPreviewRef = useRef<string | null>(null);
@@ -82,14 +84,19 @@ export function AvatarUpload({
   return (
     <div className="flex flex-col items-center gap-2">
       <div className="relative">
-        <AgentAvatarPreview
+        {presentation === "full-body" ? (
+          displayUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- owner-uploaded reference, preserve entire framing
+            <img src={displayUrl} alt={`${name || "Agent"} full-body reference`} className="h-64 w-44 rounded-lg bg-black/20 object-contain" />
+          ) : <div className="flex h-64 w-44 items-center justify-center rounded-lg border border-white/15 p-4 text-center text-sm text-white/45">Upload a full-body reference</div>
+        ) : <AgentAvatarPreview
           avatarUrl={displayUrl}
           personaKey={persona}
           name={name}
           gamesPlayed={null}
           gamesWon={null}
           size={size}
-        />
+        />}
         {uploading && (
           <div
             className="pointer-events-none absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-500 animate-spin"
@@ -112,7 +119,7 @@ export function AvatarUpload({
         disabled={uploading}
         className="min-h-11 rounded-lg px-3 text-xs font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
       >
-        {uploading ? "Uploading..." : "Change portrait"}
+        {uploading ? "Uploading..." : presentation === "full-body" ? "Change full-body reference" : "Change portrait"}
       </button>
 
       {error && <p role="alert" className="text-red-400 text-xs text-center max-w-48">{error}</p>}

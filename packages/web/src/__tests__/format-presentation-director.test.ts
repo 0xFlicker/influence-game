@@ -122,6 +122,27 @@ function cue(
 }
 
 describe("presentation director", () => {
+  it("keeps speech elapsed time consistent through pause, speed changes and seeking", () => {
+    const clock = new FakeClock();
+    const director = createPresentationDirector({ clock });
+    director.load([cue("speech:1", 1), cue("speech:2", 2)]);
+    director.play();
+    clock.tick(250);
+    expect(director.getElapsedBaseMs()).toBe(250);
+    director.pause();
+    clock.tick(500);
+    expect(director.getElapsedBaseMs()).toBe(250);
+    director.setSpeed(2);
+    director.play();
+    clock.tick(100);
+    expect(director.getElapsedBaseMs()).toBe(450);
+    director.seek(1);
+    expect(director.getElapsedBaseMs()).toBe(0);
+    clock.tick(500);
+    expect(director.getElapsedBaseMs()).toBe(1_000);
+    director.dispose();
+  });
+
   it("uses one fake-clock timer for classic and format cues", () => {
     const clock = new FakeClock();
     const director = createPresentationDirector({ clock });
