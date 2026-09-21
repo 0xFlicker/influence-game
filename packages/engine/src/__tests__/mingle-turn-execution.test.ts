@@ -19,6 +19,9 @@ import {
 import type { PhaseRunnerContext } from "../phases/phase-runner-context";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase, type UUID } from "../types";
+import { TemplateHouseInterviewer } from "../house-interviewer";
+import { MockAgent } from "./mock-agent";
+import { beginMingleWindow, advanceMingleWindow, finishMingleWindow, type MingleWindowState } from "../phases/mingle";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 import {
   applyStrategyCandidate,
@@ -137,6 +140,26 @@ function harness() {
 }
 
 describe("shared Mingle turn execution", () => {
+  test("resumes a serialized beat boundary without mutating the prior window", async () => {
+    const { ctx } = harness();
+    ctx.config = { ...DEFAULT_CONFIG, mingleSessionsPerRound: 2 };
+    ctx.agents = new Map(PLAYERS.map((player) => [player.id, new MockAgent(player.id, player.name)]));
+    ctx.houseInterviewer = new TemplateHouseInterviewer();
+    const initial = await beginMingleWindow(ctx, Phase.FORMAT_MINGLE);
+    expect(initial).not.toBeNull();
+    const serialized = JSON.stringify(initial);
+    const first = await advanceMingleWindow(ctx, initial!);
+    expect(JSON.stringify(initial)).toBe(serialized);
+    expect(first.nextBeat).toBe(2);
+    await expect(finishMingleWindow(ctx, first)).rejects.toThrow("every beat");
+    const restored: MingleWindowState = JSON.parse(JSON.stringify(first));
+    const second = await advanceMingleWindow(ctx, restored);
+    expect(second.nextBeat).toBe(3);
+    expect(restored.nextBeat).toBe(2);
+    await finishMingleWindow(ctx, second);
+    expect(ctx.gameState.getRoomAllocations(ctx.gameState.round)?.rooms).toEqual(second.allRooms);
+    await expect(advanceMingleWindow(ctx, second)).rejects.toThrow("no pending beat");
+  });
   test("initializes the live/evaluation boundary and preserves inbox/current-beat semantics", async () => {
     const { ctx, a, b, logger, mingleInbox, contextBuilder } = harness();
     const initialized = initializeMingleExecution(ctx, Phase.MINGLE_I);

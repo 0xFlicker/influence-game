@@ -95,6 +95,14 @@ export interface GameStateSnapshot {
 }
 
 export interface GameRunnerOptions {
+  /** Await verified visual context before an agent call. Requires atomic durable turns. */
+  prepareVisualTurn?: (input: {
+    context: PhaseContext;
+    method: string;
+    turnId: string;
+    committedHeads: import("./durable-game-turn").GameTurnHeadsV1;
+    committedCursor: GameExecutionCursorV1;
+  }) => Promise<NonNullable<PhaseContext["visual"]>>;
   /** Optional external run identity, used by API-backed games before the first canonical event. */
   gameId?: UUID;
   /**

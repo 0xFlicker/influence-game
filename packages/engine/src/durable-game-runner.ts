@@ -17,6 +17,8 @@ import type {
 import type {
   DurableGameTurnSnapshotV1,
   GameStreamEvent,
+  GameRunnerOptions,
+  PhaseContext,
   IAgent,
   PlayerContinuityCapsule,
   TranscriptEntry,
@@ -186,6 +188,8 @@ function stagedAgent(
   providerBindings: readonly GameTurnIntentV1["providerSubcalls"][number][],
   providerTurnId: string | null,
   acceptedProviderCallIds: Set<string>,
+  isActive: () => boolean,
+  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1 },
 ): { agent: IAgent; readCapsule: () => PlayerContinuityCapsule | null } {
   let capsule = initial ? structuredClone(initial) : null;
   let compactStrategy = capsule
@@ -253,8 +257,22 @@ function stagedAgent(
       const value: unknown = Reflect.get(target, property);
       if (typeof value !== "function") return value;
       if (!STAGED_AGENT_METHODS.has(property)) return value.bind(target);
-      return (...args: unknown[]) => {
+      return async (...args: unknown[]) => {
+        if (!isActive()) throw new Error("Durable scratch turn is no longer active");
         const providerBinding = providerBindings[providerBindingIndex++] ?? null;
+        if (visual) {
+          const context = args[0] as PhaseContext | undefined;
+          if (!providerTurnId || !context || context.selfId !== agent.id || context.gameId !== visual.committed.execution.gameId) {
+            throw new Error("Visual agent turn does not match its durable game boundary");
+          }
+          const prepared = await visual.prepare({
+            context: structuredClone(context), method: String(property), turnId: providerTurnId,
+            committedHeads: structuredClone(visual.committed.execution.heads),
+            committedCursor: structuredClone(visual.committed.execution.cursor),
+          });
+          if (!isActive()) throw new Error("Durable scratch turn ended during scene preparation");
+          args[0] = { ...context, visual: structuredClone(prepared) };
+        }
         const semanticCoordinate = providerBinding && providerTurnId
           ? durableProviderSemanticCoordinateForSubcall(providerTurnId, providerBinding)
           : null;
@@ -283,11 +301,14 @@ export function createStagedAgents(
   continuity: readonly PlayerContinuityCapsule[],
   providerSubcalls: readonly GameTurnIntentV1["providerSubcalls"][number][] = [],
   providerTurnId: string | null = null,
+  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1 },
 ): {
   agents: Map<UUID, IAgent>;
   readContinuity: () => PlayerContinuityCapsule[];
   readAcceptedProviderCallIds: () => string[];
+  stop: () => void;
 } {
+  let active = true;
   const capsules = new Map(continuity.map((entry) => [entry.playerId, entry]));
   const providerBindingsByActor = new Map<string, GameTurnIntentV1["providerSubcalls"][number][]>();
   for (const entry of providerSubcalls) {
@@ -306,6 +327,8 @@ export function createStagedAgents(
       providerBindingsByActor.get(id) ?? [],
       providerTurnId,
       acceptedProviderCallIds,
+      () => active,
+      visual,
     );
     staged.set(id, wrapped.agent);
     readers.push(wrapped.readCapsule);
@@ -317,6 +340,7 @@ export function createStagedAgents(
       return value ? [value] : [];
     }),
     readAcceptedProviderCallIds: () => [...acceptedProviderCallIds],
+    stop: () => { active = false; },
   };
 }
 

@@ -224,6 +224,7 @@ export class GameRunner {
   private readonly resumeFrom?: GameRunnerOptions["resumeFrom"];
   private readonly random?: () => number;
   private readonly durableTurnStore?: DurableGameTurnStore;
+  private readonly prepareVisualTurn?: GameRunnerOptions["prepareVisualTurn"];
   private durableTurnSnapshot: DurableGameTurnSnapshotV1 | null = null;
   private agentsStarted = false;
   private durablePreparation: Promise<void> | null = null;
@@ -294,6 +295,10 @@ export class GameRunner {
       );
     }
     this.durableTurnStore = options.durableTurnStore;
+    if (options.prepareVisualTurn && !options.durableTurnStore) {
+      throw new Error("Visual Mode requires durable turn authority");
+    }
+    this.prepareVisualTurn = options.prepareVisualTurn;
     this.durableEventSink = options.durableEventSink;
     this.durableCheckpointSink = options.durableCheckpointSink;
     this.beforeAcceptedCommit = options.beforeAcceptedCommit;
@@ -1267,6 +1272,7 @@ export class GameRunner {
         (subcall) => subcall.actorId !== null && boundProviderActorIds.has(subcall.actorId),
       ),
       intent.turnId,
+      this.prepareVisualTurn ? { prepare: this.prepareVisualTurn, committed: base } : undefined,
     );
     const actorCoordinate = this.actorCoordinateFromDurableSnapshot(base);
     const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
@@ -1342,7 +1348,7 @@ export class GameRunner {
         playerContinuityCapsules: stagedAgents.readContinuity(),
         acceptedProviderCallIds: stagedAgents.readAcceptedProviderCallIds(),
       }),
-      stop: () => actor.stop(),
+      stop: () => { stagedAgents.stop(); actor.stop(); },
     };
   }
 
