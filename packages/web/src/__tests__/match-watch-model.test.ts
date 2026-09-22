@@ -8,6 +8,10 @@ import type {
   WsViewerEvent,
 } from "../lib/api";
 import { createEdgeSmokeDuskEvents, Phase, projectViewerDecisionEvent } from "@influence/engine";
+import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
+import { formatSnapshotForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import type { FormatPresentationSnapshot } from "../app/games/[slug]/components/types";
 import {
   advancePresentationHydrationFailure,
   applyStructuredPostVotePressureSummaries,
@@ -776,10 +780,8 @@ describe("match watch model", () => {
       ["Empowered", "Shielded"],
       ["Exposed x2", "Shielded"],
     ]);
-    expect(format.players.map((card) => card.statusTags.map((tag) => tag.label))).toEqual([
-      ["Empowered"],
-      [],
-    ]);
+    // Format roles wait for the staged snapshot, including Empowered.
+    expect(format.players.map((card) => card.statusTags)).toEqual([[], []]);
     expect(format.phaseSegments.map((segment) => segment.key)).toEqual([
       "INTRODUCTION",
       "LOBBY",
@@ -1308,5 +1310,65 @@ describe("match watch model", () => {
     expect(model.phaseSegments.map((segment) => segment.key)).toContain("WHISPER");
     expect(model.phaseSegments.find((segment) => segment.key === "WHISPER")?.state).toBe("current");
     expect(model.phaseSegments.map((segment) => segment.key)).not.toContain("MINGLE");
+  });
+});
+
+describe("format cast roles follow the presented snapshot", () => {
+  const fixture = createFormatKernelViewerScenario("two_names_used_tie");
+  const decisions = fixture.decisions.filter((event) => event.sequence <= 7).map((event) => {
+    if (event.type === "format.two_names_setup") {
+      return { ...event, payload: { ...event.payload, overrideHolderId: "lyra" } };
+    }
+    if (event.type === "format.two_names_override_used") {
+      return { ...event, payload: { ...event.payload, overrideHolderId: "lyra" } };
+    }
+    return event;
+  });
+  const compilation = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: fixture.roster, decisions });
+  const players = fixture.roster.map((player) => ({ ...player, persona: "strategic", status: "alive" as const, shielded: false }));
+  const game = { ...baseGame(), gameKernel: "format" as const, players };
+  function cards(snapshot: FormatPresentationSnapshot | null, round = 2, phase: PhaseKey = "FORMAT_MINGLE", live = false) {
+    return buildMatchWatchModel({ game, messages: [], live, playbackState: { round, phase, players, visibleMessages: [], formatSnapshot: snapshot } }).players;
+  }
+  function labels(snapshot: FormatPresentationSnapshot | null, live = false) {
+    return Object.fromEntries(cards(snapshot, 2, "FORMAT_MINGLE", live).map((card) => [card.player.id, card.statusTags.map((tag) => tag.label)]));
+  }
+  function snapshotAt(kind: string) {
+    const cursor = compilation.cues.findIndex((cue) => cue.kind === kind);
+    expect(cursor).toBeGreaterThanOrEqual(0);
+    return formatSnapshotForPresentationCursor(compilation.cues, cursor, 2);
+  }
+
+  it("reveals nominees and Override separately even at the same canonical sequence, and rewinds", () => {
+    expect(compilation.status).toBe("ready");
+    for (const live of [false, true]) {
+      expect(labels(snapshotAt("two_names_empowered_intro"), live)).toMatchObject({ atlas: ["Empowered"], lyra: [], echo: [] });
+      expect(labels(snapshotAt("two_names_initial_names"), live)).toMatchObject({ atlas: ["Empowered"], lyra: ["Nominee"], echo: ["Nominee"] });
+      expect(labels(snapshotAt("two_names_override_draw"), live)).toMatchObject({ atlas: ["Empowered"], lyra: ["Nominee", "Override"], echo: ["Nominee"] });
+      expect(labels(snapshotAt("two_names_initial_names"), live).lyra).toEqual(["Nominee"]);
+    }
+  });
+
+  it("removes a rescued nomination immediately and shows the replacement only when revealed", () => {
+    expect(labels(snapshotAt("two_names_override_removed"))).toMatchObject({ lyra: ["Override"], echo: ["Nominee"], rex: [] });
+    expect(labels(snapshotAt("two_names_replacement"))).toMatchObject({ lyra: ["Override"], echo: ["Nominee"], rex: ["Nominee"] });
+    expect(cards(snapshotAt("two_names_replacement")).find((card) => card.player.id === "lyra")?.statusTags[0]?.title).toContain("used");
+  });
+
+  it("clears stale round and endgame roles and never invents roles without a snapshot", () => {
+    const snapshot = snapshotAt("two_names_override_draw");
+    expect(cards(snapshot, 3).every((card) => card.statusTags.length === 0)).toBe(true);
+    expect(cards(snapshot, 2, "JURY_QUESTIONS").every((card) => card.statusTags.length === 0)).toBe(true);
+    expect(cards(null).every((card) => card.statusTags.length === 0)).toBe(true);
+  });
+
+  it("labels only classified Safety Bounce players and supports Empowered plus Vulnerable", () => {
+    const snapshot: FormatPresentationSnapshot = {
+      ...compilation.snapshot, activeFormatId: "safety_bounce", twoNames: null,
+      safetyBounce: { starterId: "lyra", currentActorId: "atlas", safePlayerIds: ["lyra"], vulnerablePlayerIds: ["atlas"], benchPlayerIds: ["echo", "rex", "nova"] },
+    };
+    expect(labels(snapshot)).toMatchObject({ atlas: ["Empowered", "Vulnerable"], lyra: ["Safe"], echo: [], rex: [] });
+    expect(labels({ ...snapshot, safetyBounce: null })).toMatchObject({ atlas: ["Empowered"], lyra: [], echo: [] });
+    expect(labels({ ...snapshot, activeFormatId: "vote_bomb" })).toMatchObject({ atlas: ["Empowered"], lyra: [], echo: [] });
   });
 });

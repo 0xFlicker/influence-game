@@ -386,7 +386,9 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-presentation-animation-boundary="true"');
     expect(html).toContain('data-format-cue="format_menu"');
     expect(html).toContain("The House offers two formats");
-    expect(html).toContain("Empowered");
+    // Server rendering has no director cursor yet; transport pressure must not
+    // disclose cast roles before the client reports its staged snapshot.
+    expect(html).not.toContain("Empowered");
     expect(html).not.toContain("Exposed");
     expect(html).not.toContain("Shielded");
     expect(html).not.toContain("Power Play");

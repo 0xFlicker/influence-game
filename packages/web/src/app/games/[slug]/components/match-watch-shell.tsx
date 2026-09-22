@@ -511,7 +511,13 @@ function statusTagClasses(tag: MatchWatchPlayerStatusTag): string {
     case "empowered":
       return "border-amber-300/25 bg-amber-400/10 text-amber-200";
     case "empowered_selected":
+    case "nominee":
+    case "vulnerable":
       return "border-rose-300/25 bg-rose-400/10 text-rose-200";
+    case "override":
+      return "border-violet-300/25 bg-violet-400/10 text-violet-200";
+    case "safe":
+      return "border-emerald-300/25 bg-emerald-400/10 text-emerald-200";
     case "locked_at_risk":
     case "selectable_exposed":
       return "border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200";
@@ -1006,6 +1012,7 @@ function isSamePlaybackState(
     current.round === next.round &&
     current.phase === next.phase &&
     current.canonicalSequence === next.canonicalSequence &&
+    current.formatSnapshot === next.formatSnapshot &&
     current.visibleMessages.length === next.visibleMessages.length &&
     current.players.length === next.players.length &&
     currentLastMessage?.id === nextLastMessage?.id &&

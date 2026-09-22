@@ -7,7 +7,7 @@ import {
   type LaunchFormatId,
 } from "@influence/engine/format-presentation-metadata";
 import { FormatPresentation } from "../app/games/[slug]/components/format-presentation";
-import { activeFormatIdForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import { formatSnapshotForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import type {
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -345,8 +345,8 @@ describe("FormatPresentation", () => {
     };
     const cues = [selected, sameRoundSocial, nextRoundSocial];
 
-    expect(activeFormatIdForPresentationCursor(cues, 1, 1)).toBe("vote_bomb");
-    expect(activeFormatIdForPresentationCursor(cues, 2, 2)).toBeNull();
+    expect(formatSnapshotForPresentationCursor(cues, 1, 1)?.activeFormatId).toBe("vote_bomb");
+    expect(formatSnapshotForPresentationCursor(cues, 2, 2)).toBeNull();
   });
 });
 

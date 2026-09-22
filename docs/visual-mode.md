@@ -153,6 +153,14 @@ available on pointer, touch, keyboard, focus or pause. Tapping fullscreen conten
 only changes control visibility. Fullscreen Mingle temporarily follows the active
 speaker; leaving restores the normal pinned-room selection.
 
+Cast and inspector badges follow the director's last revealed format snapshot in
+the current round. Two Names shows Empowered, current Nominees and the Override
+holder, allowing multiple roles on one player. Removing a nominee clears that
+badge immediately; the replacement appears at its reveal. Safety Bounce shows
+Safe and Vulnerable only after classification, with no safety inference for
+unclassified players or other formats. Backward seeks rewind badges, including
+reveals sharing one canonical event; new rounds and endgame clear old roles.
+
 Scene framing measures the loaded immutable image and actual frame. Wide frames
 contain the whole scene; narrow frames cover and center on that version's clear
 head anchor. Unknown, uncertain and anonymous speakers retain the whole image.

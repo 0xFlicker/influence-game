@@ -305,6 +305,59 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("format cast badges follow reveals and backward seeks", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const slug = "cast-role-reveals";
+    await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_used_tie", status: "completed" });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "⏸ Pause");
+    const card = (name: string) => page.getByRole("button", { name: `Inspect ${name}`, exact: true });
+    const seek = async (kind: string) => {
+      for (let i = 0; i < 20; i++) {
+        if (await page.locator(`[data-format-cue="${kind}"]`).count()) return;
+        await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+      }
+      throw new Error(`Missing format stage ${kind}`);
+    };
+    await seek("two_names_initial_names");
+    await expect(card("Atlas")).toContainText("Empowered");
+    await expect(card("Lyra")).toContainText("Nominee");
+    await expect(card("Atlas")).not.toContainText("Override");
+    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await expect(card("Lyra")).not.toContainText("Nominee");
+    await seek("two_names_override_draw");
+    await expect(card("Atlas")).toContainText("Override");
+    await seek("two_names_override_removed");
+    await expect(card("Lyra")).not.toContainText("Nominee");
+    await expect(card("Rex")).not.toContainText("Nominee");
+    await seek("two_names_replacement");
+    await expect(card("Rex")).toContainText("Nominee");
+    await expect(card("Echo")).toContainText("Nominee");
+  });
+
+  test("format cast badges show Safety Bounce classifications only after reveal", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const slug = "cast-safety-reveals";
+    await installDeterministicFormatGame(page, { slug, scenarioId: "safety_bounce_tie", status: "completed" });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "⏸ Pause");
+    for (let i = 0; i < 20; i++) {
+      if (await page.locator('[data-format-cue="safety_bounce_started"]').count()) break;
+      await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    }
+    const scenario = createFormatKernelViewerScenario("safety_bounce_tie");
+    const start = scenario.decisions.find((event) => event.type === "format.safety_bounce_started");
+    const pointer = scenario.decisions.find((event) => event.type === "format.safety_bounce_pointer");
+    if (start?.type !== "format.safety_bounce_started" || pointer?.type !== "format.safety_bounce_pointer") throw new Error("Missing Safety Bounce fixture");
+    const card = (id: string) => page.getByRole("button", { name: `Inspect ${scenario.roster.find((player) => player.id === id)!.name}`, exact: true });
+    await expect(card(start.payload.starterId)).toContainText("Safe");
+    await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
+    await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    await expect(card(pointer.payload.targetId)).toContainText("Vulnerable");
+    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
+  });
+
   for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) {
     for (const mobile of [false, true]) {
       test(`Two Names ${scenarioId} keeps names, long pleas and tally legible ${mobile ? "mobile reduced motion" : "desktop"}`, async ({ page }, testInfo) => {

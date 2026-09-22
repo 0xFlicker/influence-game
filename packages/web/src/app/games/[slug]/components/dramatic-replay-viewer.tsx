@@ -247,7 +247,7 @@ function cueSceneIdentity(cue: PresentationCue): string {
     : cue.key;
 }
 
-export function activeFormatIdForPresentationCursor(
+export function formatSnapshotForPresentationCursor(
   cues: readonly PresentationCue[],
   cursor: number,
   round: number,
@@ -255,8 +255,8 @@ export function activeFormatIdForPresentationCursor(
   for (let index = Math.min(cursor, cues.length - 1); index >= 0; index -= 1) {
     const cue = cues[index]!;
     if (cue.round !== round) continue;
-    if (cue.source === "format" && cue.after.activeFormatId) {
-      return cue.after.activeFormatId;
+    if (cue.source === "format") {
+      return cue.after;
     }
   }
   return null;
@@ -362,14 +362,15 @@ function DramaticReplayTheater({
   const activeCue = director.getActiveCue() ?? fallbackCue;
   const classicCue = activeCue?.source === "classic" ? activeCue : null;
   const formatCue = activeCue?.source === "format" ? activeCue : null;
-  const activeFormatIdForSocialScene = useMemo(() => {
-    if (!classicCue) return null;
-    return activeFormatIdForPresentationCursor(
+  const presentedFormatSnapshot = useMemo(() => {
+    if (!isFormatGame || !activeCue) return null;
+    return formatSnapshotForPresentationCursor(
       presentationCues,
       directorSnapshot.cursor,
-      classicCue.round,
+      activeCue.round,
     );
-  }, [classicCue, directorSnapshot.cursor, presentationCues]);
+  }, [activeCue, isFormatGame, directorSnapshot.cursor, presentationCues]);
+  const activeFormatIdForSocialScene = classicCue ? presentedFormatSnapshot?.activeFormatId ?? null : null;
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
     ? scenes[classicCue.sceneIndex]
@@ -558,10 +559,11 @@ function DramaticReplayTheater({
       round: scene.round,
       phase: scene.phase,
       canonicalSequence: activeCue?.canonicalSequence ?? null,
+      formatSnapshot: presentedFormatSnapshot,
       players: replayPlayers,
       visibleMessages: allVisibleMessages,
     });
-  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
+  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, presentedFormatSnapshot, replayPlayers, scene]);
 
   const advanceMessage = useCallback(() => {
     director.manualAdvance();
