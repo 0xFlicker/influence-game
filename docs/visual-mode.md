@@ -12,6 +12,10 @@ The policy is explicit at creation (`visualFailurePolicy: best_effort | require_
 
 A visual pause preserves the committed execution cursor and transcripts, expires only the fenced current owner, and is stored as `suspended` with a `visualPause` reason in game configuration. Resume clears only that visual pause and returns the game to the existing durable worker adoption path. It does not reset the game, rewind accepted dialogue, or resume unrelated suspensions. The public watch retains its current presentation during visual repair, shows a concise paused status, and refreshes operational status to reconnect automatically after resume.
 
+The observer publication connection stays active in both `in_progress` and `suspended`. Joining a paused game still hydrates accepted dialogue and its saved scene references; structured replay frames alone do not contain conversational speech. Publication materialization selects the stored safe context and emits only its public presentation fields (scene reference, accepted ballot, farewell purpose and anonymity), without exposing private decision IDs. Paused scrubbing displays a bubble immediately at the start of its beat; this does not advance the playback clock or revive expired speech.
+
+Explicitly marked farewell dialogue remains in the presentation sequence during `FORMAT_RESOLVE`. The resolution-phase transcript filter suppresses result prose, but preserves these accepted farewell portrait beats; it never identifies farewells by their wording.
+
 ## Presentation and rooms
 
 The common style uses simple contemporary architecture, warm light, recognizable furniture, minimal clutter and natural conversation. Eight versioned settings are supported:
@@ -33,7 +37,7 @@ Existing Mingle room-count rules remain authoritative. Position inventories do n
 
 Introductions, accepted ballots, diaries and farewells use framed PFPs. Conversations use a matching verified scene when available, otherwise the same portrait treatment. Format results retain canonical choreography. Ballot wording comes from accepted structured facts at existing reveal points, without a model call or invented quotation. House text appears separately. Anonymous speech remains unidentified.
 
-Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with 200 ms fades and no upper cap. Their clock follows playback pause, speed and seeking. A visual becoming available cannot switch the active speech beat away from its chosen presentation. Mobile overflow and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
+Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with 200 ms fades and no upper cap. Their clock follows playback pause, speed and seeking. A visual becoming available cannot switch the active speech beat away from its chosen presentation. The scene fits the available watch frame and measures the complete rendered bubble: prefer above the verified head when it fits, otherwise below when that fits. If neither fits, reserve headroom by moving the image down and reducing it proportionally. Speech has no internal scrollbar or truncation; exceptionally tall speech remains accessible through the outer scene scroll. Narrow frames and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
 
 ## Profiles, identity and agent context
 

@@ -458,6 +458,12 @@ describe("MatchWatchShell", () => {
     expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_RESOLVE" }))).toBe(false);
   });
 
+  it("retains explicitly marked farewells during resolution without treating result prose as dialogue", () => {
+    const farewell = entry({ phase: "FORMAT_RESOLVE", scope: "public", presentationPurpose: "farewell", text: "37" });
+    expect(isFormatSocialTranscriptMessage(farewell)).toBe(true);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_RESOLVE", text: "Goodbye, everyone." }))).toBe(false);
+  });
+
   it("orders same-round diary scenes by canonical chronology after format beats", () => {
     const formatBeat: ClassicPresentationCue = {
       source: "classic",

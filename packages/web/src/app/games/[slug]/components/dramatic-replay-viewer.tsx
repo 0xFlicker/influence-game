@@ -64,9 +64,10 @@ const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
 ]);
 
 export function isFormatSocialTranscriptMessage(
-  message: Pick<TranscriptEntry, "phase">,
+  message: Pick<TranscriptEntry, "phase" | "presentationPurpose">,
 ): boolean {
-  return !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
+  return message.presentationPurpose === "farewell"
+    || !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
 }
 
 interface DramaticReplayViewerProps {
@@ -517,7 +518,7 @@ function DramaticReplayTheater({
   }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
 
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = formatCue?.kind === "two_names_plea";
+  const usesFullHeightContent = formatCue?.kind === "two_names_plea" || visual.beat?.kind === "scene";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
-import { visualSpeechOpacity } from "@influence/engine/visual-speech";
+import { VISUAL_SPEECH_FADE_MS, visualSpeechOpacity } from "@influence/engine/visual-speech";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import type { PresentationDirector } from "./format-presentation-director";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
@@ -18,13 +18,13 @@ export type VisualPresentationBeat =
 export function VisualPresentation({ director, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {
   director: PresentationDirector;
 }) {
-  const [elapsedMs, setElapsedMs] = useState(() => director.getElapsedBaseMs());
+  const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
     let frame: number | null = null;
     const refresh = () => {
       frame = null;
-      setElapsedMs(director.getElapsedBaseMs());
       const state = director.getSnapshot();
+      setClock({ elapsedMs: director.getElapsedBaseMs(), paused: !state.isPlaying });
       if (state.isPlaying && !state.waitingAtTail) frame = requestAnimationFrame(refresh);
     };
     // Director notifications happen inside state transitions. Read on the next
@@ -37,18 +37,22 @@ export function VisualPresentation({ director, ...props }: Omit<Parameters<typeo
     schedule();
     return () => { unsubscribe(); if (frame !== null) cancelAnimationFrame(frame); };
   }, [director]);
-  return <VisualPresentationFrame {...props} elapsedMs={elapsedMs} />;
+  return <VisualPresentationFrame {...props} {...clock} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, reducedMotion = false, status }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, paused = false, reducedMotion = false, status }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
   elapsedMs: number;
+  paused?: boolean;
   reducedMotion?: boolean;
   status?: "preparing" | "recovery" | null;
 }) {
+  // A paused seek must be readable at time zero. This affects presentation only:
+  // resuming uses the director's unchanged clock, and expired speech stays gone.
+  const elapsedMs = paused ? Math.max(clockElapsedMs, VISUAL_SPEECH_FADE_MS) : clockElapsedMs;
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
@@ -77,16 +81,16 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
     const scene = selectedScene ?? retainedScene;
     // Never anchor new-scene dialogue to an old scene, including while a room is pinned.
     const speech = selectedScene?.id === beat.sceneId && selectedRoom === beat.roomId ? beat.speech : null;
-    content = <div className="space-y-3">
-      {isMingle && <nav aria-label="Mingle rooms" className="flex flex-wrap justify-center gap-2">
+    content = <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {isMingle && <nav aria-label="Mingle rooms" className="flex shrink-0 flex-wrap justify-center gap-2">
         <button type="button" aria-pressed={pinnedRoom === null} onClick={() => setPinnedRoom(null)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">Follow speaker</button>
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
       {scene && <VisualSceneView scene={scene} speech={speech} elapsedMs={elapsedMs} reducedMotion={reducedMotion} />}
     </div>;
   }
-  return <div className="w-full text-white">
+  return <div className={`w-full text-white ${beat.kind === "scene" ? "flex min-h-0 flex-1 flex-col" : ""}`}>
     {content}
-    {status && <p role="status" className="mt-3 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Using portraits for this scene."}</p>}
+    {status && <p role="status" className="mt-3 shrink-0 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Using portraits for this scene."}</p>}
   </div>;
 }

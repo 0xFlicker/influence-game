@@ -5,7 +5,7 @@ import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 
-const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event"] as const;
+const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
 const original = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;
 beforeEach(() => {
@@ -61,4 +61,15 @@ test("portrait ballot wording is unchanged and expires even with reduced motion"
   view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={visualSpeechDurationMs(portrait.speech.text)} reducedMotion />);
   expect(view.queryByText("Eliminate: Mara")).toBeNull();
   expect(view.getByRole("img", { name: "Arden" })).not.toBeNull();
+});
+
+test("paused seeking shows speech immediately without reviving expired bubbles", () => {
+  const view = render(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={0} paused />);
+  expect(view.getAllByText(speech.text).length).toBeGreaterThan(0);
+  expect(view.getByRole("img").getAttribute("src")).toBe("/scene-1.png");
+  const portrait: VisualPresentationBeat = { kind: "portrait", purpose: "Conversation", player: { id: "p1", name: "Arden", persona: "diplomat" }, speech };
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={0} paused />);
+  expect(view.getByText(speech.text)).not.toBeNull();
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={visualSpeechDurationMs(speech.text)} paused />);
+  expect(view.queryByText(speech.text)).toBeNull();
 });

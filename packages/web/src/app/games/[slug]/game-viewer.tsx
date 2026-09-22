@@ -847,7 +847,7 @@ export function GameViewer({
   const wsStatus = useGameWebSocket(
     gameId,
     game?.id ?? gameId,
-    !!gameId && game?.status === "in_progress",
+    game?.status,
     handleWsEvent,
   );
   // Operational pauses do not advance the canonical presentation cursor. Poll

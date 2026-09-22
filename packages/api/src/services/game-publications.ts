@@ -206,6 +206,7 @@ async function materializePayload(
         thinking: schema.transcripts.thinking,
         timestamp: schema.transcripts.timestamp,
         dialogueKind: schema.transcripts.dialogueKind,
+        safeContext: schema.transcripts.safeContext,
       })
         .from(schema.transcripts)
         .where(and(
@@ -302,7 +303,7 @@ function publicTranscriptEntry(row: {
   thinking: string | null;
   timestamp: number;
   dialogueKind: string | null;
-  safeContext?: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
+  safeContext: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
   const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId

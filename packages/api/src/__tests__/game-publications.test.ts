@@ -94,6 +94,28 @@ describe("durable game publications", () => {
     expect(publications[0]?.publicationSequence).toBe(1);
   });
 
+  test.each([
+    { phase: "LOBBY", scope: "public" as const, context: { visualScene: { id: "lobby-scene", roomId: "lobby" as const } } },
+    { phase: "FORMAT_MINGLE", scope: "mingle" as const, context: { visualScene: { id: "room-scene", roomId: "mingle-1" as const } } },
+    { phase: "VOTE", scope: "public" as const, context: { acceptedBallot: { voterId: "player-a", targetId: "player-b", purpose: "empower" as const } } },
+    { phase: "FORMAT_RESOLVE", scope: "public" as const, context: { presentationPurpose: "farewell" as const } },
+    { phase: "FORMAT_MINGLE", scope: "public" as const, context: { anonymous: true } },
+  ])("preserves accepted presentation metadata in the %s publication feed", async ({ phase, scope, context }) => {
+    const fixture = await createPublicationFixture(db);
+    await insertTranscript(db, fixture.gameId, fixture.turnId, 1, "Accepted speech");
+    await db.update(schema.transcripts).set({ phase, scope, safeContext: { version: 1, ...context, decisionId: "private-decision" } })
+      .where(eq(schema.transcripts.gameId, fixture.gameId));
+    await insertPublication(db, fixture, 1, { version: 1, kind: "transcript_entry", turnId: fixture.turnId, transcriptOrdinal: 1 });
+    const [publication] = await readDueGamePublicationSuffix(db, fixture.gameId, { now: new Date(NOW) });
+    expect(publication?.payload).toMatchObject({ type: "message", entry: { entrySequence: 1, text: "Accepted speech", ...context } });
+    if (publication?.payload.type !== "message") throw new Error("Missing dialogue publication");
+    expect(publication.payload.entry).not.toHaveProperty("decisionId");
+    if ("anonymous" in context) {
+      expect(publication.payload.entry.from).toBe("Anonymous");
+      expect(publication.payload.entry).not.toHaveProperty("speakerPlayerId");
+    }
+  });
+
   test("fails closed when a canonical publication has no viewer-safe projection", async () => {
     const fixture = await createPublicationFixture(db);
     const roundStarted: CanonicalGameEvent = {
