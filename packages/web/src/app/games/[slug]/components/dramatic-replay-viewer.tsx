@@ -377,7 +377,7 @@ function DramaticReplayTheater({
       ? formatCueScene(activeCue)
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
-  const visualData = useVisualWatch(game.id, game.visualMode === true, live, activeCue?.key);
+  const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players,
   );
@@ -501,7 +501,7 @@ function DramaticReplayTheater({
   }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
 
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat?.kind === "scene";
+  const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -895,7 +895,11 @@ function DramaticReplayTheater({
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <button ref={fullscreenButton} type="button" aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={() => void toggleFullscreen()} className="mb-2 ml-auto block rounded-lg border border-white/20 px-3 py-1 text-xs text-white/80">{fullscreen ? "Exit fullscreen ↙" : "Fullscreen ↗"}</button>
+        <button ref={fullscreenButton} type="button" aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={() => void toggleFullscreen()} className="mb-2 ml-auto flex h-12 w-12 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white">
+          <svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square">
+            <path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} />
+          </svg>
+        </button>
         {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
         {!fullscreen && activeFormatIdForSocialScene && <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div>}
         {/* Mobile: compact 2-row layout */}

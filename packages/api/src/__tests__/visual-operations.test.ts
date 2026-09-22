@@ -268,3 +268,26 @@ test("read-only admins can inspect evidence but cannot change policy or resume",
     if (previousSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = previousSecret;
   }
 });
+
+test("viewer exposes only frozen full-body cast art, not annotations or other private artifacts", async () => {
+  const app = createVisualRoutes(db);
+  const [assets] = await db.select().from(schema.visualGameAssets);
+  const body = assets!.cast[0]!.referenceArtifactId;
+  const privateArtifact = await storeVisualArtifact(db, "visual-ops", await sharp({ create: { width: 32, height: 32, channels: 3, background: "#000000" } }).png().toBuffer());
+  await db.update(schema.visualGameAssets).set({ cast: [...assets!.cast, { id: "fallback", name: "Fallback", referenceArtifactId: privateArtifact, portraitFallback: true, performanceInstructions: "private" }] }).where(eq(schema.visualGameAssets.gameId, "visual-ops"));
+  const response = await app.request("/api/games/visual-ops/visual");
+  const payload = await response.json() as { fullBodies: Record<string, string> };
+  expect(payload.fullBodies).toEqual({ p1: `/api/games/visual-ops/visual/artifacts/${body}` });
+  expect(JSON.stringify(payload)).not.toContain("performanceInstructions");
+  expect((await app.request(payload.fullBodies.p1!)).status).toBe(200);
+  expect((await app.request(`/api/games/visual-ops/visual/artifacts/${privateArtifact}`)).status).toBe(404);
+  expect(calls).toBe(0);
+});
+
+test("games without generated scenes return full-body art from the game-start profile", async () => {
+  await db.insert(schema.games).values({ id: "body-only", slug: "body-only", status: "completed", config: "{}" });
+  await db.insert(schema.gamePlayers).values({ id: "frozen-player", gameId: "body-only", persona: JSON.stringify({ name: "Frozen", fullBodyReferenceUrl: "/immutable-body.png" }), agentConfig: "{}" });
+  const payload = await (await createVisualRoutes(db).request("/api/games/body-only/visual")).json();
+  expect(payload).toMatchObject({ enabled: false, fullBodies: { "frozen-player": "/immutable-body.png" }, scenes: [] });
+  expect(calls).toBe(0);
+});

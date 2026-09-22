@@ -92,3 +92,7 @@ increments a navigation revision to cut camera motion, while automatic advanceme
 may pan between clear anchors on the same immutable image. Resize recalculates
 geometry and text pages without modifying canonical cues, speech duration or the
 publication snapshot. There is no independent camera or page timer.
+
+### Full-body solo performances
+
+`SoloPresentation` owns the bounded character/bubble layout. It consumes frozen full-body media from `visualWatchPresentation`, falls back to a static portrait on absence/load failure, and delegates text pagination to `TimedSpeech`. Container queries use the actual stage width, independent of surrounding inspector panels. No video clips, generated speech reasons, extra cues or independent speech timers are introduced. Canonical ballot targets supply the entire spoken ballot text; purpose and polarity remain separate captions. House segments divide the available stage into equal upper/logo and lower/copy regions. The fullscreen toggle uses the standard corner glyph with accessible labels.

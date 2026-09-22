@@ -21,7 +21,7 @@ export function FormatResolutionStage({
     <section
       data-format-cue="format_aggregate"
       data-ballot-presentation={cue.ballotPresentationStatus}
-      className="mx-auto w-full max-w-4xl rounded-2xl border border-white/10 bg-white/[0.035] p-4 sm:p-6"
+      className="mx-auto w-full max-w-2xl px-4 py-3"
       aria-live="polite"
     >
       <header className="text-center">
@@ -29,7 +29,7 @@ export function FormatResolutionStage({
           Tally
         </p>
         <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">
-          Aggregate locked
+          Vote totals
         </h2>
       </header>
 
@@ -59,7 +59,7 @@ function SaveOrEliminateAggregate({
   const lowestNet = Math.min(...Object.values(facts.nets));
   const ids = orderedIds(facts.nets, roster);
   return (
-    <AggregateTable
+    <AggregateTotals
       caption="Save-or-Exit aggregate"
       columns={["Agent", "Saves", "Exits", "Net", "Status"]}
       rows={ids.map((playerId) => [
@@ -116,7 +116,7 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
     return "Above the line";
   };
   return (
-    <AggregateTable
+    <AggregateTotals
       caption={`${displayNameForFormat(resolution.formatId)} aggregate`}
       columns={["Agent", "Votes", "Status"]}
       rows={ids.map((playerId) => [
@@ -174,7 +174,7 @@ function SafetyBounceAggregate({
           Final ballot not applicable · the sole Vulnerable agent is automatically eliminated.
         </p>
       ) : (
-        <AggregateTable
+        <AggregateTotals
           caption="Safety Bounce final vote aggregate"
           columns={["Vulnerable agent", "Final votes", "Status"]}
           rows={ids.map((playerId) => [
@@ -231,7 +231,7 @@ function Pool({
   );
 }
 
-function AggregateTable({
+function AggregateTotals({
   caption,
   columns,
   rows,
@@ -245,58 +245,20 @@ function AggregateTable({
   rowState(playerId: string): "eligible" | "safe" | "neutral";
 }) {
   return (
-    <div className="mt-6 overflow-x-auto">
-      <table className="w-full min-w-[34rem] border-separate border-spacing-y-1 text-left text-xs">
-        <caption className="sr-only">{caption}</caption>
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column}
-                scope="col"
-                className="px-3 py-2 font-medium uppercase tracking-[0.16em] text-white/35"
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((cells, rowIndex) => {
-            const playerId = rowIds[rowIndex]!;
-            const state = rowState(playerId);
-            return (
-              <tr
-                key={playerId}
-                data-aggregate-player={playerId}
-                data-aggregate-state={state}
-                className="bg-black/20 text-white/75"
-              >
-                {cells.map((cell, cellIndex) => {
-                  const isStatus = cellIndex === cells.length - 1;
-                  const className = `px-3 py-3 ${
-                    isStatus ? AGGREGATE_STATUS_CLASS[state] : ""
-                  }`;
-                  return cellIndex === 0 ? (
-                    <th
-                      key={`${cellIndex}-${cell}`}
-                      scope="row"
-                      className={`${className} font-medium`}
-                    >
-                      {cell}
-                    </th>
-                  ) : (
-                    <td key={`${cellIndex}-${cell}`} className={className}>
-                      {cell}
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <dl aria-label={caption} className="mt-5 flex flex-col gap-4">
+      {rows.map((cells, rowIndex) => {
+        const playerId = rowIds[rowIndex]!;
+        const state = rowState(playerId);
+        return <div key={playerId} data-aggregate-player={playerId} data-aggregate-state={state}
+          className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-white/10 pb-3 last:border-0">
+          <dt className="font-medium text-white">{cells[0]}</dt>
+          <dd className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-white/75">
+            {cells.slice(1, -1).map((cell, index) => <span key={columns[index + 1]}><strong className="text-xl font-semibold">{cell}</strong> <span className="text-xs text-white/45">{columns[index + 1]}</span></span>)}
+            <span className={`text-xs ${AGGREGATE_STATUS_CLASS[state]}`}>{cells.at(-1)}</span>
+          </dd>
+        </div>;
+      })}
+    </dl>
   );
 }
 

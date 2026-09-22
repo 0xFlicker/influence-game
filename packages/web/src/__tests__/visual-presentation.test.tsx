@@ -79,7 +79,7 @@ test("House uses its logo and preserves full narration on paused seeks and reduc
   const view = render(<VisualPresentationFrame beat={{ kind: "house", text }} rooms={[]} elapsedMs={0} paused />);
   const segment = view.getByRole("region", { name: "House summary" });
   expect(segment.style.opacity).toBe("1");
-  expect(segment.querySelector("p")?.textContent).toBe(text);
+  expect(segment.querySelector("[data-house-copy]")?.textContent).toBe(text);
   expect(view.getByRole("img", { name: "The House" }).getAttribute("src")).toBe("/logo.png");
   view.rerender(<VisualPresentationFrame beat={{ kind: "house", text: null, title: "Mingle" }} rooms={[]} elapsedMs={0} reducedMotion />);
   expect(view.getByRole("heading", { name: "Mingle" })).not.toBeNull();
@@ -96,4 +96,16 @@ test("fullscreen forces follow speaker and restores the pinned room on exit", ()
   view.rerender(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={1000} />);
   expect(view.getByRole("img").getAttribute("src")).toBe("/scene-2.png");
   expect(view.queryByText(speech.text)).toBeNull();
+});
+
+
+test.each(["Introduction", "Ballot", "Farewell", "Diary", "Conversation"] as const)("%s prefers uncropped full-body art with a speech bubble", (purpose) => {
+    const solo: VisualPresentationBeat = { kind: "portrait", purpose, player: { id: "p1", name: "Arden", persona: "diplomat", avatarUrl: "/head.png", fullBodyReferenceUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGz4AAAAASUVORK5CYII=" }, speech };
+    const view = render(<VisualPresentationFrame beat={solo} rooms={[]} elapsedMs={0} paused fullscreen />);
+    expect(view.getByRole("img").getAttribute("src")).toBe(solo.player.fullBodyReferenceUrl!);
+    expect(view.getByRole("img").className).toContain("object-contain");
+    expect(view.container.querySelector("blockquote")?.textContent).toBe(speech.text);
+    expect(view.container.querySelector("video")).toBeNull();
+    fireEvent.error(view.getByRole("img"));
+    expect(view.getByRole("img").getAttribute("src")).toBe("/head.png");
 });

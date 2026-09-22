@@ -18,12 +18,24 @@ export function createVisualRoutes(db: DrizzleDB) {
     const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, c.req.param("id")), eq(schema.games.slug, c.req.param("id"))));
     if (!game) return c.json({ error: "Game not found" }, 404);
     const enabled = (JSON.parse(game.config) as { visualMode?: boolean }).visualMode === true;
-    if (!enabled) return c.json({ enabled: false, scenes: [], portraits: {}, status: null });
-    const [rows, assets] = await Promise.all([
+
+    const [rows, assets, players] = await Promise.all([
       db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, game.id)).orderBy(asc(schema.visualScenes.boundarySequence)),
       db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, game.id)),
+      db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, game.id)),
     ]);
     const url = (id: string) => `/api/games/${game.id}/visual/artifacts/${id}`;
+    // Game-start profiles and prepared cast artifacts are frozen; current agent edits
+    // must not change the identity shown in a historical solo performance.
+    const fullBodies: Record<string, string> = {};
+    for (const player of players) {
+      const profile = JSON.parse(player.persona) as { fullBodyReferenceUrl?: unknown };
+      if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl) fullBodies[player.id] = profile.fullBodyReferenceUrl;
+    }
+    for (const member of assets[0]?.cast ?? []) {
+      if (!member.portraitFallback) fullBodies[member.id] = url(member.referenceArtifactId);
+    }
+    if (!enabled) return c.json({ enabled, scenes: [], portraits: {}, fullBodies, status: null });
     let snapshot: Record<string, number> | undefined;
     const rawSnapshot = c.req.query("snapshot");
     if (rawSnapshot) {
@@ -34,6 +46,7 @@ export function createVisualRoutes(db: DrizzleDB) {
       } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
     }
     return c.json({ enabled, status: rows.some(row => row.status === "preparing") ? "preparing" : null,
+      fullBodies,
       portraits: Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)])),
       ...await readViewerMedia(db, game.id, snapshot),
     });
@@ -42,10 +55,10 @@ export function createVisualRoutes(db: DrizzleDB) {
     const gameId = c.req.param("id"), artifactId = c.req.param("artifact");
     const [scenes, assets, published] = await Promise.all([
       db.select({ id: schema.visualScenes.id }).from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"), eq(schema.visualScenes.imageArtifactId, artifactId))),
-      db.select({ portraits: schema.visualGameAssets.portraits }).from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)),
+      db.select({ portraits: schema.visualGameAssets.portraits, cast: schema.visualGameAssets.cast }).from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)),
       db.select({ id: schema.visualMediaVersions.id }).from(schema.visualMediaVersions).innerJoin(schema.visualMediaPublications, eq(schema.visualMediaPublications.versionId, schema.visualMediaVersions.id)).where(and(eq(schema.visualMediaVersions.gameId, gameId), eq(schema.visualMediaVersions.imageArtifactId, artifactId))),
     ]);
-    if (!scenes.length && !published.length && !Object.values(assets[0]?.portraits ?? {}).includes(artifactId)) return c.json({ error: "Visual artifact not found" }, 404);
+    if (!scenes.length && !published.length && !Object.values(assets[0]?.portraits ?? {}).includes(artifactId) && !assets[0]?.cast.some(member => !member.portraitFallback && member.referenceArtifactId === artifactId)) return c.json({ error: "Visual artifact not found" }, 404);
     const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, artifactId), eq(schema.visualArtifacts.gameId, gameId)));
     if (!artifact) return c.json({ error: "Visual artifact not found" }, 404);
     return c.body(new Uint8Array(artifact.image), 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" });

@@ -21,7 +21,7 @@ export function FormatEmpowerVoteStage({
     <section
       data-format-cue="empowered_tally"
       aria-labelledby="format-empowered-heading"
-      className="mx-auto w-full max-w-3xl rounded-xl border border-amber-200/15 bg-amber-200/[0.035] p-4 sm:p-6"
+      className="mx-auto w-full max-w-2xl px-4 py-3"
     >
       <div className="text-center">
         <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/45">
@@ -40,7 +40,7 @@ export function FormatEmpowerVoteStage({
 
       <dl
         aria-label="Empowered vote totals"
-        className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+        className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-4"
       >
         {orderedCounts.map((player) => {
           const isWinner = player.id === empoweredId;
@@ -49,16 +49,12 @@ export function FormatEmpowerVoteStage({
               key={player.id}
               data-empower-total={player.id}
               data-empowered={isWinner ? "true" : "false"}
-              className={`min-w-0 rounded-lg border px-3 py-3 ${
-                isWinner
-                  ? "border-amber-200/40 bg-amber-200/[0.12]"
-                  : "border-white/10 bg-white/[0.025]"
-              }`}
+              className={`min-w-0 text-center ${isWinner ? "text-amber-200" : "text-white/70"}`}
             >
               <dt className="break-words text-xs font-medium text-white/75">
                 {player.name}
               </dt>
-              <dd className="mt-1 flex items-baseline gap-1 text-2xl font-semibold text-white">
+              <dd className="mt-1 flex items-baseline justify-center gap-1 text-2xl font-semibold">
                 {counts[player.id] ?? 0}
                 <span className="text-[9px] uppercase tracking-[0.13em] text-white/35">
                   votes
@@ -81,7 +77,7 @@ export function FormatEmpowerVoteStage({
             <li
               key={receipt.voterId}
               data-empower-receipt={receipt.voterId}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-md border border-white/[0.08] bg-black/20 px-3 py-2 text-xs"
+              className="flex min-w-0 items-center justify-center gap-2 py-1 text-xs"
             >
               <span className="min-w-0 break-words text-right text-white/65">
                 {playerName(receipt.voterId, names)}

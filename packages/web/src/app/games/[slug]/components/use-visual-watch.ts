@@ -18,6 +18,7 @@ export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, 
         if (!cancelled) {
           setSnapshot({ gameId, data: { ...data,
             scenes: data.scenes.map(scene => ({ ...scene, imageUrl: resolveApiUrl(scene.imageUrl) })),
+            fullBodies: Object.fromEntries(Object.entries(data.fullBodies ?? {}).map(([id, url]) => [id, resolveApiUrl(url)])),
             portraits: Object.fromEntries(Object.entries(data.portraits).map(([id, url]) => [id, resolveApiUrl(url)])),
           } });
         }
@@ -31,7 +32,7 @@ export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, 
     void refresh();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [gameId, enabled, live]);
-  if (!choice || choice.gameId !== gameId || choice.beatKey !== beatKey) {
+  if (!choice || choice.gameId !== gameId || choice.beatKey !== beatKey || (enabled && !choice.data && snapshot?.gameId === gameId)) {
     const next = { gameId, beatKey, data: enabled && snapshot?.gameId === gameId ? snapshot.data : null };
     setChoice(next);
     return next.data;

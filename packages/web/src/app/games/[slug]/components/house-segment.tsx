@@ -21,13 +21,16 @@ export function HouseSegment({ text, title, elapsedMs, paused, reducedMotion, fu
   const motion = houseSegmentMotion(elapsedMs, duration, paused, reducedMotion);
   return <section aria-label={text === null ? `House transition: ${title}` : "House summary"}
     data-house-segment={text === null ? "transition" : "summary"}
-    className={`relative isolate mx-auto flex w-full max-w-3xl flex-col items-center px-4 text-center ${fullscreen ? "min-h-0 flex-1 py-4" : "py-8 sm:px-8 sm:py-12"}`} style={motion}>
-    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_25%,rgba(190,149,63,0.10),transparent_65%)]" />
-    {/* eslint-disable-next-line @next/next/no-img-element -- the existing House brand asset */}
-    <img src="/logo.png" alt="The House" className={`mix-blend-screen mb-5 object-contain ${fullscreen ? "h-[15vh] max-h-32 w-32 shrink-0" : "h-28 w-28 sm:h-40 sm:w-40"}`} />
-    <div aria-hidden="true" className="mb-7 h-px w-20 bg-gradient-to-r from-transparent via-[#c5a05a] to-transparent" />
-    {text === null
-      ? <h2 className="text-2xl font-medium tracking-wide text-[#e6ce9a] sm:text-4xl">{title}</h2>
-      : fullscreen ? <TimedSpeech text={text} elapsedMs={elapsedMs} className="w-full text-left text-lg leading-relaxed text-[#f0eade] sm:text-2xl" /> : <p className="whitespace-pre-wrap break-words text-left text-lg leading-relaxed text-[#f0eade] sm:text-2xl sm:leading-relaxed">{text}</p>}
+    className={`relative isolate mx-auto grid min-h-0 w-full max-w-3xl flex-1 grid-rows-2 px-4 text-center ${fullscreen ? "" : "sm:px-8"}`} style={motion}>
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_50%,rgba(190,149,63,0.10),transparent_65%)]" />
+    <div data-house-logo className="flex min-h-0 flex-col items-center justify-end pb-4">
+      {/* eslint-disable-next-line @next/next/no-img-element -- the existing House brand asset */}
+      <img src="/logo.png" alt="The House" className="min-h-0 max-h-full w-40 object-contain mix-blend-screen sm:w-48" />
+    </div>
+    <div data-house-copy className="flex min-h-0 flex-col items-center pt-4">
+      {text === null
+        ? <h2 className="text-2xl font-medium tracking-wide text-[#e6ce9a] sm:text-4xl">{title}</h2>
+        : <TimedSpeech text={text} elapsedMs={elapsedMs} className="w-full text-left text-lg leading-relaxed text-[#f0eade] sm:text-2xl" />}
+    </div>
   </section>;
 }

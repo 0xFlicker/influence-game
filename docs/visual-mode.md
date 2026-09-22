@@ -175,3 +175,11 @@ with `PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL=http://127.0.0.1:3001` to reuse that web
 server. Other tests that require seeded backend data still use the isolated
 harness. The fixture checks fallback fullscreen, unchanged speech, paged long
 text, rotation, control visibility, Escape focus and scroll restoration.
+
+### Solo character presentation
+
+Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The viewer contains the complete image; it never crops it into a talking-head clip. A missing or failed full-body image uses the static portrait. Wide content frames place the bubble beside the character; narrow frames put it above. Both use measured, director-timed text pages, including outside fullscreen.
+
+The visual endpoint supplies `fullBodies` for every game, including games without generated room scenes. It selects immutable prepared cast artifacts (excluding references marked as portrait fallbacks), then game-start profile references. Current agent edits never supply these images. The public artifact handler allows these cast images but still excludes private annotations, unpublished scene candidates and performance instructions. Initial media hydration fills an empty selection once; subsequent refreshes remain pinned until the next beat.
+
+Sealed ballots remain at their canonical reveal position. Each voter says the target's name only; the caption identifies the ballot's purpose/polarity. Private thinking is never presented as an invented spoken justification. Existing roll-call order, forfeits and result authority are unchanged. Totals use compact unboxed layouts. House segments align their logo to the bottom of the upper half and summary to the top of the lower half, with timed pages for overflow. Fullscreen has a 48-pixel corner-icon control with a 32-pixel glyph and accessible entry/exit labels.

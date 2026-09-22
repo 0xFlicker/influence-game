@@ -60,6 +60,10 @@ export async function installDeterministicFormatGame(
       );
       return;
     }
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
+      return;
+    }
     if (url.pathname.endsWith("/transcript")) {
       await fulfillJson(route, []);
       return;
@@ -112,6 +116,10 @@ export async function installDeterministicClassicGame(
   const game = buildDeterministicClassicGame(options);
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
+      return;
+    }
     if (url.pathname.endsWith("/transcript")) {
       await fulfillJson(route, []);
       return;
@@ -139,6 +147,10 @@ export async function installDeterministicCompletedClassicGame(
   const fixture = buildDeterministicCompletedClassicGame(slug);
   await page.route(gameApiPattern(slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
+      return;
+    }
     if (url.pathname.endsWith("/transcript")) {
       await fulfillJson(route, fixture.transcript);
       return;

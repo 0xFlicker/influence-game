@@ -1,5 +1,7 @@
+import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
-import { visualWatchPresentation, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
+import { visualWatchPresentation, paceVisualBallots, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
 const player: GamePlayer = { id: "a", name: "Ada", persona: "social", status: "alive", shielded: false };
 const message: TranscriptEntry = { id: 10, gameId: "g", round: 1, phase: "LOBBY", fromPlayerId: "a", fromPlayerName: "Ada", scope: "public", toPlayerIds: null, text: "Let us talk.", timestamp: 1, entrySequence: 5, visualScene: { id: "old", roomId: "lobby" } };
@@ -38,4 +40,46 @@ test("published canonical binding displays formerly portrait-only speech without
   expect(visualWatchPresentation(published, null, { ...fallback, scope: "diary" }, [player]).beat).toMatchObject({ purpose: "Diary" });
   expect(visualWatchPresentation(published, null, { ...fallback, phase: "INTRODUCTION" }, [player]).beat).toMatchObject({ purpose: "Introduction" });
   expect(visualWatchPresentation({ ...data, bindings: {} }, null, fallback, [player]).beat?.kind).toBe("portrait");
+});
+
+
+test("all accepted ballot purposes say only the target name using the frozen body", () => {
+  const frozen = { ...data, fullBodies: { a: "/saved-body.png" } };
+  for (const purpose of ["empower", "eliminate", "winner"] as const) {
+    expect(visualWatchPresentation(frozen, null, { ...message, text: "Private reasoning must not be spoken", acceptedBallot: { voterId: "a", targetId: "a", purpose } }, [player]).beat).toMatchObject({ kind: "portrait", purpose: "Ballot", speech: { text: "Ada" }, player: { fullBodyReferenceUrl: "/saved-body.png" } });
+  }
+});
+
+
+test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "majority_elimination_clear", "safety_bounce_tie"] as const)("%s sealed roll calls retain canonical voters and targets in solo presentation", (scenarioId) => {
+  const scenario = createFormatKernelViewerScenario(scenarioId);
+  const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "diplomat", status: "alive", shielded: false }));
+  const compiled = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb", "save_or_eliminate", "majority_elimination", "safety_bounce"] });
+  expect(compiled.diagnostic).toBeNull();
+  const paced = paceVisualBallots(compiled.cues, players);
+  const ballots = paced.filter(c => c.source === "format" && c.kind === "format_roll_call");
+  expect(ballots.length).toBeGreaterThan(0);
+  for (const cue of ballots) {
+    if (cue.source !== "format" || cue.kind !== "format_roll_call") throw new Error("Expected ballot");
+    const beat = visualWatchPresentation(data, cue, null, players).beat;
+    expect(beat).toMatchObject({ kind: "portrait", purpose: "Ballot", player: { id: cue.ballot.voterId }, speech: { text: players.find(p => p.id === cue.ballot.targetId)!.name } });
+  }
+  expect(paced.filter(c => c.source === "format" && !c.visualBallot).map(c => c.key)).toEqual(compiled.cues.map(c => c.key));
+});
+
+
+test("Empowered revotes follow every original receipt, and accepted pleas use solo speech", () => {
+  const scenario = createFormatKernelViewerScenario("two_names_declined");
+  const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "diplomat", status: "alive", shielded: false }));
+  const compiled = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb"] });
+  const receipts = players.map((p, i) => ({ voterId: p.id, targetId: players[0]!.id, revoteTargetId: i === 0 ? players[1]!.id : null }));
+  const tally = { ...compiled.cues[0]!, kind: "empowered_tally" as const, counts: { [players[0]!.id]: players.length }, empoweredId: players[0]!.id, receipts };
+  const paced = paceVisualBallots([{ ...tally, receipts }], players);
+  const ballots = paced.flatMap(c => c.source === "format" && c.visualBallot ? [c.visualBallot] : []);
+  expect(ballots.map(b => b.targetId)).toEqual([...receipts.map(r => r.targetId), players[1]!.id]);
+  expect(ballots.at(-1)?.revote).toBe(true);
+  for (const cue of compiled.cues.filter(c => c.kind === "two_names_plea" && c.status === "accepted")) {
+    if (cue.kind !== "two_names_plea") throw new Error("Missing plea");
+    expect(visualWatchPresentation(data, cue, null, players).beat).toMatchObject({ kind: "portrait", purpose: "Plea", speech: { text: cue.text }, player: { id: cue.speakerId } });
+  }
 });

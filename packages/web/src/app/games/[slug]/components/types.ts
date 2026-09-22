@@ -136,7 +136,7 @@ export interface FormatPresentationSnapshot {
 }
 
 interface FormatPresentationCueBase {
-  visualBallot?: { voterId: string; targetId: string; purpose: "empower" };
+  visualBallot?: { voterId: string; targetId: string; purpose: "empower"; revote?: boolean };
   source: "format";
   key: string;
   canonicalSequence: number;

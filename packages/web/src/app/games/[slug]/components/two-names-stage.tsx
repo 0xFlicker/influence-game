@@ -162,11 +162,18 @@ export function TwoNamesVoteStage({ cue, roster }: {
   ]));
   const tied = totals[aggregate.finalistPlayerIds[0]] === totals[aggregate.finalistPlayerIds[1]];
   return (
-    <section data-format-cue={cue.kind} className="w-full rounded-2xl border border-white/10 bg-[#0b0b0d] p-4 sm:p-6" aria-live="polite">
+    <section data-format-cue={cue.kind} className="w-full max-w-2xl px-4 py-3" aria-live="polite">
       <p className="mb-5 text-center text-xs uppercase tracking-[0.25em] text-white/60">
         {isResult ? (tied ? "Tie · Empowered decides" : "Result locked") : `Roll call · ${cue.rollCallIndex + 1} of ${cue.rollCallCount}`}
       </p>
-      <DossierPair ids={aggregate.finalistPlayerIds} roster={roster} totals={totals} />
+      <dl aria-label="Two Names vote totals" className="flex justify-center gap-10 text-center">
+        {aggregate.finalistPlayerIds.map(id => <div key={id}>
+          <dt className="font-medium text-white">{name(id, roster)}</dt>
+          <dd className="mt-2 text-3xl font-semibold text-white" aria-label={`${name(id, roster)}: ${totals[id] ?? 0} exit vote${totals[id] === 1 ? "" : "s"}`}>
+            {totals[id] ?? 0}<span className="block text-xs font-normal text-white/50">Exit votes</span>
+          </dd>
+        </div>)}
+      </dl>
       {cue.kind === "format_roll_call" ? (
         <p className="mt-5 text-center text-sm text-white/80">
           <strong>{name(cue.ballot.voterId, roster)}</strong> votes to exit <strong>{cue.ballot.targetId ? name(cue.ballot.targetId, roster) : "—"}</strong>
@@ -212,13 +219,12 @@ function PortraitReveal({ player: source, label, tone }: {
   );
 }
 
-function DossierPair({ ids, roster, removedId, enteringId, reveal = false, totals }: {
+function DossierPair({ ids, roster, removedId, enteringId, reveal = false }: {
   ids: [string, string];
   roster: readonly FormatPresentationRosterPlayer[];
   removedId?: string;
   enteringId?: string;
   reveal?: boolean;
-  totals?: Readonly<Record<string, number>>;
 }) {
   return (
     <div className="grid grid-cols-2 gap-3 md:gap-6">
@@ -234,11 +240,7 @@ function DossierPair({ ids, roster, removedId, enteringId, reveal = false, total
           <div className="flex min-h-40 flex-col items-center justify-center rounded-[1rem] border border-white/[0.07] bg-black/25 px-2 py-5 md:min-h-48">
             <Avatar player={player(id, roster)} size="16" />
             <h3 className="mt-4 max-w-full truncate font-serif text-2xl md:text-4xl" title={name(id, roster)}>{name(id, roster)}</h3>
-            {totals ? (
-              <p className="mt-4 font-mono text-3xl" aria-label={`${name(id, roster)}: ${totals[id] ?? 0} exit vote${totals[id] === 1 ? "" : "s"}`}>
-                {totals[id] ?? 0}<span className="mt-1 block font-sans text-[9px] uppercase tracking-[0.2em] text-white/50">Exit votes</span>
-              </p>
-            ) : <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]">Nominated</p>}
+            <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.28em] text-[#ff7b91]">Nominated</p>
           </div>
           {removedId === id ? <span className="absolute left-[12%] top-1/2 h-0.5 w-[76%] -rotate-12 bg-[#ff7b91] shadow-[0_0_16px_rgba(255,123,145,0.65)]" aria-label="Removed" /> : null}
         </article>
