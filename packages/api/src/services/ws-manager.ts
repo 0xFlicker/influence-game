@@ -38,6 +38,8 @@ type PublicWsRoomMetadata = {
 
 /** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
 export interface PublicWsTranscriptEntry {
+  dialogueKind?: TranscriptEntry["dialogueKind"] | null;
+  firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
   acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
@@ -151,6 +153,7 @@ function buildPublicRoomMetadata(
 
 function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptEntry {
   return {
+    dialogueKind: entry.dialogueKind,
     ...(!entry.anonymous && entry.speakerPlayerId && { speakerPlayerId: entry.speakerPlayerId }),
     ...(entry.entrySequence !== undefined && { entrySequence: entry.entrySequence }),
     ...(entry.dialogueContext?.acceptedBallot && { acceptedBallot: entry.dialogueContext.acceptedBallot }),

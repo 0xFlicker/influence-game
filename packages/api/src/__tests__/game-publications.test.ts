@@ -103,11 +103,11 @@ describe("durable game publications", () => {
   ])("preserves accepted presentation metadata in the %s publication feed", async ({ phase, scope, context }) => {
     const fixture = await createPublicationFixture(db);
     await insertTranscript(db, fixture.gameId, fixture.turnId, 1, "Accepted speech");
-    await db.update(schema.transcripts).set({ phase, scope, safeContext: { version: 1, ...context, decisionId: "private-decision" } })
+    await db.update(schema.transcripts).set({ phase, scope, dialogueKind: "public_speech", firstDurableEventSequence: 42, safeContext: { version: 1, ...context, decisionId: "private-decision" } })
       .where(eq(schema.transcripts.gameId, fixture.gameId));
     await insertPublication(db, fixture, 1, { version: 1, kind: "transcript_entry", turnId: fixture.turnId, transcriptOrdinal: 1 });
     const [publication] = await readDueGamePublicationSuffix(db, fixture.gameId, { now: new Date(NOW) });
-    expect(publication?.payload).toMatchObject({ type: "message", entry: { entrySequence: 1, text: "Accepted speech", ...context } });
+    expect(publication?.payload).toMatchObject({ type: "message", entry: { entrySequence: 1, dialogueKind: "public_speech", firstDurableEventSequence: 42, text: "Accepted speech", ...context } });
     if (publication?.payload.type !== "message") throw new Error("Missing dialogue publication");
     expect(publication.payload.entry).not.toHaveProperty("decisionId");
     if ("anonymous" in context) {

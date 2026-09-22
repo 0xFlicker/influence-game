@@ -194,6 +194,7 @@ async function materializePayload(
     case "transcript_entry": {
       const row = (await db.select({
         entrySequence: schema.transcripts.entrySequence,
+        firstDurableEventSequence: schema.transcripts.firstDurableEventSequence,
         round: schema.transcripts.round,
         phase: schema.transcripts.phase,
         fromPlayerId: schema.transcripts.fromPlayerId,
@@ -291,6 +292,7 @@ function assertStoredPublicationPayload(
 
 function publicTranscriptEntry(row: {
   entrySequence: number | null;
+  firstDurableEventSequence: number | null;
   round: number;
   phase: string;
   fromPlayerId: string | null;
@@ -302,7 +304,7 @@ function publicTranscriptEntry(row: {
   text: string;
   thinking: string | null;
   timestamp: number;
-  dialogueKind: string | null;
+  dialogueKind: PublicWsTranscriptEntry["dialogueKind"];
   safeContext: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
   const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
@@ -311,6 +313,8 @@ function publicTranscriptEntry(row: {
   const to = parseStringArray(row.toPlayerIds);
   const roomMetadata = parseRoomMetadata(row.roomMetadata);
   return {
+    dialogueKind: row.dialogueKind,
+    firstDurableEventSequence: row.firstDurableEventSequence,
     ...(!row.safeContext?.anonymous && row.speakerPlayerId && { speakerPlayerId: row.speakerPlayerId }),
     ...(row.safeContext?.anonymous && { anonymous: true }),
     ...(row.entrySequence !== null && { entrySequence: row.entrySequence }),

@@ -462,3 +462,38 @@ it("resumes a new live cue buffered while paused at the initial hydration bounda
   director.play();
   expect(director.getSnapshot()).toMatchObject({ activeKey: "new", isPlaying: true });
 });
+
+it("keeps House animation on the shared clock through pause, speed, reconnect and append", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const house: PresentationCue = { source: "house", kind: "house_bridge", followingCueKey: "next", key: "bridge", canonicalSequence: 2, round: 1, phase: "LOBBY", title: "Lobby", baseDurationMs: 2000 };
+  const next = cue("next", 3, 1, "classic");
+  director.load([house, next]); director.play(); clock.tick(150);
+  director.pause(); clock.tick(500);
+  expect(director.getElapsedBaseMs()).toBe(150);
+  director.setSpeed(2); director.play(); clock.tick(100);
+  expect(director.getElapsedBaseMs()).toBe(350);
+  director.reconnect([house, next]);
+  expect(director.getElapsedBaseMs()).toBe(350);
+  director.play(); director.append([house, next, cue("later", 4)]);
+  clock.tick(825);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.dispose();
+});
+
+it("late narration cannot remove an on-air title or strand playback", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const house: PresentationCue = { source: "house", kind: "house_bridge", followingCueKey: "next", key: "bridge", canonicalSequence: 2, round: 1, phase: "LOBBY", title: "Lobby", baseDurationMs: 2000 };
+  const next = cue("next", 3, 1, "classic");
+  director.load([house, next]); director.play(); clock.tick(500);
+  const summary = cue("backfilled-summary", 1, 1, "classic");
+  director.append([summary, next]);
+  expect(director.getActiveCue()?.key).toBe("bridge");
+  expect(director.getElapsedBaseMs()).toBe(500);
+  clock.tick(1500);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.append([summary, next]);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.dispose();
+});

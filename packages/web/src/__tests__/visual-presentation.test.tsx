@@ -73,3 +73,15 @@ test("paused seeking shows speech immediately without reviving expired bubbles",
   view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={visualSpeechDurationMs(speech.text)} paused />);
   expect(view.queryByText(speech.text)).toBeNull();
 });
+
+test("House uses its logo and preserves full narration on paused seeks and reduced motion", () => {
+  const text = "The room waits.\n\n" + "Everyone has something to lose. ".repeat(40);
+  const view = render(<VisualPresentationFrame beat={{ kind: "house", text }} rooms={[]} elapsedMs={0} paused />);
+  const segment = view.getByRole("region", { name: "House summary" });
+  expect(segment.style.opacity).toBe("1");
+  expect(segment.querySelector("p")?.textContent).toBe(text);
+  expect(view.getByRole("img", { name: "The House" }).getAttribute("src")).toBe("/logo.png");
+  view.rerender(<VisualPresentationFrame beat={{ kind: "house", text: null, title: "Mingle" }} rooms={[]} elapsedMs={0} reducedMotion />);
+  expect(view.getByRole("heading", { name: "Mingle" })).not.toBeNull();
+  expect(view.getByRole("region", { name: "House transition: Mingle" }).style.transform).toBe("none");
+});

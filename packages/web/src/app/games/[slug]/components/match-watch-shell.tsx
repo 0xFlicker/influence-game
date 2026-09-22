@@ -32,7 +32,6 @@ import {
   applyStructuredPostVotePressureSummaries,
   buildMatchWatchModel,
   type MatchWatchModel,
-  type MatchWatchPhaseSegment,
   type MatchWatchPlayerCard,
   type MatchWatchPlayerStatusTag,
   type MatchWatchPlaybackState,
@@ -205,14 +204,13 @@ export function MatchWatchShell({
       <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />
       <ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
       <McpBanner />
-      <PhaseRail model={model} />
 
       {/*
         Mobile: app-shell column — sticky chrome above, theater fills remaining height,
         scrub controls pin to the bottom of the theater via the embedded viewer flex layout.
         Desktop (xl): three-column grid with independent side-rail scroll.
       */}
-      <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-2 pb-2 lg:gap-3 lg:px-3 lg:pb-3 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-2 pb-2 pt-1.5 lg:gap-3 lg:px-3 lg:pb-3 lg:pt-2 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
         <CastRail model={model} onSelectPlayer={setSelectedPlayerId} />
         <MobileContextPanel model={model} onSelectPlayer={setSelectedPlayerId} />
         <TheaterPanel
@@ -409,49 +407,6 @@ function StatusPill({ value, label }: { value: number; label: string }) {
       <strong className="text-xs text-white/95">{value}</strong>
       {label}
     </span>
-  );
-}
-
-function PhaseRail({ model }: { model: MatchWatchModel }) {
-  return (
-    <nav className="relative mx-2 mt-1.5 flex h-9 shrink-0 items-center gap-2 overflow-hidden rounded-md border border-white/10 bg-black/40 px-2 backdrop-blur-glass lg:mx-3 lg:mt-2 lg:grid lg:h-auto lg:grid-cols-[8.5rem_minmax(0,1fr)_12rem] lg:items-center lg:gap-3 lg:rounded-lg lg:px-3 lg:py-3">
-      <div className="flex shrink-0 items-center gap-1.5 text-[9px] uppercase tracking-[0.16em] text-white/55 lg:gap-3 lg:text-[10px] lg:tracking-[0.22em]">
-        <span className="hidden lg:inline">Round</span>
-        <span className="lg:hidden">R</span>
-        <span className="grid h-6 min-w-6 place-items-center rounded border border-white/10 bg-white/[0.04] text-[10px] text-white/90 lg:h-7 lg:min-w-7 lg:rounded-md">
-          {model.roundLabel.replace("Round ", "")}
-        </span>
-      </div>
-
-      {/* Compact: single-row horizontal scroller. Desktop lg+: full phase grid. */}
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:grid lg:grid-cols-8 lg:gap-1.5 lg:overflow-visible">
-        {model.phaseSegments.map((segment) => (
-          <PhaseSegment key={segment.key} segment={segment} />
-        ))}
-      </div>
-
-      <div className="hidden justify-self-end rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-white/45 lg:block">
-        Strategy Lens
-      </div>
-    </nav>
-  );
-}
-
-function PhaseSegment({ segment }: { segment: MatchWatchPhaseSegment }) {
-  const className =
-    segment.state === "current"
-      ? "border-phase/60 bg-phase/[0.15] text-white shadow-phase-sm"
-      : segment.state === "past"
-        ? "border-white/[0.12] bg-white/[0.04] text-white/55"
-        : "border-white/5 bg-white/[0.015] text-white/25";
-
-  return (
-    <div className={`relative flex h-6 shrink-0 items-center justify-center overflow-hidden rounded border px-2 text-[8px] uppercase tracking-[0.1em] lg:h-8 lg:min-w-0 lg:shrink lg:rounded-md lg:text-[9px] lg:tracking-[0.14em] ${className}`}>
-      <span className="truncate whitespace-nowrap">{segment.label}</span>
-      {segment.state === "current" && (
-        <span className="absolute inset-x-0 bottom-0 h-0.5 bg-phase" />
-      )}
-    </div>
   );
 }
 

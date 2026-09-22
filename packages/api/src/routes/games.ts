@@ -1108,6 +1108,8 @@ export function createGameRoutes(db: DrizzleDB) {
       return {
         id: row.id,
         entrySequence: row.entrySequence ?? undefined,
+        dialogueKind: row.dialogueKind,
+        firstDurableEventSequence: row.firstDurableEventSequence,
         speakerPlayerId: row.safeContext?.anonymous ? null : row.speakerPlayerId,
         anonymous: row.safeContext?.anonymous === true,
         presentationPurpose: row.safeContext?.presentationPurpose,

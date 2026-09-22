@@ -107,6 +107,8 @@ export function wsEntryToTranscriptEntry(
   return {
     id,
     entrySequence: entry.entrySequence,
+    dialogueKind: entry.dialogueKind,
+    firstDurableEventSequence: entry.firstDurableEventSequence,
     speakerPlayerId: entry.speakerPlayerId,
     presentationPurpose: entry.presentationPurpose,
     acceptedBallot: entry.acceptedBallot,

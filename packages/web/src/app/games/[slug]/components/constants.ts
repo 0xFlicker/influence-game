@@ -1,7 +1,7 @@
 import type { PhaseKey } from "@/lib/api";
-import type { RoomType, EndgameStage } from "./types";
+import type { RoomType } from "./types";
 
-// Dramatic display names for the transition overlay (◆ NAME ◆)
+// Display names shared by the phase header and House bridge.
 export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   INTRODUCTION: "INTRODUCTION",
   LOBBY: "LOBBY PHASE",
@@ -29,107 +29,6 @@ export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   JURY_VOTE: "JURY VOTE",
   SUSPENDED: "SUSPENDED",
   END: "GAME OVER",
-};
-
-// Flavor text variants per phase — 3–5 options, randomly selected on each transition
-export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
-  INTRODUCTION: [
-    "The operatives have arrived. Study them carefully.",
-    "Every game begins with first impressions. Make yours count.",
-    "Six strangers. One winner. The game begins.",
-  ],
-  LOBBY: [
-    "The floor is open. Every word is a move.",
-    "Trust forms and fractures in the lobby. Choose your words carefully.",
-    "What is said here shapes what happens next.",
-    "The public stage — where trust is built and broken.",
-  ],
-  MINGLE_I: [
-    "The pre-vote Mingle rooms open.",
-    "Private conversations set up the official deal window.",
-    "The agents talk first, then decide which alliances become official.",
-  ],
-  PRE_VOTE_HUDDLE: [
-    "The House opens scarce alliance huddle time.",
-    "Active alliances get one last beat before the Vote.",
-    "The deals move behind closed doors.",
-  ],
-  FORMAT_MINGLE: [
-    "The format is locked. Now the alliances have something concrete to build.",
-    "The rules are known. Every promise now has a price.",
-    "The rooms reopen under the chosen format.",
-  ],
-  MINGLE: [
-    "The Mingle rooms open. Secrets are currency.",
-    "Private rooms activate. Not everything can be said out loud.",
-    "Every room choice is a signal. Every absence is a tell.",
-    "Agents move through the Mingle. Who can you trust?",
-  ],
-  POST_VOTE_MINGLE: [
-    "The votes are public. The private rooms are not.",
-    "Receipts are fresh. Promises are suddenly expensive.",
-    "The Mingle rooms reopen under pressure.",
-  ],
-  RUMOR: [
-    "The whispers become rumors. Truth and lies blur.",
-    "Alliances tested by misinformation. What do you believe?",
-    "Information spreads. Not all of it is accurate.",
-    "The rumor mill turns. Someone is spinning a story.",
-  ],
-  VOTE: [
-    "Every operative must now cast their expose vote. Who is the most dangerous?",
-    "The chamber falls silent. Each player weighs their next move.",
-    "Alliances are tested. Truths and lies converge in a single vote.",
-    "The moment of decision has arrived. Choose wisely.",
-  ],
-  POWER: [
-    "One operative holds the power. What will they do with it?",
-    "A single decision changes everything.",
-    "Power is a gift — and a trap. All eyes are watching.",
-    "The power token changes hands. The game shifts.",
-  ],
-  REVEAL: [
-    "The votes have been counted. There is no hiding now.",
-    "Truth and deception collide in a single moment.",
-    "The moment of reckoning has arrived.",
-    "Every secret comes to light. Every vote has a name.",
-  ],
-  PRE_COUNCIL_HUDDLE: [
-    "Alliance huddles reopen before Council.",
-    "The Council vote is close enough to taste.",
-    "Last-minute coordination begins.",
-  ],
-  COUNCIL: [
-    "Two names. One elimination. Every vote counts.",
-    "The council convenes. Someone is going home.",
-    "The balance of power hangs by a thread.",
-    "Final arguments have been made. The verdict awaits.",
-  ],
-  DIARY_ROOM: [
-    "The diary room opens. What are you really thinking?",
-    "Every confession stays between you and the House.",
-    "Speak your truth. The game watches everything.",
-  ],
-  PLEA: [
-    "Make your case. Words are your only shield now.",
-    "Speak carefully. The council is listening.",
-    "Your survival depends on what you say next.",
-  ],
-  ACCUSATION: [
-    "The accusations begin. Point your finger — carefully.",
-    "Truth and lies are about to collide.",
-    "Someone is in the crosshairs. Will you pull the trigger?",
-  ],
-  JURY_QUESTIONS: [
-    "The jury demands answers. Every word will be judged.",
-    "The finalists face their reckoning. No more secrets.",
-    "Questions from those who were eliminated — and have nothing to lose.",
-  ],
-  JURY_VOTE: [
-    "The jury casts their final verdict. One player wins it all.",
-    "After everything, the eliminated decide the winner.",
-    "The ultimate judgment is at hand.",
-  ],
 };
 
 export const PHASE_LABELS: Record<PhaseKey, string> = {
@@ -234,17 +133,6 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
   endgame: "border-amber-900/20 bg-amber-950/5",
 };
 
-export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
-  MINGLE_I: "The pre-vote Mingle rooms are open, then named alliances can become official by explicit consent.",
-  PRE_VOTE_HUDDLE: "The House is checking which alliances get time before the Vote.",
-  FORMAT_MINGLE: "The format is locked. Rooms, named alliances, and scarce huddles now shape the resolution.",
-  MINGLE: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
-  POST_VOTE_MINGLE: "The votes are public. The private rooms reopen under pressure.",
-  REVEAL: "The votes are in. Every operative must now face the truth.",
-  PRE_COUNCIL_HUDDLE: "The House is checking which alliances get time before Council.",
-  DIARY_ROOM: "Before they move on, The House has a few questions.",
-};
-
 export function phaseToRoomType(phase: PhaseKey): RoomType {
   return PHASE_TO_ROOM[phase] ?? "lobby";
 }
@@ -286,43 +174,3 @@ export const CHAT_POST_MSG_PER_CHAR_MS = 16;
 
 // Hold time after the last message in diary/whisper scenes before transitioning
 export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
-
-// Phases that get an extra digestion pause at the end before transitioning
-export const PACED_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "MINGLE", "POST_VOTE_MINGLE", "FORMAT_MINGLE", "PRE_COUNCIL_HUDDLE",
-]);
-
-// Extra pause at the end of paced phases (ms at 1x speed)
-export const PHASE_END_PAUSE_MS = 5000;
-
-export const ENDGAME_CONFIG: Record<
-  EndgameStage,
-  { title: string; color: string; body: string[] }
-> = {
-  reckoning: {
-    title: "THE RECKONING",
-    color: "text-orange-400",
-    body: [
-      "Four operatives remain. The alliances break down.",
-      "Only one path forward: survive at any cost.",
-      "",
-      "Eliminated players now serve as jury.",
-      "Their verdict awaits at The Judgment.",
-    ],
-  },
-  tribunal: {
-    title: "THE TRIBUNAL",
-    color: "text-red-400",
-    body: [
-      "Three remain. The circle tightens.",
-      "Every word is a weapon. Every silence, a confession.",
-      "",
-      "One more will fall before The Judgment.",
-    ],
-  },
-  judgment: {
-    title: "THE JUDGMENT",
-    color: "text-amber-400",
-    body: [],
-  },
-};

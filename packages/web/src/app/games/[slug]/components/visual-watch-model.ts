@@ -40,6 +40,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     }
     return { rooms, beat };
   }
+  if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title } };
   if (!message) return { rooms, beat };
   const speakerId = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
   if (message.acceptedBallot) {

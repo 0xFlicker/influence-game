@@ -15,29 +15,23 @@ import type {
 } from "@/lib/api";
 import type {
   ClassicPresentationCue,
-  EndgameStage,
-  EndgameScreenState,
   FormatPresentationCue,
+  HousePresentationCue,
   PresentationCue,
   ReplayScene,
-  TransitionState,
 } from "./types";
 import {
   PHASE_TRANSITION_LABELS,
-  PHASE_FLAVORS,
   phaseColor,
+  phaseToRoomType,
   setPhaseAttr,
   setEndgameAttr,
   ENDGAME_PHASES,
   ROOM_TYPE_COLORS,
   SPEED_OPTIONS,
-  PACED_PHASES,
-  PHASE_END_PAUSE_MS,
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
-import { PhaseTransitionOverlay } from "./phase-transition";
-import { EndgameEntryScreen } from "./endgame-entry";
-import { buildReplayScenes } from "./spectacle-viewer";
+import { buildStoryScenes, withHouseBridges } from "./house-story";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   MATCH_WATCH_FORMAT_PHASES,
@@ -64,9 +58,10 @@ const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
 ]);
 
 export function isFormatSocialTranscriptMessage(
-  message: Pick<TranscriptEntry, "phase" | "presentationPurpose">,
+  message: Pick<TranscriptEntry, "phase" | "presentationPurpose" | "dialogueKind">,
 ): boolean {
-  return message.presentationPurpose === "farewell"
+  return message.dialogueKind === "house_summary"
+    || message.presentationPurpose === "farewell"
     || !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
 }
 
@@ -92,8 +87,8 @@ export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
   );
 }
 
-function buildClassicPresentationCues(
-  scenes: ReturnType<typeof buildReplayScenes>,
+export function buildClassicPresentationCues(
+  scenes: ReplayScene[],
   replayFrames: readonly GameWatchReplayFrame[],
 ): ClassicPresentationCue[] {
   const framesByRound = new Map<number, GameWatchReplayFrame[]>();
@@ -103,30 +98,22 @@ function buildClassicPresentationCues(
     framesByRound.set(frame.round, roundFrames);
   }
   return scenes.flatMap((scene, sceneIndex) =>
-    scene.messages.flatMap((message, messageIndex) => {
-      const canonicalSequence = latestFrameSequenceAtOrBefore(
-        framesByRound.get(scene.round) ?? [],
-        message.timestamp,
-      );
-
-      const stages: Array<{ stage: ClassicPresentationCue["stage"]; durationMs: number }> = [
-        { stage: "done", durationMs: visualSpeechDurationMs(message.text) },
-      ];
-
-      return stages.map(({ stage, durationMs }) => ({
-        source: "classic" as const,
-        liveCatchUp: message.liveCatchUp,
-        key: `classic:${message.id}:${stage}`,
-        canonicalSequence,
-        round: scene.round,
-        phase: scene.phase,
-        kind: "classic_transcript" as const,
-        stage,
-        baseDurationMs: durationMs,
-        sceneIndex,
-        messageIndex,
-      }));
-    }),
+    scene.messages.map((message, messageIndex) => ({
+      source: "classic" as const,
+      liveCatchUp: message.liveCatchUp,
+      key: `classic:${message.entrySequence ?? message.id}:done`,
+      houseSummary: message.dialogueKind === "house_summary",
+      canonicalSequence: message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
+        framesByRound.get(scene.round) ?? [], message.timestamp,
+      ),
+      round: scene.round,
+      phase: scene.phase,
+      kind: "classic_transcript" as const,
+      stage: "done" as const,
+      baseDurationMs: visualSpeechDurationMs(message.text),
+      sceneIndex,
+      messageIndex,
+    })),
   );
 }
 
@@ -164,7 +151,12 @@ export function comparePresentationCues(
   const phaseDifference =
     phaseIndex(left.phase) - phaseIndex(right.phase);
   if (phaseDifference !== 0) return phaseDifference;
-  if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
+  if (left.source !== right.source) {
+    // Summaries sharing a commit with a result follow every reveal stage.
+    if (left.source === "classic") return left.houseSummary ? 1 : -1;
+    if (right.source === "classic") return right.houseSummary ? -1 : 1;
+    return left.source === "house" ? -1 : 1;
+  }
   if (left.source === "format" && right.source === "format") {
     return left.canonicalSequence - right.canonicalSequence;
   }
@@ -201,7 +193,7 @@ export function buildReplayPlayersForCue(input: {
 function mergeFormatAndSocialCues(
   formatCues: readonly FormatPresentationCue[],
   classicCues: readonly ClassicPresentationCue[],
-  scenes: ReturnType<typeof buildReplayScenes>,
+  scenes: ReplayScene[],
 ): PresentationCue[] {
   const socialCues = classicCues.filter((cue) => {
     const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
@@ -210,14 +202,13 @@ function mergeFormatAndSocialCues(
   return [...socialCues, ...formatCues].sort(comparePresentationCues);
 }
 
-function formatCueScene(cue: FormatPresentationCue): ReplayScene {
+function formatCueScene(cue: FormatPresentationCue | HousePresentationCue): ReplayScene {
   return {
     id: cue.key,
     round: cue.round,
     phase: cue.phase,
-    roomType: "tribunal" as const,
-    messages: [] as TranscriptEntry[],
-    houseIntro: null,
+    roomType: phaseToRoomType(cue.phase),
+    messages: [],
   };
 }
 
@@ -316,7 +307,7 @@ function DramaticReplayTheater({
     })),
     [players],
   );
-  const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
+  const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
     () => buildClassicPresentationCues(scenes, replayFrames),
     [replayFrames, scenes],
@@ -350,18 +341,13 @@ function DramaticReplayTheater({
       scenes,
     ],
   );
-  const presentationCues = useMemo(() => paceVisualBallots(canonicalPresentationCues, players), [canonicalPresentationCues, players]);
+  const presentationCues = useMemo(() => withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes), [canonicalPresentationCues, players, scenes]);
   const {
     director,
     snapshot: directorSnapshot,
     scope: animationScope,
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
-  // Check if any per-message thinking exists (to decide whether to show toggle)
-  const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
-  const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
-  const resumeAfterTransitionRef = useRef(false);
-  const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectHydrationPendingRef = useRef(false);
@@ -379,12 +365,11 @@ function DramaticReplayTheater({
       classicCue.round,
     );
   }, [classicCue, directorSnapshot.cursor, presentationCues]);
-  const sceneIndex = classicCue?.sceneIndex ?? 0;
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
     ? scenes[classicCue.sceneIndex]
-    : formatCue
-      ? formatCueScene(formatCue)
+    : activeCue && activeCue.source !== "classic"
+      ? formatCueScene(activeCue)
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const visualData = useVisualWatch(game.id, game.visualMode === true, live);
@@ -397,7 +382,6 @@ function DramaticReplayTheater({
     { enabled: true, status: null, portraits: {}, scenes: [], ...visualData }, activeCue,
     choice.sceneAvailable ? currentMessage : currentMessage ? { ...currentMessage, visualScene: undefined } : null, players,
   );
-  const messagePhase = classicCue?.stage ?? "done";
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
 
@@ -579,71 +563,11 @@ function DramaticReplayTheater({
     });
   }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
 
-  // Detect scene transitions
-  const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
-  const isNewRound = scene && prevScene && scene.round !== prevScene.round;
-  const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
-  // Phase transition overlay on room type changes
-  const replayTransitionHoldMs =
-    prevScene && PACED_PHASES.has(prevScene.phase) ? 2000 + PHASE_END_PAUSE_MS / speed : 2000;
-
-  useEffect(() => {
-    if (isRoomChange && scene) {
-      if (director.getSnapshot().isPlaying) {
-        resumeAfterTransitionRef.current = true;
-        director.pause();
-      }
-      const flavors = PHASE_FLAVORS[scene.phase] ?? [];
-      const flavorText = flavors.length > 0
-        ? flavors[Math.floor(Math.random() * flavors.length)]!
-        : "";
-      setActivePhaseTransition({
-        phase: scene.phase,
-        round: scene.round,
-        maxRounds: game.maxRounds,
-        aliveCount,
-        flavorText,
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIndex]);
-
-  const dismissPhaseTransition = useCallback(() => {
-    setActivePhaseTransition(null);
-    if (resumeAfterTransitionRef.current) {
-      resumeAfterTransitionRef.current = false;
-      director.play();
-    }
-  }, [director]);
-
-  // Endgame entry screens at player-count thresholds
-  useEffect(() => {
-    if (!scene || scene.roomType !== "endgame") return;
-    let stage: EndgameStage | null = null;
-    if (aliveCount <= 2 && !seenEndgameStages.current.has("judgment")) stage = "judgment";
-    else if (aliveCount <= 3 && !seenEndgameStages.current.has("tribunal")) stage = "tribunal";
-    else if (aliveCount <= 4 && !seenEndgameStages.current.has("reckoning")) stage = "reckoning";
-    if (stage) {
-      seenEndgameStages.current.add(stage);
-      const alivePlayers = players.filter((p) => !eliminatedIds.has(p.id));
-      const finalists = alivePlayers.length === 2
-        ? [alivePlayers[0]!.name, alivePlayers[1]!.name] as [string, string]
-        : undefined;
-      const jurors = stage === "judgment"
-        ? players.filter((p) => eliminatedIds.has(p.id)).map((p) => p.name)
-        : undefined;
-      setActiveEndgameScreen({ stage, finalists, jurors });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIndex]);
-
   const advanceMessage = useCallback(() => {
     director.manualAdvance();
   }, [director]);
 
   const pausePresentation = useCallback(() => {
-    // An explicit audience pause wins over automatic transition/reconnect resume.
-    resumeAfterTransitionRef.current = false;
     director.pause();
   }, [director]);
 
@@ -717,7 +641,6 @@ function DramaticReplayTheater({
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (activePhaseTransition || activeEndgameScreen) return;
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -751,8 +674,6 @@ function DramaticReplayTheater({
     return () => window.removeEventListener("keydown", handleKey);
   }, [
     advanceMessage,
-    activeEndgameScreen,
-    activePhaseTransition,
     director,
     directorSnapshot.cursor,
     goToNextScene,
@@ -800,12 +721,6 @@ function DramaticReplayTheater({
     );
   }
 
-  // Whisper room label
-  const roomLabel = scene.whisperRoom
-    ? `Room ${scene.whisperRoom.roomId} — ${scene.whisperRoom.playerNames.join(" × ")}`
-    : null;
-
-
   return (
     <div
       ref={animationScope}
@@ -828,20 +743,6 @@ function DramaticReplayTheater({
         </>
       )}
 
-      {/* Overlays */}
-      {activePhaseTransition && (
-        <PhaseTransitionOverlay
-          transition={activePhaseTransition}
-          onDismiss={dismissPhaseTransition}
-          holdMs={replayTransitionHoldMs}
-        />
-      )}
-      {activeEndgameScreen && (
-        <EndgameEntryScreen
-          endgame={activeEndgameScreen}
-          onDismiss={() => setActiveEndgameScreen(null)}
-        />
-      )}
       {/* Exit button — top-left, auto-hides with controls */}
       {!embedded && (
         <button
@@ -872,10 +773,7 @@ function DramaticReplayTheater({
             <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
               {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
             </span>
-            {roomLabel && (
-              <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
-            )}
-            {isNewRound && (
+            {scene.round > 0 && (
               <span className="text-xs text-white/25 uppercase tracking-wider hidden md:inline">
                 Round {scene.round}
               </span>
@@ -939,12 +837,7 @@ function DramaticReplayTheater({
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {activeFormatIdForSocialScene ? (
-            <div className="mb-3 flex shrink-0 justify-center">
-              <ActiveFormatLabel formatId={activeFormatIdForSocialScene} />
-            </div>
-          ) : null}
-          {visual?.beat ? <VisualPresentation director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} status={visualData?.status} /> : <>
+          {visual?.beat ? <VisualPresentation director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FormatPresentation
@@ -961,15 +854,6 @@ function DramaticReplayTheater({
           )}
 
           </>}
-          {/* Paused indicator */}
-          {!formatCue
-            && !isPlaying
-            && messagePhase === "done"
-            && (
-            <p className="text-center text-xs text-white/15 mt-8 animate-pulse">
-              Click or press → to advance
-            </p>
-          )}
 
         </div>
       </div>
@@ -985,6 +869,7 @@ function DramaticReplayTheater({
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
+        {activeFormatIdForSocialScene && <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div>}
         {/* Mobile: compact 2-row layout */}
         <div className="md:hidden flex flex-col gap-2 max-w-sm mx-auto">
           <div className="flex items-center justify-between gap-2">

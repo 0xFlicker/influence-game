@@ -63,6 +63,12 @@ append. Active-match MCP does not expose in-match vote tools. The presentation
 may hold already-received identities until phase-end, then shows the aggregate
 before the canonical roster-ordered roll call.
 
+## House narration and operational records
+
+Both transcript REST responses and committed WebSocket publications expose the stored dialogue kind and first durable event sequence. The watch compiler includes `house_summary` during format-authority phases, ordered after reveal cues sharing that sequence. It omits operational log records from the theatrical sequence without deleting transcript evidence. Scene grouping follows accepted chronology and never parses room allocation text.
+
+One director owns the House logo segment, summary reading time and title-only bridges. The standalone phase/endgame overlays and random copy are removed. Live append, reconnect and media readiness preserve the current speech/House beat; historical backfill cannot interrupt a title already on air. No new provider invocation or gameplay boundary is introduced.
+
 ## Verification status
 
 Automated model/component coverage proves:

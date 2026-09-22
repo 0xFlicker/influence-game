@@ -2617,6 +2617,8 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
+  firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
@@ -2678,6 +2680,8 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
+  firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
   presentationPurpose?: "farewell";
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };

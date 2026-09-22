@@ -209,9 +209,13 @@ pointer candidates, easing, and layout motion never become game decisions.
 
 ## Presentation director
 
-The single controller that advances classic replay scenes and typed format cues.
+The single controller that advances conversation, House segments and typed format cues.
 It owns pause, resume, speed, manual advance, current-state hydration, and
 reduced-motion timing without changing cue order or canonical outcomes.
+
+## House segment
+
+A viewer-only narration or transition cue. A saved `house_summary` delivers the House's public commentary at its recorded canonical position; it does not establish game facts. The outgoing summary bridges phases, or a short logo/title cue bridges an unsummarized boundary. Operational logs and Mingle room allocations are not story beats. The presentation director owns the segment's reading time and motion.
 
 ## Elimination message
 

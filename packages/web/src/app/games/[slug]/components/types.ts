@@ -17,13 +17,7 @@ export interface ReplayScene {
   phase: PhaseKey;
   roomType: RoomType;
   messages: TranscriptEntry[];
-  houseIntro: string | null;
-  /** Present on per-room scenes (sequential presentation). Field name retained for historical data shape compatibility (see whisper-phase.tsx header comment). */
-  whisperRoom?: { roomId: number; playerNames: string[] };
-  /** Present on per-player diary scenes (sequential presentation). */
-  diaryPlayer?: { playerName: string };
-  /** When true, this scene is an overview/allocation screen with no chat messages. */
-  isOverview?: boolean;
+
 }
 
 export interface WhisperRoomStage {
@@ -42,26 +36,10 @@ export interface WhisperStageData {
   hasRoomMetadata?: boolean;
 }
 
-export interface TransitionState {
-  phase: PhaseKey;
-  round: number;
-  maxRounds: number;
-  aliveCount: number;
-  flavorText: string;
-}
-
 export type GroupedMessage =
   | { kind: "msg"; entry: TranscriptEntry }
   | { kind: "diary_pair"; question: TranscriptEntry; answer: TranscriptEntry | null; id: number }
   | { kind: "diary_orphan_answer"; answer: TranscriptEntry };
-
-export type EndgameStage = "reckoning" | "tribunal" | "judgment";
-
-export interface EndgameScreenState {
-  stage: EndgameStage;
-  finalists?: [string, string];
-  jurors?: string[];
-}
 
 export interface DiaryRoomData {
   playerName: string;
@@ -272,6 +250,7 @@ export interface ClassicPresentationCue {
   /** Historical dialogue is navigable but must not resume live playback. */
   liveCatchUp?: boolean;
   source: "classic";
+  houseSummary?: boolean;
   key: string;
   canonicalSequence: number | null;
   round: number;
@@ -283,4 +262,17 @@ export interface ClassicPresentationCue {
   messageIndex: number;
 }
 
-export type PresentationCue = ClassicPresentationCue | FormatPresentationCue;
+export interface HousePresentationCue {
+  source: "house";
+  kind: "house_bridge";
+  followingCueKey: string;
+  key: string;
+  canonicalSequence: number | null;
+  round: number;
+  phase: PhaseKey;
+  title: string;
+  liveCatchUp?: boolean;
+  baseDurationMs: number;
+}
+
+export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue;

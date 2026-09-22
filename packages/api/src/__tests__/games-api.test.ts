@@ -2264,6 +2264,8 @@ describe("Game REST API", () => {
             phase: "LOBBY",
             scope: "system",
             text: "Round 1 has begun.",
+            dialogueKind: "house_summary",
+            firstDurableEventSequence: 17,
             timestamp: Date.now() + 1000,
           },
         ]);
@@ -2285,6 +2287,7 @@ describe("Game REST API", () => {
       expect(body[1]!.fromPlayerName).toBeNull();
       expect(body[1]!.scope).toBe("system");
       expect(body[1]!.thinking).toBeNull();
+      expect(body[1]).toMatchObject({ dialogueKind: "house_summary", firstDurableEventSequence: 17 });
     });
 
     test("omits hidden alliance huddle entries from public transcript export", async () => {

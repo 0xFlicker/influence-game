@@ -410,7 +410,7 @@ export class PresentationDirector {
     if (this.disposed || cues.length === 0) return;
     const existingKeys = new Set(this.state.cues.map((cue) => cue.key));
     const activeKey = this.getActiveCue()?.key;
-    const incoming = canonicalizeCues(cues);
+    const incoming = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
     // Reconcile the complete chronological timeline, including backfilled history.
     const nextCues = incoming;
     if (activeKey && !nextCues.some((cue) => cue.key === activeKey)) return;
@@ -419,10 +419,10 @@ export class PresentationDirector {
     const firstNewIndex = nextCues.findIndex((cue, index) =>
       index > nextCursor
       && !existingKeys.has(cue.key)
-      && !(cue.source === "classic" && cue.liveCatchUp)
+      && !(cue.source !== "format" && cue.liveCatchUp)
       && (watermark === null || cue.canonicalSequence === null
         || cue.canonicalSequence > watermark
-        || (cue.source === "classic" && cue.canonicalSequence === watermark)),
+        || (cue.source !== "format" && cue.canonicalSequence === watermark)),
     );
     if (firstNewIndex >= 0 && this.state.isPlaying
       && (this.waitingAtHydrationWatermark || this.state.waitingAtTail)) {
@@ -447,7 +447,7 @@ export class PresentationDirector {
     }
     if (this.waitingAtHydrationWatermark) {
       const next = this.state.cues.findIndex((cue, index) => index > this.state.cursor
-        && !(cue.source === "classic" && cue.liveCatchUp));
+        && !(cue.source !== "format" && cue.liveCatchUp));
       if (next >= 0) {
         this.waitingAtHydrationWatermark = false;
         this.apply({ type: "set_cursor", cursor: next });
@@ -528,18 +528,15 @@ export class PresentationDirector {
 
   reconnect(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
-    const canonical = canonicalizeCues(cues);
+    const canonical = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
     const activeKey = this.state.cues[this.state.cursor]?.key;
-    const retainedCursor = activeKey
-      ? canonical.findIndex((cue) => cue.key === activeKey)
-      : -1;
-    const cursor = retainedCursor >= 0
-      ? retainedCursor
-      : Math.max(0, canonical.length - 1);
+    const retainedCursor = activeKey ? canonical.findIndex((cue) => cue.key === activeKey) : -1;
+    const cursor = retainedCursor >= 0 ? retainedCursor : Math.max(0, canonical.length - 1);
     const watermark = highestCanonicalSequence(canonical);
+    this.captureRemainingTime();
     this.clearTimer();
     this.apply({ type: "hydrate", cues: canonical, cursor, watermark });
-    this.remainingBaseMs = retainedCursor >= 0 ? this.activeDurationMs() : 0;
+    if (retainedCursor < 0) this.remainingBaseMs = 0;
     this.waitingAtHydrationWatermark = retainedCursor < 0;
   }
 
@@ -675,4 +672,12 @@ function browserClock(): PresentationClock {
     setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
     clearTimeout: (timerId) => window.clearTimeout(timerId),
   };
+}
+
+/** Backfilled narration can replace a title in history, but cannot interrupt a title already on air. */
+function retainActiveHouseBridge(cues: PresentationCue[], active: PresentationCue | null): PresentationCue[] {
+  if (active?.source !== "house" || cues.some((cue) => cue.key === active.key)) return cues;
+  const following = cues.findIndex((cue) => cue.key === active.followingCueKey);
+  if (following >= 0) cues.splice(following, 0, active);
+  return cues;
 }

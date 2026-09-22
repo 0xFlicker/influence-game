@@ -5,13 +5,14 @@ import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@infl
 import { VISUAL_SPEECH_FADE_MS, visualSpeechOpacity } from "@influence/engine/visual-speech";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import type { PresentationDirector } from "./format-presentation-director";
+import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
   | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation"; player: { id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
-  | { kind: "house"; text: string }
+  | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 
 /** Observe the director instead of creating an independent wall-clock speech timer. */
@@ -73,7 +74,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
     const opacity = visualSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
     content = <section aria-label="Anonymous speech" className="mx-auto max-w-2xl py-10"><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote style={{ opacity }} className="rounded-2xl border border-white/20 bg-black/85 p-5">{beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
-    content = <section aria-label="House summary" className="mx-auto max-w-2xl py-10"><p className="mb-4 text-xs uppercase tracking-widest text-white/50">The House</p><p className="whitespace-pre-wrap text-lg leading-relaxed">{beat.text}</p></section>;
+    content = <HouseSegment text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
   } else {
     const isMingle = beat.roomId.startsWith("mingle-");
     const selectedRoom = isMingle && pinnedRoom && mingleRooms.some((room) => room.roomId === pinnedRoom) ? pinnedRoom : beat.roomId;

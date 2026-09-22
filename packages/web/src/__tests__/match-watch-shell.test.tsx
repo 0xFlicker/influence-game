@@ -23,7 +23,7 @@ import {
   comparePresentationCues,
   isFormatSocialTranscriptMessage,
 } from "../app/games/[slug]/components/dramatic-replay-viewer";
-import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
+import { buildStoryScenes } from "../app/games/[slug]/components/house-story";
 
 const matchWatchShellSource = readFileSync(
   join(import.meta.dir, "../app/games/[slug]/components/match-watch-shell.tsx"),
@@ -115,7 +115,7 @@ describe("MatchWatchShell", () => {
     expect(matchWatchShellSource).toContain("Cross-examine this game with your AI.");
     expect(matchWatchShellSource).toContain("Analyze this game");
     expect(matchWatchShellSource.indexOf("<McpBanner />")).toBeLessThan(
-      matchWatchShellSource.indexOf("<PhaseRail model={model} />"),
+      matchWatchShellSource.indexOf("<TheaterPanel"),
     );
   });
 
@@ -172,7 +172,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('aria-label="Cast selection"');
     expect(html).toContain('data-testid="match-watch-count-alive"');
     expect(html).toContain('data-testid="match-watch-count-out"');
-    expect(html).toContain("Strategy Lens");
+    expect(html).not.toContain("Strategy Lens");
     expect(html).toContain("Audience Lens");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
@@ -229,19 +229,16 @@ describe("MatchWatchShell", () => {
         text: "Lyra, can I count on you once Vote Bomb ballots matter?",
       }),
     ];
-    const scenes = buildReplayScenes(messages);
+    const scenes = buildStoryScenes(messages);
 
     expect(scenes).toHaveLength(1);
     expect(scenes[0]).toMatchObject({
       phase: "FORMAT_MINGLE",
       roomType: "private_rooms",
       messages: [
-        { text: "Turn 1: Room 1: Atlas, Lyra" },
         { text: "Lyra, can I count on you once Vote Bomb ballots matter?" },
       ],
     });
-    expect(scenes[0]?.isOverview).toBeUndefined();
-    expect(scenes[0]?.whisperRoom).toBeUndefined();
 
     const html = renderToString(
       <MatchWatchShell
@@ -256,7 +253,7 @@ describe("MatchWatchShell", () => {
         connStatus="replay"
       />,
     );
-    expect(html).toContain("Turn 1: Room 1: Atlas, Lyra");
+    expect(html).not.toContain("Turn 1: Room 1: Atlas, Lyra");
     expect(html).not.toContain("MINGLE MAP");
   });
 
@@ -309,7 +306,7 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Public Receipts");
   });
 
-  it("renders a format-only phase rail with every format phase", () => {
+  it("keeps only the current phase label and progress dock", () => {
     const html = renderToString(
       <MatchWatchShell
         game={{
@@ -325,11 +322,10 @@ describe("MatchWatchShell", () => {
     );
     const textHtml = withoutReactTextMarkers(html);
 
-    expect(textHtml).toContain("Voting");
-    expect(textHtml).toContain("Format Menu");
-    expect(textHtml).toContain("Format Selection");
-    expect(textHtml).toContain("Format Mingle");
-    expect(textHtml).toContain("Format Resolution");
+    expect(textHtml).toContain("Round 1 / Format Mingle");
+    expect(textHtml).not.toContain("Format Menu");
+    expect(textHtml).not.toContain("Format Selection");
+    expect(textHtml).not.toContain("Strategy Lens");
     expect(textHtml).not.toContain("Power Play");
     expect(textHtml).not.toContain("Council");
   });
@@ -608,7 +604,7 @@ describe("MatchWatchShell", () => {
   });
 
   it("keeps diary-room transcript entries out of replay theater scenes", () => {
-    const scenes = buildReplayScenes([
+    const scenes = buildStoryScenes([
       entry({ id: 1, phase: "LOBBY", scope: "public", text: "Lobby opens.", timestamp: 100 }),
       entry({
         id: 2,
