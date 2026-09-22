@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "./use-player-fullscreen";
 import { VisualPresentation } from "./visual-presentation";
 import { useVisualWatch } from "./use-visual-watch";
-import { visualWatchPresentation, paceVisualBallots } from "./visual-watch-model";
+import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
   TranscriptEntry,
@@ -92,6 +91,7 @@ export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
 export function buildClassicPresentationCues(
   scenes: ReplayScene[],
   replayFrames: readonly GameWatchReplayFrame[],
+  players: readonly GamePlayer[] = [],
 ): ClassicPresentationCue[] {
   const framesByRound = new Map<number, GameWatchReplayFrame[]>();
   for (const frame of replayFrames) {
@@ -112,7 +112,7 @@ export function buildClassicPresentationCues(
       phase: scene.phase,
       kind: "classic_transcript" as const,
       stage: "done" as const,
-      baseDurationMs: visualSpeechDurationMs(message.text),
+      baseDurationMs: transcriptPresentationDurationMs(message, players),
       sceneIndex,
       messageIndex,
     })),
@@ -311,8 +311,8 @@ function DramaticReplayTheater({
   );
   const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
-    () => buildClassicPresentationCues(scenes, replayFrames),
-    [replayFrames, scenes],
+    () => buildClassicPresentationCues(scenes, replayFrames, players),
+    [replayFrames, scenes, players],
   );
   const formatCompilation = useMemo(
     () => compileFormatPresentationPrefix({
@@ -502,6 +502,7 @@ function DramaticReplayTheater({
 
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
+  const isSoloPresentation = visual.beat?.kind === "portrait";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -852,9 +853,9 @@ function DramaticReplayTheater({
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
-        } justify-center ${fullscreen ? visual.beat?.kind === "scene" ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+        } justify-center ${fullscreen ? visual.beat?.kind === "scene" || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
+        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}

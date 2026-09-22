@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
+import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
@@ -56,9 +57,9 @@ test("anonymous speech stays unidentified and unanchored", () => {
 
 test("portrait ballot wording is unchanged and expires even with reduced motion", () => {
   const portrait: VisualPresentationBeat = { kind: "portrait", purpose: "Ballot", player: { id: "p1", name: "Arden", persona: "diplomat" }, speech: { ...speech, text: "Eliminate: Mara" } };
-  const view = render(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={0} reducedMotion />);
+  const view = render(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={0} reducedMotion paused />);
   expect(view.getByText("Eliminate: Mara")).not.toBeNull();
-  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={visualSpeechDurationMs(portrait.speech.text)} reducedMotion />);
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={soloPresentationDurationMs(portrait.speech.text)} reducedMotion />);
   expect(view.queryByText("Eliminate: Mara")).toBeNull();
   expect(view.getByRole("img", { name: "Arden" })).not.toBeNull();
 });
@@ -70,7 +71,20 @@ test("paused seeking shows speech immediately without reviving expired bubbles",
   const portrait: VisualPresentationBeat = { kind: "portrait", purpose: "Conversation", player: { id: "p1", name: "Arden", persona: "diplomat" }, speech };
   view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={0} paused />);
   expect(view.getByText(speech.text)).not.toBeNull();
-  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={visualSpeechDurationMs(speech.text)} paused />);
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={soloPresentationDurationMs(speech.text)} paused />);
+  expect(view.queryByText(speech.text)).toBeNull();
+});
+
+test("solo image and bubble render their separate director-driven fades", () => {
+  const portrait: VisualPresentationBeat = { kind: "portrait", purpose: "Ballot", player: { id: "p1", name: "Arden", persona: "diplomat" }, speech };
+  const view = render(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={175} paused />);
+  expect((view.getByRole("img") as HTMLImageElement).style.opacity).toBe("0.5");
+  expect(view.queryByText(speech.text)).toBeNull();
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={1125} paused />);
+  expect((view.getByRole("img") as HTMLImageElement).style.opacity).toBe("1");
+  expect(view.container.querySelector("blockquote")?.parentElement?.style.opacity).toBe("0.5");
+  view.rerender(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={soloPresentationDurationMs(speech.text) - 175} paused />);
+  expect((view.getByRole("img") as HTMLImageElement).style.opacity).toBe("0.5");
   expect(view.queryByText(speech.text)).toBeNull();
 });
 

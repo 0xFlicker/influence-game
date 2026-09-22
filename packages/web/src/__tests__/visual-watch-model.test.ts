@@ -1,7 +1,9 @@
 import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
-import { visualWatchPresentation, paceVisualBallots, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
+import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
+import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
+import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
 const player: GamePlayer = { id: "a", name: "Ada", persona: "social", status: "alive", shielded: false };
 const message: TranscriptEntry = { id: 10, gameId: "g", round: 1, phase: "LOBBY", fromPlayerId: "a", fromPlayerName: "Ada", scope: "public", toPlayerIds: null, text: "Let us talk.", timestamp: 1, entrySequence: 5, visualScene: { id: "old", roomId: "lobby" } };
@@ -50,6 +52,14 @@ test("all accepted ballot purposes say only the target name using the frozen bod
   }
 });
 
+test("solo cues budget their full shot sequence while room and House speech keep their timing", () => {
+  expect(transcriptPresentationDurationMs(message, [player])).toBe(visualSpeechDurationMs(message.text));
+  expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined }, [player])).toBe(soloPresentationDurationMs(message.text));
+  expect(transcriptPresentationDurationMs({ ...message, phase: "INTRODUCTION" }, [player])).toBe(soloPresentationDurationMs(message.text));
+  expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined, fromPlayerId: null, scope: "system", dialogueKind: "house_summary" }, [player])).toBe(visualSpeechDurationMs(message.text));
+  expect(transcriptPresentationDurationMs({ ...message, text: "Hidden reasoning. ".repeat(60), acceptedBallot: { voterId: "a", targetId: "a", purpose: "winner" } }, [player])).toBe(soloPresentationDurationMs("Ada"));
+});
+
 
 test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "majority_elimination_clear", "safety_bounce_tie"] as const)("%s sealed roll calls retain canonical voters and targets in solo presentation", (scenarioId) => {
   const scenario = createFormatKernelViewerScenario(scenarioId);
@@ -63,6 +73,7 @@ test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "
     if (cue.source !== "format" || cue.kind !== "format_roll_call") throw new Error("Expected ballot");
     const beat = visualWatchPresentation(data, cue, null, players).beat;
     expect(beat).toMatchObject({ kind: "portrait", purpose: "Ballot", player: { id: cue.ballot.voterId }, speech: { text: players.find(p => p.id === cue.ballot.targetId)!.name } });
+    expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(players.find(p => p.id === cue.ballot.targetId)!.name));
   }
   expect(paced.filter(c => c.source === "format" && !c.visualBallot).map(c => c.key)).toEqual(compiled.cues.map(c => c.key));
 });

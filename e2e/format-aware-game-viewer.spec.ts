@@ -142,16 +142,21 @@ test.describe("format-aware game viewer", () => {
       scope: "public", text: speech, timestamp: Date.now(),
     } }));
     await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+    await expect(page.locator('[data-solo-image] blockquote').locator('..')).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: "Pause replay", exact: true }).click();
     await page.getByRole("button", { name: "Enter fullscreen" }).click();
     const player = page.locator('[data-player-fullscreen="true"]');
     await expect(player).toBeVisible();
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
-    const before = await player.locator('blockquote').innerText();
+    const before = await player.locator('[data-solo-image]').getAttribute('aria-label');
     await player.getByRole('img').click();
-    expect(await player.locator('blockquote').innerText()).toBe(before);
+    // Fullscreen resize may still repaginate text. Tapping must preserve the
+    // active speech and reading position, not the previous frame's page size.
+    await expect(player.locator('[data-solo-image]')).toHaveAttribute('aria-label', before!);
+    await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
+    await expect.poll(() => player.locator('blockquote').evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
     const bounds = await player.locator('blockquote').evaluate((element) => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, height: window.innerHeight, scroll: element.scrollHeight, client: element.clientHeight }));
     expect(bounds.top).toBeGreaterThanOrEqual(0);
     expect(bounds.bottom).toBeLessThanOrEqual(bounds.height);
@@ -193,15 +198,25 @@ test.describe("format-aware game viewer", () => {
     const icon = await enter.locator("svg").boundingBox();
     expect(icon!.width).toBeGreaterThanOrEqual(32);
     await enter.click();
+    await expect(solo.locator('blockquote').locator('..')).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
     for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await page.setViewportSize(size);
       await expect(solo.getByRole("img")).toHaveCSS("object-fit", "contain");
+      await expect.poll(async () => {
+        const image = await solo.getByRole("img").boundingBox();
+        return Math.round(image!.height);
+      }).toBe(size.height);
+      const image = (await solo.getByRole("img").boundingBox())!;
+      expect(image.y).toBe(0);
+      expect(image.width).toBeCloseTo(size.height * 2 / 3, 0);
+      expect(image.x).toBeCloseTo((size.width - image.width) / 2, 0);
       const bubble = solo.locator("blockquote");
       await expect(bubble).toContainText("I intend to win your trust.");
       const bounds = await bubble.evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, viewport: innerHeight, scroll: el.firstElementChild!.scrollHeight, client: el.firstElementChild!.clientHeight }));
       expect(bounds.top).toBeGreaterThanOrEqual(0);
-      expect(bounds.bottom).toBeLessThan(bounds.viewport);
+      expect(bounds.top).toBeGreaterThan(image.y + image.height * 0.22);
+      expect(bounds.bottom).toBeLessThan(bounds.viewport - 140);
       expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
     }
     fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));

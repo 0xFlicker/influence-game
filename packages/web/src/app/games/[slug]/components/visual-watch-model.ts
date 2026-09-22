@@ -3,6 +3,15 @@ import type { GamePlayer, TranscriptEntry } from "@/lib/api";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { PresentationCue } from "./types";
 import type { VisualPresentationBeat } from "./visual-presentation";
+import { soloPresentationDurationMs } from "./solo-presentation-timing";
+
+/** Reserve solo staging from committed transcript metadata, never image load timing. */
+export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
+  const solo = !message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
+    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || !message.visualScene)));
+  const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
+  return solo ? soloPresentationDurationMs(text) : visualSpeechDurationMs(text);
+}
 
 export interface VisualWatchData {
   publicationSnapshot?: Record<string, number>;
@@ -83,13 +92,13 @@ export function paceVisualBallots(cues: readonly PresentationCue[], players: rea
       const portraits = receipts.map((receipt, index) => {
         const name = players.find((player) => player.id === receipt.targetId)?.name ?? "Player";
         return { ...cue, key: `${cue.key}:visual-ballot:${index}`, before: cue.before, after: cue.before,
-          visualBallot: { ...receipt, purpose: "empower" as const }, baseDurationMs: visualSpeechDurationMs(name) };
+          visualBallot: { ...receipt, purpose: "empower" as const }, baseDurationMs: soloPresentationDurationMs(name) };
       });
       return [...portraits, cue];
     }
     if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea") {
       const beat = visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cue, null, players).beat;
-      if (beat?.kind === "portrait") return [{ ...cue, baseDurationMs: visualSpeechDurationMs(beat.speech.text) }];
+      if (beat?.kind === "portrait") return [{ ...cue, baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
     }
     return [cue];
   });

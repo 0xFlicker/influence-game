@@ -61,7 +61,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
   if (beat.kind === "portrait") {
-    content = <SoloPresentation beat={beat} opacity={visualSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion)} elapsedMs={clockElapsedMs} />;
+    content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} />;
   } else if (beat.kind === "anonymous") {
     const opacity = visualSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={clockElapsedMs} /> : beat.speech.text}</blockquote>}</section>;

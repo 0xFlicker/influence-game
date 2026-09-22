@@ -11,6 +11,7 @@ import {
 } from "../app/games/[slug]/components/format-presentation-director";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
+import { soloPresentationDurationMs, soloPresentationMotion } from "../app/games/[slug]/components/solo-presentation-timing";
 
 class FakeClock implements PresentationClock {
   nowMs = 0;
@@ -461,6 +462,27 @@ it("resumes a new live cue buffered while paused at the initial hydration bounda
   expect(director.getSnapshot()).toMatchObject({ activeKey: "current", isPlaying: false });
   director.play();
   expect(director.getSnapshot()).toMatchObject({ activeKey: "new", isPlaying: true });
+});
+
+it("keeps solo fades on the director clock through pause, speed changes and the next shot", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const shot = { ...cue("solo", 1, 0, "classic"), baseDurationMs: soloPresentationDurationMs("Echo") };
+  const next = { ...shot, key: "next-solo" };
+  director.load([shot, next]); director.play(); clock.tick(175);
+  director.pause(); clock.tick(1000);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs(), true).imageOpacity).toBe(.5);
+  director.setSpeed(2); director.play(); clock.tick(475);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
+  director.reconnect([shot, next]);
+  expect(director.getElapsedBaseMs()).toBe(1125);
+  director.play();
+  clock.tick((shot.baseDurationMs - 1125 - 175) / 2);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs())).toMatchObject({ imageOpacity: .5, speechOpacity: 0 });
+  clock.tick(175 / 2);
+  expect(director.getActiveCue()?.key).toBe("next-solo");
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).imageOpacity).toBe(0);
+  director.dispose();
 });
 
 it("keeps House animation on the shared clock through pause, speed, reconnect and append", () => {
