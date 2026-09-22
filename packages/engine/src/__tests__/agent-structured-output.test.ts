@@ -3036,7 +3036,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(firstPrompt).toContain("Talk about the game");
     expect(firstPrompt).toContain("Bluff, misdirect, exaggerate, or lie");
-    expect(firstPrompt).toContain("Write 1-5 sentences; prefer conciseness");
+    expect(firstPrompt).toContain("one short paragraph, usually 1–3 sentences, under 100 tokens");
     expect(firstPrompt).toContain("This is lobby message 1 of 2; 1 lobby message remains after this.");
     expect(firstPrompt).not.toContain("Openly naming vote plans, expose targets, or alliance structures");
     expect(firstPrompt).not.toContain("Revealing private deals or whisper-room information as fact");
@@ -7049,6 +7049,109 @@ describe("Two Names canonical prompt board", () => {
       expect(prompt).toContain(`Two Names current nominees: ${use ? "Sage" : "Mira"} and Vera`);
       expect(prompt).toContain("Pair status: final");
     }
+  });
+});
+
+describe("final conversational dialogue driver", () => {
+  const heading = "# CONSTITUTION.md";
+  const speech = { thinking: "Keep the pitch direct.", message: "Mira, back my vote and I'll back yours.", strategyDelta: null };
+  const mingle = { ...speech, noReply: false, gotoRoomId: null, gotoPlayerName: null, coordinationFact: null, noProposal: true };
+  const huddle = {
+    sessionId: "session", allianceId: "glass", allianceName: "Glass Table",
+    memberIds: ["atlas-id", "mira-id"], memberNames: ["Atlas", "Mira"],
+    purpose: "Coordinate", timebox: null, window: "pre_vote" as const,
+    scheduleId: "schedule", pass: 1, priorFacts: [],
+  };
+
+  for (const model of ["gpt-5.6-luna", "google/gemma-4-26b-a4b-qat"]) {
+    for (const visual of [false, true]) {
+      it(`ends each conversational request and private trace with one driver (${model}, visual=${visual})`, async () => {
+        for (const phase of [Phase.LOBBY, Phase.MINGLE_I, Phase.MINGLE, Phase.POST_VOTE_MINGLE, Phase.FORMAT_MINGLE, Phase.PRE_VOTE_HUDDLE]) {
+          const requests: Array<Record<string, unknown>> = [];
+          const traces: PrivateDecisionTrace[] = [];
+          const cue = visual ? { cue: null } : {};
+          const client = phase === Phase.LOBBY
+            ? makeTextOpenAIStub(requests, JSON.stringify({ ...speech, ...cue }))
+            : phase === Phase.PRE_VOTE_HUDDLE
+              ? makeToolOpenAIStub(requests, "alliance_huddle_turn", { ...speech, ...cue, noReply: false, factAtoms: [] })
+              : makeToolOpenAIStub(requests, "mingle_turn", { ...mingle, ...cue });
+          const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", client, model, undefined, undefined, {
+            privateTraceSink: (trace) => { traces.push(trace); },
+          });
+          agent.onGameStart("game-1", makeContext().alivePlayers);
+          const ctx = {
+            ...makeContext(phase), roomCount: 2, currentRoomId: 1,
+            ...(visual ? { visual: { performanceInstructions: "Quiet delivery." } } : {}),
+          };
+          if (phase === Phase.LOBBY) await agent.getLobbyMessage(ctx);
+          else if (phase === Phase.PRE_VOTE_HUDDLE) await agent.getAllianceHuddleTurn(ctx, huddle);
+          else await agent.takeMingleTurn(ctx, ["Atlas", "Mira"]);
+
+          expect(requests).toHaveLength(1);
+          expect(traces).toHaveLength(1);
+          const messages = requests[0]!.messages as Array<{ role: string; content: string }>;
+          const driver = messages.at(-1)!;
+          expect(driver.role).toBe("user");
+          expect(driver.content).toContain(`\n\n${heading}\n`);
+          expect(driver.content).toEndWith("Silence remains valid when the action allows it.");
+          expect(driver.content).toContain("under 100 tokens");
+          expect(driver.content).toContain("only to your spoken message");
+          expect(driver.content).toContain("Silence remains valid");
+          expect(messages.filter((message) => message.content.includes(heading))).toHaveLength(1);
+          expect(messages[0]!.content).not.toContain(heading);
+          expect(JSON.stringify(messages)).not.toContain("1-5 sentences");
+          if (visual) {
+            expect(driver.content).toContain("Quiet delivery.");
+            expect(driver.content.indexOf("Quiet delivery.")).toBeLessThan(driver.content.indexOf(heading));
+          } else if (model === "gpt-5.6-luna") {
+            expect(typeof requests[0]!.input).toBe("string");
+          }
+          expect(traces[0]!.prompt.messages).toEqual(messages);
+          expect(traces[0]!.request).toMatchObject({ messages });
+        }
+      });
+    }
+  }
+
+  it("keeps introductions, finals and decision-only calls outside the dialogue rule", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify(speech)), "gpt-5.6-luna");
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+    await agent.getOpeningStatement(makeContext(Phase.OPENING_STATEMENTS));
+    const voter = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeOpenAIStub(requests), "gpt-5.6-luna");
+    voter.onGameStart("game-1", makeContext().alivePlayers);
+    await voter.getVotes(makeContext());
+    expect(requests).toHaveLength(3);
+    expect(JSON.stringify(requests)).not.toContain(heading);
+  });
+
+  it("retries without duplicating the driver and preserves valid longer speech", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const message = "I remember exactly what you promised me. ".repeat(60).trim();
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextSequenceOpenAIStub(requests, ["{}", JSON.stringify({ ...speech, message })]), "gpt-5.6-luna");
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const result = await agent.getLobbyMessage(makeContext(Phase.LOBBY));
+    expect(result.message).toBe(message);
+    expect(requests).toHaveLength(2);
+    expect(requests[0]!.messages).toEqual(requests[1]!.messages);
+    for (const request of requests) {
+      expect(JSON.stringify(request.messages).split(heading)).toHaveLength(2);
+    }
+  });
+
+  it("preserves legal silence in Mingle and huddles", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeToolSequenceOpenAIStub(requests, [
+      { toolName: "mingle_turn", args: { ...mingle, message: null, noReply: true } },
+      { toolName: "alliance_huddle_turn", args: { ...speech, message: null, noReply: true, factAtoms: [] } },
+    ]), "gpt-5.6-luna");
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const turn = await agent.takeMingleTurn({ ...makeContext(Phase.MINGLE), roomCount: 2 }, ["Atlas"]);
+    const reply = await agent.getAllianceHuddleTurn(makeContext(Phase.PRE_VOTE_HUDDLE), huddle);
+    expect(turn).toMatchObject({ message: null, noReply: true });
+    expect(reply).toMatchObject({ message: null, noReply: true, factAtoms: [] });
+    expect(requests).toHaveLength(2);
   });
 });
 

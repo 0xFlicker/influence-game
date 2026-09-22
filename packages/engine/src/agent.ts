@@ -1604,6 +1604,10 @@ export interface InfluenceAgentOptions {
   providerManifest?: readonly LlmProviderRuntime[];
 }
 
+const SHORT_DIALOGUE_ACTIONS = new Set(["lobby", "mingle-turn", "alliance-huddle-turn"]);
+const SHORT_DIALOGUE_DRIVER = `# CONSTITUTION.md
+You are playing a game for yourself, with other players and an audience watching. You may occasionally break the fourth wall. When speaking, keep your message terse: one short paragraph, usually 1–3 sentences, under 100 tokens. Every word should advance your game or entertain the audience. Play for yourself and the cameras. Make friends, form blocs, influence targets. This limit applies only to your spoken message; preserve all required structured fields. Silence remains valid when the action allows it.`;
+
 const VISUAL_CONVERSATION_ACTIONS = new Set([
   "lobby", "room-message", "mingle-turn", "accusation", "tribunal-defense",
   "opening-statement", "jury-question", "jury-answer", "closing-argument", "plea",
@@ -2511,7 +2515,7 @@ export class InfluenceAgent implements IAgent {
 
   private async emitPrivateDecisionTrace(params: {
     options?: LlmCallOptions;
-    messages: readonly { role: string; content: unknown; name?: string }[];
+    messages: readonly ModelInvocationMessage[];
     response: ModelCallResponse;
     output?: unknown;
     toolName?: string;
@@ -2563,7 +2567,9 @@ export class InfluenceAgent implements IAgent {
       runtime,
       params.options,
     );
-    const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
+    const privateTraceMessages = InfluenceAgent.privateTraceMessages(
+      this.buildInvocationMessages(params.messages, params.options),
+    );
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: traceContext.actor.id ?? traceContext.actor.role,
       requestShape: response.transport,
@@ -2685,7 +2691,7 @@ You can:
 - Talk about the game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`
+Your message should feel public and watchable, not like a rules spreadsheet.`
   : `## Lobby Guidance
 This is public. Everyone is watching. The game is heating up.
 
@@ -2698,7 +2704,7 @@ You may:
 - Name empower plans, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should be entertaining and useful to your game. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`;
+Your message should be entertaining and useful to your game.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
 ${lobbyProgress}
@@ -3394,7 +3400,7 @@ Rules:
 - Author proposal and commitment atoms only for yourself. Respond to another member only by referencing an eligible earlier fact ID; a counter must include its complete replacement action and target.
 - An empty factAtoms array is valid when this turn contributes dialogue but no structured fact. Never invent another member's promise from what they said.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation happened in the structured post-format alliance window.
-- Keep dialogue to 1-3 sentences. The House may use it for narrative presentation, but factual continuity comes only from the closed atoms.
+- The House may use dialogue for narrative presentation, but factual continuity comes only from the closed atoms.
 
 Use the alliance_huddle_turn tool.`;
 
@@ -3597,7 +3603,7 @@ Guidance:
 ${spreadInformationGuidance}${movingNoticeGuidance}
 - If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
 
-Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
+Use the mingle_turn tool.`;
 
     try {
       type MingleTurnProviderValue = {
@@ -6509,6 +6515,35 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     );
   }
 
+  /** Final dynamic prompt tail, shared by provider requests and private prompt evidence. */
+  private buildInvocationMessages(
+    messages: readonly ModelInvocationMessage[],
+    options?: LlmCallOptions,
+  ): ModelInvocationMessage[] {
+    const result = [...messages];
+    if (options?.visual) {
+      result.push({
+        role: "user",
+        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
+        ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
+      });
+    }
+    // Keep the stable prefix/cache key intact. This is guidance for dialogue only,
+    // not a completion budget or a guarantee that the provider never caches this tail.
+    // Append within the last user message to retain the existing native request shape.
+    if (options?.action && SHORT_DIALOGUE_ACTIONS.has(options.action)) {
+      const lastMessage = result.at(-1);
+      if (lastMessage?.role !== "user" || typeof lastMessage.content !== "string") {
+        throw new Error("Conversational dialogue requires a final user message.");
+      }
+      result[result.length - 1] = {
+        ...lastMessage,
+        content: `${lastMessage.content.trimEnd()}\n\n${SHORT_DIALOGUE_DRIVER}`,
+      };
+    }
+    return result;
+  }
+
   private semanticInvocationWithMessages<TStructuredValue = unknown>(
     messages: readonly ModelInvocationMessage[],
     effectiveMaxTokens: number,
@@ -6519,11 +6554,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
     return {
-      messages: options?.visual ? [...messages, {
-        role: "user" as const,
-        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
-        ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
-      }] : messages,
+      messages: this.buildInvocationMessages(messages, options),
       result,
       outputTokenLimit: effectiveMaxTokens,
       ...(effort || summary ? {
