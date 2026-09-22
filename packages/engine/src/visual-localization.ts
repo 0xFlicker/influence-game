@@ -73,7 +73,7 @@ export function visualCompositionSchema(playerIds: readonly string[]) {
     count: { type: "integer", minimum: 0 },
     identities: { type: "array", minItems: playerIds.length, maxItems: playerIds.length, items: {
       type: "object", additionalProperties: false, required: ["playerId", "confidence"], properties: {
-        playerId: { type: "string", enum: [...playerIds] }, confidence: { type: "string", enum: ["clear", "uncertain"] },
+        playerId: { type: "string", ...(playerIds.length ? { enum: [...playerIds] } : {}) }, confidence: { type: "string", enum: ["clear", "uncertain"] },
       },
     } },
   } };

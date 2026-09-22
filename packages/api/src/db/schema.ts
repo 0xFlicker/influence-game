@@ -3462,6 +3462,7 @@ export const visualRenderOperations = pgTable("visual_render_operations", {
   gameId: text("game_id").references(() => games.id, { onDelete: "cascade" }),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   operationKey: text("operation_key").notNull(),
+  repairJobId: text("repair_job_id"),
   sceneId: text("scene_id").references(() => visualScenes.id),
   inputHash: text("input_hash").notNull(),
   request: jsonb("request").$type<Record<string, unknown>>(),
@@ -3579,3 +3580,43 @@ export const agentContentSubmissions = pgTable("agent_content_submissions", {
   requestHash: text("request_hash").notNull(),
   result: jsonb("result").notNull().$type<Record<string, unknown>>(),
 });
+
+/** Media jobs never own or advance a game turn. */
+export const visualRepairJobs = pgTable("visual_repair_jobs", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
+  sceneId: text("scene_id").notNull().references(() => visualScenes.id), version: integer("version").notNull(),
+  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue">(),
+  plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
+  renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
+  candidateArtifactId: text("candidate_artifact_id"),
+  sourceImageId: text("source_image_id"), reusePrefix: text("reuse_prefix"),
+  status: text("status").notNull().$type<"queued" | "rendering" | "verifying" | "ready" | "failed" | "needs_reconciliation">(),
+  step: text("step").notNull().default("queued"), failure: text("failure"),
+  owner: text("owner"), leaseUntil: text("lease_until"), fallbackUsed: boolean("fallback_used").notNull().default(false),
+  createdAt: text("created_at").notNull(), startedAt: text("started_at"), finishedAt: text("finished_at"),
+}, (t) => [unique("visual_repair_version_unique").on(t.sceneId, t.version),
+  uniqueIndex("visual_repair_active_unique").on(t.sceneId).where(sql`${t.status} IN ('queued','rendering','verifying')`)]);
+
+export const visualMediaVersions = pgTable("visual_media_versions", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id), sceneId: text("scene_id").notNull().references(() => visualScenes.id),
+  jobId: text("job_id").references(() => visualRepairJobs.id), version: integer("version").notNull(),
+  plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
+  imageArtifactId: text("image_artifact_id").notNull().references(() => visualArtifacts.id),
+  annotatedArtifactId: text("annotated_artifact_id").notNull().references(() => visualArtifacts.id),
+  localization: jsonb("localization").notNull().$type<import("@influence/engine/visual-localization").VisualLocalization>(),
+  verificationVersion: text("verification_version").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [unique("visual_media_version_unique").on(t.sceneId, t.version)]);
+
+export const visualMediaPublications = pgTable("visual_media_publications", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id), sceneId: text("scene_id").notNull().references(() => visualScenes.id),
+  versionId: text("version_id").notNull().references(() => visualMediaVersions.id), revision: integer("revision").notNull(),
+  operatorId: text("operator_id").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [unique("visual_media_publication_unique").on(t.sceneId, t.revision)]);
+
+export const visualMediaRequests = pgTable("visual_media_requests", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
+  operatorId: text("operator_id").notNull(), requestId: text("request_id").notNull(), inputHash: text("input_hash").notNull(),
+  input: jsonb("input").notNull().$type<Record<string, unknown>>(),
+  receipt: jsonb("receipt").notNull().$type<{ accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }>(),
+  createdAt: text("created_at").notNull(),
+}, (t) => [unique("visual_media_request_unique").on(t.gameId,t.operatorId,t.requestId)]);

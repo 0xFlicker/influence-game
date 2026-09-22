@@ -24,14 +24,14 @@ export class VisualRenderRecoveryRequired extends Error {
 }
 
 /** Immutable operation inputs make scratch-turn replay safe before scene publication. */
-export async function reserveVisualRender(db: DrizzleDB, gameId: string, operationKey: string, request: VisualImageRequest, sceneId?: string): Promise<Operation> {
+export async function reserveVisualRender(db: DrizzleDB, gameId: string, operationKey: string, request: VisualImageRequest, sceneId?: string, repairJobId?: string): Promise<Operation> {
   const inputHash = hash(stableJson({ ...request, references: request.references.map(hash) }));
-  return reserveVisualOperation(db, gameId, operationKey, inputHash, undefined, { ...request, references: request.references.map(hash) }, sceneId);
+  return reserveVisualOperation(db, gameId, operationKey, inputHash, undefined, { ...request, references: request.references.map(hash) }, sceneId, repairJobId);
 }
 
-async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string): Promise<Operation> {
+async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string, repairJobId?: string): Promise<Operation> {
   if (!operationKey.trim()) throw new Error("A visual operation needs a stable operation key");
-  await db.insert(operations).values({ id: randomUUID(), gameId, userId, operationKey, inputHash, request, sceneId }).onConflictDoNothing();
+  await db.insert(operations).values({ id: randomUUID(), gameId, userId, operationKey, inputHash, request, sceneId, repairJobId }).onConflictDoNothing();
   const [operation] = await db.select().from(operations).where(and(gameId ? eq(operations.gameId, gameId) : eq(operations.userId, userId!), eq(operations.operationKey, operationKey)));
   if (!operation || operation.inputHash !== inputHash) throw new Error("Visual operation inputs changed at an existing boundary");
   return operation;
@@ -40,9 +40,11 @@ async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, 
 /** No transaction is held while either image provider runs. */
 export async function renderDurableVisualImage(db: DrizzleDB, input: {
   gameId: string; operationKey: string; request: VisualImageRequest; signal?: AbortSignal; allowFallback?: boolean; sceneId?: string;
-  beforeDispatch?: VisualBoundaryGuard;
+  beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
 }) {
-  const operation = await reserveVisualRender(db, input.gameId, input.operationKey, input.request, input.sceneId);
+  const operation = await reserveVisualRender(db, input.gameId, input.operationKey, input.request, input.sceneId, input.repairJobId);
+  const reused = await reusableVisualAttempt(db, input.gameId, input.reuseOperationKey, operation.inputHash);
+  if (reused?.image && reused.receipt) return { image: reused.image, receipt: reused.receipt };
   const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
   if (completed?.image && completed.receipt) return { image: completed.image, receipt: completed.receipt };
@@ -57,7 +59,11 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
       await beforeDispatch?.();
       await db.transaction(async (tx) => {
         await beforeDispatch?.(tx);
-        if (operation.sceneId && input.provider === "xai") {
+        if (operation.repairJobId && input.provider === "xai") {
+          const [job] = await tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, operation.repairJobId)).for("update");
+          if (!job || job.fallbackUsed) throw new VisualRenderRecoveryRequired(operation.id, "Repair fallback budget consumed");
+          await tx.update(schema.visualRepairJobs).set({ fallbackUsed: true }).where(eq(schema.visualRepairJobs.id, job.id));
+        } else if (operation.sceneId && input.provider === "xai") {
           const [scene] = await tx.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, operation.sceneId)).for("update");
           if (!scene || scene.status !== "preparing" || scene.repairBudgetUsed) throw new VisualRenderRecoveryRequired(operation.id, "Scene repair budget already consumed");
           await tx.update(schema.visualScenes).set({ repairBudgetUsed: true }).where(eq(schema.visualScenes.id, scene.id));
@@ -156,15 +162,18 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) 
 
 /** Image and identity references are hashed into the same durable request boundary. */
 export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1] & { gameId: string }) {
-  const composition = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:composition`, compositionOnly: true });
+  await input.onStep?.("verifying:composition");
+  const composition = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:composition`, reuseOperationKey: input.reuseOperationKey ? `${input.reuseOperationKey}:composition` : undefined, compositionOnly: true });
+  if (!input.references.length) return composition;
   let geometry;
-  try { geometry = await runDurableLocalization(db, input); }
+  try { await input.onStep?.("verifying:heads"); geometry = await runDurableLocalization(db, input); }
   catch (error) {
-    if (error instanceof VisualIdentityFailure || input.signal?.aborted) throw error;
+    if (error instanceof VisualIdentityFailure || input.signal?.aborted || (input.repairJobId && error instanceof VisualRenderRecoveryRequired)) throw error;
     await recordVisualOperationEvent(db, input.gameId, `${input.operationKey}:unanchored`, { kind: "presentation", outcome: "unanchored", message: "Identities verified; head coordinates unavailable. Use a named speech panel." }, visualFailureEvidence(error, "anchors"));
     return composition;
   }
-  const matched = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:identities`, candidateAnchors: geometry.anchors });
+  await input.onStep?.("verifying:identities");
+  const matched = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:identities`, reuseOperationKey: input.reuseOperationKey ? `${input.reuseOperationKey}:identities` : undefined, candidateAnchors: geometry.anchors });
   return { ...matched, verifiedParticipantIds: composition.verifiedParticipantIds };
 }
 
@@ -172,7 +181,8 @@ async function runDurableLocalization(db: DrizzleDB, input: {
   gameId: string | null; userId?: string; operationKey: string; scene: Uint8Array; sceneId?: string;
   references: readonly import("./visual-scene-localization.js").VisualReferenceImage[];
   apiKey: string; signal?: AbortSignal;
-  beforeDispatch?: VisualBoundaryGuard;
+  beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
+  onStep?: (step: string) => Promise<void>;
   compositionOnly?: boolean;
   candidateAnchors?: readonly import("@influence/engine/visual-mode").VisualPlayerAnchor[];
 }) {
@@ -183,8 +193,10 @@ async function runDurableLocalization(db: DrizzleDB, input: {
     task: VISUAL_LOCALIZATION_VERSION, compositionOnly: input.compositionOnly === true,
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
-  }, input.sceneId);
+  }, input.sceneId, input.repairJobId);
   const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
+  const reused = await reusableVisualAttempt(db, input.gameId, input.reuseOperationKey, inputHash);
+  if (reused?.localization && reused.receipt) return reused.localization;
   const completed = prior.find((entry) => entry.localization !== null && entry.receipt !== null);
   if (completed?.localization) return completed.localization;
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Scene localization needs recovery before another paid request");
@@ -242,4 +254,21 @@ export async function localizeOwnedVisualReference(db: DrizzleDB, input: { userI
   return runDurableLocalization(db, { ...input, gameId: null, operationKey: `portrait-head:${VISUAL_LOCALIZATION_VERSION}:${input.requestId}`,
     references: [{ image: input.scene, players: [{ id: "character", name: "Character" }] }],
   });
+}
+
+/** Reuse only exact-input successful evidence; do not duplicate its cost or receipt. */
+async function reusableVisualAttempt(db: DrizzleDB, gameId: string | null, key: string | undefined, inputHash: string): Promise<Attempt | null> {
+  if (!gameId || !key) return null;
+  const visited = new Set<string>();
+  while (key && !visited.has(key)) {
+    visited.add(key);
+    const [operation] = await db.select().from(operations).where(and(eq(operations.gameId, gameId), eq(operations.operationKey, key)));
+    if (operation && operation.inputHash !== inputHash) return null;
+    const rows = operation ? await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation))) : [];
+    if (rows.length) return rows.find(a => a.receipt && !a.receipt.failure && !a.receipt.chargeUncertain && !a.reconciliation && (a.image || a.localization)) ?? null;
+    // Continued jobs may themselves have reused a saved step. Follow their immutable source chain.
+    const [job] = await db.select().from(schema.visualRepairJobs).where(and(eq(schema.visualRepairJobs.gameId, gameId), sql`${key} LIKE 'media:' || ${schema.visualRepairJobs.id} || ':%'`));
+    key = job?.reusePrefix ? job.reusePrefix + key.slice(`media:${job.id}`.length) : undefined;
+  }
+  return null;
 }

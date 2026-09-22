@@ -1,3 +1,5 @@
+import { readViewerMedia } from "../services/visual-media-viewer.js";
+import { controlVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { prepareVisualRepair, prepareVisualAssetRepair } from "../services/visual-repair.js";
 import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
 import { Hono } from "hono";
@@ -7,6 +9,7 @@ import { readVisualProductionExport } from "../services/visual-production-export
 import { reconcileVisualAttempt } from "../services/visual-render-journal.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
 import type { AuthEnv } from "../middleware/auth.js";
+import { recordVisualOperationEvent } from "../services/visual-diagnostics.js";
 
 /** Viewer surface intentionally excludes numbered copies, references and private cues. */
 export function createVisualRoutes(db: DrizzleDB) {
@@ -21,25 +24,53 @@ export function createVisualRoutes(db: DrizzleDB) {
       db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, game.id)),
     ]);
     const url = (id: string) => `/api/games/${game.id}/visual/artifacts/${id}`;
-    return c.json({ enabled, status: rows.some((row) => row.status === "preparing") ? "preparing" : null,
+    let snapshot: Record<string, number> | undefined;
+    const rawSnapshot = c.req.query("snapshot");
+    if (rawSnapshot) {
+      try {
+        const parsed: unknown = JSON.parse(rawSnapshot);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || Object.values(parsed).some(v => !Number.isSafeInteger(v) || Number(v) < 0)) throw new Error("Invalid snapshot");
+        snapshot = parsed as Record<string, number>;
+      } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
+    }
+    return c.json({ enabled, status: rows.some(row => row.status === "preparing") ? "preparing" : null,
       portraits: Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)])),
-      scenes: rows.filter((row) => row.status === "ready").map((row) => ({ id: row.id, roomId: row.roomId, version: row.boundarySequence,
-        afterDialogueSequence: row.afterDialogueSequence, imageUrl: url(row.imageArtifactId!), participantIds: row.plan.cast.map((member) => member.id), anchors: row.anchors })),
+      ...await readViewerMedia(db, game.id, snapshot),
     });
   });
   app.get("/api/games/:id/visual/artifacts/:artifact", async (c) => {
     const gameId = c.req.param("id"), artifactId = c.req.param("artifact");
-    const [scenes, assets] = await Promise.all([
+    const [scenes, assets, published] = await Promise.all([
       db.select({ id: schema.visualScenes.id }).from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"), eq(schema.visualScenes.imageArtifactId, artifactId))),
       db.select({ portraits: schema.visualGameAssets.portraits }).from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)),
+      db.select({ id: schema.visualMediaVersions.id }).from(schema.visualMediaVersions).innerJoin(schema.visualMediaPublications, eq(schema.visualMediaPublications.versionId, schema.visualMediaVersions.id)).where(and(eq(schema.visualMediaVersions.gameId, gameId), eq(schema.visualMediaVersions.imageArtifactId, artifactId))),
     ]);
-    if (!scenes.length && !Object.values(assets[0]?.portraits ?? {}).includes(artifactId)) return c.json({ error: "Visual artifact not found" }, 404);
+    if (!scenes.length && !published.length && !Object.values(assets[0]?.portraits ?? {}).includes(artifactId)) return c.json({ error: "Visual artifact not found" }, 404);
     const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.id, artifactId), eq(schema.visualArtifacts.gameId, gameId)));
     if (!artifact) return c.json({ error: "Visual artifact not found" }, 404);
     return c.body(new Uint8Array(artifact.image), 200, { "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff" });
   });
   app.get("/api/admin/games/:id/visual", requireAuth(db), requirePermission("view_admin"), async (c) => {
     return c.json(await readVisualProductionExport(db, c.req.param("id")));
+  });
+  app.post("/api/admin/games/:id/visual/media", requireAuth(db), requirePermission("start_game"), async c => {
+    const gameId = c.req.param("id"), operatorId = c.get("user").id;
+    const [game] = await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.id, gameId));
+    if (!game) return c.json({ error: "Game not found" }, 404);
+    const invalid = async (message: string) => {
+      const code = "invalid_media_request", auditId = crypto.randomUUID();
+      await recordVisualOperationEvent(db, gameId, `media-rejected:${auditId}`, { kind: "failure", outcome: "failed", message },
+        { kind: "internal", name: code, message: JSON.stringify({ operatorId, reason: message }) });
+      return c.json({ accepted: false, code, error: message, auditId }, 400);
+    };
+    let value: unknown;
+    try { value = await c.req.json(); } catch { return invalid("Invalid JSON"); }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid("Invalid media request");
+    const b = value as Record<string, unknown>;
+    if (typeof b.requestId !== "string" || !b.requestId.trim() || b.requestId.length > 200 || typeof b.sceneId !== "string" || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0
+      || !(b.action === "regenerate" || b.action === "verify" && typeof b.sourceVersionId === "string" || b.action === "continue" && (b.sourceJobId === undefined || typeof b.sourceJobId === "string") || b.action === "publish" && typeof b.versionId === "string" && Number.isSafeInteger(b.expectedPublication) && Number(b.expectedPublication) >= 0)) return invalid("Invalid media control fields");
+    const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, b as MediaControl);
+    return c.json({ ...receipt, ...(!receipt.accepted && { error: receipt.message }) }, receipt.accepted ? 200 : 409);
   });
   app.post("/api/admin/games/:id/visual/attempts/:attempt/reconcile", requireAuth(db), requirePermission("start_game"), async (c) => {
     const [attempt] = await db.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)

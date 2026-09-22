@@ -5,10 +5,12 @@ import type { PresentationCue } from "./types";
 import type { VisualPresentationBeat } from "./visual-presentation";
 
 export interface VisualWatchData {
+  publicationSnapshot?: Record<string, number>;
+  bindings?: Record<string, string>;
   enabled: boolean;
   status: "preparing" | "recovery" | null;
   portraits: Record<string, string>;
-  scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number }>;
+  scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
 
 export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[]): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
@@ -52,7 +54,8 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   else if (message.phase === "INTRODUCTION" && speakerId) portrait(speakerId, message.text, "Introduction");
   else if (message.scope === "diary" && speakerId) portrait(speakerId, message.text, "Diary");
   else {
-    const target = message.visualScene;
+    const binding = message.entrySequence !== undefined ? data.bindings?.[message.entrySequence] : undefined;
+    const target = binding ? data.scenes.find(scene => scene.id === binding) : message.visualScene;
     if (target && rooms.some((room) => room.id === target.id)) beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
       id: String(message.id), playerId: message.anonymous ? null : speakerId,
       speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,

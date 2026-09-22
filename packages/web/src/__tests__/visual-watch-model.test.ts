@@ -29,3 +29,13 @@ test("games without generated media still present portraits and House text", () 
   expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait", speech: { text: message.text } });
   expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined, fromPlayerId: null, scope: "system", phase: "REVEAL" }, [player]).beat).toEqual({ kind: "house", text: message.text });
 });
+
+test("published canonical binding displays formerly portrait-only speech without changing individual beats", () => {
+  const published = { ...data, bindings: { 5: "old" }, scenes: data.scenes.map(s => ({ ...s, imageUrl: "/published.png", publicationRevision: 2 })) };
+  const fallback = { ...message, visualScene: undefined };
+  expect(visualWatchPresentation(published, null, fallback, [player]).beat).toMatchObject({ kind: "scene", sceneId: "old" });
+  expect(visualWatchPresentation(published, null, { ...fallback, presentationPurpose: "farewell" }, [player]).beat).toMatchObject({ purpose: "Farewell" });
+  expect(visualWatchPresentation(published, null, { ...fallback, scope: "diary" }, [player]).beat).toMatchObject({ purpose: "Diary" });
+  expect(visualWatchPresentation(published, null, { ...fallback, phase: "INTRODUCTION" }, [player]).beat).toMatchObject({ purpose: "Introduction" });
+  expect(visualWatchPresentation({ ...data, bindings: {} }, null, fallback, [player]).beat?.kind).toBe("portrait");
+});

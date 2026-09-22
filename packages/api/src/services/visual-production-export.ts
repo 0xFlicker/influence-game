@@ -1,3 +1,5 @@
+import { readVisualMedia } from "./visual-media-repair.js";
+import { readViewerMedia } from "./visual-media-viewer.js";
 import { readVisualOperationEvents } from "./visual-diagnostics.js";
 import { visualFailurePolicy } from "./visual-policy.js";
 import { and, asc, eq, or } from "drizzle-orm";
@@ -31,5 +33,7 @@ export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: st
   }
   return { version: 1, gameId: game.id, gameStatus: game.status, policy: visualFailurePolicy(config), pause: config.visualPause ?? null, events, metrics,
     rebuildPreview, rebuildError, contextFailures: events.filter((row) => row.evidence?.context),
+    media: await readVisualMedia(db, game.id),
+    selectedViewerMedia: await readViewerMedia(db, game.id),
     enabled: JSON.parse(game.config).visualMode === true, assets: assets[0] ?? null, scenes, accounting, cues };
 }

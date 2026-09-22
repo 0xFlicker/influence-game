@@ -372,15 +372,9 @@ function DramaticReplayTheater({
       ? formatCueScene(activeCue)
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
-  const visualData = useVisualWatch(game.id, game.visualMode === true, live);
-  const [visualBeatChoice, setVisualBeatChoice] = useState<{ key: string | undefined; sceneAvailable: boolean }>({ key: undefined, sceneAvailable: false });
-  const beatKey = activeCue?.key;
-  const sceneAvailable = Boolean(currentMessage?.visualScene && visualData?.scenes.some((entry) => entry.id === currentMessage.visualScene?.id));
-  const choice = visualBeatChoice.key === beatKey ? visualBeatChoice : { key: beatKey, sceneAvailable };
-  if (visualBeatChoice.key !== beatKey) setVisualBeatChoice(choice);
+  const visualData = useVisualWatch(game.id, game.visualMode === true, live, activeCue?.key);
   const visual = visualWatchPresentation(
-    { enabled: true, status: null, portraits: {}, scenes: [], ...visualData }, activeCue,
-    choice.sceneAvailable ? currentMessage : currentMessage ? { ...currentMessage, visualScene: undefined } : null, players,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players,
   );
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;

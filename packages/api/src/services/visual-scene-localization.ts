@@ -24,7 +24,7 @@ export async function localizeVisualScene(input: {
   compositionOnly?: boolean;
 }) {
   const players = input.references.flatMap((reference) => reference.players);
-  if (!players.length || new Set(players.map((player) => player.id)).size !== players.length) throw new Error("Unique scene identities are required");
+  if ((!players.length && !input.compositionOnly) || new Set(players.map((player) => player.id)).size !== players.length) throw new Error("Unique scene identities are required");
   const dimensions = await sharp(input.scene).metadata();
   if (!dimensions.width || !dimensions.height) throw new Error("Scene dimensions are missing");
   const inspection = input.compositionOnly ? Buffer.from(input.scene) : input.candidateAnchors ? await annotateVisualScene(input.scene, input.candidateAnchors) : await localizationGrid(input.scene, dimensions.width, dimensions.height);

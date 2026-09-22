@@ -724,3 +724,8 @@ One visible speech bubble per displayed room or portrait beat, with duration pro
 ### Character content revision and moderation record
 
 A **content revision** is the complete immutable snapshot submitted from a character draft, including image evidence and crop metadata. It is distinct from a competitive Agent revision: image-only edits do not recalibrate ratings. Each changed submission creates a **pending moderation record** atomically with the accepted profile update. Pending review is evidence for future moderation, not an admission or gameplay gate. See [the submission contract](docs/agent-content-submissions.md).
+
+
+### Scene media repair and viewer publication
+
+A **media repair job** independently renders or verifies a frozen existing scene plan. Its immutable **candidate version** is separate from the original scene accepted for agent context. An explicit **viewer publication** selects a verified candidate and appends publication history. Playback pins a publication snapshot until an explicit media refresh is adopted at the next beat. None of these records changes canonical game execution or the image context agents originally received. **Game recovery** remains a separate paused-game operation requiring Resume.
