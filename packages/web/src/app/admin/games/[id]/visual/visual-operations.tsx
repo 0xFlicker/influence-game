@@ -9,6 +9,10 @@ interface Failure { kind: string; name: string; message: string; stack?: string;
 interface VisualExport {
   gameId: string; gameStatus: string; policy: Policy; pause: { reason: string; boundarySequence: number } | null;
   assets: { status: string; failure: string | null } | null;
+  rebuildPreview: { sceneId: string; roomId: string; boundarySequence: number; expectedRevision: number; previewHash: string;
+    expectedParticipants: Array<{ id: string; name: string }>; sceneParticipants: Array<{ id: string; name: string }>; missingIds: string[]; extraIds: string[] } | null;
+  rebuildError: string | null;
+  contextFailures: Array<{ id: string; event: { boundarySequence: number | null; message: string }; evidence: { context?: { reason: string; sceneId: string | null; agentId: string; expectedParticipants: Array<{ id: string; name: string }>; sceneParticipants: Array<{ id: string; name: string }> } } | null }>;
   scenes: Array<{ id: string; roomId: string; boundarySequence: number; status: string; failure: string | null; imageArtifactId: string | null; candidateArtifactId: string | null; renderRevision: number; anchors: unknown[] | null }>;
   metrics: Array<{ provider: string; attempts: number; failed: number; uncertain: number; knownCostMicrousd: number; p50Ms: number | null; p95Ms: number | null }>;
   events: Array<{ id: string; event: { occurredAt: string; kind: string; outcome: string; message: string; operationId: string | null; sceneId: string | null; boundarySequence: number | null }; evidence: Failure | null }>;
@@ -46,6 +50,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
   const requestVersion = useRef(0);
   const { hasPermission } = usePermissions();
   const canOperate = hasPermission("start_game");
+  const preparedRepair = data?.scenes.some((scene) => scene.boundarySequence === data.pause?.boundarySequence && scene.status === "preparing" && scene.renderRevision > 0);
   const refresh = useCallback(async () => {
     const version = ++requestVersion.current;
     try { const result = await apiFetch<VisualExport>(`/api/admin/games/${gameId}/visual`); if (version === requestVersion.current) { setData(result); setError(null); } }
@@ -75,23 +80,38 @@ export function VisualOperations({ gameId }: { gameId: string }) {
         </select></label>
         <p className="text-sm text-white/60">Both policies retain provider errors, verification evidence, timing and costs. Changing policy does not automatically resume a paused game.</p>
         {data.pause && <div className="space-y-3 border-t border-white/15 pt-3"><p className="text-amber-200">Paused at boundary {data.pause.boundarySequence}: {data.pause.reason}</p>
-          {canOperate && <div className="flex flex-wrap gap-3"><button className={button} disabled={busy} onClick={() => void control({ action: "repair_assets" }, "Asset repair prepared. Resume when ready to run it.")}>Prepare asset repair</button><button className={button} disabled={busy} onClick={() => void control({ action: "resume" }, "Resume queued for the game worker at the committed boundary.")}>Resume game</button></div>}
+          {canOperate && <div className="flex flex-wrap gap-3">{data.assets?.status !== "ready" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_assets" }, "Asset repair prepared. Resume when ready to run it.")}>Prepare asset repair</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "resume" }, "Resume queued for the game worker at the committed boundary.")}>Resume game</button></div>}
           <p className="text-sm text-white/60">Choose scene repairs below, then resume. Repairs may incur provider charges. Reconcile uncertain attempts first. To continue with portraits, select Best effort and resume.</p>
         </div>}
         {data.assets?.failure && <p className="text-amber-200">{data.assets.failure}</p>}
       </section>
+      {data.pause && <section aria-label="Current visual problem" className="space-y-3 rounded-xl border border-amber-300/30 p-5">
+        <h2 className="text-lg font-semibold">Current visual problem</h2>
+        {data.rebuildPreview && (data.rebuildPreview.missingIds.length > 0 || data.rebuildPreview.extraIds.length > 0) ? <>
+          <p className="text-amber-200">Finals participant mismatch: expected {data.rebuildPreview.expectedParticipants.length} people; scene contains {data.rebuildPreview.sceneParticipants.length}.</p>
+          <p>Expected: {data.rebuildPreview.expectedParticipants.map((member) => member.name).join(", ")}</p>
+          <p>In the image plan: {data.rebuildPreview.sceneParticipants.map((member) => member.name).join(", ")}</p>
+          {data.rebuildPreview.extraIds.length > 0 && <p>Extra: {data.rebuildPreview.sceneParticipants.filter((member) => data.rebuildPreview!.extraIds.includes(member.id)).map((member) => member.name).join(", ")}</p>}
+          <p className="text-sm text-white/60">The image was verified against the wrong cast. Rechecking or regenerating that plan will not correct it. Rebuild uses the eligible jury from committed game state, then Resume runs the new render. Provider charges apply when it runs.</p>
+          {canOperate && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", mode: "rebuild", sceneId: data.rebuildPreview!.sceneId,
+            expectedRevision: data.rebuildPreview!.expectedRevision, previewHash: data.rebuildPreview!.previewHash }, "Corrected Finals plan prepared. Resume game to render it and continue.")}>Rebuild scene from current game state</button>}
+          <a className="block text-sm underline" href={`#scene-${data.rebuildPreview.sceneId}`}>View affected Finals scene</a>
+        </> : <p>{preparedRepair ? "Scene repair is prepared. Resume game to render it and continue." : data.pause.reason}</p>}
+        {data.rebuildError && <p className="text-sm text-amber-200">{data.rebuildError}</p>}
+        {(data.contextFailures ?? []).filter((row) => row.event.boundarySequence === data.pause!.boundarySequence).map((row) => <details key={row.id}><summary>Agent context: {row.evidence?.context?.reason ?? row.event.message}</summary><Evidence value={row.evidence?.context} /></details>)}
+      </section>}
       <section aria-label="Provider performance" className="overflow-x-auto rounded-xl border border-white/15 p-5">
         <p className="mb-4">Known spend: {money(data.accounting.knownCostMicrousd)} · {data.accounting.unpricedAttempts} unpriced · {data.accounting.uncertainAttempts} uncertain</p>
-        <table className="w-full text-left text-sm"><thead><tr>{["Provider", "Attempts", "Failures", "Uncertain", "P50", "P95", "Known cost"].map((label) => <th key={label} className="pb-3 pr-4">{label}</th>)}</tr></thead><tbody>{data.metrics.map((metric) => <tr key={metric.provider}><td>{metric.provider}</td><td>{metric.attempts}</td><td>{metric.failed}</td><td>{metric.uncertain}</td><td>{seconds(metric.p50Ms)}</td><td>{seconds(metric.p95Ms)}</td><td>{money(metric.knownCostMicrousd)}</td></tr>)}</tbody></table>
+        <table className="w-full text-left text-sm"><thead><tr>{["Provider", "Attempts", "Provider failures", "Uncertain", "P50", "P95", "Known cost"].map((label) => <th key={label} className="pb-3 pr-4">{label}</th>)}</tr></thead><tbody>{data.metrics.map((metric) => <tr key={metric.provider}><td>{metric.provider}</td><td>{metric.attempts}</td><td>{metric.failed}</td><td>{metric.uncertain}</td><td>{seconds(metric.p50Ms)}</td><td>{seconds(metric.p95Ms)}</td><td>{money(metric.knownCostMicrousd)}</td></tr>)}</tbody></table>
         <button className={`${button} mt-4`} onClick={() => { const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })); const link = document.createElement("a"); link.href = url; link.download = `${gameId}-visual-production.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}>Export production records</button>
       </section>
       <h2 className="text-lg font-semibold">Scenes and verification</h2>
-      <div className="grid gap-4 md:grid-cols-2">{data.scenes.map((scene) => <article key={scene.id} className="overflow-hidden rounded-xl border border-white/15">
+      <div className="grid gap-4 md:grid-cols-2">{data.scenes.map((scene) => <article id={`scene-${scene.id}`} key={scene.id} className="overflow-hidden rounded-xl border border-white/15">
         {/* eslint-disable-next-line @next/next/no-img-element -- immutable accepted artifact */}
         {scene.status === "ready" && scene.imageArtifactId && <img src={resolveApiUrl(`/api/games/${data.gameId}/visual/artifacts/${scene.imageArtifactId}`)} alt={`${scene.roomId}, scene ${scene.boundarySequence}`} className="aspect-video w-full object-contain" />}
-        <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
+        <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status === "ready" ? "Image verified" : scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
           {scene.candidateArtifactId && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" />}
-          {data.pause && canOperate && scene.status !== "preparing" && <div className="flex flex-wrap gap-2">{scene.candidateArtifactId && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "verify" }, "Verification repair prepared; resume to run it.")}>Recheck existing image</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "New render authorized; resume to run it.")}>Regenerate scene</button></div>}
+          {data.rebuildPreview?.sceneId === scene.id && (data.rebuildPreview.extraIds.length > 0 || data.rebuildPreview.missingIds.length > 0) ? <p className="text-amber-200">Agent context unavailable: participant mismatch. Rebuild the plan above.</p> : data.pause && canOperate && scene.status !== "preparing" && <div className="flex flex-wrap gap-2">{scene.candidateArtifactId && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "verify" }, "Verification repair prepared; resume to run it.")}>Recheck existing image</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "New render authorized; resume to run it.")}>Regenerate scene</button></div>}
         </div>
       </article>)}</div>
       <h2 className="text-lg font-semibold">Operational timeline</h2>

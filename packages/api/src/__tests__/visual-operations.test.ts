@@ -3,18 +3,21 @@ import { createSessionToken } from "../middleware/auth.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { GameState, type DurableGameTurnSnapshotV1 } from "@influence/engine";
+import { GameState, Phase, type DurableGameTurnSnapshotV1 } from "@influence/engine";
+import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
-import { insertOwner } from "./durable-run-test-utils.js";
+import { insertOwner, insertCanonicalEventRows } from "./durable-run-test-utils.js";
+import { previewFinalsRebuild } from "../services/visual-rebuild-preview.js";
+import { hashCanonicalEvent } from "../services/game-events.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
 import { createVisualGameRuntime } from "../services/visual-game-runtime.js";
 import { pauseForVisualRepair, resumeVisualGame, setVisualFailurePolicy, VisualPreparationBlocked } from "../services/visual-policy.js";
 import { readVisualOperationEvents, recordVisualOperationEvent } from "../services/visual-diagnostics.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
-import { storeVisualArtifact } from "../services/visual-scene-store.js";
+import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { prepareVisualRepair } from "../services/visual-repair.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { renderPlannedVisualScene } from "../services/visual-scene-renderer.js";
@@ -45,6 +48,43 @@ afterEach(() => {
 });
 const runtime = () => createVisualGameRuntime(db, "visual-ops", ownerEpoch);
 
+test.each([
+  ["judgment_opening", Phase.OPENING_STATEMENTS, "getOpeningStatement"],
+  ["judgment_jury_questions", Phase.JURY_QUESTIONS, "getJuryAnswer"],
+  ["judgment_closing", Phase.CLOSING_ARGUMENTS, "getClosingArgument"],
+] as const)("%s reuses the five-person Finals scene and supplies both finalists without pausing", async (actor, phase, method) => {
+  const [assets] = await db.select().from(schema.visualGameAssets);
+  const referenceArtifactId = assets!.cast[0]!.referenceArtifactId;
+  const cast = Array.from({ length: 6 }, (_, index) => ({ id: `p${index + 1}`, name: `Player ${index + 1}`, referenceArtifactId, performanceInstructions: "Quiet" }));
+  const gameState = new GameState(cast, { gameId: "visual-ops" });
+  for (const member of cast.slice(2)) gameState.eliminatePlayer(member.id);
+  gameState.setEndgameStage("judgment");
+  snapshot.canonicalEvents = [...gameState.getCanonicalEvents()];
+  snapshot.execution.xstateSnapshot = { value: actor };
+  snapshot.execution.cursor = { version: 1, kind: "phase_enter", actor };
+  await db.update(schema.gameExecutionStates).set({ xstateSnapshot: snapshot.execution.xstateSnapshot, executionCursor: snapshot.execution.cursor }).where(eq(schema.gameExecutionStates.gameId, "visual-ops"));
+  await db.update(schema.visualGameAssets).set({ cast }).where(eq(schema.visualGameAssets.gameId, "visual-ops"));
+  await setVisualFailurePolicy(db, "visual-ops", "require_visuals", "operator");
+  const expectedIds = ["p1", "p2", "p4", "p5", "p6"];
+  const plan = planVisualScene({ roomId: "finals", backgroundArtifactId: referenceArtifactId, cast: cast.filter((member) => expectedIds.includes(member.id)),
+    roles: { p1: "finalist", p2: "finalist", p4: "juror", p5: "juror", p6: "juror" } });
+  const planned = await prepareVisualScene(db, { gameId: "visual-ops", boundarySequence: 0, plan });
+  const scene = await acceptVisualScene(db, { sceneId: planned.id, planHash: planned.planHash, imageArtifactId: referenceArtifactId,
+    anchors: expectedIds.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear", head: { x: index * 0.18, y: 0.2, width: 0.1, height: 0.1 } })) });
+  const visual = runtime();
+  await visual.prepareVisualBoundary!(snapshot);
+  for (const finalist of cast.slice(0, 2)) {
+    const context = await visual.prepareVisualTurn!({ context: { gameId: "visual-ops", selfId: finalist.id, selfName: finalist.name, round: 1, phase,
+      endgameStage: "judgment", alivePlayers: cast.slice(0, 2), jury: gameState.jury.slice(1), publicMessages: [], mingleMessages: [] },
+      method, turnId: `turn-${finalist.id}`, committedHeads: snapshot.execution.heads, committedCursor: snapshot.execution.cursor });
+    expect(context.room?.scene.id).toBe(scene.id);
+    expect(context.room?.scene.participantIds).toEqual(expectedIds);
+    expect(context.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+  }
+  expect(calls).toBe(0);
+  expect((await db.select().from(schema.games))[0]?.status).toBe("in_progress");
+});
+
 test("Best effort continues, retains evidence and does not reset its budget on restart", async () => {
   const events = await runtime().prepareVisualBoundary!(snapshot);
   expect(events?.some((event) => event.outcome === "portraits")).toBe(true);
@@ -63,6 +103,76 @@ test("Best effort continues, retains evidence and does not reset its budget on r
   expect(replay.getCanonicalEvents().filter((event) => event.type === "visual.operation_recorded")).toHaveLength(events?.length ?? 0);
   const repeated = await runtime().prepareVisualBoundary!({ ...snapshot, canonicalEvents: [...snapshot.canonicalEvents, ...accepted.getCanonicalEvents().filter((event) => event.type === "visual.operation_recorded")] });
   expect(repeated).toEqual([]);
+});
+
+test("rebuilds an unused incorrect Finals plan at the same boundary, preserving evidence and fencing old results", async () => {
+  const [assets] = await db.select().from(schema.visualGameAssets);
+  const artifact = assets!.cast[0]!.referenceArtifactId;
+  const cast = Array.from({ length: 6 }, (_, index) => ({ id: `p${index + 1}`, name: `Player ${index + 1}`, referenceArtifactId: artifact, performanceInstructions: "Quiet" }));
+  const state = new GameState(cast, { gameId: "visual-ops" });
+  for (const member of cast.slice(2)) state.eliminatePlayer(member.id);
+  state.setEndgameStage("judgment");
+  const events = [...state.getCanonicalEvents()];
+  await insertCanonicalEventRows(db, "visual-ops", ownerEpoch, events);
+  const last = events.at(-1)!;
+  snapshot.canonicalEvents = events;
+  snapshot.execution.heads.eventSequence = last.sequence;
+  snapshot.execution.heads.eventHash = hashCanonicalEvent(last);
+  snapshot.execution.xstateSnapshot = { value: "judgment_opening" };
+  snapshot.execution.cursor = { version: 1, kind: "phase_enter", actor: "judgment_opening" };
+  await db.update(schema.gameExecutionStates).set({ eventHeadSequence: last.sequence, eventHeadHash: hashCanonicalEvent(last), xstateSnapshot: snapshot.execution.xstateSnapshot, executionCursor: snapshot.execution.cursor }).where(eq(schema.gameExecutionStates.gameId, "visual-ops"));
+  await db.update(schema.visualGameAssets).set({ cast }).where(eq(schema.visualGameAssets.gameId, "visual-ops"));
+  const wrong = await prepareVisualScene(db, { gameId: "visual-ops", boundarySequence: 0, plan: planVisualScene({ roomId: "finals", backgroundArtifactId: artifact, cast }) });
+  const anchors = cast.map((member, index) => ({ playerId: member.id, label: index + 1, confidence: "clear" as const, head: { x: index * 0.15, y: 0.2, width: 0.1, height: 0.1 } }));
+  await acceptVisualScene(db, { sceneId: wrong.id, planHash: wrong.planHash, imageArtifactId: artifact, anchors });
+  await setVisualFailurePolicy(db, "visual-ops", "require_visuals", "operator");
+  await pauseForVisualRepair(db, new VisualPreparationBlocked("Participant mismatch", snapshot));
+  const preview = await previewFinalsRebuild(db, "visual-ops", wrong.id);
+  expect(preview.expectedParticipants.map((p) => p.id)).toEqual(["p1", "p2", "p4", "p5", "p6"]);
+  expect(preview.extraIds).toEqual(["p3"]);
+  const request = { gameId: "visual-ops", sceneId: wrong.id, expectedRevision: 0, mode: "rebuild" as const, operatorId: "operator", previewHash: preview.previewHash };
+  await db.update(schema.gameExecutionStates).set({ dialogueHeadSequence: 1 }).where(eq(schema.gameExecutionStates.gameId, "visual-ops"));
+  await expect(prepareVisualRepair(db, request)).rejects.toThrow("unused scene");
+  expect((await db.select().from(schema.visualScenes))[0]?.planHash).toBe(wrong.planHash);
+  await db.update(schema.gameExecutionStates).set({ dialogueHeadSequence: 0 }).where(eq(schema.gameExecutionStates.gameId, "visual-ops"));
+  await expect(prepareVisualRepair(db, { ...request, previewHash: "stale" })).rejects.toThrow("preview changed");
+  await prepareVisualRepair(db, request);
+  expect(calls).toBe(0);
+  await expect(prepareVisualRepair(db, request)).rejects.toThrow("revision changed");
+  await expect(acceptVisualScene(db, { sceneId: wrong.id, planHash: wrong.planHash, renderRevision: 0, imageArtifactId: artifact, anchors })).rejects.toThrow("does not match");
+  const [repaired] = await db.select().from(schema.visualScenes);
+  expect(repaired!.renderRevision).toBe(1);
+  expect(repaired!.plan.cast).toHaveLength(5);
+  const audit = (await readVisualOperationEvents(db, "visual-ops")).find((row) => row.evidence?.repair);
+  expect(audit?.evidence?.repair?.before).toMatchObject({ imageArtifactId: artifact, planHash: wrong.planHash, renderRevision: 0 });
+  // Restarted preparation computes exactly the stored replacement plan, without changing the boundary.
+  await resumeVisualGame(db, "visual-ops", "operator");
+  const adopted = await adoptDurableGameRunOwner(db, "visual-ops", { processId: "rebuild-worker" });
+  expect(adopted.ok).toBe(true);
+  if (!adopted.ok) throw new Error(adopted.error);
+  ownerEpoch = adopted.claim.ownerEpoch;
+  snapshot.execution = adopted.claim.executionState;
+  const ids = preview.expectedParticipants.map((member) => member.id);
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    calls++;
+    if (String(url).includes("/images/")) return Response.json({ data: [{ b64_json: png.toString("base64") }] });
+    const properties = JSON.parse(String(init?.body)).text.format.schema.properties;
+    const output = properties.identities ? { count: 5, identities: ids.map((playerId) => ({ playerId, confidence: "clear" })) }
+      : properties.matches ? { count: 5, matches: ids.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear" })) }
+      : { count: 5, anchors: ids.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear", head: { x: index * 0.18, y: 0.2, width: 0.1, height: 0.1 } })) };
+    return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
+  }, { preconnect: originalFetch.preconnect });
+  const resumed = runtime();
+  await resumed.prepareVisualBoundary!(snapshot);
+  expect((await db.select().from(schema.visualScenes))[0]?.status).toBe("ready");
+  expect((await db.select().from(schema.gameExecutionStates))[0]?.committedTurnSequence).toBe(0);
+  for (const finalist of cast.slice(0, 2)) {
+    const context = await resumed.prepareVisualTurn!({ context: { gameId: "visual-ops", selfId: finalist.id, selfName: finalist.name,
+      round: state.round, phase: Phase.OPENING_STATEMENTS, endgameStage: "judgment", alivePlayers: cast.slice(0, 2), jury: state.jury.slice(1), publicMessages: [], mingleMessages: [] },
+      method: "getOpeningStatement", turnId: `repaired-${finalist.id}`, committedHeads: snapshot.execution.heads, committedCursor: snapshot.execution.cursor });
+    expect(context.room?.scene.participantIds).toEqual(ids);
+    expect(context.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+  }
 });
 
 test("Require visuals pauses at the unchanged durable boundary and explicitly resumes", async () => {

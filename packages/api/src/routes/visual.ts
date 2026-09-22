@@ -63,8 +63,9 @@ export function createVisualRoutes(db: DrizzleDB) {
       if (body.action === "policy" && "policy" in body && (body.policy === "best_effort" || body.policy === "require_visuals")) await setVisualFailurePolicy(db, gameId, body.policy, operatorId);
       else if (body.action === "resume") await resumeVisualGame(db, gameId, operatorId);
       else if (body.action === "repair_assets") await prepareVisualAssetRepair(db, gameId, operatorId);
-      else if (body.action === "repair_scene" && "sceneId" in body && typeof body.sceneId === "string" && "expectedRevision" in body && typeof body.expectedRevision === "number" && Number.isSafeInteger(body.expectedRevision) && "mode" in body && (body.mode === "verify" || body.mode === "regenerate")) {
-        await prepareVisualRepair(db, { gameId, operatorId, sceneId: body.sceneId, expectedRevision: body.expectedRevision, mode: body.mode });
+      else if (body.action === "repair_scene" && "sceneId" in body && typeof body.sceneId === "string" && "expectedRevision" in body && typeof body.expectedRevision === "number" && Number.isSafeInteger(body.expectedRevision) && "mode" in body && (body.mode === "verify" || body.mode === "regenerate" || body.mode === "rebuild")) {
+        await prepareVisualRepair(db, { gameId, operatorId, sceneId: body.sceneId, expectedRevision: body.expectedRevision, mode: body.mode,
+          previewHash: "previewHash" in body && typeof body.previewHash === "string" ? body.previewHash : undefined });
       } else return c.json({ error: "Invalid visual control" }, 400);
       return c.json({ accepted: true });
     } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Visual operation failed" }, 409); }

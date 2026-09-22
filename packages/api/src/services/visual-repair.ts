@@ -1,10 +1,11 @@
 import { and, eq, like, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
+import { previewFinalsRebuild } from "./visual-rebuild-preview.js";
 
 /** Explicit repair grants one new revision, never edits a historical paid attempt. */
 export async function prepareVisualRepair(db: DrizzleDB, input: {
-  gameId: string; sceneId: string; expectedRevision: number; mode: "verify" | "regenerate"; operatorId: string;
+  gameId: string; sceneId: string; expectedRevision: number; mode: "verify" | "regenerate" | "rebuild"; operatorId: string; previewHash?: string;
 }) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence.game-turn'), hashtext(${input.gameId}))`);
@@ -19,6 +20,16 @@ export async function prepareVisualRepair(db: DrizzleDB, input: {
       .where(and(eq(schema.visualRenderOperations.gameId, input.gameId), like(schema.visualRenderOperations.operationKey, `${scene.id}:%`)));
     if (attempts.some(({ attempt }) => !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain))) throw new Error("Reconcile uncertain paid attempts before authorizing another request");
     const candidateArtifactId = scene.candidateArtifactId ?? scene.imageArtifactId;
+    if (input.mode === "rebuild") {
+      const preview = await previewFinalsRebuild(tx, input.gameId, scene.id);
+      if (input.previewHash !== preview.previewHash) throw new Error("Rebuild preview changed; refresh before authorizing repair");
+      await tx.update(schema.visualScenes).set({ plan: preview.plan, planHash: preview.planHash, status: "preparing", failure: null,
+        repairMode: "regenerate", repairBudgetUsed: true, candidateArtifactId: null, imageArtifactId: null, annotatedArtifactId: null, anchors: null,
+        renderRevision: scene.renderRevision + 1 }).where(eq(schema.visualScenes.id, scene.id));
+      await recordVisualOperationEvent(tx, input.gameId, `${scene.id}:manual-repair:${scene.renderRevision + 1}`, { sceneId: scene.id, boundarySequence: scene.boundarySequence, kind: "retry", outcome: "pending", message: `${input.operatorId} authorized canonical Finals rebuild; revision ${scene.renderRevision + 1}` },
+        { kind: "internal", name: "VisualPlanRebuilt", message: "Previous scene retained as repair evidence", repair: { before: scene, after: preview } });
+      return;
+    }
     if (input.mode === "verify" && !candidateArtifactId) throw new Error("No candidate image is available to verify");
     await tx.update(schema.visualScenes).set({ status: "preparing", failure: null, repairMode: input.mode, repairBudgetUsed: true, candidateArtifactId, renderRevision: scene.renderRevision + 1 }).where(eq(schema.visualScenes.id, scene.id));
     await recordVisualOperationEvent(tx, input.gameId, `${scene.id}:manual-repair:${scene.renderRevision + 1}`, { sceneId: scene.id, boundarySequence: scene.boundarySequence, kind: "retry", outcome: "pending", message: `${input.operatorId} authorized ${input.mode}; revision ${scene.renderRevision + 1}` });

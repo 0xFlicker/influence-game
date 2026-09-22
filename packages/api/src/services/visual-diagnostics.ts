@@ -10,6 +10,14 @@ export interface VisualFailureEvidence {
   stack?: string;
   responseBody?: string;
   truncated?: boolean;
+  context?: {
+    reason: "participants" | "stale_scene" | "reference" | "artifact" | "anchors" | "scene_unavailable";
+    roomId: string; sceneId: string | null; renderRevision: number | null; agentId: string;
+    expectedParticipants: Array<{ id: string; name: string }>;
+    sceneParticipants: Array<{ id: string; name: string }>;
+    missingIds: string[]; extraIds: string[];
+  };
+  repair?: { before: unknown; after: unknown };
 }
 
 /** Only response evidence is bounded; never interpret agent-authored cue content. */

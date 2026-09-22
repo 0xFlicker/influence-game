@@ -27,6 +27,8 @@ The common style uses simple contemporary architecture, warm light, recognizable
 | Tribunal | Charcoal walls, dark wood, restrained overhead light; not a courtroom |
 | Finals | Pale stone, warm brass, symmetrical finalist/jury staging |
 
+Finals scene membership is the two finalists plus the active jury, using the same `selectActiveJury` helper as agent context. The active jury consists of the last eligible eliminations in canonical order: three jurors for 5–6 players, five for 7–9, and seven for 10–12. Early eliminations outside that jury are not staged in Finals. This applies to openings, jury questions/answers and closing arguments. Stored scenes still require exact participant matching before agents receive their annotations; correcting the planner does not silently rewrite an already stored incorrect plan.
+
 Existing Mingle room-count rules remain authoritative. Position inventories do not impose capacity limits. Scenes use canonical participants, explicit House alliance groups and furniture-relative staging; transcript prose never determines membership or game facts.
 
 Introductions, accepted ballots, diaries and farewells use framed PFPs. Conversations use a matching verified scene when available, otherwise the same portrait treatment. Format results retain canonical choreography. Ballot wording comes from accepted structured facts at existing reveal points, without a model call or invented quotation. House text appears separately. Anonymous speech remains unidentified.
@@ -88,3 +90,11 @@ Visual admission checks every provider slot, including fallbacks. Katana GLM 5.2
 ## Character submissions
 
 Profile generation and uploads edit a current-tab draft. Final submission atomically saves the selected content and creates durable moderation evidence; pending generation never attaches images after saving. See [Character drafts and moderation evidence](agent-content-submissions.md) for timeouts, cancellation, content revisions, review receipts and operator inspection. Pending moderation does not gate visual games.
+
+### Incorrect Finals cast at a suspended boundary
+
+The current-problem panel compares the saved Finals plan with canonical eligible jurors. It distinguishes a verified image from an image applicable to an agent turn, and lists missing/extra participants. Context rejection events retain the room, scene revision, agent, expected cast and scene cast; provider failure counts remain separate.
+
+Choose **Rebuild scene from current game state** after reviewing that cast preview, then **Resume game**. Rebuild changes only the unused Finals scene at the current suspended boundary. It grants one render revision and saves the complete prior scene and replacement plan in the repair audit; it makes no provider calls itself. It rejects stale previews, uncertain paid attempts, earlier boundaries and scenes already used by accepted dialogue. The worker recomputes the same plan after restart and fences late completions from the old revision. Recheck/regenerate of an unchanged incorrect plan is not the appropriate repair.
+
+The admin export includes `rebuildPreview`, `rebuildError` and `contextFailures`. The existing `repair_scene` control accepts `mode: "rebuild"` with the preview's `sceneId`, `expectedRevision` and `previewHash`; it does not accept a caller-authored cast or plan. This targeted rebuild is supported for Finals. Other scene repairs retain their existing verification/regeneration controls. Neither this control nor its diagnostics introduces new game pause conditions.

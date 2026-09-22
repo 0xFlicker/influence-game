@@ -3,6 +3,7 @@ import { visualFailurePolicy } from "./visual-policy.js";
 import { and, asc, eq, or } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readVisualRenderAccounting } from "./visual-render-journal.js";
+import { previewFinalsRebuild } from "./visual-rebuild-preview.js";
 
 /** Producer-only record: includes private diary cues, never used by the watch feed. */
 export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: string) {
@@ -21,5 +22,14 @@ export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: st
     const elapsed = attempts.flatMap((attempt) => attempt.receipt ? [attempt.receipt.elapsedMs] : []).sort((a, b) => a - b);
     return { provider, attempts: attempts.length, failed: attempts.filter((attempt) => attempt.receipt?.failure).length, uncertain: attempts.filter((attempt) => !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain)).length, knownCostMicrousd: attempts.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0), p50Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .5) - 1)] ?? null, p95Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .95) - 1)] ?? null };
   });
-  return { version: 1, gameId: game.id, gameStatus: game.status, policy: visualFailurePolicy(config), pause: config.visualPause ?? null, events, metrics, enabled: JSON.parse(game.config).visualMode === true, assets: assets[0] ?? null, scenes, accounting, cues };
+  let rebuildPreview: Awaited<ReturnType<typeof previewFinalsRebuild>> | null = null;
+  let rebuildError: string | null = null;
+  const currentFinals = scenes.findLast((scene) => scene.roomId === "finals");
+  if (config.visualPause && currentFinals) {
+    try { rebuildPreview = await previewFinalsRebuild(db, game.id, currentFinals.id); }
+    catch (error) { rebuildError = error instanceof Error ? error.message : "Rebuild preview unavailable"; }
+  }
+  return { version: 1, gameId: game.id, gameStatus: game.status, policy: visualFailurePolicy(config), pause: config.visualPause ?? null, events, metrics,
+    rebuildPreview, rebuildError, contextFailures: events.filter((row) => row.evidence?.context),
+    enabled: JSON.parse(game.config).visualMode === true, assets: assets[0] ?? null, scenes, accounting, cues };
 }

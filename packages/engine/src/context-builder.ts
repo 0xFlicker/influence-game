@@ -53,7 +53,7 @@ export interface PrivateRecallSelectionObservation {
     historyChars: number;
   };
 }
-import { computeJurySize } from "./types";
+import { selectActiveJury } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
 import {
@@ -126,10 +126,7 @@ export class ContextBuilder {
    * Early eliminations don't earn jury seats.
    */
   getActiveJury(): readonly JuryMember[] {
-    const maxJurors = computeJurySize(this.totalPlayerCount);
-    const allJurors = this.gameState.jury;
-    if (allJurors.length <= maxJurors) return allJurors;
-    return allJurors.slice(allJurors.length - maxJurors);
+    return selectActiveJury(this.gameState.jury, this.totalPlayerCount);
   }
 
   revealVoteLedgerEntries(entries: RevealedVoteLedgerEntry[]): void {

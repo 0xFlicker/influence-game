@@ -718,6 +718,12 @@ export function computeJurySize(totalPlayers: number): number {
   return 7;
 }
 
+/** Eligible jurors are the last N eliminations in canonical elimination order. */
+export function selectActiveJury(jury: readonly JuryMember[], totalPlayers: number): readonly JuryMember[] {
+  const maxJurors = computeJurySize(totalPlayers);
+  return jury.length <= maxJurors ? jury : jury.slice(jury.length - maxJurors);
+}
+
 /**
  * Compute a player-count-scaled maxRounds to ensure games resolve.
  * Formula: normal rounds to reach 4 players + 3 endgame rounds + 2 buffer.

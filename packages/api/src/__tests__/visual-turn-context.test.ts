@@ -9,6 +9,7 @@ import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
 import { createVisualTurnContextReader } from "../services/visual-turn-context.js";
+import { readVisualOperationEvents } from "../services/visual-diagnostics.js";
 import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 let db: DrizzleDB;
 let gameId: string;
@@ -54,6 +55,12 @@ test("portrait and ballot turns need no room image; conversations use canonical 
   const changed = await reader()({ ...args(), context: { ...context, alivePlayers: [...context.alivePlayers, { id: "p2", name: "Mira" }] } });
   expect(changed.room).toBeUndefined();
   expect(changed.observableRoom?.participantIds).toEqual(["p1", "p2"]);
+  const diagnostic = (await readVisualOperationEvents(db, gameId)).find((row) => row.evidence?.context?.reason === "participants");
+  expect(diagnostic?.evidence?.context).toMatchObject({
+    agentId: "p1", roomId: "lobby", renderRevision: 0,
+    expectedParticipants: [{ id: "p1", name: "Arden" }, { id: "p2", name: "Mira" }],
+    sceneParticipants: [{ id: "p1", name: "Arden" }], missingIds: ["p2"], extraIds: [],
+  });
 });
 
 test("rejects stale ownership and changed committed heads before returning scene context", async () => {

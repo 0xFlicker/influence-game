@@ -3,7 +3,7 @@ import { schema } from "../db/index.js";
 import { VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { recordVisualOperationEvent, readVisualOperationEvents, visualFailureEvidence } from "./visual-diagnostics.js";
 import { visualFailurePolicy, VisualPreparationBlocked } from "./visual-policy.js";
-import { GameState, type GameRunnerOptions, type DurableGameTurnSnapshotV1, type CanonicalGameEvent } from "@influence/engine";
+import { GameState, selectActiveJury, type GameRunnerOptions, type DurableGameTurnSnapshotV1, type CanonicalGameEvent } from "@influence/engine";
 import { planVisualScene, sameVisualArrangement, type VisualPlacement } from "@influence/engine/visual-scene-plan";
 import type { VisualRoomId } from "@influence/engine/visual-mode";
 import type { DrizzleDB } from "../db/index.js";
@@ -13,6 +13,7 @@ import { prepareCommittedMingleScenes } from "./visual-mingle-boundary.js";
 import { prepareVisualScene, readCurrentVisualScene } from "./visual-scene-store.js";
 import { renderVisualSceneBestEffort } from "./visual-best-effort.js";
 import { createVisualTurnContextReader } from "./visual-turn-context.js";
+import { planFinalsScene } from "./visual-finals-plan.js";
 
 export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoch: string): Pick<GameRunnerOptions, "prepareVisualBoundary" | "prepareVisualTurn"> {
   let readContext = createVisualTurnContextReader(db, { gameId, ownerEpoch, frozenCast: [] });
@@ -40,7 +41,7 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
           : ["tribunal_lobby", "tribunal_accusation", "tribunal_defense"].includes(String(coordinate)) ? "tribunal"
           : ["judgment_opening", "judgment_jury_questions", "judgment_closing"].includes(String(coordinate)) ? "finals" : null;
         if (!roomId) return;
-        const ids = [...new Set([...state.getAlivePlayerIds(), ...(roomId === "finals" ? state.jury.map((member) => member.playerId) : [])])];
+        const ids = [...new Set([...state.getAlivePlayerIds(), ...(roomId === "finals" ? selectActiveJury(state.jury, state.getAllPlayers().length).map((member) => member.playerId) : [])])];
         const cast = ids.map((id) => {
           const member = assets.cast.find((entry) => entry.id === id);
           if (!member) throw new Error("Scene participant lacks a frozen reference");
@@ -55,7 +56,7 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
         }
         const cues = snapshot.canonicalEvents.filter((event): event is Extract<CanonicalGameEvent, { type: "visual.cue_recorded" }> => event.type === "visual.cue_recorded" && event.payload.sceneId === previous?.id)
           .map((event) => ({ playerId: event.payload.playerId, cue: event.payload.cue }));
-        const plan = planVisualScene({ roomId, backgroundArtifactId: assets.backgrounds[roomId] ?? null, cast, roles, previous: previous?.plan,
+        const plan = roomId === "finals" ? planFinalsScene(state, assets.cast, assets.backgrounds.finals ?? null, previous ?? undefined) : planVisualScene({ roomId, backgroundArtifactId: assets.backgrounds[roomId] ?? null, cast, roles, previous: previous?.plan,
           allianceGroups: state.getHuddleEligibleAlliances().map((alliance) => alliance.memberIds), cues });
         if (previous?.status === "ready" && sameVisualArrangement(previous.plan, plan)) {
           if (requireVisuals && previous.anchors?.length !== plan.cast.length) throw new Error("Required agent annotations are unavailable");
