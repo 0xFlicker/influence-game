@@ -6,7 +6,7 @@
  */
 
 import { createHash, randomUUID } from "crypto";
-import { PERFORMANCE_CUE_SCHEMA, PERFORMANCE_CUE_GUIDANCE, decodePerformanceCue } from "./performance-cue";
+import { PERFORMANCE_CUE_SCHEMA, PERFORMANCE_CUE_GUIDANCE, optionalPerformanceCue } from "./performance-cue";
 import { assertVisualAnchors, latestSceneCues, visualRoomForPhase } from "./visual-mode";
 import type OpenAI from "openai";
 import type {
@@ -1534,7 +1534,7 @@ function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] |
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
   const decisionId = normalizeNullableString(record.decisionId);
   return {
-    ...(Object.prototype.hasOwnProperty.call(record, "cue") ? { cue: decodePerformanceCue(record.cue) } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "cue") ? { cue: optionalPerformanceCue(record.cue) } : {}),
     ...(Object.prototype.hasOwnProperty.call(record, "strategyDelta")
       ? { strategyDelta: record.strategyDelta }
       : {}),
@@ -6521,7 +6521,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return {
       messages: options?.visual ? [...messages, {
         role: "user" as const,
-        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
+        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
         ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
       }] : messages,
       result,
@@ -6626,8 +6626,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     }
     let cue: import("./visual-mode").PerformanceCue | null | undefined;
     if (options?.visual) {
-      try { cue = decodePerformanceCue(record.cue); }
-      catch (error) { return { status: "invalid", message: error instanceof Error ? error.message : "Invalid performance cue" }; }
+      cue = optionalPerformanceCue(record.cue);
     }
     const metadata = normalizeStrategicDecisionMetadata(record);
     return {
@@ -6732,6 +6731,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         action: `agent-response.${options?.action ?? "message"}.${options?.visual ? "visual." : ""}v1`,
         name: responseFormat.json_schema.name,
         schema: responseFormat.json_schema.schema,
+        optionalPerformanceCue: Boolean(options?.visual),
         decodeProviderPayload: (payload) =>
           this.decodeExactAgentResponsePayload(payload, options),
         decodeAcceptedValue: (value) =>
@@ -6864,8 +6864,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       if (!value || typeof value !== "object" || Array.isArray(value)) return { status: "invalid", message: "Visual turn must be an object" };
       const { cue: rawCue, ...domain } = value as Record<string, unknown>;
       let cue: import("./visual-mode").PerformanceCue | null;
-      try { cue = decodePerformanceCue(rawCue); }
-      catch (error) { return { status: "invalid", message: error instanceof Error ? error.message : "Invalid performance cue" }; }
+      cue = optionalPerformanceCue(rawCue);
       const decoded = decode(domain);
       if (decoded.status === "invalid") return decoded;
       return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
@@ -6875,6 +6874,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       name: requestTool.function.name,
       schema: (requestTool.function.parameters ?? {}) as Record<string, unknown>,
       acceptedValueUsesProviderSchema: false,
+      optionalPerformanceCue: Boolean(options?.visual),
       decodeProviderPayload: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;

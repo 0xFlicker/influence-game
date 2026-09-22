@@ -1,3 +1,4 @@
+import { generateVisualProfileReference } from "../services/visual-profile-generation.js";
 /**
  * Agent Profile REST API routes.
  *
@@ -84,6 +85,13 @@ Respond with JSON only:
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.post("/api/agent-profiles/visual-reference", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/visual-reference");
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
+    try {
+      return c.json(await generateVisualProfileReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin));
+    } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
+  });
 
   // -------------------------------------------------------------------------
   // Draft portrait generation — starts as soon as AI Help returns profile text

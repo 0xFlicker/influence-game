@@ -81,6 +81,7 @@ describe("AgentForm", () => {
 
   test("starts a review edit from the proposal and keeps the baseline visible", () => {
     const html = renderForm({
+      showLiveChanges: true,
       initial: {
         id: "agent-1",
         name: "Atlas",

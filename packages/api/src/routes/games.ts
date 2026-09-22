@@ -15,6 +15,7 @@
  *   GET    /api/games/:id/replay-watch-frames — trusted structured replay/catch-up frames
  */
 
+import { createVisualRoutes } from "./visual.js";
 import { Hono, type Context } from "hono";
 import { eq, inArray, asc, or, and, isNull, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -102,6 +103,7 @@ function publicErrorInfo(
   settlementState?: GameCompletionSettlementState | "not_applicable",
 ): string | undefined {
   if (status === "suspended") {
+    if (config.visualPause) return "Visual preparation is paused for repair.";
     if (settlementState === "pending") return "Finalizing results.";
     if (settlementState === "repair_required") return "Results under review.";
     return PUBLIC_SUSPENDED_ERROR_INFO;
@@ -138,6 +140,8 @@ export function createGameRoutes(db: DrizzleDB) {
       viewerMode,
       serviceTier,
       formatManifest,
+      visualMode = false,
+      visualFailurePolicy = "best_effort",
     } = body;
 
     if (
@@ -153,6 +157,8 @@ export function createGameRoutes(db: DrizzleDB) {
       }, 400);
     }
 
+    if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
+    if (typeof visualMode !== "boolean") return c.json({ error: "visualMode must be a boolean" }, 400);
     const minPlayers = MIN_NEW_GAME_PLAYERS;
     const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
 
@@ -227,6 +233,12 @@ export function createGameRoutes(db: DrizzleDB) {
         error: error instanceof Error ? error.message : "Invalid provider manifest",
       }, 400);
     }
+    const unsupportedVisualModels = visualMode ? frozenProviderManifest
+      .map((selection) => resolveModelSelection(selection).model)
+      .filter((model) => !model.capabilities.supportsImageInput) : [];
+    if (unsupportedVisualModels.length) {
+      return c.json({ error: `Visual Mode cannot provide image context to: ${unsupportedVisualModels.map((model) => model.displayName).join(", ")}. Select image-capable models for every provider slot, or turn off Visual Mode; portrait and speech-bubble playback remains available.` }, 400);
+    }
     const resolvedModelSelection = resolveModelSelection(frozenProviderManifest[0]);
 
     let frozenFormatManifest;
@@ -257,6 +269,8 @@ export function createGameRoutes(db: DrizzleDB) {
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
       slotType: "all_ai",
+      visualMode,
+      visualFailurePolicy,
       viewerMode: resolvedViewerMode,
       formatManifest: frozenFormatManifest,
     };
@@ -341,6 +355,9 @@ export function createGameRoutes(db: DrizzleDB) {
           modelLabel: modelLabelFromConfig(config),
           visibility: config.visibility ?? "public",
           viewerMode: config.viewerMode ?? "speedrun",
+      visualMode: config.visualMode === true,
+      visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
+      visualPaused: game.status === "suspended" && Boolean(config.visualPause),
           formatManifest,
           trackType: game.trackType,
           seasonId: game.seasonId ?? undefined,
@@ -425,6 +442,9 @@ export function createGameRoutes(db: DrizzleDB) {
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
+      visualMode: config.visualMode === true,
+      visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
+      visualPaused: game.status === "suspended" && Boolean(config.visualPause),
       formatManifest,
       seasonId: game.seasonId ?? undefined,
       season: competition
@@ -1087,11 +1107,17 @@ export function createGameRoutes(db: DrizzleDB) {
       const roomMetadata = parseJsonOrNull(row.roomMetadata);
       return {
         id: row.id,
+        entrySequence: row.entrySequence ?? undefined,
+        speakerPlayerId: row.safeContext?.anonymous ? null : row.speakerPlayerId,
+        anonymous: row.safeContext?.anonymous === true,
+        presentationPurpose: row.safeContext?.presentationPurpose,
+        acceptedBallot: row.safeContext?.acceptedBallot,
+        visualScene: row.safeContext?.visualScene,
         gameId: row.gameId,
         round: row.round,
         phase: row.phase,
-        fromPlayerId: row.fromPlayerId,
-        fromPlayerName: row.fromPlayerId ? (playerNameMap.get(row.fromPlayerId) ?? null) : null,
+        fromPlayerId: row.safeContext?.anonymous ? null : row.fromPlayerId,
+        fromPlayerName: !row.safeContext?.anonymous && row.fromPlayerId ? (playerNameMap.get(row.fromPlayerId) ?? null) : null,
         scope: row.scope,
         toPlayerIds: row.toPlayerIds ? JSON.parse(row.toPlayerIds) : null,
         ...(row.roomId != null && { roomId: row.roomId }),
@@ -1135,6 +1161,7 @@ export function createGameRoutes(db: DrizzleDB) {
     return c.json(frames);
   });
 
+  app.route("/", createVisualRoutes(db));
   return app;
 }
 

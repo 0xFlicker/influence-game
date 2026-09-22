@@ -113,6 +113,8 @@ The post-pick social window in a normal pre-endgame round. The format and rule s
 
 The current private-room social phase for new Influence games. Agents move through rooms, rooms may be empty, solo, or crowded, and messages are private to current room occupants. Mingle is not a display rename for Whisper; new game state, events, transcript rows, prompts, simulator output, and current docs should treat it as the active phase.
 
+The durable Format Mingle coordinator commits initial assignments, then each complete simultaneous conversation/movement beat, then alliance actions and huddles at completion. Its saved window includes repaired initial assignments, the current player-to-room map and prior beat allocations. Both Two Names windows use this sequence. A restart resumes the next uncommitted beat; visual preparation uses that committed arrangement before its dialogue starts. Completion does not generate a scene for the final unused movement map.
+
 ## Post-vote Mingle
 
 A legacy classic-lane Mingle window after Vote resolves and before Power. It remains readable for historical replay but is not part of the default format-kernel round. The current standard social window is Format Mingle after the empowered player locks the format.
@@ -705,7 +707,7 @@ The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every str
 
 ## Visual scene plan and accepted scene
 
-An optional Visual Mode scene plan stages a canonical set of participants against a versioned room background and frozen character references. Intended furniture positions guide generation; observed head anchors come from verification of the final pixels. A plan is not an accepted scene until every participant is localized clearly. Scene versions bind to presentation boundaries. Returning to an unchanged arrangement reuses accepted artifacts, and empty rooms reuse their background. Performance cues inform subsequent required renders but do not invalidate scenes or execute game actions.
+An optional Visual Mode scene plan stages a canonical set of participants against a versioned room background and frozen character references. Intended furniture positions guide generation; observed head anchors come from verification of the final pixels. A plan becomes an accepted scene only after every participant identity and the composition are verified. Head localization is separate: uncertain coordinates require an unanchored named speech panel and no annotated agent imagery. Scene versions bind to presentation boundaries. Preparation waits are bounded; one best-effort repair may follow failure, then portraits keep gameplay moving. Best effort visual failures never suspend a game or disable future arrangements. The explicit Require visuals policy pauses at a committed boundary for admin repair and resume when required imagery is unavailable. Operational evidence is retained independently of that policy and promoted into producer-visible canonical events. Returning to an unchanged arrangement reuses accepted artifacts, and empty rooms reuse their background. Performance cues are free-form `string | null` values. Only surrounding whitespace is trimmed; cue content is not classified or text-matched. They inform subsequent required renders but do not invalidate scenes or execute game actions.
 
 ## Visual paid-attempt journal
 

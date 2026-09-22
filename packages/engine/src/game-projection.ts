@@ -447,6 +447,8 @@ export function applyCanonicalEvent(
       // Accepted public speech fact — no board mutation.
       break;
     }
+    case "visual.operation_recorded":
+    case "visual.cue_recorded":
     case "endgame.speech_recorded": {
       // Accepted public Reckoning/Tribunal speech fact — no board mutation.
       break;

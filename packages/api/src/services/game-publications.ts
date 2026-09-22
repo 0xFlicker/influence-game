@@ -302,14 +302,20 @@ function publicTranscriptEntry(row: {
   thinking: string | null;
   timestamp: number;
   dialogueKind: string | null;
+  safeContext?: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
-  const from = row.speakerPlayerId
+  const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId
     ?? (row.dialogueKind === "house_summary" ? "House" : "SYSTEM");
   const to = parseStringArray(row.toPlayerIds);
   const roomMetadata = parseRoomMetadata(row.roomMetadata);
   return {
+    ...(!row.safeContext?.anonymous && row.speakerPlayerId && { speakerPlayerId: row.speakerPlayerId }),
+    ...(row.safeContext?.anonymous && { anonymous: true }),
     ...(row.entrySequence !== null && { entrySequence: row.entrySequence }),
+    ...(row.safeContext?.acceptedBallot && { acceptedBallot: row.safeContext.acceptedBallot }),
+    ...(row.safeContext?.visualScene && { visualScene: row.safeContext.visualScene }),
+    ...(row.safeContext?.presentationPurpose && { presentationPurpose: row.safeContext.presentationPurpose }),
     round: row.round,
     phase: row.phase as PublicWsTranscriptEntry["phase"],
     from,

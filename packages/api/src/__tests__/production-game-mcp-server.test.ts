@@ -242,6 +242,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_learning_reviews",
       "read_learning_review",
       "preflight_learning_review",
+      "generate_agent_visual_reference",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -642,7 +643,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["generate_agent_visual_reference", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -853,6 +854,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
       "read_producer_season_diagnostics",
+      "read_producer_visual_production",
       "inspect_durable_run",
       "read_provider_health",
       "read_producer_game_analysis",
@@ -1307,6 +1309,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "retry_learning_review",
       "apply_learning_review",
       "resolve_learning_review",
+      "generate_agent_visual_reference",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -1395,7 +1398,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["generate_agent_visual_reference", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [

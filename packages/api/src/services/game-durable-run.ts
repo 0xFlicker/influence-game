@@ -165,8 +165,6 @@ export type DurableRunExecutionCursorSummary =
       coordinate: string;
       currentBeat: number;
       totalBeats: number;
-      roomIndex: number;
-      speakerIndex: number;
     }
   | {
       kind: "alliance";
@@ -650,11 +648,9 @@ function summarizeExecutionCursor(
     case "mingle":
       return {
         kind: cursor.kind,
-        coordinate: cursor.progress.phase,
-        currentBeat: cursor.progress.currentBeat,
-        totalBeats: cursor.progress.totalBeats,
-        roomIndex: cursor.progress.roomIndex,
-        speakerIndex: cursor.progress.speakerIndex,
+        coordinate: cursor.progress.window?.phase ?? "format_mingle",
+        currentBeat: cursor.progress.window?.nextBeat ?? 0,
+        totalBeats: cursor.progress.window?.beats ?? 0,
       };
     case "alliance":
       return {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import {
+  apiFetch,
   AGENT_GENDER_OPTIONS,
   ApiError,
   generatePersonality,
@@ -35,6 +36,7 @@ export interface StrategyComparison {
 interface AgentFormProps {
   initial?: SavedAgent;
   strategyComparison?: StrategyComparison;
+  showLiveChanges?: boolean;
   draftScope: string;
   onSubmit: (params: AgentProfileWriteParams, context: { creationRequestId: string }) => Promise<void>;
   onCancel: () => void;
@@ -120,6 +122,7 @@ function parseStoredDraft(value: string | null): StoredEditorDraft | null {
 export function AgentForm({
   initial,
   strategyComparison,
+  showLiveChanges = false,
   draftScope,
   onSubmit,
   onCancel,
@@ -127,6 +130,7 @@ export function AgentForm({
 }: AgentFormProps) {
   const { account } = useAuth();
   const isEditing = Boolean(initial);
+  const showStrategyComparison = showLiveChanges && Boolean(strategyComparison);
   const initialStrategy = strategyComparison?.initialWorking ?? initial?.strategyStyle ?? "";
   const initialPersona = initial ? initial.personaKey : "strategic";
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
@@ -147,6 +151,9 @@ export function AgentForm({
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
   const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
   const [fullBodyReferenceUrl, setFullBodyReferenceUrl] = useState(initialSnapshot.fullBodyReferenceUrl);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const referenceRequest = useRef<{ requestId: string; name: string; personaKey: string; avatarUrl: string | null; performanceInstructions: string } | null>(null);
   const [personaKey, setPersonaKey] = useState<PersonaKey | null>(initialSnapshot.personaKey);
   const [gender, setGender] = useState<AgentGender | "">(initialSnapshot.gender);
   const [explicitAvatarUrl, setExplicitAvatarUrl] = useState<string | undefined>(initialSnapshot.explicitAvatarUrl);
@@ -241,7 +248,7 @@ export function AgentForm({
         setDraftStorageError("This draft could not be stored locally. Save before leaving this page.");
       }
     }, 500);
-    return () => window.clearTimeout(timeout);
+  return () => window.clearTimeout(timeout);
   }, [creationRequestId, currentSnapshot, dirty, draftAvatarCompletion, draftAvatarUrl, draftReady, draftStorageKey, initialSnapshot, pendingRestore]);
 
   useEffect(() => {
@@ -446,10 +453,34 @@ export function AgentForm({
     && (normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
       || normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.baseline)));
   const submitDisabled = submitting
+    || referenceBusy
     || profileGenerating
     || portraitStarting
     || uploading
     || requiredStrategyChangeMissing;
+
+  async function generateReference() {
+    setReferenceBusy(true);
+    setReferenceError(null);
+    const referenceStorageKey = `${draftStorageKey}:visual-reference`;
+    const saved = readEditorStorage(referenceStorageKey);
+    if (saved.ok && saved.value && !referenceRequest.current) {
+      try { referenceRequest.current = JSON.parse(saved.value); }
+      catch { setReferenceError("Saved reference request is unreadable. Restore the draft before generating again."); setReferenceBusy(false); return; }
+    }
+    referenceRequest.current ??= { requestId: createRequestId(), name, personaKey: personaKey ?? "", avatarUrl: explicitAvatarUrl ?? null, performanceInstructions };
+    if (!writeEditorStorage(referenceStorageKey, JSON.stringify(referenceRequest.current))) {
+      setReferenceError("The reference request could not be saved. Enable session storage before generating."); setReferenceBusy(false); return;
+    }
+    try {
+      const result = await apiFetch<{ fullBodyReferenceUrl: string }>("/api/agent-profiles/visual-reference", { method: "POST", body: JSON.stringify(referenceRequest.current) });
+      setFullBodyReferenceUrl(result.fullBodyReferenceUrl);
+      removeEditorStorage(referenceStorageKey);
+      referenceRequest.current = null;
+    } catch (error) {
+      setReferenceError(error instanceof Error ? error.message : "Reference generation failed");
+    } finally { setReferenceBusy(false); }
+  }
 
   return (
     <form onSubmit={handleSubmit} className="pb-28">
@@ -541,10 +572,10 @@ export function AgentForm({
               <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>
             </div>
-            <div className={strategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
-              {strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
+            <div className={showStrategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
+              {showStrategyComparison && strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
               <div className="order-1 xl:order-2">
-                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${strategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
+                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${showStrategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
                 {strategyComparison?.requireChange && (
                   <p className="mt-2 min-h-5 text-xs leading-5 text-white/45" aria-live="polite">
                     {requiredStrategyChangeMissing
@@ -573,6 +604,8 @@ export function AgentForm({
             <GrowingTextarea id="agent-performance" value={performanceInstructions} onChange={(event) => setPerformanceInstructions(event.target.value)} maxLength={AGENT_PROFILE_LIMITS.performanceInstructions} aria-describedby="agent-performance-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
             <div className="mt-5">
               <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
+              <button type="button" disabled={referenceBusy || !name.trim()} onClick={() => void generateReference()} className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50">{referenceBusy ? "Generating reference…" : referenceRequest.current ? "Retry reference request" : "Generate full-body reference"}</button>
+              {referenceError && <p role="alert" className="mb-3 text-sm text-red-300">{referenceError}</p>}
               <AvatarUpload currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={setFullBodyReferenceUrl} onUploadingChange={setFullBodyUploading} presentation="full-body" />
             </div>
           </section>

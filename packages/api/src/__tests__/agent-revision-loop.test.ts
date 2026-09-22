@@ -153,7 +153,7 @@ describe("agent revision update loop", () => {
     expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
   });
 
-  test("presentation-only edits preserve the active revision and current waiting tuple", async () => {
+  test("presentation-only edits preserve the active revision and refresh waiting visual assets", async () => {
     const profile = await createAgent("Presentation Agent");
     await insertGame("presentation-waiting", "presentation-waiting");
     await admit(profile.id, "presentation-waiting");
@@ -170,15 +170,16 @@ describe("agent revision update loop", () => {
     expect(result.profileRevision.outcome).toBe("preserved");
     expect(result.receipt.waitingSeats).toMatchObject({
       total: 1,
-      reconciled: 0,
-      alreadyCurrent: 1,
+      reconciled: 1,
+      alreadyCurrent: 0,
       crossedFreeze: 0,
     });
     expect(result.receipt.waitingSeats.games[0]).toMatchObject({
-      disposition: "already_current",
+      disposition: "reconciled",
       effectiveRevisionId: seatBefore.agentRevisionId,
     });
-    expect(seatAfter).toEqual(seatBefore);
+    expect({ ...seatAfter, persona: seatBefore.persona }).toEqual(seatBefore);
+    expect(JSON.parse(seatAfter.persona).avatarUrl).toBe("https://example.test/avatar.png");
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
   });
 

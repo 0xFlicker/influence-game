@@ -1,3 +1,4 @@
+import { optionalPerformanceCue } from "./performance-cue";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { CanonicalGameEvent } from "./canonical-events";
 import {
@@ -189,7 +190,7 @@ function stagedAgent(
   providerTurnId: string | null,
   acceptedProviderCallIds: Set<string>,
   isActive: () => boolean,
-  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1 },
+  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1; recordVisualContext?: (context: PhaseContext) => void; recordCue?: (context: PhaseContext, turnId: string, cue: import("./visual-mode").PerformanceCue) => void },
 ): { agent: IAgent; readCapsule: () => PlayerContinuityCapsule | null } {
   let capsule = initial ? structuredClone(initial) : null;
   let compactStrategy = capsule
@@ -272,6 +273,7 @@ function stagedAgent(
           });
           if (!isActive()) throw new Error("Durable scratch turn ended during scene preparation");
           args[0] = { ...context, visual: structuredClone(prepared) };
+          visual.recordVisualContext?.(args[0] as PhaseContext);
         }
         const semanticCoordinate = providerBinding && providerTurnId
           ? durableProviderSemanticCoordinateForSubcall(providerTurnId, providerBinding)
@@ -284,6 +286,13 @@ function stagedAgent(
         return Promise.resolve(Reflect.apply(value, proxy, args)).then((result: unknown) => {
           if (providerBinding && providerResultWasAccepted(result)) {
             acceptedProviderCallIds.add(providerBinding.logicalCallId);
+          }
+          if (visual && providerTurnId && providerResultWasAccepted(result) && result && typeof result === "object" && "cue" in result) {
+            const cue = optionalPerformanceCue(result.cue);
+            if (cue !== null && cue !== undefined) {
+              if (!isActive()) throw new Error("Durable scratch ended before cue acceptance");
+              visual.recordCue?.(args[0] as PhaseContext, providerTurnId, cue);
+            }
           }
           return result;
         });
@@ -301,7 +310,7 @@ export function createStagedAgents(
   continuity: readonly PlayerContinuityCapsule[],
   providerSubcalls: readonly GameTurnIntentV1["providerSubcalls"][number][] = [],
   providerTurnId: string | null = null,
-  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1 },
+  visual?: { prepare: NonNullable<GameRunnerOptions["prepareVisualTurn"]>; committed: DurableGameTurnSnapshotV1; recordVisualContext?: (context: PhaseContext) => void; recordCue?: (context: PhaseContext, turnId: string, cue: import("./visual-mode").PerformanceCue) => void },
 ): {
   agents: Map<UUID, IAgent>;
   readContinuity: () => PlayerContinuityCapsule[];

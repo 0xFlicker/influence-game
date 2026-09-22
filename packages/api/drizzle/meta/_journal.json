@@ -568,6 +568,41 @@
       "when": 1790010635801,
       "tag": "0080_visual_localization_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790010635802,
+      "tag": "0081_visual_game_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790010635803,
+      "tag": "0082_visual_profile_render_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790010635804,
+      "tag": "0083_visual_scene_render_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790010635805,
+      "tag": "0084_visual_operation_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790010635806,
+      "tag": "0085_visual_repair_controls",
+      "breakpoints": true
     }
   ]
 }

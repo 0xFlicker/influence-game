@@ -1,3 +1,5 @@
+import { generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { createDB, type DrizzleDB } from "../db/index.js";
 import {
   bearerChallenge,
@@ -558,6 +560,10 @@ export class ProductionGameMcpJsonRpcServer {
           request.arguments,
         ));
       }
+      if (name === "generate_agent_visual_reference") {
+        requireScopes(auth, ["agents:read", "agents:write"]);
+        return content(await generateVisualProfileReference(this.requireManagementDb(), auth.userId, args));
+      }
       if (name === "create_agent") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const db = this.requireManagementDb();
@@ -581,6 +587,10 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const db = this.requireManagementDb();
         return content(await leaveQueue(db, mcpManagementContext(auth), args));
+      }
+      if (name === "read_producer_visual_production") {
+        requireScopes(auth, ["producer"]);
+        return content(await readVisualProductionExport(this.requireManagementDb(), requiredString(args, "gameIdOrSlug")));
       }
       if (name === "inspect_durable_run") {
         requireScopes(auth, ["producer"]);
@@ -1000,6 +1010,11 @@ function productionGameMcpTools(
       readOnlyHint: true,
     }),
     tool({
+      name: "read_producer_visual_production",
+      description: "Read visual policy and pause status, durable operational events, rejected verification evidence, request latency metrics, frozen profiles, scene plans, private cues, provider receipts and costs for production analysis.",
+      properties: { gameIdOrSlug: { type: "string" } }, required: ["gameIdOrSlug"], scopes: ["producer"], readOnlyHint: true,
+    }),
+    tool({
       name: "inspect_durable_run",
       description: "Return the durable-run inspection summary for one game ID or slug.",
       properties: {
@@ -1393,6 +1408,12 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
 function userAgentWriteTools(): GameMcpToolDescriptor[] {
   const writeScopes: readonly McpOAuthScope[] = ["agents:read", "agents:write"];
   return [
+    tool({
+      name: "generate_agent_visual_reference",
+      description: "Generate a full-body reference preview. Return the image to the user and use create_agent or update_agent to save its fullBodyReferenceUrl. Reuse the same requestId UUID and identical inputs when retrying an uncertain response; do not create another paid request to bypass recovery.",
+      properties: { requestId: { type: "string" }, name: { type: "string" }, personaKey: { type: "string" }, avatarUrl: { type: ["string", "null"] }, performanceInstructions: { type: "string" } },
+      required: ["requestId", "name", "personaKey", "avatarUrl", "performanceInstructions"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
+    }),
     tool({
       name: "create_agent",
       description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names plus null/undefined are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",

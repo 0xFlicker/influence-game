@@ -52,7 +52,7 @@ describe("durable visual render journal", () => {
     const fallback = { provider: "xai" as const, model: "grok-imagine-image-2.0", requestHash: "xai-request" };
     await expect(journal.begin(fallback)).rejects.toThrow("fallback");
     await journal.begin(reservation);
-    await journal.finish({ ...receipt, requestId: null, status: null, chargeUncertain: true });
+    await journal.finish({ ...receipt, requestId: null, status: 503, chargeUncertain: true });
     await journal.begin(fallback);
     await journal.finish({ ...receipt, ...fallback }, Buffer.from("fallback image"));
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ unpricedAttempts: 2, uncertainAttempts: 1 });
@@ -68,7 +68,7 @@ describe("durable visual render journal", () => {
     const next = await retryVisualRender(db, operation.id, 1);
     expect(next.generation).toBe(2);
     await expect(retryVisualRender(db, operation.id, 1)).rejects.toThrow("generation changed");
-    await expect(journal.finish(receipt, Buffer.from("late image"))).rejects.toThrow("Stale");
+    await expect(journal.finish(receipt, Buffer.from("late image"))).rejects.toThrow("Conflicting");
     await visualImageJournal(db, next).begin(reservation);
     expect(await db.select().from(schema.visualRenderAttempts)).toHaveLength(2);
   });
@@ -80,8 +80,11 @@ describe("durable visual render journal", () => {
     await expect(retryVisualRender(db, operation.id, 1)).rejects.toThrow("Reconcile");
     const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, operation.id));
     await reconcileVisualAttempt(db, { attemptId: attempt!.id, operatorId: "operator-1", note: "Provider confirmed completed charge; pixels unavailable", costMicrousd: 123_000 });
-    await expect(journal.finish(receipt, Buffer.from("late image"))).rejects.toThrow("reconciled");
     const next = await retryVisualRender(db, operation.id, 1);
+    await journal.finish(receipt, Buffer.from("late image"));
+    const [retained] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id));
+    expect(retained?.image?.toString()).toBe("late image");
+    expect(retained?.generation).toBe(1);
     expect(next.generation).toBe(2);
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ knownCostMicrousd: 123_000, unpricedAttempts: 0, uncertainAttempts: 0 });
   });

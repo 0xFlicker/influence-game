@@ -5,6 +5,8 @@ export interface VisualCastMember {
   name: string;
   /** Frozen, content-addressed reference for this game, not a mutable profile URL. */
   referenceArtifactId: string;
+  /** Explicit preparation outcome; identical image hashes do not imply degraded quality. */
+  portraitFallback?: boolean;
   performanceInstructions: string;
 }
 export interface VisualPlacement {
@@ -17,7 +19,7 @@ export interface VisualScenePlan {
   version: 1;
   roomId: VisualRoomId;
   roomVersion: number;
-  backgroundArtifactId: string;
+  backgroundArtifactId: string | null;
   cast: readonly VisualCastMember[];
   placements: readonly VisualPlacement[];
   /** House-held grouping facts only. Never extracted from transcript prose. */
@@ -28,7 +30,7 @@ export interface VisualScenePlan {
 /** Deterministic staging. The inventory suggests furniture-relative positions, not room capacity. */
 export function planVisualScene(input: {
   roomId: VisualRoomId;
-  backgroundArtifactId: string;
+  backgroundArtifactId: string | null;
   cast: readonly VisualCastMember[];
   allianceGroups?: readonly (readonly string[])[];
   roles?: Readonly<Record<string, VisualPlacement["role"]>>;
@@ -36,7 +38,7 @@ export function planVisualScene(input: {
   cues?: VisualScenePlan["cues"];
 }): VisualScenePlan {
   const room = VISUAL_ROOMS[input.roomId];
-  if (!room || !input.backgroundArtifactId.trim()) throw new Error("Visual scene requires a versioned room background");
+  if (!room || (input.backgroundArtifactId !== null && !input.backgroundArtifactId.trim())) throw new Error("Visual scene requires a versioned room background");
   const ids = new Set(input.cast.map((member) => member.id));
   if (ids.size !== input.cast.length || input.cast.some((member) => !member.id.trim() || !member.name.trim() || !member.referenceArtifactId.trim())) throw new Error("Visual cast needs unique identities and frozen references");
   const groups: string[][] = [];
@@ -94,7 +96,7 @@ export function planVisualScene(input: {
     version: 1, roomId: room.id, roomVersion: room.version, backgroundArtifactId: input.backgroundArtifactId,
     cast: input.cast.map((member) => ({ ...member })), placements: input.cast.map((member) => placements.get(member.id)!),
     allianceGroups: groups,
-    cues: (input.cues ?? []).filter((cue) => ids.has(cue.playerId)).map((entry) => ({ playerId: entry.playerId, cue: { ...entry.cue } })),
+    cues: (input.cues ?? []).filter((cue) => ids.has(cue.playerId)).map((entry) => ({ playerId: entry.playerId, cue: entry.cue })),
   };
 }
 

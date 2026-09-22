@@ -1,46 +1,86 @@
-# Visual Mode
+# Optional Visual Mode
 
-## Approved behavior
+Portraits and timed speech bubbles are the standard presentation for every live game and replay. Visual Mode controls generated media, agent imagery and performance cues; it is selected at game creation and defaults off. A visual game always has a complete portrait-and-speech presentation. Generated images improve that presentation. Best effort is the default failure policy; Require visuals is an explicit championship setting. Cue content never causes suspension.
 
-Visual Mode is a default-off, creation-time game option. It generates Lobby, up to five Mingle rooms, Tribunal and Finals conversation scenes. Introductions, ballots, diaries and farewells use framed PFPs; format resolutions retain canonical result choreography. No image generation occurs for those portrait/procedural beats.
+## Availability contract
 
-Room art direction is defined in `packages/engine/src/visual-mode.ts`: ivory/oak/rust Lobby; green garden nook; terracotta kitchen corner; blue reading lounge; ochre music room; plum-and-walnut Den; charcoal/dark-wood Tribunal; pale-stone/brass Finals. Furniture inventories are staging suggestions, never game occupancy limits.
+At a committed conversational boundary, gameplay waits for pending visual preparation within a bounded timeout. A failed arrangement receives at most one best-effort repair. Under Best effort, once that allowance is exhausted, gameplay and timers proceed with portraits. Under Require visuals, unavailable required imagery stops advancement at the committed boundary for admin repair. A provider fallback consumes the repair allowance; it does not create another retry chain. Uncertain paid requests are recorded and never blindly repeated. Later changed arrangements get their own bounded preparation. Unchanged arrangements reuse their accepted scene or exhausted fallback decision, including after restart.
 
-**Updated bubble decision:** show one active bubble per displayed room, then hide it after message-length reading time. Do not retain every player's latest message. The initial timing is 200 words/minute plus one second to orient, with a three-second minimum and 200 ms entrance/exit fades. Long messages are not capped. Use the presentation clock for pause, speed, replay and expiry; changing rooms must not restart expired bubbles.
+Each scene attempt is bounded to 180 seconds. Abort and owner/turn guards prevent late work from publishing after the boundary has changed. Successful paid outputs and receipts remain durable even when publication is no longer permitted. Generation runs outside game transactions; only short reservation and acceptance transactions hold locks.
 
-Agents need a full-body reference plus character performance instructions. Missing references generate before play. Only verified image-capable provider entries may receive annotated room images. Observable cues from current occupants supplement the still image; private thought and strategy remain separate. Cues do not execute game actions or independently trigger renders.
+The policy is explicit at creation (`visualFailurePolicy: best_effort | require_visuals`) and can be changed by an admin. Both policies retain the same evidence. Best effort never waits for operator recovery; future arrangements still generate. Require visuals needs full-body references, room backgrounds, verified composition and agent-facing annotations. An unanchored viewer image alone does not satisfy it. A policy change does not itself resume a paused game.
 
-OpenAI is primary for generation, with xAI on availability failures. Affected gameplay waits for matching verified scenes. Failed verification or exhausted providers pauses for operator recovery. Track costs without a cap. Retain receipts and uncertain-attempt records to avoid duplicate paid requests after restarts.
+A visual pause preserves the committed execution cursor and transcripts, expires only the fenced current owner, and is stored as `suspended` with a `visualPause` reason in game configuration. Resume clears only that visual pause and returns the game to the existing durable worker adoption path. It does not reset the game, rewind accepted dialogue, or resume unrelated suspensions. The public watch retains its current presentation during visual repair, shows a concise paused status, and refreshes operational status to reconnect automatically after resume.
 
-## Implementation status
+## Presentation and rooms
 
-This branch is in progress; Visual Mode is not yet exposed as a runnable game option.
+The common style uses simple contemporary architecture, warm light, recognizable furniture, minimal clutter and natural conversation. Eight versioned settings are supported:
 
-Implemented foundations:
+| Setting | Direction |
+| --- | --- |
+| Lobby | Ivory plaster, oak, rust couch, cream chairs, kitchen bar, dark garden windows |
+| Mingle 1 — Garden nook | Muted green upholstery, pale stone, garden windows |
+| Mingle 2 — Kitchen corner | Terracotta, oak cabinets, pale counter, stools |
+| Mingle 3 — Reading lounge | Muted blue upholstery, dark wood, sparse shelves |
+| Mingle 4 — Music room | Ochre upholstery, warm wood, upright piano |
+| Mingle 5 — Den | Muted plum upholstery, warm grey plaster, walnut, sconces |
+| Tribunal | Charcoal walls, dark wood, restrained overhead light; not a courtroom |
+| Finals | Pale stone, warm brass, symmetrical finalist/jury staging |
 
-- Explicit image attachments in provider-neutral invocations, compiled to OpenAI Responses and Katana chat formats; unsupported models reject attachments. Luna and Katana Grok 4.6 have verified capability entries.
-- Eight room definitions, explicit phase mapping, scene/cue/anchor types and strict localization validation.
-- Final-image localization and numbered image annotation in the API service.
-- Timed scene and portrait presentation, Mingle room pinning, anonymous bubbles, retained-image loading states and a presentation-director clock adapter. Full watch data integration remains pending.
-- Deterministic staging plans using explicit House alliance groups, preserved furniture positions, overflow staging without capacity limits, and batches of up to four characters.
-- Durable image/localization reservations, saved outputs, explicit uncertain-attempt reconciliation, retry generations, and stale-result fencing. Immutable game-scoped artifacts and scene acceptance reuse unchanged and empty rooms.
-- A renderer that builds small groups, assembles large casts, harmonizes the final scene and verifies identities before acceptance. Provider-mocked PostgreSQL tests cover the full service pipeline; live visual quality of this production pipeline remains unverified.
-- An awaited durable agent-call hook and an owner-fenced scene-context reader. The reader checks committed turn heads, frozen profiles and exact room membership; portrait and ballot methods receive performance instructions without imagery. The game lifecycle has not yet installed this hook.
-- Mingle execution is split into serializable initialization, beat and completion functions. Movement remains simultaneous at the end of each beat. The durable coordinator still needs to persist these individual boundaries; the context reader rejects uncommitted Mingle assignments.
-- Exact optional cue contracts in agent turns, with malformed-output rejection. Runtime cue collection and sharing remain pending.
-- Full-body reference and performance fields through profile storage, authoring API/MCP and editor, including draft/create recovery. Generated reference completion remains to implement.
+Existing Mingle room-count rules remain authoritative. Position inventories do not impose capacity limits. Scenes use canonical participants, explicit House alliance groups and furniture-relative staging; transcript prose never determines membership or game facts.
 
-Live localization verification on 2026-09-21 used both prior twelve-player wide arrangements. All 24 identities were correctly marked above their heads in visually inspected numbered outputs. Temporary evidence is in `/private/tmp/visual-mode-localization-proof/`; no generated media or research runners are committed. This proves those two samples, not general localization accuracy. Actual speech-bubble browser verification remains pending.
+Introductions, accepted ballots, diaries and farewells use framed PFPs. Conversations use a matching verified scene when available, otherwise the same portrait treatment. Format results retain canonical choreography. Ballot wording comes from accepted structured facts at existing reveal points, without a model call or invented quotation. House text appears separately. Anonymous speech remains unidentified.
 
-Remaining work: lock and publish room assets; reference generation with safe completion; automatic receipt pricing and operator recovery API/tools; committed game scene boundaries and context; cue persistence and producer exports; creation admission; live/replay watch data integration; live-provider and browser verification. The current service tests do not prove these runtime behaviors.
+Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with 200 ms fades and no upper cap. Their clock follows playback pause, speed and seeking. A visual becoming available cannot switch the active speech beat away from its chosen presentation. Mobile overflow and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
 
-Research code is archived separately on `codex/visual-research` (`089a91db`). It is not a production dependency.
+## Profiles, identity and agent context
 
-## Verification checkpoint (2026-09-21)
+Profile editing and agent tools support full-body references and performance instructions. Selected profile values are frozen for the game. Missing full-body references receive bounded generation; if unavailable, the frozen PFP remains a usable identity reference. Missing room backgrounds do not prohibit later scene generation from the room specification and character references.
 
-- Provider-free baseline: 1,702 passed, 5 skipped with local network access. A subsequent focused run passed 23 durable-runner and visual-boundary tests, including cancellation while scene preparation is pending.
-- PostgreSQL baseline: 1,581 passed. Includes durable render/localization reuse, uncertain attempts, retry fencing, scene acceptance, stale-result checks and owner-fenced context reads with mocked providers.
-- Workspace typechecks and lint passed. Focused Mingle tests also verify serialization between beats and reject premature completion; agent tests cover room-audience rejection and diary image omission.
-- No new paid requests were made during the durable pipeline implementation. Production pipeline visual quality, browser integration and game-runtime behavior are not yet verified.
+Identity/composition verification is separate from head localization. Composition must establish exactly one of each canonical participant, without extra, missing, duplicate or ambiguous identities. Invalid composition remains unpublished. Verified composition with unavailable or invalid geometry may publish a clean image with unanchored named speech panels. Overlapping head anchors are rejected. Only fully verified identity-to-anchor mappings produce agent-facing numbered imagery.
 
-The fifth Mingle room is approved: the Den uses muted plum upholstery, warm grey plaster, walnut furniture, a low coffee table and simple wall sconces. Sofa seats, armchairs and standing positions follow the shared staging inventory. The existing `ceil(alivePlayers / 3) + 1` room-count rule remains unchanged, including five rooms at 10–12 players. There are now eight distinct setting definitions; the Den background still needs generation and visual inspection alongside final asset preparation.
+Before each agent call, the context reader checks the current canonical audience, frozen profile and committed boundary. A matching verified annotated image may accompany the turn; otherwise the agent receives canonical participants and applicable observable cues as text. Ballots and diaries receive no room imagery. Visual cues continue when imagery is unavailable, cannot execute actions or movement, and remain separate from private cognition. Diary cues are producer-only. Cue strings have surrounding whitespace trimmed and are otherwise preserved without text matching, filtering or interpretation; malformed game actions remain invalid.
+
+## Durable implementation
+
+- `visual_game_assets` freezes profiles, references and room assets.
+- `visual_scenes` stores canonical arrangement plans, boundary/dialogue sequence, render revision, artifacts, localization and diagnostics.
+- `visual_operation_events` is an idempotent, durable operational journal, written atomically with provider reservations and completions. It retains failures and presentation decisions even when a turn cannot commit. Pending records are copied as producer-visible `visual.operation_recorded` canonical events in the next committed turn, without changing rules or agent context. Paused-game diagnostics are available immediately from the journal; canonical promotion occurs on resume.
+- `visual_render_operations` reserves immutable input hashes and request descriptions; `visual_render_attempts` retains provider dispatches, outputs, receipts, costs and reconciliation.
+- `visual-best-effort.ts` owns the per-arrangement initial/repair policy and timeout. Repeated unchanged turns cannot reset the budget.
+- `visual-turn-context.ts` supplies image or text context without generating media.
+- Accepted transcript metadata records the chosen scene and structured ballot facts. Producer exports include frozen profiles, cues, plans, observed anchors and accounting.
+
+OpenAI generates images; xAI is the availability fallback within the same bounded allowance. GPT-5.6 Sol verifies composition and localization. Pricing records known costs and explicitly retains unpriced/uncertain receipts. There is no spending cap. The admin visual-production page exposes diagnostics, saved images, exports and accounting reconciliation with policy, repair and resume controls. Provider error bodies and rejected verification responses are retained with typed failure evidence (response evidence bounded to 64 KiB, with truncation indicated). Credentials and request authorization headers are never stored.
+
+## Operator workflow
+
+Open `/admin/games/<id>/visual`. Inspect the timeline, scene revision, candidate image, exact rejected verifier response, provider request ID, duration, cost and uncertainty before authorizing repair. Provider P50/P95 timings are per request, not total boundary wait. The production export includes this evidence and the immutable request description. Private evidence endpoints require admin access and cannot publish an unverified image to viewers.
+
+For Require visuals games:
+
+1. Diagnose the failure; fix provider configuration or availability as needed.
+2. Reconcile uncertain paid requests using provider billing/request evidence. Unknown charges are never treated as zero.
+3. Choose **Recheck existing image** to pay only for verification, or **Regenerate scene** for a new image revision. **Prepare asset repair** retries missing references/backgrounds while keeping successful assets. These actions only prepare work; they do not dispatch paid calls until resume.
+4. **Resume game** queues the unchanged cursor for worker adoption. A repair gets one explicit new scene revision; a failed repair pauses again under Require visuals.
+5. To finish with portraits instead, select Best effort and resume. Future arrangements remain eligible for generation.
+
+Manual actions are permission checked, audited and guarded against stale revisions. An old owner or obsolete arrangement cannot publish results. Late paid completions remain journal evidence even when publication is no longer allowed. Image fallback consumes a shared per-scene repair allowance; a transport failure with no response does not authorize a second paid request.
+
+## Verification and operator review
+
+Provider-free checks cover opaque cue preservation with strict gameplay validation, timed bubbles, anonymous presentation and replay selection. PostgreSQL checks cover scene identity acceptance, movement reuse, durable attempts, restart budgets, bounded failures, hanging providers, uncertain charges and late completions. Browser checks must cover portraits, generated scenes, pause/speed/seek, mobile overflow and room selection.
+
+Use Doppler dev for explicitly authorized bounded live-provider tests. Local review servers must use the local development database, never an implicit remote Doppler database. The earlier live rehearsal exposed duplicate occupants and overlapping model-estimated anchors; those cases now have explicit rejection and fallback coverage. A synthetic primary rate limit followed by a real xAI edit succeeded. Current verification results belong in the operator handoff; historical green results do not prove later changes.
+
+Research scripts are archived on `codex/visual-research` (`089a91db`). Generated samples and temporary rehearsal scripts are not feature-branch dependencies. Video rendering, new format-specific environments, camera-angle changes and agent-controlled visual movement remain outside scope.
+
+Performance cues are `string | null`. Trim surrounding whitespace only. Preserve the cue content, including `"37"` and empty strings. Do not classify, text-match, infer meaning, or filter cue content. Null means no cue. The provider is prompted for free-form performance text; non-string optional metadata supplies no cue without rejecting otherwise valid gameplay. Strict gameplay validation remains separate; cues cannot execute game actions.
+
+## Removed presentation paths
+
+The replay theater no longer branches on Visual Mode to render scrolling chat feeds, stacked diary/whisper conversations, or typing/typewriter spotlights. Both live and recorded playback use the same portrait/scene presentation and reading-time clock; structured format results keep their dedicated choreography. Live playback reports its cursor to the surrounding phase navigation just as recorded playback does. Newly published first speech receives its full reading time; historical catch-up does not replay old introductions. The duplicate House intro and floating phase-ending overlays were removed; a single in-flow waiting status sits above playback controls. The transcript inspector remains available.
+
+For historical reference, the removed theater branches are in `packages/web/src/app/games/[slug]/components/dramatic-replay-viewer.tsx` at commit `d2e11ad8548bba6c0329f6b52b1a8a64189cb9e4` (`git show <commit>:<path>`). They are not an alternate replay mode to restore.
+
+Visual admission checks every provider slot, including fallbacks. Katana GLM 5.2 is configured as text-only; the creation UI names incompatible slots before submission. Portrait playback does not require vision-capable models.

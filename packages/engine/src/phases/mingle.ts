@@ -504,12 +504,20 @@ export async function beginMingleWindow(
     }
   }
 
-  return { phase, alivePlayers, roomCount, beats, nextBeat: 1, initialAllocation,
+  return { phase, alivePlayers: alivePlayers.map(({ id, name }) => ({ id, name })), roomCount, beats, nextBeat: 1, initialAllocation,
     roomByPlayerId: Object.fromEntries(roomByPlayerId), allRooms: [] };
+}
+
+/** Current committed arrangement, including empty rooms. */
+export function mingleWindowRooms(state: MingleWindowState): RoomAllocation[] {
+  if (state.nextBeat > state.beats) return [];
+  return state.nextBeat === 1 ? structuredClone(state.initialAllocation.rooms)
+    : buildRoomsFromAssignments(new Map(Object.entries(state.roomByPlayerId)), state.alivePlayers, state.roomCount, state.initialAllocation.diagnostics.round, state.nextBeat);
 }
 
 /** Collect a whole beat before applying its simultaneous movement decisions. */
 export async function advanceMingleWindow(ctx: PhaseRunnerContext, state: MingleWindowState): Promise<MingleWindowState> {
+  assertMingleWindowRoster(ctx, state);
   state = structuredClone(state);
   if (state.nextBeat < 1 || state.nextBeat > state.beats) throw new Error("Mingle window has no pending beat");
   const { gameState, logger, contextBuilder } = ctx;
@@ -558,6 +566,7 @@ export async function advanceMingleWindow(ctx: PhaseRunnerContext, state: Mingle
 }
 
 export async function finishMingleWindow(ctx: PhaseRunnerContext, state: MingleWindowState): Promise<void> {
+  assertMingleWindowRoster(ctx, state);
   if (state.nextBeat !== state.beats + 1) throw new Error("Cannot finish Mingle before every beat completes");
   const { gameState, contextBuilder } = ctx;
   const { phase, alivePlayers, roomCount, beats, allRooms } = state;
@@ -571,6 +580,15 @@ export async function finishMingleWindow(ctx: PhaseRunnerContext, state: MingleW
   await assertCanAcceptCommit(ctx);
   gameState.recordRoomAllocations(allRooms, [], [], phase);
 
+}
+
+function assertMingleWindowRoster(ctx: PhaseRunnerContext, state: MingleWindowState): void {
+  const alive = ctx.gameState.getAlivePlayers();
+  if (state.initialAllocation.diagnostics.round !== ctx.gameState.round
+    || alive.length !== state.alivePlayers.length
+    || state.alivePlayers.some((player) => !alive.some((current) => current.id === player.id && current.name === player.name))) {
+    throw new Error("Mingle window does not match the canonical round and roster");
+  }
 }
 
 export async function runMinglePhase(

@@ -37,6 +37,10 @@ export class TranscriptLogger {
   /** 1-based product dialogue sequence counter (dialogue scopes only). */
   private dialogueSequence = 0;
 
+  private readonly visualScenes = new Map<string, NonNullable<TranscriptDialogueContext["visualScene"]>>();
+  setVisualSceneForSpeaker(playerId: string, scene: TranscriptDialogueContext["visualScene"]): void {
+    if (scene) this.visualScenes.set(playerId, scene); else this.visualScenes.delete(playerId);
+  }
   constructor(private readonly gameState: GameState) {}
 
   seed(entries: readonly TranscriptEntry[]): void {
@@ -219,6 +223,7 @@ export class TranscriptLogger {
     });
     const dialogueContext: TranscriptDialogueContext = {
       version: 1,
+      ...(this.visualScenes.has(fromId) && { visualScene: this.visualScenes.get(fromId) }),
       ...(opts?.dialogueContext ?? {}),
       ...((opts?.decisionId ?? opts?.dialogueContext?.decisionId)
         ? { decisionId: opts.decisionId ?? opts.dialogueContext?.decisionId }
@@ -272,6 +277,7 @@ export class TranscriptLogger {
       dialogueContext: {
         version: 1,
         ...(roomId != null && { roomId }),
+        ...(this.visualScenes.has(fromId) && { visualScene: this.visualScenes.get(fromId) }),
         ...(decisionId && { decisionId }),
       },
       ...(roomId != null && { roomId }),
@@ -367,6 +373,7 @@ export class TranscriptLogger {
     thinking?: string,
     reasoningContext?: string,
     kind: TranscriptDialogueKind = "system_announcement",
+    acceptedBallot?: TranscriptDialogueContext["acceptedBallot"],
   ): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -379,7 +386,7 @@ export class TranscriptLogger {
       entrySequence: this.nextDialogueSequence(),
       dialogueKind: kind,
       audiencePlayerIds: [],
-      dialogueContext: { version: 1 },
+      dialogueContext: { version: 1, ...(acceptedBallot && { acceptedBallot }) },
       ...(thinking && { thinking }),
       ...(reasoningContext && { reasoningContext }),
     };

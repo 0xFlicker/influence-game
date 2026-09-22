@@ -737,6 +737,14 @@ export class GameState {
   // Room allocation tracking
   // ---------------------------------------------------------------------------
 
+  recordVisualOperation(payload: import("./visual-mode").VisualOperationEvent): void {
+    this.appendCanonicalEvent("visual.operation_recorded", payload, { visibility: "producer" });
+  }
+
+  recordVisualCue(payload: Extract<CanonicalGameEvent, { type: "visual.cue_recorded" }>["payload"], phase: Phase): void {
+    this.appendCanonicalEvent("visual.cue_recorded", payload, { phase, visibility: "producer" });
+  }
+
   recordRoomAllocations(
     rooms: RoomAllocation[],
     excluded: UUID[],

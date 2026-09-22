@@ -111,7 +111,7 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
           {sourceReviewId
             ? "The review suggestion is loaded as your working Strategy. Edit it while the live diff stays visible."
-            : "Tune this Agent while comparing Strategy changes with the saved version."}
+            : "Tune this Agent’s profile and strategy."}
         </p>
       </header>
 
@@ -141,6 +141,7 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
         <AgentForm
           initial={agent}
           strategyComparison={strategyComparison}
+          showLiveChanges={Boolean(sourceReviewId)}
           draftScope={sourceReviewId ? `review:${agentId}:${sourceReviewId}` : `edit:${agentId}`}
           onSubmit={handleUpdate}
           onCancel={() => router.replace(cancelPath)}

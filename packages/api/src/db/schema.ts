@@ -610,6 +610,10 @@ export type TranscriptSafeContextV1 = {
    * digest identity (CanonicalDialogueContextV2 omits it).
    */
   formalSpeechCorrelationKey?: string;
+  anonymous?: boolean;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"];
+  visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /**
    * Durable private-decision id for narrative correlation. Optional; forward-path
    * only. Outside product-dialogue digests. Not exposed on match-transcript DTOs.
@@ -3441,14 +3445,31 @@ export const agentLearningEvents = pgTable("agent_learning_events", {
 // Paid visual requests retain their pixels and receipts atomically. These are
 // source artifacts; public scene publication is a separate verified operation.
 const visualBytes = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
-export const visualRenderOperations = pgTable("visual_render_operations", {
+export const visualOperationEvents = pgTable("visual_operation_events", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  eventKey: text("event_key").notNull(),
+  event: jsonb("event").notNull().$type<import("@influence/engine/visual-mode").VisualOperationEvent>(),
+  evidence: jsonb("evidence").$type<import("../services/visual-diagnostics").VisualFailureEvidence>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [unique("visual_operation_events_key_unique").on(table.gameId, table.eventKey)]);
+
+export const visualRenderOperations = pgTable("visual_render_operations", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").references(() => games.id, { onDelete: "cascade" }),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
   operationKey: text("operation_key").notNull(),
+  sceneId: text("scene_id").references(() => visualScenes.id),
   inputHash: text("input_hash").notNull(),
+  request: jsonb("request").$type<Record<string, unknown>>(),
+  budgetStartGeneration: integer("budget_start_generation").notNull().default(1),
   generation: integer("generation").notNull().default(1),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
-}, (table) => [unique("visual_render_operations_key_unique").on(table.gameId, table.operationKey)]);
+}, (table) => [
+  unique("visual_render_operations_key_unique").on(table.gameId, table.operationKey),
+  uniqueIndex("visual_render_operations_user_key_unique").on(table.userId, table.operationKey),
+  check("visual_render_operations_owner_check", sql`(${table.gameId} IS NOT NULL) <> (${table.userId} IS NOT NULL)`),
+]);
 
 export const visualRenderAttempts = pgTable("visual_render_attempts", {
   id: text("id").primaryKey(),
@@ -3489,11 +3510,16 @@ export const visualScenes = pgTable("visual_scenes", {
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   roomId: text("room_id").notNull().$type<import("@influence/engine/visual-mode").VisualRoomId>(),
   boundarySequence: integer("boundary_sequence").notNull(),
+  renderRevision: integer("render_revision").notNull().default(0),
+  afterDialogueSequence: integer("after_dialogue_sequence").notNull().default(0),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
   planHash: text("plan_hash").notNull(),
   status: text("status").notNull().$type<"preparing" | "ready" | "failed">().default("preparing"),
   imageArtifactId: text("image_artifact_id").references(() => visualArtifacts.id),
   annotatedArtifactId: text("annotated_artifact_id").references(() => visualArtifacts.id),
+  candidateArtifactId: text("candidate_artifact_id").references(() => visualArtifacts.id),
+  repairBudgetUsed: boolean("repair_budget_used").notNull().default(false),
+  repairMode: text("repair_mode").notNull().default("regenerate").$type<"regenerate" | "verify">(),
   anchors: jsonb("anchors").$type<import("@influence/engine/visual-mode").VisualPlayerAnchor[]>(),
   failure: text("failure"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
@@ -3502,3 +3528,19 @@ export const visualScenes = pgTable("visual_scenes", {
   check("visual_scenes_status_check", sql`${table.status} IN ('preparing', 'ready', 'failed')`),
   check("visual_scenes_ready_check", sql`${table.status} <> 'ready' OR (${table.imageArtifactId} IS NOT NULL AND ${table.annotatedArtifactId} IS NOT NULL AND ${table.anchors} IS NOT NULL)`),
 ]);
+
+export const visualGameAssets = pgTable("visual_game_assets", {
+  gameId: text("game_id").primaryKey().references(() => games.id, { onDelete: "cascade" }),
+  profiles: jsonb("profiles").notNull().$type<import("@influence/engine/visual-mode").FrozenVisualProfile[]>(),
+  cast: jsonb("cast").notNull().$type<import("@influence/engine/visual-scene-plan").VisualCastMember[]>().default(sql`'[]'::jsonb`),
+  portraits: jsonb("portraits").notNull().$type<Record<string, string>>().default(sql`'{}'::jsonb`),
+  backgrounds: jsonb("backgrounds").notNull().$type<Partial<Record<import("@influence/engine/visual-mode").VisualRoomId, string>>>().default(sql`'{}'::jsonb`),
+  status: text("status").notNull().$type<"preparing" | "ready" | "failed">().default("preparing"),
+  failure: text("failure"),
+}, (table) => [check("visual_game_assets_status_check", sql`${table.status} IN ('preparing', 'ready', 'failed')`)]);
+
+export const visualRoomLibrary = pgTable("visual_room_library", {
+  roomId: text("room_id").notNull().$type<import("@influence/engine/visual-mode").VisualRoomId>(),
+  version: integer("version").notNull(),
+  image: visualBytes("image").notNull(),
+}, (table) => [primaryKey({ columns: [table.roomId, table.version] })]);

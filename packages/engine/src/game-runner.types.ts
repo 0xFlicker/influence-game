@@ -95,7 +95,9 @@ export interface GameStateSnapshot {
 }
 
 export interface GameRunnerOptions {
-  /** Await verified visual context before an agent call. Requires atomic durable turns. */
+  /** Prepare visuals at a durable boundary. Best effort continues with portraits; explicit Require visuals may request an operator pause. */
+  prepareVisualBoundary?: (snapshot: DurableGameTurnSnapshotV1) => Promise<void | import("./visual-mode").VisualOperationEvent[]>;
+  /** Read verified imagery when available, otherwise canonical text context. Never generates images. */
   prepareVisualTurn?: (input: {
     context: PhaseContext;
     method: string;
@@ -1352,6 +1354,8 @@ export interface PhaseContext {
   /** Present only for games explicitly created in Visual Mode. */
   visual?: {
     performanceInstructions: string;
+    observableRoom?: { roomId: import("./visual-mode").VisualRoomId; arrangementKey: string; participantIds: string[]; cues: Array<{ playerId: string; cue: import("./visual-mode").PerformanceCue }> };
+    presentationScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
     room?: import("./visual-mode").AgentVisualContext;
   };
   gameId: UUID;
@@ -1515,6 +1519,9 @@ export type TranscriptDialogueKind =
  */
 export interface TranscriptDialogueContextV1 {
   version: 1;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: UUID; targetId: UUID; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
   roomId?: number;
   allianceId?: string;
   scheduleId?: string;

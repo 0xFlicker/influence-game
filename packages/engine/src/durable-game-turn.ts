@@ -1,3 +1,4 @@
+import { validateMingleWindowState } from "./mingle-window-contract";
 import {
   isCanonicalGameEventType,
   type CanonicalEventSource,
@@ -85,37 +86,11 @@ export const HOUSE_OPERATIONS_V1 = [
 
 export type HouseOperationV1 = (typeof HOUSE_OPERATIONS_V1)[number];
 
-export interface MingleRoomProgressV1 {
-  version: 1;
-  roomId: number;
-  playerIds: string[];
-}
-
-export interface MingleBeatAllocationV1 {
-  version: 1;
-  beat: number;
-  rooms: MingleRoomProgressV1[];
-  excludedPlayerIds: string[];
-}
-
-export interface MingleMovementRequestV1 {
-  version: 1;
-  playerId: string;
-  gotoPlayerId: string | null;
-  preferredRoomSize: 2 | 3 | null;
-}
-
 export interface MingleProgressV1 {
   version: 1;
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE | Phase.POST_VOTE_MINGLE;
-  totalBeats: number;
-  currentBeat: number;
-  roomIndex: number;
-  speakerIndex: number;
-  currentAllocation: MingleBeatAllocationV1 | null;
-  roomByPlayerId: Record<string, number>;
-  priorBeatAllocations: MingleBeatAllocationV1[];
-  movementRequests: MingleMovementRequestV1[];
+  completion: "format_resolve" | "two_names_override" | "two_names_plea";
+  inboxStartIndex: number;
+  window: import("./phases/mingle").MingleWindowState | null;
 }
 
 export interface AllianceProgressV1 {
@@ -664,73 +639,12 @@ function validateCursor(value: unknown): string[] {
 }
 
 function validateMingleProgress(value: unknown): string[] {
-  if (!exactRecord(value, [
-    "version", "phase", "totalBeats", "currentBeat", "roomIndex", "speakerIndex",
-    "currentAllocation", "roomByPlayerId", "priorBeatAllocations", "movementRequests",
-  ])) return ["mingle progress fields are not exact"];
+  if (!exactRecord(value, ["version", "completion", "inboxStartIndex", "window"])) return ["mingle progress fields are not exact"];
   const errors: string[] = [];
   if (value.version !== 1) errors.push("mingle progress version must be 1");
-  if (value.phase !== Phase.MINGLE_I && value.phase !== Phase.FORMAT_MINGLE && value.phase !== Phase.POST_VOTE_MINGLE) {
-    errors.push("mingle progress phase is invalid");
-  }
-  requirePositiveInteger(value.totalBeats, "mingle totalBeats", errors);
-  requirePositiveInteger(value.currentBeat, "mingle currentBeat", errors);
-  if (Number.isInteger(value.totalBeats) && Number.isInteger(value.currentBeat) && Number(value.currentBeat) > Number(value.totalBeats)) {
-    errors.push("mingle currentBeat exceeds totalBeats");
-  }
-  requireNonNegativeInteger(value.roomIndex, "mingle roomIndex", errors);
-  requireNonNegativeInteger(value.speakerIndex, "mingle speakerIndex", errors);
-  if (value.currentAllocation !== null) errors.push(...validateMingleAllocation(value.currentAllocation, "currentAllocation"));
-  if (!isRecord(value.roomByPlayerId) || Object.keys(value.roomByPlayerId).length > MAX_CURSOR_ITEMS ||
-    !Object.values(value.roomByPlayerId).every((roomId) => Number.isInteger(roomId) && Number(roomId) > 0)) {
-    errors.push("mingle roomByPlayerId is invalid or unbounded");
-  }
-  if (!Array.isArray(value.priorBeatAllocations) || value.priorBeatAllocations.length > MAX_CURSOR_ITEMS) {
-    errors.push("mingle priorBeatAllocations is invalid or unbounded");
-  } else {
-    value.priorBeatAllocations.forEach((entry, index) => errors.push(...validateMingleAllocation(entry, `priorBeatAllocations[${index}]`)));
-  }
-  if (!Array.isArray(value.movementRequests) || value.movementRequests.length > MAX_CURSOR_ITEMS) {
-    errors.push("mingle movementRequests is invalid or unbounded");
-  } else {
-    value.movementRequests.forEach((entry, index) => errors.push(...validateMovementRequest(entry, index)));
-  }
-  return errors;
-}
-
-function validateMingleAllocation(value: unknown, label: string): string[] {
-  if (!exactRecord(value, ["version", "beat", "rooms", "excludedPlayerIds"])) return [`mingle ${label} fields are not exact`];
-  const errors: string[] = [];
-  if (value.version !== 1) errors.push(`mingle ${label} version must be 1`);
-  requirePositiveInteger(value.beat, `mingle ${label} beat`, errors);
-  validateBoundedUniqueStrings(value.excludedPlayerIds, `mingle ${label} excludedPlayerIds`, errors);
-  if (!Array.isArray(value.rooms) || value.rooms.length > MAX_CURSOR_ITEMS) {
-    errors.push(`mingle ${label} rooms is invalid or unbounded`);
-  } else {
-    value.rooms.forEach((room, index) => {
-      if (!exactRecord(room, ["version", "roomId", "playerIds"])) {
-        errors.push(`mingle ${label} rooms[${index}] fields are not exact`);
-        return;
-      }
-      if (room.version !== 1) errors.push(`mingle ${label} rooms[${index}] version must be 1`);
-      requirePositiveInteger(room.roomId, `mingle ${label} rooms[${index}] roomId`, errors);
-      validateBoundedUniqueStrings(room.playerIds, `mingle ${label} rooms[${index}] playerIds`, errors);
-    });
-  }
-  return errors;
-}
-
-function validateMovementRequest(value: unknown, index: number): string[] {
-  if (!exactRecord(value, ["version", "playerId", "gotoPlayerId", "preferredRoomSize"])) {
-    return [`mingle movementRequests[${index}] fields are not exact`];
-  }
-  const errors: string[] = [];
-  if (value.version !== 1) errors.push(`mingle movementRequests[${index}] version must be 1`);
-  requireString(value.playerId, `mingle movementRequests[${index}] playerId`, errors);
-  if (value.gotoPlayerId !== null) requireString(value.gotoPlayerId, `mingle movementRequests[${index}] gotoPlayerId`, errors);
-  if (value.preferredRoomSize !== null && value.preferredRoomSize !== 2 && value.preferredRoomSize !== 3) {
-    errors.push(`mingle movementRequests[${index}] preferredRoomSize is invalid`);
-  }
+  if (!["format_resolve", "two_names_override", "two_names_plea"].includes(String(value.completion))) errors.push("mingle completion is invalid");
+  requireNonNegativeInteger(value.inboxStartIndex, "mingle inboxStartIndex", errors);
+  if (value.window !== null) errors.push(...validateMingleWindowState(value.window));
   return errors;
 }
 

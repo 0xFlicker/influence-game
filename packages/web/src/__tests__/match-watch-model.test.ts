@@ -430,6 +430,13 @@ describe("match watch model", () => {
     });
   });
 
+  it("keeps repairable visual pauses on the live presentation route", () => {
+    const paused = { ...baseGame(), status: "suspended" as const, visualMode: true, visualPaused: true };
+    expect(getMatchWatchRouteDecision(paused, [])).toEqual({ eligible: true, mode: "live", reason: "live_game" });
+    expect(getMatchWatchRouteDecision({ ...paused, visualPaused: false }, []).eligible).toBe(false);
+    expect(getMatchWatchRouteDecision({ ...paused, status: "in_progress", visualPaused: false }, []).mode).toBe("live");
+  });
+
   it("routes live games and explicit completed transcript replays into the shell", () => {
     const liveDecision = getMatchWatchRouteDecision(baseGame(), []);
     expect(liveDecision).toEqual({

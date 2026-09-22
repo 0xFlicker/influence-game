@@ -62,11 +62,8 @@ export function visualRoomForPhase(phase: Phase, roomId?: number, endgameStage?:
   }
 }
 
-export interface PerformanceCue {
-  behavior: string;
-  delivery: string;
-  intendedAction: string;
-}
+/** Agent-authored performance text, trimmed only at its edges without content validation. */
+export type PerformanceCue = string | null;
 
 export interface VisualPlayerAnchor {
   playerId: string;
@@ -107,6 +104,13 @@ export function assertVisualAnchors(anchors: readonly VisualPlayerAnchor[], play
     if (!playerIds.includes(anchor.playerId) || anchor.confidence !== "clear") throw new Error("Unverified scene identity");
     if (!Number.isInteger(anchor.label) || anchor.label < 1 || labels.has(anchor.label)) throw new Error("Invalid scene label");
     labels.add(anchor.label);
+    for (const other of anchors) {
+      if (other === anchor) continue;
+      const overlapWidth = Math.max(0, Math.min(anchor.head.x + anchor.head.width, other.head.x + other.head.width) - Math.max(anchor.head.x, other.head.x));
+      const overlapHeight = Math.max(0, Math.min(anchor.head.y + anchor.head.height, other.head.y + other.head.height) - Math.max(anchor.head.y, other.head.y));
+      const smallerArea = Math.min(anchor.head.width * anchor.head.height, other.head.width * other.head.height);
+      if (smallerArea > 0 && overlapWidth * overlapHeight / smallerArea > 0.6) throw new Error("Scene head anchors overlap ambiguously");
+    }
     const { x, y, width, height } = anchor.head;
     if (![x, y, width, height].every(Number.isFinite) || x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1 || y + height > 1) throw new Error("Head bounds lie outside the scene");
   }
@@ -119,4 +123,26 @@ export function latestSceneCues(scene: AcceptedVisualScene, records: readonly Sc
     if (record.sceneId === scene.id && scene.participantIds.includes(record.playerId)) latest.set(record.playerId, record);
   }
   return [...latest.values()];
+}
+
+/** Creation-time profile input, copied before any paid visual work. */
+export interface FrozenVisualProfile {
+  id: string;
+  name: string;
+  personaKey: string;
+  avatarUrl: string | null;
+  fullBodyReferenceUrl: string | null;
+  performanceInstructions: string;
+}
+
+/** Operational facts; producer-visible evidence never changes game rules. */
+export interface VisualOperationEvent {
+  id: string;
+  occurredAt: string;
+  boundarySequence: number | null;
+  sceneId: string | null;
+  operationId: string | null;
+  kind: "attempt_started" | "attempt_finished" | "retry" | "presentation" | "failure" | "reconciliation" | "paused" | "resumed" | "policy";
+  outcome: "pending" | "success" | "failed" | "uncertain" | "portraits" | "unanchored" | "scene" | "paused";
+  message: string;
 }

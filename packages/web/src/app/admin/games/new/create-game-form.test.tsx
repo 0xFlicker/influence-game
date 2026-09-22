@@ -29,6 +29,17 @@ afterEach(() => {
 });
 
 describe("new game form", () => {
+  test("names incompatible visual provider slots before submission", async () => {
+    installDom();
+    globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getAllByText("Fallback 2").length).toBeGreaterThan(0));
+    fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
+    expect(mounted.getByRole("status").textContent).toContain("Katana GLM 5.2");
+    expect(mounted.getByRole("status").textContent).toContain("xAI Grok 4.5");
+    expect(mounted.getByRole("status").textContent).not.toContain("OpenAI gpt-5.6-luna");
+  });
+
   test("shows Primary and fallbacks with approved models and Adaptive reasoning", async () => {
     installDom();
     globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
@@ -106,12 +117,13 @@ describe("new game form", () => {
     }) as typeof fetch;
 
     const mounted = render(<CreateGameForm />);
-    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(7));
-    expect(mounted.getAllByRole("checkbox").every((checkbox) => (
+    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(8));
+    expect(mounted.getAllByRole("checkbox").filter((checkbox) => checkbox.hasAttribute("aria-checked")).every((checkbox) => (
       checkbox.getAttribute("aria-checked") === "true"
     ))).toBe(true);
 
     fireEvent.click(mounted.getByRole("button", { name: "Only Highest Count" }));
+    expect(mounted.getByRole("checkbox", { name: /Visual Mode/ }).hasAttribute("checked")).toBe(false);
     expect(mounted.getByText("1/7 selected")).not.toBeNull();
     fireEvent.click(mounted.getByRole("checkbox", { name: "Highest Count" }));
     expect(mounted.getByText("1/7 selected")).not.toBeNull();
@@ -148,7 +160,7 @@ describe("new game form", () => {
     }) as typeof fetch;
 
     const mounted = render(<CreateGameForm />);
-    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(7));
+    await waitFor(() => expect(mounted.getAllByRole("checkbox")).toHaveLength(8));
     fireEvent.click(mounted.getByRole("button", { name: "Only Save-or-Exit" }));
     fireEvent.click(mounted.getByRole("checkbox", { name: "Restricted History" }));
     fireEvent.click(mounted.getByRole("checkbox", { name: "Save-or-Exit" }));
@@ -245,6 +257,7 @@ function providerInventory() {
       supportsOpenAIResponses: false,
       supportsStructuredOutput: true,
       supportsTools: true,
+      supportsImageInput: false,
     },
     notes: null,
   };
@@ -253,6 +266,7 @@ function providerInventory() {
     models: [
       {
         ...base,
+        capabilities: { ...base.capabilities, supportsImageInput: true },
         catalogId: "openai:gpt-5.6-luna",
         providerProfileId: "openai",
         modelId: "gpt-5.6-luna",

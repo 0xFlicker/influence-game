@@ -466,6 +466,109 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("GameRunner durable logical turns", () => {
+  it("resumes committed Mingle movement without replaying the prior beat", async () => {
+    const store = new MemoryDurableTurnStore();
+    const ids = Array.from({ length: 5 }, () => createUUID());
+    const config = { ...TEST_GAME_CONFIG, formatManifest: ["save_or_eliminate" as const], mingleSessionsPerRound: 2 };
+    const agents = () => ids.map((id, index) => {
+      const agent = new FormatContextProbeAgent(id, `Player ${index}`);
+      const takeTurn = agent.takeMingleTurn.bind(agent);
+      agent.takeMingleTurn = async (...args) => ({ ...await takeTurn(...args), gotoRoomId: 3 });
+      return agent;
+    });
+    const firstAgents = agents();
+    const first = new GameRunner(firstAgents, config, undefined, { durableTurnStore: store });
+    store.onCommit = (draft) => {
+      if (draft.nextExecution.cursor.kind === "mingle" && draft.nextExecution.cursor.progress.window?.nextBeat === 2) first.abort();
+    };
+    await expectAborted(first.run());
+    const cursor = store.snapshot!.execution.cursor;
+    if (cursor.kind !== "mingle" || !cursor.progress.window) throw new Error("Expected committed Mingle window");
+    expect(Object.values(cursor.progress.window.roomByPlayerId)).toEqual(ids.map(() => 3));
+    expect(firstAgents.flatMap((agent) => agent.mingleContexts).every((context) => context.mingleBeat === 1)).toBeTrue();
+    const resumedAgents = agents();
+    let prepared = false;
+    const resumed = new GameRunner(resumedAgents, config, undefined, {
+      gameId: store.snapshot!.execution.gameId, durableTurnStore: store,
+      prepareVisualBoundary: async (snapshot) => {
+        if (snapshot.execution.cursor.kind === "mingle" && snapshot.execution.cursor.progress.window?.nextBeat === 2) {
+          expect(resumedAgents.flatMap((agent) => agent.mingleContexts)).toHaveLength(0);
+          prepared = true;
+        }
+      },
+    });
+    store.onCommit = (draft) => {
+      if (draft.nextExecution.cursor.kind === "phase_enter" && draft.nextExecution.cursor.actor === "format_resolve") resumed.abort();
+    };
+    await expectAborted(resumed.run());
+    expect(prepared).toBeTrue();
+    const turns = resumedAgents.flatMap((agent) => agent.mingleContexts);
+    expect(turns).toHaveLength(5);
+    expect(turns.every((context) => context.mingleBeat === 2 && context.currentRoomId === 3)).toBeTrue();
+    expect(turns.some((context) => context.mingleMessages.length > 0)).toBeTrue();
+    expect(store.committedActions.filter((action) => action === "mingle-beat-1")).toHaveLength(1);
+    expect(store.committedActions.filter((action) => action === "mingle-beat-2")).toHaveLength(1);
+  });
+
+
+  it("prepares visual boundaries before dispatch and aborts without starting a turn", async () => {
+    const store = new MemoryDurableTurnStore();
+    const agents = ["Alpha", "Beta", "Gamma"].map((name) => new ObservedAgent(createUUID(), name));
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const runner = new GameRunner(agents, TEST_GAME_CONFIG, undefined, {
+      durableTurnStore: store,
+      prepareVisualBoundary: async (snapshot) => {
+        expect(snapshot.execution.cursor).toEqual({ version: 1, kind: "phase_enter", actor: "introduction" });
+        snapshot.execution.heads.turnSequence = 999;
+        entered.resolve();
+        await release.promise;
+      },
+    });
+    const running = runner.run();
+    await Promise.race([entered.promise, running.then(() => { throw new Error("Run ended before visual preparation"); })]);
+    expect(store.plannedActions).toEqual(["bootstrap-roster"]);
+    expect(agents[0]!.introductionCalls).toBe(0);
+    expect(store.snapshot!.execution.heads.turnSequence).not.toBe(999);
+    runner.abort();
+    release.resolve();
+    await expectAborted(running);
+    expect(store.plannedActions).toEqual(["bootstrap-roster"]);
+    expect(agents[0]!.introductionCalls).toBe(0);
+  });
+
+  it("finishes gameplay and commits visual fallback evidence once with producer visibility", async () => {
+    const store = new MemoryDurableTurnStore();
+    const agents = ["Alpha", "Beta", "Gamma"].map((name) => new ObservedAgent(createUUID(), name));
+    const diagnostic: import("../visual-mode").VisualOperationEvent = {
+      id: "diagnostic-1", occurredAt: "2026-09-21T00:00:00.000Z", boundarySequence: 1,
+      sceneId: null, operationId: null, kind: "presentation", outcome: "portraits", message: "Provider unavailable; continue with portraits",
+    };
+    const runner = new GameRunner(agents, TEST_GAME_CONFIG, undefined, {
+      durableTurnStore: store,
+      prepareVisualBoundary: async (snapshot) => snapshot.canonicalEvents.some((event) => event.type === "visual.operation_recorded" && event.payload.id === diagnostic.id) ? [] : [diagnostic],
+    });
+    await runner.run();
+    expect(store.snapshot?.execution.cursor.kind).toBe("terminal");
+    const events = store.snapshot!.canonicalEvents.filter((event) => event.type === "visual.operation_recorded");
+    expect(events).toHaveLength(1);
+    expect(events[0]?.visibility).toBe("producer");
+    expect(agents.every((agent) => agent.introductionCalls === 1)).toBe(true);
+    expect(store.snapshot!.transcriptEntries.some((entry) => entry.text === diagnostic.message)).toBe(false);
+  });
+
+  it("does not plan gameplay when visual boundary preparation fails", async () => {
+    const store = new MemoryDurableTurnStore();
+    const agents = ["Alpha", "Beta", "Gamma"].map((name) => new ObservedAgent(createUUID(), name));
+    const runner = new GameRunner(agents, TEST_GAME_CONFIG, undefined, {
+      durableTurnStore: store,
+      prepareVisualBoundary: async () => { throw new Error("Scene requires recovery"); },
+    });
+    await expect(runner.run()).rejects.toThrow("Scene requires recovery");
+    expect(store.plannedActions).toEqual(["bootstrap-roster"]);
+    expect(agents[0]!.introductionCalls).toBe(0);
+  });
+
   it("commits Two Names as restart-safe staged turns with an atomic Override replacement", async () => {
     const store = new MemoryDurableTurnStore();
     const agents = ["A", "B", "C", "D", "E"].map(
@@ -560,16 +663,15 @@ describe("GameRunner durable logical turns", () => {
     ]));
     const initialMingleIntent = store.plannedIntentForAction("two-names-initial-mingle");
     const finalMingleIntent = store.plannedIntentForAction("two-names-final-mingle");
-    expect(initialMingleIntent?.providerSubcalls).toEqual([
-      expect.objectContaining({ actorId: null, action: "house-mingle-assignment" }),
-      expect.objectContaining({ actorId: null, action: "house-alliance-proposer-selection" }),
-      expect.objectContaining({ actorId: null, action: "house-alliance-huddle-schedule" }),
-    ]);
-    expect(finalMingleIntent?.providerSubcalls).toEqual([
-      expect.objectContaining({ actorId: null, action: "house-mingle-assignment" }),
-      expect.objectContaining({ actorId: null, action: "house-alliance-proposer-selection" }),
-      expect.objectContaining({ actorId: null, action: "house-alliance-huddle-schedule" }),
-    ]);
+    for (const intent of [initialMingleIntent, finalMingleIntent]) {
+      expect(intent?.providerSubcalls).toEqual([expect.objectContaining({ actorId: null, action: "house-mingle-assignment" })]);
+    }
+    for (const action of ["mingle-complete-two_names_override", "mingle-complete-two_names_plea"]) {
+      expect(store.plannedIntentForAction(action)?.providerSubcalls).toEqual([
+        expect.objectContaining({ actorId: null, action: "house-alliance-proposer-selection" }),
+        expect.objectContaining({ actorId: null, action: "house-alliance-huddle-schedule" }),
+      ]);
+    }
     expect(initialMingleIntent?.providerSubcalls[0]?.semanticCoordinate).not.toEqual(
       finalMingleIntent?.providerSubcalls[0]?.semanticCoordinate,
     );
@@ -582,7 +684,7 @@ describe("GameRunner durable logical turns", () => {
     )).toHaveLength(1);
   });
 
-  it.each(["two-names-initial-mingle", "two-names-final-mingle"])(
+  it.each(["two-names-initial-mingle", "two-names-final-mingle", "mingle-complete-two_names_override", "mingle-complete-two_names_plea"])(
     "reconstructs %s after decisions finish but before canonical commit",
     async (action) => {
       const store = new MemoryDurableTurnStore();
@@ -629,7 +731,7 @@ describe("GameRunner durable logical turns", () => {
       expect(stableEvents(committed)).toEqual(stableEvents(failedDraft!));
       expect(store.plannedIntentForAction(action)).toEqual(failedIntent!);
       expect(store.committedActions.filter((entry) => entry === action)).toHaveLength(1);
-      expect(committed.canonicalEvents.some((event) => event.type === "alliance.huddle_outcome_recorded"))
+      expect(committed.canonicalEvents.some((event) => event.type === (action.startsWith("mingle-complete") ? "alliance.huddle_outcome_recorded" : "mingle.rooms_allocated")))
         .toBeTrue();
     },
   );
@@ -967,7 +1069,7 @@ describe("GameRunner durable logical turns", () => {
     expect(ballotContexts.every((ctx) => ctx.formatPressure?.selectedFormat === "save_or_eliminate")).toBe(true);
     expect(store.committedActions.filter((action) => action === "format-mingle")).toHaveLength(1);
     expect(store.committedActions.filter((action) => action === "format-resolve")).toHaveLength(1);
-    expect(store.snapshot!.canonicalEvents.filter((event) => event.type === "mingle.rooms_allocated")).toHaveLength(1);
+    expect(store.snapshot!.canonicalEvents.filter((event) => event.type === "mingle.rooms_allocated")).toHaveLength(2);
     expect(store.snapshot!.canonicalEvents.filter((event) => event.type === "format.resolved")).toHaveLength(1);
     expect(store.snapshot!.canonicalEvents.filter((event) => event.type === "player.eliminated")).toHaveLength(1);
     expect(store.snapshot!.execution.cursor).toEqual({

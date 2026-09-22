@@ -7053,13 +7053,13 @@ describe("Two Names canonical prompt board", () => {
 });
 
 describe("Visual Mode performance cues", () => {
-  const cue = { behavior: "Opens both hands.", delivery: "Calm and measured.", intendedAction: "" };
+  const cue = "Opens both hands. Calm and measured.";
   function visualAgent(payload: string, requests: Array<Record<string, unknown>>) {
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, payload), "gpt-5.6-luna");
     agent.onGameStart("game-1", makeContext().alivePlayers);
     return agent;
   }
-  it("accepts a structured observable cue alongside speech without changing game strategy", async () => {
+  it("accepts a free-form cue alongside speech without changing game strategy", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = visualAgent(JSON.stringify({ thinking: "Make a good introduction.", message: "Good to meet you.", strategyDelta: null, cue }), requests);
     const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "Use restrained open-handed gestures." } });
@@ -7090,14 +7090,44 @@ describe("Visual Mode performance cues", () => {
     expect(requests).toHaveLength(1);
     expect(JSON.stringify(requests)).not.toContain("private-room.png");
   });
-  it("does not accept malformed cue fields as successful visual speech", async () => {
-    for (const invalid of [{}, { ...cue, hiddenStrategy: "secret" }, { ...cue, behavior: 12 }, undefined]) {
+  it("only trims cue edges while preserving valid speech", async () => {
+    for (const authored of ["37", "  37  ", "", "  ", "0", "false", null]) {
       const requests: Array<Record<string, unknown>> = [];
-      const agent = visualAgent(JSON.stringify({ thinking: "test", message: "Must not be accepted.", strategyDelta: null, cue: invalid }), requests);
+      const agent = visualAgent(JSON.stringify({ thinking: "test", message: "Valid gameplay speech.", strategyDelta: null, cue: authored }), requests);
       const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "Quiet delivery." } });
-      expect(result.providerAbsence?.kind).toBe("provider_exhausted");
-      expect(result.message).toBe("");
-      expect(requests).toHaveLength(2);
+      expect(result.providerAbsence).toBeUndefined();
+      expect(result.message).toBe("Valid gameplay speech.");
+      expect(result.cue).toEqual(authored === null ? null : authored.trim());
+      expect(requests).toHaveLength(1);
     }
   });
+  it("preserves long and free-text cues without judging the performance", async () => {
+    for (const value of ["Cartwheels through the room.", "Whispers. ".repeat(100), "Dramatically slumps into the chair."]) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = visualAgent(JSON.stringify({ thinking: "test", message: "Hello.", strategyDelta: null, cue: value }), requests);
+      const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "" } });
+      expect(result.message).toBe("Hello.");
+      expect(result.cue).toEqual(value.trim());
+      expect(requests).toHaveLength(1);
+    }
+  });
+  it("non-string optional metadata cannot reject otherwise valid gameplay", async () => {
+    for (const cue of [undefined, 37, false, [], { behavior: "Smiles" }]) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = visualAgent(JSON.stringify({ thinking: "test", message: "Hello.", strategyDelta: null, cue }), requests);
+      const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "" } });
+      expect(result.message).toBe("Hello.");
+      expect(result.cue).toBeNull();
+      expect(result.providerAbsence).toBeUndefined();
+      expect(requests).toHaveLength(1);
+    }
+  });
+  it("opaque optional cues never repair malformed gameplay fields", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = visualAgent(JSON.stringify({ thinking: "test", message: 42, strategyDelta: null, cue: "Smiles" }), requests);
+    const result = await agent.getIntroduction({ ...makeContext(Phase.INTRODUCTION), visual: { performanceInstructions: "" } });
+    expect(result.providerAbsence?.kind).toBe("provider_exhausted");
+    expect(result.message).toBe("");
+  });
+
 });

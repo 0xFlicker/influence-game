@@ -22,7 +22,7 @@ test("preserves furniture positions while adding/removing occupants without capa
 
 test("cue changes alone do not invalidate a reusable scene; empty rooms require no render groups", () => {
   const previous = planVisualScene(base);
-  const next = planVisualScene({ ...base, previous, cues: [{ playerId: "p1", cue: { behavior: "Folds arms", delivery: "Quiet", intendedAction: "" } }] });
+  const next = planVisualScene({ ...base, previous, cues: [{ playerId: "p1", cue: "Folds arms. Quiet." }] });
   expect(sameVisualArrangement(previous, next)).toBe(true);
   expect(sameVisualArrangement(previous, planVisualScene({ ...base, previous, cast: cast.slice(1) }))).toBe(false);
   expect(visualRenderGroups(planVisualScene({ ...base, cast: [] }))).toEqual([]);
@@ -35,4 +35,12 @@ test("role changes re-stage addresses and finalists separately from listeners", 
   expect(next.placements.find((p) => p.playerId === "p0")?.sectionId).toBe("listeners");
   const finals = planVisualScene({ ...base, roomId: "finals", roles: { p0: "finalist", p1: "finalist" } });
   expect(finals.placements.filter((p) => p.sectionId === "finalists").map((p) => p.playerId)).toEqual(["p0", "p1"]);
+});
+
+
+test("scene plans preserve authored cue values without interpreting or reshaping them", () => {
+  for (const cue of ["37", "", "  ", "false", "0", null]) {
+    const plan = planVisualScene({ ...base, cues: [{ playerId: "p1", cue }] });
+    expect(plan.cues).toEqual([{ playerId: "p1", cue }]);
+  }
 });

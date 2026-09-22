@@ -10,8 +10,9 @@ import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
-  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell"; player: { id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
-  | { kind: "house"; text: string };
+  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation"; player: { id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "house"; text: string }
+  | { kind: "anonymous"; speech: VisualSpeech };
 
 /** Observe the director instead of creating an independent wall-clock speech timer. */
 export function VisualPresentation({ director, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {
@@ -64,6 +65,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {opacity > 0 && <blockquote className="rounded-2xl border border-white/20 bg-black/85 px-5 py-4 text-base leading-relaxed whitespace-pre-wrap break-words" style={{ opacity }}>{speech.text}</blockquote>}
       </div>
     </section>;
+  } else if (beat.kind === "anonymous") {
+    const opacity = visualSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
+    content = <section aria-label="Anonymous speech" className="mx-auto max-w-2xl py-10"><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote style={{ opacity }} className="rounded-2xl border border-white/20 bg-black/85 p-5">{beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     content = <section aria-label="House summary" className="mx-auto max-w-2xl py-10"><p className="mb-4 text-xs uppercase tracking-widest text-white/50">The House</p><p className="whitespace-pre-wrap text-lg leading-relaxed">{beat.text}</p></section>;
   } else {
@@ -83,6 +87,6 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   }
   return <div className="w-full text-white">
     {content}
-    {status && <p role="status" className="mt-3 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Scene preparation paused. Awaiting recovery."}</p>}
+    {status && <p role="status" className="mt-3 text-center text-sm text-white/60">{status === "preparing" ? "Preparing the next scene…" : "Using portraits for this scene."}</p>}
   </div>;
 }

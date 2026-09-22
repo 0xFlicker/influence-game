@@ -1,3 +1,5 @@
+import { beginMingleWindow, advanceMingleWindow, finishMingleWindow, mingleWindowRooms } from "./phases/mingle";
+import { prepareFormatMinglePressure } from "./phases/format-kernel";
 /**
  * Influence Game - Game Runner
  *
@@ -162,7 +164,8 @@ import {
 } from "./phases/vote";
 import {
   runTwoNamesBallots,
-  runTwoNamesMingleWindow,
+  beginTwoNamesMingleWindow,
+  finishTwoNamesMingleWindow,
   runTwoNamesOverrideTransition,
   runTwoNamesPlea,
   runTwoNamesResolution,
@@ -225,6 +228,7 @@ export class GameRunner {
   private readonly random?: () => number;
   private readonly durableTurnStore?: DurableGameTurnStore;
   private readonly prepareVisualTurn?: GameRunnerOptions["prepareVisualTurn"];
+  private readonly prepareVisualBoundary?: GameRunnerOptions["prepareVisualBoundary"];
   private durableTurnSnapshot: DurableGameTurnSnapshotV1 | null = null;
   private agentsStarted = false;
   private durablePreparation: Promise<void> | null = null;
@@ -295,10 +299,11 @@ export class GameRunner {
       );
     }
     this.durableTurnStore = options.durableTurnStore;
-    if (options.prepareVisualTurn && !options.durableTurnStore) {
+    if ((options.prepareVisualTurn || options.prepareVisualBoundary) && !options.durableTurnStore) {
       throw new Error("Visual Mode requires durable turn authority");
     }
     this.prepareVisualTurn = options.prepareVisualTurn;
+    this.prepareVisualBoundary = options.prepareVisualBoundary;
     this.durableEventSink = options.durableEventSink;
     this.durableCheckpointSink = options.durableCheckpointSink;
     this.beforeAcceptedCommit = options.beforeAcceptedCommit;
@@ -1089,12 +1094,12 @@ export class GameRunner {
     hydrateMingleInboxFromReplay(
       this.mingleInbox,
       buildMingleInboxReplayFromTranscript({
-        transcriptReplay: snapshot.transcriptEntries,
+        transcriptReplay: this.durableMingleTranscript(snapshot),
         players: this.gameState.getAllPlayers().map((player) => ({
           id: player.id,
           name: player.name,
         })),
-        session: mingleInboxSessionForResumeTarget(actorCoordinate),
+        session: snapshot.execution.cursor.kind === "mingle" ? "format_mingle" : mingleInboxSessionForResumeTarget(actorCoordinate),
       }),
     );
     this.contextBuilder = new ContextBuilder(
@@ -1249,9 +1254,17 @@ export class GameRunner {
     }));
   }
 
+  private durableMingleTranscript(snapshot: DurableGameTurnSnapshotV1): readonly TranscriptEntry[] {
+    const cursor = snapshot.execution.cursor;
+    if (cursor.kind !== "mingle") return snapshot.transcriptEntries;
+    if (cursor.progress.inboxStartIndex > snapshot.transcriptEntries.length) throw new Error("Mingle inbox boundary exceeds committed transcript");
+    return snapshot.transcriptEntries.slice(cursor.progress.inboxStartIndex);
+  }
+
   private createDurableScratch(
     intent: GameTurnIntentV1,
     boundProviderActorIds: ReadonlySet<string>,
+    visualEvents: readonly import("./visual-mode").VisualOperationEvent[] = [],
   ): {
     actor: PhaseActor;
     context: PhaseRunnerContext;
@@ -1261,6 +1274,7 @@ export class GameRunner {
     const base = this.durableTurnSnapshot;
     if (!base) throw new Error("Durable turn execution requires a committed base snapshot");
     const gameState = GameState.fromCanonicalEvents(base.canonicalEvents);
+    for (const event of visualEvents) gameState.recordVisualOperation(event);
     const logger = new TranscriptLogger(gameState);
     logger.seed(base.transcriptEntries);
     const streamEvents: GameStreamEvent[] = [];
@@ -1272,19 +1286,26 @@ export class GameRunner {
         (subcall) => subcall.actorId !== null && boundProviderActorIds.has(subcall.actorId),
       ),
       intent.turnId,
-      this.prepareVisualTurn ? { prepare: this.prepareVisualTurn, committed: base } : undefined,
+      this.prepareVisualTurn ? { prepare: this.prepareVisualTurn, committed: base,
+        recordVisualContext: (context) => logger.setVisualSceneForSpeaker(context.selfId, context.visual?.presentationScene ?? (context.visual?.room ? { id: context.visual.room.scene.id, roomId: context.visual.room.scene.roomId } : undefined)),
+        recordCue: (context, turnId, cue) => gameState.recordVisualCue({
+          playerId: context.selfId, turnId, cue,
+          sceneId: context.visual?.room?.scene.id ?? null, roomId: context.visual?.observableRoom?.roomId ?? context.visual?.room?.scene.roomId ?? null,
+          arrangementKey: context.visual?.observableRoom?.arrangementKey,
+        }, context.phase),
+      } : undefined,
     );
     const actorCoordinate = this.actorCoordinateFromDurableSnapshot(base);
     const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
     hydrateMingleInboxFromReplay(
       mingleInbox,
       buildMingleInboxReplayFromTranscript({
-        transcriptReplay: base.transcriptEntries,
+        transcriptReplay: this.durableMingleTranscript(base),
         players: gameState.getAllPlayers().map((player) => ({
           id: player.id,
           name: player.name,
         })),
-        session: mingleInboxSessionForResumeTarget(actorCoordinate),
+        session: base.execution.cursor.kind === "mingle" ? "format_mingle" : mingleInboxSessionForResumeTarget(actorCoordinate),
       }),
     );
     const contextBuilder = new ContextBuilder(
@@ -1362,6 +1383,8 @@ export class GameRunner {
     const store = this.durableTurnStore;
     const base = this.durableTurnSnapshot;
     if (!store || !base) throw new Error("Durable turn coordinator is not initialized");
+    const visualEvents = await this.prepareVisualBoundary?.(structuredClone(base));
+    if (this._aborted) throw new Error("Game run aborted");
     const requestedIntent = createDurableTurnIntent(base.execution, input);
     const planned = await store.planNextTurn(requestedIntent);
     if (planned.status === "committed") {
@@ -1399,7 +1422,7 @@ export class GameRunner {
     );
     let scratch: ReturnType<GameRunner["createDurableScratch"]>;
     try {
-      scratch = this.createDurableScratch(intent, boundProviderActorIds);
+      scratch = this.createDurableScratch(intent, boundProviderActorIds, visualEvents ?? []);
     } catch (error) {
       for (const agent of boundAgents) agent.setDurableProviderTurnBinding?.(null);
       this.houseInterviewer.setDurableProviderTurnBindings?.([]);
@@ -1777,22 +1800,13 @@ export class GameRunner {
 
       if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "initial_mingle") {
         await this.executeDurableTurn({
-          branch: "engine",
-          action: "two-names-initial-mingle",
-          actorIds: this.gameState.getAlivePlayerIds(),
-          handles: ["initial_names"],
-          providerActions: [
-            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
-            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
-            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
-          ],
-        }, async (ctx, scratchActor) => {
-          await runTwoNamesMingleWindow(ctx, scratchActor, "initial_names");
-          return {
-            version: 1,
-            kind: "two_names",
-            progress: { version: 1, stage: "override", pleaIndex: 0 },
-          };
+          branch: "engine", action: "two-names-initial-mingle", actorIds: this.gameState.getAlivePlayerIds(), handles: ["initial_names"],
+          providerActions: [{ actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" }],
+        }, async (ctx) => {
+          beginTwoNamesMingleWindow(ctx, "initial_names");
+          const window = await beginMingleWindow(ctx, Phase.FORMAT_MINGLE);
+          if (window) ctx.gameState.recordRoomAllocations(mingleWindowRooms(window), [], [], window.phase);
+          return { version: 1, kind: "mingle", progress: { version: 1, completion: "two_names_override", inboxStartIndex: ctx.logger.transcript.length, window } };
         });
         continue;
       }
@@ -1843,43 +1857,63 @@ export class GameRunner {
 
       if (phase === "format_mingle" && cursor.kind === "two_names" && cursor.progress.stage === "final_mingle") {
         await this.executeDurableTurn({
-          branch: "engine",
-          action: "two-names-final-mingle",
-          actorIds: this.gameState.getAlivePlayerIds(),
-          handles: ["final_names"],
-          providerActions: [
-            { actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" },
-            { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
-            { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
-          ],
-        }, async (ctx, scratchActor) => {
-          await runTwoNamesMingleWindow(ctx, scratchActor, "final_names");
-          scratchActor.send({ type: "PHASE_COMPLETE" });
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          return {
-            version: 1,
-            kind: "two_names",
-            progress: { version: 1, stage: "plea", pleaIndex: 0 },
-          };
+          branch: "engine", action: "two-names-final-mingle", actorIds: this.gameState.getAlivePlayerIds(), handles: ["final_names"],
+          providerActions: [{ actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" }],
+        }, async (ctx) => {
+          beginTwoNamesMingleWindow(ctx, "final_names");
+          const window = await beginMingleWindow(ctx, Phase.FORMAT_MINGLE);
+          if (window) ctx.gameState.recordRoomAllocations(mingleWindowRooms(window), [], [], window.phase);
+          return { version: 1, kind: "mingle", progress: { version: 1, completion: "two_names_plea", inboxStartIndex: ctx.logger.transcript.length, window } };
         });
         continue;
       }
 
       if (phase === "format_mingle" && cursor.kind === "phase_enter" && cursor.actor === "format_mingle") {
         await this.executeDurableTurn({
-          branch: "engine",
-          action: "format-mingle",
-          actorIds: this.gameState.getAlivePlayerIds(),
+          branch: "engine", action: "format-mingle", actorIds: this.gameState.getAlivePlayerIds(),
           houseBeat: this.requireHouseBeat("format_mingle"),
-        }, async (ctx, scratchActor) => {
-          await runFormatMinglePhase(ctx, scratchActor, { completePhase: false });
-          await runAllianceFormationPhase(ctx);
-          await runAllianceHuddleWindow(ctx, scratchActor, Phase.FORMAT_MINGLE);
-          if (String(scratchActor.getSnapshot().value) !== "format_resolve") {
-            throw new Error("Format Mingle did not advance its scratch actor to format_resolve");
-          }
-          return { version: 1, kind: "phase_enter", actor: "format_resolve" };
+          providerActions: [{ actorId: null, action: "house-mingle-assignment", contractId: "house-mingle-assignment-v1" }],
+        }, async (ctx) => {
+          prepareFormatMinglePressure(ctx);
+          const window = await beginMingleWindow(ctx, Phase.FORMAT_MINGLE);
+          if (window) ctx.gameState.recordRoomAllocations(mingleWindowRooms(window), [], [], window.phase);
+          return { version: 1, kind: "mingle", progress: { version: 1, completion: "format_resolve", inboxStartIndex: ctx.logger.transcript.length, window } };
         });
+        continue;
+      }
+
+      if (phase === "format_mingle" && cursor.kind === "mingle") {
+        const { window, completion, inboxStartIndex } = cursor.progress;
+        if (window && window.nextBeat <= window.beats) {
+          await this.executeDurableTurn({
+            branch: "engine", action: `mingle-beat-${window.nextBeat}`, actorIds: this.gameState.getAlivePlayerIds(),
+          }, async (ctx) => {
+            const next = await advanceMingleWindow(ctx, window);
+            if (next.nextBeat <= next.beats) ctx.gameState.recordRoomAllocations(mingleWindowRooms(next), [], [], next.phase);
+            return { version: 1, kind: "mingle", progress: { version: 1, completion, inboxStartIndex, window: next } };
+          });
+        } else {
+          await this.executeDurableTurn({
+            branch: "engine", action: `mingle-complete-${completion}`, actorIds: this.gameState.getAlivePlayerIds(),
+            providerActions: [
+              { actorId: null, action: "house-alliance-proposer-selection", contractId: "house-alliance-proposer-selection-v1" },
+              { actorId: null, action: "house-alliance-huddle-schedule", contractId: "house-alliance-huddle-schedule-v1" },
+            ],
+          }, async (ctx, scratchActor) => {
+            if (window) await finishMingleWindow(ctx, window);
+            if (completion === "format_resolve") {
+              await runAllianceFormationPhase(ctx);
+              await runAllianceHuddleWindow(ctx, scratchActor, Phase.FORMAT_MINGLE);
+              return { version: 1, kind: "phase_enter", actor: "format_resolve" };
+            }
+            await finishTwoNamesMingleWindow(ctx, scratchActor, completion === "two_names_override" ? "initial_names" : "final_names");
+            if (completion === "two_names_plea") {
+              scratchActor.send({ type: "PHASE_COMPLETE" });
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+            return { version: 1, kind: "two_names", progress: { version: 1, stage: completion === "two_names_override" ? "override" : "plea", pleaIndex: 0 } };
+          });
+        }
         continue;
       }
 

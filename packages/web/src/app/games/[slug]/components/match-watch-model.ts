@@ -359,7 +359,7 @@ export function getMatchWatchRouteDecision(
   completedMode: "replay" | "results" | null = null,
   replayFrames: readonly GameWatchReplayFrame[] = [],
 ): MatchWatchRouteDecision {
-  if (game.status === "in_progress") {
+  if (game.status === "in_progress" || (game.status === "suspended" && game.visualPaused)) {
     return {
       eligible: true,
       mode: "live",
@@ -466,7 +466,7 @@ export function buildMatchWatchModel({
     players,
     selectedPlayer: players.find((card) => card.player.id === selectedPlayer?.id) ?? null,
     selectedPlayerId: selectedPlayer?.id ?? null,
-    connectionLabel: getConnectionLabel(live, connStatus),
+    connectionLabel: game.visualPaused ? "Paused" : getConnectionLabel(live, connStatus),
     sourceLabel: getSourceLabel(game),
     phaseSegments: buildPhaseSegments(
       phase,

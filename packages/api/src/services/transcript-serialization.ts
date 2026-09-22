@@ -158,6 +158,10 @@ function modernFieldsForCurrentCapture(
 
   const safeContext: TranscriptSafeContext = {
     version: 1,
+    ...(entry.anonymous && { anonymous: true }),
+    ...(entry.dialogueContext?.acceptedBallot && { acceptedBallot: entry.dialogueContext.acceptedBallot }),
+    ...(entry.dialogueContext?.visualScene && { visualScene: entry.dialogueContext.visualScene }),
+    ...(entry.dialogueContext?.presentationPurpose && { presentationPurpose: entry.dialogueContext.presentationPurpose }),
     ...(entry.dialogueContext?.roomId != null && { roomId: entry.dialogueContext.roomId }),
     ...(entry.dialogueContext?.allianceId && { allianceId: entry.dialogueContext.allianceId }),
     ...(entry.dialogueContext?.scheduleId && { scheduleId: entry.dialogueContext.scheduleId }),
@@ -400,6 +404,10 @@ function sanitizeSafeContext(
   ) {
     out.formalSpeechCorrelationKey = value.formalSpeechCorrelationKey;
   }
+  if (value.anonymous) out.anonymous = true;
+  if (value.acceptedBallot) out.acceptedBallot = { ...value.acceptedBallot };
+  if (value.visualScene) out.visualScene = { ...value.visualScene };
+  if (value.presentationPurpose === "farewell") out.presentationPurpose = "farewell";
   return out;
 }
 

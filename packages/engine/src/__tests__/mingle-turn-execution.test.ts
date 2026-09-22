@@ -147,6 +147,9 @@ describe("shared Mingle turn execution", () => {
     ctx.houseInterviewer = new TemplateHouseInterviewer();
     const initial = await beginMingleWindow(ctx, Phase.FORMAT_MINGLE);
     expect(initial).not.toBeNull();
+    const stale = structuredClone(initial!);
+    stale.initialAllocation.diagnostics.round += 1;
+    await expect(advanceMingleWindow(ctx, stale)).rejects.toThrow("canonical round and roster");
     const serialized = JSON.stringify(initial);
     const first = await advanceMingleWindow(ctx, initial!);
     expect(JSON.stringify(initial)).toBe(serialized);

@@ -123,6 +123,37 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("nonvisual live portraits keep phase navigation on the presented dialogue", async ({ page }) => {
+    const slug = "nonvisual-live-portraits";
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const fixture = await installDeterministicFormatGame(page, {
+      slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0,
+    });
+    let visualRequests = 0;
+    page.on("request", (request) => { if (request.url().endsWith("/visual")) visualRequests++; });
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    const actor = scenario.roster[0]!;
+    for (const [index, phase] of ["INTRODUCTION", "LOBBY", "FORMAT_MINGLE"].entries()) {
+      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+        entrySequence: index + 1, round: phase === "INTRODUCTION" ? 0 : 1,
+        phase, from: actor.id, scope: "public", text: `Accepted dialogue ${index + 1}.`, timestamp: Date.now() + index,
+      } }));
+      const purpose = phase === "INTRODUCTION" ? "Introduction" : "Conversation";
+      await expect(page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true })).toBeVisible({ timeout: 15_000 });
+      const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
+      await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+      await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
+      await expect(page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true }).getByText(`Accepted dialogue ${index + 1}.`, { exact: true })).toBeVisible();
+      // Let this accepted speech finish before the next live publication arrives.
+      await page.waitForTimeout(4200);
+    }
+    expect(visualRequests).toBe(0);
+    await expect(page.getByText("Waiting for messages…", { exact: true })).toHaveCount(1);
+    await expect(page.getByText("Waiting for next phase", { exact: true })).toHaveCount(0);
+  });
+
   test("Two Names reconnect preserves an explicit pause while newer results arrive", async ({ page }) => {
     const slug = "catchup-two-names-paused";
     const scenario = createFormatKernelViewerScenario("two_names_declined");

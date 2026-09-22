@@ -425,6 +425,8 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
   playerCount: CreateGamePlayerCount;
   providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
@@ -464,6 +466,7 @@ export interface ProviderModelInventoryEntry {
     supportsOpenAIResponses: boolean;
     supportsStructuredOutput: boolean;
     supportsTools: boolean;
+    supportsImageInput: boolean;
   };
   notes: string | null;
 }
@@ -474,6 +477,9 @@ export interface ProviderModelInventory {
 }
 
 export interface GameSummary {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
+  visualPaused?: boolean;
   id: string;
   slug: string;
   status: GameStatus;
@@ -2610,6 +2616,12 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  speakerPlayerId?: string | null;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
+  entrySequence?: number;
+  anonymous?: boolean;
   /** Durable live publication identity and catch-up classification. */
   publicationSequence?: number;
   liveCatchUp?: boolean;
@@ -2629,6 +2641,9 @@ export interface TranscriptEntry {
 }
 
 export interface GameDetail {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
+  visualPaused?: boolean;
   id: string;
   slug: string;
   status: GameStatus;
@@ -2662,6 +2677,10 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  speakerPlayerId?: string | null;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /** Durable game-local dialogue identity. */
   entrySequence?: number;
   round: number;

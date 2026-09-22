@@ -338,6 +338,8 @@ export class ContextBuilder {
         return `${prefix}: Shields expired: ${this.formatPlayerList(event.payload.expiredPlayerIds)}.`;
       case "mingle.rooms_allocated":
         return `${prefix}: Mingle rooms allocated: ${event.payload.rooms.map((room) => `Room ${room.roomId}: ${this.formatPlayerList(room.playerIds)}`).join(" | ")}.`;
+      case "visual.operation_recorded":
+      case "visual.cue_recorded":
       case "mingle.coordination_receipt_recorded":
         // Private audit evidence is intentionally absent from player prompt context.
         return "";

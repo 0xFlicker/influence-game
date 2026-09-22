@@ -618,7 +618,7 @@ function TheaterPanel({
           presentationHydrationStatus={presentationHydrationStatus}
           startSequence={startSequence}
           embedded
-          onPlaybackStateChange={live ? undefined : onPlaybackStateChange}
+          onPlaybackStateChange={onPlaybackStateChange}
         />
       </div>
     </section>

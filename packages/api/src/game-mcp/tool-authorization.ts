@@ -123,6 +123,7 @@ const AGENT_READ_TOOLS = [
 ] as const;
 
 const AGENT_WRITE_TOOLS = [
+  "generate_agent_visual_reference",
   "create_agent",
   "update_agent",
   "join_queue",
@@ -144,6 +145,7 @@ const OWNER_LEARNING_WRITE_TOOLS = [
 ] as const;
 
 const PRODUCER_TOOLS = [
+  "read_producer_visual_production",
   "read_producer_season_diagnostics",
   "inspect_durable_run",
   "read_producer_game_analysis",

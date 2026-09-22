@@ -7,9 +7,12 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 ## Purpose
 
 [Visual Mode](visual-mode.md) introduces a separate observable-performance contract.
+
+Scene preparation uses a committed-boundary hook before gameplay dispatch. The agent hook reads the accepted image afterward; waiting for scene generation is not an agent decision or an accepted cue. Paid render receipts remain durable even when a worker loses ownership before scene acceptance.
+
+Durable Mingle emits each beat's dialogue and movement diagnostics in one commit. Initial assignment, beat execution, and final alliance/huddle work have separate provider-turn identities. Recovery must reuse accepted results for the failed logical turn and must not dispatch a previously committed beat again.
 Performance instructions describe delivery and mannerisms; they are not private thinking,
-strategic decisions or canonical movement. Cue persistence and agent-context integration
-are still in progress. Numbered images are derived from verified final-image head anchors,
+strategic decisions or canonical movement. Cues persist as producer-visible canonical records and are shared only with their applicable room audience; diary cues remain private. Cue strings have surrounding whitespace trimmed and are otherwise preserved without text matching, filtering or interpretation; gameplay actions retain their strict validation. Numbered images are derived from verified final-image head anchors,
 not intended staging coordinates. Keep direct House calls and exact schemas; do not
 introduce `as any` or infer decisions from speech or performance prose.
 
@@ -626,4 +629,10 @@ New Override draws exclude Empowered and include every other living contestant, 
 
 Every agent call after initial nominations and before resolution receives the current round's canonical Two Names board: initial and current nominees, Empowered, Override holder and decision, pair finality, and ordinary-voter eligibility. The active board is removed after resolution and in endgame. Mingle and alliance prompts share this board; transcript prose does not establish nominations. Only the Empowered initial nomination request may say no pair is selected. The replacement request labels the pending removal explicitly until Override and replacement commit together. Provider-free outgoing-prompt regressions exercise this contract; old game dialogue cannot prove updated prompt behavior. Continue using direct House calls and no `as any` in simulation integrations.
 
-Visual context is prepared through the optional `GameRunnerOptions.prepareVisualTurn` hook before a staged agent call. It requires durable turn authority and receives the committed heads and cursor separately from the scratch phase context. Failure prevents provider dispatch. The API reader verifies the active owner, exact committed boundary, frozen character references and scene occupants. It never generates images, and portrait/ballot methods do not fetch room artifacts. Cue persistence and producer export integration remain pending.
+Visual context is prepared through the optional `GameRunnerOptions.prepareVisualTurn` hook before a staged agent call. It requires durable turn authority and receives the committed heads and cursor separately from the scratch phase context. Under Best effort, image failures use supported text-only context and do not prevent gameplay dispatch. Require visuals pauses for admin repair when verified agent imagery is unavailable. The API reader verifies the active owner, exact committed boundary, frozen character references and scene occupants. It never generates images, and portrait/ballot methods do not fetch room artifacts. Producer visual exports include cues, frozen performance profiles, scenes, anchors and costs.
+
+### Visual operational evidence
+
+`visual_operation_events` retains attempt dispatch/completion, typed failure evidence, retries, presentation decisions, policy changes, pauses, resumes and accounting reconciliation. Attempt events join the reservation/receipt transaction. This journal remains readable when gameplay is paused. The next committed turn promotes unrecorded entries as producer-only `visual.operation_recorded` events; stable diagnostic IDs prevent duplicate canonical promotion. Operational records never become agent strategy/context or public dialogue.
+
+The admin visual-production page groups scenes, receipts and evidence, exposes private rejected images, shows request latency percentiles and costs, and provides explicit repair/resume controls. The `read_producer_visual_production` tool exports the same evidence. Cues remain free-form `string | null`; only surrounding whitespace is trimmed.

@@ -33,12 +33,12 @@ export function VisualSceneView({ scene, speech, elapsedMs, reducedMotion = fals
       <div className="relative aspect-video">
         {/* eslint-disable-next-line @next/next/no-img-element -- immutable generated scene served by game media storage */}
         <img src={scene.imageUrl} alt="Current conversation scene" className="absolute inset-0 h-full w-full object-contain" />
-        {bubble && <div className="absolute z-10 hidden w-[34%] md:block" style={{ left: `${left}%`, bottom: `${bottom}%` }}>
+        {bubble && anchor && <div className="absolute z-10 hidden w-[34%] md:block" style={{ left: `${left}%`, bottom: `${bottom}%` }}>
           {bubble}
           {anchor && <span aria-hidden="true" className="absolute -bottom-2 h-4 w-4 rotate-45 border-b border-r border-white/20 bg-black/90" style={{ left: `${Math.max(8, Math.min(92, (center - left) / 34 * 100))}%`, opacity }} />}
         </div>}
       </div>
-      <div className="min-h-24 p-3 md:hidden">{bubble}</div>
+      <div className={`min-h-24 p-3 ${anchor ? "md:hidden" : ""}`}>{bubble}</div>
     </section>
   );
 }

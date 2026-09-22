@@ -371,6 +371,14 @@ export async function runFormatMinglePhase(
     await runTwoNamesFormatMingle(ctx, actor);
     return;
   }
+  prepareFormatMinglePressure(ctx);
+  await runMinglePhase(ctx, actor, {
+    phase: Phase.FORMAT_MINGLE,
+    completePhase: options.completePhase ?? true,
+  });
+}
+
+export function prepareFormatMinglePressure(ctx: PhaseRunnerContext): void {
   const { logger } = ctx;
   const pressure = ctx.formatKernelState.pressure;
   if (pressure) {
@@ -378,10 +386,6 @@ export async function runFormatMinglePhase(
     // Re-publish through the single writer so contextBuilder stays aligned.
     setFormatPressure(ctx, pressure);
   }
-  await runMinglePhase(ctx, actor, {
-    phase: Phase.FORMAT_MINGLE,
-    completePhase: options.completePhase ?? true,
-  });
 }
 
 export async function runFormatResolvePhase(

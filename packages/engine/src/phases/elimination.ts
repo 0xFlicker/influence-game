@@ -213,7 +213,7 @@ export async function handleElimination(
     messageResponse.thinking,
     messageResponse.reasoningContext,
   );
-  logger.logPublic(eliminatedId, messageResponse.message, phase, transcriptThinking);
+  logger.logPublic(eliminatedId, messageResponse.message, phase, { ...transcriptThinking, dialogueContext: { version: 1, presentationPurpose: "farewell" } });
   logger.emitAgentTurn({
     phase,
     action: "elimination-message",

@@ -850,6 +850,34 @@ export function GameViewer({
     !!gameId && game?.status === "in_progress",
     handleWsEvent,
   );
+  // Operational pauses do not advance the canonical presentation cursor. Poll
+  // their status separately so repair/resume preserves the mounted watch scene.
+  useEffect(() => {
+    if (!game?.visualMode || !["in_progress", "suspended"].includes(game.status)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const latest = await getGame(gameId);
+        if (cancelled) return;
+        setGame((current) => {
+          if (!current || current.id !== latest.id || !["in_progress", "suspended"].includes(current.status)) return current;
+          if (!["in_progress", "suspended"].includes(latest.status)) return current;
+          gameStatusRef.current = latest.status;
+          return { ...current, status: latest.status, visualPaused: latest.visualPaused,
+            visualFailurePolicy: latest.visualFailurePolicy, errorInfo: latest.errorInfo };
+        });
+      } catch (error) {
+        // A transient status-read failure must retain the current presentation.
+        console.warn("Visual game status refresh failed", error);
+      } finally {
+        if (!cancelled) timer = setTimeout(() => { void refresh(); }, 3000);
+      }
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [gameId, game?.visualMode, game?.status]);
+
   const previousWsStatusRef = useRef(wsStatus);
 
   useEffect(() => {
@@ -900,7 +928,7 @@ export function GameViewer({
     gamePresentation.route === "format"
     && replayFrames.some((frame) => frame.viewerDecisionEvent);
 
-  if (game.status === "suspended") {
+  if (game.status === "suspended" && !game.visualPaused) {
     const health = game.kernelHealth;
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
@@ -1055,6 +1083,11 @@ export function GameViewer({
       : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}:${startSequence ?? "start"}`;
     return (
       <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className="scroll-mt-24">
+        {game.visualPaused && (
+          <div role="status" className="mb-3 rounded-lg border border-amber-700/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+            Paused for visual repair. Play will continue after the operator resumes the game.
+          </div>
+        )}
         <MatchWatchShell
           key={matchWatchKey}
           game={game}
@@ -1062,7 +1095,7 @@ export function GameViewer({
           replayFrames={replayFrames}
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
-          presentationHydrationStatus={matchWatchDecision.mode === "live" && wsStatus !== "live"
+          presentationHydrationStatus={matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
             ? (wsStatus === "connecting" ? "loading" : "reconnecting")
             : presentationHydration.status}
           startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}

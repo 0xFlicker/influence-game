@@ -35,7 +35,7 @@ describe("visual scenes", () => {
 
   it("shares only latest cues of current occupants in the accepted scene", () => {
     const scene: AcceptedVisualScene = { id: "scene-2", roomId: "mingle-1", version: 2, imageUrl: "clean", annotatedImageUrl: "numbered", participantIds: ["a"], anchors: [anchor] };
-    const cue = { behavior: "looks down", delivery: "quiet", intendedAction: "" };
+    const cue = "Looks down. Quiet.";
     const records = [
       { sceneId: "scene-1", playerId: "a", turnId: "1", cue },
       { sceneId: "scene-2", playerId: "b", turnId: "2", cue },

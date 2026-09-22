@@ -44,22 +44,25 @@ test("supplies accepted annotated pixels and frozen performance instructions", a
   expect(result.room?.scene.participantIds).toEqual(["p1"]);
 });
 
-test("portrait and ballot turns need no room image; conversations wait for matching occupants", async () => {
+test("portrait and ballot turns need no room image; conversations use canonical text when images are unavailable", async () => {
   for (const method of ["getIntroduction", "getVotes", "getDiaryEntry", "getLastMessage", "getJuryVote"]) {
     expect(await reader()({ ...args(), method })).toEqual({ performanceInstructions: "Quiet delivery" });
   }
-  await expect(reader()(args())).rejects.toThrow("not ready");
+  expect((await reader()(args())).observableRoom?.participantIds).toEqual(["p1"]);
+  expect((await reader()(args())).room).toBeUndefined();
   await readyScene();
-  await expect(reader()({ ...args(), context: { ...context, alivePlayers: [...context.alivePlayers, { id: "p2", name: "Mira" }] } })).rejects.toThrow("occupants");
+  const changed = await reader()({ ...args(), context: { ...context, alivePlayers: [...context.alivePlayers, { id: "p2", name: "Mira" }] } });
+  expect(changed.room).toBeUndefined();
+  expect(changed.observableRoom?.participantIds).toEqual(["p1", "p2"]);
 });
 
 test("rejects stale ownership and changed committed heads before returning scene context", async () => {
   await readyScene();
-  await expect(reader()({ ...args(), committedHeads: { ...state.heads, turnSequence: 1 } })).rejects.toThrow("boundary changed");
+  expect((await reader()({ ...args(), committedHeads: { ...state.heads, turnSequence: 1 } })).room).toBeUndefined();
   await db.update(schema.gameRunOwners).set({ status: "revoked" }).where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
-  await expect(reader()(args())).rejects.toThrow("revoked");
+  expect((await reader()(args())).room).toBeUndefined();
 });
 
 test("Mingle imagery cannot use uncommitted scratch movement", async () => {
-  await expect(reader()({ ...args(), method: "takeMingleTurn", context: { ...context, phase: Phase.FORMAT_MINGLE, currentRoomId: 1, mingleBeat: 1, roomMates: ["Arden"] } })).rejects.toThrow("movement must commit");
+  expect((await reader()({ ...args(), method: "takeMingleTurn", context: { ...context, phase: Phase.FORMAT_MINGLE, currentRoomId: 1, mingleBeat: 1, roomMates: ["Arden"] } })).room).toBeUndefined();
 });

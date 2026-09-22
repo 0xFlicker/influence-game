@@ -197,135 +197,17 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('title="Exit"');
   });
 
-  it("renders Mingle I replay room metadata as a room map instead of a single transcript card", () => {
-    const html = renderToString(
-      <MatchWatchShell
-        game={{ ...game(), currentPhase: "MINGLE_I" }}
-        messages={[
-          entry({
-            id: 1,
-            phase: "MINGLE_I",
-            fromPlayerId: null,
-            fromPlayerName: null,
-            scope: "system",
-            toPlayerIds: null,
-            roomId: undefined,
-            text: "Canonical room allocation is ready.",
-            roomMetadata: {
-              rooms: [
-                { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
-              ],
-              excluded: [],
-            },
-          }),
-          entry({
-            id: 2,
-            phase: "MINGLE_I",
-            text: "Lyra, can I count on you before votes?",
-          }),
-        ]}
-        live={false}
-        connStatus="replay"
-      />,
-    );
-
-    expect(html).toContain("MINGLE MAP");
-    expect(html).toContain("Mingle Feed");
-    expect(html).toContain("Room");
-    expect(html).not.toContain("Click or press");
-  });
-
-  it("renders Format Mingle room metadata as a room map instead of a single transcript card", () => {
-    const html = renderToString(
-      <MatchWatchShell
-        game={{
-          ...game(),
-          gameKernel: "format",
-          gameKernelSource: "stored",
-          currentPhase: "FORMAT_MINGLE",
-        }}
-        messages={[
-          entry({
-            id: 1,
-            phase: "FORMAT_MINGLE",
-            fromPlayerId: null,
-            fromPlayerName: null,
-            scope: "system",
-            toPlayerIds: null,
-            roomId: undefined,
-            text: "Turn 1: Room 1: Atlas, Lyra",
-            roomMetadata: {
-              rooms: [
-                { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
-              ],
-              excluded: [],
-            },
-          }),
-          entry({
-            id: 2,
-            phase: "FORMAT_MINGLE",
-            text: "Lyra, can I count on you once Vote Bomb ballots matter?",
-          }),
-        ]}
-        live={false}
-        connStatus="replay"
-      />,
-    );
-
-    expect(html).toContain("MINGLE MAP");
-    expect(html).toContain("Mingle Feed");
-    expect(html).toContain("Select Mingle room R1");
-    expect(html).toContain("Atlas");
-    expect(html).toContain("Lyra");
-    expect(html).not.toContain("Click or press");
-  });
-
-  it("keeps same-round room allocations isolated by phase", () => {
-    const html = renderToString(
-      <MatchWatchShell
-        game={game()}
-        messages={[
-          entry({
-            id: 1,
-            phase: "MINGLE",
-            fromPlayerId: null,
-            fromPlayerName: null,
-            scope: "system",
-            toPlayerIds: null,
-            roomId: undefined,
-            text: "Turn 1: Room 1: Atlas, Lyra",
-          }),
-          entry({
-            id: 2,
-            phase: "MINGLE",
-            roomId: 1,
-            text: "Lyra, can I count on you before the format?",
-          }),
-          entry({
-            id: 3,
-            phase: "FORMAT_MINGLE",
-            fromPlayerId: null,
-            fromPlayerName: null,
-            scope: "system",
-            toPlayerIds: null,
-            roomId: undefined,
-            text: "Canonical format allocation is ready.",
-            roomMetadata: {
-              rooms: [
-                { roomId: 2, round: 1, beat: 1, playerIds: ["p3", "p4"] },
-              ],
-              excluded: [],
-            },
-          }),
-        ]}
-        live={false}
-        connStatus="replay"
-      />,
-    );
-
-    const readableHtml = html.replaceAll("<!-- -->", "");
-    expect(readableHtml).toContain("Room 1 · GROUP");
-    expect(readableHtml).not.toContain("Room 2 · GROUP");
+  it("uses the portrait theater for nonvisual live games and replays", () => {
+    for (const live of [false, true]) {
+      const html = renderToString(<MatchWatchShell
+        game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
+        messages={[entry({ text: "Can I count on you?", phase: "LOBBY" })]}
+        live={live} connStatus={live ? "live" : "replay"}
+      />);
+      expect(html).toContain('aria-label="Conversation: Atlas"');
+      expect(html).not.toContain("MINGLE MAP");
+      expect(html).toContain("data-replay-controls");
+    }
   });
 
   it("does not parse Format Mingle transcript prose into authoritative rooms", () => {

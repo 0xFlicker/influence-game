@@ -758,6 +758,8 @@ export async function runJudgmentJuryVote(
       Phase.JURY_VOTE,
       voteTranscriptThinking.thinking,
       voteTranscriptThinking.reasoningContext,
+      "system_announcement",
+      { voterId: juror.playerId, targetId: vote.target, purpose: "winner" },
     );
     logger.emitAgentTurn({
       phase: Phase.JURY_VOTE,

@@ -79,7 +79,7 @@ type GameModelOption = Pick<
   | "available"
   | "defaultReasoningPolicy"
   | "allowedReasoningPolicies"
-> & { sublabel: string };
+> & { sublabel: string; supportsImageInput?: boolean };
 
 const GAME_MODELS: GameModelOption[] = [
   {
@@ -199,6 +199,8 @@ export function moveProviderRouteEntry(
 // ---------------------------------------------------------------------------
 
 interface FormState {
+  visualMode: boolean;
+  visualFailurePolicy: "best_effort" | "require_visuals";
   playerCount: CreateGameParams["playerCount"];
   formatManifest: LaunchFormatId[];
   providerRoute: ProviderRouteEntry[];
@@ -211,6 +213,8 @@ interface FormState {
 }
 
 const DEFAULT_STATE: FormState = {
+  visualMode: false,
+  visualFailurePolicy: "best_effort",
   playerCount: 6,
   formatManifest: [...LAUNCH_FORMAT_IDS],
   providerRoute: DEFAULT_PROVIDER_MANIFEST.map(providerRouteEntry),
@@ -715,6 +719,7 @@ export function CreateGameForm() {
       const staticById = new Map(GAME_MODELS.map((model) => [model.catalogId, model]));
       setModels(inventory.models.map((model) => ({
         catalogId: model.catalogId,
+        supportsImageInput: model.capabilities.supportsImageInput,
         displayName: model.displayName,
         configured: model.configured,
         available: model.available,
@@ -760,6 +765,10 @@ export function CreateGameForm() {
     });
   }
 
+  const incompatibleVisualModels = form.visualMode ? form.providerRoute
+    .map((entry) => models.find((model) => model.catalogId === entry.catalogId))
+    .filter((model) => model && !model.supportsImageInput) : [];
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!hasOpeningFormat(form.formatManifest, form.playerCount)) {
@@ -779,6 +788,10 @@ export function CreateGameForm() {
       .find((message): message is string => Boolean(message));
     if (routeError) {
       setError(routeError);
+      return;
+    }
+    if (incompatibleVisualModels.length) {
+      setError(`These provider slots do not support image input: ${incompatibleVisualModels.map((model) => model!.displayName).join(", ")}. Change or remove those slots to use Visual Mode.`);
       return;
     }
     setError(null);
@@ -930,6 +943,16 @@ export function CreateGameForm() {
 
       {/* Game Mode */}
       <SectionCard title="Game Mode">
+        <label className="mb-5 flex items-start gap-3">
+          <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
+          <span>Visual Mode<span className="block text-sm text-white/50">Generated rooms, agent image context and performance cues. Requires image-capable models in every provider slot. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created.</span></span>
+        </label>
+        {incompatibleVisualModels.length > 0 && <p role="status" className="mb-4 text-sm text-amber-300">
+          Image input is unavailable for: {incompatibleVisualModels.map((model) => model!.displayName).join(", ")}. Change or remove these entries in Provider route above.
+        </p>}
+        {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
+          options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
+          onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
         <RadioGroup
           label="Viewer mode"
           value={form.viewerMode}

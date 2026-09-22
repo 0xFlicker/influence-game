@@ -21,7 +21,8 @@
     "./model-defaults": "./src/model-defaults.ts",
     "./viewer-presentation": "./src/viewer-decision-events.ts",
     "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts",
-    "./visual-scene-plan": "./src/visual-scene-plan.ts"
+    "./visual-scene-plan": "./src/visual-scene-plan.ts",
+    "./performance-cue": "./src/performance-cue.ts"
   },
   "scripts": {
     "simulate": "doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts",

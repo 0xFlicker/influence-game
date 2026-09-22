@@ -25,13 +25,13 @@ test("freezes pixels, rejects cross-game assets, and reuses identical artifacts"
 test("requires complete localization, accepts once, and reuses unchanged scenes", async () => {
   const first = await prepareVisualScene(db, { gameId: "game", boundarySequence: 1, plan: plan() });
   const result = { sceneId: first.id, planHash: first.planHash, imageArtifactId: artifactId, anchors };
-  await expect(acceptVisualScene(db, { ...result, anchors: [] })).rejects.toThrow("every participant");
+  await expect(acceptVisualScene(db, { ...result, anchors: [] })).rejects.toThrow("verified participant");
   const accepted = await acceptVisualScene(db, result);
   expect(accepted.status).toBe("ready");
   expect(accepted.annotatedArtifactId).not.toBe(artifactId);
   expect((await acceptVisualScene(db, result)).id).toBe(first.id);
   const next = await prepareVisualScene(db, { gameId: "game", boundarySequence: 2, plan: plan() });
-  expect(next.id).not.toBe(first.id);
+  expect(next.id).toBe(first.id);
   expect(next.status).toBe("ready");
   expect(next.annotatedArtifactId).toBe(accepted.annotatedArtifactId);
 });

@@ -191,6 +191,8 @@ export async function applyEmpowerVoteBatch(
       Phase.VOTE,
       transcriptThinking.thinking,
       transcriptThinking.reasoningContext,
+      "system_announcement",
+      { voterId: player.id, targetId: votes.empowerTarget, purpose: "empower" },
     );
     logger.emitAgentTurn({
       phase: Phase.VOTE,
@@ -305,6 +307,8 @@ export async function applyEmpowerRevoteBatch(
       Phase.VOTE,
       transcriptThinking.thinking,
       transcriptThinking.reasoningContext,
+      "system_announcement",
+      { voterId: player.id, targetId: revote.empowerTarget, purpose: "empower" },
     );
     logger.emitAgentTurn({
       phase: Phase.VOTE,
@@ -474,6 +478,8 @@ export async function runVotePhase(
         Phase.VOTE,
         transcriptThinking.thinking,
         transcriptThinking.reasoningContext,
+      "system_announcement",
+      { voterId: player.id, targetId: votes.empowerTarget, purpose: "empower" },
       );
       logger.emitAgentTurn({
         phase: Phase.VOTE,
@@ -580,7 +586,7 @@ export async function runVotePhase(
           revoteTargetsByPlayerId.set(player.id, empowerTarget);
           const empowerName = gameState.getPlayerName(empowerTarget);
           const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext, revote);
-          logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
+          logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext, "system_announcement", { voterId: player.id, targetId: revote.empowerTarget, purpose: "empower" });
           logger.emitAgentTurn({
             phase: Phase.VOTE,
             action: "empower-revote",

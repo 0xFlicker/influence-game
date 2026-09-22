@@ -11,8 +11,7 @@ Use this workflow to test LM Studio or another OpenAI-compatible local model ser
 The native model-message contract supports user image attachments only for explicitly
 verified image-capable catalog entries: OpenAI Luna and Katana Grok 4.6. Unknown or
 text-only entries reject image-bearing invocations rather than dropping attachments.
-This is transport support; the in-progress [Visual Mode](visual-mode.md) integration
-is not yet exposed as a simulator or game-creation option.
+[Visual Mode](visual-mode.md) uses this transport in API-created visual games. The standalone simulator does not enable visual generation.
 
 The engine and API read LLM provider settings through a shared OpenAI-compatible client helper.
 
@@ -393,4 +392,8 @@ New Override draws exclude Empowered and include every other living contestant, 
 
 Every agent call after initial nominations and before resolution receives the current round's canonical Two Names board: initial and current nominees, Empowered, Override holder and decision, pair finality, and ordinary-voter eligibility. The active board is removed after resolution and in endgame. Mingle and alliance prompts share this board; transcript prose does not establish nominations. Only the Empowered initial nomination request may say no pair is selected. The replacement request labels the pending removal explicitly until Override and replacement commit together. Provider-free outgoing-prompt regressions exercise this contract; old game dialogue cannot prove updated prompt behavior. Continue using direct House calls and no `as any` in simulation integrations.
 
-The Visual Mode runtime hook requires a durable turn store. Provider-free coverage is in `visual-turn-boundary.test.ts`; API ownership and audience checks are in `visual-turn-context.test.ts` and require local PostgreSQL. The current CLI still does not enable Visual Mode. Do not inject room images around uncommitted Mingle movement to bypass scene readiness; movement must first become a committed beat boundary.
+The Visual Mode runtime hook requires a durable turn store. Provider-free coverage is in `visual-turn-boundary.test.ts`; API ownership and audience checks are in `visual-turn-context.test.ts` and require local PostgreSQL. The current CLI still does not enable Visual Mode. Only matching committed Mingle membership permits image context. Under Best effort, missing or invalid imagery uses canonical participants and observable cues as text. Require visuals instead pauses for admin repair before agent dispatch. Both retain the same provider and verification evidence.
+
+`durable-game-runner.test.ts` also checks scene preparation before turn planning, including abort and preparation boundaries. `visual-scene-renderer.test.ts` uses mocked providers to check five-room preparation, source/destination-only updates after movement, and ownership loss before fallback. These checks make no paid provider calls and do not prove live visual quality.
+
+Durable-runner coverage now includes restart after a committed Mingle movement beat, Two Names initialization/completion replay, and preserved format pressure and revealed vote context across the split. `mingle-window-contract.test.ts` rejects malformed saved windows and inconsistent allocation histories. Local CLI simulations retain the same conversation and simultaneous movement rules without requiring the API's durable coordinator.
