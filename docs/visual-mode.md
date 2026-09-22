@@ -63,6 +63,8 @@ OpenAI generates images; xAI is the availability fallback within the same bounde
 
 Open `/admin/games/<id>/visual`. Inspect the timeline, scene revision, candidate image, exact rejected verifier response, provider request ID, duration, cost and uncertainty before authorizing repair. Provider P50/P95 timings are per request, not total boundary wait. The production export includes this evidence and the immutable request description. Private evidence endpoints require admin access and cannot publish an unverified image to viewers.
 
+Click a scene thumbnail to view the complete image full-screen. Escape or Close returns to the same grid position; Open original opens the source image separately. Candidate and provider-attempt images open in the same viewer with distinct labels, without duplicating images inside scene cards.
+
 For Require visuals games:
 
 1. Diagnose the failure; fix provider configuration or availability as needed.

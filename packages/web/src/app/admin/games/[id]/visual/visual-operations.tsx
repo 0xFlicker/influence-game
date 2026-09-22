@@ -24,24 +24,47 @@ const seconds = (value: number | null) => value === null ? "—" : `${(value / 1
 function Evidence({ value }: { value: unknown }) {
   return <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-black/30 p-3 text-xs text-white/75">{JSON.stringify(value, null, 2)}</pre>;
 }
-function EvidenceImage({ gameId, id, kind }: { gameId: string; id: string; kind: "attempt" | "artifact" }) {
-  const [image, setImage] = useState<string | null>(null);
+function SceneImageDialog({ image, onClose }: { image: { url: string; label: string }; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { dialog?.close(); document.body.style.overflow = overflow; };
+  }, []);
+  return <dialog ref={dialogRef} aria-label={image.label} onCancel={(event) => { event.preventDefault(); onClose(); }}
+    className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-[#08090d] p-0 text-white backdrop:bg-black/90">
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/15 px-5 py-3">
+        <p className="text-sm font-semibold">{image.label}</p>
+        <div className="flex shrink-0 items-center gap-4">
+          <a href={image.url} target="_blank" rel="noreferrer" className="text-sm text-white/70 underline">Open original</a>
+          <button type="button" className={button} onClick={onClose} aria-label="Close full-screen image">Close ×</button>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 p-3 sm:p-6">
+        {/* eslint-disable-next-line @next/next/no-img-element -- original scene or authenticated diagnostic evidence */}
+        <img src={image.url} alt={image.label} className="h-full w-full object-contain" />
+      </div>
+    </div>
+  </dialog>;
+}
+function EvidenceImage({ gameId, id, kind, onOpen }: { gameId: string; id: string; kind: "attempt" | "artifact"; onOpen: (url: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return <div className="mt-3">
     <button className={button} disabled={busy} onClick={async () => {
-      if (image) { setImage(null); return; }
       setBusy(true); setError(null);
-      try { const result = await apiFetch<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/${kind}/${id}`); setImage(result.imageUrl); }
+      try { const result = await apiFetch<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/${kind}/${id}`); onOpen(result.imageUrl); }
       catch (failure) { setError(failure instanceof Error ? failure.message : "Evidence unavailable"); }
       finally { setBusy(false); }
-    }}>{busy ? "Loading evidence…" : image ? "Hide image" : "Inspect image"}</button>
+    }}>{busy ? "Loading evidence…" : kind === "artifact" ? "View candidate image" : "View attempt image"}</button>
     {error && <p role="alert" className="text-red-300">{error}</p>}
-    {/* eslint-disable-next-line @next/next/no-img-element -- authenticated diagnostic image */}
-    {image && <img src={image} alt="Generated image retained as diagnostic evidence" className="mt-3 w-full rounded object-contain" />}
   </div>;
 }
 export function VisualOperations({ gameId }: { gameId: string }) {
+  const [openImage, setOpenImage] = useState<{ url: string; label: string } | null>(null);
   const [data, setData] = useState<VisualExport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -68,6 +91,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
     finally { setBusy(false); }
   };
   return <div className="space-y-6">
+    {openImage && <SceneImageDialog image={openImage} onClose={() => setOpenImage(null)} />}
     <Link href="/admin/games" className="text-sm text-white/50">← Games</Link>
     <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Visual production</h1><button className={button} onClick={() => void refresh()}>Refresh</button></div>
     {error && <p role="alert" className="rounded border border-red-400/30 p-3 text-red-300">{error}</p>}
@@ -107,10 +131,14 @@ export function VisualOperations({ gameId }: { gameId: string }) {
       </section>
       <h2 className="text-lg font-semibold">Scenes and verification</h2>
       <div className="grid gap-4 md:grid-cols-2">{data.scenes.map((scene) => <article id={`scene-${scene.id}`} key={scene.id} className="overflow-hidden rounded-xl border border-white/15">
-        {/* eslint-disable-next-line @next/next/no-img-element -- immutable accepted artifact */}
-        {scene.status === "ready" && scene.imageArtifactId && <img src={resolveApiUrl(`/api/games/${data.gameId}/visual/artifacts/${scene.imageArtifactId}`)} alt={`${scene.roomId}, scene ${scene.boundarySequence}`} className="aspect-video w-full object-contain" />}
+        {scene.status === "ready" && scene.imageArtifactId && <button type="button" className="group relative block w-full cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white" aria-haspopup="dialog" aria-label={`View ${scene.roomId} scene ${scene.boundarySequence} full-screen`}
+          onClick={() => setOpenImage({ url: resolveApiUrl(`/api/games/${data.gameId}/visual/artifacts/${scene.imageArtifactId}`), label: `${scene.roomId} · boundary ${scene.boundarySequence} · revision ${scene.renderRevision}` })}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- immutable accepted artifact */}
+          <img src={resolveApiUrl(`/api/games/${data.gameId}/visual/artifacts/${scene.imageArtifactId}`)} alt={`${scene.roomId}, scene ${scene.boundarySequence}`} className="aspect-video w-full object-contain" />
+          <span className="absolute bottom-3 right-3 rounded border border-white/25 bg-black/80 px-3 py-1 text-xs text-white">View full-screen ↗</span>
+        </button>}
         <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status === "ready" ? "Image verified" : scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
-          {scene.candidateArtifactId && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" />}
+          {scene.candidateArtifactId && (scene.status !== "ready" || scene.candidateArtifactId !== scene.imageArtifactId) && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" onOpen={(url) => setOpenImage({ url, label: `${scene.roomId} · boundary ${scene.boundarySequence} · candidate image` })} />}
           {data.rebuildPreview?.sceneId === scene.id && (data.rebuildPreview.extraIds.length > 0 || data.rebuildPreview.missingIds.length > 0) ? <p className="text-amber-200">Agent context unavailable: participant mismatch. Rebuild the plan above.</p> : data.pause && canOperate && scene.status !== "preparing" && <div className="flex flex-wrap gap-2">{scene.candidateArtifactId && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "verify" }, "Verification repair prepared; resume to run it.")}>Recheck existing image</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "New render authorized; resume to run it.")}>Regenerate scene</button></div>}
         </div>
       </article>)}</div>
@@ -123,7 +151,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
         <p className="mt-1 break-all text-xs text-white/50">{attempt.operationKey} · generation {attempt.generation}</p>
         {attempt.receipt?.failure && <p className="mt-2 text-amber-200">{attempt.receipt.failure.kind}: {attempt.receipt.failure.message}</p>}
         <details className="mt-3"><summary className="cursor-pointer text-sm">Request, receipt and verification evidence</summary><Evidence value={attempt} /></details>
-        {attempt.imageHash && <EvidenceImage gameId={gameId} id={attempt.id} kind="attempt" />}
+        {attempt.imageHash && <EvidenceImage gameId={gameId} id={attempt.id} kind="attempt" onOpen={(url) => setOpenImage({ url, label: `${attempt.provider} · ${attempt.model} · attempt image` })} />}
         {!attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain) && canOperate && <form className="mt-3 flex flex-wrap gap-3" onSubmit={async (event) => {
           event.preventDefault(); const form = new FormData(event.currentTarget); setError(null); setBusy(true);
           try { await apiFetch(`/api/admin/games/${gameId}/visual/attempts/${attempt.id}/reconcile`, { method: "POST", body: JSON.stringify({ note: String(form.get("note")), costMicrousd: Math.round(Number(form.get("cost")) * 1_000_000) }) }); await refresh(); }
