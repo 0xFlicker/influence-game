@@ -82,3 +82,13 @@ without transcript repair.
 - `packages/engine/src/viewer-decision-events.ts`
 - `packages/engine/src/revealed-round-facts.ts`
 - `packages/web/src/app/games/[slug]/components/format-presentation-director.ts`
+
+## Fullscreen presentation (September 2026)
+
+Fullscreen is an element-level concern owned by `DramaticReplayViewer`, with the
+same mounted director and content in normal and immersive viewing. The camera
+and speech pagination sample base presentation time. Explicit director navigation
+increments a navigation revision to cut camera motion, while automatic advancement
+may pan between clear anchors on the same immutable image. Resize recalculates
+geometry and text pages without modifying canonical cues, speech duration or the
+publication snapshot. There is no independent camera or page timer.

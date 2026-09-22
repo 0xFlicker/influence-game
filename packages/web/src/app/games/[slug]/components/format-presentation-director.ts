@@ -200,13 +200,6 @@ export function usePresentationDirector({
       control.speed = director.getSnapshot().speed;
       controls.push({ control, release: animation.track(control) });
     };
-    const rootControl = animate(
-      scope.current,
-      { opacity: reducedMotion ? 1 : [0.985, 1] },
-      { duration: reducedMotion ? 0 : 0.18, ease: "easeOut" },
-    ) as RetainedMotionControl;
-    track(rootControl);
-
     const activeCue = director.getActiveCue();
     const currentStateEntry = scope.current.querySelector(
       '[data-presentation-current-entry="true"]',
@@ -335,6 +328,10 @@ export class PresentationDirector {
   private disposed = false;
   private waitingAtHydrationWatermark = false;
   private hasPlayed = false;
+  private navigationRevision = 0;
+
+  /** Explicit navigation cuts camera motion; automatic advances may pan. */
+  getNavigationRevision(): number { return this.navigationRevision; }
 
   constructor({
     clock = browserClock(),
@@ -478,6 +475,7 @@ export class PresentationDirector {
 
   manualAdvance(): void {
     if (this.disposed || this.state.cues.length === 0) return;
+    this.navigationRevision++;
     this.animation.complete();
     this.advanceOne();
   }
@@ -517,6 +515,7 @@ export class PresentationDirector {
   }
 
   seek(cursor: number): void {
+    this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
     this.waitingAtHydrationWatermark = false;

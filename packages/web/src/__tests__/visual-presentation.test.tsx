@@ -85,3 +85,15 @@ test("House uses its logo and preserves full narration on paused seeks and reduc
   expect(view.getByRole("heading", { name: "Mingle" })).not.toBeNull();
   expect(view.getByRole("region", { name: "House transition: Mingle" }).style.transform).toBe("none");
 });
+
+test("fullscreen forces follow speaker and restores the pinned room on exit", () => {
+  const view = render(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={1000} />);
+  fireEvent.click(view.getByRole("button", { name: "Kitchen corner" }));
+  view.rerender(<VisualPresentationFrame fullscreen beat={beat} rooms={rooms} elapsedMs={1000} />);
+  expect(view.queryByRole("navigation", { name: "Mingle rooms" })).toBeNull();
+  expect(view.getByRole("img").getAttribute("src")).toBe("/scene-1.png");
+  expect(view.getByText(speech.text)).not.toBeNull();
+  view.rerender(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={1000} />);
+  expect(view.getByRole("img").getAttribute("src")).toBe("/scene-2.png");
+  expect(view.queryByText(speech.text)).toBeNull();
+});

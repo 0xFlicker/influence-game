@@ -114,6 +114,10 @@ test.describe("format-aware game viewer", () => {
 
   test.beforeAll(async () => {
     test.setTimeout(180_000);
+    if (process.env.PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL) {
+      harness = { webUrl: process.env.PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL };
+      return;
+    }
     const started = await startLocalFormatViewerHarness();
     harnessProcess = started.process;
     harness = started.harness;
@@ -121,6 +125,53 @@ test.describe("format-aware game viewer", () => {
 
   test.afterAll(async () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
+  });
+
+  test("fullscreen portrait player preserves speech through fallback, rotation and exit", async ({ page }) => {
+    const slug = "fullscreen-portrait-fixture";
+    await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
+    await page.setViewportSize({ width: 390, height: 844 });
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    const speech = "We can make this plan work together. ".repeat(70);
+    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+      entrySequence: 1, round: 0, phase: "INTRODUCTION", from: scenario.roster[0]!.id,
+      scope: "public", text: speech, timestamp: Date.now(),
+    } }));
+    await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeVisible();
+    await page.getByRole("button", { name: "Pause replay", exact: true }).click();
+    await page.getByRole("button", { name: "Enter fullscreen" }).click();
+    const player = page.locator('[data-player-fullscreen="true"]');
+    await expect(player).toBeVisible();
+    await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
+    const before = await player.locator('blockquote').innerText();
+    await player.getByRole('img').click();
+    expect(await player.locator('blockquote').innerText()).toBe(before);
+    await page.setViewportSize({ width: 844, height: 390 });
+    await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
+    const bounds = await player.locator('blockquote').evaluate((element) => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, height: window.innerHeight, scroll: element.scrollHeight, client: element.clientHeight }));
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.height);
+    expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
+    await player.getByRole("button", { name: /Play/ }).filter({ visible: true }).click();
+    await player.getByRole("img").click();
+    const controls = player.locator('[data-replay-controls]');
+    await expect(controls).toHaveClass(/opacity-0/);
+    const picture = await player.getByRole("img").boundingBox();
+    if (!picture) throw new Error("Missing fullscreen portrait bounds");
+    await page.mouse.move(picture.x + 5, picture.y + 5);
+    await expect(controls).toHaveClass(/opacity-100/);
+    await expect(controls).toHaveClass(/opacity-0/, { timeout: 5000 });
+    await page.keyboard.press("Space");
+    await expect(controls).toHaveClass(/opacity-100/);
+    await page.getByRole("button", { name: "Exit fullscreen" }).press("Escape");
+    await expect(player).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeFocused();
+    await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+    expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   });
 
   test("nonvisual live portraits keep phase navigation on the presented dialogue", async ({ page }) => {

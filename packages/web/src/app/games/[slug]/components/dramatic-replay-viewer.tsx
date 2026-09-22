@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
+import { FitPresentation } from "./fit-presentation";
+import { usePlayerFullscreen } from "./use-player-fullscreen";
 import { VisualPresentation } from "./visual-presentation";
 import { useVisualWatch } from "./use-visual-watch";
 import { visualWatchPresentation, paceVisualBallots } from "./visual-watch-model";
@@ -348,6 +350,9 @@ function DramaticReplayTheater({
     scope: animationScope,
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
+  const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const controlsHovered = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectHydrationPendingRef = useRef(false);
@@ -496,7 +501,7 @@ function DramaticReplayTheater({
   }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
 
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = formatCue?.kind === "two_names_plea" || visual.beat?.kind === "scene";
+  const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat?.kind === "scene";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -596,45 +601,59 @@ function DramaticReplayTheater({
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
-    if (embedded) {
+    if (embedded && !fullscreen) {
       setControlsVisible(true);
       return;
     }
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
-    controlsTimer.current = setTimeout(() => setControlsVisible(false), 3000);
-  }, [embedded]);
+    controlsTimer.current = setTimeout(() => {
+      if (!controlsHovered.current && !controlsRef.current?.contains(document.activeElement)) setControlsVisible(false);
+    }, 3000);
+  }, [embedded, fullscreen]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setControlsVisible(true);
+      if (isPlaying) resetControlsTimer();
+    });
+    return () => { cancelAnimationFrame(frame); if (controlsTimer.current) clearTimeout(controlsTimer.current); };
+  }, [fullscreen, isPlaying, resetControlsTimer]);
 
   // Click/tap handler — if controls are hidden, show them first (don't advance).
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
+    if (fullscreen) { setControlsVisible((visible) => !visible); resetControlsTimer(); return; }
     if (!controlsVisible && isPlaying) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, fullscreen, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
-    if (embedded) return;
+    if (embedded && !fullscreen) return;
     setControlsVisible(true);
     resetControlsTimer();
-  }, [embedded, resetControlsTimer]);
+  }, [embedded, fullscreen, resetControlsTimer]);
 
   // Auto-hide controls (touch for mobile)
   const handleTouchStart = useCallback(() => {
-    if (embedded) return;
+    if (embedded && !fullscreen) return;
     if (controlsVisible) {
       resetControlsTimer();
     }
-  }, [controlsVisible, embedded, resetControlsTimer]);
+  }, [controlsVisible, embedded, fullscreen, resetControlsTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      setControlsVisible(true);
+      resetControlsTimer();
+      if ((e.key === "Enter" || e.key === " ") && shouldSuppressDramaticAdvance(e.target)) return;
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -674,6 +693,7 @@ function DramaticReplayTheater({
     isPlaying,
     pausePresentation,
     presentationCues,
+    resetControlsTimer,
   ]);
 
   const formatCompilationNotice =
@@ -725,11 +745,13 @@ function DramaticReplayTheater({
           ? "relative h-full min-h-0 overflow-hidden"
           : "fixed inset-0 z-30 influence-shell"
       }`}
+      data-player-fullscreen={fullscreen || undefined}
+      style={fullscreen ? { position: "fixed", inset: 0, width: "100vw", height: "100dvh", maxWidth: "none", maxHeight: "none", margin: 0, padding: 0, border: 0, zIndex: 1000, background: "black" } : undefined}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
     >
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <>
           <div className="influence-phase-atmosphere" />
           <div className="influence-phase-vignette" />
@@ -738,7 +760,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Exit button — top-left, auto-hides with controls */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <button
           type="button"
           data-replay-controls
@@ -758,7 +780,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Top bar — phase context */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] pointer-events-none transition-opacity duration-500 ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
         }`}>
@@ -784,9 +806,14 @@ function DramaticReplayTheater({
       )}
 
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <div
           data-replay-controls
+        ref={controlsRef}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
+        onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={resetControlsTimer}
           className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
             controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
@@ -802,7 +829,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Scene progress bar */}
-      <div className="shrink-0 px-6 z-[60]">
+      <div className={`shrink-0 px-6 z-[60] ${fullscreen ? "hidden" : ""}`}>
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
           {presentationCues.map((cue, i) => (
             <div
@@ -825,16 +852,16 @@ function DramaticReplayTheater({
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
-        } justify-center ${isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+        } justify-center ${fullscreen ? visual.beat?.kind === "scene" ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
+        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
+          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FormatPresentation
+              <FitPresentation enabled={fullscreen}><FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}
                 currentStateEntry={Boolean(
@@ -843,7 +870,7 @@ function DramaticReplayTheater({
                   && formatCue.canonicalSequence
                     <= directorSnapshot.hydrationWatermark,
                 )}
-              />
+              /></FitPresentation>
             </div>
           )}
 
@@ -852,18 +879,25 @@ function DramaticReplayTheater({
         </div>
       </div>
 
-      {live && directorSnapshot.waitingAtTail && (
+      {live && !fullscreen && directorSnapshot.waitingAtTail && (
         <div role="status" className="shrink-0 py-3 text-center text-xs text-white/40">Waiting for messages…</div>
       )}
 
       {/* Bottom scrub controls — pinned under the scrollable content region */}
       <div
         data-replay-controls
-        className={`shrink-0 border-t border-white/5 bg-black/70 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
+        ref={controlsRef}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
+        onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={resetControlsTimer}
+        className={`${fullscreen ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        {activeFormatIdForSocialScene && <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div>}
+        <button ref={fullscreenButton} type="button" aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={() => void toggleFullscreen()} className="mb-2 ml-auto block rounded-lg border border-white/20 px-3 py-1 text-xs text-white/80">{fullscreen ? "Exit fullscreen ↙" : "Fullscreen ↗"}</button>
+        {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
+        {!fullscreen && activeFormatIdForSocialScene && <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div>}
         {/* Mobile: compact 2-row layout */}
         <div className="md:hidden flex flex-col gap-2 max-w-sm mx-auto">
           <div className="flex items-center justify-between gap-2">
@@ -1015,7 +1049,7 @@ function DramaticReplayTheater({
 
 
         </div>
-        <p className="text-[10px] text-white/10 text-center mt-2 hidden md:block">
+        <p className={`text-[10px] text-white/10 text-center mt-2 ${fullscreen ? "hidden" : "hidden md:block"}`}>
           Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
         </p>
       </div>

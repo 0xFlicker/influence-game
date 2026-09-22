@@ -126,7 +126,7 @@ Each scene shows its own accepted/rejected receipt, job ID, candidate number, st
 
 **Publish for viewers** explicitly selects a verified version. **Restore for viewers** uses the same audited publication action for an earlier selection or the original image. Publication requires verified composition and identities. Uncertain geometry yields no anchors, and the viewer shows a named speech panel; it never guesses a head position. An uncertain paid attempt must be reconciled before a candidate becomes ready. No candidate becomes agent context or changes game policy, status, timers, decisions, transcript or results.
 
-Public `/api/games/:id/visual` returns `publicationSnapshot` (a scene-to-publication-revision map), selected clean images, publication revisions and canonical dialogue bindings. A session sends the snapshot back in the `snapshot` query while polling. **Refresh published images** fetches a new selection, adopted at the next beat; the entire active beat's media is pinned and the director clock is untouched. A new session starts with current publications. Previously published clean URLs remain accessible; unpublished candidates and numbered artifacts require admin authorization.
+Public `/api/games/:id/visual` returns `publicationSnapshot` (a scene-to-publication-revision map), selected clean images, publication revisions and canonical dialogue bindings. Live and completed-game viewers poll the latest published selection automatically. Updates are adopted at the next beat; the entire active beat's media is pinned and the director clock is untouched. Refresh failures retain cached images and retry in the background, without adding maintenance controls or notices to the viewer. A new session starts with current publications. Previously published clean URLs remain accessible; unpublished candidates and numbered artifacts require admin authorization.
 
 Historical portrait-fallback dialogue can acquire viewer media without rewriting transcript/agent-context artifacts. Bindings use stored committed turns, scene boundaries, dialogue sequences, canonical endgame stages and private-room audience membership. Missing or contradictory evidence leaves portraits. Individual introductions, ballots, diaries and farewells retain portrait presentation. Scene publication is not a mechanism for rewriting which characters were present.
 
@@ -139,3 +139,39 @@ Provider-free regression coverage lives in `visual-media-repair.test.ts`, `scene
 Local browser review on 2026-09-22 verified the completed `odd-lime-vine` controls, original lobby clean/numbered comparison, and inline Finals harmonization uncertainty. No paid requests or publication changes were made to that game. Publication/restoration execution was verified with provider-free fixtures. The unresolved original Finals attempt requires actual provider evidence before another paid request.
 
 See [game-worker operations](deployment/game-worker-operations.md#independent-visual-media-queue) for leases, shutdown and reconciliation. This feature adds no prompt editor, manual anchor editor, new rooms, video generation or automatic publication.
+
+### Fullscreen player and responsive speech
+
+`DramaticReplayViewer` owns fullscreen on the existing content-player element.
+Browser fullscreen falls back to a top-layer viewport presentation; neither path
+remounts the director. Escape restores the trigger focus and page scroll. Cast,
+inspector, navigation and surrounding progress stay outside. Playback controls
+float over a gradient, hide after three idle seconds while playing, and remain
+available on pointer, touch, keyboard, focus or pause. Tapping fullscreen content
+only changes control visibility. Fullscreen Mingle temporarily follows the active
+speaker; leaving restores the normal pinned-room selection.
+
+Scene framing measures the loaded immutable image and actual frame. Wide frames
+contain the whole scene; narrow frames cover and center on that version's clear
+head anchor. Unknown, uncertain and anonymous speakers retain the whole image.
+`visual-scene-layout.ts` owns pure framing, coordinate transforms, bounded bubble
+placement and the 450 ms pan interpolation. Same-image automatic speech changes
+pan on director time; explicit navigation, image changes, resizing and reduced
+motion cut directly. No provider inference or transcript parsing supplies anchors.
+
+Speech stays in named bubbles. `TimedSpeech` measures at the rendered font size,
+prefers sentence boundaries then word boundaries, and preserves the entire text.
+Pages divide the existing reading interval by word count, so pause/speed/seek and
+rotation share the same reading position instead of starting separate timers.
+Fullscreen portraits and House summaries use the same bounded pages. Scene
+bubbles reserve room for controls and prefer above the head, then below; extreme
+close-ups without room for readable speech use an unanchored panel. Published
+media remains pinned to the active beat through `useVisualWatch`.
+
+Provider-free fullscreen browser regression (portrait-only live fixture):
+`bun run test:e2e:format-viewer --grep 'fullscreen portrait player'`.
+When the usual dev server already owns `.next/dev`, run this route-mocked test
+with `PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL=http://127.0.0.1:3001` to reuse that web
+server. Other tests that require seeded backend data still use the isolated
+harness. The fixture checks fallback fullscreen, unchanged speech, paged long
+text, rotation, control visibility, Escape focus and scroll restoration.

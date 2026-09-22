@@ -12,6 +12,7 @@ export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = async () => {
+      if (cancelled) return;
       try {
         const data = await apiFetch<VisualWatchData>(`/api/games/${gameId}/visual`);
         if (!cancelled) {

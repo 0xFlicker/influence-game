@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { SceneRepairPanel, type MediaRecords } from "../app/admin/games/[id]/visual/scene-repair-panel";
@@ -64,11 +64,58 @@ test("compares annotations, publishes explicitly, restores versions and preserve
   expect(writes[1]).toMatchObject({ action: "publish", versionId: "v0", expectedPublication: 1 });
 });
 
-function Watch() { const { data, refreshMedia, refreshError } = useVisualWatch("game", true, false); return <><p>{data?.scenes[0]?.imageUrl ?? "Loading"}</p><button onClick={refreshMedia}>Refresh media</button>{refreshError && <p>Refresh failed</p>}</>; }
-test("explicit viewer media refresh preserves current media when it fails", async () => {
-  let failure = false;
-  respond(async () => { if (failure) throw new Error("offline"); return Response.json({ enabled: true, scenes: [{ id: "scene", imageUrl: "/v1.png" }], portraits: {}, publicationSnapshot: { scene: 1 } }); });
-  const mounted = render(<Watch />); await waitFor(() => expect(mounted.getByText("/v1.png")).not.toBeNull());
-  failure = true; fireEvent.click(mounted.getByText("Refresh media"));
-  await waitFor(() => expect(mounted.getByText("Refresh failed")).not.toBeNull()); expect(mounted.getByText("/v1.png")).not.toBeNull();
+function Watch({ beat, live = false }: { beat: string; live?: boolean }) {
+  const data = useVisualWatch("game", true, live, beat);
+  return <p>{data?.scenes[0]?.imageUrl ?? "Portraits"}</p>;
+}
+test.each([false, true])("published media refreshes silently between beats (live=%s), retaining media through failures", async live => {
+  const originalTimeout = globalThis.setTimeout;
+  let poll: (() => Promise<void>) | undefined;
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  globalThis.setTimeout = ((callback: () => Promise<void>, delay?: number) => {
+    if (delay === (live ? 2_000 : 5_000)) {
+      poll = callback;
+      const timer = originalTimeout(() => {}, 60_000);
+      timers.push(timer);
+      return timer;
+    }
+    return originalTimeout(callback, delay);
+  }) as typeof setTimeout;
+  const warning = spyOn(console, "warn").mockImplementation(() => {});
+  let version = 1, failure = false;
+  const urls: string[] = [];
+  respond(async url => {
+    urls.push(url);
+    if (failure) throw new Error("offline");
+    return Response.json({ enabled: true, scenes: [{ id: "scene", imageUrl: `/v${version}.png` }], portraits: {}, publicationSnapshot: { scene: version } });
+  });
+  try {
+    const mounted = render(<Watch beat="opening" live={live} />);
+    await waitFor(() => expect(poll).toBeDefined());
+    mounted.rerender(<Watch beat="speech-1" live={live} />);
+    expect(mounted.getByText("/v1.png")).not.toBeNull();
+    version = 2;
+    await act(async () => { await poll!(); });
+    expect(mounted.getByText("/v1.png")).not.toBeNull(); // Paused or speaking: keep the same beat.
+    mounted.rerender(<Watch beat="speech-2" live={live} />);
+    expect(mounted.getByText("/v2.png")).not.toBeNull();
+    failure = true;
+    await act(async () => { await poll!(); });
+    mounted.rerender(<Watch beat="speech-3" live={live} />);
+    expect(mounted.getByText("/v2.png")).not.toBeNull();
+    expect(mounted.queryByRole("button")).toBeNull();
+    expect(warning).toHaveBeenCalledTimes(1);
+    failure = false; version = 3;
+    await act(async () => { await poll!(); });
+    expect(mounted.getByText("/v2.png")).not.toBeNull();
+    mounted.rerender(<Watch beat="speech-4" live={live} />);
+    expect(mounted.getByText("/v3.png")).not.toBeNull();
+    expect(urls).toHaveLength(4);
+    expect(urls.every(url => !url.includes("snapshot="))).toBe(true);
+    cleanup();
+    const requestsBeforeUnmount = urls.length;
+    await act(async () => { await poll!(); });
+    // A callback already dequeued at unmount cannot schedule another refresh or apply media.
+    expect(urls.length).toBe(requestsBeforeUnmount);
+  } finally { for (const timer of timers) clearTimeout(timer); globalThis.setTimeout = originalTimeout; warning.mockRestore(); }
 });

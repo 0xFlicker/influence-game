@@ -1,44 +1,68 @@
-import { expect, test } from "bun:test";
-import { layoutVisualScene } from "../app/games/[slug]/components/visual-scene-layout";
+import { describe, expect, test } from "bun:test";
+import { frameVisualScene, panScene, placeSceneBubble } from "../app/games/[slug]/components/visual-scene-layout";
+import { paginateSpeech, speechPageIndex } from "../app/games/[slug]/components/speech-pages";
 
-const head = { x: .7, y: .6, width: .1, height: .1 };
-test("prefers above when both directions have room", () => {
-  const layout = layoutVisualScene({ width: 1000, height: 700, bubbleHeight: 100, head });
-  expect(layout.below).toBe(false);
-  expect(layout.imageTop).toBe(0);
-  expect(layout.bubbleTop).toBeGreaterThanOrEqual(12);
-  expect(layout.bubbleTop + 100).toBeLessThan(head.y * layout.imageHeight);
+const head = { x: .8, y: .2, width: .06, height: .1 };
+describe("responsive scene framing", () => {
+  test("wide frames contain; narrow frames cover around a verified head", () => {
+    expect(frameVisualScene(1600, 600, 1600, 900, head).width).toBeCloseTo(1600 * 2 / 3);
+    const frame = frameVisualScene(390, 700, 1600, 900, head);
+    expect(frame.height).toBe(700);
+    expect(frame.left).toBeLessThan(0);
+    expect(frame.left + head.x * frame.width).toBeGreaterThan(0);
+    expect(frame.left + (head.x + head.width) * frame.width).toBeLessThan(390);
+  });
+  test("unknown or anonymous speakers show the whole image", () => {
+    const frame = frameVisualScene(390, 700, 1600, 900);
+    expect(frame.width).toBe(390);
+    expect(frame.left).toBe(0);
+    expect(frame.top).toBeGreaterThan(0);
+  });
+  test("edge crops stay within source image", () => {
+    for (const x of [0, .94]) {
+      const frame = frameVisualScene(390, 700, 1600, 900, { ...head, x });
+      expect(frame.left).toBeLessThanOrEqual(0);
+      expect(frame.left + frame.width).toBeGreaterThanOrEqual(390);
+    }
+  });
+  test("pan is a pure 450ms director-time interpolation", () => {
+    const from = { width: 1000, height: 600, left: 0, top: 0 }, to = { ...from, left: -500 };
+    expect(panScene(from, to, 0).left).toBe(0);
+    expect(panScene(from, to, 225).left).toBe(-250);
+    expect(panScene(from, to, 450)).toEqual(to);
+    expect(panScene(from, to, 900)).toEqual(to);
+  });
+  test("bubble prefers above and flips below near the top", () => {
+    const frame = { width: 1000, height: 700, left: 0, top: 0 };
+    const above = placeSceneBubble(1000, 700, frame, { ...head, y: .6 });
+    const below = placeSceneBubble(1000, 700, frame, { ...head, y: .1 });
+    expect(above.below).toBe(false);
+    expect(below.below).toBe(true);
+    for (const b of [above, below]) {
+      expect(b.left).toBeGreaterThanOrEqual(12);
+      expect(b.left + b.width).toBeLessThanOrEqual(988);
+      expect(b.top + b.height).toBeLessThanOrEqual(688);
+    }
+  });
 });
-test("uses the space below a high head without shifting the image", () => {
-  const layout = layoutVisualScene({ width: 1000, height: 700, bubbleHeight: 250, head: { ...head, y: .15 } });
-  expect(layout.below).toBe(true);
-  expect(layout.imageTop).toBe(0);
-  expect(layout.bubbleTop).toBeGreaterThan(.25 * layout.imageHeight);
-  expect(layout.bubbleTop + 250).toBeLessThanOrEqual(700);
-});
-test("reserves space and shrinks the image when neither side fits", () => {
-  const layout = layoutVisualScene({ width: 1000, height: 500, bubbleHeight: 300, head: { ...head, y: .4 } });
-  expect(layout.below).toBe(false);
-  expect(layout.imageTop).toBeGreaterThan(0);
-  expect(layout.bubbleTop).toBeCloseTo(12);
-  expect(layout.contentHeight).toBeLessThanOrEqual(500);
-  expect(layout.imageWidth / layout.imageHeight).toBeCloseTo(16 / 9);
-});
-test.each([0, .9])("keeps speech horizontally inside the frame for a head at %s", (x) => {
-  const layout = layoutVisualScene({ width: 1000, height: 700, bubbleHeight: 200, head: { ...head, x } });
-  expect(layout.bubbleLeft).toBeGreaterThanOrEqual(12);
-  expect(layout.bubbleLeft + layout.bubbleWidth).toBeLessThanOrEqual(988);
-});
-test("narrow screens and unanchored speech use a complete panel below the image", () => {
-  for (const width of [400, 1000]) {
-    const layout = layoutVisualScene({ width, height: 700, bubbleHeight: 350, head: width === 400 ? head : undefined });
-    expect(layout.anchored).toBe(false);
-    expect(layout.bubbleTop).toBeGreaterThan(layout.imageHeight);
-    expect(layout.contentHeight).toBeLessThanOrEqual(700);
-  }
-});
-test("exceptionally long speech remains in the outer flow rather than clipping", () => {
-  const layout = layoutVisualScene({ width: 400, height: 300, bubbleHeight: 800 });
-  expect(layout.contentHeight).toBeGreaterThan(800);
-  expect(layout.imageHeight).toBeGreaterThan(0);
+describe("speech pages", () => {
+  test("preserve all text and prefer complete sentences", () => {
+    const text = 'One sentence. Second sentence carries more words.\n\nLast one.';
+    const pages = paginateSpeech(text, (value) => value.length <= 32);
+    expect(pages.join('')).toBe(text);
+    expect(pages[0]).toBe('One sentence. ');
+    expect(pages.every((page) => page.length <= 32)).toBe(true);
+  });
+  test("unbroken text cannot overflow or disappear", () => {
+    const text = 'abcdefghijklmnopqrst';
+    const pages = paginateSpeech(text, (value) => value.length <= 5);
+    expect(pages.join('')).toBe(text);
+    expect(pages).toHaveLength(4);
+  });
+  test("reading position is weighted and clamps at both ends", () => {
+    const pages = ['one two ', 'three four five six'];
+    expect(speechPageIndex(pages, 0)).toBe(0);
+    expect(speechPageIndex(pages, .34)).toBe(1);
+    expect(speechPageIndex(pages, 1)).toBe(1);
+  });
 });
