@@ -35,7 +35,7 @@ export function SoloPresentation({ beat, elapsedMs, paused = false, reducedMotio
     return () => observer.disconnect();
   }, []);
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, (naturalHeight ?? 240) + 68);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, (naturalHeight ?? 240) + 68, player.headRectangle);
   return <section ref={frame} aria-label={`${beat.purpose}: ${player.name}`} data-solo-image={fullBody ? "full-body" : "portrait"}
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen game image, with a static portrait only when full-body art is unavailable */}
@@ -48,7 +48,7 @@ export function SoloPresentation({ beat, elapsedMs, paused = false, reducedMotio
       <blockquote className="flex min-h-0 flex-1 flex-col">
         <TimedSpeech text={speech.text} elapsedMs={motion.speechElapsedMs} onNaturalHeight={setNaturalHeight} />
       </blockquote>
-      <span aria-hidden="true" className="absolute -top-2 h-4 w-4 rotate-45 border-l border-t border-white/25 bg-black" style={{ left: geometry.bubble.width / 2 - 8 }} />
+      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={{ left: geometry.tailLeft - 8 }} />
     </div>}
   </section>;
 }

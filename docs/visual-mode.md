@@ -47,6 +47,8 @@ The content frame plays accepted conversation, portrait beats, canonical format 
 
 `house-segment.tsx` presents the existing logo, gold accents and complete saved text. Reading duration uses the speech clock; entrance and exit take approximately 300 ms. Pause, speed, reduced motion and seeking use the same presentation director as dialogue. Stable dialogue-sequence keys survive REST/live identity changes. Reconnect preserves elapsed time; backfilled summaries cannot interrupt an on-air title. Seeking an operational-only event lands on the next presentable cue. No playback operation generates narration or media.
 
+Finished House segments stay faded out while waiting for new live content, including with reduced motion. Pausing mid-fade freezes opacity; a paused seek to the start remains readable. Resuming or reconnecting at the live tail preserves the completed cue instead of replaying its animation; new content advances the director normally.
+
 The old `phase-transition.tsx`, `endgame-entry.tsx`, random flavor copy and `buildReplayScenes` allocation/parser path were removed. Their last version is available at git commit `c7f7b48f` under `packages/web/src/app/games/[slug]/components/`. Phase/format context stays in watch chrome and playback controls, not an independent overlay. Provider execution and visual failure policy are unchanged.
 
 ## Profiles, identity and agent context
@@ -156,8 +158,10 @@ contain the whole scene; narrow frames cover and center on that version's clear
 head anchor. Unknown, uncertain and anonymous speakers retain the whole image.
 `visual-scene-layout.ts` owns pure framing, coordinate transforms, bounded bubble
 placement and the 450 ms pan interpolation. Same-image automatic speech changes
-pan on director time; explicit navigation, image changes, resizing and reduced
-motion cut directly. No provider inference or transcript parsing supplies anchors.
+pan on director time; explicit navigation and resizing set framing directly.
+Room and scene-image changes crossfade over 250 ms in independently framed layers,
+without carrying the outgoing camera position into the incoming room. Reduced
+motion switches immediately. No provider inference or transcript parsing supplies anchors.
 
 Speech stays in named bubbles. `TimedSpeech` measures at the rendered font size,
 prefers sentence boundaries then word boundaries, and preserves the entire text.
@@ -180,10 +184,12 @@ text, rotation, control visibility, Escape focus and scroll restoration.
 
 Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The image fills the content frame vertically, with black side bars on wide frames. Narrow frames trim the image's sides while preserving its full height. Speech overlays the image below the head region, with its tail pointing upward. It never becomes a talking-head clip or a separate image/text column. A missing or failed full-body image uses the static portrait with speech below it. Both use measured, director-timed text pages, including outside fullscreen; fullscreen controls reserve bubble space without shrinking the image.
 
-Existing upright single-character references, including `odd-lime-vine`, do not carry saved head rectangles. Their temporary presentation-only fallback reserves the top 22% of the source for the head. This is not localization evidence, must not be used for room scenes, and does not change historical assets or game state. The next editor change is specified in [Confirmed character head positions](plans/2026-09-22-confirmed-character-head-positions.md).
+Existing upright single-character references, including `odd-lime-vine`, do not carry saved head rectangles. Their temporary presentation-only fallback reserves the top 22% of the source for the head. This is not localization evidence, must not be used for room scenes, and does not change historical assets or game state. New selections now use [confirmed character head positions](plans/2026-09-22-confirmed-character-head-positions.md). Historical games are not backfilled from current profiles.
 
 Solo shots use the director's base clock: 350 ms image fade-in, 650 ms settling hold, 250 ms speech fade-in, the complete existing reading duration, 250 ms speech fade-out, a shorter 250 ms hold, then 350 ms image fade-out to black. The next shot starts from black. Bubble pages consume only the reading interval. Pausing during a fade freezes it; a paused seek to the start shows the line immediately. Speed scales the entire sequence, and reduced motion preserves the holds and reading time with immediate opacity changes. Cue duration comes from committed dialogue/ballot metadata, so media loading and publication refreshes cannot restart or resize the active clock. A historical portrait beat later published as a room scene retains its original duration.
 
 The visual endpoint supplies `fullBodies` for every game, including games without generated room scenes. It selects immutable prepared cast artifacts (excluding references marked as portrait fallbacks), then game-start profile references. Current agent edits never supply these images. The public artifact handler allows these cast images but still excludes private annotations, unpublished scene candidates and performance instructions. Initial media hydration fills an empty selection once; subsequent refreshes remain pinned until the next beat.
 
 Sealed ballots remain at their canonical reveal position. Each voter says the target's name only; the caption identifies the ballot's purpose/polarity. Private thinking is never presented as an invented spoken justification. Existing roll-call order, forfeits and result authority are unchanged. Totals use compact unboxed layouts. House segments align their logo to the bottom of the upper half and summary to the top of the lower half, with timed pages for overflow. Fullscreen has a 48-pixel corner-icon control with a 32-pixel glyph and accessible entry/exit labels.
+
+Confirmed head geometry is frozen at game start and bound to the selected full-body image. `fullBodyHeads` accompanies `fullBodies`; prepared cast artifacts override both together, dropping unmatched geometry. Solo framing centers an edge-positioned confirmed head within narrow crops. Speech sits below the head, or above a low head when that gives more reading room, with the tail transformed through the same image coordinates. Missing geometry retains the existing single-person fallback. This does not affect room-scene localization, publication timing or director duration.

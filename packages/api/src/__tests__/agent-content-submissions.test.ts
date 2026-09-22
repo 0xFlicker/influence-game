@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile, createOwnedAgent, updateOwnedAgent } from "../services/agent-profile-management.js";
-import { contentImageFixture } from "./content-image-fixture.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 import { writeLocalUpload } from "../lib/storage.js";
 
 let db: DrizzleDB;
@@ -81,10 +81,11 @@ describe("atomic character content submissions", () => {
   });
   test("captures original image bytes and crop metadata without recalibrating competition", async () => {
     const first = await create();
-    const bytes = Uint8Array.from([137,80,78,71]);
-    await writeLocalUpload("pfp/source.png", "image/png", bytes.buffer);
+    await contentImageFixture("pfp/source.png");
+    const { readVisualProfileImage } = await import("../services/visual-game-assets.js");
+    const bytes = await readVisualProfileImage("/api/uploads/local?key=pfp%2Fsource.png", { name: "", personaKey: "" });
     const url = "http://localhost/api/uploads/local?key=pfp%2Fsource.png";
-    const second = await updateOwnedAgentProfile(db, context, first.profile.id, { fullBodyReferenceUrl: url, avatarUrl: url, submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
+    const second = await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: await headPositionFixture(url), fullBodyReferenceUrl: url, avatarUrl: url, submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
     const crop = { sourceUrl: url, x: 0.1, y: 0, width: 0.4, height: 0.4 };
     const third = await updateOwnedAgentProfile(db, context, first.profile.id, { portraitCrop: crop, submissionId: randomUUID(), expectedContentRevisionId: second.profile.contentRevisionId });
     expect(third.profile.currentRevisionId).toBe(first.profile.currentRevisionId);
@@ -129,5 +130,40 @@ describe("atomic character content submissions", () => {
     expect(result.receipt.moderationRecordId).toBeTruthy();
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
+  });
+  test("head confirmation validates image evidence, records the actor, and is retry safe", async () => {
+    const sourceUrl = `http://localhost${await contentImageFixture("pfp/head-confirm.png")}`;
+    const headPosition = await headPositionFixture(sourceUrl);
+    await expect(createOwnedAgentProfile(db, context, { ...initial, fullBodyReferenceUrl: sourceUrl })).rejects.toThrow("Confirm the head");
+    const first = await createOwnedAgentProfile(db, context, { ...initial, creationRequestId: randomUUID(), fullBodyReferenceUrl: sourceUrl,
+      headPosition: { ...headPosition, confirmation: { userId: "forged", at: "1900-01-01" } } });
+    expect(first.profile.headPosition?.confirmation?.userId).toBe(context.userId);
+    expect(first.profile.headPosition?.confirmation?.at).not.toBe("1900-01-01");
+    for (const invalid of [{ ...headPosition, sourceHash: "b".repeat(64) }, { ...headPosition, sourceWidth: 10 }, { ...headPosition, rect: { ...headPosition.rect, x: .99 } }]) {
+      await expect(updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: invalid })).rejects.toThrow();
+    }
+    const nextUrl = `http://localhost${await contentImageFixture("pfp/other-head.png")}`;
+    await expect(updateOwnedAgentProfile(db, context, first.profile.id, { fullBodyReferenceUrl: nextUrl })).rejects.toThrow("different image");
+    const update = { submissionId: randomUUID(), headPosition: { ...headPosition, rect: { ...headPosition.rect, y: .04 } }, expectedContentRevisionId: first.profile.contentRevisionId };
+    const second = await updateOwnedAgentProfile(db, context, first.profile.id, update);
+    const retry = await updateOwnedAgentProfile(db, context, first.profile.id, update);
+    expect(retry.receipt).toEqual(second.receipt);
+    expect(retry.profile.headPosition).toEqual(second.profile.headPosition);
+    expect(second.profile.currentRevisionId).toBe(first.profile.currentRevisionId);
+    await updateOwnedAgentProfile(db, context, first.profile.id, { headPosition: second.profile.headPosition });
+    expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
+    const [old] = await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.contentRevisionId!));
+    expect(old!.snapshot.headPosition).toEqual(first.profile.headPosition);
+  });
+  test("legacy text edits do not invent head evidence; tool submissions require the same confirmation", async () => {
+    const first = await create();
+    const sourceUrl = `http://localhost${await contentImageFixture("pfp/legacy-head.png")}`;
+    await db.update(schema.agentProfiles).set({ fullBodyReferenceUrl: sourceUrl }).where(eq(schema.agentProfiles.id, first.profile.id));
+    const changed = await updateOwnedAgentProfile(db, context, first.profile.id, { backstory: "A revised history" });
+    expect(changed.profile.headPosition).toBeNull();
+    const nextUrl = `http://localhost${await contentImageFixture("pfp/tool-head.png")}`;
+    await expect(updateOwnedAgent(db, context, { agentId: first.profile.id, fullBodyReferenceUrl: nextUrl })).rejects.toThrow("Confirm the head");
+    const tool = await updateOwnedAgent(db, context, { agentId: first.profile.id, fullBodyReferenceUrl: nextUrl, headPosition: await headPositionFixture(nextUrl) });
+    expect(tool.agent.headPosition?.confirmation?.userId).toBe(context.userId);
   });
 });

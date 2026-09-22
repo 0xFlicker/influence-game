@@ -1971,6 +1971,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 export interface SavedAgent {
   contentRevisionId?: string | null;
   visualDesign?: string | null;
+  headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   id: string;
   name: string;
@@ -2029,6 +2030,7 @@ export interface AgentProfileWriteParams {
   submissionId?: string;
   expectedContentRevisionId?: string | null;
   visualDesign?: string | null;
+  headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   name: string;
   personality: string;
@@ -2302,6 +2304,7 @@ export interface AvatarCompletion {
 
 export interface CharacterImageDraft {
   requestId: string; fullBodyReferenceUrl: string; width: number; height: number;
+  headSuggestion?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
 }
 export interface GeneratePersonalityParams {

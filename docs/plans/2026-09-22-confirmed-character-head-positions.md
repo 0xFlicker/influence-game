@@ -1,7 +1,7 @@
 ---
 title: Confirmed character head positions
 type: feat
-status: proposed
+status: implemented
 date: 2026-09-22
 ---
 
@@ -9,9 +9,9 @@ date: 2026-09-22
 
 ## Current delivery and existing behavior
 
-The viewer now fills the player vertically with the saved full-body reference and overlays speech below its head region. Existing upright character references use a conservative top-of-image fallback; no historical game data or paid generation is needed for that presentation fix. The workflow below is the next implementation, not yet shipped.
+The viewer now fills the player vertically with the saved full-body reference and overlays speech below its head region. Existing upright character references use a conservative top-of-image fallback; no historical game data or paid generation is needed for that presentation fix. The workflow below is implemented in this checkout. Historical games keep the fallback until separately reviewed against their frozen assets.
 
-`generateVisualProfileReference` already calls head localization after generation. It uses the returned head rectangle to derive `portraitCropFromHead`, exports the portrait, then discards the rectangle from the response. `CharacterPortraitEditor` allows adjusting a square crop. `AgentForm` accepts the generated image/crop immediately. The square portrait crop includes hair and shoulders and is **not** a reliable head bounding box.
+`generateVisualProfileReference` already calls head localization after generation. It uses the returned head rectangle to derive `portraitCropFromHead`, exports the portrait, and now retains a source-bound `headSuggestion`. `CharacterPortraitEditor` allows adjusting the head box and square crop separately. `AgentForm` requires explicit confirmation for a newly selected full body. The square portrait crop includes hair and shoulders and is **not** a reliable head bounding box.
 
 ## Source-bound geometry
 
@@ -42,3 +42,7 @@ Existing games are not rewritten from current agent profiles. Optional backfill 
 - Geometry tests: portrait/landscape sources, EXIF orientation, image scaling, edge heads, crop transforms, source mismatch, invalid bounds, and speech below the confirmed head on rotation.
 - Shared service/PostgreSQL tests: text-only edits to legacy profiles, geometry-only revision without rating effects, atomic rollback, concurrency conflicts, idempotent retry, immutable moderation evidence, browser/API/tool parity.
 - Viewer tests: frozen geometry survives later profile edits; different image hashes never reuse it; actual confirmed head and legacy fallback both preserve face clearance and readable pages. Review `odd-lime-vine` and new confirmed profiles on phone portrait, phone landscape and desktop.
+
+### Delivery evidence
+
+`bun run test` passed (1,825 tests, five skips), `bun run test:postgres` passed (1,645 tests), and `bun run check` passed. Final focused draft/layout/recovery tests passed (28), as did the final PostgreSQL submission/generation/viewer regressions (31). Two provider-free browser fixtures verified confirmed heads and the legacy fallback at desktop landscape, phone portrait and phone landscape sizes. The local Character images editor was also inspected on desktop and phone, including keyboard head adjustment and confirmation controls; no live profile was submitted and no paid provider was called. Historical `odd-lime-vine` assets were not backfilled.

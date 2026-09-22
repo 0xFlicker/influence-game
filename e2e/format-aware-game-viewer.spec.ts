@@ -179,58 +179,60 @@ test.describe("format-aware game viewer", () => {
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   });
 
-  test("full-body solo speech and House summary fit the fullscreen midline layout", async ({ page }) => {
-    const slug = "full-body-solo-fixture";
-    const scenario = createFormatKernelViewerScenario("two_names_declined");
-    const actor = scenario.roster[0]!;
-    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
-    await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { [actor.id]: "/solo-fixture.svg" } } }));
-    await page.route("**/solo-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/><path d="M160 140H240L260 360H230V560H205V360H195V560H170V360H140Z" fill="#ded4c0"/></svg>' }));
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto(viewerUrl(`/games/${slug}`));
-    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect.poll(() => fixture.sockets.length).toBe(1);
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() } }));
-    const solo = page.locator('[data-solo-image="full-body"]');
-    await expect(solo).toBeVisible();
-    await expect(solo.getByRole("img")).toHaveAttribute("src", /\/solo-fixture\.svg$/);
-    const enter = page.getByRole("button", { name: "Enter fullscreen", exact: true });
-    const icon = await enter.locator("svg").boundingBox();
-    expect(icon!.width).toBeGreaterThanOrEqual(32);
-    await enter.click();
-    await expect(solo.locator('blockquote').locator('..')).toHaveCSS("opacity", "1");
-    await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
-    for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
-      await page.setViewportSize(size);
-      await expect(solo.getByRole("img")).toHaveCSS("object-fit", "contain");
-      await expect.poll(async () => {
-        const image = await solo.getByRole("img").boundingBox();
-        return Math.round(image!.height);
-      }).toBe(size.height);
-      const image = (await solo.getByRole("img").boundingBox())!;
-      expect(image.y).toBe(0);
-      expect(image.width).toBeCloseTo(size.height * 2 / 3, 0);
-      expect(image.x).toBeCloseTo((size.width - image.width) / 2, 0);
-      const bubble = solo.locator("blockquote");
-      await expect(bubble).toContainText("I intend to win your trust.");
-      const bounds = await bubble.evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, viewport: innerHeight, scroll: el.firstElementChild!.scrollHeight, client: el.firstElementChild!.clientHeight }));
-      expect(bounds.top).toBeGreaterThanOrEqual(0);
-      expect(bounds.top).toBeGreaterThan(image.y + image.height * 0.22);
-      expect(bounds.bottom).toBeLessThan(bounds.viewport - 140);
-      expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
-    }
-    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));
-    await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeEnabled();
-    await page.keyboard.press("ArrowRight");
-    const house = page.getByRole("region", { name: "House summary" });
-    await expect(house).toBeVisible();
-    const halves = await house.evaluate(el => {
-      const stage = el.getBoundingClientRect();
-      return { mid: stage.top + stage.height / 2, logoBottom: el.querySelector("img")!.getBoundingClientRect().bottom, textTop: el.querySelector("[data-house-copy]")!.getBoundingClientRect().top };
+  for (const confirmedHead of [false, true]) {
+    test(`full-body solo speech and House summary fit the fullscreen midline layout (${confirmedHead ? "confirmed head" : "legacy fallback"})`, async ({ page }) => {
+      const slug = "full-body-solo-fixture";
+      const scenario = createFormatKernelViewerScenario("two_names_declined");
+      const actor = scenario.roster[0]!;
+      const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
+      await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { [actor.id]: "/solo-fixture.svg" }, fullBodyHeads: confirmedHead ? { [actor.id]: { x: 0.4, y: 0.09, width: 0.2, height: 0.14 } } : {} } }));
+      await page.route("**/solo-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/><path d="M160 140H240L260 360H230V560H205V360H195V560H170V360H140Z" fill="#ded4c0"/></svg>' }));
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(viewerUrl(`/games/${slug}`));
+      await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+      await expect.poll(() => fixture.sockets.length).toBe(1);
+      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() } }));
+      const solo = page.locator('[data-solo-image="full-body"]');
+      await expect(solo).toBeVisible();
+      await expect(solo.getByRole("img")).toHaveAttribute("src", /\/solo-fixture\.svg$/);
+      const enter = page.getByRole("button", { name: "Enter fullscreen", exact: true });
+      const icon = await enter.locator("svg").boundingBox();
+      expect(icon!.width).toBeGreaterThanOrEqual(32);
+      await enter.click();
+      await expect(solo.locator('blockquote').locator('..')).toHaveCSS("opacity", "1");
+      await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+      for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+        await page.setViewportSize(size);
+        await expect(solo.getByRole("img")).toHaveCSS("object-fit", "contain");
+        await expect.poll(async () => {
+          const image = await solo.getByRole("img").boundingBox();
+          return Math.round(image!.height);
+        }).toBe(size.height);
+        const image = (await solo.getByRole("img").boundingBox())!;
+        expect(image.y).toBe(0);
+        expect(image.width).toBeCloseTo(size.height * 2 / 3, 0);
+        expect(image.x).toBeCloseTo((size.width - image.width) / 2, 0);
+        const bubble = solo.locator("blockquote");
+        await expect(bubble).toContainText("I intend to win your trust.");
+        const bounds = await bubble.evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, viewport: innerHeight, scroll: el.firstElementChild!.scrollHeight, client: el.firstElementChild!.clientHeight }));
+        expect(bounds.top).toBeGreaterThanOrEqual(0);
+        expect(bounds.top).toBeGreaterThan(image.y + image.height * (confirmedHead ? 0.23 : 0.22));
+        expect(bounds.bottom).toBeLessThan(bounds.viewport - 140);
+        expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
+      }
+      fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));
+      await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeEnabled();
+      await page.keyboard.press("ArrowRight");
+      const house = page.getByRole("region", { name: "House summary" });
+      await expect(house).toBeVisible();
+      const halves = await house.evaluate(el => {
+        const stage = el.getBoundingClientRect();
+        return { mid: stage.top + stage.height / 2, logoBottom: el.querySelector("img")!.getBoundingClientRect().bottom, textTop: el.querySelector("[data-house-copy]")!.getBoundingClientRect().top };
+      });
+      expect(halves.logoBottom).toBeLessThanOrEqual(halves.mid);
+      expect(halves.textTop).toBeCloseTo(halves.mid, 0);
     });
-    expect(halves.logoBottom).toBeLessThanOrEqual(halves.mid);
-    expect(halves.textTop).toBeCloseTo(halves.mid, 0);
-  });
+  }
 
   test("nonvisual live portraits keep phase navigation on the presented dialogue", async ({ page }) => {
     const slug = "nonvisual-live-portraits";

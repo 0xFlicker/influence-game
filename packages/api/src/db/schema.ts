@@ -404,6 +404,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   fullBodyReferenceUrl: text("full_body_reference_url"),
   performanceInstructions: text("performance_instructions"),
   visualDesign: text("visual_design"),
+  headPosition: jsonb("head_position").$type<import("@influence/engine/character-portrait").CharacterHeadPosition>(),
   portraitCrop: jsonb("portrait_crop").$type<{ sourceUrl: string; x: number; y: number; width: number; height: number }>(),
   contentRevisionId: text("content_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
   gamesPlayed: integer("games_played").notNull().default(0),

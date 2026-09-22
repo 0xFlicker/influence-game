@@ -459,7 +459,7 @@ export class PresentationDirector {
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
       this.remainingBaseMs = this.activeDurationMs();
     }
-    if (this.remainingBaseMs <= 0) {
+    if (this.remainingBaseMs <= 0 && !this.state.waitingAtTail) {
       this.remainingBaseMs = this.activeDurationMs();
     }
     this.ensureTimer();
@@ -527,6 +527,7 @@ export class PresentationDirector {
 
   reconnect(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
+    const wasWaitingAtTail = this.state.waitingAtTail;
     const canonical = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
     const activeKey = this.state.cues[this.state.cursor]?.key;
     const retainedCursor = activeKey ? canonical.findIndex((cue) => cue.key === activeKey) : -1;
@@ -535,6 +536,9 @@ export class PresentationDirector {
     this.captureRemainingTime();
     this.clearTimer();
     this.apply({ type: "hydrate", cues: canonical, cursor, watermark });
+    if (wasWaitingAtTail && retainedCursor >= 0) {
+      this.apply({ type: "set_waiting_at_tail", waitingAtTail: true });
+    }
     if (retainedCursor < 0) this.remainingBaseMs = 0;
     this.waitingAtHydrationWatermark = retainedCursor < 0;
   }

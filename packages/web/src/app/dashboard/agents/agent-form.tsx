@@ -48,6 +48,8 @@ interface AgentFormProps {
 interface EditorSnapshot {
   visualDesign?: string | null;
   portraitCrop?: SavedAgent["portraitCrop"];
+  headPosition?: SavedAgent["headPosition"];
+  headSuggestion?: SavedAgent["headPosition"];
   name: string;
   backstory: string;
   personality: string;
@@ -98,6 +100,8 @@ function isUuid(value: string): boolean {
 function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
   return left.name === right.name
     && (left.visualDesign ?? null) === (right.visualDesign ?? null)
+    && JSON.stringify(left.headPosition ?? null) === JSON.stringify(right.headPosition ?? null)
+    && JSON.stringify(left.headSuggestion ?? null) === JSON.stringify(right.headSuggestion ?? null)
     && JSON.stringify(left.portraitCrop ?? null) === JSON.stringify(right.portraitCrop ?? null)
     && left.backstory === right.backstory
     && left.personality === right.personality
@@ -147,6 +151,8 @@ export function AgentForm({
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
     visualDesign: initial?.visualDesign ?? null,
     portraitCrop: initial?.portraitCrop ?? null,
+    headPosition: initial?.headPosition ?? null,
+    headSuggestion: null,
     name: initial?.name ?? "",
     backstory: initial?.backstory ?? "",
     personality: initial?.personality ?? "",
@@ -159,6 +165,8 @@ export function AgentForm({
   }), [initial, initialPersona, initialStrategy]);
 
   const [visualDesign, setVisualDesign] = useState(initialSnapshot.visualDesign);
+  const [headPosition, setHeadPosition] = useState(initialSnapshot.headPosition);
+  const [headSuggestion, setHeadSuggestion] = useState(initialSnapshot.headSuggestion);
   const [portraitCrop, setPortraitCrop] = useState(initialSnapshot.portraitCrop);
   const [name, setName] = useState(initialSnapshot.name);
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
@@ -245,6 +253,8 @@ export function AgentForm({
   const currentSnapshot: EditorSnapshot = useMemo(() => ({
     visualDesign,
     portraitCrop,
+    headPosition,
+    headSuggestion,
     name,
     backstory,
     personality,
@@ -254,7 +264,7 @@ export function AgentForm({
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [visualDesign, portraitCrop, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
+  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const draftStorageKey = account?.id
     ? `influence:agent-editor:${DRAFT_VERSION}:${account.id}:${draftScope}`
@@ -388,6 +398,8 @@ export function AgentForm({
     if (!pendingRestore) return;
     setVisualDesign(pendingRestore.current.visualDesign ?? null);
     setPortraitCrop(pendingRestore.current.portraitCrop ?? null);
+    setHeadPosition(pendingRestore.current.headPosition ?? null);
+    setHeadSuggestion(pendingRestore.current.headSuggestion ?? null);
     setName(pendingRestore.current.name);
     setBackstory(pendingRestore.current.backstory);
     setPersonality(pendingRestore.current.personality);
@@ -479,15 +491,17 @@ export function AgentForm({
     requestAnimationFrame(() => document.getElementById(id)?.focus());
   }
 
+  const headConfirmationRequired = Boolean(fullBodyReferenceUrl && (!headPosition || headPosition.sourceUrl !== fullBodyReferenceUrl) && (fullBodyReferenceUrl !== initialSnapshot.fullBodyReferenceUrl || initialSnapshot.headPosition || headSuggestion));
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (generationBusy || uploading || submitting) return;
+    if (generationBusy || uploading || submitting || headConfirmationRequired) return;
     if (unfinishedReplacement) { setConfirmIncompleteSave(true); return; }
     await submitDraft();
   }
 
   async function submitDraft() {
-    if (generationBusy || uploading || submitting) return;
+    if (generationBusy || uploading || submitting || headConfirmationRequired) return;
     setConfirmIncompleteSave(false);
     const errors: Record<string, string> = {};
     if (!name.trim()) errors.name = "Agent name is required.";
@@ -520,6 +534,7 @@ export function AgentForm({
         avatarUrl: avatarUrl,
         visualDesign,
         portraitCrop,
+        headPosition,
         expectedContentRevisionId: baseContentRevisionId,
       };
       const fingerprint = JSON.stringify(params);
@@ -558,6 +573,7 @@ export function AgentForm({
     || referenceBusy
     || profileGenerating
     || uploading
+    || headConfirmationRequired
     || requiredStrategyChangeMissing;
 
   async function generateReference(refined?: { name: string; personaKey: string; performanceInstructions: string; visualDesign: string }) {
@@ -579,6 +595,9 @@ export function AgentForm({
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
       setFullBodyReferenceUrl(result.fullBodyReferenceUrl);
+      setHeadPosition(null);
+      setHeadSuggestion(result.headSuggestion ?? null);
+      setPortraitEditorSource(result.fullBodyReferenceUrl);
       if (result.avatarUrl && result.portraitCrop) {
         setExplicitAvatarUrl(result.avatarUrl);
         setPortraitCrop(result.portraitCrop);
@@ -728,13 +747,14 @@ export function AgentForm({
               <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
               <button type="button" disabled={generationBusy || uploading || submitting || !name.trim()} onClick={() => void generateReference()} className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50">{referenceBusy ? "Generating reference…" : referenceRequest.current ? "Retry reference request" : "Generate full-body reference"}</button>
               {referenceError && <p role="alert" className="mb-3 text-sm text-red-300">{referenceError}</p>}
-              <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={setFullBodyReferenceUrl} onUploadingChange={setFullBodyUploading} presentation="full-body" />
+              <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={(url) => { setFullBodyReferenceUrl(url); setHeadPosition(null); setHeadSuggestion(null); setPortraitEditorSource(url); }} onUploadingChange={setFullBodyUploading} presentation="full-body" />
             </div>
           </section>
         </main>
       </div>
 
-      {portraitEditorSource && <CharacterPortraitEditor sourceUrl={portraitEditorSource} initialCrop={portraitCrop} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); setUnfinishedReplacement(false); setReferenceError(null); }} />}
+      {headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
+      {portraitEditorSource && <CharacterPortraitEditor sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
       {(generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
       {generationNotice && <p role="status" className="mt-4 text-sm text-amber-200">{generationNotice}</p>}
       {saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}

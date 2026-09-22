@@ -91,7 +91,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   app.post("/api/agent-profiles/portrait-crop", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/portrait-crop");
     if (!body) return c.json({ error: "A portrait crop is required" }, 400);
-    try { return c.json(await exportCharacterPortrait(body as unknown as import("@influence/engine/character-portrait").PortraitCrop, new URL(c.req.url).origin)); }
+    const { headRectangle, ...crop } = body;
+    try { return c.json(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, new URL(c.req.url).origin, headRectangle)); }
     catch (error) { return c.json({ error: error instanceof Error ? error.message : "Portrait export failed" }, 400); }
   });
   app.post("/api/agent-profiles/visual-reference", requireAuth(db), async (c) => {
@@ -302,6 +303,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         performanceInstructions: body.performanceInstructions,
         visualDesign: body.visualDesign,
         portraitCrop: body.portraitCrop,
+        headPosition: body.headPosition,
         submissionId: body.submissionId,
         expectedContentRevisionId: body.expectedContentRevisionId,
         creationRequestId: body.creationRequestId,
@@ -506,6 +508,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         performanceInstructions: body.performanceInstructions,
         visualDesign: body.visualDesign,
         portraitCrop: body.portraitCrop,
+        headPosition: body.headPosition,
         submissionId: body.submissionId,
         expectedContentRevisionId: body.expectedContentRevisionId,
         sourceReviewId: body.sourceReviewId,

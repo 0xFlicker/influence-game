@@ -26,7 +26,7 @@ export function contentSnapshot(profile: Profile) {
     name: profile.name, personaKey: profile.personaKey, gender: profile.gender,
     personality: profile.personality, backstory: profile.backstory, strategyStyle: profile.strategyStyle,
     performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign,
-    avatarUrl: profile.avatarUrl, fullBodyReferenceUrl: profile.fullBodyReferenceUrl, portraitCrop: profile.portraitCrop,
+    avatarUrl: profile.avatarUrl, fullBodyReferenceUrl: profile.fullBodyReferenceUrl, portraitCrop: profile.portraitCrop, headPosition: profile.headPosition,
   };
 }
 export async function replayContentSubmission(tx: Tx | DrizzleDB, userId: string, agentId: string, id: string, requestHash: string): Promise<AgentProfileMutationRead | null> {

@@ -7,6 +7,7 @@ export interface VisualCastMember {
   referenceArtifactId: string;
   /** Explicit preparation outcome; identical image hashes do not imply degraded quality. */
   portraitFallback?: boolean;
+  headRectangle?: import("./character-portrait").HeadRectangle;
   performanceInstructions: string;
 }
 export interface VisualPlacement {

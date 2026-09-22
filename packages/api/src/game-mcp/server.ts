@@ -562,7 +562,8 @@ export class ProductionGameMcpJsonRpcServer {
       }
       if (name === "crop_agent_portrait") {
         requireScopes(auth, ["agents:read", "agents:write"]);
-        return content(await exportCharacterPortrait(args as unknown as import("@influence/engine/character-portrait").PortraitCrop));
+        const { headRectangle, ...crop } = args;
+        return content(await exportCharacterPortrait(crop as unknown as import("@influence/engine/character-portrait").PortraitCrop, undefined, headRectangle));
       }
       if (name === "generate_agent_visual_reference") {
         requireScopes(auth, ["agents:read", "agents:write"]);
@@ -1419,8 +1420,8 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: "crop_agent_portrait",
-      description: "Export a square portrait from a source image using normalized x/y/width/height. This edits draft assets only and makes no image-generation call. Submit returned avatarUrl and portraitCrop with create_agent or update_agent.",
-      properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } },
+      description: "Export a square portrait from a source image using normalized x/y/width/height. This edits draft assets only and makes no image-generation call. Pass a reviewed headRectangle to receive source-bound headPosition. Submit avatarUrl, portraitCrop and headPosition with create_agent or update_agent; supplying headPosition explicitly confirms it.",
+      properties: { headRectangle: { type: "object", additionalProperties: false, properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["x", "y", "width", "height"] }, sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } },
       required: ["sourceUrl", "x", "y", "width", "height"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
     }),
     tool({
@@ -1435,7 +1436,8 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
         visualDesign: nullableStringSchema(8000),
-        portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
+        headPosition: { type: ["object", "null"], description: "Explicit confirmation of the head box for this exact full-body image. Obtain its source hash and dimensions with crop_agent_portrait. Required when selecting a new full-body image.", additionalProperties: false, properties: { sourceUrl: { type: "string" }, sourceHash: { type: "string" }, sourceWidth: { type: "integer" }, sourceHeight: { type: "integer" }, rect: { type: "object", additionalProperties: false, properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["x", "y", "width", "height"] } }, required: ["sourceUrl", "sourceHash", "sourceWidth", "sourceHeight", "rect"] },
+          portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
         submissionId: { type: "string", format: "uuid" },
         expectedContentRevisionId: { type: ["string", "null"] },
         fullBodyReferenceUrl: nullableStringSchema(2048),
@@ -1459,7 +1461,8 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
         visualDesign: nullableStringSchema(8000),
-        portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
+        headPosition: { type: ["object", "null"], description: "Explicit confirmation of the head box for this exact full-body image. Obtain its source hash and dimensions with crop_agent_portrait. Required when selecting a new full-body image.", additionalProperties: false, properties: { sourceUrl: { type: "string" }, sourceHash: { type: "string" }, sourceWidth: { type: "integer" }, sourceHeight: { type: "integer" }, rect: { type: "object", additionalProperties: false, properties: { x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["x", "y", "width", "height"] } }, required: ["sourceUrl", "sourceHash", "sourceWidth", "sourceHeight", "rect"] },
+          portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
         submissionId: { type: "string", format: "uuid" },
         expectedContentRevisionId: { type: ["string", "null"] },
         fullBodyReferenceUrl: nullableStringSchema(2048),

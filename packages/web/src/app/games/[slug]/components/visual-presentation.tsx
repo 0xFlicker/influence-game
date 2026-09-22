@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import { VISUAL_SPEECH_FADE_MS, visualSpeechOpacity } from "@influence/engine/visual-speech";
 import { SoloPresentation } from "./solo-presentation";
@@ -9,10 +10,20 @@ import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 
+/** Each room keeps its own camera; switching rooms changes only opacity. */
+function RoomLayer({ reducedMotion, ...props }: Parameters<typeof VisualSceneView>[0]) {
+  const present = useIsPresent();
+  return <motion.div aria-hidden={!present} className="absolute inset-0 flex min-h-0 flex-col"
+    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+    transition={{ duration: reducedMotion ? 0 : 0.25 }}>
+    <VisualSceneView {...props} reducedMotion={reducedMotion} />
+  </motion.div>;
+}
+
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
-  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 
@@ -79,7 +90,11 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
         <button type="button" aria-pressed={pinnedRoom === null} onClick={() => setPinnedRoom(null)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">Follow speaker</button>
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
-      {scene && <VisualSceneView controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={elapsedMs} clockElapsedMs={clockElapsedMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+      <div className="relative min-h-0 flex-1">
+        <AnimatePresence initial={false}>
+          {scene && <RoomLayer key={`${scene.roomId}:${scene.id}:${scene.version}:${scene.imageUrl}`} controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={elapsedMs} clockElapsedMs={clockElapsedMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+        </AnimatePresence>
+      </div>
     </div>;
   }
   return <div className={`w-full text-white ${(beat.kind !== "anonymous" || fullscreen) ? "flex min-h-0 flex-1 flex-col" : ""}`}>

@@ -1,3 +1,4 @@
+import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
 import { controlVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { prepareVisualRepair, prepareVisualAssetRepair } from "../services/visual-repair.js";
@@ -28,14 +29,21 @@ export function createVisualRoutes(db: DrizzleDB) {
     // Game-start profiles and prepared cast artifacts are frozen; current agent edits
     // must not change the identity shown in a historical solo performance.
     const fullBodies: Record<string, string> = {};
+    const fullBodyHeads: Record<string, HeadRectangle> = {};
     for (const player of players) {
-      const profile = JSON.parse(player.persona) as { fullBodyReferenceUrl?: unknown };
+      const profile = JSON.parse(player.persona) as { fullBodyReferenceUrl?: unknown; headPosition?: CharacterHeadPosition };
       if (typeof profile.fullBodyReferenceUrl === "string" && profile.fullBodyReferenceUrl) fullBodies[player.id] = profile.fullBodyReferenceUrl;
+      const head = profile.headPosition;
+      if (head?.confirmation && head.sourceUrl === fullBodies[player.id] && validHeadRectangle(head.rect)) fullBodyHeads[player.id] = head.rect;
     }
     for (const member of assets[0]?.cast ?? []) {
-      if (!member.portraitFallback) fullBodies[member.id] = url(member.referenceArtifactId);
+      if (!member.portraitFallback) {
+        fullBodies[member.id] = url(member.referenceArtifactId);
+        delete fullBodyHeads[member.id];
+        if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
+      }
     }
-    if (!enabled) return c.json({ enabled, scenes: [], portraits: {}, fullBodies, status: null });
+    if (!enabled) return c.json({ enabled, scenes: [], portraits: {}, fullBodies, fullBodyHeads, status: null });
     let snapshot: Record<string, number> | undefined;
     const rawSnapshot = c.req.query("snapshot");
     if (rawSnapshot) {
@@ -46,7 +54,7 @@ export function createVisualRoutes(db: DrizzleDB) {
       } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
     }
     return c.json({ enabled, status: rows.some(row => row.status === "preparing") ? "preparing" : null,
-      fullBodies,
+      fullBodies, fullBodyHeads,
       portraits: Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)])),
       ...await readViewerMedia(db, game.id, snapshot),
     });

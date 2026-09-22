@@ -12,6 +12,7 @@ import {
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
 import { soloPresentationDurationMs, soloPresentationMotion } from "../app/games/[slug]/components/solo-presentation-timing";
+import { houseSegmentMotion } from "../app/games/[slug]/components/house-segment";
 
 class FakeClock implements PresentationClock {
   nowMs = 0;
@@ -501,6 +502,50 @@ it("keeps House animation on the shared clock through pause, speed, reconnect an
   clock.tick(825);
   expect(director.getActiveCue()?.key).toBe("next");
   director.dispose();
+});
+
+it("expired House narration stays faded at the live tail until a new cue arrives", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock, followTail: true });
+  const summary = { ...cue("house-summary", 1, 1, "classic"), houseSummary: true, baseDurationMs: 2000 };
+  const opacity = () => houseSegmentMotion(director.getElapsedBaseMs(), 2000, !director.getSnapshot().isPlaying, false).opacity;
+  director.load([summary]); director.play();
+  clock.tick(1850);
+  expect(opacity()).toBe(.5);
+  clock.tick(150);
+  expect(director.getSnapshot().waitingAtTail).toBe(true);
+  expect(opacity()).toBe(0);
+  director.append([summary]);
+  clock.tick(5000);
+  expect(opacity()).toBe(0);
+  director.pause();
+  expect(opacity()).toBe(0);
+  director.play();
+  expect(opacity()).toBe(0);
+  director.reconnect([summary]);
+  director.play();
+  expect(director.getSnapshot().waitingAtTail).toBe(true);
+  expect(opacity()).toBe(0);
+  director.append([summary, cue("new-message", 2, 1, "classic")]);
+  expect(director.getActiveCue()?.key).toBe("new-message");
+  expect(director.getElapsedBaseMs()).toBe(0);
+  director.dispose();
+});
+
+it("House fades stay finished at replay end, including reduced motion", () => {
+  for (const reducedMotion of [false, true]) {
+    expect(houseSegmentMotion(2000, 2000, false, reducedMotion).opacity).toBe(0);
+    expect(houseSegmentMotion(2000, 2000, true, reducedMotion).opacity).toBe(0);
+    expect(houseSegmentMotion(2500, 2000, false, reducedMotion).opacity).toBe(0);
+  }
+});
+
+it("paused House seeks are readable but pausing an active fade preserves its position", () => {
+  expect(houseSegmentMotion(0, 2000, true, false)).toEqual({ opacity: 1, transform: "none" });
+  for (const elapsed of [150, 1850]) {
+    expect(houseSegmentMotion(elapsed, 2000, true, false)).toEqual(houseSegmentMotion(elapsed, 2000, false, false));
+    expect(houseSegmentMotion(elapsed, 2000, true, false).opacity).toBe(.5);
+  }
 });
 
 it("late narration cannot remove an on-air title or strand playback", () => {

@@ -3,7 +3,8 @@ import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 
 /** All motion is sampled from the presentation director's clock. */
 export function houseSegmentMotion(elapsedMs: number, durationMs: number, readable: boolean, reducedMotion: boolean) {
-  if (readable || reducedMotion || elapsedMs >= durationMs) return { opacity: 1, transform: "none" };
+  if (elapsedMs >= durationMs) return { opacity: 0, transform: "none" };
+  if ((readable && elapsedMs === 0) || reducedMotion) return { opacity: 1, transform: "none" };
   const entrance = Math.min(1, Math.max(0, elapsedMs / 300));
   const exit = Math.min(1, Math.max(0, (durationMs - elapsedMs) / 300));
   return { opacity: Math.min(entrance, exit), transform: `translateY(${(1 - entrance) * 12}px)` };

@@ -19,6 +19,7 @@ export interface VisualWatchData {
   enabled: boolean;
   status: "preparing" | "recovery" | null;
   portraits: Record<string, string>;
+  fullBodyHeads?: Record<string, import("@influence/engine/character-portrait").HeadRectangle>;
   fullBodies?: Record<string, string>;
   scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
@@ -37,7 +38,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   let beat: VisualPresentationBeat | null = null;
   const portrait = (id: string, text: string, purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea", caption?: string) => {
     const player = players.find((entry) => entry.id === id);
-    if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
+    if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
   if (cue?.source === "format") {
     if (cue.kind === "two_names_plea" && cue.status === "accepted" && cue.text) {

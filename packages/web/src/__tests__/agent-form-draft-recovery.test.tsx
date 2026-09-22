@@ -187,6 +187,10 @@ describe("atomic character draft generation", () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat" };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/portrait-crop")) {
+        const { headRectangle, ...portraitCrop } = JSON.parse(String(init?.body));
+        return Response.json({ avatarUrl: "/face.png", portraitCrop, headPosition: { sourceUrl: portraitCrop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: headRectangle } });
+      }
       calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
       return Response.json(String(url).endsWith("/generate") ? profile : { fullBodyReferenceUrl: "/body.png", avatarUrl: "/face.png", portraitCrop: { sourceUrl: "/body.png", x: 0.3, y: 0.05, width: 0.4, height: 0.3 }, cropWarning: null });
     }) as unknown as typeof fetch;
@@ -195,6 +199,7 @@ describe("atomic character draft generation", () => {
     const view = await renderForm(false, async (params) => { submissions.push(params); }, emptyText);
     fireEvent.click(view.getByRole("button", { name: emptyText ? "Generate with AI" : "Refine with AI" }));
     await waitFor(() => expect(calls).toHaveLength(2));
+    await confirmHeadInEditor(view);
     await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
     expect((view.getByLabelText("Character performance") as HTMLTextAreaElement).value).toBe(profile.performanceInstructions);
     expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe(profile.visualDesign);
@@ -228,11 +233,30 @@ describe("atomic character draft generation", () => {
     await waitFor(() => expect(submissions).toHaveLength(1));
     expect(submissions[0]).toMatchObject({ avatarUrl: "/manual-face.png", portraitCrop: cropBody });
   });
+  test.each([false, true])("restoring a new full-body draft preserves head proposal and confirmation: %s", async confirmed => {
+    const head = { sourceUrl: "/draft-body.png", sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: { x: .35, y: .04, width: .3, height: .16 } };
+    const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);
+    stored.current = { ...stored.current, fullBodyReferenceUrl: head.sourceUrl, headPosition: confirmed ? head : null, headSuggestion: confirmed ? null : head };
+    domWindow.sessionStorage.setItem(draftKey, JSON.stringify(stored));
+    const view = await renderForm(false);
+    fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
+    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(!confirmed));
+    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
+    const recovered = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!).current;
+    expect(recovered.headPosition).toEqual(confirmed ? head : null);
+    expect(recovered.headSuggestion).toEqual(confirmed ? null : head);
+  });
   test("successful generation stays in the draft until final submission", async () => {
-    globalThis.fetch = (async () => Response.json({ fullBodyReferenceUrl: "/completed.png", avatarUrl: "/portrait.png", portraitCrop: { sourceUrl: "/completed.png", x: 0.3, y: 0.1, width: 0.4, height: 0.3 }, cropWarning: null })) as unknown as typeof fetch;
+    globalThis.fetch = (async (url: string | URL | Request, options?: RequestInit) => {
+      if (String(url).endsWith("/portrait-crop")) {
+        const { headRectangle, ...portraitCrop } = JSON.parse(String(options?.body));
+        return Response.json({ avatarUrl: "/portrait.png", portraitCrop, headPosition: { sourceUrl: portraitCrop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: headRectangle } });
+      }
+      return Response.json({ fullBodyReferenceUrl: "/completed.png", avatarUrl: "/portrait.png", portraitCrop: { sourceUrl: "/completed.png", x: 0.3, y: 0.1, width: 0.4, height: 0.3 }, cropWarning: null }); }) as unknown as typeof fetch;
     const submissions: AgentProfileWriteParams[] = [];
     const view = await ready(async (params) => { submissions.push(params); });
     fireEvent.click(view.getByRole("button", { name: "Generate full-body reference" }));
+    await confirmHeadInEditor(view);
     await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
     expect(submissions).toHaveLength(0);
     fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
@@ -335,3 +359,15 @@ describe("atomic character draft generation", () => {
     expect(calls).toBe(0);
   });
 });
+
+async function confirmHeadInEditor(view: RenderResult) {
+  await waitFor(() => expect(Boolean(view.getByRole("button", { name: "Confirm head and portrait" }))).toBe(true));
+  expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true);
+  const source = view.getByAltText(/full image$/);
+  Object.defineProperty(source, "naturalWidth", { value: 1000 });
+  Object.defineProperty(source, "naturalHeight", { value: 1500 });
+  fireEvent.load(source);
+  fireEvent.input(view.getByRole("slider", { name: "Head vertical position" }), { target: { value: "0.12" } });
+  fireEvent.click(view.getByRole("button", { name: "Confirm head and portrait" }));
+  await waitFor(() => expect(view.container.querySelector("dialog") === null).toBe(true));
+}

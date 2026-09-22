@@ -1,3 +1,5 @@
+import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
+import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
 import { ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -71,6 +73,7 @@ const CREATE_AGENT_FIELDS = new Set([
   "performanceInstructions",
   "visualDesign",
   "portraitCrop",
+  "headPosition",
   "submissionId",
   "expectedContentRevisionId",
 ]);
@@ -88,6 +91,7 @@ const UPDATE_AGENT_FIELDS = new Set([
   "performanceInstructions",
   "visualDesign",
   "portraitCrop",
+  "headPosition",
   "submissionId",
   "expectedContentRevisionId",
   "sourceReviewId",
@@ -176,6 +180,7 @@ export interface CreateAgentProfileMutationInput {
   performanceInstructions?: unknown;
   visualDesign?: unknown;
   portraitCrop?: unknown;
+  headPosition?: unknown;
   submissionId?: unknown;
   expectedContentRevisionId?: unknown;
   creationRequestId?: unknown;
@@ -193,6 +198,7 @@ export interface UpdateAgentProfileMutationInput {
   performanceInstructions?: unknown;
   visualDesign?: unknown;
   portraitCrop?: unknown;
+  headPosition?: unknown;
   submissionId?: unknown;
   expectedContentRevisionId?: unknown;
   sourceReviewId?: unknown;
@@ -262,6 +268,7 @@ export interface AgentSummary {
   gender: AgentGender | null;
   avatarUrl: string | null;
   fullBodyReferenceUrl: string | null;
+  headPosition: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   performanceInstructions: string | null;
   stats: AgentStatsSummary;
   rating: AccountRatingSummary;
@@ -408,8 +415,12 @@ export async function searchOwnedAgents(
   };
 }
 
-function contentMetadata(input: { visualDesign?: unknown; portraitCrop?: unknown }) {
+function contentMetadata(input: { visualDesign?: unknown; portraitCrop?: unknown; headPosition?: unknown }) {
   const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {};
+  if (input.headPosition !== undefined) {
+    try { updates.headPosition = input.headPosition === null ? null : parseCharacterHeadPosition(input.headPosition); }
+    catch (error) { throw new AgentProfileManagementError("invalid_agent_input", (error as Error).message, 400); }
+  }
   if (input.visualDesign !== undefined) updates.visualDesign = optionalStringField(input.visualDesign, "visualDesign", 8000);
   if (input.portraitCrop !== undefined) {
     if (input.portraitCrop === null) updates.portraitCrop = null;
@@ -552,6 +563,7 @@ export async function createOwnedAgentProfile(
   }
   await assertAvailableProfileName(db, values.name);
   const contentAssets = await prepareContentAssets({ avatarUrl: values.avatarUrl ?? null, fullBodyReferenceUrl: values.fullBodyReferenceUrl ?? null, portraitCrop: values.portraitCrop ?? null });
+  values.headPosition = await confirmProfileHead(values, null, context.userId, contentAssets);
   try {
     return await db.transaction(async (tx) => {
       const created = await createAgentProfileInTransaction(tx, values);
@@ -774,6 +786,7 @@ export async function updateOwnedAgentProfileInLockedTransaction(
 ): Promise<AgentProfileMutationRead> {
   const { existing, lockedGames, candidateGames } = input.locked;
   const updates = prepareAgentProfileUpdates(input.context, input.input, existing.avatarUrl);
+  updates.headPosition = await confirmProfileHead({ ...existing, ...updates }, existing, input.context.userId, input.context.contentAssets);
   const contentUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key, value]) => existing[key as keyof AgentProfileRow] !== value),
   ) as Partial<typeof schema.agentProfiles.$inferInsert>;
@@ -946,6 +959,7 @@ function mutableAgentProfileChanged(left: AgentProfileRow, right: AgentProfileRo
     || left.fullBodyReferenceUrl !== right.fullBodyReferenceUrl
     || left.performanceInstructions !== right.performanceInstructions
     || left.visualDesign !== right.visualDesign
+    || sha256StableJson(left.headPosition) !== sha256StableJson(right.headPosition)
     || sha256StableJson(left.portraitCrop) !== sha256StableJson(right.portraitCrop);
 }
 
@@ -1366,6 +1380,7 @@ function serializeAgent(
     gender: profile.gender,
     avatarUrl: profile.avatarUrl,
     fullBodyReferenceUrl: profile.fullBodyReferenceUrl,
+    headPosition: profile.headPosition,
     performanceInstructions: profile.performanceInstructions,
     stats: {
       gamesPlayed: profile.gamesPlayed,

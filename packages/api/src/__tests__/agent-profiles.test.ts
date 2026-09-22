@@ -1,4 +1,4 @@
-import { contentImageFixture } from "./content-image-fixture.js";
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 /**
  * Agent Profile REST API endpoint tests.
  *
@@ -165,6 +165,7 @@ describe("Agent Profile API", () => {
     const create = await app.request("/api/agent-profiles", jsonReq({
       name: "Visual Maris", personality: "A patient mediator.",
       fullBodyReferenceUrl: "/api/uploads/local?key=pfp%2Fmaris-full.png",
+      headPosition: await headPositionFixture("/api/uploads/local?key=pfp%2Fmaris-full.png"),
       performanceInstructions: "Upright posture, quiet delivery, deliberate open-handed gestures.",
     }, tokenA));
     expect(create.status).toBe(201);

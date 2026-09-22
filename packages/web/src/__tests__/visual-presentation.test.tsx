@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, within } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
@@ -33,13 +33,17 @@ const beat: VisualPresentationBeat = { kind: "scene", sceneId: "scene-1", roomId
 test("pinning changes the room but does not restart expired speech", () => {
   const view = render(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={1000} />);
   expect(view.getAllByText(speech.text).length).toBeGreaterThan(0);
+  const firstRoom = view.getByRole("region", { name: "Current room" });
   fireEvent.click(view.getByRole("button", { name: "Kitchen corner" }));
-  expect(view.queryByText(speech.text)).toBeNull();
+  const secondRoom = view.getByRole("region", { name: "Current room" });
+  expect(secondRoom === firstRoom).toBe(false);
+  expect(firstRoom.parentElement?.getAttribute("aria-hidden")).toBe("true");
+  expect(within(secondRoom).queryByText(speech.text) === null).toBe(true);
   expect(view.getByRole("img").getAttribute("src")).toBe("/scene-2.png");
   view.rerender(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={visualSpeechDurationMs(speech.text)} />);
   fireEvent.click(view.getByRole("button", { name: "Follow speaker" }));
   expect(view.getByRole("img").getAttribute("src")).toBe("/scene-1.png");
-  expect(view.queryByText(speech.text)).toBeNull();
+  expect(within(view.getByRole("region", { name: "Current room" })).queryByText(speech.text) === null).toBe(true);
 });
 
 test("new-scene dialogue never appears on a retained image during preparation", () => {
@@ -109,7 +113,7 @@ test("fullscreen forces follow speaker and restores the pinned room on exit", ()
   expect(view.getByText(speech.text)).not.toBeNull();
   view.rerender(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={1000} />);
   expect(view.getByRole("img").getAttribute("src")).toBe("/scene-2.png");
-  expect(view.queryByText(speech.text)).toBeNull();
+  expect(within(view.getByRole("region", { name: "Current room" })).queryByText(speech.text) === null).toBe(true);
 });
 
 

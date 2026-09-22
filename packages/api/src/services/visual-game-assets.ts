@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { validHeadRectangle } from "@influence/engine/character-portrait";
 import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
 import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
@@ -49,7 +51,7 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
       const persona = JSON.parse(player.persona) as Record<string, unknown>;
       const string = (key: string) => typeof persona[key] === "string" ? persona[key] : null;
       return { id: player.id, name: string("name") ?? player.id, personaKey: string("personaKey") ?? "",
-        avatarUrl: string("avatarUrl"), fullBodyReferenceUrl: string("fullBodyReferenceUrl"), performanceInstructions: string("performanceInstructions") ?? "" };
+        headPosition: persona.headPosition as FrozenVisualProfile["headPosition"], avatarUrl: string("avatarUrl"), fullBodyReferenceUrl: string("fullBodyReferenceUrl"), performanceInstructions: string("performanceInstructions") ?? "" };
     });
     await write((tx) => tx.insert(schema.visualGameAssets).values({ gameId, profiles }).onConflictDoNothing());
     [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
@@ -73,7 +75,10 @@ export async function prepareVisualGameAssets(db: DrizzleDB, gameId: string, ass
             request: { width: 1024, height: 1536, references: [await readVisualArtifact(db, gameId, portraitId)],
               prompt: `Create a photorealistic full-body character reference of this exact contestant, ${profile.name}. Preserve their face, hair and distinguishing features. Neutral standing pose, entire body and shoes visible, simple contemporary clothing with a distinct reproducible silhouette and color palette, plain warm grey background. No labels or text. Performance direction: ${profile.performanceInstructions}` } }))?.image;
       const reference = preparedReference ?? await readVisualArtifact(db, gameId, portraitId);
-      assets.cast.push({ id: profile.id, name: profile.name, referenceArtifactId: await storeVisualArtifact(db, gameId, reference), portraitFallback: !preparedReference, performanceInstructions: profile.performanceInstructions });
+      const head = profile.headPosition;
+      const headRectangle = preparedReference && head?.confirmation && head.sourceUrl === profile.fullBodyReferenceUrl
+        && createHash("sha256").update(preparedReference).digest("hex") === head.sourceHash && validHeadRectangle(head.rect) ? head.rect : undefined;
+      assets.cast.push({ headRectangle, id: profile.id, name: profile.name, referenceArtifactId: await storeVisualArtifact(db, gameId, reference), portraitFallback: !preparedReference, performanceInstructions: profile.performanceInstructions });
       await save();
     }
     for (const room of Object.values(VISUAL_ROOMS)) {

@@ -291,3 +291,18 @@ test("games without generated scenes return full-body art from the game-start pr
   expect(payload).toMatchObject({ enabled: false, fullBodies: { "frozen-player": "/immutable-body.png" }, scenes: [] });
   expect(calls).toBe(0);
 });
+
+test("head positions follow the frozen image, and are dropped when a different prepared artifact is selected", async () => {
+  const rect = { x: .35, y: .06, width: .2, height: .15 };
+  await db.insert(schema.gamePlayers).values({ id: "head-player", gameId: "visual-ops", persona: JSON.stringify({ fullBodyReferenceUrl: "/frozen-body.png", headPosition: {
+    sourceUrl: "/frozen-body.png", sourceHash: "a".repeat(64), sourceWidth: 1024, sourceHeight: 1536, rect, confirmation: { userId: "owner", at: "2026-09-22" },
+  } }), agentConfig: "{}" });
+  const app = createVisualRoutes(db);
+  expect((await (await app.request("/api/games/visual-ops/visual")).json() as { fullBodyHeads: unknown }).fullBodyHeads).toEqual({ "head-player": rect });
+  const body = await storeVisualArtifact(db, "visual-ops", png);
+  await db.insert(schema.visualGameAssets).values({ gameId: "visual-ops", profiles: [], cast: [{ id: "head-player", name: "Head", referenceArtifactId: body, performanceInstructions: "" }] }).onConflictDoUpdate({ target: schema.visualGameAssets.gameId, set: { cast: [{ id: "head-player", name: "Head", referenceArtifactId: body, performanceInstructions: "" }] } });
+  const result = await (await app.request("/api/games/visual-ops/visual")).json() as { fullBodies: Record<string, string>; fullBodyHeads: unknown };
+  expect(result.fullBodies["head-player"]).toContain(body);
+  expect(result.fullBodyHeads).toEqual({});
+  expect(JSON.stringify(result)).not.toContain("confirmation");
+});

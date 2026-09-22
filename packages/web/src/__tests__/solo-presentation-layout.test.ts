@@ -27,3 +27,21 @@ test("static portrait fallback puts speech below the actual portrait instead of 
   expect(bubble.top).toBe(image.top + image.height + 16);
   expect(bubble.height).toBeGreaterThan(110);
 });
+
+test("confirmed edge head controls framing and speech on a narrow screen", () => {
+  const head = { x: .8, y: .12, width: .15, height: .12 };
+  const { image, bubble, tailLeft } = layoutSoloPresentation(390, 844, 1024, 1536, true, 140, 220, head);
+  const headX = image.left + image.width * (head.x + head.width / 2);
+  expect(headX).toBeGreaterThan(0);
+  expect(headX).toBeLessThan(390);
+  expect(bubble.top).toBeCloseTo(844 * .24 + 16);
+  expect(bubble.left + tailLeft).toBeCloseTo(headX);
+});
+
+test.each([.65, .85])("low confirmed heads put speech above the face and controls: %s", y => {
+  const head = { x: .4, y, width: .15, height: .12 };
+  const { image, bubble, above } = layoutSoloPresentation(844, 390, 1024, 1536, true, 140, 220, head);
+  expect(above).toBe(true);
+  expect(bubble.top + bubble.height).toBeLessThan(image.height * head.y);
+  expect(bubble.top + bubble.height).toBeLessThan(390 - 140);
+});

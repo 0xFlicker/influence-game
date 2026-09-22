@@ -624,6 +624,13 @@
       "when": 1790010635809,
       "tag": "0088_visual_media_repairs",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790010635810,
+      "tag": "0089_character_head_position",
+      "breakpoints": true
     }
   ]
 }

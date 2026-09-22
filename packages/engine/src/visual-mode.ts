@@ -132,6 +132,7 @@ export interface FrozenVisualProfile {
   personaKey: string;
   avatarUrl: string | null;
   fullBodyReferenceUrl: string | null;
+  headPosition?: import("./character-portrait").CharacterHeadPosition | null;
   performanceInstructions: string;
 }
 

@@ -45,6 +45,8 @@ describe("complete character image drafts", () => {
     const args = input();
     const result = await generateVisualProfileReference(db, userId, args, "http://localhost");
     expect(result.cropWarning).toBeNull();
+    expect(result.headSuggestion).toMatchObject({ sourceUrl: result.fullBodyReferenceUrl, sourceWidth: 1024, sourceHeight: 1536, rect: { x: .4, y: .07, width: .2, height: .15 } });
+    expect(result.headSuggestion?.confirmation).toBeUndefined();
     expect(result.portraitCrop?.sourceUrl).toBe(result.fullBodyReferenceUrl);
     expect(calls.filter((url) => url.includes("/images/"))).toHaveLength(1);
     const portrait = await readVisualProfileImage(result.avatarUrl!, { name: "", personaKey: "" });
@@ -61,9 +63,11 @@ describe("complete character image drafts", () => {
     const created = await createOwnedAgentProfile(db, context, { name: args.name, personaKey: args.personaKey, personality: "Observant", gender: "non-binary", creationRequestId: randomUUID() });
     const saved = await updateOwnedAgentProfile(db, context, created.profile.id, {
       submissionId: randomUUID(), expectedContentRevisionId: created.profile.contentRevisionId,
-      fullBodyReferenceUrl: result.fullBodyReferenceUrl, avatarUrl: result.avatarUrl, portraitCrop: result.portraitCrop,
+      headPosition: result.headSuggestion, fullBodyReferenceUrl: result.fullBodyReferenceUrl, avatarUrl: result.avatarUrl, portraitCrop: result.portraitCrop,
       visualDesign: args.visualDesign, performanceInstructions: args.performanceInstructions,
     });
+    expect(saved.profile.headPosition?.confirmation?.userId).toBe(userId);
+    expect(saved.profile.headPosition?.sourceHash).toBe(result.headSuggestion?.sourceHash);
     expect(saved.profile.avatarUrl).toBe(result.avatarUrl);
     expect(saved.profile.fullBodyReferenceUrl).toBe(result.fullBodyReferenceUrl);
     expect(saved.receipt.moderationRecordId).toBeTruthy();
@@ -71,6 +75,7 @@ describe("complete character image drafts", () => {
       submissionId: randomUUID(), expectedContentRevisionId: saved.profile.contentRevisionId,
       avatarUrl: manual.avatarUrl, portraitCrop: manual.portraitCrop,
     });
+    expect(recropped.profile.headPosition).toEqual(saved.profile.headPosition);
     expect(recropped.profile.portraitCrop).toEqual(manual.portraitCrop);
     expect(calls).toHaveLength(2);
   });
@@ -102,5 +107,17 @@ describe("complete character image drafts", () => {
     await generateVisualProfileReference(db, userId, args);
     await expect(generateVisualProfileReference(db, userId, input())).rejects.toThrow("quota");
     expect(calls).toHaveLength(2);
+  });
+  test("manual confirmation uses oriented source dimensions and rejects portraits that cut through the head", async () => {
+    const { writeLocalUpload } = await import("../lib/storage.js");
+    const bytes = await sharp({ create: { width: 600, height: 400, channels: 3, background: "red" } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+    await writeLocalUpload("pfp/oriented.jpg", "image/jpeg", new Uint8Array(bytes).buffer);
+    const sourceUrl = "/api/uploads/local?key=pfp%2Foriented.jpg";
+    const crop = { sourceUrl, x: 0, y: 0, width: .6, height: .4 };
+    const head = { x: .1, y: .1, width: .2, height: .2 };
+    const confirmed = await exportCharacterPortrait(crop, "http://localhost", head);
+    expect(confirmed.headPosition).toMatchObject({ sourceWidth: 400, sourceHeight: 600, rect: head });
+    await expect(exportCharacterPortrait({ ...crop, x: .2 }, "http://localhost", head)).rejects.toThrow("entire head");
+    expect(calls).toHaveLength(0);
   });
 });
