@@ -19,6 +19,8 @@ export interface AgentMutationWaitingSeatReference {
 }
 
 export interface AgentMutationReceipt {
+  contentRevisionId?: string;
+  moderationRecordId?: string;
   schemaVersion: typeof AGENT_MUTATION_RECEIPT_SCHEMA_VERSION;
   operation: "created" | "updated";
   agent: {

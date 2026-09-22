@@ -64,6 +64,14 @@ describe("Agent creation response-loss recovery", () => {
       remote({ name: "Remote Rename", strategyStyle: local.strategyStyle }),
     );
 
-    expect(update).toEqual({ strategyStyle: local.strategyStyle });
+    expect(update).toEqual({});
   });
+  test("recovers crop and visual design together and detects conflicting crop edits", () => {
+    const portraitCrop = { sourceUrl: "/source.png", x: 0, y: 0, width: 0.5, height: 0.5 };
+    const local = { ...baseline, visualDesign: "Green coat", portraitCrop };
+    expect(buildRecoveredUpdate(baseline, local, remote())).toEqual({ visualDesign: "Green coat", portraitCrop });
+    expect(buildRecoveredUpdate(baseline, local, remote({ visualDesign: local.visualDesign, portraitCrop }))).toEqual({});
+    expect(() => buildRecoveredUpdate(baseline, local, remote({ portraitCrop: { ...portraitCrop, x: 0.2 } }))).toThrow("portraitCrop changed");
+  });
+
 });

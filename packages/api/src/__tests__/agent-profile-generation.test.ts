@@ -37,16 +37,10 @@ describe("generated agent gender", () => {
     }, "female")).toBe("female");
   });
 
-  test("recovers gender from pronouns when a provider ignores the structured field", () => {
-    expect(resolveGeneratedAgentGender({
-      personality: "She speaks with a measured cadence and trusts her instincts.",
-      strategyStyle: "She builds durable coalitions.",
-    })).toBe("female");
-    expect(resolveGeneratedAgentGender({
-      backstory: "He learned diplomacy from his grandfather.",
-      personality: "His humor disarms rivals.",
-    })).toBe("male");
+  test("never infers missing structured gender from prose", () => {
+    expect(() => resolveGeneratedAgentGender({ personality: "She is decisive." })).toThrow("Structured gender");
   });
+
 });
 
 describe("generated agent names", () => {
@@ -90,5 +84,16 @@ describe("generated agent names", () => {
       personality: "Nova Hartwell has a warm but calculating presence.",
       strategyStyle: "Nova Hartwell builds alliances before making a move.",
     });
+  });
+});
+
+import { decodeCharacterProfile } from "../services/character-profile-contract.js";
+const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket" } as const;
+describe("complete character contract", () => {
+  test("requires performance and visual design alongside the original fields", () => {
+    expect(decodeCharacterProfile(JSON.stringify(character))).toEqual(character);
+  });
+  test.each(["not json", "{}", "```json\n{}\n```", 'Here is {"name":"Mira"}', JSON.stringify({ ...character, extra: true }), JSON.stringify({ ...character, visualDesign: undefined }), JSON.stringify({ ...character, performanceInstructions: "" }), JSON.stringify({ ...character, gender: "unknown" })])("rejects malformed or incomplete output: %s", (output) => {
+    expect(() => decodeCharacterProfile(output)).toThrow();
   });
 });

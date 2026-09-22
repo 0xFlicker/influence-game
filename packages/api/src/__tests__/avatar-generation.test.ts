@@ -1,3 +1,4 @@
+import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -5,7 +6,6 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
-  attachOwnedDraftAvatarCompletion,
   buildAvatarPrompt,
   completeAvatarGenerationRequest,
   requestAvatarCompletion,
@@ -83,7 +83,7 @@ describe("avatar generation service", () => {
     expect(changes[0]!.source).toBe("generation_skipped");
   });
 
-  test("generates, stores, and assigns a durable local avatar URL", async () => {
+  test("generates and stores a durable draft URL without changing the saved profile", async () => {
     process.env.API_KAT_IMGNAI_KEY = "kat-key";
     process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
     const calls: string[] = [];
@@ -142,9 +142,7 @@ describe("avatar generation service", () => {
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, AGENT_ID));
-    expect(agent!.avatarUrl).toBe(completion.avatarUrl ?? null);
-    expect(agent!.avatarUrl).not.toContain("assets.example");
-    expect(agent!.avatarUrl).not.toContain("must-stay-private");
+    expect(agent!.avatarUrl).toBeNull();
 
     const [generation] = await db.select().from(schema.avatarGenerationRequests);
     expect(generation!.status).toBe("completed");
@@ -152,9 +150,7 @@ describe("avatar generation service", () => {
     expect(JSON.stringify(generation!.safeMetadata)).not.toContain("assets.example");
     expect(JSON.stringify(generation!.safeMetadata)).not.toContain("must-stay-private");
 
-    const [change] = await db.select().from(schema.avatarChangeEvents);
-    expect(change!.source).toBe("web_generated_completion");
-    expect(change!.newAvatarUrl).toBe(completion.avatarUrl ?? null);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
   test("generates a durable draft portrait before an agent profile exists", async () => {
@@ -210,7 +206,7 @@ describe("avatar generation service", () => {
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
-  test("applies a draft portrait when save attaches it during provider completion", async () => {
+  test("rejects pending attachment and keeps late completion as a draft", async () => {
     process.env.API_KAT_IMGNAI_KEY = "kat-key";
     process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
     let signalAssetDownload!: () => void;
@@ -257,26 +253,15 @@ describe("avatar generation service", () => {
     });
     await assetDownloadStarted;
 
-    const attached = await db.transaction((tx) => attachOwnedDraftAvatarCompletion(tx, {
-      userId: USER_ID,
-      generationRequestId: requested.generationRequestId!,
-      agentProfileId: AGENT_ID,
-    }));
-    expect(attached).toMatchObject({ attached: true, completion: { status: "processing" } });
+    await expect(updateOwnedAgentProfile(db, { userId: USER_ID, avatarGenerationRequestId: requested.generationRequestId! }, AGENT_ID, { personality: "Unsaved pending replacement" })).rejects.toThrow("Select the completed portrait");
     releaseAssetDownload();
     const completed = await completionPromise;
 
     expect(completed.status).toBe("completed");
     const [agent] = await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, AGENT_ID));
-    expect(agent?.avatarUrl).toBe(completed.avatarUrl ?? null);
-    const changes = await db.select().from(schema.avatarChangeEvents);
-    expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({
-      agentProfileId: AGENT_ID,
-      generationRequestId: requested.generationRequestId,
-      source: "web_generated_completion",
-    });
+    expect(agent?.avatarUrl).toBeNull();
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
   test("serializes concurrent draft quota reservations per user", async () => {
@@ -347,20 +332,12 @@ describe("avatar generation service", () => {
       processImmediately: true,
     });
 
-    expect(completion.status).toBe("skipped");
-    expect(completion.avatarUrl).toBe(manualAvatarUrl);
-    const [agent] = await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, AGENT_ID));
+    expect(completion.status).toBe("completed");
+    const [agent] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, AGENT_ID));
     expect(agent!.avatarUrl).toBe(manualAvatarUrl);
-
     const [generation] = await db.select().from(schema.avatarGenerationRequests);
-    expect(generation!.status).toBe("skipped");
-    expect(generation!.failureCode).toBe("avatar_already_provided");
-    const [change] = await db.select().from(schema.avatarChangeEvents);
-    expect(change!.source).toBe("generation_skipped");
-    expect(change!.newAvatarUrl).toBe(manualAvatarUrl);
+    expect(generation!.status).toBe("completed");
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
   test("fails safely when Katana returns a non-image asset", async () => {

@@ -403,6 +403,9 @@ export const agentProfiles = pgTable("agent_profiles", {
   avatarUrl: text("avatar_url"),
   fullBodyReferenceUrl: text("full_body_reference_url"),
   performanceInstructions: text("performance_instructions"),
+  visualDesign: text("visual_design"),
+  portraitCrop: jsonb("portrait_crop").$type<{ sourceUrl: string; x: number; y: number; width: number; height: number }>(),
+  contentRevisionId: text("content_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
   gamesPlayed: integer("games_played").notNull().default(0),
   gamesWon: integer("games_won").notNull().default(0),
   createdAt: text("created_at")
@@ -3544,3 +3547,35 @@ export const visualRoomLibrary = pgTable("visual_room_library", {
   version: integer("version").notNull(),
   image: visualBytes("image").notNull(),
 }, (table) => [primaryKey({ columns: [table.roomId, table.version] })]);
+
+/** Complete saved character content, separate from competitive rating revisions. */
+export const agentContentRevisions = pgTable("agent_content_revisions", {
+  id: text("id").primaryKey(),
+  agentProfileId: text("agent_profile_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
+  competitiveRevisionId: text("competitive_revision_id"),
+  fingerprint: text("fingerprint").notNull(),
+  snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [index("agent_content_revisions_profile_idx").on(table.agentProfileId, table.createdAt)]);
+export const agentContentAssets = pgTable("agent_content_assets", {
+  hash: text("hash").primaryKey(),
+  bytes: visualBytes("bytes").notNull(),
+});
+export const agentModerationReviews = pgTable("agent_moderation_reviews", {
+  id: text("id").primaryKey(),
+  contentRevisionId: text("content_revision_id").notNull().references(() => agentContentRevisions.id),
+  status: text("status").notNull().default("pending"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_moderation_revision_unique").on(table.contentRevisionId),
+  index("agent_moderation_pending_idx").on(table.status, table.createdAt),
+]);
+/** Exact mutation receipt, including unchanged submissions, for response-loss recovery. */
+export const agentContentSubmissions = pgTable("agent_content_submissions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  agentProfileId: text("agent_profile_id").notNull(),
+  requestHash: text("request_hash").notNull(),
+  result: jsonb("result").notNull().$type<Record<string, unknown>>(),
+});

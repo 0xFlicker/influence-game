@@ -603,6 +603,20 @@
       "when": 1790010635806,
       "tag": "0085_visual_repair_controls",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790010635807,
+      "tag": "0086_agent_content_submissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790010635808,
+      "tag": "0087_agent_content_immutability",
+      "breakpoints": true
     }
   ]
 }

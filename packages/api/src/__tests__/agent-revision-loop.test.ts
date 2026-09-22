@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -67,6 +68,8 @@ describe("agent revision update loop", () => {
       strategyHints: "Keep precise social receipts and force decisive endgames.",
     });
     expect(result.receipt).toEqual({
+      contentRevisionId: result.profile.contentRevisionId!,
+      moderationRecordId: expect.any(String),
       schemaVersion: 1,
       operation: "updated",
       agent: { agentProfileId: profile.id, identityDisposition: "preserved" },
@@ -163,7 +166,7 @@ describe("agent revision update loop", () => {
       userId: OWNER_ID,
       avatarChangeSource: "web_manual_update",
     }, profile.id, {
-      avatarUrl: "https://example.test/avatar.png",
+      avatarUrl: await contentImageFixture("pfp/avatar.png"),
     });
 
     const seatAfter = (await db.select().from(schema.gamePlayers))[0]!;
@@ -179,7 +182,7 @@ describe("agent revision update loop", () => {
       effectiveRevisionId: seatBefore.agentRevisionId,
     });
     expect({ ...seatAfter, persona: seatBefore.persona }).toEqual(seatBefore);
-    expect(JSON.parse(seatAfter.persona).avatarUrl).toBe("https://example.test/avatar.png");
+    expect(JSON.parse(seatAfter.persona).avatarUrl).toContain("key=pfp%2Favatar.png");
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
   });
 
@@ -357,7 +360,7 @@ describe("agent revision update loop", () => {
     }, profile.id, {
       name: " conflict name ",
       personality: "This must roll back too.",
-      avatarUrl: "https://example.test/should-not-commit.png",
+      avatarUrl: await contentImageFixture("pfp/should-not-commit.png"),
     })).rejects.toMatchObject({
       code: "waiting_roster_name_conflict",
       statusCode: 409,
@@ -408,7 +411,7 @@ describe("agent revision update loop", () => {
       avatarGenerationRequestId: "missing-generation-request",
     }, profile.id, {
       personality: "This edit must vanish with the failed audit.",
-      avatarUrl: "https://example.test/atomic.png",
+      avatarUrl: await contentImageFixture("pfp/atomic.png"),
     })).rejects.toBeTruthy();
 
     expect((await db.select().from(schema.agentProfiles)
@@ -418,33 +421,19 @@ describe("agent revision update loop", () => {
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
-  test("commits the update and reports a warning when external avatar generation fails", async () => {
+  test("commits the selected profile without attempting post-save avatar generation", async () => {
     const profile = await createAgent("Avatar Warning");
     const result = await updateOwnedAgent(db, {
       userId: OWNER_ID,
-      avatarCompletion: {
-        triggerSource: "mcp_create_default",
-        request: async () => ({
-          status: "failed",
-          failureCode: "provider_unavailable",
-          failureStage: "provider_submit",
-          retryable: true,
-        }),
-      },
     }, {
       agentId: profile.id,
       personalityPrompt: "The behavior update still commits.",
     });
 
     expect(result.agent.personalityPrompt).toBe("The behavior update still commits.");
-    expect(result.receipt.warnings).toEqual(["avatar_generation_failed"]);
-    expect(result.receipt.avatarCompletion).toEqual({
-      status: "failed",
-      failureCode: "provider_unavailable",
-      failureStage: "provider_submit",
-      retryable: true,
-    });
-    expect(result.avatarCompletion).toEqual(result.receipt.avatarCompletion);
+    expect(result.receipt.warnings).toEqual([]);
+    expect(result.avatarCompletion).toBeUndefined();
+    expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
   });
 
   test("bounds waiting-game receipt details without losing exact counts", async () => {

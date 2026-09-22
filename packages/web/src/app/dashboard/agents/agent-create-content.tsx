@@ -71,6 +71,8 @@ export function AgentCreateContent({
       if (Object.keys(update).length > 0) {
         agent = await updateAgent(agent.id, {
           ...update,
+          submissionId: params.submissionId,
+          expectedContentRevisionId: agent.contentRevisionId ?? null,
           ...(agent.profileRevisionId ? { expectedRevisionId: agent.profileRevisionId } : {}),
         });
       }
@@ -182,25 +184,24 @@ export function buildRecoveredUpdate(
   remote: SavedAgent,
 ): UpdateAgentParams {
   const update: UpdateAgentParams = {};
-  const fields = ["name", "personality", "backstory", "strategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl"] as const;
+  const fields = ["name", "personality", "backstory", "strategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl", "visualDesign", "portraitCrop"] as const;
   for (const field of fields) {
     const baseValue = comparableValue(baseline[field]);
     const localValue = comparableValue(local[field]);
     if (localValue === baseValue) continue;
     const remoteValue = comparableValue(remote[field]);
-    if (remoteValue !== baseValue && remoteValue !== localValue) {
+    if (remoteValue === localValue) continue;
+    if (remoteValue !== baseValue) {
       throw new Error(`The saved Agent's ${fieldLabel(field)} changed in another session. Open the Agent editor to merge those changes safely.`);
     }
     Object.assign(update, { [field]: local[field] });
-  }
-  if (local.avatarGenerationRequestId !== baseline.avatarGenerationRequestId) {
-    update.avatarGenerationRequestId = local.avatarGenerationRequestId;
   }
   return update;
 }
 
 function comparableValue(value: unknown): string | null {
-  return value === undefined || value === null || value === "" ? null : String(value);
+  if (value === undefined || value === null || value === "") return null;
+  return typeof value === "object" ? JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))) : String(value);
 }
 
 function fieldLabel(field: string): string {

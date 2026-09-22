@@ -1,10 +1,11 @@
+import { checkAvatarGenerationQuota } from "./avatar-generation.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import { visualReceiptCostMicrousd } from "./visual-pricing.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, getTableColumns } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { stableJson } from "./stable-hash.js";
 import { generateVisualImage, type VisualImageJournal, type VisualImageReceipt, type VisualImageRequest } from "./visual-image-provider.js";
@@ -28,7 +29,7 @@ export async function reserveVisualRender(db: DrizzleDB, gameId: string, operati
   return reserveVisualOperation(db, gameId, operationKey, inputHash, undefined, { ...request, references: request.references.map(hash) }, sceneId);
 }
 
-async function reserveVisualOperation(db: DrizzleDB, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string): Promise<Operation> {
+async function reserveVisualOperation(db: Pick<DrizzleDB, "select" | "insert">, gameId: string | null, operationKey: string, inputHash: string, userId?: string, request?: Record<string, unknown>, sceneId?: string): Promise<Operation> {
   if (!operationKey.trim()) throw new Error("A visual operation needs a stable operation key");
   await db.insert(operations).values({ id: randomUUID(), gameId, userId, operationKey, inputHash, request, sceneId }).onConflictDoNothing();
   const [operation] = await db.select().from(operations).where(and(gameId ? eq(operations.gameId, gameId) : eq(operations.userId, userId!), eq(operations.operationKey, operationKey)));
@@ -154,7 +155,7 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) 
 }
 
 /** Image and identity references are hashed into the same durable request boundary. */
-export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1]) {
+export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1] & { gameId: string }) {
   const composition = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:composition`, compositionOnly: true });
   let geometry;
   try { geometry = await runDurableLocalization(db, input); }
@@ -168,7 +169,7 @@ export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameter
 }
 
 async function runDurableLocalization(db: DrizzleDB, input: {
-  gameId: string; operationKey: string; scene: Uint8Array; sceneId?: string;
+  gameId: string | null; userId?: string; operationKey: string; scene: Uint8Array; sceneId?: string;
   references: readonly import("./visual-scene-localization.js").VisualReferenceImage[];
   apiKey: string; signal?: AbortSignal;
   beforeDispatch?: VisualBoundaryGuard;
@@ -178,7 +179,7 @@ async function runDurableLocalization(db: DrizzleDB, input: {
   const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
     references: input.references.map((reference) => ({ image: hash(reference.image), players: reference.players })),
   }));
-  const operation = await reserveVisualOperation(db, input.gameId, input.operationKey, inputHash, undefined, {
+  const operation = await reserveVisualOperation(db, input.gameId, input.operationKey, inputHash, input.userId, {
     task: VISUAL_LOCALIZATION_VERSION, compositionOnly: input.compositionOnly === true,
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
@@ -196,7 +197,15 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
   userId: string; requestId: string; request: VisualImageRequest;
 }) {
   const inputHash = hash(stableJson({ ...input.request, references: input.request.references.map(hash) }));
-  const operation = await reserveVisualOperation(db, null, `full-body:${input.requestId}`, inputHash, input.userId);
+  const operation = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
+    const [existing] = await tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`)));
+    if (!existing) {
+      const quota = await checkAvatarGenerationQuota(tx, input.userId, undefined, {});
+      if (!quota.ok) throw new Error(quota.message);
+    }
+    return reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId);
+  });
   const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
   if (completed?.image) return { operationId: operation.id, image: completed.image };
@@ -226,4 +235,11 @@ export async function renderVisualAssetBestEffort(db: DrizzleDB, input: Paramete
     }
     return null;
   }
+}
+
+/** A single-character head observation; shares durable receipts without scene/game authority. */
+export async function localizeOwnedVisualReference(db: DrizzleDB, input: { userId: string; requestId: string; scene: Uint8Array; apiKey: string }) {
+  return runDurableLocalization(db, { ...input, gameId: null, operationKey: `portrait-head:${VISUAL_LOCALIZATION_VERSION}:${input.requestId}`,
+    references: [{ image: input.scene, players: [{ id: "character", name: "Character" }] }],
+  });
 }

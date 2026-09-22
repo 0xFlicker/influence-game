@@ -397,3 +397,7 @@ The Visual Mode runtime hook requires a durable turn store. Provider-free covera
 `durable-game-runner.test.ts` also checks scene preparation before turn planning, including abort and preparation boundaries. `visual-scene-renderer.test.ts` uses mocked providers to check five-room preparation, source/destination-only updates after movement, and ownership loss before fallback. These checks make no paid provider calls and do not prove live visual quality.
 
 Durable-runner coverage now includes restart after a committed Mingle movement beat, Two Names initialization/completion replay, and preserved format pressure and revealed vote context across the split. `mingle-window-contract.test.ts` rejects malformed saved windows and inconsistent allocation histories. Local CLI simulations retain the same conversation and simultaneous movement rules without requiring the API's durable coordinator.
+
+### Character-authoring generation
+
+Agent editor refinement is a hosted authoring flow, separate from gameplay model selection. Its exact structured response now requires performance instructions and visual design alongside the profile fields. Existing artwork guides identity. Provider-free coverage lives in `agent-profile-generation.test.ts`, `character-image-generation.test.ts`, `character-portrait.test.ts` and `agent-form-draft-recovery.test.tsx`. See [character drafts](agent-content-submissions.md) for the one-full-body-image workflow, durable localization and editable pixel crops. No image provider is called by these required tests.

@@ -124,6 +124,7 @@ const AGENT_READ_TOOLS = [
 
 const AGENT_WRITE_TOOLS = [
   "generate_agent_visual_reference",
+  "crop_agent_portrait",
   "create_agent",
   "update_agent",
   "join_queue",

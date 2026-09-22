@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
@@ -262,7 +263,7 @@ describe("owner learning apply and resolution", () => {
       db,
       { userId: fixture.ownerUserId },
       fixture.agentProfileId,
-      { avatarUrl: "https://cdn.example/review-avatar.png", sourceReviewId: reviewId },
+      { avatarUrl: await contentImageFixture("pfp/review-avatar.png"), sourceReviewId: reviewId },
     )).rejects.toMatchObject({ code: "source_review_conflict" });
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
@@ -279,7 +280,7 @@ describe("owner learning apply and resolution", () => {
     await markReviewReady(db, reviewId);
 
     const presentation = await updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
-      avatarUrl: "https://cdn.example/learning-avatar.png",
+      avatarUrl: await contentImageFixture("pfp/learning-avatar.png"),
     });
     expect(presentation.profileRevision.outcome).toBe("preserved");
     expect((await db.select().from(schema.agentLearningReviews)

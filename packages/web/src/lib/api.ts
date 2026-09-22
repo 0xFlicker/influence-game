@@ -1969,6 +1969,9 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // ---------------------------------------------------------------------------
 
 export interface SavedAgent {
+  contentRevisionId?: string | null;
+  visualDesign?: string | null;
+  portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   id: string;
   name: string;
   backstory: string | null;
@@ -1989,6 +1992,8 @@ export interface SavedAgent {
 }
 
 export interface AgentMutationReceipt {
+  contentRevisionId?: string;
+  moderationRecordId?: string;
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -2021,6 +2026,10 @@ export interface AgentMutationReceipt {
 }
 
 export interface AgentProfileWriteParams {
+  submissionId?: string;
+  expectedContentRevisionId?: string | null;
+  visualDesign?: string | null;
+  portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   name: string;
   personality: string;
   backstory?: string;
@@ -2291,6 +2300,10 @@ export interface AvatarCompletion {
   reason?: string;
 }
 
+export interface CharacterImageDraft {
+  requestId: string; fullBodyReferenceUrl: string; width: number; height: number;
+  avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
+}
 export interface GeneratePersonalityParams {
   traits?: string;
   occupation?: string;
@@ -2303,12 +2316,18 @@ export interface GeneratePersonalityParams {
     backstory?: string;
     personality?: string;
     strategyStyle?: string;
+    performanceInstructions?: string;
+    visualDesign?: string;
+    avatarUrl?: string | null;
+    fullBodyReferenceUrl?: string | null;
     personaKey?: string;
     gender?: AgentGender;
   };
 }
 
 export interface GeneratePersonalityResult {
+  performanceInstructions: string;
+  visualDesign: string;
   name: string;
   backstory: string | null;
   personality: string;
@@ -2345,15 +2364,6 @@ export async function createAgent(
     method: "POST",
     body: JSON.stringify(params),
   });
-  if (typeof window !== "undefined" && agent.avatarCompletion) {
-    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
-      detail: {
-        agentId: agent.id,
-        agentName: agent.name,
-        completion: agent.avatarCompletion,
-      },
-    }));
-  }
   return agent;
 }
 
@@ -2365,15 +2375,6 @@ export async function updateAgent(
     method: "PATCH",
     body: JSON.stringify(params),
   });
-  if (typeof window !== "undefined" && agent.avatarCompletion) {
-    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
-      detail: {
-        agentId: agent.id,
-        agentName: agent.name,
-        completion: agent.avatarCompletion,
-      },
-    }));
-  }
   return agent;
 }
 
@@ -3715,6 +3716,7 @@ export interface UploadResult {
 }
 
 export async function uploadProfilePicture(file: File): Promise<UploadResult> {
+  const signal = AbortSignal.timeout(120_000);
   // Step 1: Get a presigned PUT URL from our API
   const { uploadUrl, publicUrl, key } = await apiFetch<{
     uploadUrl: string;
@@ -3723,6 +3725,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
   }>("/api/upload/pfp", {
     method: "POST",
     body: JSON.stringify({ contentType: file.type }),
+    signal,
   });
 
   // Step 2: PUT the file directly to object storage
@@ -3730,6 +3733,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
     method: "PUT",
     headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
     body: file,
+    signal,
   });
 
   if (!putRes.ok) {

@@ -84,3 +84,7 @@ The replay theater no longer branches on Visual Mode to render scrolling chat fe
 For historical reference, the removed theater branches are in `packages/web/src/app/games/[slug]/components/dramatic-replay-viewer.tsx` at commit `d2e11ad8548bba6c0329f6b52b1a8a64189cb9e4` (`git show <commit>:<path>`). They are not an alternate replay mode to restore.
 
 Visual admission checks every provider slot, including fallbacks. Katana GLM 5.2 is configured as text-only; the creation UI names incompatible slots before submission. Portrait playback does not require vision-capable models.
+
+## Character submissions
+
+Profile generation and uploads edit a current-tab draft. Final submission atomically saves the selected content and creates durable moderation evidence; pending generation never attaches images after saving. See [Character drafts and moderation evidence](agent-content-submissions.md) for timeouts, cancellation, content revisions, review receipts and operator inspection. Pending moderation does not gate visual games.

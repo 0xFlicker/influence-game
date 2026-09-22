@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -160,7 +161,7 @@ describe("public player profile", () => {
       },
       {
         name: "Zulu",
-        avatarUrl: "https://cdn.example.test/zulu.png",
+        avatarUrl: await contentImageFixture("pfp/zulu.png"),
         role: {
           key: "strategic",
           label: "Strategic",
@@ -342,7 +343,7 @@ async function seedPublicPlayerFixture(db: DrizzleDB) {
     backstory: "PRIVATE_BACKSTORY_SENTINEL",
     strategyStyle: "PRIVATE_STRATEGY_SENTINEL",
     personaKey: "strategic",
-    avatarUrl: "https://cdn.example.test/zulu.png",
+    avatarUrl: await contentImageFixture("pfp/zulu.png"),
   })).profile;
   await db.update(schema.agentProfiles)
     .set({ gamesPlayed: 9_999, gamesWon: 8_888 })

@@ -1,4 +1,7 @@
-import { generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import sharp from "sharp";
+import { characterProfileSchema, decodeCharacterProfile } from "../services/character-profile-contract.js";
+import { readVisualProfileImage } from "../services/visual-game-assets.js";
+import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 /**
  * Agent Profile REST API routes.
  *
@@ -42,9 +45,7 @@ import {
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
   resumeOwnedAttachedAvatarCompletions,
-  type AvatarCompletionRead,
 } from "../services/avatar-generation.js";
-import type { AgentMutationReceipt } from "../services/agent-mutation-receipt.js";
 import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
 import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
@@ -75,7 +76,9 @@ Respond with JSON only:
   "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
   "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
-  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice."
+  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
+  "performanceInstructions": "Specific posture, gestures, movement, mannerisms and vocal delivery for performing this character; at most 2000 characters.",
+  "visualDesign": "A coherent full-body visual design: adult appearance, face, hair, build, clothing, colors, footwear and distinguishing features. Simple reproducible contemporary styling. Preserve the identity of supplied reference artwork; at most 8000 characters."
 }`;
 }
 
@@ -85,6 +88,12 @@ Respond with JSON only:
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.post("/api/agent-profiles/portrait-crop", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/portrait-crop");
+    if (!body) return c.json({ error: "A portrait crop is required" }, 400);
+    try { return c.json(await exportCharacterPortrait(body as unknown as import("@influence/engine/character-portrait").PortraitCrop, new URL(c.req.url).origin)); }
+    catch (error) { return c.json({ error: error instanceof Error ? error.message : "Portrait export failed" }, 400); }
+  });
   app.post("/api/agent-profiles/visual-reference", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/visual-reference");
     if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
@@ -162,6 +171,10 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         strategyStyle?: string;
         personaKey?: string;
         gender?: AgentGender;
+        performanceInstructions?: string;
+        visualDesign?: string;
+        avatarUrl?: string | null;
+        fullBodyReferenceUrl?: string | null;
       };
     };
 
@@ -194,31 +207,24 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (requestedGender) userParts.push(`Required gender: ${requestedGender}. Do not change it.`);
 
     try {
+      const sourceUrl = existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl;
+      const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
       const response = await openai.chat.completions.create({
         model: llmConfig.modelId,
         max_completion_tokens: 5200,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userParts.join("\n\n") },
+          { role: "user", content: reference ? [
+            { type: "text", text: userParts.join("\n\n") + "\nPreserve this character's visible identity when refining visualDesign." },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${reference.toString("base64")}`, detail: "high" } },
+          ] : userParts.join("\n\n") },
         ],
         response_format: {
           type: "json_schema",
           json_schema: {
             name: "agent_profile_generation",
             strict: true,
-            schema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                name: { type: "string", maxLength: MAX_AGENT_DISPLAY_NAME_LENGTH },
-                backstory: { type: "string" },
-                personality: { type: "string" },
-                strategyStyle: { type: "string" },
-                personaKey: { type: "string" },
-                gender: { type: "string", enum: ["male", "female", "non-binary"] },
-              },
-              required: ["name", "backstory", "personality", "strategyStyle", "personaKey", "gender"],
-            },
+            schema: characterProfileSchema,
           },
         },
       });
@@ -228,31 +234,19 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         return c.json({ error: "AI generation returned empty response" }, 502);
       }
 
-      const generated = JSON.parse(content) as {
-        name?: string;
-        backstory?: string;
-        personality?: string;
-        strategyStyle?: string;
-        personaKey?: string;
-        gender?: unknown;
-      };
-
-      // Validate personaKey
-      const validatedPersonaKey =
-        isUserSelectableAgentArchetype(generated.personaKey)
-          ? generated.personaKey
-          : "strategic";
+      if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
+      const generated = decodeCharacterProfile(content);
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
       const generatedName = allocateGeneratedAgentName(
-        generated.name ?? name ?? "Unknown",
+        generated.name,
         new Set(existingNames.map((profile) => profile.name)),
       );
       const profile = updateGeneratedProfileNameReferences({
-        name: generated.name ?? name ?? "Unknown",
+        name: generated.name,
         backstory: generated.backstory ?? null,
-        personality: generated.personality ?? "A mysterious player.",
+        personality: generated.personality,
         strategyStyle: generated.strategyStyle ?? null,
       }, generatedName.name);
 
@@ -261,7 +255,9 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory: profile.backstory,
         personality: profile.personality,
         strategyStyle: profile.strategyStyle,
-        personaKey: validatedPersonaKey,
+        personaKey: generated.personaKey,
+        performanceInstructions: generated.performanceInstructions,
+        visualDesign: generated.visualDesign,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
       });
     } catch (err) {
@@ -304,45 +300,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         avatarUrl: body.avatarUrl,
         fullBodyReferenceUrl: body.fullBodyReferenceUrl,
         performanceInstructions: body.performanceInstructions,
+        visualDesign: body.visualDesign,
+        portraitCrop: body.portraitCrop,
+        submissionId: body.submissionId,
+        expectedContentRevisionId: body.expectedContentRevisionId,
         creationRequestId: body.creationRequestId,
       });
-      if (result.profile.avatarUrl || result.avatarCompletion) {
-        return c.json({
-          ...playerSafeAgentProfile(result.profile),
-          receipt: result.avatarCompletion
-            ? withAvatarCompletionReceipt(result.receipt, result.avatarCompletion)
-            : result.receipt,
-          ...(result.avatarCompletion && { avatarCompletion: result.avatarCompletion }),
-        }, 201);
-      }
-
-      let avatarCompletion;
-      try {
-        avatarCompletion = await requestAndStartAvatarCompletion(db, {
-          userId: user.id,
-          agentProfileId: result.profile.id,
-          triggerSource: "web_create_default",
-          publicBaseUrl,
-          userRoles: c.get("userRoles") ?? [],
-        }, { publicBaseUrl });
-      } catch (error) {
-        console.warn("[agent-profiles] Failed to request automatic avatar generation:", error);
-        const failedCompletion = {
-          status: "failed",
-          reason: "Portrait generation could not be started.",
-          retryable: true,
-        } as const;
-        return c.json({
-          ...playerSafeAgentProfile(result.profile),
-          receipt: withAvatarCompletionReceipt(result.receipt, failedCompletion),
-          avatarCompletion: failedCompletion,
-        }, 201);
-      }
-      return c.json({
-        ...playerSafeAgentProfile(result.profile),
-        receipt: withAvatarCompletionReceipt(result.receipt, avatarCompletion),
-        avatarCompletion,
-      }, 201);
+      return c.json({ ...playerSafeAgentProfile(result.profile), receipt: result.receipt }, 201);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
         return agentProfileErrorResponse(c, error);
@@ -540,6 +504,10 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         avatarUrl: body.avatarUrl,
         fullBodyReferenceUrl: body.fullBodyReferenceUrl,
         performanceInstructions: body.performanceInstructions,
+        visualDesign: body.visualDesign,
+        portraitCrop: body.portraitCrop,
+        submissionId: body.submissionId,
+        expectedContentRevisionId: body.expectedContentRevisionId,
         sourceReviewId: body.sourceReviewId,
         expectedRevisionId: body.expectedRevisionId,
       });
@@ -686,14 +654,7 @@ export function resolveGeneratedAgentGender(generated: {
   if (requestedGender) return requestedGender;
   if (isAgentGender(generated.gender)) return generated.gender;
 
-  const prose = [generated.backstory, generated.personality, generated.strategyStyle]
-    .filter(Boolean)
-    .join(" ");
-  const femalePronouns = prose.match(/\b(she|her|hers|herself)\b/gi)?.length ?? 0;
-  const malePronouns = prose.match(/\b(he|him|his|himself)\b/gi)?.length ?? 0;
-  if (femalePronouns > malePronouns) return "female";
-  if (malePronouns > femalePronouns) return "male";
-  return "non-binary";
+  throw new Error("Structured gender is required");
 }
 
 export function allocateGeneratedAgentName(
@@ -791,15 +752,4 @@ function agentProfileErrorResponse(
   if (error.statusCode === 404) return c.json(body, 404);
   if (error.statusCode === 409) return c.json(body, 409);
   return c.json(body, 400);
-}
-
-function withAvatarCompletionReceipt(
-  receipt: AgentMutationReceipt,
-  avatarCompletion: AvatarCompletionRead,
-): AgentMutationReceipt {
-  const warnings = avatarCompletion.status === "failed"
-    && !receipt.warnings.includes("avatar_generation_failed")
-    ? [...receipt.warnings, "avatar_generation_failed" as const]
-    : receipt.warnings;
-  return { ...receipt, avatarCompletion, warnings };
 }

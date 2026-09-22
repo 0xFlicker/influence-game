@@ -1,18 +1,16 @@
 import { randomUUID } from "crypto";
+import { ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
+import type { AvatarChangeSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 import { isLegacyIdentityBearingAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { isPostgresCheckViolation, isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { normalizeUploadedAvatarUrl, ownedPublicAvatarStorageKey } from "../lib/storage.js";
 import {
-  attachOwnedDraftAvatarCompletion,
-  latestAvatarCompletion,
   recordAvatarChange,
-  requestAndStartAvatarCompletion,
   type AvatarCompletionRead,
 } from "./avatar-generation.js";
 import {
@@ -31,7 +29,6 @@ import {
   boundAgentMutationWaitingSeatReferences,
   type AgentMutationProfileRevisionReceipt,
   type AgentMutationReceipt,
-  type AgentMutationWarning,
   type AgentMutationWaitingSeatReference,
 } from "./agent-mutation-receipt.js";
 import {
@@ -72,6 +69,10 @@ const CREATE_AGENT_FIELDS = new Set([
   "avatarUrl",
   "fullBodyReferenceUrl",
   "performanceInstructions",
+  "visualDesign",
+  "portraitCrop",
+  "submissionId",
+  "expectedContentRevisionId",
 ]);
 
 const UPDATE_AGENT_FIELDS = new Set([
@@ -85,6 +86,10 @@ const UPDATE_AGENT_FIELDS = new Set([
   "avatarUrl",
   "fullBodyReferenceUrl",
   "performanceInstructions",
+  "visualDesign",
+  "portraitCrop",
+  "submissionId",
+  "expectedContentRevisionId",
   "sourceReviewId",
 ]);
 
@@ -138,14 +143,9 @@ export type ParsedAgentAvatarUrl =
 export interface AgentProfileManagementContext {
   userId: string;
   publicBaseUrl?: string;
-  avatarCompletion?: {
-    triggerSource: AvatarGenerationTriggerSource;
-    processImmediately?: boolean;
-    /** Internal service collaborator override; never populated from request input. */
-    request?: typeof requestAndStartAvatarCompletion;
-  };
   avatarChangeSource?: AvatarChangeSource;
   avatarGenerationRequestId?: string;
+  contentAssets?: ContentAssetEvidence;
 }
 
 export interface ListOwnedAgentsInput extends AgentProfileManagementContext {
@@ -174,6 +174,10 @@ export interface CreateAgentProfileMutationInput {
   avatarUrl?: unknown;
   fullBodyReferenceUrl?: unknown;
   performanceInstructions?: unknown;
+  visualDesign?: unknown;
+  portraitCrop?: unknown;
+  submissionId?: unknown;
+  expectedContentRevisionId?: unknown;
   creationRequestId?: unknown;
 }
 
@@ -187,6 +191,10 @@ export interface UpdateAgentProfileMutationInput {
   avatarUrl?: unknown;
   fullBodyReferenceUrl?: unknown;
   performanceInstructions?: unknown;
+  visualDesign?: unknown;
+  portraitCrop?: unknown;
+  submissionId?: unknown;
+  expectedContentRevisionId?: unknown;
   sourceReviewId?: unknown;
   expectedRevisionId?: unknown;
 }
@@ -243,6 +251,7 @@ export interface AgentCurrentRevisionSummary {
 }
 
 export interface AgentSummary {
+  contentRevisionId: string | null;
   id: string;
   displayName: string;
   archetype: AgentArchetypeKey | null;
@@ -399,6 +408,36 @@ export async function searchOwnedAgents(
   };
 }
 
+function contentMetadata(input: { visualDesign?: unknown; portraitCrop?: unknown }) {
+  const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {};
+  if (input.visualDesign !== undefined) updates.visualDesign = optionalStringField(input.visualDesign, "visualDesign", 8000);
+  if (input.portraitCrop !== undefined) {
+    if (input.portraitCrop === null) updates.portraitCrop = null;
+    else {
+      const crop = input.portraitCrop as Record<string, unknown>;
+      if (typeof crop !== "object" || Array.isArray(crop) || typeof crop.sourceUrl !== "string"
+        || Object.keys(crop).sort().join(",") !== "height,sourceUrl,width,x,y"
+        || ![crop.x, crop.y, crop.width, crop.height].every((v) => typeof v === "number" && Number.isFinite(v))
+        || Number(crop.x) < 0 || Number(crop.y) < 0 || Number(crop.width) <= 0 || Number(crop.height) <= 0
+        || Number(crop.x) + Number(crop.width) > 1 || Number(crop.y) + Number(crop.height) > 1) {
+        throw new AgentProfileManagementError("invalid_agent_input", "Portrait crop must use normalized source-image coordinates.", 400);
+      }
+      updates.portraitCrop = crop as NonNullable<typeof updates.portraitCrop>;
+    }
+  }
+  return updates;
+}
+async function assertAvailableProfileName(db: DrizzleDB, name: string, agentId?: string) {
+  const [occupied] = await db.select({ id: schema.agentProfiles.id }).from(schema.agentProfiles).where(sql`lower(btrim(${schema.agentProfiles.name})) = lower(btrim(${name}))`).limit(1);
+  if (occupied && occupied.id !== agentId) throw new AgentProfileManagementError("agent_name_taken", "That agent name is already in use. Choose another name.", 409);
+}
+
+function submissionId(value: unknown): string {
+  if (value === undefined) return randomUUID();
+  if (typeof value !== "string" || !UUID_PATTERN.test(value)) throw new AgentProfileManagementError("invalid_agent_input", "submissionId must be a UUID", 400);
+  return value;
+}
+
 function prepareAgentProfileCreate(
   context: AgentProfileManagementContext,
   input: CreateAgentProfileMutationInput,
@@ -432,9 +471,10 @@ function prepareAgentProfileCreate(
 
   const id = randomUUID();
   const now = new Date().toISOString();
-  const creationRequestId = input.creationRequestId === undefined
+  const createIdentity = input.creationRequestId ?? input.submissionId;
+  const creationRequestId = createIdentity === undefined
     ? null
-    : requiredStringField(input.creationRequestId, "creationRequestId", 36);
+    : requiredStringField(createIdentity, "creationRequestId", 36);
   if (creationRequestId && !UUID_PATTERN.test(creationRequestId)) {
     throw new AgentProfileManagementError(
       "invalid_agent_input",
@@ -453,6 +493,7 @@ function prepareAgentProfileCreate(
         avatarUrl: avatarUrl.value ?? null,
         fullBodyReferenceUrl,
         performanceInstructions,
+        ...contentMetadata(input),
         avatarGenerationRequestId: context.avatarGenerationRequestId ?? null,
       })
     : null;
@@ -470,6 +511,7 @@ function prepareAgentProfileCreate(
     avatarUrl: avatarUrl.value ?? null,
     fullBodyReferenceUrl,
     performanceInstructions,
+    ...contentMetadata(input),
     gamesPlayed: 0,
     gamesWon: 0,
     createdAt: now,
@@ -498,6 +540,7 @@ export async function createOwnedAgentProfile(
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
+  if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
   if (values.creationRequestId) {
     const replay = await findIdempotentCreatedAgent(
       db,
@@ -507,9 +550,11 @@ export async function createOwnedAgentProfile(
     );
     if (replay) return replay;
   }
+  await assertAvailableProfileName(db, values.name);
+  const contentAssets = await prepareContentAssets({ avatarUrl: values.avatarUrl ?? null, fullBodyReferenceUrl: values.fullBodyReferenceUrl ?? null, portraitCrop: values.portraitCrop ?? null });
   try {
     return await db.transaction(async (tx) => {
-      let created = await createAgentProfileInTransaction(tx, values);
+      const created = await createAgentProfileInTransaction(tx, values);
       if (created.profile.avatarUrl) {
         const source = context.avatarChangeSource ?? "mcp_provided_avatar";
         await recordAvatarChange(tx, {
@@ -522,26 +567,7 @@ export async function createOwnedAgentProfile(
           newAvatarUrl: created.profile.avatarUrl,
         });
       }
-      if (context.avatarGenerationRequestId) {
-        const attachment = await attachOwnedDraftAvatarCompletion(tx, {
-          userId: context.userId,
-          generationRequestId: context.avatarGenerationRequestId,
-          agentProfileId: created.profile.id,
-        });
-        const attachedProfile = attachment.attached && attachment.avatarUrl !== created.profile.avatarUrl
-          ? { ...created.profile, avatarUrl: attachment.avatarUrl }
-          : created.profile;
-        const warnings = attachment.completion.status === "failed"
-          ? [...created.receipt.warnings, "avatar_generation_failed" as const]
-          : created.receipt.warnings;
-        created = {
-          ...created,
-          profile: attachedProfile,
-          receipt: { ...created.receipt, avatarCompletion: attachment.completion, warnings },
-          avatarCompletion: attachment.completion,
-        };
-      }
-      return created;
+      return recordContentSubmission(tx, created, { id: submissionId(input.creationRequestId ?? input.submissionId), requestHash: sha256StableJson(input), assets: contentAssets });
     });
   } catch (error) {
     if (values.creationRequestId) {
@@ -581,11 +607,11 @@ async function findIdempotentCreatedAgent(
   )).limit(1))[0];
   if (!revision) throw new Error("Idempotent Agent creation is missing its active revision.");
   const ensured: EnsuredAgentRevision = { revision, created: false, ratingRecalibrated: false };
-  const avatarCompletion = await latestAvatarCompletion(db, userId, profile.id) ?? undefined;
+  const [submission] = await db.select().from(schema.agentContentSubmissions).where(eq(schema.agentContentSubmissions.id, creationRequestId));
+  if (submission) return { ...(submission.result as unknown as AgentProfileMutationRead), replayed: true };
   return {
     ...profileMutationRead(profile, ensured, emptyMutationReceipt(profile.id, ensured, "created")),
     replayed: true,
-    ...(avatarCompletion && { avatarCompletion }),
   };
 }
 
@@ -595,6 +621,16 @@ export async function updateOwnedAgentProfile(
   agentId: string,
   input: UpdateAgentProfileMutationInput,
 ): Promise<AgentProfileMutationRead> {
+  const contentSubmissionId = submissionId(input.submissionId);
+  input = { ...input, submissionId: contentSubmissionId };
+  const requestHash = sha256StableJson(input);
+  const startingProfile = await requireOwnedAgentProfile(db, context.userId, agentId);
+  try { const replay = await replayContentSubmission(db, context.userId, agentId, contentSubmissionId, requestHash); if (replay) return replay; }
+  catch (error) { if (error instanceof ContentSubmissionConflict) throw new AgentProfileManagementError("agent_profile_stale", error.message, 409); throw error; }
+  if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
+  const prepared = prepareAgentProfileUpdates(context, input, startingProfile.avatarUrl);
+  await assertAvailableProfileName(db, prepared.name ?? startingProfile.name, agentId);
+  const contentAssets = await prepareContentAssets({ ...startingProfile, ...prepared });
   const sourceReviewId = input.sourceReviewId === undefined
     ? undefined
     : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
@@ -609,29 +645,24 @@ export async function updateOwnedAgentProfile(
     const candidateGames = await findWaitingFollowerGames(db, agentId);
     try {
       const outcome = await db.transaction(async (tx) => {
-        if (context.avatarGenerationRequestId) {
-          await tx.execute(sql`
-            SELECT id
-            FROM avatar_generation_requests
-            WHERE id = ${context.avatarGenerationRequestId}
-              AND user_id = ${context.userId}
-            FOR UPDATE
-          `);
-        }
         const locked = await lockOwnedAgentProfileMutationInTransaction(tx, {
           context,
           agentId,
           candidateGames,
         });
+        const replay = await replayContentSubmission(tx, context.userId, agentId, contentSubmissionId, requestHash);
+        if (replay) return { mutation: replay, resolvedReviewId: null };
+        if (input.expectedContentRevisionId !== undefined && input.expectedContentRevisionId !== locked.existing.contentRevisionId) throw new ContentSubmissionConflict("This Agent changed in another session. Reload before submitting.");
+        if (startingProfile.updatedAt !== locked.existing.updatedAt) throw new ContentSubmissionConflict("This Agent changed while its assets were being prepared. Reload before submitting.");
         const learningReview = await lockOwnerLearningReviewForProfileMutation(tx, {
           ownerUserId: context.userId,
           agentProfileId: agentId,
           ...(sourceReviewId ? { sourceReviewId } : {}),
         });
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
-          context,
+          context: { ...context, contentAssets },
           agentId,
-          input,
+          input: { ...input, submissionId: contentSubmissionId },
           locked,
         });
         const profileChanged = mutableAgentProfileChanged(locked.existing, mutation.profile);
@@ -667,6 +698,7 @@ export async function updateOwnedAgentProfile(
       if (outcome.resolvedReviewId) abortActiveOwnerLearningReview(outcome.resolvedReviewId);
       return outcome.mutation;
     } catch (error) {
+      if (error instanceof ContentSubmissionConflict) throw new AgentProfileManagementError("agent_profile_stale", error.message, 409);
       if (error instanceof ExpandedWaitingGameSetError) {
         if (attempt < MAX_UPDATE_ATTEMPTS) continue;
         throw new AgentProfileManagementError(
@@ -813,19 +845,6 @@ export async function updateOwnedAgentProfileInLockedTransaction(
     });
   }
 
-  let avatarCompletion: AvatarCompletionRead | undefined;
-  if (input.context.avatarGenerationRequestId) {
-    const attachment = await attachOwnedDraftAvatarCompletion(tx, {
-      userId: input.context.userId,
-      generationRequestId: input.context.avatarGenerationRequestId,
-      agentProfileId: input.agentId,
-    });
-    avatarCompletion = attachment.completion;
-    if (attachment.attached && attachment.avatarUrl !== profile.avatarUrl) {
-      profile = { ...profile, avatarUrl: attachment.avatarUrl };
-    }
-  }
-
   const [standingMembership, frozenSeatCount] = await Promise.all([
     tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue)
       .where(eq(schema.freeGameQueue.agentProfileId, input.agentId)).limit(1),
@@ -857,12 +876,11 @@ export async function updateOwnedAgentProfileInLockedTransaction(
       ...boundedReferences,
     },
     frozenSeats: { unchanged: frozenSeatCount[0]?.count ?? 0 },
-    warnings: avatarCompletion?.status === "failed" ? ["avatar_generation_failed"] : [],
+    warnings: [],
   };
-  return {
+  return recordContentSubmission(tx, {
     ...profileMutationRead(profile, revision, receipt),
-    ...(avatarCompletion && { avatarCompletion }),
-  };
+  }, { id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets });
 }
 
 function prepareAgentProfileUpdates(
@@ -870,7 +888,7 @@ function prepareAgentProfileUpdates(
   input: UpdateAgentProfileMutationInput,
   currentAvatarUrl: string | null,
 ): Partial<typeof schema.agentProfiles.$inferInsert> {
-  const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {};
+  const updates: Partial<typeof schema.agentProfiles.$inferInsert> = contentMetadata(input);
   if (input.name !== undefined) {
     const name = requiredStringField(input.name, "name", MAX_AGENT_DISPLAY_NAME_LENGTH);
     assertAgentNameNotReserved(name);
@@ -926,7 +944,9 @@ function mutableAgentProfileChanged(left: AgentProfileRow, right: AgentProfileRo
     || left.gender !== right.gender
     || left.avatarUrl !== right.avatarUrl
     || left.fullBodyReferenceUrl !== right.fullBodyReferenceUrl
-    || left.performanceInstructions !== right.performanceInstructions;
+    || left.performanceInstructions !== right.performanceInstructions
+    || left.visualDesign !== right.visualDesign
+    || sha256StableJson(left.portraitCrop) !== sha256StableJson(right.portraitCrop);
 }
 
 function profileMutationRead(
@@ -1065,41 +1085,17 @@ export async function createOwnedAgent(
     avatarUrl: avatarUrl.value,
     fullBodyReferenceUrl: input.fullBodyReferenceUrl,
     performanceInstructions: input.performanceInstructions,
+    ...contentMetadata(input),
+    submissionId: input.submissionId,
   });
   const { profile } = mutation;
 
-  let receipt = mutation.receipt;
-  let avatarCompletion: AvatarCompletionRead | {
-    status: "already_provided";
-    avatarUrl: string;
-    reason: string;
-  } | undefined;
-  if (profile.avatarUrl) {
-    avatarCompletion = {
-      status: "already_provided",
-      avatarUrl: profile.avatarUrl,
-      reason: "Agent already has an avatar.",
-    };
-  } else {
-    try {
-      avatarCompletion = await maybeRequestAvatarCompletion(db, context, profile.id);
-    } catch (error) {
-      console.warn("[agent-profile-management] Failed to request automatic avatar generation:", error);
-      receipt = addMutationWarning(receipt, "avatar_generation_failed");
-    }
-  }
-  if (avatarCompletion) {
-    receipt = { ...receipt, avatarCompletion };
-    if (avatarCompletion.status === "failed") {
-      receipt = addMutationWarning(receipt, "avatar_generation_failed");
-    }
-  }
+  const receipt = mutation.receipt;
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId: profile.id })),
     message: "Agent created.",
     receipt,
-    ...(avatarCompletion && { avatarCompletion }),
   };
 }
 
@@ -1112,7 +1108,7 @@ export async function updateOwnedAgent(
 
   const agentId = requiredStringField(input.agentId, "agentId", 200);
   const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
-  const updates: UpdateAgentProfileMutationInput = {};
+  const updates: UpdateAgentProfileMutationInput = { ...contentMetadata(input), submissionId: input.submissionId, expectedContentRevisionId: input.expectedContentRevisionId };
   if (input.fullBodyReferenceUrl !== undefined) updates.fullBodyReferenceUrl = input.fullBodyReferenceUrl;
   if (input.performanceInstructions !== undefined) updates.performanceInstructions = input.performanceInstructions;
 
@@ -1153,36 +1149,13 @@ export async function updateOwnedAgent(
     updates.sourceReviewId = requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
   }
   const mutation = await updateOwnedAgentProfile(db, context, agentId, updates);
-  let receipt = mutation.receipt;
-  let avatarCompletion: AvatarCompletionRead | undefined;
-  if (!mutation.profile.avatarUrl && context.avatarCompletion) {
-    try {
-      avatarCompletion = await maybeRequestAvatarCompletion(db, context, agentId);
-      if (avatarCompletion) receipt = { ...receipt, avatarCompletion };
-      if (avatarCompletion?.status === "failed") {
-        receipt = addMutationWarning(receipt, "avatar_generation_failed");
-      }
-    } catch (error) {
-      console.warn("[agent-profile-management] Failed to request automatic avatar generation:", error);
-      receipt = addMutationWarning(receipt, "avatar_generation_failed");
-    }
-  }
+  const receipt = mutation.receipt;
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId })),
     message: "Agent updated.",
     receipt,
-    ...(avatarCompletion && { avatarCompletion }),
   };
-}
-
-function addMutationWarning(
-  receipt: AgentMutationReceipt,
-  warning: AgentMutationWarning,
-): AgentMutationReceipt {
-  return receipt.warnings.includes(warning)
-    ? receipt
-    : { ...receipt, warnings: [...receipt.warnings, warning] };
 }
 
 function mapOwnerLearningResolutionError(
@@ -1202,25 +1175,6 @@ function mapOwnerLearningResolutionError(
       : "That learning review has already been resolved.",
     409,
   );
-}
-
-async function maybeRequestAvatarCompletion(
-  db: DrizzleDB,
-  context: AgentProfileManagementContext,
-  agentProfileId: string,
-): Promise<AvatarCompletionRead | undefined> {
-  if (!context.avatarCompletion) return undefined;
-
-  const request = context.avatarCompletion.request ?? requestAndStartAvatarCompletion;
-  return request(db, {
-    userId: context.userId,
-    agentProfileId,
-    triggerSource: context.avatarCompletion.triggerSource,
-    publicBaseUrl: context.publicBaseUrl,
-  }, {
-    processImmediately: context.avatarCompletion.processImmediately,
-    publicBaseUrl: context.publicBaseUrl,
-  });
 }
 
 async function requireOwnedAgentProfile(
@@ -1403,6 +1357,7 @@ function serializeAgent(
   return {
     id: profile.id,
     displayName: profile.name,
+    contentRevisionId: profile.contentRevisionId,
     archetype,
     archetypeLabel: archetypeRecord?.label ?? null,
     publicBiography: profile.backstory,

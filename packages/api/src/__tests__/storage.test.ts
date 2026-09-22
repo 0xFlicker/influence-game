@@ -13,6 +13,7 @@ import {
 } from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
 import { normalizeAgentAvatarUrlInput } from "../services/agent-profile-management.js";
+import { isLegacyIdentityBearingAvatarStorageKey, isOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { assertPrivateContentStoragePointer } from "../services/game-evidence.js";
 import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
 
@@ -194,6 +195,19 @@ describe("local filesystem upload storage", () => {
       ok: true,
       value: "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F11111111-1111-4111-8111-111111111111.png",
     });
+  });
+
+  test("accepts content-addressed portrait crops without exempting identity-bearing crop paths", () => {
+    const key = `pfp/crops/${"a".repeat(64)}.webp`;
+    const url = `http://127.0.0.1:3000/api/uploads/local?key=${encodeURIComponent(key)}`;
+    expect(isOpaqueAvatarStorageKey(key)).toBe(true);
+    expect(isLegacyIdentityBearingAvatarStorageKey(key)).toBe(false);
+    expect(normalizeAgentAvatarUrlInput(url, "http://127.0.0.1:3000")).toEqual({ ok: true, value: url });
+    for (const unsafeKey of ["pfp/crops/user-1.webp", "pfp/user-1/avatar.webp", `pfp/crops/${"a".repeat(63)}.webp`]) {
+      expect(isOpaqueAvatarStorageKey(unsafeKey)).toBe(false);
+      expect(isLegacyIdentityBearingAvatarStorageKey(unsafeKey)).toBe(true);
+      expect(normalizeAgentAvatarUrlInput(`/api/uploads/local?key=${encodeURIComponent(unsafeKey)}`, "http://127.0.0.1:3000").ok).toBe(false);
+    }
   });
 
   test("normalizes expiring S3 signed avatar URLs to stable public URLs", () => {

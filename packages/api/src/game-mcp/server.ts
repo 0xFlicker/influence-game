@@ -1,4 +1,4 @@
-import { generateVisualProfileReference } from "../services/visual-profile-generation.js";
+import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { createDB, type DrizzleDB } from "../db/index.js";
 import {
@@ -560,6 +560,10 @@ export class ProductionGameMcpJsonRpcServer {
           request.arguments,
         ));
       }
+      if (name === "crop_agent_portrait") {
+        requireScopes(auth, ["agents:read", "agents:write"]);
+        return content(await exportCharacterPortrait(args as unknown as import("@influence/engine/character-portrait").PortraitCrop));
+      }
       if (name === "generate_agent_visual_reference") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         return content(await generateVisualProfileReference(this.requireManagementDb(), auth.userId, args));
@@ -569,7 +573,6 @@ export class ProductionGameMcpJsonRpcServer {
         const db = this.requireManagementDb();
         return content(await createOwnedAgent(db, {
           ...mcpManagementContext(auth),
-          avatarCompletion: { triggerSource: "mcp_create_default" },
           avatarChangeSource: "mcp_provided_avatar",
         }, args));
       }
@@ -1410,13 +1413,19 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "generate_agent_visual_reference",
-      description: "Generate a full-body reference preview. Return the image to the user and use create_agent or update_agent to save its fullBodyReferenceUrl. Reuse the same requestId UUID and identical inputs when retrying an uncertain response; do not create another paid request to bypass recovery.",
-      properties: { requestId: { type: "string" }, name: { type: "string" }, personaKey: { type: "string" }, avatarUrl: { type: ["string", "null"] }, performanceInstructions: { type: "string" } },
+      description: "Generate a full-body character image and matching cropped portrait. Return both for review, then use create_agent or update_agent to submit fullBodyReferenceUrl, avatarUrl and portraitCrop together. A cropWarning requires manual cropping with crop_agent_portrait. Reuse the same requestId UUID and identical inputs when retrying an uncertain response; do not create another paid request to bypass recovery.",
+      properties: { requestId: { type: "string" }, name: { type: "string" }, personaKey: { type: "string" }, avatarUrl: { type: ["string", "null"] }, performanceInstructions: { type: "string" }, visualDesign: { type: "string" }, fullBodyReferenceUrl: { type: ["string", "null"] } },
       required: ["requestId", "name", "personaKey", "avatarUrl", "performanceInstructions"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
     }),
     tool({
+      name: "crop_agent_portrait",
+      description: "Export a square portrait from a source image using normalized x/y/width/height. This edits draft assets only and makes no image-generation call. Submit returned avatarUrl and portraitCrop with create_agent or update_agent.",
+      properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } },
+      required: ["sourceUrl", "x", "y", "width", "height"], scopes: writeScopes, readOnlyHint: false, idempotentHint: true,
+    }),
+    tool({
       name: "create_agent",
-      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names plus null/undefined are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Supply a fresh UUID creationRequestId and reuse it only when retrying the same payload; an exact retry returns the original Agent. Display names are globally unique after trim/case normalization, and House-agent names plus null/undefined are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and atomically records its complete content for future moderation. Generate and select image assets before submitting.",
       properties: {
         creationRequestId: { type: "string", format: "uuid" },
         displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
@@ -1425,6 +1434,10 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
+        visualDesign: nullableStringSchema(8000),
+        portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
+        submissionId: { type: "string", format: "uuid" },
+        expectedContentRevisionId: { type: ["string", "null"] },
         fullBodyReferenceUrl: nullableStringSchema(2048),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
@@ -1436,7 +1449,7 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: "update_agent",
-      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
+      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Supply submissionId as a fresh UUID and expectedContentRevisionId from get_agent (null before its first content revision); reuse the ID only for exact retries. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
         displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
@@ -1445,6 +1458,10 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
         publicBiography: nullableStringSchema(AGENT_PROFILE_LIMITS.backstory),
         strategyStyle: nullableStringSchema(AGENT_PROFILE_LIMITS.strategyStyle),
         performanceInstructions: nullableStringSchema(AGENT_PROFILE_LIMITS.performanceInstructions),
+        visualDesign: nullableStringSchema(8000),
+        portraitCrop: { type: ["object", "null"], additionalProperties: false, properties: { sourceUrl: { type: "string" }, x: { type: "number" }, y: { type: "number" }, width: { type: "number" }, height: { type: "number" } }, required: ["sourceUrl", "x", "y", "width", "height"] },
+        submissionId: { type: "string", format: "uuid" },
+        expectedContentRevisionId: { type: ["string", "null"] },
         fullBodyReferenceUrl: nullableStringSchema(2048),
         gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),

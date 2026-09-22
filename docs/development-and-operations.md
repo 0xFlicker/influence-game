@@ -531,3 +531,7 @@ Scene acceptance is fenced by game, room, arrangement, render revision and commi
 Durable Mingle commits initial allocation, each simultaneous beat and completion separately, including both Two Names windows. Its cursor preserves the current assignments and delivered private-inbox boundary. Only committed movement changes visual arrangements. Rendering stays outside long transactions; no visual result may change canonical participants or movement.
 
 For local review use Doppler dev with an explicit local database URL. Run provider-free checks, PostgreSQL durability tests and browser playback checks before handoff. Paid provider experiments remain opt-in. No generated samples or research scripts are required on the feature branch.
+
+### Character content evidence
+
+Agent submission writes durable content revisions and pending moderation records in the same transaction as the active profile. No moderator worker or enforcement runs yet. Image generation completes into draft assets; users must select and submit those assets. See [Character drafts and moderation evidence](agent-content-submissions.md) for idempotency, concurrency, asset retention, and the pending-review inspection query.
