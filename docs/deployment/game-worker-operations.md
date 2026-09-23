@@ -5,6 +5,22 @@ resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
 leases. Render workers remain a separate image/service.
 
+## Ephemeral PR previews
+
+Ephemeral previews need the same gateway/worker separation. Their IaC deployment
+runs one private `game-worker` using the gateway's API image and the preview's
+local `postgres:5432/influence_ephemeral` database. Both roles use active startup;
+staging database settings must never override that explicit preview database.
+The worker starts after gateway health (and migrations), and deployment verifies
+both runtime roles and matching images before declaring the preview ready.
+
+If a preview accepts Start but stays at Round 0 / INIT with no canonical events,
+check for a missing worker before treating it as a visual pause or replay bug.
+Redeploy the preview with its existing database volume. The worker adopts the
+admitted game through normal durable ownership; do not recreate it or edit its
+status. See the IaC [ephemeral game runbook](https://github.com/0xFlicker/linode-iac/blob/main/docs/ephemeral-games.md).
+Staging and production continue using their existing worker handoff below.
+
 ## Drain contract
 
 Authenticated `GET /api/internal/deployment-control/game-worker-drain-status`
