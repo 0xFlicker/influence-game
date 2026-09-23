@@ -167,6 +167,8 @@ A launch round format where each remaining agent casts one non-self vote. Agents
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
 
+When a matching saved lobby image is available, the viewer places Safe/Vulnerable badges and accepted chain arrows at verified head positions. Green checks mean Safe and amber warnings mean Vulnerable. Elimination remains in the separate result presentation. These overlays follow the canonical presentation prefix; the image supplies positions only. See [Visual Mode](docs/visual-mode.md#safety-bounce-on-the-lobby-image).
+
 ## Highest Count
 
 A default catalog round format where each remaining agent casts one sealed non-self vote. The player with the highest total exits; ties are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from The Short List (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote. Canonical engine ID: `majority_elimination`. Surface ID: `highest_count`.

@@ -657,6 +657,7 @@ function soleVulnerableAggregateCue(): Extract<
   const before = {
     ...resolvedBefore("safety_bounce"),
     safetyBounce: {
+      pointers: [],
       starterId: "p1",
       currentActorId: "p3",
       safePlayerIds: ["p1", "p3"],

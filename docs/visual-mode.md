@@ -214,6 +214,18 @@ server. Other tests that require seeded backend data still use the isolated
 harness. The fixture checks fallback fullscreen, unchanged speech, paged long
 text, rotation, control visibility, Escape focus and scroll restoration.
 
+### Safety Bounce on the lobby image
+
+Safety Bounce reuses the saved lobby from the current round's preceding dialogue when its participant set exactly matches the canonical chain. An explicit dialogue scene binding selects that image version; later publications and future dialogue cannot substitute a different room while seeking backward. Games without an applicable lobby keep the existing classification picker. A failed image also returns to the picker without changing the presentation cursor.
+
+The lobby stays fully in view, including on narrow screens. Saved, clear head rectangles anchor small badges below each face: a green check for Safe, an amber warning triangle for Vulnerable, and a neutral dotted circle for Unclassified. A white ring identifies the chooser. Numbered chain positions match the named strip below the scene. Uncertain or missing head rectangles remain represented in that strip and never receive invented coordinates or arrows.
+
+Each accepted pointer adds a directed arrow, colored by the target's new classification: Safe chooses Vulnerable; Vulnerable chooses Safe. The latest link is emphasized and draws over 450 ms on the director clock; earlier links remain subdued. Paused seeks, reduced motion and live current-state hydration show settled links. Only the trusted pointer prefix is retained in presentation snapshots, so backward seeks remove later links and classifications. This is a visualization of accepted choices, not a simulation of candidate selection.
+
+The completed chain remains on the lobby for the vote tally and tie announcement. Vote totals appear only at the canonical aggregate reveal; automatic sole-vulnerable elimination does not invent a vote total. Elimination uses the existing result presentation; the lobby never marks someone eliminated. Individual ballot and deciding-vote speech retains the existing portrait treatment. No new images, model calls, game rules or event types are introduced.
+
+Browser coverage verifies desktop/mobile geometry against the loaded image, alternating Safe/Vulnerable arrows, backward seeking, tally/tie reveals, the transition to the existing elimination presentation, uncertain anchors and failed-image fallback. The existing viewer suite continues to cover games without lobby media.
+
 ### Solo character presentation
 
 Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The image fills the content frame vertically, with black side bars on wide frames. Narrow frames trim the image's sides while preserving its full height. Speech overlays the image below the head region, with its tail pointing upward. It never becomes a talking-head clip or a separate image/text column. A missing or failed full-body image uses the static portrait with speech below it. Both use measured, director-timed text pages, including outside fullscreen; fullscreen controls reserve bubble space without shrinking the image.

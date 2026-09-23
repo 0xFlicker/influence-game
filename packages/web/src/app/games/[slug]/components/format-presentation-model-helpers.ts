@@ -73,6 +73,7 @@ export function cloneSnapshot(snapshot: FormatPresentationSnapshot): FormatPrese
     safetyBounce: snapshot.safetyBounce
       ? {
           ...snapshot.safetyBounce,
+          pointers: snapshot.safetyBounce.pointers.map(pointer => ({ ...pointer })),
           safePlayerIds: [...snapshot.safetyBounce.safePlayerIds],
           vulnerablePlayerIds: [...snapshot.safetyBounce.vulnerablePlayerIds],
           benchPlayerIds: [...snapshot.safetyBounce.benchPlayerIds],

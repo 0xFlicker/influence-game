@@ -382,9 +382,15 @@ function DramaticReplayTheater({
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
+  const priorLobbyMessages = useMemo(() => !formatCue ? [] : classicCues
+    .filter(cue => cue.round === formatCue.round && cue.phase === "LOBBY"
+      && cue.canonicalSequence !== null && cue.canonicalSequence <= formatCue.canonicalSequence)
+    .map(cue => scenes[cue.sceneIndex]!.messages[cue.messageIndex]!), [classicCues, formatCue, scenes]);
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players, priorLobbyMessages,
   );
+  const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
+    && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
 
@@ -506,6 +512,7 @@ function DramaticReplayTheater({
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait";
+  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "safety-bounce";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -856,13 +863,13 @@ function DramaticReplayTheater({
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
-        } justify-center ${fullscreen ? visual.beat?.kind === "scene" || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+        } justify-center ${fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
+        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : isRoomPresentation ? "max-w-7xl" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
+          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={fullscreen}><FormatPresentation

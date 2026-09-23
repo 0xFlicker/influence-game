@@ -99,6 +99,7 @@ export interface FormatEmpowerVoteReceipt {
 export interface SafetyBouncePresentationSnapshot {
   starterId: string;
   currentActorId: string;
+  pointers: Array<{ actorId: string; targetId: string; classification: "safe" | "vulnerable" }>;
   safePlayerIds: string[];
   vulnerablePlayerIds: string[];
   benchPlayerIds: string[];

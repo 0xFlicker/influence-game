@@ -9,6 +9,8 @@ import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
 import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
+import { SafetyBounceScene } from "./safety-bounce-scene";
+import type { SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 
 /** Each room keeps its own camera; switching rooms changes only opacity. */
 function RoomLayer({ reducedMotion, ...props }: Parameters<typeof VisualSceneView>[0]) {
@@ -22,6 +24,7 @@ function RoomLayer({ reducedMotion, ...props }: Parameters<typeof VisualSceneVie
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
+  | SafetyBounceSceneBeat
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
   | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
@@ -53,7 +56,7 @@ export function VisualPresentation({ director, ...props }: Omit<Parameters<typeo
   return <VisualPresentationFrame {...props} {...clock} elapsedMs={director.getElapsedBaseMs()} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!director.getSnapshot().isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, readingElapsedMs = clockElapsedMs, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, readingElapsedMs = clockElapsedMs, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
@@ -61,6 +64,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
   elapsedMs: number;
   readingElapsedMs?: number;
   paused?: boolean;
+  currentStateEntry?: boolean;
   reducedMotion?: boolean;
   fullscreen?: boolean;
   navigationRevision?: number;
@@ -70,7 +74,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
-  if (beat.kind === "portrait") {
+  if (beat.kind === "safety-bounce") {
+    content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} />;
+  } else if (beat.kind === "portrait") {
     content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
     const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);

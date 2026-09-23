@@ -5,6 +5,7 @@ import type { PresentationCue } from "./types";
 import type { VisualPresentationBeat } from "./visual-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
+import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
@@ -30,7 +31,7 @@ export interface VisualWatchData {
   scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
 
-export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[]): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
+export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[], priorMessages: readonly TranscriptEntry[] = []): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
   const rooms: AcceptedVisualScene[] = [];
   if (message?.entrySequence !== undefined) {
     for (const scene of data.scenes) {
@@ -57,6 +58,10 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     return { rooms, beat };
   }
   if (cue?.source === "format") {
+    if (isSafetyBounceSceneCue(cue)) {
+      const lobby = safetyBounceLobbyScene(data, cue, priorMessages);
+      if (lobby) return { rooms: [lobby], beat: { kind: "safety-bounce", scene: lobby, cue, roster: players } };
+    }
     if (cue.kind === "format_deciding_vote") {
       const target = players.find(player => player.id === cue.targetId);
       if (target) portrait(cue.tiebreakerId, target.name, "Ballot", "Deciding vote · Vote to eliminate");
