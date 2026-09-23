@@ -11,9 +11,11 @@ Use this workflow to test LM Studio or another OpenAI-compatible local model ser
 When inspecting a bounded `--chatty` run, review Lobby, Mingle, and alliance-huddle dialogue for one short paragraph, usually 1–3 sentences, under the requested 100-token limit. All models receive this guidance once at the end of the prompt, after visual instructions when applicable. The limit concerns spoken `message` only; structured fields and completion budgets are unchanged, and longer valid messages are preserved. Introductions and formal speeches are excluded. Inspect private prompt evidence for `# CONSTITUTION.md`; a passing prompt test alone does not establish shorter or punchier model output.
 
 The native model-message contract supports user image attachments only for explicitly
-verified image-capable catalog entries: OpenAI Luna and Katana Grok 4.6. Unknown or
+registered image-capable catalog entries: OpenAI GPT-5.6 Luna, GPT-6 Luna and Katana Grok 4.6. Unknown or
 text-only entries reject image-bearing invocations rather than dropping attachments.
 [Visual Mode](visual-mode.md) uses this transport in API-created visual games. The standalone simulator does not enable visual generation.
+
+Select GPT-6 Luna explicitly with `--provider-entry openai:gpt-6-luna,reasoning=action-policy` in an authorized provider evaluation, or in the admin provider route for a visual game. It uses the existing OpenAI credential and Responses adapter. Adding the model does not rewrite Daily defaults or sealed game routes; provider access and game-quality evaluation remain separate from capability/transport tests.
 
 For API-backed endgame checks, verify Final 4 pleas use a scene containing exactly the four remaining players. Compare viewer ballots with canonical endgame/jury resolution tallies and IN/OUT status with elimination events, rather than speech or image membership. Provider-free and PostgreSQL tests cover these bindings and projections; they do not establish generated-image quality.
 

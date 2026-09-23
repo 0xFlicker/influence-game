@@ -36,13 +36,15 @@ export interface ModelPricing {
   cacheWriteInputPer1M?: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
-  /** Optional total-token request tiers. When matched, the tier rate applies to the whole request. */
+  /** Optional request tiers. When matched, the tier rate applies to the whole request. */
   tiers?: ModelPricingTier[];
 }
 
 export interface ModelPricingTier {
   minTotalTokens?: number;
   maxTotalTokens?: number;
+  /** Input-only threshold; output tokens must not trigger a long-context rate. */
+  minPromptTokens?: number;
   inputPer1M: number;
   cachedInputPer1M: number;
   cacheWriteInputPer1M?: number;
@@ -93,6 +95,14 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
     cacheWriteInputPer1M: 0.25,
     outputPer1M: 1.20,
   },
+  // https://developers.openai.com/api/docs/models/gpt-6-luna (2026-09-22).
+  "gpt-6-luna": {
+    inputPer1M: 0.10,
+    cachedInputPer1M: 0.01,
+    cacheWriteInputPer1M: 0.125,
+    outputPer1M: 0.50,
+    tiers: [{ minPromptTokens: 272_001, inputPer1M: 0.20, cachedInputPer1M: 0.02, cacheWriteInputPer1M: 0.25, outputPer1M: 0.75 }],
+  },
   // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
   "grok-4-3": {
     inputPer1M: 1.375,
@@ -130,6 +140,13 @@ export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
     cacheWriteInputPer1M: 0.125,
     outputPer1M: 0.60,
   },
+  "gpt-6-luna": {
+    inputPer1M: 0.05,
+    cachedInputPer1M: 0.005,
+    cacheWriteInputPer1M: 0.0625,
+    outputPer1M: 0.25,
+    tiers: [{ minPromptTokens: 272_001, inputPer1M: 0.10, cachedInputPer1M: 0.01, cacheWriteInputPer1M: 0.125, outputPer1M: 0.375 }],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -142,7 +159,7 @@ export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | s
   const basePricing = typeof pricingOrModel === "string"
     ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING[DEFAULT_MODEL_ID]!
     : pricingOrModel;
-  const pricing = pricingForUsage(basePricing, usage.totalTokens);
+  const pricing = pricingForUsage(basePricing, usage);
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";
 
   const cached = usage.cachedTokens ?? 0;
@@ -162,11 +179,15 @@ export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | s
   };
 }
 
-function pricingForUsage(pricing: ModelPricing, totalTokens: number): ModelPricing {
+function pricingForUsage(pricing: ModelPricing, usage: TokenUsage): ModelPricing {
   const tier = pricing.tiers?.find((candidate) => {
-    const aboveMinimum = candidate.minTotalTokens === undefined || totalTokens >= candidate.minTotalTokens;
-    const belowMaximum = candidate.maxTotalTokens === undefined || totalTokens <= candidate.maxTotalTokens;
-    return aboveMinimum && belowMaximum;
+    const aboveMinimum = candidate.minTotalTokens === undefined || usage.totalTokens >= candidate.minTotalTokens;
+    const belowMaximum = candidate.maxTotalTokens === undefined || usage.totalTokens <= candidate.maxTotalTokens;
+    // A batch total cannot establish the size of any individual prompt. Keep
+    // aggregate comparisons at base rates; receipt accounting passes one call.
+    const aboveInputMinimum = candidate.minPromptTokens === undefined
+      || (usage.callCount === 1 && usage.promptTokens >= candidate.minPromptTokens);
+    return aboveMinimum && belowMaximum && aboveInputMinimum;
   });
   return tier ?? pricing;
 }

@@ -18,6 +18,22 @@ const usage: TokenUsage = {
 };
 
 describe("token cost estimation", () => {
+  it("prices GPT-6 Luna input, cache reads, writes, and output on Standard and Flex", () => {
+    const sample = { ...usage, promptTokens: 10_000, cachedTokens: 2_000, cacheWriteTokens: 3_000, completionTokens: 1_000, totalTokens: 11_000 };
+    expect(estimateCostForKnownModel(sample, "gpt-6-luna")?.totalCost).toBeCloseTo(0.001395, 10);
+    expect(estimateTierAwareOpenAICost({ flex: sample }, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0006975, 10);
+  });
+
+  it("uses Luna long-context pricing only above 272K input tokens, excluding output", () => {
+    const sample = { ...usage, promptTokens: 272_000, completionTokens: 1_000, totalTokens: 273_000 };
+    expect(estimateCostForKnownModel(sample, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0277, 10);
+    const long = { ...sample, promptTokens: 272_001, totalTokens: 273_001 };
+    expect(estimateCostForKnownModel(long, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0551502, 10);
+    expect(estimateTierAwareOpenAICost({ flex: long }, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0275751, 10);
+    expect(estimateCostForKnownModel({ ...sample, callCount: 4 }, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0277, 10);
+    expect(estimateCostForKnownModel({ ...long, callCount: 4 }, "gpt-6-luna")?.totalCost).toBeCloseTo(0.0277001, 10);
+  });
+
   it("returns null instead of fallback pricing for unknown models", () => {
     expect(estimateCostForKnownModel(usage, "not-a-real-model")).toBeNull();
   });

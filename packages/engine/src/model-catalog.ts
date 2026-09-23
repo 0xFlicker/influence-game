@@ -210,7 +210,20 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
     capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
-    notes: "GPT-5.6 Luna — cost-sensitive high-volume tier ($1/$0.10/$6 per 1M tokens).",
+    notes: "GPT-5.6 Luna — cost-sensitive high-volume tier.",
+  },
+  {
+    id: "openai:gpt-6-luna",
+    providerProfileId: "openai",
+    modelId: "gpt-6-luna",
+    displayName: "OpenAI gpt-6-luna",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    // Reasoning with function tools requires Responses; cache options match GPT-5.6.
+    // https://developers.openai.com/api/docs/models/gpt-6-luna
+    capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
+    notes: "GPT-6 Luna — text and image input with structured decisions through Responses.",
   },
   {
     id: "katana:grok-4-6",

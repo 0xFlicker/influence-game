@@ -94,7 +94,7 @@ const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
 };
 
 function runtime(
-  catalogId: "openai:gpt-5.6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2",
+  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -824,6 +824,32 @@ describe("vision invocation contracts", () => {
     result: { kind: "text" }, outputTokenLimit: 100,
   };
   const client = {} as OpenAI;
+
+  it("routes GPT-6 Luna image decisions through Responses with reasoning and strict tools", () => {
+    const provider = runtime("openai:gpt-6-luna", client);
+    provider.reasoningPolicy = "high";
+    const invocation: ModelInvocation = {
+      ...visual,
+      result: { kind: "tool", artifact: targetArtifact, choice: { name: targetArtifact.name }, allowParallel: false },
+      reasoning: { effort: "high" },
+      temperature: 0.7,
+      promptCache: { key: "luna-visual", ttl: "30m" },
+    };
+    expect(provider.adapter.validate(invocation, provider).compatible).toBe(true);
+    const request = provider.adapter.compile(invocation, provider);
+    expect(request.transport).toBe("openai.responses");
+    expect(request.body).toMatchObject({
+      model: "gpt-6-luna",
+      reasoning: { effort: "high" },
+      prompt_cache_options: { ttl: "30m" },
+      tools: [{ type: "function", name: targetArtifact.name, strict: true }],
+      input: [{ role: "user", content: [
+        { type: "input_text", text: "Read your room." },
+        { type: "input_image", image_url: image.url, detail: "high" },
+      ] }],
+    });
+    expect(request.body).not.toHaveProperty("temperature");
+  });
 
   it("keeps the image in single-user Responses inputs and translates Katana attachments", () => {
     const openai = runtime("openai:gpt-5.6-luna", client);

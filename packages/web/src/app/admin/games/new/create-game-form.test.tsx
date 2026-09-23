@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
+import { modelCatalogEntryById } from "@influence/engine";
 
 const pushed: string[] = [];
 mock.module("next/navigation", () => ({
@@ -29,6 +30,31 @@ afterEach(() => {
 });
 
 describe("new game form", () => {
+  test("submits Visual Mode with GPT-6 Luna using catalog image capabilities", async () => {
+    installDom();
+    const model = modelCatalogEntryById("openai:gpt-6-luna")!;
+    const bodies: Array<Record<string, unknown>> = [];
+    const inventory = { status: "complete", models: [{
+      catalogId: model.id, modelId: model.modelId, providerProfileId: model.providerProfileId,
+      displayName: model.displayName, capabilities: model.capabilities, notes: model.notes,
+      configured: true, available: true, defaultReasoningPolicy: model.defaultReasoningPolicy,
+      allowedReasoningPolicies: ["action-policy", ...model.allowedReasoningEfforts],
+    }] };
+    globalThis.fetch = (async (request, init) => {
+      if (String(request).endsWith("/api/provider-models")) return jsonResponse(inventory);
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse({ id: "luna-game", slug: "luna-visual" }, 201);
+    }) as typeof fetch;
+    const mounted = render(<CreateGameForm />);
+    await waitFor(() => expect(mounted.getByRole("option", { name: "OpenAI gpt-6-luna" })).not.toBeNull());
+    fireEvent.change(mounted.getByRole("combobox", { name: "Primary model" }), { target: { value: model.id } });
+    fireEvent.click(mounted.getByRole("checkbox", { name: /Visual Mode/ }));
+    expect(mounted.queryByText(/These provider slots do not support image input/)).toBeNull();
+    fireEvent.click(mounted.getByRole("button", { name: /Create .* Game/ }));
+    await waitFor(() => expect(pushed).toEqual(["/games/luna-visual"]));
+    expect(bodies[0]).toMatchObject({ visualMode: true, providerManifest: [{ catalogId: model.id, reasoningPolicy: "medium" }] });
+  });
+
   test("names incompatible visual provider slots before submission", async () => {
     installDom();
     globalThis.fetch = (async () => jsonResponse(providerInventory())) as unknown as typeof fetch;
