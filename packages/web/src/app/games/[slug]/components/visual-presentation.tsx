@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
-import { VISUAL_SPEECH_FADE_MS, visualSpeechOpacity } from "@influence/engine/visual-speech";
 import { SoloPresentation } from "./solo-presentation";
 import type { PresentationDirector } from "./format-presentation-director";
 import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
+import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 
 /** Each room keeps its own camera; switching rooms changes only opacity. */
 function RoomLayer({ reducedMotion, ...props }: Parameters<typeof VisualSceneView>[0]) {
@@ -38,7 +38,7 @@ export function VisualPresentation({ director, ...props }: Omit<Parameters<typeo
       frame = null;
       const state = director.getSnapshot();
       setClock({ elapsedMs: director.getElapsedBaseMs(), paused: !state.isPlaying });
-      if (state.isPlaying && !state.waitingAtTail) frame = requestAnimationFrame(refresh);
+      if (director.isAnimating()) frame = requestAnimationFrame(refresh);
     };
     // Director notifications happen inside state transitions. Read on the next
     // frame, after the transition has also updated its remaining duration.
@@ -50,32 +50,31 @@ export function VisualPresentation({ director, ...props }: Omit<Parameters<typeo
     schedule();
     return () => { unsubscribe(); if (frame !== null) cancelAnimationFrame(frame); };
   }, [director]);
-  return <VisualPresentationFrame {...props} {...clock} elapsedMs={director.getElapsedBaseMs()} paused={!director.getSnapshot().isPlaying} navigationRevision={director.getNavigationRevision()} />;
+  return <VisualPresentationFrame {...props} {...clock} elapsedMs={director.getElapsedBaseMs()} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!director.getSnapshot().isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0 }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, readingElapsedMs = clockElapsedMs, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
   elapsedMs: number;
+  readingElapsedMs?: number;
   paused?: boolean;
   reducedMotion?: boolean;
   fullscreen?: boolean;
   navigationRevision?: number;
+  speechPresentation?: "solo" | "scene";
   status?: "preparing" | "recovery" | null;
 }) {
-  // A paused seek must be readable at time zero. This affects presentation only:
-  // resuming uses the director's unchanged clock, and expired speech stays gone.
-  const elapsedMs = paused ? Math.max(clockElapsedMs, VISUAL_SPEECH_FADE_MS) : clockElapsedMs;
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
   if (beat.kind === "portrait") {
-    content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} />;
+    content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
-    const opacity = visualSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
-    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={clockElapsedMs} /> : beat.speech.text}</blockquote>}</section>;
+    const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);
+    content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
   } else if (beat.kind === "house") {
     content = <HouseSegment fullscreen={fullscreen} text={beat.text} title={beat.title} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} />;
   } else {
@@ -92,7 +91,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
       </nav>}
       <div className="relative min-h-0 flex-1">
         <AnimatePresence initial={false}>
-          {scene && <RoomLayer key={`${scene.roomId}:${scene.id}:${scene.version}:${scene.imageUrl}`} controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={elapsedMs} clockElapsedMs={clockElapsedMs} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+          {scene && <RoomLayer key={`${scene.roomId}:${scene.id}:${scene.version}:${scene.imageUrl}`} controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
         </AnimatePresence>
       </div>
     </div>;

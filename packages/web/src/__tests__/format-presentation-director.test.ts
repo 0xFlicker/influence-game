@@ -11,7 +11,9 @@ import {
 } from "../app/games/[slug]/components/format-presentation-director";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
-import { soloPresentationDurationMs, soloPresentationMotion, SOLO_EXIT_MS } from "../app/games/[slug]/components/solo-presentation-timing";
+import { soloPresentationDurationMs, soloPresentationMotion, SOLO_EXIT_MS, SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS } from "../app/games/[slug]/components/solo-presentation-timing";
+import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "../app/games/[slug]/components/scene-speech-timing";
+import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import { houseSegmentMotion } from "../app/games/[slug]/components/house-segment";
 
 class FakeClock implements PresentationClock {
@@ -566,53 +568,122 @@ it("late narration cannot remove an on-air title or strand playback", () => {
   director.dispose();
 });
 
-it("reveals solo speech before exiting, and rapid clicks cannot skip the exit", () => {
+it.each(["solo", "scene"] as const)("%s clicks fade speech in and out without skipping the clear interval", (speechPresentation) => {
   const clock = new FakeClock();
   const director = createPresentationDirector({ clock });
-  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), soloSpeech: true, baseDurationMs: soloPresentationDurationMs("Echo") };
+  const solo = speechPresentation === "solo";
+  const fade = solo ? SOLO_SPEECH_FADE_MS : VISUAL_SPEECH_FADE_MS;
+  const exit = solo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + fade;
+  const opacity = () => solo ? soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity : sceneSpeechOpacity("Echo", director.getElapsedBaseMs());
+  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), speechPresentation, baseDurationMs: solo ? soloPresentationDurationMs("Echo") : sceneSpeechDurationMs("Echo") };
   director.load([shot, { ...shot, key: "vote" }]);
   director.play();
   clock.tick(100);
   director.manualAdvance();
   expect(director.getSnapshot().activeKey).toBe("intro");
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs())).toMatchObject({ imageOpacity: 1, speechOpacity: 1 });
+  expect(opacity()).toBe(0);
+  clock.tick(fade / 2);
+  expect(opacity()).toBe(.5);
   director.manualAdvance();
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
-  clock.tick(125);
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
+  clock.tick(fade / 2);
+  expect(opacity()).toBe(1);
+  director.manualAdvance();
+  clock.tick(fade / 2);
+  expect(opacity()).toBe(.5);
   director.manualAdvance();
   expect(director.getSnapshot().activeKey).toBe("intro");
   director.pause(); clock.tick(1000);
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
-  director.setSpeed(2); director.play(); clock.tick((SOLO_EXIT_MS - 125) / 2);
-  expect(director.getSnapshot().activeKey).toBe("vote");
-  // Natural entry keeps cinematic staging, and a click can reveal it immediately.
-  expect(director.getElapsedBaseMs()).toBe(0);
+  expect(opacity()).toBe(.5);
+  director.setSpeed(2); director.play(); clock.tick(fade / 4);
+  expect(opacity()).toBe(0);
   director.manualAdvance();
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
+  expect(director.getSnapshot().activeKey).toBe("intro");
+  clock.tick((exit - fade) / 2);
+  expect(director.getSnapshot().activeKey).toBe("vote");
+  // The next bubble cannot appear while its camera is still settling.
+  expect(director.getElapsedBaseMs()).toBe(0);
+  expect(opacity()).toBe(0);
   director.dispose();
 });
 
-it("lands solo seeks and paused steps on readable text, retaining reading time across reconnect", () => {
+it.each(["solo", "scene"] as const)("paused %s clicks alternate show, hide, then show the next line", (speechPresentation) => {
   const clock = new FakeClock();
   const director = createPresentationDirector({ clock });
-  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), soloSpeech: true, baseDurationMs: soloPresentationDurationMs("Echo") };
-  const cues = [shot, { ...shot, key: "vote" }, cue("result", 3)];
+  const solo = speechPresentation === "solo";
+  const start = solo ? SOLO_SPEECH_START_MS : SCENE_SPEECH_START_MS;
+  const read = solo ? SOLO_READ_START_MS : SCENE_READ_START_MS;
+  const fade = read - start;
+  const opacity = () => solo ? soloPresentationMotion("Echo", director.getElapsedBaseMs(), true).speechOpacity : sceneSpeechOpacity("Echo", director.getElapsedBaseMs());
+  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), speechPresentation, baseDurationMs: solo ? soloPresentationDurationMs("Echo") : sceneSpeechDurationMs("Echo") };
+  const cues = [shot, { ...shot, key: "vote" }];
   director.load(cues);
+  expect(opacity()).toBe(0);
   director.manualAdvance();
-  expect(director.getSnapshot().activeKey).toBe("vote");
-  director.setReducedMotion(true); director.play(); director.seek(1);
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
-  clock.tick(100);
-  const elapsed = director.getElapsedBaseMs();
-  director.pause(); director.reconnect(cues); director.append(cues);
-  expect(director.getElapsedBaseMs()).toBe(elapsed);
-  director.seek(0);
+  clock.tick(fade / 2);
+  expect(opacity()).toBe(.5);
+  director.manualAdvance(); // Repeated clicks cannot interrupt the reveal.
+  director.reconnect(cues); director.append(cues);
+  clock.tick(fade / 2);
+  expect(opacity()).toBe(1);
+  expect(director.isAnimating()).toBe(false);
+  clock.tick(10_000);
+  expect(director.getElapsedBaseMs()).toBe(read);
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "intro", isPlaying: false });
   director.manualAdvance();
+  clock.tick(fade);
+  expect(opacity()).toBe(0);
+  expect(director.getSpeechElapsedBaseMs()).toBe(read);
+  if (solo) expect(soloPresentationMotion("Echo", director.getElapsedBaseMs(), true).imageOpacity).toBe(1);
+  expect(director.isAnimating()).toBe(false);
+  clock.tick(10_000);
+  expect(director.getSnapshot().activeKey).toBe("intro");
+  director.manualAdvance();
+  clock.tick((solo ? SOLO_EXIT_MS - fade : SCENE_EXIT_HOLD_MS) + read);
   expect(director.getSnapshot()).toMatchObject({ activeKey: "vote", isPlaying: false });
-  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
-  director.manualAdvance();
-  expect(director.getSnapshot().activeKey).toBe("result");
-  expect(director.getElapsedBaseMs()).toBe(0);
+  expect(opacity()).toBe(1);
+  expect(director.getNavigationRevision()).toBe(0);
+  expect(director.getSpeechElapsedBaseMs()).toBe(read);
+  director.manualAdvance(); clock.tick(fade);
+  director.manualAdvance(); clock.tick(10_000);
+  expect(opacity()).toBe(0);
+  expect(director.isAnimating()).toBe(false);
+  director.seek(0);
+  expect(director.getElapsedBaseMs()).toBe(start);
+  expect(director.getSpeechElapsedBaseMs()).toBe(start);
+  expect(opacity()).toBe(0);
+  director.dispose();
+});
+
+it("seek and resume cancel a pending manual boundary without advancing stale speech", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const shot: PresentationCue = { ...cue("first", 1, 0, "classic"), speechPresentation: "scene", baseDurationMs: sceneSpeechDurationMs("Echo") };
+  director.load([shot, { ...shot, key: "second" }]);
+  director.manualAdvance(); clock.tick(100);
+  director.seek(1); clock.tick(1000);
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "second", isPlaying: false });
+  expect(director.getElapsedBaseMs()).toBe(SCENE_SPEECH_START_MS);
+  director.manualAdvance(); clock.tick(100); director.play(); clock.tick(300);
+  expect(director.getElapsedBaseMs()).toBe(SCENE_SPEECH_START_MS + 400);
+  expect(director.getSnapshot().isPlaying).toBe(true);
+  director.dispose();
+  expect(clock.timers.size).toBe(0);
+});
+
+it.each(["tail", "hydration"])("paused clicks reveal buffered live speech after waiting at %s", waiting => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock, followTail: true });
+  const first: PresentationCue = { ...cue("first", 1, 0, "classic"), speechPresentation: "scene", baseDurationMs: sceneSpeechDurationMs("Echo") };
+  if (waiting === "tail") {
+    director.load([first]); director.play(); clock.tick(first.baseDurationMs); director.pause();
+  } else {
+    director.reconnect([first]);
+  }
+  director.append([first, { ...first, key: "second", canonicalSequence: 2 }]);
+  director.manualAdvance(); clock.tick(SCENE_READ_START_MS);
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "second", isPlaying: false, waitingAtTail: false });
+  expect(sceneSpeechOpacity("Echo", director.getElapsedBaseMs())).toBe(1);
+  director.manualAdvance(); clock.tick(VISUAL_SPEECH_FADE_MS);
+  expect(sceneSpeechOpacity("Echo", director.getElapsedBaseMs())).toBe(0);
   director.dispose();
 });

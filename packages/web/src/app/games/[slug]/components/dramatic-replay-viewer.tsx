@@ -113,7 +113,8 @@ export function buildClassicPresentationCues(
       kind: "classic_transcript" as const,
       stage: "done" as const,
       baseDurationMs: transcriptPresentationDurationMs(message, players),
-      soloSpeech: isSoloTranscript(message),
+      speechPresentation: isSoloTranscript(message) ? "solo" as const
+        : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
       sceneIndex,
       messageIndex,
     })),
@@ -627,14 +628,13 @@ function DramaticReplayTheater({
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
-    if (fullscreen) { setControlsVisible((visible) => !visible); resetControlsTimer(); return; }
     if (!controlsVisible && isPlaying) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, fullscreen, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
@@ -1058,7 +1058,7 @@ function DramaticReplayTheater({
 
         </div>
         <p className={`text-[10px] text-white/10 text-center mt-2 ${fullscreen ? "hidden" : "hidden md:block"}`}>
-          Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
+          Space: play/pause · Click/→: show/hide speech · ←: back · []: rounds · 1234: speed
         </p>
       </div>
     </div>

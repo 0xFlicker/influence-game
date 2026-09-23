@@ -152,9 +152,7 @@ test.describe("format-aware game viewer", () => {
     await expect(player).toBeVisible();
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
     const before = await player.locator('[data-solo-image]').getAttribute('aria-label');
-    await player.getByRole('img').click();
-    // Fullscreen resize may still repaginate text. Tapping must preserve the
-    // active speech and reading position, not the previous frame's page size.
+    // Fullscreen resize may still repaginate text while retaining the reading position.
     await expect(player.locator('[data-solo-image]')).toHaveAttribute('aria-label', before!);
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
@@ -183,6 +181,67 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   });
+
+  for (const [phase, roomId] of [["LOBBY", "lobby"], ["MINGLE", "mingle-1"], ["JURY_QUESTIONS", "finals"]] as const) {
+    test(`${phase} bubbles fade, hold a clear scene, and pan between paused clicks`, async ({ page }, testInfo) => {
+      await page.clock.install();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
+      const slug = `speech-gaps-${roomId}`;
+      const scenario = createFormatKernelViewerScenario("two_names_declined");
+      const [first, second] = scenario.roster;
+      const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
+      await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: {
+        enabled: true, status: null, portraits: {}, scenes: [{
+          id: "room", roomId, version: 1, imageUrl: "/speech-room.svg", participantIds: [first!.id, second!.id], afterDialogueSequence: 0,
+          anchors: [first!, second!].map((player, index) => ({ playerId: player.id, label: index + 1, confidence: "clear", head: { x: index === 0 ? .15 : .75, y: .2, width: .08, height: .12 } })),
+        }],
+      } }));
+      await page.route("**/speech-room.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="#34324b"/><circle cx="300" cy="240" r="85" fill="#bfa989"/><circle cx="1260" cy="240" r="85" fill="#99bfa9"/></svg>' }));
+      await page.goto(viewerUrl(`/games/${slug}`));
+      await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+      await expect.poll(() => fixture.sockets.length).toBe(1);
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+      for (const [index, player] of [first!, second!].entries()) {
+        fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+          entrySequence: index + 1, round: 0, phase, from: player.id, scope: "public",
+          text: index === 0 ? "The first accepted line." : "The second accepted line.",
+          visualScene: { id: "room", roomId }, timestamp: Date.now() + index,
+        } }));
+        if (index === 0) await expect(page.getByRole("region", { name: "Current room" })).toBeVisible();
+      }
+      const room = page.getByRole("region", { name: "Current room" });
+      const bubble = room.locator("[data-speech-bubble]");
+      await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
+      await page.clock.runFor(900);
+      await expect(bubble).toContainText("The first accepted line.");
+      await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+      await room.click();
+      await page.clock.runFor(100);
+      const fading = Number(await bubble.evaluate(element => getComputedStyle(element).opacity));
+      expect(fading).toBeGreaterThan(0);
+      expect(fading).toBeLessThan(1);
+      await page.clock.runFor(100);
+      await expect(bubble).toHaveCount(0);
+      const oldLeft = await room.getByRole("img").evaluate(element => element.getBoundingClientRect().left);
+      await page.clock.runFor(10_000);
+      await expect(bubble).toHaveCount(0);
+      await room.screenshot({ path: testInfo.outputPath(`${roomId}-clear-scene.png`) });
+      await room.click();
+      await page.clock.runFor(650); // 400 ms clear hold, then 250 ms into the camera pan.
+      await expect(bubble).toHaveCount(0);
+      const panningLeft = await room.getByRole("img").evaluate(element => element.getBoundingClientRect().left);
+      expect(panningLeft).toBeLessThan(oldLeft);
+      await page.clock.runFor(400); // Camera has settled; next bubble has not faded in yet.
+      await expect(bubble).toHaveCount(0);
+      await page.clock.runFor(200);
+      await expect(bubble).toContainText("The second accepted line.");
+      await expect(bubble).toHaveCSS("opacity", "1");
+      await page.clock.runFor(10_000);
+      await expect(bubble).toContainText("The second accepted line.");
+      await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+    });
+  }
 
   test("native fullscreen enters and exits without changing paused speech", async ({ page }) => {
     await page.clock.install();
@@ -216,7 +275,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Enter fullscreen", exact: true })).toBeFocused();
   });
 
-  test("solo clicks reveal speech before exiting and seeks reveal votes immediately", async ({ page }) => {
+  test("solo clicks fade speech before exiting and seeks wait for a reveal click", async ({ page }) => {
     await page.clock.install();
     const slug = "solo-click-fixture";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
@@ -236,6 +295,7 @@ test.describe("format-aware game viewer", () => {
     await page.clock.runFor(100);
     await expect(solo.locator("blockquote")).toHaveCount(0);
     await solo.click();
+    await page.clock.runFor(300);
     await expect(solo.locator("blockquote")).toContainText("I intend to win your trust.");
     await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
     send({ entrySequence: 2, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "Private thinking must not be spoken.", acceptedBallot: { voterId: actor.id, targetId: target.id, purpose: "empower" }, timestamp: Date.now() + 1 });
@@ -246,13 +306,17 @@ test.describe("format-aware game viewer", () => {
     expect(opacity).toBeLessThan(1);
     await solo.click();
     await expect(solo).toHaveAttribute("aria-label", `Introduction: ${actor.name}`);
-    await page.clock.runFor(725);
+    await page.clock.runFor(875);
     await expect(solo).toHaveAttribute("aria-label", `Ballot: ${actor.name}`);
     await expect(solo.locator("blockquote")).toHaveCount(0);
     await solo.click();
+    await page.clock.runFor(300);
     await expect(solo.locator("blockquote")).toContainText(target.name);
     await expect(solo.locator("blockquote")).not.toContainText("Private thinking");
     await page.getByRole("button", { name: "Go to replay start", exact: true }).click();
+    await expect(solo.locator("blockquote")).toHaveCount(0);
+    await solo.click();
+    await page.clock.runFor(300);
     await expect(solo.locator("blockquote")).toContainText("I intend to win your trust.");
     await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
   });
@@ -305,7 +369,7 @@ test.describe("format-aware game viewer", () => {
       await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeEnabled();
       await page.keyboard.press("ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
-      await expect(house).toBeVisible();
+      await advanceUntilVisible(page, house, "House summary after hiding solo speech");
       const halves = await house.evaluate(el => {
         const stage = el.getBoundingClientRect();
         return { mid: stage.top + stage.height / 2, logoBottom: el.querySelector("img")!.getBoundingClientRect().bottom, textTop: el.querySelector("[data-house-copy]")!.getBoundingClientRect().top };
@@ -627,6 +691,8 @@ test.describe("format-aware game viewer", () => {
         const plea = page.getByRole("region", { name: `Plea: ${speaker}`, exact: true });
         for (let i = 0; i < 30 && !await plea.count(); i++) await next();
         const quote = plea.getByRole("blockquote");
+        // A paused scene seek leaves its portrait clear until speech is requested.
+        await page.keyboard.press("ArrowRight");
         await expect(quote).toContainText("Keep me because the case against me");
         // Image sizing and measured pagination settle in separate observers.
         // Assert their combined result instead of sampling an intermediate page.
@@ -925,10 +991,15 @@ test.describe("format-aware game viewer", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     const rollCall = page.getByRole("region", { name: /^Ballot: / });
-    await advanceUntilVisible(page, rollCall, "format roll call");
+    await advanceUntilVisible(page, rollCall.getByRole("blockquote"), "format roll call speech");
     const firstVoter = await rollCall.getAttribute("aria-label");
     await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
     await page.keyboard.press("ArrowRight");
+    await page.clock.runFor(250);
+    await expect(rollCall).toHaveAttribute("aria-label", firstVoter!);
+    await expect(rollCall.getByRole("blockquote")).toHaveCount(0);
+    await page.keyboard.press("ArrowRight");
+    await page.clock.runFor(600);
     await expect(rollCall).not.toHaveAttribute("aria-label", firstVoter!);
     await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
     await expect(rollCall).toHaveCount(1);
@@ -1114,7 +1185,7 @@ test.describe("format-aware game viewer", () => {
 
 async function assertSoloBallot(page: Page, voter: string, target: string): Promise<void> {
   const ballot = page.getByRole("region", { name: `Ballot: ${voter}`, exact: true });
-  await expect(ballot).toBeVisible();
+  await advanceUntilVisible(page, ballot.getByRole("blockquote"), `revealed ballot for ${voter}`);
   await expect(ballot.getByRole("blockquote")).toHaveText(target);
   await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
 }

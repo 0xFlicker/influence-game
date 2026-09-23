@@ -135,12 +135,12 @@ export interface FormatPresentationSnapshot {
   eliminatedId: string | null;
 }
 
-interface SoloSpeechCue {
-  /** Solo shot staging supports reveal-before-advance and readable seeks. */
-  soloSpeech?: boolean;
+interface SpeechCue {
+  /** The director stages bubbles independently from the surrounding image. */
+  speechPresentation?: "solo" | "scene";
 }
 
-interface FormatPresentationCueBase extends SoloSpeechCue {
+interface FormatPresentationCueBase extends SpeechCue {
   visualBallot?: { voterId: string; targetId: string; purpose: "empower"; revote?: boolean };
   source: "format";
   key: string;
@@ -263,7 +263,7 @@ export type FormatPresentationCue =
       resolutionKind: "clear" | "auto";
     });
 
-export interface ClassicPresentationCue extends SoloSpeechCue {
+export interface ClassicPresentationCue extends SpeechCue {
   /** Historical dialogue is navigable but must not resume live playback. */
   liveCatchUp?: boolean;
   source: "classic";
@@ -279,7 +279,7 @@ export interface ClassicPresentationCue extends SoloSpeechCue {
   messageIndex: number;
 }
 
-export interface HousePresentationCue extends SoloSpeechCue {
+export interface HousePresentationCue extends SpeechCue {
   source: "house";
   kind: "house_bridge";
   followingCueKey: string;
@@ -292,7 +292,7 @@ export interface HousePresentationCue extends SoloSpeechCue {
   baseDurationMs: number;
 }
 
-export interface EndgamePresentationCue extends SoloSpeechCue {
+export interface EndgamePresentationCue extends SpeechCue {
   source: "endgame";
   key: string;
   canonicalSequence: number;
