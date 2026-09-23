@@ -225,8 +225,8 @@ describe("agent revision update loop", () => {
       .where(sql`${schema.gamePlayers.gameId} IN ('rename-active', 'rename-suspended')`)
       .orderBy(schema.gamePlayers.gameId);
     expect(result.profileRevision).toMatchObject({
-      revisionId: waitingBefore.agentRevisionId,
-      ordinal: revisionsBefore[0]?.ordinal,
+      revisionId: profile.currentRevisionId,
+      ordinal: revisionsBefore.find((revision) => revision.id === profile.currentRevisionId)?.ordinal,
       outcome: "preserved",
       ratingRecalibrated: false,
     });

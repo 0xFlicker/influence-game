@@ -58,7 +58,7 @@ describe("agent revision persistence", () => {
     expect(revision?.effectiveRuntimeSnapshot).toMatchObject({
       backstory: "A retired negotiator.",
       strategyInstructions: "Build trust before acting.",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       providerProfileId: "openai",
       reasoningPolicy: "action-policy",
     });

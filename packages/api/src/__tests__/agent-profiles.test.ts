@@ -1282,7 +1282,7 @@ describe("Agent Profile API", () => {
       }
     });
 
-    test("sends GPT-5.6 Luna for new and refined profiles", async () => {
+    test("sends GPT-6 Luna for new and refined profiles", async () => {
       const envKeys = [
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
@@ -1307,7 +1307,7 @@ describe("Agent Profile API", () => {
             id: "chatcmpl-test",
             object: "chat.completion",
             created: 1,
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             choices: [{
               index: 0,
               message: {
@@ -1354,8 +1354,8 @@ describe("Agent Profile API", () => {
         expect(refined.status).toBe(200);
         expect(requestBodies).toHaveLength(2);
         expect(requestBodies.map((body) => body.model)).toEqual([
-          "gpt-5.6-luna",
-          "gpt-5.6-luna",
+          "gpt-6-luna",
+          "gpt-6-luna",
         ]);
       } finally {
         globalThis.fetch = originalFetch;

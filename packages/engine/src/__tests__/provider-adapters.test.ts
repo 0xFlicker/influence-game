@@ -457,24 +457,27 @@ describe("provider-native adapters", () => {
     ]);
   });
 
-  it("compiles the identical OpenAI Responses request regardless of fallback presence", () => {
+  it.each(["openai:gpt-6-luna", "openai:gpt-5.6-luna"] as const)("compiles %s Responses reasoning with strict tools and caching", (catalogId) => {
     const client = {} as OpenAI;
-    const openai = runtime("openai:gpt-5.6-luna", client);
+    const openai = runtime(catalogId, client);
 
     const alone = compileOpenAIResponsesRequest(invocation, openai);
     const withFallbacks = compileOpenAIResponsesRequest(invocation, openai);
 
     expect(withFallbacks).toEqual(alone);
     expect(withFallbacks).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: catalogId.slice("openai:".length),
       input: "Choose one target.",
       store: false,
       service_tier: "flex",
       reasoning: { effort: "medium", summary: "auto" },
       max_output_tokens: 4_096,
+      prompt_cache_options: { ttl: "30m" },
     });
     expect(withFallbacks).toHaveProperty("tools");
     expect(withFallbacks).not.toHaveProperty("reasoning_effort");
+    expect(withFallbacks).not.toHaveProperty("temperature");
+    expect(withFallbacks.tools?.[0]).toMatchObject({ type: "function", strict: true });
   });
 
   it("preserves Grok options while GLM omits only unsupported options", () => {

@@ -4,6 +4,8 @@ Two Names restart checks must preserve distinct semantic coordinates for initial
 
 These rules and patterns apply to the game engine (`packages/engine`) for surfacing agent internal reasoning during simulations, particularly for Mingle workflows and decision phases.
 
+New default simulations and games use `openai:gpt-6-luna`; their sealed manifest and attempt metadata remain the source of model provenance. Existing games and explicit evaluation models are unchanged. Use the same `--chatty` inspection flow and direct House calls with typed contracts; no `as any`.
+
 ## Purpose
 
 Lobby, every Mingle turn, and private alliance huddles use one final `# CONSTITUTION.md` dialogue driver across all models: one short paragraph, usually 1–3 sentences, under 100 tokens, with every word serving gameplay or the audience. The driver follows dynamic context and any visual/performance instructions. Private prompt/request traces include the same final text sent to the provider. It stays outside the stable system prefix without changing cache keys; providers do not expose a per-line guarantee against caching. This is speech guidance, not truncation, a schema constraint, or a smaller completion budget. Thinking, strategy, typed facts, legal silence, introductions, and formal speeches retain their existing contracts. Judge actual brevity and watchability from fresh outputs; prompt tests prove placement, not model compliance.

@@ -56,6 +56,8 @@ describe("provider model inventory", () => {
         capabilities: { supportsImageInput: true, supportsOpenAIResponses: true, supportsTemperature: false },
       });
     expect(calls).toEqual(["openai"]);
+    expect(body.models.find((model) => model.catalogId === "openai:gpt-6-luna"))
+      .toMatchObject({ configured: true, available: true, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
     expect(body.models.find((model) => model.catalogId === "openai:gpt-5.6-luna"))
       .toMatchObject({ configured: true, available: true });
     expect(body.models.find((model) => model.catalogId === "katana:grok-4-5"))

@@ -112,7 +112,16 @@ const GAME_MODELS: GameModelOption[] = [
   {
     catalogId: "openai:gpt-5.6-luna",
     displayName: "OpenAI gpt-5.6-luna",
-    sublabel: "GPT-5.6 baseline play",
+    sublabel: "Previous Luna generation",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
+  {
+    catalogId: "openai:gpt-6-luna",
+    displayName: "OpenAI gpt-6-luna",
+    sublabel: "Default cost-efficient play",
     configured: true,
     available: null,
     defaultReasoningPolicy: "medium",

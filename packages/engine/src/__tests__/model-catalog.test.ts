@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
+  DEFAULT_MODEL_ID,
+  DEFAULT_MODEL_CATALOG_ID,
   MODEL_CATALOG,
   MAX_PROVIDER_MANIFEST_ENTRIES,
   MAX_PROVIDER_ENTRY_CALLS_PER_GAME,
@@ -36,6 +38,25 @@ describe("model catalog", () => {
       expect(resolveProviderManifest(manifest).every(slot => slot.model.capabilities.supportsImageInput)).toBe(true);
     }
     expect(inferModelCapabilities("gpt-6-unlisted").supportsImageInput).toBe(false);
+  });
+
+  it("resolves the GPT-6 Luna default through hosted Responses with strict tools", () => {
+    expect(DEFAULT_MODEL_ID).toBe("gpt-6-luna");
+    expect(DEFAULT_MODEL_CATALOG_ID).toBe("openai:gpt-6-luna");
+    const selection = resolveModelSelection({ catalogId: DEFAULT_MODEL_CATALOG_ID });
+    expect(selection.modelId).toBe("gpt-6-luna");
+    const entry = modelCatalogEntryById(DEFAULT_MODEL_CATALOG_ID);
+    expect(entry?.evaluationStatus).toBe("game-ready");
+    expect(entry?.defaultReasoningPolicy).toBe("action-policy");
+    expect(entry?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+    expect(entry?.capabilities).toMatchObject({
+      supportsOpenAIResponses: true,
+      supportsReasoningEffort: true,
+      supportsStructuredOutput: true,
+      supportsTools: true,
+      supportsTemperature: false,
+      supportsPromptCacheRetention: true,
+    });
   });
 
   it("marks grok-4-3 as the active Katana game-ready model", () => {

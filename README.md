@@ -131,7 +131,7 @@ An API-backed test game can seal the same fallback order used by Daily:
 
 ```bash
 bun run simulate:api -- \
-  --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+  --provider-entry openai:gpt-6-luna,reasoning=action-policy \
   --provider-entry katana:grok-4-5,reasoning=action-policy,max-calls=12 \
   --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
 ```

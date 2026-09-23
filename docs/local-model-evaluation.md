@@ -66,7 +66,8 @@ Game-ready catalog entries:
 | `openai:gpt-5-mini` | OpenAI | `gpt-5-mini` | Legacy standard fallback |
 | `openai:gpt-5.4-nano` | OpenAI | `gpt-5.4-nano` | Cheapest GPT-5.4-class game-ready model |
 | `openai:gpt-5.4-mini` | OpenAI | `gpt-5.4-mini` | Legacy premium fallback |
-| `openai:gpt-5.6-luna` | OpenAI | `gpt-5.6-luna` | Product baseline; GPT-5.6 cost-sensitive tier ($1 / $0.10 cached / $6 per 1M) |
+| `openai:gpt-5.6-luna` | OpenAI | `gpt-5.6-luna` | Previous Luna generation; still selectable explicitly |
+| `openai:gpt-6-luna` | OpenAI | `gpt-6-luna` | Product baseline; Responses reasoning and strict tools |
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
 | `katana:glm-5-2` | Katana / IMGNAI | `glm-5-2` | Qualified preferred secondary Daily fallback; speech, strict JSON Schema, and named tools pass |
 | `katana:grok-4-5` | Katana / IMGNAI | `grok-4-5` | Qualified tertiary Daily fallback; speech, strict JSON Schema, and named tools pass |
@@ -340,7 +341,7 @@ This opt-in paid lane captures the visible presentation plus engine-generated st
 doppler run --config dev -- \
   bun run --cwd packages/engine evaluate:r32-provider-surfaces -- \
     --stage=after \
-    --catalog-id=openai:gpt-5.6-luna \
+    --catalog-id=openai:gpt-6-luna \
     --reasoning-policy=low \
     --tool-choice-mode=named \
     --service-tier=flex \
@@ -407,3 +408,9 @@ Durable-runner coverage now includes restart after a committed Mingle movement b
 ### Character-authoring generation
 
 Agent editor refinement is a hosted authoring flow, separate from gameplay model selection. Its exact structured response now requires performance instructions and visual design alongside the profile fields. Existing artwork guides identity. Provider-free coverage lives in `agent-profile-generation.test.ts`, `character-image-generation.test.ts`, `character-portrait.test.ts` and `agent-form-draft-recovery.test.tsx`. See [character drafts](agent-content-submissions.md) for the one-full-body-image workflow, durable localization and editable pixel crops. No image provider is called by these required tests.
+
+### GPT-6 Luna default (2026-09-22)
+
+New game forms, Daily Free primary selections, simulator defaults and shared profile-generation helpers use GPT-6 Luna. Existing games retain their sealed provider manifests; explicit model choices and the separately pinned owner-learning workload remain unchanged. No new secret is required: hosted requests use `OPENAI_API_KEY`. The Daily fallback order remains GLM 5.2 (24 calls), then Grok 4.5 (12 calls).
+
+The [model documentation](https://developers.openai.com/api/docs/models/gpt-6-luna) specifies Standard input/cache-read/cache-write/output rates of $0.10/$0.01/$0.125/$0.50 per million tokens; Flex rates are half. Individual prompts above 272,000 input tokens cost 2× for input/cache and 1.5× for output. Aggregate comparisons cannot infer per-request context sizes and use base rates. The catalog selects Responses for reasoning plus strict tools, omits unsupported temperature, and enables the existing 30-minute prompt cache contract. Provider-free tests verify routing and accounting; this change makes no live strategic-quality qualification claim.

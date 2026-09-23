@@ -444,7 +444,7 @@ function printHelp(): void {
   bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id>
   bun run simulate:api -- --provider katana --model deepseek-v4-flash
   bun run simulate:api -- \\
-    --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \\
+    --provider-entry openai:gpt-6-luna,reasoning=action-policy \\
     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \\
     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
