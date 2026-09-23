@@ -5578,6 +5578,14 @@ IMPORTANT: Treat remaining contestants as the only current game actors for messa
       : "not in endgame";
 
     const twoNames = ctx.twoNamesBoard;
+    const nominatedOverrideGuidance = twoNames?.overrideAction === null
+      && !twoNames.replacementPending
+      && twoNames.overrideHolderId !== null
+      && twoNames.currentNomineeIds.includes(twoNames.overrideHolderId)
+      ? `\n\n## Two Names Strategic Context\n${twoNames.overrideHolderId === this.id
+        ? "You are both nominated and, by luck, the Override holder. That means you can take yourself off the nomination block and return the decision to the Empowered player, who must nominate another player. Think about who might be the replacement nominee."
+        : "The Override is also a nominee, so they will most likely use the Override on themselves."}`
+      : "";
     const names = (ids: readonly UUID[]) => ids.map((id) => playerNameById.get(id) ?? id).join(" and ");
     const twoNamesSection = !twoNames ? "" : !twoNames.initialNomineeIds
       ? "- Two Names: no pair has been selected. You are Empowered and must select the initial nominees.\n"
@@ -5601,7 +5609,7 @@ ${twoNamesSection}${classicCouncilStatusLine}- Latest resolved exit: ${latestEli
 - Current endgame status: ${endgameStatus}
 - Active jurors: ${activeJuryNames.length > 0 ? activeJuryNames.join(", ") : "none"}
 - Exited contestants who are not jurors: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}
-- Exited-contestant rule: exited contestants may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not current targets, active allies, shield recipients, room targets, or normal-round voters.`;
+- Exited-contestant rule: exited contestants may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not current targets, active allies, shield recipients, room targets, or normal-round voters.${nominatedOverrideGuidance}`;
   }
 
   private buildRecentDecisionsSection(ctx: PhaseContext): string {

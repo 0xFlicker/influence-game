@@ -76,6 +76,9 @@
  *
  * Two Names prompts carry canonical initial/current nominees and Override state for
  * every social decision; only the Empowered initial nomination has no selected pair.
+ * A nominated holder with Override pending receives neutral self-removal/replacement
+ * guidance; other players are told self-rescue is most likely. This strategic advice
+ * ends at use/decline, including pending replacement; it is not an accepted decision.
  * Inspect fresh outgoing prompts for this contract, not historical transcript prose.
  * Keep direct House calls and no `as any` in simulation integrations.
  *

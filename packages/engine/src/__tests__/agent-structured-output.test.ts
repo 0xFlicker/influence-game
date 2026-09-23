@@ -6993,6 +6993,58 @@ describe("Two Names canonical prompt board", () => {
       expect(prompt).toContain("initial nominations; Override pending");
       expect(prompt).toContain("Nyx and Sage");
       expect(prompt).not.toContain("no pair has been selected");
+      expect(prompt).not.toContain("## Two Names Strategic Context");
+    }
+  });
+  it.each(["mira", "vera"])("gives nominee Override %s neutral self-rescue guidance and everyone else the likely outcome", async (holderId) => {
+    const { state, builder } = harness();
+    state.recordTwoNamesSetup({ empoweredId: "atlas", initialNomineeIds: ["mira", "vera"], overrideHolderId: holderId });
+    const holderGuidance = "You are both nominated and, by luck, the Override holder. That means you can take yourself off the nomination block and return the decision to the Empowered player, who must nominate another player. Think about who might be the replacement nominee.";
+    const othersGuidance = "The Override is also a nominee, so they will most likely use the Override on themselves.";
+    for (const { id } of players) {
+      const prompt = await minglePrompt(builder.buildPhaseContext(id, Phase.FORMAT_MINGLE));
+      expect(prompt).toContain(id === holderId ? holderGuidance : othersGuidance);
+      expect(prompt).not.toContain(id === holderId ? othersGuidance : holderGuidance);
+      expect(prompt).toContain("Override decision: pending");
+    }
+
+    state.recordTwoNamesMingleCompleted("initial_names", ["mira", "vera"]);
+    const ctx = builder.buildPhaseContext(holderId, Phase.FORMAT_MINGLE);
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(holderId, ctx.selfName, "strategic", makeToolOpenAIStub(requests, "two_names_override", {
+      thinking: "Consider the replacement.", useOverride: false, removed: null, strategyDelta: null,
+    }), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, players);
+    const decision = await agent.getTwoNamesOverride(ctx, ["mira", "vera"]);
+    const prompt = JSON.stringify(requests[0]?.messages);
+    expect(prompt).toContain(holderGuidance);
+    expect(prompt).not.toContain(othersGuidance);
+    expect(decision.action).toBe("decline");
+  });
+  it.each([null, "mira", "vera"])("retires nominee Override guidance after the decision (removed: %s)", async (removedId) => {
+    const { state, builder } = harness();
+    state.recordTwoNamesSetup({ empoweredId: "atlas", initialNomineeIds: ["mira", "vera"], overrideHolderId: "mira" });
+    state.recordTwoNamesMingleCompleted("initial_names", ["mira", "vera"]);
+    if (removedId) {
+      const pending = builder.buildPhaseContext("atlas", Phase.FORMAT_MINGLE, { twoNamesReplacementRemovedId: removedId });
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", {
+        thinking: "Name a replacement.", target: "Sage", strategyDelta: null,
+      }), "gpt-5-nano");
+      agent.onGameStart(pending.gameId, players);
+      await agent.getTwoNamesReplacement(pending, ["sage"]);
+      expect(JSON.stringify(requests[0]?.messages)).not.toContain("## Two Names Strategic Context");
+      state.recordTwoNamesOverrideUsed({
+        overrideHolderId: "mira", removedNomineeId: removedId, empoweredId: "atlas", replacementNomineeId: "sage",
+        finalistPlayerIds: removedId === "mira" ? ["sage", "vera"] : ["mira", "sage"],
+      }, { override: [], replacement: [] });
+    } else {
+      state.recordTwoNamesOverrideDeclined("mira", ["mira", "vera"]);
+    }
+    for (const { id } of players) {
+      const prompt = await minglePrompt(builder.buildPhaseContext(id, Phase.FORMAT_MINGLE));
+      expect(prompt).not.toContain("## Two Names Strategic Context");
+      expect(prompt).toContain(`Override decision: ${removedId ? "used" : "declined"}`);
     }
   });
   it("removes resolved nominees from the active board before diary and endgame prompts", async () => {

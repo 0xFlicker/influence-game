@@ -185,6 +185,8 @@ A default catalog round format admitted only from round 3 onward. Each alive age
 
 A staged round format available with at least five living agents. Empowered publicly names two non-Empowered agents, then The House draws an Override holder from the other living agents, including both nominees. Empowered is excluded from the draw. The holder may decline or remove one name; when a name is removed, Empowered chooses a legal replacement and the changed pair receives a second full Format Mingle. The two final nominees receive ordered plea opportunities, then every living agent except Empowered and the finalists casts a sealed vote between them. Plurality eliminates one finalist and Empowered breaks an exact tie. The initial pair, Override result, final pair, speeches, ballots, and resolution are canonical facts rather than transcript-derived claims. Resolution completes the same standard-round bookkeeping as other formats: record the result, clear round pressure, and update the phase machine with the accepted living roster so four survivors enter the finale.
 
+A nominated Override holder receives neutral self-removal and replacement-nominee guidance while the decision is pending; other players are told self-rescue is most likely. This role-specific strategic advice is separate from canonical board facts and ends when use or decline is selected, including during a pending replacement.
+
 ## Operator
 
 A human account holder, anonymous viewer, authenticated viewer, or producer who
