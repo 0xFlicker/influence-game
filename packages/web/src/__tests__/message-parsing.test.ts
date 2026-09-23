@@ -270,8 +270,9 @@ describe("wsEntryToTranscriptEntry", () => {
 
     expect(result.fromPlayerId).toBeNull();
 
-    const houseResult = wsEntryToTranscriptEntry({ ...wsEntry, from: "House" }, "game-456", 2);
+    const houseResult = wsEntryToTranscriptEntry({ ...wsEntry, from: "House", dialogueKind: "house_summary", firstDurableEventSequence: 42 }, "game-456", 2);
     expect(houseResult.fromPlayerId).toBeNull();
+    expect(houseResult).toMatchObject({ dialogueKind: "house_summary", firstDurableEventSequence: 42 });
   });
 
   it("sets toPlayerIds to null when 'to' is undefined", () => {

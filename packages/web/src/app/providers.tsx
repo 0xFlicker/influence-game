@@ -36,7 +36,6 @@ import { InfluenceAuthProvider, useAuth } from "@/hooks/use-auth";
 import { isE2EMode } from "@/lib/wallet-adapter";
 import { InviteCodeModal } from "@/components/invite-code-modal";
 import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
-import { AvatarGenerationActivity } from "@/components/avatar-generation-activity";
 import { PublicIdentityOnboarding } from "@/components/public-identity-onboarding";
 import { LegalAcceptancePrompt } from "@/components/legal-acceptance-prompt";
 import {
@@ -301,7 +300,6 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
             onImmediateHandoffConsumed={consumeDailyAgentHandoff}
           />
         )}
-        <AvatarGenerationActivity />
       </PublicIdentityContext.Provider>
     </InviteContext.Provider>
   );

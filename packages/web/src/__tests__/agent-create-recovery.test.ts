@@ -64,6 +64,23 @@ describe("Agent creation response-loss recovery", () => {
       remote({ name: "Remote Rename", strategyStyle: local.strategyStyle }),
     );
 
-    expect(update).toEqual({ strategyStyle: local.strategyStyle });
+    expect(update).toEqual({});
   });
+  test("recovers crop and visual design together and detects conflicting crop edits", () => {
+    const portraitCrop = { sourceUrl: "/source.png", x: 0, y: 0, width: 0.5, height: 0.5 };
+    const local = { ...baseline, visualDesign: "Green coat", portraitCrop };
+    expect(buildRecoveredUpdate(baseline, local, remote())).toEqual({ visualDesign: "Green coat", portraitCrop });
+    expect(buildRecoveredUpdate(baseline, local, remote({ visualDesign: local.visualDesign, portraitCrop }))).toEqual({});
+    expect(() => buildRecoveredUpdate(baseline, local, remote({ portraitCrop: { ...portraitCrop, x: 0.2 } }))).toThrow("portraitCrop changed");
+  });
+
+});
+
+test("head recovery ignores server-owned confirmation stamps but protects conflicting geometry", () => {
+  const head = { sourceUrl: "/body.png", sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: { x: .3, y: .1, width: .2, height: .2 } };
+  const committed = { ...head, confirmation: { userId: "owner", at: "2026-09-22" } };
+  expect(buildRecoveredUpdate(baseline, { ...baseline, headPosition: head }, remote({ headPosition: committed }))).toEqual({});
+  const next = { ...head, rect: { ...head.rect, y: .12 } };
+  expect(buildRecoveredUpdate({ ...baseline, headPosition: head }, { ...baseline, headPosition: next }, remote({ headPosition: committed }))).toEqual({ headPosition: next });
+  expect(() => buildRecoveredUpdate({ ...baseline, headPosition: head }, { ...baseline, headPosition: next }, remote({ headPosition: { ...committed, rect: { ...head.rect, y: .2 } } }))).toThrow("headPosition changed");
 });

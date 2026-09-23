@@ -85,10 +85,6 @@ export interface DraftAvatarCompletionInput {
   userRoles?: readonly string[];
 }
 
-export type DraftAvatarAttachmentResult =
-  | { attached: true; completion: AvatarCompletionRead; avatarUrl: string | null }
-  | { attached: false; completion: AvatarCompletionRead };
-
 export interface AvatarGenerationOptions {
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -370,75 +366,6 @@ export async function resumeOwnedAttachedAvatarCompletions(
   }
 }
 
-export async function attachOwnedDraftAvatarCompletion(
-  db: DatabaseExecutor,
-  input: { userId: string; generationRequestId: string; agentProfileId: string },
-): Promise<DraftAvatarAttachmentResult> {
-  await db.execute(sql`
-    SELECT id
-    FROM avatar_generation_requests
-    WHERE id = ${input.generationRequestId}
-      AND user_id = ${input.userId}
-    FOR UPDATE
-  `);
-  const request = (await db.select().from(schema.avatarGenerationRequests).where(and(
-    eq(schema.avatarGenerationRequests.id, input.generationRequestId),
-    eq(schema.avatarGenerationRequests.userId, input.userId),
-  )).limit(1))[0];
-  if (!request || !readDraftProfile(request)) return rejectedAttachment();
-  if (request.agentProfileId !== null) {
-    if (request.agentProfileId !== input.agentProfileId) return rejectedAttachment();
-    const profile = await requireOwnedAgentProfile(db, input.userId, input.agentProfileId);
-    return { attached: true, completion: generationRead(request), avatarUrl: profile.avatarUrl };
-  }
-
-  const metadata = isRecord(request.safeMetadata) ? request.safeMetadata : {};
-  const now = new Date().toISOString();
-  const [attached] = await db.update(schema.avatarGenerationRequests).set({
-    agentProfileId: input.agentProfileId,
-    safeMetadata: {
-      ...metadata,
-      attachedAt: now,
-      attachedAgentProfileId: input.agentProfileId,
-    },
-    updatedAt: now,
-  }).where(and(
-    eq(schema.avatarGenerationRequests.id, request.id),
-    isNull(schema.avatarGenerationRequests.agentProfileId),
-    sql`NOT EXISTS (
-      SELECT 1
-      FROM avatar_generation_requests active_request
-      WHERE active_request.user_id = ${input.userId}
-        AND active_request.agent_profile_id = ${input.agentProfileId}
-        AND active_request.purpose = ${AVATAR_GENERATION_PURPOSE}
-        AND active_request.status IN ('queued', 'processing', 'completed')
-        AND active_request.id <> ${request.id}
-    )`,
-  )).returning();
-  if (!attached) return rejectedAttachment();
-
-  const storedAvatarUrl = storedAvatarUrlFromRequest(attached);
-  if (attached.status !== "completed" || !storedAvatarUrl) {
-    const profile = await requireOwnedAgentProfile(db, input.userId, input.agentProfileId);
-    return { attached: true, completion: generationRead(attached), avatarUrl: profile.avatarUrl };
-  }
-
-  const applied = await applyStoredAvatarInTransaction(db, attached, storedAvatarUrl, now);
-  return { attached: true, completion: generationRead(applied.request), avatarUrl: applied.avatarUrl };
-}
-
-function rejectedAttachment(): DraftAvatarAttachmentResult {
-  return {
-    attached: false,
-    completion: {
-      status: "failed",
-      failureCode: "portrait_attachment_rejected",
-      reason: "The requested portrait could not be attached.",
-      retryable: false,
-    },
-  };
-}
-
 function storedAvatarUrlFromRequest(request: AvatarGenerationRequestRow): string | null {
   const metadata = isRecord(request.safeMetadata) ? request.safeMetadata : {};
   return typeof metadata.avatarUrl === "string" ? metadata.avatarUrl : null;
@@ -449,62 +376,6 @@ function requireAttachedProfileId(request: AvatarGenerationRequestRow): string {
     throw new Error("Avatar generation request is not attached to an agent profile.");
   }
   return request.agentProfileId;
-}
-
-async function applyStoredAvatarInTransaction(
-  db: DatabaseExecutor,
-  request: AvatarGenerationRequestRow,
-  storedAvatarUrl: string,
-  now: string,
-  options: Pick<AvatarGenerationOptions, "now"> = {},
-): Promise<{ request: AvatarGenerationRequestRow; avatarUrl: string }> {
-  const agentProfileId = requireAttachedProfileId(request);
-  const before = await requireOwnedAgentProfile(db, request.userId, agentProfileId);
-  const [assigned] = await db.update(schema.agentProfiles).set({
-    avatarUrl: storedAvatarUrl,
-    updatedAt: now,
-  }).where(and(
-    eq(schema.agentProfiles.id, agentProfileId),
-    eq(schema.agentProfiles.userId, request.userId),
-    isNull(schema.agentProfiles.avatarUrl),
-  )).returning();
-
-  if (!assigned) {
-    const current = await requireOwnedAgentProfile(db, request.userId, agentProfileId);
-    const skipped = await updateGenerationRequest(db, request.id, {
-      status: "skipped",
-      failureCode: "avatar_already_provided",
-      failureMessage: displayFailureMessage("avatar_already_provided"),
-      completedAt: now,
-      safeMetadata: mergeSafeMetadata(request.safeMetadata, { avatarUrl: storedAvatarUrl }),
-    }, options);
-    await recordAvatarChange(db, {
-      userId: request.userId,
-      agentProfileId,
-      source: "generation_skipped",
-      status: "skipped",
-      generationRequestId: request.id,
-      previousAvatarUrl: before.avatarUrl,
-      newAvatarUrl: current.avatarUrl,
-      safeMetadata: { reason: "avatar_already_provided" },
-    }, options);
-    return { request: skipped, avatarUrl: current.avatarUrl ?? storedAvatarUrl };
-  }
-
-  await recordAvatarChange(db, {
-    userId: request.userId,
-    agentProfileId,
-    source: request.triggerSource === "web_user_prompt"
-      || request.triggerSource === "web_ai_help_draft"
-      || request.triggerSource === "web_create_default"
-      ? "web_generated_completion"
-      : "backend_generated_completion",
-    status: "completed",
-    generationRequestId: request.id,
-    previousAvatarUrl: before.avatarUrl,
-    newAvatarUrl: storedAvatarUrl,
-  }, options);
-  return { request, avatarUrl: storedAvatarUrl };
 }
 
 export function avatarProfileFingerprint(profile: AvatarPromptProfile): string {
@@ -677,10 +548,8 @@ export async function completeAvatarGenerationRequest(
           avatarUrl: stored.publicUrl,
         }),
       }, options);
-      if (finished.agentProfileId === null) {
-        return { request: finished, avatarUrl: stored.publicUrl };
-      }
-      return applyStoredAvatarInTransaction(tx, finished, stored.publicUrl, now, options);
+      // Generation produces a selectable draft asset; only profile submission publishes it.
+      return { request: finished, avatarUrl: stored.publicUrl };
     });
 
     return {
@@ -857,7 +726,7 @@ async function findActiveOrCompletedGeneration(
     .limit(1))[0];
 }
 
-async function checkAvatarGenerationQuota(
+export async function checkAvatarGenerationQuota(
   db: DatabaseExecutor,
   userId: string,
   userRoles: readonly string[] | undefined,
@@ -883,7 +752,14 @@ async function checkAvatarGenerationQuota(
       eq(schema.avatarGenerationRequests.purpose, AVATAR_GENERATION_PURPOSE),
       inArray(schema.avatarGenerationRequests.status, countedStatuses),
     ));
-  if ((counts?.lifetime ?? 0) >= lifetimeQuota) {
+  const [references] = await db.select({
+    lifetime: sql<number>`count(*)::int`,
+    daily: sql<number>`count(*) filter (where ${schema.visualRenderOperations.createdAt}::timestamptz >= ${since}::timestamptz)::int`,
+  }).from(schema.visualRenderOperations).where(and(
+    eq(schema.visualRenderOperations.userId, userId),
+    sql`${schema.visualRenderOperations.operationKey} LIKE 'full-body:%'`,
+  ));
+  if ((counts?.lifetime ?? 0) + (references?.lifetime ?? 0) >= lifetimeQuota) {
     return {
       ok: false,
       code: "quota_exhausted",
@@ -891,7 +767,7 @@ async function checkAvatarGenerationQuota(
     };
   }
 
-  if ((counts?.daily ?? 0) >= dailyLimit) {
+  if ((counts?.daily ?? 0) + (references?.daily ?? 0) >= dailyLimit) {
     return {
       ok: false,
       code: "rate_limited",

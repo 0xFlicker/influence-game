@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
@@ -20,6 +21,7 @@ describe("agent profile management service", () => {
   beforeEach(async () => {
     db = await setupTestDB();
     await seedUsers(db);
+    for (const key of ["avatars/neon.png", `avatars/${USER_A_ID}.png`, `avatars/${USER_B_ID}.png`, "pfp/did:privy:legacy-owner/avatar.png"]) await contentImageFixture(key);
   });
 
   test("lists only the authenticated user's agents with account-level rating provenance", async () => {

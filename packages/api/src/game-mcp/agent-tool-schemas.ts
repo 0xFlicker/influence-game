@@ -45,6 +45,7 @@ export function agentCommandOutputSchema(): Record<string, unknown> {
         required: ["id", "displayName", "currentRevision", "queueState", "activeEnrollment"],
         properties: {
           id: { type: "string" },
+          contentRevisionId: nullableSchema({ type: "string" }),
           displayName: { type: "string" },
           currentRevision: currentRevisionSchema,
           queueState: { type: "object", additionalProperties: true },
@@ -76,6 +77,8 @@ export function agentMutationReceiptOutputSchema(): Record<string, unknown> {
     type: "object",
     required: ["schemaVersion", "operation", "agent", "profileRevision", "dailyFree", "waitingSeats", "frozenSeats", "warnings"],
     properties: {
+      contentRevisionId: { type: "string" },
+      moderationRecordId: { type: "string" },
       schemaVersion: { type: "number", const: 1 },
       operation: { type: "string", enum: ["created", "updated"] },
       agent: {

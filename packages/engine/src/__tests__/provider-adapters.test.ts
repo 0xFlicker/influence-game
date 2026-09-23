@@ -94,7 +94,7 @@ const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
 };
 
 function runtime(
-  catalogId: "openai:gpt-6-luna" | "openai:gpt-5.6-luna" | "katana:grok-4-5" | "katana:glm-5-2",
+  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -818,4 +818,72 @@ describe("nullable normalization across native transports", () => {
       expect(native).toEqual(before);
     },
   );
+});
+
+describe("vision invocation contracts", () => {
+  const image = { url: "https://assets.example.test/scene.png", detail: "high" as const };
+  const visual: ModelInvocation = {
+    messages: [{ role: "system", content: "Play Influence." }, { role: "user", content: "Read your room.", images: [image] }],
+    result: { kind: "text" }, outputTokenLimit: 100,
+  };
+  const client = {} as OpenAI;
+
+  it("routes GPT-6 Luna image decisions through Responses with reasoning and strict tools", () => {
+    const provider = runtime("openai:gpt-6-luna", client);
+    provider.reasoningPolicy = "high";
+    const invocation: ModelInvocation = {
+      ...visual,
+      result: { kind: "tool", artifact: targetArtifact, choice: { name: targetArtifact.name }, allowParallel: false },
+      reasoning: { effort: "high" },
+      temperature: 0.7,
+      promptCache: { key: "luna-visual", ttl: "30m" },
+    };
+    expect(provider.adapter.validate(invocation, provider).compatible).toBe(true);
+    const request = provider.adapter.compile(invocation, provider);
+    expect(request.transport).toBe("openai.responses");
+    expect(request.body).toMatchObject({
+      model: "gpt-6-luna",
+      reasoning: { effort: "high" },
+      prompt_cache_options: { ttl: "30m" },
+      tools: [{ type: "function", name: targetArtifact.name, strict: true }],
+      input: [{ role: "user", content: [
+        { type: "input_text", text: "Read your room." },
+        { type: "input_image", image_url: image.url, detail: "high" },
+      ] }],
+    });
+    expect(request.body).not.toHaveProperty("temperature");
+  });
+
+  it("keeps the image in single-user Responses inputs and translates Katana attachments", () => {
+    const openai = runtime("openai:gpt-5.6-luna", client);
+    expect(compileOpenAIResponsesRequest(visual, openai).input).toEqual([
+      { role: "user", content: [
+        { type: "input_text", text: "Read your room." },
+        { type: "input_image", image_url: image.url, detail: "high" },
+      ] },
+    ]);
+    const katana = runtime("katana:grok-4-6", client);
+    expect(compileChatCompletionsRequest(visual, katana).messages[1]).toEqual({
+      role: "user", content: [
+        { type: "text", text: "Read your room." },
+        { type: "image_url", image_url: image },
+      ],
+    });
+  });
+
+  it("rejects unsupported vision instead of silently dropping image context", () => {
+    const unsupported = runtime("katana:grok-4-5", client);
+    expect(unsupported.adapter.validate(visual, unsupported).compatible).toBe(false);
+    expect(() => compileChatCompletionsRequest(visual, unsupported)).toThrow("image inputs are unsupported");
+  });
+
+  it("rejects image attachments on instruction roles and invalid image URLs", () => {
+    const openai = runtime("openai:gpt-5.6-luna", client);
+    for (const role of ["system", "developer", "assistant", "tool"] as const) {
+      expect(() => compileOpenAIResponsesRequest({ ...visual, messages: [{ role, content: "test", images: [image] }] }, openai))
+        .toThrow("image inputs require a user message");
+    }
+    expect(() => compileOpenAIResponsesRequest({ ...visual, messages: [{ role: "user", content: "test", images: [{ ...image, url: "file:///etc/passwd" }] }] }, openai))
+      .toThrow("invalid image input");
+  });
 });

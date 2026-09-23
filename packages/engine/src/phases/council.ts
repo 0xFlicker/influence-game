@@ -149,6 +149,8 @@ export async function runCouncilPhase(
       Phase.COUNCIL,
       transcriptThinking.thinking,
       transcriptThinking.reasoningContext,
+      "system_announcement",
+      { voterId: player.id, targetId: vote, purpose: "eliminate" },
     );
     logger.emitAgentTurn({
       phase: Phase.COUNCIL,

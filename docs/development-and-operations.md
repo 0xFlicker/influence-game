@@ -519,3 +519,19 @@ cd packages/api && bun run db:seed
 - [Agent Guide](AGENTS.md) -- repo-specific agent operating context
 - [Development Guide](DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
 - [Local Model Evaluation](docs/local-model-evaluation.md) -- LM Studio and local simulation workflow
+
+### Visual Mode operations
+
+Visual Mode is available at game creation, default off. See [Visual Mode](visual-mode.md) for the room catalog, bounded generation policy and presentation contract. Gameplay waits for a pending attempt within its timeout, makes at most one safe repair, then continues with portraits. This is the default Best effort policy. Require visuals is an explicit championship option that pauses at the durable boundary for admin repair; neither policy disables future generation.
+
+The durable render journal retains immutable request descriptions/hashes, provider attempts, artifacts, rejected verification responses, typed failures, receipts, durations and costs. Operational events are written durably and promoted into producer-visible canonical game events on the next committed turn. A missing or uncertain receipt is not permission to repeat a paid request. The admin visual-production page and producer export expose diagnostics and accounting reconciliation; Best effort never requires operator action. Require visuals exposes repair and resume controls at `/admin/games/<id>/visual`. Known, unpriced and uncertain costs remain distinct.
+
+Scene acceptance is fenced by game, room, arrangement, render revision and committed owner boundary. Unchanged failed arrangements retain their exhausted budget after restart; changed arrangements may generate again. Verified identity with uncertain anchors uses an unanchored name/PFP panel. Agent context uses canonical participants and observable cues unless a matching annotated scene is verified. Ballots receive no room imagery.
+
+Durable Mingle commits initial allocation, each simultaneous beat and completion separately, including both Two Names windows. Its cursor preserves the current assignments and delivered private-inbox boundary. Only committed movement changes visual arrangements. Rendering stays outside long transactions; no visual result may change canonical participants or movement.
+
+For local review use Doppler dev with an explicit local database URL. Run provider-free checks, PostgreSQL durability tests and browser playback checks before handoff. Paid provider experiments remain opt-in. No generated samples or research scripts are required on the feature branch.
+
+### Character content evidence
+
+Agent submission writes durable content revisions and pending moderation records in the same transaction as the active profile. No moderator worker or enforcement runs yet. Image generation completes into draft assets; users must select and submit those assets. See [Character drafts and moderation evidence](agent-content-submissions.md) for idempotency, concurrency, asset retention, and the pending-review inspection query.

@@ -34,6 +34,8 @@ export interface ViewerDecisionEventBase<
 export type ViewerDecisionEventType =
   | "game.phase_entered"
   | "player.eliminated"
+  | "endgame.elimination_resolved"
+  | "jury.winner_determined"
   | "vote.cast"
   | "vote.empower_tally_resolved"
   | "vote.empower_revote_cast"
@@ -58,6 +60,13 @@ export type ViewerDecisionEventType =
   | "council.elimination_resolved";
 
 export type ViewerDecisionEvent =
+  | ViewerDecisionEventBase<"endgame.elimination_resolved", {
+      stage: "reckoning" | "tribunal" | "judgment" | null;
+      votes: Record<UUID, UUID>;
+      juryTiebreakerVotes: Record<UUID, UUID>;
+      eliminatedId: UUID;
+    }>
+  | ViewerDecisionEventBase<"jury.winner_determined", { votes: Record<UUID, UUID>; winnerId: UUID }>
   | ViewerDecisionEventBase<
       "game.phase_entered",
       { phase: Phase; remainingPlayers: Array<{ id: UUID; name: string }> }
@@ -165,6 +174,8 @@ export type ViewerDecisionEvent =
     >;
 
 const VIEWER_DECISION_EVENT_TYPES = new Set<string>([
+  "endgame.elimination_resolved",
+  "jury.winner_determined",
   "game.phase_entered",
   "player.eliminated",
   "vote.cast",
@@ -247,6 +258,13 @@ export function projectViewerDecisionEvent(
   const base = viewerEventBase(event);
 
   switch (event.type) {
+    case "endgame.elimination_resolved":
+      return { ...base, type: event.type, payload: {
+        stage: event.payload.stage, votes: copyRecord(event.payload.tally.votes),
+        juryTiebreakerVotes: copyRecord(event.payload.juryTiebreakerVotes ?? {}), eliminatedId: event.payload.eliminated,
+      } };
+    case "jury.winner_determined":
+      return { ...base, type: event.type, payload: { votes: copyRecord(event.payload.tally.votes), winnerId: event.payload.winnerId } };
     case "game.phase_entered":
       return {
         ...base,

@@ -1,6 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { renderToString } from "react-dom/server";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
 import type { DiaryRoomData } from "../app/games/[slug]/components/types";
@@ -8,11 +6,6 @@ import {
   DiaryQACard,
   DiaryRoomChat,
 } from "../app/games/[slug]/components/diary-room";
-
-const dramaticReplaySource = readFileSync(
-  join(import.meta.dir, "../app/games/[slug]/components/dramatic-replay-viewer.tsx"),
-  "utf8",
-);
 
 const player: GamePlayer = {
   id: "p1",
@@ -104,8 +97,5 @@ describe("DiaryRoomChat", () => {
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
   });
 
-  it("bounds stacked diary cards in the dramatic replay viewport", () => {
-    expect(dramaticReplaySource).toContain("flex max-h-full min-h-0 flex-shrink-0 flex-col opacity-60");
-    expect(dramaticReplaySource).toContain("flex max-h-full min-h-0 flex-shrink-0 flex-col");
-  });
+
 });

@@ -331,6 +331,8 @@ abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
     invocation: ModelInvocation,
     runtime: ProviderRuntimeDescriptor,
   ) {
+    const imageError = imageInvocationError(invocation, runtime);
+    if (imageError) return { compatible: false, reason: imageError };
     if (
       invocation.result.kind === "tool" &&
       !runtime.modelCapabilities.supportsTools &&
@@ -545,6 +547,7 @@ export function compileOpenAIResponsesRequest(
   invocation: ModelInvocation,
   runtime: ProviderRuntimeDescriptor,
 ): ResponseCreateParamsNonStreaming {
+  assertImageInvocation(invocation, runtime);
   const instructions = invocation.messages
     .filter((message) => message.role === "system")
     .map((message) => message.content ?? "")
@@ -554,6 +557,7 @@ export function compileOpenAIResponsesRequest(
     .filter((message) => message.role !== "system");
   const input = inputMessages.length === 1
       && inputMessages[0]?.role === "user"
+      && !inputMessages[0].images?.length
       && typeof inputMessages[0].content === "string"
       && inputMessages[0].content.length > 0
     ? inputMessages[0].content
@@ -633,6 +637,7 @@ export function compileChatCompletionsRequest(
   invocation: ModelInvocation,
   runtime: ProviderRuntimeDescriptor,
 ): ChatCompletionCreateParamsNonStreaming {
+  assertImageInvocation(invocation, runtime);
   const body: Record<string, unknown> = {
     model: runtime.modelId,
     messages: invocation.messages.map(chatMessage),
@@ -735,6 +740,19 @@ function chatTool(tool: ProviderFunctionToolDefinition): ChatCompletionTool {
 }
 
 function chatMessage(message: ModelInvocationMessage): ChatCompletionMessageParam {
+  if (message.role === "user" && message.images?.length) {
+    return {
+      role: "user",
+      content: [
+        { type: "text", text: message.content ?? "" },
+        ...message.images.map((image) => ({
+          type: "image_url" as const,
+          image_url: { url: image.url, detail: image.detail },
+        })),
+      ],
+      ...(message.name && { name: message.name }),
+    };
+  }
   if (message.role === "tool") {
     return {
       role: "tool",
@@ -763,6 +781,12 @@ function chatMessage(message: ModelInvocationMessage): ChatCompletionMessagePara
 }
 
 function responseInputItems(message: ModelInvocationMessage): unknown[] {
+  if (message.role === "user" && message.images?.length) {
+    return [{ role: "user", content: [
+      { type: "input_text", text: message.content ?? "" },
+      ...message.images.map((image) => ({ type: "input_image", image_url: image.url, detail: image.detail })),
+    ] }];
+  }
   if (message.role === "tool") {
     return [{
       type: "function_call_output",
@@ -784,6 +808,23 @@ function responseInputItems(message: ModelInvocationMessage): unknown[] {
     ];
   }
   return [{ role: message.role, content: message.content ?? "" }];
+}
+
+function imageInvocationError(invocation: ModelInvocation, runtime: ProviderRuntimeDescriptor): string | undefined {
+  const messages = invocation.messages.filter((message) => message.images?.length);
+  if (!messages.length) return undefined;
+  if (!runtime.modelCapabilities.supportsImageInput) return "image inputs are unsupported";
+  if (messages.some((message) => message.role !== "user")) return "image inputs require a user message";
+  if (messages.some((message) => message.images?.some((image) =>
+    !["low", "high", "auto"].includes(image.detail)
+    || !/^(https:\/\/[^\s]+|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*)$/.test(image.url)
+  ))) return "invalid image input";
+  return undefined;
+}
+
+function assertImageInvocation(invocation: ModelInvocation, runtime: ProviderRuntimeDescriptor): void {
+  const error = imageInvocationError(invocation, runtime);
+  if (error) throw new Error(error);
 }
 
 export function normalizeOpenAIResponse(

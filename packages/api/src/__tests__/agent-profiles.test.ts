@@ -1,3 +1,4 @@
+import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 /**
  * Agent Profile REST API endpoint tests.
  *
@@ -13,7 +14,7 @@ import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { joinQueue } from "../services/queue-enrollment.js";
 import { createSeason } from "../services/seasons.js";
 import { avatarProfileFingerprint } from "../services/avatar-generation.js";
@@ -157,6 +158,79 @@ describe("Agent Profile API", () => {
 
   beforeEach(async () => {
     ({ app, db, tokenA, tokenB } = await setupApp());
+    for (const key of ["pfp/maris-full.png", "pfp/11111111-1111-4111-8111-111111111111.png", "pfp/22222222-2222-4222-8222-222222222222.png"]) await contentImageFixture(key);
+  });
+
+  test("persists visual profile fields and protects performance edits from stale saves", async () => {
+    const create = await app.request("/api/agent-profiles", jsonReq({
+      name: "Visual Maris", personality: "A patient mediator.",
+      fullBodyReferenceUrl: "/api/uploads/local?key=pfp%2Fmaris-full.png",
+      headPosition: await headPositionFixture("/api/uploads/local?key=pfp%2Fmaris-full.png"),
+      performanceInstructions: "Upright posture, quiet delivery, deliberate open-handed gestures.",
+    }, tokenA));
+    expect(create.status).toBe(201);
+    const original = await create.json() as { id: string; profileRevisionId: string };
+    const updated = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
+      performanceInstructions: "Relaxed posture. Speaks softly, pauses before answering, avoids eye contact when nervous.",
+      expectedRevisionId: original.profileRevisionId,
+    }, tokenA, "PATCH"));
+    expect(updated.status).toBe(200);
+    const value = await updated.json() as { profileRevisionId: string; fullBodyReferenceUrl: string };
+    expect(value.fullBodyReferenceUrl).toContain("key=pfp%2Fmaris-full.png");
+    expect(value.profileRevisionId).not.toBe(original.profileRevisionId);
+    const stale = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({
+      performanceInstructions: "Old tab instructions", expectedRevisionId: original.profileRevisionId,
+    }, tokenA, "PATCH"));
+    expect(stale.status).toBe(409);
+    const foreign = await app.request(`/api/agent-profiles/${original.id}`, jsonReq({ fullBodyReferenceUrl: null }, tokenB, "PATCH"));
+    expect(foreign.status).toBe(404);
+  });
+
+  test("rejects overlong or non-text visual performance instructions", async () => {
+    for (const performanceInstructions of ["x".repeat(2001), { behavior: "bad shape" }]) {
+      const response = await app.request("/api/agent-profiles", jsonReq({
+        name: "Visual Maris", personality: "A patient mediator.", performanceInstructions,
+      }, tokenA));
+      expect(response.status).toBe(400);
+    }
+  });
+
+  test("rejects pending generation attachment rather than saving a late portrait", async () => {
+    const response = await app.request("/api/agent-profiles", jsonReq({ name: "Draft Arden", personality: "Careful", avatarGenerationRequestId: "pending-request" }, tokenA));
+    expect(response.status).toBe(400);
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+    expect(await db.select().from(schema.agentContentRevisions)).toHaveLength(0);
+  });
+
+  test("submits selected assets and returns durable review IDs with response-loss replay", async () => {
+    const response = await app.request("/api/agent-profiles", jsonReq({ name: "Draft Arden", personality: "Careful", avatarUrl: await contentImageFixture("pfp/selected.png") }, tokenA));
+    expect(response.status).toBe(201);
+    const created = await response.json() as { id: string; contentRevisionId: string; receipt: { moderationRecordId: string } };
+    expect(created.receipt.moderationRecordId).toBeTruthy();
+    const input = { submissionId: randomUUID(), expectedContentRevisionId: created.contentRevisionId, visualDesign: "A green coat" };
+    const update = await app.request(`/api/agent-profiles/${created.id}`, jsonReq(input, tokenA, "PATCH"));
+    expect(update.status).toBe(200);
+    const saved = await update.json();
+    const replay = await app.request(`/api/agent-profiles/${created.id}`, jsonReq(input, tokenA, "PATCH"));
+    expect(await replay.json()).toEqual(saved);
+    expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(2);
+    expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
+  });
+
+  test("image-only and crop-only API submissions retain the competitive revision", async () => {
+    const response = await app.request("/api/agent-profiles", jsonReq({ name: "Crop Arden", personality: "Careful" }, tokenA));
+    const created = await response.json() as { id: string; contentRevisionId: string; currentRevisionId: string };
+    const sourceUrl = await contentImageFixture("pfp/crop-api.png");
+    let revision = created.contentRevisionId;
+    for (const change of [{ avatarUrl: sourceUrl }, { portraitCrop: { sourceUrl, x: 0, y: 0, width: 0.5, height: 0.5 } }]) {
+      const update = await app.request(`/api/agent-profiles/${created.id}`, jsonReq({ ...change, submissionId: randomUUID(), expectedContentRevisionId: revision }, tokenA, "PATCH"));
+      expect(update.status).toBe(200);
+      const saved = await update.json() as { contentRevisionId: string; currentRevisionId: string; receipt: { moderationRecordId: string } };
+      expect(saved.currentRevisionId).toBe(created.currentRevisionId);
+      expect(saved.receipt.moderationRecordId).toBeTruthy();
+      revision = saved.contentRevisionId;
+    }
+    expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(3);
   });
 
   // =========================================================================
@@ -227,7 +301,7 @@ describe("Agent Profile API", () => {
       expect(await conflict.json()).toMatchObject({ code: "agent_creation_request_conflict" });
       expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
       expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
-      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(1);
+      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
     });
 
     test("recovers a committed creation request only for its owner", async () => {
@@ -251,33 +325,6 @@ describe("Agent Profile API", () => {
         authGet(tokenB),
       );
       expect(foreign.status).toBe(404);
-    });
-
-    test("attaches a pending portrait while saving changed profile text", async () => {
-      await db.insert(schema.avatarGenerationRequests).values({
-        id: "pending-create-draft",
-        userId: USER_A_ID,
-        agentProfileId: null,
-        purpose: "agent_profile_completion",
-        status: "processing",
-        triggerSource: "web_ai_help_draft",
-        provider: "katana",
-        model: "gen",
-        providerRequestId: "provider-pending-create",
-        safeMetadata: { draftProfile: VALID_DRAFT_PROFILE },
-      });
-      const response = await app.request("/api/agent-profiles", jsonReq({
-        ...VALID_DRAFT_PROFILE,
-        name: "Changed After Prompt",
-        strategyStyle: "A later strategy is allowed.",
-        avatarGenerationRequestId: "pending-create-draft",
-      }, tokenA));
-      expect(response.status).toBe(201);
-      const created = await response.json() as { id: string; avatarCompletion: { status: string } };
-      expect(created.avatarCompletion.status).toBe("processing");
-      const [request] = await db.select().from(schema.avatarGenerationRequests)
-        .where(eq(schema.avatarGenerationRequests.id, "pending-create-draft"));
-      expect(request?.agentProfileId).toBe(created.id);
     });
 
     test("creates an agent profile", async () => {
@@ -342,42 +389,6 @@ describe("Agent Profile API", () => {
       expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
     });
 
-    test("does not consume a completed draft when its normalized name is already used", async () => {
-      const existing = await app.request("/api/agent-profiles", jsonReq({
-        name: "Velvet Circuit",
-        personality: "Already owns this identity.",
-      }, tokenB));
-      expect(existing.status).toBe(201);
-      await insertCompletedDraft(db, {
-        id: "name-conflict-draft-request",
-        agentProfileId: "draft-name-conflict",
-        profile: {
-          ...VALID_DRAFT_PROFILE,
-          name: " velvet circuit ",
-        },
-      });
-      const avatarEventsBefore = await db.select().from(schema.avatarChangeEvents);
-
-      const res = await app.request("/api/agent-profiles", jsonReq({
-        ...VALID_DRAFT_PROFILE,
-        name: " velvet circuit ",
-        avatarGenerationRequestId: "name-conflict-draft-request",
-      }, tokenA));
-
-      expect(res.status).toBe(409);
-      expect(await res.json()).toEqual({
-        code: "agent_name_taken",
-        error: "That agent name is already in use. Choose another name.",
-        retryable: false,
-      });
-      const [request] = await db.select().from(schema.avatarGenerationRequests)
-        .where(eq(schema.avatarGenerationRequests.id, "name-conflict-draft-request"));
-      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
-      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
-      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length);
-    });
-
     test("rejects missing name", async () => {
       const res = await app.request(
         "/api/agent-profiles",
@@ -428,57 +439,9 @@ describe("Agent Profile API", () => {
       expect(body.strategyStyle).toBeNull();
       expect(body.personaKey).toBeNull();
       expect(body.gender).toBeNull();
-      expect(body.avatarCompletion).toMatchObject({
-        status: "skipped",
-        failureCode: "provider_not_configured",
-      });
-
-      const generations = await db.select().from(schema.avatarGenerationRequests);
-      expect(generations).toHaveLength(1);
-      expect(generations[0]!.triggerSource).toBe("web_create_default");
-    });
-
-    test("reuses an AI Help draft portrait attempt instead of requesting again on create", async () => {
-      const draftRes = await app.request(
-        "/api/agent-profiles/avatar/generate-draft",
-        jsonReq({
-          name: "Maris Vale",
-          gender: "female",
-          personality: "A patient mediator.",
-          backstory: "She grew up translating between rival communities.",
-          strategyStyle: "Build stable coalitions.",
-          personaKey: "diplomat",
-        }, tokenA),
-      );
-      expect(draftRes.status).toBe(200);
-      const draft = await draftRes.json() as {
-        avatarCompletion: { generationRequestId: string; status: string };
-      };
-      expect(draft.avatarCompletion.status).toBe("skipped");
-      expect(draft.avatarCompletion.generationRequestId).toBeTruthy();
-
-      const createRes = await app.request(
-        "/api/agent-profiles",
-        jsonReq({
-          name: "Maris Vale",
-          gender: "female",
-          personality: "A patient mediator.",
-          backstory: "She grew up translating between rival communities.",
-          strategyStyle: "Build stable coalitions.",
-          personaKey: "diplomat",
-          avatarGenerationRequestId: draft.avatarCompletion.generationRequestId,
-        }, tokenA),
-      );
-      expect(createRes.status).toBe(201);
-      const created = await createRes.json() as { id: string; avatarCompletion: { status: string } };
-      expect(created).toMatchObject({
-        avatarUrl: null,
-        avatarCompletion: { status: "skipped" },
-      });
-
-      const generations = await db.select().from(schema.avatarGenerationRequests);
-      expect(generations).toHaveLength(1);
-      expect(generations[0]!.agentProfileId).toBe(created.id);
+      expect(body.avatarCompletion).toBeUndefined();
+      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
+      expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(1);
     });
 
     test("rejects an overlong draft name before generating a portrait", async () => {
@@ -493,99 +456,6 @@ describe("Agent Profile API", () => {
 
       expect(res.status).toBe(400);
       expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
-    });
-
-    test("attaches a completed AI Help portrait as generated media", async () => {
-      await db.insert(schema.avatarGenerationRequests).values({
-        id: "completed-draft-request",
-        userId: USER_A_ID,
-        agentProfileId: null,
-        purpose: "agent_profile_completion",
-        status: "completed",
-        triggerSource: "web_user_prompt",
-        provider: "katana",
-        model: "gen",
-        safeMetadata: {
-          draftProfile: {
-            name: "Maris Vale",
-            gender: "female",
-            backstory: null,
-            personality: "A patient mediator.",
-            strategyStyle: null,
-            personaKey: "diplomat",
-          },
-          profileFingerprint: avatarProfileFingerprint({
-            name: "Maris Vale",
-            gender: "female",
-            backstory: null,
-            personality: "A patient mediator.",
-            strategyStyle: null,
-            personaKey: "diplomat",
-          }),
-          avatarUrl: "/api/uploads/local?key=pfp%2Fgenerated%2Fmira.png",
-        },
-        createdAt: "2026-07-12T00:00:00.000Z",
-        updatedAt: "2026-07-12T00:01:00.000Z",
-        completedAt: "2026-07-12T00:01:00.000Z",
-      });
-
-      const createRes = await app.request(
-        "/api/agent-profiles",
-        jsonReq({
-          name: "Maris Vale",
-          gender: "female",
-          personality: "A patient mediator.",
-          personaKey: "diplomat",
-          avatarGenerationRequestId: "completed-draft-request",
-        }, tokenA),
-      );
-      expect(createRes.status).toBe(201);
-      const created = await createRes.json() as { avatarUrl: string };
-      expect(created.avatarUrl).toContain("pfp%2Fgenerated%2Fmira.png");
-
-      const [change] = await db.select().from(schema.avatarChangeEvents);
-      expect(change).toMatchObject({
-        source: "web_generated_completion",
-        generationRequestId: "completed-draft-request",
-      });
-      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(1);
-
-      const duplicate = await app.request(
-        "/api/agent-profiles",
-        jsonReq({
-          name: "Maris Vale",
-          gender: "female",
-          personality: "A patient mediator.",
-          personaKey: "diplomat",
-          avatarGenerationRequestId: "completed-draft-request",
-        }, tokenA),
-      );
-      expect(duplicate.status).toBe(409);
-    });
-
-    test("accepts a renamed agent after its completed draft portrait", async () => {
-      await insertCompletedDraft(db, {
-        id: "renamed-draft-request",
-        agentProfileId: "draft-renamed-nova",
-        profile: {
-          ...VALID_DRAFT_PROFILE,
-          name: "Nova Quinn",
-        },
-      });
-
-      const createRes = await app.request(
-        "/api/agent-profiles",
-        jsonReq({
-          name: "Nova Hartwell",
-          gender: "female",
-          personality: "A patient mediator.",
-          personaKey: "diplomat",
-          avatarGenerationRequestId: "renamed-draft-request",
-        }, tokenA),
-      );
-
-      expect(createRes.status).toBe(201);
-      expect((await createRes.json() as { name: string }).name).toBe("Nova Hartwell");
     });
 
     test("does not consume a completed draft when profile validation fails", async () => {
@@ -608,181 +478,6 @@ describe("Agent Profile API", () => {
       const [request] = await db.select().from(schema.avatarGenerationRequests)
         .where(eq(schema.avatarGenerationRequests.id, "invalid-profile-draft-request"));
       expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
-    });
-
-    test("does not reveal or mutate another owner's completed draft", async () => {
-      await insertCompletedDraft(db, {
-        id: "foreign-owner-draft-request",
-        agentProfileId: "draft-foreign-owner",
-      });
-
-      const response = await app.request("/api/agent-profiles", jsonReq({
-        ...VALID_DRAFT_PROFILE,
-        avatarGenerationRequestId: "foreign-owner-draft-request",
-      }, tokenB));
-      expect(response.status).toBe(201);
-      expect(await response.json()).toMatchObject({
-        avatarCompletion: {
-          status: "failed",
-          failureCode: "portrait_attachment_rejected",
-        },
-      });
-
-      const [request] = await db.select().from(schema.avatarGenerationRequests)
-        .where(eq(schema.avatarGenerationRequests.id, "foreign-owner-draft-request"));
-      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
-      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
-    });
-
-    test("allows at most one concurrent adoption of a completed draft", async () => {
-      await insertCompletedDraft(db, {
-        id: "concurrent-draft-request",
-        agentProfileId: "draft-concurrent",
-      });
-      const create = (name: string) => app.request("/api/agent-profiles", jsonReq({
-        ...VALID_DRAFT_PROFILE,
-        name,
-        avatarGenerationRequestId: "concurrent-draft-request",
-      }, tokenA));
-
-      const responses = await Promise.all([create("Concurrent One"), create("Concurrent Two")]);
-      expect(responses.map((response) => response.status)).toEqual([201, 201]);
-      const bodies = await Promise.all(responses.map((response) => response.json())) as Array<{
-        avatarCompletion: { status: string; failureCode?: string };
-      }>;
-      expect(bodies.filter((body) => body.avatarCompletion.status === "completed")).toHaveLength(1);
-      expect(bodies.filter((body) => body.avatarCompletion.failureCode === "portrait_attachment_rejected")).toHaveLength(1);
-      expect(await db.select().from(schema.agentProfiles)).toHaveLength(2);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(2);
-      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
-    });
-
-    for (const failureTable of ["agent_profiles", "agent_revisions", "avatar_change_events"] as const) {
-      test(`rolls back draft adoption when ${failureTable} insertion fails and allows retry`, async () => {
-        const requestId = `rollback-${failureTable}-draft-request`;
-        const triggerName = `fail_draft_adoption_${failureTable}`;
-        await insertCompletedDraft(db, {
-          id: requestId,
-          agentProfileId: `draft-rollback-${failureTable}`,
-        });
-        await db.execute(sql.raw(`
-          CREATE OR REPLACE FUNCTION ${triggerName}() RETURNS trigger AS $$
-          BEGIN
-            RAISE EXCEPTION 'injected ${failureTable} insertion failure';
-          END;
-          $$ LANGUAGE plpgsql;
-          CREATE TRIGGER ${triggerName}
-            BEFORE INSERT ON ${failureTable}
-            FOR EACH ROW EXECUTE FUNCTION ${triggerName}();
-        `));
-
-        const create = () => app.request("/api/agent-profiles", jsonReq({
-          ...VALID_DRAFT_PROFILE,
-          avatarGenerationRequestId: requestId,
-        }, tokenA));
-        let failed: Response;
-        try {
-          failed = await create();
-        } finally {
-          await db.execute(sql.raw(`
-            DROP TRIGGER IF EXISTS ${triggerName} ON ${failureTable};
-            DROP FUNCTION IF EXISTS ${triggerName}();
-          `));
-        }
-        expect(failed.status).toBe(500);
-
-        const [request] = await db.select().from(schema.avatarGenerationRequests)
-          .where(eq(schema.avatarGenerationRequests.id, requestId));
-        expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
-        expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
-        expect(await db.select().from(schema.agentRevisions)).toHaveLength(0);
-        expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
-
-        const retried = await create();
-        expect(retried.status).toBe(201);
-        expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-        expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
-        expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
-      });
-    }
-
-    test("keeps an explicit upload authoritative over an unrelated draft", async () => {
-      await db.insert(schema.avatarGenerationRequests).values({
-        id: "ignored-draft-request",
-        userId: USER_A_ID,
-        agentProfileId: null,
-        purpose: "agent_profile_completion",
-        status: "completed",
-        triggerSource: "web_ai_help_draft",
-        provider: "katana",
-        model: "gen",
-        safeMetadata: {
-          draftProfile: { name: "Other", gender: "male", personality: "Other", backstory: null, strategyStyle: null, personaKey: "strategic" },
-          profileFingerprint: "different",
-          avatarUrl: "/api/uploads/local?key=generated.png",
-        },
-        createdAt: "2026-07-12T00:00:00.000Z",
-        updatedAt: "2026-07-12T00:01:00.000Z",
-        completedAt: "2026-07-12T00:01:00.000Z",
-      });
-
-      const res = await app.request("/api/agent-profiles", jsonReq({
-        name: "Uploaded Mira",
-        gender: "female",
-        personality: "A patient mediator.",
-        avatarUrl: "/api/uploads/local?key=uploaded.png",
-        avatarGenerationRequestId: "ignored-draft-request",
-      }, tokenA));
-      expect(res.status).toBe(201);
-      const changes = await db.select().from(schema.avatarChangeEvents);
-      expect(changes).toHaveLength(2);
-      expect(changes.find((change) => change.source === "web_upload")).toMatchObject({ generationRequestId: null });
-      expect(changes.find((change) => change.source === "web_upload")!.newAvatarUrl).toContain("uploaded.png");
-      expect(changes.find((change) => change.source === "generation_skipped")).toBeTruthy();
-    });
-
-    test("skips automatic avatar generation when the user has no quota allowance", async () => {
-      const saved = {
-        key: process.env.API_KAT_IMGNAI_KEY,
-        secret: process.env.API_KAT_IMGNAI_SECRET,
-        quota: process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA,
-      };
-      process.env.API_KAT_IMGNAI_KEY = "kat-key";
-      process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
-      process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA = "1";
-
-      try {
-        await db.insert(schema.avatarGenerationRequests).values({
-          id: "existing-generation",
-          userId: USER_B_ID,
-          agentProfileId: "prior-agent",
-          purpose: "agent_profile_completion",
-          status: "completed",
-          triggerSource: "web_create_default",
-          provider: "katana",
-          model: "gen",
-          createdAt: "2026-07-12T00:00:00.000Z",
-          updatedAt: "2026-07-12T00:00:00.000Z",
-        });
-
-        const res = await app.request(
-          "/api/agent-profiles",
-          jsonReq({ name: "Quota Agent", personality: "Quiet", gender: "male" }, tokenB),
-        );
-        expect(res.status).toBe(201);
-        expect(await res.json()).toMatchObject({
-          avatarUrl: null,
-          avatarCompletion: {
-            status: "skipped",
-            failureCode: "quota_exhausted",
-          },
-        });
-      } finally {
-        restoreEnv("API_KAT_IMGNAI_KEY", saved.key);
-        restoreEnv("API_KAT_IMGNAI_SECRET", saved.secret);
-        restoreEnv("INFLUENCE_AVATAR_GENERATION_FREE_QUOTA", saved.quota);
-      }
     });
 
     test("records avatar change history when creating with an avatar", async () => {
@@ -954,7 +649,7 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(200);
       const body = await res.json() as { name: string; avatarCompletion?: { status: string }; creationPayloadFingerprint?: string };
       expect(body.name).toBe("Aster Vale");
-      expect(body.avatarCompletion).toBeDefined();
+      expect(body.avatarCompletion).toBeUndefined();
       expect(body.creationPayloadFingerprint).toBeUndefined();
     });
 
@@ -1025,60 +720,6 @@ describe("Agent Profile API", () => {
       });
     });
 
-    test("attaches a completed draft portrait while updating strategy", async () => {
-      const created = await app.request("/api/agent-profiles", jsonReq({
-        name: "Update Portrait",
-        personality: "Starts without a portrait.",
-      }, tokenA));
-      const agent = await created.json() as { id: string };
-      await db.delete(schema.avatarChangeEvents);
-      await db.delete(schema.avatarGenerationRequests);
-      await insertCompletedDraft(db, { id: "completed-update-draft" });
-
-      const response = await app.request(`/api/agent-profiles/${agent.id}`, jsonReq({
-        strategyStyle: "Use the review suggestion, then refine it.",
-        avatarGenerationRequestId: "completed-update-draft",
-      }, tokenA, "PATCH"));
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({
-        strategyStyle: "Use the review suggestion, then refine it.",
-        avatarCompletion: { status: "completed" },
-      });
-      const [request] = await db.select().from(schema.avatarGenerationRequests);
-      expect(request?.agentProfileId).toBe(agent.id);
-    });
-
-    test("attaches a pending draft portrait on update without waiting", async () => {
-      const created = await app.request("/api/agent-profiles", jsonReq({
-        name: "Pending Update",
-        personality: "Starts without a portrait.",
-      }, tokenA));
-      const agent = await created.json() as { id: string };
-      await db.delete(schema.avatarChangeEvents);
-      await db.delete(schema.avatarGenerationRequests);
-      await db.insert(schema.avatarGenerationRequests).values({
-        id: "pending-update-draft",
-        userId: USER_A_ID,
-        agentProfileId: null,
-        purpose: "agent_profile_completion",
-        status: "processing",
-        triggerSource: "web_ai_help_draft",
-        provider: "katana",
-        model: "gen",
-        providerRequestId: "provider-pending-update",
-        safeMetadata: { draftProfile: VALID_DRAFT_PROFILE },
-      });
-
-      const response = await app.request(`/api/agent-profiles/${agent.id}`, jsonReq({
-        personality: "The save completes while the portrait remains pending.",
-        avatarGenerationRequestId: "pending-update-draft",
-      }, tokenA, "PATCH"));
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ avatarCompletion: { status: "processing" } });
-      const [request] = await db.select().from(schema.avatarGenerationRequests);
-      expect(request?.agentProfileId).toBe(agent.id);
-    });
-
     test("updates profile fields", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
@@ -1129,7 +770,7 @@ describe("Agent Profile API", () => {
 
       const res = await app.request(`/api/agent-profiles/${id}`, jsonReq({
         name: "  COPPER WARDEN  ",
-        avatarUrl: "https://cdn.example/should-not-write.png",
+        avatarUrl: await contentImageFixture("pfp/should-not-write.png"),
       }, tokenA, "PATCH"));
 
       expect(res.status).toBe(409);
@@ -1151,14 +792,14 @@ describe("Agent Profile API", () => {
         jsonReq({
           name: "Aster Vale",
           personality: "Strategic",
-          avatarUrl: "https://cdn.example/old.png",
+          avatarUrl: await contentImageFixture("pfp/old.png"),
         }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
-        jsonReq({ avatarUrl: "https://cdn.example/new.png" }, tokenA, "PATCH"),
+        jsonReq({ avatarUrl: await contentImageFixture("pfp/new.png") }, tokenA, "PATCH"),
       );
 
       expect(res.status).toBe(200);
@@ -1167,8 +808,8 @@ describe("Agent Profile API", () => {
         .from(schema.avatarChangeEvents);
       expect(changes.map((change) => change.source)).toEqual(["web_upload", "web_manual_update"]);
       expect(changes[1]!).toMatchObject({
-        previousAvatarUrl: "https://cdn.example/old.png",
-        newAvatarUrl: "https://cdn.example/new.png",
+        previousAvatarUrl: "http://localhost/api/uploads/local?key=pfp%2Fold.png",
+        newAvatarUrl: "http://localhost/api/uploads/local?key=pfp%2Fnew.png",
       });
     });
 
@@ -1251,7 +892,7 @@ describe("Agent Profile API", () => {
         jsonReq({
           name: "Aster Vale",
           personality: "Strategic",
-          avatarUrl: "https://cdn.example/avatar.png",
+          avatarUrl: await contentImageFixture("pfp/avatar.png"),
         }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
@@ -1266,7 +907,7 @@ describe("Agent Profile API", () => {
       const history = await db.select().from(schema.avatarChangeEvents)
         .where(eq(schema.avatarChangeEvents.agentProfileId, id));
       expect(history).toHaveLength(1);
-      expect(history[0]!.newAvatarUrl).toBe("https://cdn.example/avatar.png");
+      expect(history[0]!.newAvatarUrl).toContain("key=pfp%2Favatar.png");
     });
 
     test("terminalizes an attached portrait before deleting its Agent", async () => {
@@ -1676,6 +1317,8 @@ describe("Agent Profile API", () => {
                   backstory: "Nova learned patience in crowded rooms.",
                   personality: "Nova listens before making a move.",
                   strategyStyle: "Nova builds a coalition and waits for leverage.",
+                  performanceInstructions: "Measured delivery and open posture.",
+                  visualDesign: "Short dark hair and a green coat.",
                   personaKey: "strategic",
                   gender: "female",
                 }),

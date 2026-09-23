@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getAuthToken,
+  type GameStatus,
   type WsGameEvent,
   type WsPublicationEvent,
   type WsViewerEvent,
@@ -113,10 +114,13 @@ export class GamePublicationCatchUp {
 export function useGameWebSocket(
   gameLocator: string,
   canonicalGameId: string,
-  enabled: boolean,
+  gameStatus: GameStatus | undefined,
   onEvent: (ev: WsViewerEvent) => void,
   initialPublicationSequence = 0,
 ): ConnStatus {
+  // Suspension stops the runner, not observation: saved publications are the
+  // source of dialogue (and its scene binding) when joining or scrubbing live.
+  const enabled = gameStatus === "in_progress" || gameStatus === "suspended";
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
   const onEventRef = useRef(onEvent);

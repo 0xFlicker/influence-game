@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine";
@@ -242,6 +243,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_learning_reviews",
       "read_learning_review",
       "preflight_learning_review",
+      "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -642,7 +644,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
 
-    for (const name of ["create_agent", "update_agent", "join_queue", "leave_queue"]) {
+    for (const name of ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]) {
       const response = await server.handle({
         jsonrpc: "2.0",
         id: name,
@@ -853,6 +855,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
       "read_producer_season_diagnostics",
+      "read_producer_visual_production",
       "inspect_durable_run",
       "read_provider_health",
       "read_producer_game_analysis",
@@ -1307,6 +1310,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "retry_learning_review",
       "apply_learning_review",
       "resolve_learning_review",
+      "generate_agent_visual_reference", "crop_agent_portrait",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -1395,7 +1399,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
-          : ["create_agent", "update_agent", "join_queue", "leave_queue"]
+          : ["generate_agent_visual_reference", "crop_agent_portrait", "create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
@@ -2145,7 +2149,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: "https://cdn.example/lillith.png",
+          avatarUrl: await contentImageFixture("pfp/lillith.png"),
         },
       },
     }, AGENT_WRITE_AUTH);
@@ -2171,7 +2175,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "Patient and observant.",
           publicBiography: null,
           strategyStyle: "Build trust before acting.",
-          avatarUrl: "https://cdn.example/lillith.png",
+          avatarUrl: await contentImageFixture("pfp/lillith.png"),
         },
       },
     }, AGENT_WRITE_AUTH);
@@ -2298,7 +2302,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           personalityPrompt: "A separate attempt.",
           publicBiography: null,
           strategyStyle: null,
-          avatarUrl: "https://cdn.example/new.png",
+          avatarUrl: await contentImageFixture("pfp/new.png"),
         },
       },
     }, GAMES_AUTH);
@@ -2351,7 +2355,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
   });
 
-  test("reports MCP avatar completion status without exposing a standalone image tool", async () => {
+  test("creates an MCP profile without automatic image generation", async () => {
     delete process.env.API_KAT_IMGNAI_KEY;
     delete process.env.API_KAT_IMGNAI_SECRET;
     const db = await setupTestDB();
@@ -2381,16 +2385,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
     expect(response?.error).toBeUndefined();
     const structured = (response?.result as { structuredContent: { avatarCompletion?: { status: string; reason: string } } }).structuredContent;
-    expect(structured.avatarCompletion).toMatchObject({
-      status: "skipped",
-    });
-    expect(structured.avatarCompletion?.reason).toContain("not configured");
-    const text = (response?.result as { content: Array<{ text: string }> }).content[0]?.text;
-    expect(text).toContain("avatarCompletion");
-    expect(text).not.toContain("prompt");
+    expect(structured.avatarCompletion).toBeUndefined();
+    expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
+    expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(1);
   });
 
-  test("keeps MCP explicit avatar ahead of automatic completion", async () => {
+  test("submits the explicitly selected MCP avatar", async () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({
       id: GAMES_AUTH.userId,
@@ -2412,15 +2412,15 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           publicBiography: null,
           strategyStyle: null,
           personalityPrompt: "Already has a portrait.",
-          avatarUrl: "https://cdn.example/avatar.png",
+          avatarUrl: await contentImageFixture("pfp/avatar.png"),
         },
       },
     }, GAMES_AUTH);
 
     expect(response?.error).toBeUndefined();
     const structured = (response?.result as { structuredContent: { agent: { avatarUrl: string }; avatarCompletion?: { status: string } } }).structuredContent;
-    expect(structured.agent.avatarUrl).toBe("https://cdn.example/avatar.png");
-    expect(structured.avatarCompletion?.status).toBe("already_provided");
+    expect(structured.agent.avatarUrl).toContain("key=pfp%2Favatar.png");
+    expect(structured.avatarCompletion).toBeUndefined();
     expect(await db.select().from(schema.avatarGenerationRequests)).toEqual([]);
     const changes = await db.select().from(schema.avatarChangeEvents);
     expect(changes).toHaveLength(1);

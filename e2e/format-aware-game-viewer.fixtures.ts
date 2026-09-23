@@ -26,6 +26,7 @@ export async function installDeterministicFormatGame(
     scenarioId: FormatKernelViewerScenarioId;
     status: DeterministicGameStatus;
     initialDecisionCount?: number;
+    decisions?: ReturnType<typeof createFormatKernelViewerScenario>["decisions"];
     historicalCatchUp?: boolean;
     frameResponseDelayMs?: number;
   },
@@ -35,6 +36,7 @@ export async function installDeterministicFormatGame(
   currentGame: () => ReturnType<typeof buildDeterministicFormatGame>;
 }> {
   const scenario = createFormatKernelViewerScenario(options.scenarioId);
+  if (options.decisions) scenario.decisions = options.decisions;
   let decisionCount = options.initialDecisionCount ?? scenario.decisions.length;
   const sockets: WebSocketRoute[] = [];
   const currentDecisions = () => scenario.decisions.slice(0, decisionCount);
@@ -58,6 +60,10 @@ export async function installDeterministicFormatGame(
           currentDecisions(),
         ).filter((frame) => frame.sequence > afterSequence),
       );
+      return;
+    }
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
       return;
     }
     if (url.pathname.endsWith("/transcript")) {
@@ -112,6 +118,10 @@ export async function installDeterministicClassicGame(
   const game = buildDeterministicClassicGame(options);
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
+      return;
+    }
     if (url.pathname.endsWith("/transcript")) {
       await fulfillJson(route, []);
       return;
@@ -139,6 +149,10 @@ export async function installDeterministicCompletedClassicGame(
   const fixture = buildDeterministicCompletedClassicGame(slug);
   await page.route(gameApiPattern(slug), async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/visual")) {
+      await fulfillJson(route, { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] });
+      return;
+    }
     if (url.pathname.endsWith("/transcript")) {
       await fulfillJson(route, fixture.transcript);
       return;

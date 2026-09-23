@@ -79,6 +79,8 @@ export type CanonicalGameEventType =
   | "game.phase_entered"
   | "round.started"
   | "shields.expired"
+  | "visual.operation_recorded"
+  | "visual.cue_recorded"
   | "mingle.rooms_allocated"
   | "mingle.coordination_receipt_recorded"
   | "vote.cast"
@@ -377,6 +379,8 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "game.phase_entered",
   "round.started",
   "shields.expired",
+  "visual.operation_recorded",
+  "visual.cue_recorded",
   "mingle.rooms_allocated",
   "mingle.coordination_receipt_recorded",
   "vote.cast",
@@ -583,6 +587,8 @@ export type TwoNamesPleaRecordedPayload = {
 };
 
 export type CanonicalGameEvent =
+  | CanonicalEventEnvelope<"visual.operation_recorded", import("./visual-mode").VisualOperationEvent>
+  | CanonicalEventEnvelope<"visual.cue_recorded", { playerId: string; turnId: string; sceneId: string | null; arrangementKey?: string; roomId: import("./visual-mode").VisualRoomId | null; cue: import("./visual-mode").PerformanceCue }>
   | CanonicalEventEnvelope<
       "game.roster_initialized",
       {

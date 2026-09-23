@@ -163,7 +163,7 @@ function GameCard({
               <span className="text-xs px-2 py-0.5 rounded-sm bg-emerald-500/20 text-emerald-200 border border-emerald-500/35 font-semibold">
                 {ACTIVE_GAME.badgeLabel}
               </span>
-              <StatusBadge status={game.status} />
+              <StatusBadge status={game.status} visualPaused={game.visualPaused} />
               {categoryLabel && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
                   {categoryLabel}
@@ -205,7 +205,7 @@ function GameCard({
                 <span className="text-emerald-400/70">Finished</span>
               )}
               {game.status === "suspended" && (
-                <span className="text-amber-300/80">Failed</span>
+                <span className="text-amber-300/80">{game.visualPaused ? "Awaiting visual repair" : "Failed"}</span>
               )}
               {game.finalists && isLive && (
                 <span>Finalists: {game.finalists.join(", ")}</span>
@@ -320,7 +320,7 @@ function GameCard({
   );
 }
 
-function StatusBadge({ status }: { status: GameStatus }) {
+function StatusBadge({ status, visualPaused }: { status: GameStatus; visualPaused?: boolean }) {
   const styles: Record<GameStatus, string> = {
     waiting: "bg-yellow-900/40 text-yellow-400 border border-yellow-900/60",
     in_progress: "bg-blue-900/40 text-blue-400 border border-blue-900/60",
@@ -337,7 +337,7 @@ function StatusBadge({ status }: { status: GameStatus }) {
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}>
-      {labels[status]}
+      {status === "suspended" && visualPaused ? "Paused" : labels[status]}
     </span>
   );
 }

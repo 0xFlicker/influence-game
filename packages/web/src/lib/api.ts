@@ -425,6 +425,8 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
   playerCount: CreateGamePlayerCount;
   providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
@@ -464,6 +466,7 @@ export interface ProviderModelInventoryEntry {
     supportsOpenAIResponses: boolean;
     supportsStructuredOutput: boolean;
     supportsTools: boolean;
+    supportsImageInput: boolean;
   };
   notes: string | null;
 }
@@ -474,6 +477,9 @@ export interface ProviderModelInventory {
 }
 
 export interface GameSummary {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
+  visualPaused?: boolean;
   id: string;
   slug: string;
   status: GameStatus;
@@ -1963,6 +1969,10 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // ---------------------------------------------------------------------------
 
 export interface SavedAgent {
+  contentRevisionId?: string | null;
+  visualDesign?: string | null;
+  headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
+  portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   id: string;
   name: string;
   backstory: string | null;
@@ -1971,6 +1981,8 @@ export interface SavedAgent {
   personaKey: PersonaKey | null;
   gender?: AgentGender | null;
   avatarUrl: string | null;
+  fullBodyReferenceUrl?: string | null;
+  performanceInstructions?: string | null;
   gamesPlayed: number;
   gamesWon: number;
   profileRevisionId?: string | null;
@@ -1981,6 +1993,8 @@ export interface SavedAgent {
 }
 
 export interface AgentMutationReceipt {
+  contentRevisionId?: string;
+  moderationRecordId?: string;
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -2013,6 +2027,11 @@ export interface AgentMutationReceipt {
 }
 
 export interface AgentProfileWriteParams {
+  submissionId?: string;
+  expectedContentRevisionId?: string | null;
+  visualDesign?: string | null;
+  headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
+  portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
   name: string;
   personality: string;
   backstory?: string;
@@ -2020,6 +2039,8 @@ export interface AgentProfileWriteParams {
   personaKey?: PersonaKey;
   gender: AgentGender;
   avatarUrl?: string;
+  fullBodyReferenceUrl?: string | null;
+  performanceInstructions?: string;
   avatarGenerationRequestId?: string;
 }
 
@@ -2281,6 +2302,11 @@ export interface AvatarCompletion {
   reason?: string;
 }
 
+export interface CharacterImageDraft {
+  requestId: string; fullBodyReferenceUrl: string; width: number; height: number;
+  headSuggestion?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
+  avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
+}
 export interface GeneratePersonalityParams {
   traits?: string;
   occupation?: string;
@@ -2293,12 +2319,18 @@ export interface GeneratePersonalityParams {
     backstory?: string;
     personality?: string;
     strategyStyle?: string;
+    performanceInstructions?: string;
+    visualDesign?: string;
+    avatarUrl?: string | null;
+    fullBodyReferenceUrl?: string | null;
     personaKey?: string;
     gender?: AgentGender;
   };
 }
 
 export interface GeneratePersonalityResult {
+  performanceInstructions: string;
+  visualDesign: string;
   name: string;
   backstory: string | null;
   personality: string;
@@ -2335,15 +2367,6 @@ export async function createAgent(
     method: "POST",
     body: JSON.stringify(params),
   });
-  if (typeof window !== "undefined" && agent.avatarCompletion) {
-    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
-      detail: {
-        agentId: agent.id,
-        agentName: agent.name,
-        completion: agent.avatarCompletion,
-      },
-    }));
-  }
   return agent;
 }
 
@@ -2355,15 +2378,6 @@ export async function updateAgent(
     method: "PATCH",
     body: JSON.stringify(params),
   });
-  if (typeof window !== "undefined" && agent.avatarCompletion) {
-    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
-      detail: {
-        agentId: agent.id,
-        agentName: agent.name,
-        completion: agent.avatarCompletion,
-      },
-    }));
-  }
   return agent;
 }
 
@@ -2606,6 +2620,14 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
+  firstDurableEventSequence?: number | null;
+  speakerPlayerId?: string | null;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
+  entrySequence?: number;
+  anonymous?: boolean;
   /** Durable live publication identity and catch-up classification. */
   publicationSequence?: number;
   liveCatchUp?: boolean;
@@ -2625,6 +2647,9 @@ export interface TranscriptEntry {
 }
 
 export interface GameDetail {
+  visualMode?: boolean;
+  visualFailurePolicy?: "best_effort" | "require_visuals";
+  visualPaused?: boolean;
   id: string;
   slug: string;
   status: GameStatus;
@@ -2658,6 +2683,12 @@ export interface GameDetail {
 
 /** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
+  dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
+  firstDurableEventSequence?: number | null;
+  speakerPlayerId?: string | null;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("@influence/engine/visual-mode").VisualRoomId };
   /** Durable game-local dialogue identity. */
   entrySequence?: number;
   round: number;
@@ -3692,6 +3723,7 @@ export interface UploadResult {
 }
 
 export async function uploadProfilePicture(file: File): Promise<UploadResult> {
+  const signal = AbortSignal.timeout(120_000);
   // Step 1: Get a presigned PUT URL from our API
   const { uploadUrl, publicUrl, key } = await apiFetch<{
     uploadUrl: string;
@@ -3700,6 +3732,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
   }>("/api/upload/pfp", {
     method: "POST",
     body: JSON.stringify({ contentType: file.type }),
+    signal,
   });
 
   // Step 2: PUT the file directly to object storage
@@ -3707,6 +3740,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
     method: "PUT",
     headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
     body: file,
+    signal,
   });
 
   if (!putRes.ok) {

@@ -433,7 +433,7 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 - Status: `closed`
 - Consolidates: Standing Daily Agent implementation review finding #9.
-- Sources: `packages/web/src/components/avatar-generation-activity.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`
+- Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`. The former `avatar-generation-activity.tsx` global completion UI was removed by atomic character drafts; its implementation remains in Git history.
 - Resolution: repeated status-read failures preserve the last provider status and surface a distinct `Portrait status unavailable` state with manual refresh. They no longer manufacture a terminal generation failure.
 - Concrete seam: avatar completion UI state, activity polling, retry affordances, and provider-versus-status error copy.
 - Validation path: force three consecutive status API failures while the provider request remains pending, then recover the API; verify the UI reports status as temporarily unavailable, never claims generation failed, and eventually displays the completed portrait.
@@ -444,10 +444,10 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Status: `closed`
 - Consolidates: Standing Daily Agent implementation review finding #10.
 - Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
-- Resolution: draft polling uses bounded backoff and a manual status refresh, and portrait generation no longer disables Agent creation or update. A pending draft request attaches to the saved profile transactionally and completes against that profile in the background.
+- Resolution: draft polling uses bounded backoff and manual status refresh. Atomic character drafts supersede background attachment: pending generation blocks final submission, Save draft remains available, and cancellation or timeout fences late results.
 - Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
-- Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
-- Implemented slice: the editor persists its request ID with the local draft, save attaches that request without waiting, explicit uploads retain precedence, and creation retries reuse a per-owner idempotency key.
+- Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent. Final submission waits for a terminal outcome or explicit cancellation; saving a local draft never updates the Agent.
+- Implemented slice: the editor persists its request ID with the local draft, submits only selected completed assets, and creation retries reuse a per-owner idempotency key. See `docs/agent-content-submissions.md`.
 
 
 

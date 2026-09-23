@@ -106,6 +106,14 @@ export function wsEntryToTranscriptEntry(
 ): TranscriptEntry {
   return {
     id,
+    entrySequence: entry.entrySequence,
+    dialogueKind: entry.dialogueKind,
+    firstDurableEventSequence: entry.firstDurableEventSequence,
+    speakerPlayerId: entry.speakerPlayerId,
+    presentationPurpose: entry.presentationPurpose,
+    acceptedBallot: entry.acceptedBallot,
+    visualScene: entry.visualScene,
+    anonymous: entry.anonymous,
     gameId,
     round: entry.round,
     phase: entry.phase as PhaseKey,

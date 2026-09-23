@@ -7,7 +7,7 @@ import {
   type LaunchFormatId,
 } from "@influence/engine/format-presentation-metadata";
 import { FormatPresentation } from "../app/games/[slug]/components/format-presentation";
-import { activeFormatIdForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import { formatSnapshotForPresentationCursor } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import type {
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -48,7 +48,7 @@ describe("FormatPresentation", () => {
     expect(result).toContain('aria-label="Echo: 0 exit votes"');
   });
 
-  it("renders only the Empowered aggregate and roster-ordered named receipts", () => {
+  it("renders compact Empower totals without repeating the solo vote receipts", () => {
     const html = renderToString(
       <FormatPresentation
         cue={empoweredCue()}
@@ -65,15 +65,33 @@ describe("FormatPresentation", () => {
     expect(text.indexOf("Atlas With A Deliberately Long Strategic Name")).toBeLessThan(
       text.lastIndexOf("Lyra"),
     );
-    expect(html).toContain('data-empower-receipt="p1"');
-    expect(html).toContain('data-empower-receipt="p2"');
-    expect(html).toContain('data-empower-receipt="p3"');
-    expect(text).toContain("Revote");
+    expect(html).not.toContain("data-empower-receipt");
+    expect(text).not.toContain("Revote");
     expect(text).not.toContain("Expose");
     expect(text).not.toContain("At risk");
     expect(text).not.toContain("Shield");
     expect(text).not.toContain("Power");
     expect(text).not.toContain("Council");
+  });
+
+  it("separates tied nominees, revote totals and the accepted final decision", () => {
+    const base = empoweredCue();
+    const render = (cue: FormatPresentationCue) => withoutReactMarkers(renderToString(<FormatPresentation cue={cue} roster={roster} currentStateEntry={false} />));
+    const tie = render({ ...base, kind: "empowered_tie", tiedPlayerIds: ["p1", "p2"], counts: { p1: 2, p2: 2, p3: 0 } });
+    expect(tie).toContain("A tie for Empower");
+    expect(tie).toContain("The other players revote between them.");
+    expect(tie).not.toContain("is Empowered");
+    const allTied = render({ ...base, kind: "empowered_tie", tiedPlayerIds: ["p1", "p2", "p3"], counts: { p1: 1, p2: 1, p3: 1 } });
+    expect(allTied).not.toContain("other players revote");
+    expect(allTied).toContain("A tiebreak will decide");
+    const revote = render({ ...base, resolutionMethod: "revote", counts: { p1: 0, p2: 1 }, empoweredId: "p2", receipts: [{ voterId: "p3", targetId: "p1", revoteTargetId: "p2" }] });
+    expect(revote).toContain("Empower revote");
+    expect(revote).toContain("Lyra is Empowered.");
+    expect(revote).not.toContain("data-empower-receipt");
+    expect(render({ ...base, resolutionMethod: "wheel" })).toContain("The revote stayed tied. The wheel decided.");
+    const manual = render({ ...base, resolutionMethod: "manual" });
+    expect(manual).toContain("Original vote totals shown.");
+    expect(manual).not.toContain("Empower revote");
   });
 
   it("keeps both offered cards in canonical order and expands only the selected rules", () => {
@@ -315,7 +333,7 @@ describe("FormatPresentation", () => {
     );
 
     expect(withoutReactMarkers(tiebreak)).toContain(
-      "Atlas With A Deliberately Long Strategic Name breaks the tie",
+      "Atlas With A Deliberately Long Strategic Name must break the tie",
     );
     expect(withoutReactMarkers(tiebreak)).toContain("Tied: Lyra · Echo");
     expect(withoutReactMarkers(elimination)).toContain("Echo is eliminated");
@@ -345,8 +363,8 @@ describe("FormatPresentation", () => {
     };
     const cues = [selected, sameRoundSocial, nextRoundSocial];
 
-    expect(activeFormatIdForPresentationCursor(cues, 1, 1)).toBe("vote_bomb");
-    expect(activeFormatIdForPresentationCursor(cues, 2, 2)).toBeNull();
+    expect(formatSnapshotForPresentationCursor(cues, 1, 1)?.activeFormatId).toBe("vote_bomb");
+    expect(formatSnapshotForPresentationCursor(cues, 2, 2)).toBeNull();
   });
 });
 

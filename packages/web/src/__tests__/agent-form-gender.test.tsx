@@ -32,7 +32,7 @@ describe("AgentForm", () => {
     expect(html).toContain("min-h-11");
     expect(html).toContain("flex-[1_1_auto]");
     expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("Generate replaces the current profile text and image.");
+    expect(html).toContain("generates a full-body image and matching portrait. Changes stay in this draft.");
   });
 
   test("shows the saved gender as selected on edit", () => {
@@ -54,8 +54,8 @@ describe("AgentForm", () => {
     });
 
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>Female<\/button>/);
-    expect(html).toContain("Generate replaces the current profile text.");
-    expect(html).not.toContain("Generate replaces the current profile text and image.");
+    expect(html).toContain("Refines your profile, performance and look");
+    expect(html).toContain("generates a full-body image and matching portrait. Changes stay in this draft.");
   });
 
   test("makes Strategy the dominant long-form field and shares server limits", () => {
@@ -81,6 +81,7 @@ describe("AgentForm", () => {
 
   test("starts a review edit from the proposal and keeps the baseline visible", () => {
     const html = renderForm({
+      showLiveChanges: true,
       initial: {
         id: "agent-1",
         name: "Atlas",

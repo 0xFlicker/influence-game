@@ -95,6 +95,16 @@ export interface GameStateSnapshot {
 }
 
 export interface GameRunnerOptions {
+  /** Prepare visuals at a durable boundary. Best effort continues with portraits; explicit Require visuals may request an operator pause. */
+  prepareVisualBoundary?: (snapshot: DurableGameTurnSnapshotV1) => Promise<void | import("./visual-mode").VisualOperationEvent[]>;
+  /** Read verified imagery when available, otherwise canonical text context. Never generates images. */
+  prepareVisualTurn?: (input: {
+    context: PhaseContext;
+    method: string;
+    turnId: string;
+    committedHeads: import("./durable-game-turn").GameTurnHeadsV1;
+    committedCursor: GameExecutionCursorV1;
+  }) => Promise<NonNullable<PhaseContext["visual"]>>;
   /** Optional external run identity, used by API-backed games before the first canonical event. */
   gameId?: UUID;
   /**
@@ -704,6 +714,7 @@ export type CompactStrategyApplicationResult =
   | CompactStrategyRejected;
 
 export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
+  cue?: import("./visual-mode").PerformanceCue | null;
   /**
    * Engine-only marker that this response came from a model-authored strategic
    * surface even when the offered strategy field was omitted. Provider and
@@ -1340,6 +1351,13 @@ export interface TwoNamesBoard {
 }
 
 export interface PhaseContext {
+  /** Present only for games explicitly created in Visual Mode. */
+  visual?: {
+    performanceInstructions: string;
+    observableRoom?: { roomId: import("./visual-mode").VisualRoomId; arrangementKey: string; participantIds: string[]; cues: Array<{ playerId: string; cue: import("./visual-mode").PerformanceCue }> };
+    presentationScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
+    room?: import("./visual-mode").AgentVisualContext;
+  };
   gameId: UUID;
   round: number;
   phase: Phase;
@@ -1501,6 +1519,9 @@ export type TranscriptDialogueKind =
  */
 export interface TranscriptDialogueContextV1 {
   version: 1;
+  presentationPurpose?: "farewell";
+  acceptedBallot?: { voterId: UUID; targetId: UUID; purpose: "empower" | "eliminate" | "winner" };
+  visualScene?: { id: string; roomId: import("./visual-mode").VisualRoomId };
   roomId?: number;
   allianceId?: string;
   scheduleId?: string;

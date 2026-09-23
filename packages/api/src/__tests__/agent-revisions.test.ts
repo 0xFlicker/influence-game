@@ -1,3 +1,4 @@
+import { contentImageFixture } from "./content-image-fixture.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -73,7 +74,7 @@ describe("agent revision persistence", () => {
     });
 
     const avatar = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
-      avatarUrl: "https://cdn.example.test/atlas.png",
+      avatarUrl: await contentImageFixture("pfp/revision-test.png"),
     });
     const identical = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
       personality: "Patient and exact.",

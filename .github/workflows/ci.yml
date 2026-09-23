@@ -119,6 +119,17 @@ jobs:
       - name: Run automatically discovered API tests serially
         run: bun run test:postgres
 
+  api-pr-build:
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build API runtime
+        run: docker build -f Dockerfile.api -t influence-api:pr-check .
+      - name: Verify packaged images and both API roles
+        run: bash scripts/test-api-image.sh influence-api:pr-check
+
   render-worker-pr-build:
     if: github.event_name == 'pull_request'
     needs: check
@@ -167,7 +178,7 @@ jobs:
 
           if git diff --quiet "$comparison_base" "$GITHUB_SHA" -- \
             Dockerfile.api Dockerfile.web Dockerfile.render-worker \
-            .dockerignore package.json bun.lock bunfig.toml tsconfig.json \
+            .dockerignore package.json bun.lock bunfig.toml tsconfig.json scripts/test-api-image.sh \
             packages/api/ packages/engine/ packages/prompt-lab-protocol/ packages/web/ \
             music/house-highlights-variants/; then
             echo "release_required=false" >> "$GITHUB_OUTPUT"
@@ -231,6 +242,9 @@ jobs:
               chromium --version >/dev/null
               test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
             '
+          fi
+          if [ "${{ matrix.target }}" = "api" ]; then
+            bash scripts/test-api-image.sh ${{ matrix.image }}:${{ steps.sha.outputs.short }}
           fi
           push_output="$(docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }})"
           printf '%s\n' "$push_output"

@@ -374,7 +374,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
 // Recent game row
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; errorInfo?: string }) {
+function StatusBadge({ status, errorInfo, visualPaused }: { status: GameSummary["status"]; errorInfo?: string; visualPaused?: boolean }) {
   const styles: Record<GameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
@@ -389,7 +389,7 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
     cancelled: "void",
     suspended: "failed",
   };
-  const label = status === "suspended" && (
+  const label = status === "suspended" && visualPaused ? "visual repair" : status === "suspended" && (
     errorInfo === "Finalizing results." || errorInfo === "Results under review."
   )
     ? errorInfo.replace(/\.$/, "")
@@ -502,7 +502,7 @@ function RecentGameRow({
       </td>
       <td className="block w-full px-4 pb-4 align-top md:table-cell md:w-80 md:py-4">
         <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
-          <StatusBadge status={game.status} errorInfo={game.errorInfo} />
+          <StatusBadge status={game.status} errorInfo={game.errorInfo} visualPaused={game.visualPaused} />
           <AdminCostPill
             summary={game.cost}
             onClick={onOpenCosts}
@@ -515,6 +515,7 @@ function RecentGameRow({
             onClick={onOpenProviderFailures}
             ariaLabel={`Open provider failures for game ${game.slug}`}
           />
+          {game.visualMode && <Link href={`/admin/games/${game.id}/visual`} onClick={(event) => event.stopPropagation()} className="rounded border border-white/20 px-2.5 py-1 text-xs">Visual production</Link>}
           {settlementRetryIsAvailable(game, canRetrySettlement) && (
             <button
               type="button"

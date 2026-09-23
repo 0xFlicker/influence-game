@@ -11,6 +11,8 @@ import {
 } from "../app/games/[slug]/components/format-presentation-director";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
+import { soloPresentationDurationMs, soloPresentationMotion, SOLO_EXIT_MS } from "../app/games/[slug]/components/solo-presentation-timing";
+import { houseSegmentMotion } from "../app/games/[slug]/components/house-segment";
 
 class FakeClock implements PresentationClock {
   nowMs = 0;
@@ -122,6 +124,27 @@ function cue(
 }
 
 describe("presentation director", () => {
+  it("keeps speech elapsed time consistent through pause, speed changes and seeking", () => {
+    const clock = new FakeClock();
+    const director = createPresentationDirector({ clock });
+    director.load([cue("speech:1", 1), cue("speech:2", 2)]);
+    director.play();
+    clock.tick(250);
+    expect(director.getElapsedBaseMs()).toBe(250);
+    director.pause();
+    clock.tick(500);
+    expect(director.getElapsedBaseMs()).toBe(250);
+    director.setSpeed(2);
+    director.play();
+    clock.tick(100);
+    expect(director.getElapsedBaseMs()).toBe(450);
+    director.seek(1);
+    expect(director.getElapsedBaseMs()).toBe(0);
+    clock.tick(500);
+    expect(director.getElapsedBaseMs()).toBe(1_000);
+    director.dispose();
+  });
+
   it("uses one fake-clock timer for classic and format cues", () => {
     const clock = new FakeClock();
     const director = createPresentationDirector({ clock });
@@ -383,6 +406,7 @@ describe("presentation director", () => {
       "format_roll_call",
       "format_roll_call",
       "format_tiebreak",
+      "format_deciding_vote",
       "format_elimination",
     ]);
   });
@@ -440,4 +464,155 @@ it("resumes a new live cue buffered while paused at the initial hydration bounda
   expect(director.getSnapshot()).toMatchObject({ activeKey: "current", isPlaying: false });
   director.play();
   expect(director.getSnapshot()).toMatchObject({ activeKey: "new", isPlaying: true });
+});
+
+it("keeps solo fades on the director clock through pause, speed changes and the next shot", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const shot = { ...cue("solo", 1, 0, "classic"), baseDurationMs: soloPresentationDurationMs("Echo") };
+  const next = { ...shot, key: "next-solo" };
+  director.load([shot, next]); director.play(); clock.tick(175);
+  director.pause(); clock.tick(1000);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs(), true).imageOpacity).toBe(.5);
+  director.setSpeed(2); director.play(); clock.tick(475);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
+  director.reconnect([shot, next]);
+  expect(director.getElapsedBaseMs()).toBe(1125);
+  director.play();
+  clock.tick((shot.baseDurationMs - 1125 - 175) / 2);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs())).toMatchObject({ imageOpacity: .5, speechOpacity: 0 });
+  clock.tick(175 / 2);
+  expect(director.getActiveCue()?.key).toBe("next-solo");
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).imageOpacity).toBe(0);
+  director.dispose();
+});
+
+it("keeps House animation on the shared clock through pause, speed, reconnect and append", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const house: PresentationCue = { source: "house", kind: "house_bridge", followingCueKey: "next", key: "bridge", canonicalSequence: 2, round: 1, phase: "LOBBY", title: "Lobby", baseDurationMs: 2000 };
+  const next = cue("next", 3, 1, "classic");
+  director.load([house, next]); director.play(); clock.tick(150);
+  director.pause(); clock.tick(500);
+  expect(director.getElapsedBaseMs()).toBe(150);
+  director.setSpeed(2); director.play(); clock.tick(100);
+  expect(director.getElapsedBaseMs()).toBe(350);
+  director.reconnect([house, next]);
+  expect(director.getElapsedBaseMs()).toBe(350);
+  director.play(); director.append([house, next, cue("later", 4)]);
+  clock.tick(825);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.dispose();
+});
+
+it("expired House narration stays faded at the live tail until a new cue arrives", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock, followTail: true });
+  const summary = { ...cue("house-summary", 1, 1, "classic"), houseSummary: true, baseDurationMs: 2000 };
+  const opacity = () => houseSegmentMotion(director.getElapsedBaseMs(), 2000, !director.getSnapshot().isPlaying, false).opacity;
+  director.load([summary]); director.play();
+  clock.tick(1850);
+  expect(opacity()).toBe(.5);
+  clock.tick(150);
+  expect(director.getSnapshot().waitingAtTail).toBe(true);
+  expect(opacity()).toBe(0);
+  director.append([summary]);
+  clock.tick(5000);
+  expect(opacity()).toBe(0);
+  director.pause();
+  expect(opacity()).toBe(0);
+  director.play();
+  expect(opacity()).toBe(0);
+  director.reconnect([summary]);
+  director.play();
+  expect(director.getSnapshot().waitingAtTail).toBe(true);
+  expect(opacity()).toBe(0);
+  director.append([summary, cue("new-message", 2, 1, "classic")]);
+  expect(director.getActiveCue()?.key).toBe("new-message");
+  expect(director.getElapsedBaseMs()).toBe(0);
+  director.dispose();
+});
+
+it("House fades stay finished at replay end, including reduced motion", () => {
+  for (const reducedMotion of [false, true]) {
+    expect(houseSegmentMotion(2000, 2000, false, reducedMotion).opacity).toBe(0);
+    expect(houseSegmentMotion(2000, 2000, true, reducedMotion).opacity).toBe(0);
+    expect(houseSegmentMotion(2500, 2000, false, reducedMotion).opacity).toBe(0);
+  }
+});
+
+it("paused House seeks are readable but pausing an active fade preserves its position", () => {
+  expect(houseSegmentMotion(0, 2000, true, false)).toEqual({ opacity: 1, transform: "none" });
+  for (const elapsed of [150, 1850]) {
+    expect(houseSegmentMotion(elapsed, 2000, true, false)).toEqual(houseSegmentMotion(elapsed, 2000, false, false));
+    expect(houseSegmentMotion(elapsed, 2000, true, false).opacity).toBe(.5);
+  }
+});
+
+it("late narration cannot remove an on-air title or strand playback", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const house: PresentationCue = { source: "house", kind: "house_bridge", followingCueKey: "next", key: "bridge", canonicalSequence: 2, round: 1, phase: "LOBBY", title: "Lobby", baseDurationMs: 2000 };
+  const next = cue("next", 3, 1, "classic");
+  director.load([house, next]); director.play(); clock.tick(500);
+  const summary = cue("backfilled-summary", 1, 1, "classic");
+  director.append([summary, next]);
+  expect(director.getActiveCue()?.key).toBe("bridge");
+  expect(director.getElapsedBaseMs()).toBe(500);
+  clock.tick(1500);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.append([summary, next]);
+  expect(director.getActiveCue()?.key).toBe("next");
+  director.dispose();
+});
+
+it("reveals solo speech before exiting, and rapid clicks cannot skip the exit", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), soloSpeech: true, baseDurationMs: soloPresentationDurationMs("Echo") };
+  director.load([shot, { ...shot, key: "vote" }]);
+  director.play();
+  clock.tick(100);
+  director.manualAdvance();
+  expect(director.getSnapshot().activeKey).toBe("intro");
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs())).toMatchObject({ imageOpacity: 1, speechOpacity: 1 });
+  director.manualAdvance();
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
+  clock.tick(125);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
+  director.manualAdvance();
+  expect(director.getSnapshot().activeKey).toBe("intro");
+  director.pause(); clock.tick(1000);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(.5);
+  director.setSpeed(2); director.play(); clock.tick((SOLO_EXIT_MS - 125) / 2);
+  expect(director.getSnapshot().activeKey).toBe("vote");
+  // Natural entry keeps cinematic staging, and a click can reveal it immediately.
+  expect(director.getElapsedBaseMs()).toBe(0);
+  director.manualAdvance();
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
+  director.dispose();
+});
+
+it("lands solo seeks and paused steps on readable text, retaining reading time across reconnect", () => {
+  const clock = new FakeClock();
+  const director = createPresentationDirector({ clock });
+  const shot: PresentationCue = { ...cue("intro", 1, 0, "classic"), soloSpeech: true, baseDurationMs: soloPresentationDurationMs("Echo") };
+  const cues = [shot, { ...shot, key: "vote" }, cue("result", 3)];
+  director.load(cues);
+  director.manualAdvance();
+  expect(director.getSnapshot().activeKey).toBe("vote");
+  director.setReducedMotion(true); director.play(); director.seek(1);
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
+  clock.tick(100);
+  const elapsed = director.getElapsedBaseMs();
+  director.pause(); director.reconnect(cues); director.append(cues);
+  expect(director.getElapsedBaseMs()).toBe(elapsed);
+  director.seek(0);
+  director.manualAdvance();
+  expect(director.getSnapshot()).toMatchObject({ activeKey: "vote", isPlaying: false });
+  expect(soloPresentationMotion("Echo", director.getElapsedBaseMs()).speechOpacity).toBe(1);
+  director.manualAdvance();
+  expect(director.getSnapshot().activeKey).toBe("result");
+  expect(director.getElapsedBaseMs()).toBe(0);
+  director.dispose();
 });

@@ -113,6 +113,8 @@ The post-pick social window in a normal pre-endgame round. The format and rule s
 
 The current private-room social phase for new Influence games. Agents move through rooms, rooms may be empty, solo, or crowded, and messages are private to current room occupants. Mingle is not a display rename for Whisper; new game state, events, transcript rows, prompts, simulator output, and current docs should treat it as the active phase.
 
+The durable Format Mingle coordinator commits initial assignments, then each complete simultaneous conversation/movement beat, then alliance actions and huddles at completion. Its saved window includes repaired initial assignments, the current player-to-room map and prior beat allocations. Both Two Names windows use this sequence. A restart resumes the next uncommitted beat; visual preparation uses that committed arrangement before its dialogue starts. Completion does not generate a scene for the final unused movement map.
+
 ## Post-vote Mingle
 
 A legacy classic-lane Mingle window after Vote resolves and before Power. It remains readable for historical replay but is not part of the default format-kernel round. The current standard social window is Format Mingle after the empowered player locks the format.
@@ -207,9 +209,13 @@ pointer candidates, easing, and layout motion never become game decisions.
 
 ## Presentation director
 
-The single controller that advances classic replay scenes and typed format cues.
+The single controller that advances conversation, House segments and typed format cues.
 It owns pause, resume, speed, manual advance, current-state hydration, and
 reduced-motion timing without changing cue order or canonical outcomes.
+
+## House segment
+
+A viewer-only narration or transition cue. A saved `house_summary` delivers the House's public commentary at its recorded canonical position; it does not establish game facts. The outgoing summary bridges phases, or a short logo/title cue bridges an unsummarized boundary. Operational logs and Mingle room allocations are not story beats. The presentation director owns the segment's reading time and motion.
 
 ## Elimination message
 
@@ -702,3 +708,24 @@ A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` 
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries model-side reasoning evidence when available (via `as T & { reasoningContext?: string }` intersections only — never `as any`). For local models this is native `reasoningContext`; for hosted OpenAI Responses calls it can be a labeled provider summary display. Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.
+
+## Visual scene plan and accepted scene
+
+An optional Visual Mode scene plan stages a canonical set of participants against a versioned room background and frozen character references. Intended furniture positions guide generation; observed head anchors come from verification of the final pixels. A plan becomes an accepted scene only after every participant identity and the composition are verified. Head localization is separate: uncertain coordinates require an unanchored named speech panel and no annotated agent imagery. Scene versions bind to presentation boundaries. Preparation waits are bounded; one best-effort repair may follow failure, then portraits keep gameplay moving. Best effort visual failures never suspend a game or disable future arrangements. The explicit Require visuals policy pauses at a committed boundary for admin repair and resume when required imagery is unavailable. Operational evidence is retained independently of that policy and promoted into producer-visible canonical events. Returning to an unchanged arrangement reuses accepted artifacts, and empty rooms reuse their background. Performance cues are free-form `string | null` values. Only surrounding whitespace is trimmed; cue content is not classified or text-matched. They inform subsequent required renders but do not invalidate scenes or execute game actions.
+
+## Visual paid-attempt journal
+
+A durable reservation written before image generation or localization leaves the process. Receipt, generated pixels or verified localization are retained atomically. A missing response or a server failure leaves a potentially charged attempt requiring reconciliation before a same-operation retry. Provider fallback is a separate recorded attempt. Unpriced work is reported separately from known spend; missing price information is never represented as a free request.
+
+## Timed visual speech
+
+One visible speech bubble per displayed room or portrait beat, with duration proportional to accepted message length. Its lifetime follows the presentation clock, including pause, speed changes and seeking. Room selection does not restart expired bubbles. Speech cannot be anchored to a different scene version, and anonymous speech has no identity anchor.
+
+### Character content revision and moderation record
+
+A **content revision** is the complete immutable snapshot submitted from a character draft, including image evidence and crop metadata. It is distinct from a competitive Agent revision: image-only edits do not recalibrate ratings. Each changed submission creates a **pending moderation record** atomically with the accepted profile update. Pending review is evidence for future moderation, not an admission or gameplay gate. See [the submission contract](docs/agent-content-submissions.md).
+
+
+### Scene media repair and viewer publication
+
+A **media repair job** independently renders or verifies a frozen existing scene plan. Its immutable **candidate version** is separate from the original scene accepted for agent context. An explicit **viewer publication** selects a verified candidate and appends publication history. Playback polls published media automatically and pins the selection for each beat; updates take effect at the next beat without interrupting speech. None of these records changes canonical game execution or the image context agents originally received. **Game recovery** remains a separate paused-game operation requiring Resume.

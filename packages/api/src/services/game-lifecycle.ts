@@ -1,3 +1,5 @@
+import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
+import { createVisualGameRuntime } from "./visual-game-runtime.js";
 /**
  * Game Lifecycle Service
  *
@@ -595,6 +597,7 @@ export async function validateGameStartReadiness(
   let resolvedProviderManifest;
   try {
     resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
+    if (gameConfig.visualMode === true && resolvedProviderManifest.some((selection) => !selection.model.capabilities.supportsImageInput)) return { error: "Visual Mode requires image-capable models" };
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }
@@ -802,6 +805,7 @@ async function startGameWithOwner(
   // Create runner
   const runner = new GameRunner(agents, engineConfig, houseInterviewer, {
     gameId,
+    ...(gameConfig.visualMode === true && createVisualGameRuntime(db, gameId, ownerEpoch)),
     ...(options.durableUpgradeFrom && {
       durableUpgradeFrom: options.durableUpgradeFrom,
     }),
@@ -976,8 +980,17 @@ async function runGameAsync(
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
   } catch (err) {
+    if (err instanceof VisualPreparationBlocked) {
+      await pauseForVisualRepair(db, err);
+      await tryRefreshGameWatchStateSummary(db, gameId, "visual_preparation");
+      // If policy changed during the attempt, release for ordinary worker adoption.
+      const [current] = await db.select({ status: schema.games.status }).from(schema.games).where(eq(schema.games.id, gameId));
+      if (current?.status === "in_progress" && ownerEpoch) await relinquishInterruptedGame(db, gameId, ownerEpoch);
+      return;
+    }
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`[game-lifecycle] Durable runner for ${gameId} stopped:`, errorMessage);
+
 
     if (ownerEpoch) {
       try {

@@ -20,20 +20,15 @@ import { completedGameModeHref } from "@/lib/game-links";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
 import type {
-  EndgameScreenState,
-  TransitionState,
   SpectacleMessagePhase,
   GameViewerProps,
 } from "./components/types";
 import {
-  PHASE_FLAVORS,
   setPhaseAttr,
   setEndgameAttr,
   TYPING_HOLD_MS,
   POST_REVEAL_BASE_MS,
   POST_REVEAL_PER_CHAR_MS,
-  PACED_PHASES,
-  PHASE_END_PAUSE_MS,
 } from "./components/constants";
 import { wsEntryToTranscriptEntry } from "./components/message-parsing";
 import { useGameWebSocket } from "./components/use-game-websocket";
@@ -49,8 +44,6 @@ import {
 } from "./components/match-watch-model";
 import { ReplayControls } from "./components/replay-controls";
 import { MessageBubble } from "./components/message-bubble";
-import { PhaseTransitionOverlay } from "./components/phase-transition";
-import { EndgameEntryScreen } from "./components/endgame-entry";
 import {
   ConnectionBadge,
   PhaseHeader,
@@ -116,13 +109,8 @@ export function GameViewer({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [replayIndex, setReplayIndex] = useState<number>(0);
-  const [activeTransition, setActiveTransition] =
-    useState<TransitionState | null>(null);
-  const [transitionHoldMs, setTransitionHoldMs] = useState(2000);
   // Negative IDs for live WS messages (avoids collision with positive DB ids)
   const msgIdRef = useRef(-1);
-  // maxRounds ref so handleWsEvent can access it without being a dep
-  const maxRoundsRef = useRef<number>(initialGame?.maxRounds ?? 9);
   const watchCursorRef = useRef<number>(
     initialGame?.watchState?.eventCursor.sequence ?? 0,
   );
@@ -138,11 +126,6 @@ export function GameViewer({
   const [, setLastWordsIds] = useState<ReadonlySet<number>>(
     new Set(),
   );
-  // Endgame entry screens
-  const [activeEndgame, setActiveEndgame] = useState<EndgameScreenState | null>(
-    null,
-  );
-  const prevAliveCountRef = useRef<number | null>(null);
   // Reveal choreography queue (REVEAL + COUNCIL phases, live mode only)
   const [revealQueue, setRevealQueue] = useState<TranscriptEntry[]>([]);
   const [revealShown, setRevealShown] = useState<TranscriptEntry[]>([]);
@@ -350,7 +333,6 @@ export function GameViewer({
       setGame(initialGame);
       gameRef.current = initialGame;
       setLoadError(null);
-      maxRoundsRef.current = initialGame.maxRounds;
       watchCursorRef.current = initialGame.watchState?.eventCursor.sequence ?? 0;
       gameStatusRef.current = initialGame.status;
       watchFinalStatusRef.current = initialGame.watchState?.final.status;
@@ -413,7 +395,6 @@ export function GameViewer({
         if (cancelled) return;
         setGame(gameData);
         gameRef.current = gameData;
-        maxRoundsRef.current = gameData.maxRounds;
         watchCursorRef.current = gameData.watchState?.eventCursor.sequence ?? 0;
         gameStatusRef.current = gameData.status;
         watchFinalStatusRef.current = gameData.watchState?.final.status;
@@ -479,9 +460,8 @@ export function GameViewer({
   }, [replayIndex, isReplay]);
 
   // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
-  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
-    if (revealQueue.length === 0 || isReplay || activeTransition) return;
+    if (revealQueue.length === 0 || isReplay) return;
 
     if (isSpeedrun) {
       setRevealShown((s) => [...s, ...revealQueue]);
@@ -513,16 +493,14 @@ export function GameViewer({
     }, HOLD_MS);
 
     return () => clearTimeout(timer);
-  }, [revealQueue, isReplay, isSpeedrun, activeTransition]);
+  }, [revealQueue, isReplay, isSpeedrun]);
 
   // Spectacle queue drain — take next message when current finishes
-  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
     if (
       isReplay ||
       spectacleCurrent ||
-      spectacleQueue.length === 0 ||
-      activeTransition
+      spectacleQueue.length === 0
     )
       return;
     setSpectacleQueue((q) => {
@@ -532,12 +510,11 @@ export function GameViewer({
       setSpectaclePhase("typing");
       return rest;
     });
-  }, [spectacleQueue, spectacleCurrent, isReplay, activeTransition]);
+  }, [spectacleQueue, spectacleCurrent, isReplay]);
 
   // Spectacle animation state machine
-  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
-    if (!spectacleCurrent || isReplay || activeTransition) return;
+    if (!spectacleCurrent || isReplay) return;
     const isSystem =
       !spectacleCurrent.fromPlayerId || spectacleCurrent.scope === "system";
 
@@ -571,45 +548,7 @@ export function GameViewer({
     spectaclePhase,
     isReplay,
     isSpeedrun,
-    activeTransition,
   ]);
-
-  // Trigger endgame entry screens when alive count crosses a threshold
-  useEffect(() => {
-    if (!game || isReplay) return;
-    const aliveCount = game.players.filter((p) => p.status === "alive").length;
-    const prev = prevAliveCountRef.current;
-    if (
-      prev !== null &&
-      prev > aliveCount &&
-      (aliveCount === 4 || aliveCount === 3 || aliveCount === 2)
-    ) {
-      // Compute active jury pool (odd-sized, last N eliminated)
-      const totalPlayers = game.players.length;
-      const maxJurors = totalPlayers <= 6 ? 3 : totalPlayers <= 9 ? 5 : 7;
-      const allEliminated = game.players
-        .filter((p) => p.status === "eliminated")
-        .map((p) => p.name);
-      const jurors = allEliminated.slice(-maxJurors);
-      const alive = game.players.filter((p) => p.status === "alive");
-      // Audio sting for endgame entry
-      if (aliveCount === 4) audioCue.sting("endgame_reckoning");
-      setActiveEndgame({
-        stage:
-          aliveCount === 4
-            ? "reckoning"
-            : aliveCount === 3
-              ? "tribunal"
-              : "judgment",
-        finalists:
-          aliveCount === 2
-            ? [alive[0]?.name ?? "?", alive[1]?.name ?? "?"]
-            : undefined,
-        jurors,
-      });
-    }
-    prevAliveCountRef.current = aliveCount;
-  }, [game, isReplay]);
 
   const handleWsEvent = useCallback(
     (ev: WsViewerEvent) => {
@@ -643,7 +582,6 @@ export function GameViewer({
           watchCursorRef.current = state.eventCursor.sequence;
           gameStatusRef.current = state.status;
           watchFinalStatusRef.current = state.final.status;
-          maxRoundsRef.current = state.maxRounds;
           setGame((g) => (g ? applyWatchStateToGameDetail(g, state) : g));
 
           if (state.currentPhase !== "INIT") {
@@ -730,29 +668,15 @@ export function GameViewer({
             audioCue.zone("drama");
           else if (ev.phase === "LOBBY")
             audioCue.zone("resolution");
-          // Show transition overlay in live mode (not on END phase — no point)
-          if (ev.phase !== "END" && ev.phase !== "INIT") {
-            const flavorText = (() => {
-              const flavors = PHASE_FLAVORS[ev.phase] ?? [];
-              return flavors.length > 0
-                ? flavors[Math.floor(Math.random() * flavors.length)]
-                : "";
-            })();
-            // Extend overlay hold when leaving a paced phase (gives viewers digestion time)
-            setTransitionHoldMs(
-              PACED_PHASES.has(prevPhase) ? 2000 + PHASE_END_PAUSE_MS : 2000,
-            );
-            setActiveTransition({
-              phase: ev.phase,
-              round: ev.round,
-              maxRounds: maxRoundsRef.current,
-              aliveCount: ev.alivePlayers.length,
-              flavorText,
-            });
-          }
           break;
         }
         case "message": {
+          // Phase/elimination publications use dedicated WS shapes, not
+          // viewer_decision_event. Their following dialogue still needs fresh
+          // canonical status frames, including throughout the endgame.
+          if ((ev.entry.firstDurableEventSequence ?? 0) > (replayFramesRef.current.at(-1)?.sequence ?? 0)) {
+            void hydratePresentationFrames({ afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0, preserveScreen: replayFramesRef.current.length > 0 });
+          }
           const id = ev.publicationSequence !== undefined ? -ev.publicationSequence : msgIdRef.current--;
           const msg = {
             ...wsEntryToTranscriptEntry(ev.entry, gameId, id),
@@ -847,9 +771,37 @@ export function GameViewer({
   const wsStatus = useGameWebSocket(
     gameId,
     game?.id ?? gameId,
-    !!gameId && game?.status === "in_progress",
+    game?.status,
     handleWsEvent,
   );
+  // Operational pauses do not advance the canonical presentation cursor. Poll
+  // their status separately so repair/resume preserves the mounted watch scene.
+  useEffect(() => {
+    if (!game?.visualMode || !["in_progress", "suspended"].includes(game.status)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const latest = await getGame(gameId);
+        if (cancelled) return;
+        setGame((current) => {
+          if (!current || current.id !== latest.id || !["in_progress", "suspended"].includes(current.status)) return current;
+          if (!["in_progress", "suspended"].includes(latest.status)) return current;
+          gameStatusRef.current = latest.status;
+          return { ...current, status: latest.status, visualPaused: latest.visualPaused,
+            visualFailurePolicy: latest.visualFailurePolicy, errorInfo: latest.errorInfo };
+        });
+      } catch (error) {
+        // A transient status-read failure must retain the current presentation.
+        console.warn("Visual game status refresh failed", error);
+      } finally {
+        if (!cancelled) timer = setTimeout(() => { void refresh(); }, 3000);
+      }
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [gameId, game?.visualMode, game?.status]);
+
   const previousWsStatusRef = useRef(wsStatus);
 
   useEffect(() => {
@@ -900,7 +852,7 @@ export function GameViewer({
     gamePresentation.route === "format"
     && replayFrames.some((frame) => frame.viewerDecisionEvent);
 
-  if (game.status === "suspended") {
+  if (game.status === "suspended" && !game.visualPaused) {
     const health = game.kernelHealth;
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
@@ -1055,6 +1007,11 @@ export function GameViewer({
       : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}:${startSequence ?? "start"}`;
     return (
       <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className="scroll-mt-24">
+        {game.visualPaused && (
+          <div role="status" className="mb-3 rounded-lg border border-amber-700/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+            Paused for visual repair. Play will continue after the operator resumes the game.
+          </div>
+        )}
         <MatchWatchShell
           key={matchWatchKey}
           game={game}
@@ -1062,7 +1019,7 @@ export function GameViewer({
           replayFrames={replayFrames}
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
-          presentationHydrationStatus={matchWatchDecision.mode === "live" && wsStatus !== "live"
+          presentationHydrationStatus={matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
             ? (wsStatus === "connecting" ? "loading" : "reconnecting")
             : presentationHydration.status}
           startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}
@@ -1207,23 +1164,6 @@ export function GameViewer({
           game={gameSummaryForJoin}
           onClose={() => setJoinModalOpen(false)}
           onSuccess={handleJoinSuccess}
-        />
-      )}
-
-      {/* Phase transition overlay — live mode only, not replay */}
-      {activeTransition && !isReplay && (
-        <PhaseTransitionOverlay
-          transition={activeTransition}
-          onDismiss={() => setActiveTransition(null)}
-          holdMs={transitionHoldMs}
-        />
-      )}
-
-      {/* Endgame entry screens (Reckoning / Tribunal / Judgment) — live mode only */}
-      {activeEndgame && !isReplay && (
-        <EndgameEntryScreen
-          endgame={activeEndgame}
-          onDismiss={() => setActiveEndgame(null)}
         />
       )}
 

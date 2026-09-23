@@ -14,7 +14,7 @@ contradictions retain the stored route with an incomplete diagnostic.
 
 | Surface | Current behavior |
 | --- | --- |
-| Standard vote | Format rounds show Empowered totals and receipts only. Classic expose, Power, and Council remain classic-only. |
+| Standard vote | Original Empower votes precede a tied-nominees beat at `tie_pending`; only accepted revotes precede the final Empower result and revote totals. Classic expose, Power, and Council remain classic-only. |
 | Format offer | The two immutable House cards remain stable until the selected card becomes legible and expands into its concise fixed rules. |
 | Safety Bounce | Typed starter/pointer facts drive the center actor, bench, Safe/Vulnerable lanes, deterministic presentation-only cycling, and canonical landing. |
 | Phase-end ballot | The aggregate appears first, then the existing ballots reveal in trusted roster order. Save-or-Eliminate preserves Save/Eliminate polarity. |
@@ -63,6 +63,14 @@ append. Active-match MCP does not expose in-match vote tools. The presentation
 may hold already-received identities until phase-end, then shows the aggregate
 before the canonical roster-ordered roll call.
 
+## House narration and operational records
+
+Both transcript REST responses and committed WebSocket publications expose the stored dialogue kind and first durable event sequence. The watch compiler includes `house_summary` during format-authority phases, ordered after reveal cues sharing that sequence. It omits operational log records from the theatrical sequence without deleting transcript evidence. Scene grouping follows accepted chronology and never parses room allocation text.
+
+One director owns the House logo segment, summary reading time and title-only bridges. The standalone phase/endgame overlays and random copy are removed. Live append, reconnect and media readiness preserve the current speech/House beat; historical backfill cannot interrupt a title already on air. No new provider invocation or gameplay boundary is introduced.
+
+Solo speech cues also carry an explicit presentation marker. The director uses it to reveal speech before a manual advance, run the existing exit on the same clock, and land seeks or paused steps within the reading interval. This applies to introductions and accepted ballot shots without inspecting their prose or changing canonical order.
+
 ## Verification status
 
 Automated model/component coverage proves:
@@ -88,3 +96,5 @@ The remaining runtime-only gate is one fresh controlled format game for
 end-to-end API/WebSocket progression, current-state entry, and reconnect at
 representative prefixes. It must use deterministic/local agents or approved
 mocks unless paid provider execution is explicitly authorized.
+
+Empower tie presentation is committed at `vote.empower_tally_resolved`, independently of the later `vote.empowered_set`. The placeholder winner on a pending tally never becomes viewer state. Final counts derive from validated canonical revote receipts; manual decisions retain explicitly labeled original totals. At format resolution, a tiebreak context beat is followed by a `format_deciding_vote` solo cue naming the validated eliminated target, then elimination. These are viewer cues only: no added event, decision, model call or gameplay transition.

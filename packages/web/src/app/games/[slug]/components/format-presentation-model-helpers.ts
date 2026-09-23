@@ -11,6 +11,7 @@ import type {
 
 export const FIXED_CUE_DURATION_MS = {
   empowered_tally: 2_400,
+  empowered_tie: 4_000,
   format_menu: 3_000,
   format_selected: 3_600,
   safety_bounce_started: 2_400,

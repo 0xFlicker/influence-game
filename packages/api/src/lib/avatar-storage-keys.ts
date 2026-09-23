@@ -5,6 +5,7 @@ export type AvatarStorageKind = "uploaded" | "generated";
 const AVATAR_EXTENSION = /^(?:png|jpe?g|webp)$/;
 const OPAQUE_ID = "[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}";
 const OPAQUE_AVATAR_KEY = new RegExp(`^pfp/(?:generated/)?${OPAQUE_ID}\\.(?:png|jpe?g|webp)$`, "i");
+const CONTENT_ADDRESSED_PORTRAIT_KEY = /^pfp\/crops\/[0-9a-f]{64}\.webp$/;
 const LEGACY_UPLOADED_AVATAR_KEY = /^pfp\/(?!generated\/)[^/]+\/[^/]+\.(?:png|jpe?g|webp)$/i;
 const LEGACY_GENERATED_AVATAR_KEY = /^pfp\/generated\/[^/]+\/[^/]+\/[^/]+\.(?:png|jpe?g|webp)$/i;
 
@@ -21,12 +22,12 @@ export function createOpaqueAvatarStorageKey(
 }
 
 export function isOpaqueAvatarStorageKey(key: string): boolean {
-  return OPAQUE_AVATAR_KEY.test(key);
+  return OPAQUE_AVATAR_KEY.test(key) || CONTENT_ADDRESSED_PORTRAIT_KEY.test(key);
 }
 
 export function isLegacyIdentityBearingAvatarStorageKey(key: string): boolean {
-  return LEGACY_UPLOADED_AVATAR_KEY.test(key)
-    || LEGACY_GENERATED_AVATAR_KEY.test(key);
+  return !isOpaqueAvatarStorageKey(key) && (LEGACY_UPLOADED_AVATAR_KEY.test(key)
+    || LEGACY_GENERATED_AVATAR_KEY.test(key));
 }
 
 export function opaqueReplacementAvatarStorageKey(key: string): string {

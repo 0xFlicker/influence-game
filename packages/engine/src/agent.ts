@@ -6,6 +6,8 @@
  */
 
 import { createHash, randomUUID } from "crypto";
+import { PERFORMANCE_CUE_SCHEMA, PERFORMANCE_CUE_GUIDANCE, optionalPerformanceCue } from "./performance-cue";
+import { assertVisualAnchors, latestSceneCues, visualRoomForPhase } from "./visual-mode";
 import type OpenAI from "openai";
 import type {
   ChatCompletionTool,
@@ -1532,6 +1534,7 @@ function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] |
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
   const decisionId = normalizeNullableString(record.decisionId);
   return {
+    ...(Object.prototype.hasOwnProperty.call(record, "cue") ? { cue: optionalPerformanceCue(record.cue) } : {}),
     ...(Object.prototype.hasOwnProperty.call(record, "strategyDelta")
       ? { strategyDelta: record.strategyDelta }
       : {}),
@@ -1601,7 +1604,17 @@ export interface InfluenceAgentOptions {
   providerManifest?: readonly LlmProviderRuntime[];
 }
 
+const SHORT_DIALOGUE_ACTIONS = new Set(["lobby", "mingle-turn", "alliance-huddle-turn"]);
+const SHORT_DIALOGUE_DRIVER = `# CONSTITUTION.md
+You are playing a game for yourself, with other players and an audience watching. You may occasionally break the fourth wall. When speaking, keep your message terse: one short paragraph, usually 1–3 sentences, under 100 tokens. Every word should advance your game or entertain the audience. Play for yourself and the cameras. Make friends, form blocs, influence targets. This limit applies only to your spoken message; preserve all required structured fields. Silence remains valid when the action allows it.`;
+
+const VISUAL_CONVERSATION_ACTIONS = new Set([
+  "lobby", "room-message", "mingle-turn", "accusation", "tribunal-defense",
+  "opening-statement", "jury-question", "jury-answer", "closing-argument", "plea",
+]);
+
 type LlmCallOptions = {
+  visual?: PhaseContext["visual"];
   action?: string;
   reasoningOverhead?: number;
   reasoningEffort?: ModelReasoningEffort;
@@ -2412,8 +2425,26 @@ export class InfluenceAgent implements IAgent {
 
   private traceOptions(ctx: PhaseContext, options: LlmCallOptions): LlmCallOptions {
     const action = options.action ?? "unknown";
+    let visual = ctx.visual;
+    if (visual?.room) {
+      const roomId = VISUAL_CONVERSATION_ACTIONS.has(action)
+        ? visualRoomForPhase(ctx.phase, ctx.currentRoomId, ctx.endgameStage) : null;
+      if (!roomId) {
+        visual = { performanceInstructions: visual.performanceInstructions };
+      } else {
+        const scene = visual.room.scene;
+        if (scene.roomId !== roomId || !scene.participantIds.includes(ctx.selfId)) throw new Error("Visual context does not match the agent's room");
+        const visibleIds = roomId.startsWith("mingle-")
+          ? ctx.alivePlayers.filter((player) => ctx.roomMates?.includes(player.name)).map((player) => player.id)
+          : [...ctx.alivePlayers.map((player) => player.id), ...(roomId === "finals" ? (ctx.jury ?? []).map((member) => member.playerId) : [])];
+        if (scene.participantIds.some((id) => !visibleIds.includes(id))) throw new Error("Visual scene includes an occupant outside the agent's visible audience");
+        assertVisualAnchors(scene.anchors, scene.participantIds);
+        visual = { ...visual, room: { scene, cues: latestSceneCues(scene, visual.room.cues) } };
+      }
+    }
     return {
       ...options,
+      ...(visual && { visual }),
       privateTrace: options.privateTrace ?? this.privateTraceContext(ctx, action),
     };
   }
@@ -2484,7 +2515,7 @@ export class InfluenceAgent implements IAgent {
 
   private async emitPrivateDecisionTrace(params: {
     options?: LlmCallOptions;
-    messages: readonly { role: string; content: unknown; name?: string }[];
+    messages: readonly ModelInvocationMessage[];
     response: ModelCallResponse;
     output?: unknown;
     toolName?: string;
@@ -2536,7 +2567,9 @@ export class InfluenceAgent implements IAgent {
       runtime,
       params.options,
     );
-    const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
+    const privateTraceMessages = InfluenceAgent.privateTraceMessages(
+      this.buildInvocationMessages(params.messages, params.options),
+    );
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: traceContext.actor.id ?? traceContext.actor.role,
       requestShape: response.transport,
@@ -2658,7 +2691,7 @@ You can:
 - Talk about the game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`
+Your message should feel public and watchable, not like a rules spreadsheet.`
   : `## Lobby Guidance
 This is public. Everyone is watching. The game is heating up.
 
@@ -2671,7 +2704,7 @@ You may:
 - Name empower plans, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should be entertaining and useful to your game. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`;
+Your message should be entertaining and useful to your game.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
 ${lobbyProgress}
@@ -3367,7 +3400,7 @@ Rules:
 - Author proposal and commitment atoms only for yourself. Respond to another member only by referencing an eligible earlier fact ID; a counter must include its complete replacement action and target.
 - An empty factAtoms array is valid when this turn contributes dialogue but no structured fact. Never invent another member's promise from what they said.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation happened in the structured post-format alliance window.
-- Keep dialogue to 1-3 sentences. The House may use it for narrative presentation, but factual continuity comes only from the closed atoms.
+- The House may use dialogue for narrative presentation, but factual continuity comes only from the closed atoms.
 
 Use the alliance_huddle_turn tool.`;
 
@@ -3466,7 +3499,8 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       if (result.pass) return null;
       const msg = result.message?.trim();
       if (!msg) return null;
-      return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext };
+      return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext,
+        ...normalizeStrategicDecisionMetadata(result) };
     } catch (error) {
       if (error instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(error);
@@ -3569,7 +3603,7 @@ Guidance:
 ${spreadInformationGuidance}${movingNoticeGuidance}
 - If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
 
-Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
+Use the mingle_turn tool.`;
 
     try {
       type MingleTurnProviderValue = {
@@ -6418,10 +6452,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       properties: {
         ...properties,
         ...(fragment?.properties ?? {}),
+        ...(options?.visual && { cue: PERFORMANCE_CUE_SCHEMA }),
       },
       required: [
         ...required,
         ...(requireStrategy ? fragment?.required ?? [] : []),
+        ...(options?.visual ? ["cue"] : []),
       ],
     };
   }
@@ -6479,6 +6515,35 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     );
   }
 
+  /** Final dynamic prompt tail, shared by provider requests and private prompt evidence. */
+  private buildInvocationMessages(
+    messages: readonly ModelInvocationMessage[],
+    options?: LlmCallOptions,
+  ): ModelInvocationMessage[] {
+    const result = [...messages];
+    if (options?.visual) {
+      result.push({
+        role: "user",
+        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
+        ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
+      });
+    }
+    // Keep the stable prefix/cache key intact. This is guidance for dialogue only,
+    // not a completion budget or a guarantee that the provider never caches this tail.
+    // Append within the last user message to retain the existing native request shape.
+    if (options?.action && SHORT_DIALOGUE_ACTIONS.has(options.action)) {
+      const lastMessage = result.at(-1);
+      if (lastMessage?.role !== "user" || typeof lastMessage.content !== "string") {
+        throw new Error("Conversational dialogue requires a final user message.");
+      }
+      result[result.length - 1] = {
+        ...lastMessage,
+        content: `${lastMessage.content.trimEnd()}\n\n${SHORT_DIALOGUE_DRIVER}`,
+      };
+    }
+    return result;
+  }
+
   private semanticInvocationWithMessages<TStructuredValue = unknown>(
     messages: readonly ModelInvocationMessage[],
     effectiveMaxTokens: number,
@@ -6489,7 +6554,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
     return {
-      messages,
+      messages: this.buildInvocationMessages(messages, options),
       result,
       outputTokenLimit: effectiveMaxTokens,
       ...(effort || summary ? {
@@ -6590,12 +6655,17 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
           : requireNonEmptyString(record.strategyDelta, "strategyDelta");
       if (strategyIssue) return { status: "invalid", message: strategyIssue };
     }
+    let cue: import("./visual-mode").PerformanceCue | null | undefined;
+    if (options?.visual) {
+      cue = optionalPerformanceCue(record.cue);
+    }
     const metadata = normalizeStrategicDecisionMetadata(record);
     return {
       status: "valid",
       value: this.normalizeAgentResponseForCall({
         thinking: record.thinking,
         message: record.message.trim(),
+        ...(options?.visual && { cue }),
         ...metadata,
       }, options, metadata),
     };
@@ -6613,6 +6683,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const allowed = new Set([
       "thinking",
       "message",
+      ...(options?.visual ? ["cue"] : []),
       ...(boundary === "action_repair" ? ["strategy"] : boundary ? ["strategyDelta"] : []),
     ]);
     const unsupported = Object.keys(record).find((key) => !allowed.has(key));
@@ -6688,9 +6759,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         Record<string, unknown>,
         AgentResponse
       >({
-        action: `agent-response.${options?.action ?? "message"}.v1`,
+        action: `agent-response.${options?.action ?? "message"}.${options?.visual ? "visual." : ""}v1`,
         name: responseFormat.json_schema.name,
         schema: responseFormat.json_schema.schema,
+        optionalPerformanceCue: Boolean(options?.visual),
         decodeProviderPayload: (payload) =>
           this.decodeExactAgentResponsePayload(payload, options),
         decodeAcceptedValue: (value) =>
@@ -6813,20 +6885,36 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const domainSchema = structuredClone(
       (requestTool.function.parameters ?? {}) as Record<string, unknown>,
     );
+    if (options?.visual) {
+      const properties = domainSchema.properties as Record<string, unknown>;
+      delete properties.cue;
+      domainSchema.required = (domainSchema.required as string[]).filter((key) => key !== "cue");
+    }
+    const decodeWithCue = <T,>(value: unknown, decode: (value: unknown) => StructuredDomainDecodeResult<T>): StructuredDomainDecodeResult<T> => {
+      if (!options?.visual) return decode(value);
+      if (!value || typeof value !== "object" || Array.isArray(value)) return { status: "invalid", message: "Visual turn must be an object" };
+      const { cue: rawCue, ...domain } = value as Record<string, unknown>;
+      let cue: import("./visual-mode").PerformanceCue | null;
+      cue = optionalPerformanceCue(rawCue);
+      const decoded = decode(domain);
+      if (decoded.status === "invalid") return decoded;
+      return { status: "valid", value: Object.assign({}, decoded.value, { cue }) };
+    };
     const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
-      action: `agent-tool.${action}.v1`,
+      action: `agent-tool.${action}.${options?.visual ? "visual." : ""}v1`,
       name: requestTool.function.name,
       schema: (requestTool.function.parameters ?? {}) as Record<string, unknown>,
       acceptedValueUsesProviderSchema: false,
+      optionalPerformanceCue: Boolean(options?.visual),
       decodeProviderPayload: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;
-        return semanticDecoder.decodeProvider(value);
+        return decodeWithCue(value, (payload) => semanticDecoder.decodeProvider(payload as TProviderValue));
       },
       decodeAcceptedValue: (value) => {
         const strategy = validateStrategyBoundary(value);
         if (strategy.status === "invalid") return strategy;
-        return semanticDecoder.decodeAccepted(value, domainSchema);
+        return decodeWithCue(value, (payload) => semanticDecoder.decodeAccepted(payload, domainSchema));
       },
     });
     const providerCall = this.startProviderCall(options);

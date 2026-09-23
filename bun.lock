@@ -29,6 +29,7 @@
         "openai": "^4.77.0",
         "openskill": "5.0.1",
         "postgres": "^3.4.8",
+        "sharp": "0.34.5",
         "viem": "^2.47.5",
       },
       "devDependencies": {
@@ -51,6 +52,18 @@
         "rxjs": "^7.8.2",
         "xstate": "^5.20.1",
       },
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@typescript-eslint/eslint-plugin": "^8.57.1",
+        "@typescript-eslint/parser": "^8.57.1",
+        "bun-types": "^1.3.10",
+        "eslint": "^10.0.3",
+        "typescript": "^5.8.3",
+      },
+    },
+    "packages/made-for-video": {
+      "name": "@influence/made-for-video",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/node": "^22.0.0",
         "@typescript-eslint/eslint-plugin": "^8.57.1",
@@ -395,6 +408,8 @@
     "@influence/api": ["@influence/api@workspace:packages/api"],
 
     "@influence/engine": ["@influence/engine@workspace:packages/engine"],
+
+    "@influence/made-for-video": ["@influence/made-for-video@workspace:packages/made-for-video"],
 
     "@influence/prompt-lab-protocol": ["@influence/prompt-lab-protocol@workspace:packages/prompt-lab-protocol"],
 

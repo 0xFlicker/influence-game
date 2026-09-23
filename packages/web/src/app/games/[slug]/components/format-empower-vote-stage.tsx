@@ -1,46 +1,51 @@
-import type {
-  FormatEmpowerVoteReceipt,
-  FormatPresentationRosterPlayer,
-} from "./types";
+import type { FormatPresentationRosterPlayer } from "./types";
 
 export function FormatEmpowerVoteStage({
   empoweredId,
   counts,
-  receipts,
   roster,
+  tiedPlayerIds = [],
+  resolutionMethod,
 }: {
-  empoweredId: string;
+  empoweredId: string | null;
   counts: Readonly<Record<string, number>>;
-  receipts: readonly FormatEmpowerVoteReceipt[];
   roster: readonly FormatPresentationRosterPlayer[];
+  tiedPlayerIds?: readonly string[];
+  resolutionMethod?: "revote" | "wheel" | "manual";
 }) {
   const names = new Map(roster.map((player) => [player.id, player.name]));
+  const isRevote = resolutionMethod === "revote" || resolutionMethod === "wheel";
   const orderedCounts = roster.filter((player) => player.id in counts);
+  const hasRevoters = orderedCounts.some(player => !tiedPlayerIds.includes(player.id));
 
   return (
     <section
-      data-format-cue="empowered_tally"
+      data-format-cue={empoweredId ? "empowered_tally" : "empowered_tie"}
       aria-labelledby="format-empowered-heading"
-      className="mx-auto w-full max-w-3xl rounded-xl border border-amber-200/15 bg-amber-200/[0.035] p-4 sm:p-6"
+      className="mx-auto w-full max-w-2xl px-4 py-3"
     >
       <div className="text-center">
         <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-amber-100/45">
-          Standard vote
+          {isRevote ? "Empower revote" : "Standard vote"}
         </p>
         <h2
           id="format-empowered-heading"
           className="mt-2 text-2xl font-semibold text-white sm:text-3xl"
         >
-          Empowered tally
+          {empoweredId ? "Empowered tally" : "A tie for Empower"}
         </h2>
         <p className="mt-2 text-sm text-white/55">
-          {playerName(empoweredId, names)} is Empowered.
+          {empoweredId
+            ? `${playerName(empoweredId, names)} is Empowered.`
+            : `${tiedPlayerIds.map(id => playerName(id, names)).join(" · ")} are tied. ${hasRevoters ? "The other players revote between them." : "A tiebreak will decide who is Empowered."}`}
         </p>
+        {resolutionMethod === "wheel" && <p className="mt-2 text-sm text-amber-200">The revote stayed tied. The wheel decided.</p>}
+        {resolutionMethod === "manual" && <p className="mt-2 text-sm text-amber-200">Manual decision · Original vote totals shown.</p>}
       </div>
 
       <dl
         aria-label="Empowered vote totals"
-        className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+        className="mt-5 flex flex-wrap justify-center gap-x-8 gap-y-4"
       >
         {orderedCounts.map((player) => {
           const isWinner = player.id === empoweredId;
@@ -49,16 +54,12 @@ export function FormatEmpowerVoteStage({
               key={player.id}
               data-empower-total={player.id}
               data-empowered={isWinner ? "true" : "false"}
-              className={`min-w-0 rounded-lg border px-3 py-3 ${
-                isWinner
-                  ? "border-amber-200/40 bg-amber-200/[0.12]"
-                  : "border-white/10 bg-white/[0.025]"
-              }`}
+              className={`min-w-0 text-center ${isWinner || tiedPlayerIds.includes(player.id) ? "text-amber-200" : "text-white/70"}`}
             >
               <dt className="break-words text-xs font-medium text-white/75">
                 {player.name}
               </dt>
-              <dd className="mt-1 flex items-baseline gap-1 text-2xl font-semibold text-white">
+              <dd className="mt-1 flex items-baseline justify-center gap-1 text-2xl font-semibold">
                 {counts[player.id] ?? 0}
                 <span className="text-[9px] uppercase tracking-[0.13em] text-white/35">
                   votes
@@ -68,37 +69,6 @@ export function FormatEmpowerVoteStage({
           );
         })}
       </dl>
-
-      <div className="mt-6 border-t border-white/10 pt-4">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/45">
-          Named Empowered votes
-        </h3>
-        <ol
-          aria-label="Voter to Empowered target receipts"
-          className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2"
-        >
-          {receipts.map((receipt) => (
-            <li
-              key={receipt.voterId}
-              data-empower-receipt={receipt.voterId}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-md border border-white/[0.08] bg-black/20 px-3 py-2 text-xs"
-            >
-              <span className="min-w-0 break-words text-right text-white/65">
-                {playerName(receipt.voterId, names)}
-              </span>
-              <span aria-hidden="true" className="text-amber-200/60">→</span>
-              <span className="min-w-0 break-words font-medium text-white/90">
-                {playerName(receipt.targetId, names)}
-                {receipt.revoteTargetId ? (
-                  <span className="mt-0.5 block text-[10px] font-normal text-cyan-100/65">
-                    Revote → {playerName(receipt.revoteTargetId, names)}
-                  </span>
-                ) : null}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
     </section>
   );
 }

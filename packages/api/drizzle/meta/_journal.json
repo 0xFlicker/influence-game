@@ -540,6 +540,97 @@
       "when": 1788800243166,
       "tag": "0076_deployment_bot_actors",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790010635798,
+      "tag": "0077_visual_agent_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790010635799,
+      "tag": "0078_visual_render_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790010635800,
+      "tag": "0079_visual_scenes",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790010635801,
+      "tag": "0080_visual_localization_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790010635802,
+      "tag": "0081_visual_game_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790010635803,
+      "tag": "0082_visual_profile_render_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790010635804,
+      "tag": "0083_visual_scene_render_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790010635805,
+      "tag": "0084_visual_operation_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1790010635806,
+      "tag": "0085_visual_repair_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1790010635807,
+      "tag": "0086_agent_content_submissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790010635808,
+      "tag": "0087_agent_content_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790010635809,
+      "tag": "0088_visual_media_repairs",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790010635810,
+      "tag": "0089_character_head_position",
+      "breakpoints": true
     }
   ]
 }

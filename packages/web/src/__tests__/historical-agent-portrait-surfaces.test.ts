@@ -16,7 +16,6 @@ const historicalPortraitFiles = [
   "game-info.tsx",
   "completed-results-agent-card.tsx",
   "vote-display.tsx",
-  "dramatic-replay-viewer.tsx",
 ] as const;
 
 function source(filename: string): string {
@@ -49,7 +48,6 @@ describe("historical agent portrait surfaces", () => {
     const replaySource = source("dramatic-replay-viewer.tsx");
 
     expect(replaySource).toContain("shouldSuppressDramaticAdvance(e.target)");
-    expect(replaySource).toContain("GamePlayerAvatarPreview");
     expect(DRAMATIC_ADVANCE_SUPPRESS_SELECTOR).toContain("button");
   });
 });

@@ -502,10 +502,7 @@ export type {
   GameTurnTranscriptDraftV1,
   HouseOperationV1,
   HuddleProgressV1,
-  MingleBeatAllocationV1,
-  MingleMovementRequestV1,
   MingleProgressV1,
-  MingleRoomProgressV1,
   ParallelBatchKind,
   RulesOperationV1,
   RuntimeActorCoordinate,
@@ -777,3 +774,5 @@ export {
   projectedSavingsFraction,
 } from "./token-cost-projection";
 export type { CostedTokenRequest, TokenCostProjection, TokenCostRateCard } from "./token-cost-projection";
+export { computeMingleRoomCount } from "./mingle-turn-execution";
+export { mingleWindowRooms } from "./phases/mingle";

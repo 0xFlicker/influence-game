@@ -48,6 +48,13 @@ describe("provider model inventory", () => {
       }>;
     };
     expect(body.status).toBe("complete");
+    expect(body.models.find((model) => model.catalogId === "openai:gpt-6-luna"))
+      .toMatchObject({
+        configured: true,
+        available: true,
+        allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+        capabilities: { supportsImageInput: true, supportsOpenAIResponses: true, supportsTemperature: false },
+      });
     expect(calls).toEqual(["openai"]);
     expect(body.models.find((model) => model.catalogId === "openai:gpt-6-luna"))
       .toMatchObject({ configured: true, available: true, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });

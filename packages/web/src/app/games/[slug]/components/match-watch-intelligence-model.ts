@@ -174,7 +174,7 @@ function buildOverviewCards(model: MatchWatchModel): MatchWatchIntelligenceCardM
       id: "selected-state",
       title: selected ? selected.player.name : "No Agent Selected",
       body: selected
-        ? `${selected.player.name} is ${selected.statusLabel.toLowerCase()} in ${model.roundLabel.toLowerCase()}.`
+        ? `${selected.player.name} is ${selected.isAlive ? "still competing" : selected.statusLabel.toLowerCase()} in ${model.roundLabel.toLowerCase()}.`
         : "Select an agent from the cast to inspect their thinking, strategy, and receipts.",
       meta: model.phaseLabel,
       context: "current_phase",

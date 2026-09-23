@@ -4,7 +4,6 @@ import {
   phaseColor,
   ENDGAME_PHASES,
   PHASE_LABELS,
-  PHASE_FLAVORS,
   DRAMATIC_PHASES,
   CHAT_FEED_PHASES,
 } from "../app/games/[slug]/components/constants";
@@ -80,12 +79,6 @@ describe("PHASE_LABELS", () => {
       expect(typeof PHASE_LABELS[phase]).toBe("string");
       expect(PHASE_LABELS[phase].length).toBeGreaterThan(0);
     }
-  });
-});
-
-describe("PHASE_FLAVORS", () => {
-  it("does not describe official alliance formation as a Lobby action", () => {
-    expect(PHASE_FLAVORS.LOBBY?.join(" ")).not.toMatch(/alliances form/i);
   });
 });
 

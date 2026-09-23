@@ -18,12 +18,13 @@ export function FormatPresentation({
   roster: readonly FormatPresentationRosterPlayer[];
   currentStateEntry: boolean;
 }) {
-  if (cue.kind === "empowered_tally") {
+  if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
     return (
       <FormatEmpowerVoteStage
-        empoweredId={cue.empoweredId}
+        empoweredId={cue.kind === "empowered_tally" ? cue.empoweredId : null}
+        tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
+        resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}
         counts={cue.counts}
-        receipts={cue.receipts}
         roster={roster}
       />
     );
@@ -127,14 +128,14 @@ export function FormatPresentation({
       <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <section
           data-format-cue="format_tiebreak"
-          className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-center"
+          className="w-full px-6 py-8 text-center"
           aria-live="polite"
         >
           <p className="text-[10px] uppercase tracking-[0.24em] text-white/35">
-            Tiebreak receipt
+            The deciding vote
           </p>
           <h2 className="mt-3 text-xl font-semibold text-white">
-            {playerName(cue.tiebreakerId, roster)} breaks the tie
+            {playerName(cue.tiebreakerId, roster)} must break the tie
           </h2>
           <p className="mt-3 text-sm text-white/55">
             Tied: {cue.tiedPlayerIds.map((id) => playerName(id, roster)).join(" · ")}
@@ -142,6 +143,13 @@ export function FormatPresentation({
         </section>
       </PresentationShell>
     );
+  }
+
+  if (cue.kind === "format_deciding_vote") {
+    return <section data-format-cue="format_deciding_vote" className="text-center">
+      <p className="text-sm text-amber-200">{playerName(cue.tiebreakerId, roster)} · Deciding vote</p>
+      <p className="mt-3 text-2xl text-white">{playerName(cue.targetId, roster)}</p>
+    </section>;
   }
 
   if (cue.kind === "format_elimination") {

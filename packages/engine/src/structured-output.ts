@@ -27,6 +27,8 @@ export interface ExactStructuredOutputArtifactInput<TProviderPayload, TValue> {
    * their dedicated decoder instead.
    */
   acceptedValueUsesProviderSchema?: boolean;
+  /** Preserve opaque optional performance metadata separately from exact gameplay validation. */
+  optionalPerformanceCue?: boolean;
 }
 
 const EXACT_STRUCTURED_OUTPUT_ARTIFACT = Symbol("exact-structured-output-artifact");
@@ -43,6 +45,7 @@ export interface ExactStructuredOutputArtifact<TValue> {
     value: unknown,
   ) => StructuredDomainDecodeResult<TValue>;
   readonly acceptedValueUsesProviderSchema: boolean;
+  readonly optionalPerformanceCue: boolean;
 }
 
 export interface StructuredOutputValidationIssue {
@@ -159,6 +162,7 @@ export function createExactStructuredOutputArtifact<TProviderPayload, TValue>(
     decodeProviderPayload: (payload: unknown) => input.decodeProviderPayload(payload as TProviderPayload),
     decodeAcceptedValue: input.decodeAcceptedValue,
     acceptedValueUsesProviderSchema: input.acceptedValueUsesProviderSchema ?? false,
+    optionalPerformanceCue: input.optionalPerformanceCue ?? false,
   });
   compiledValidators.set(artifact, ajv.compile(schema));
   providerNormalizers.set(artifact, compileProviderNormalizer(schema));
@@ -263,6 +267,12 @@ export class ExactStructuredOutputRegistry {
   ): ExactStructuredOutputResult<TValue> {
     const normalize = providerNormalizers.get(artifact);
     if (!normalize) throw new Error("Structured output artifact was not created by createExactStructuredOutputArtifact().");
+    if (artifact.optionalPerformanceCue && payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+      const record = payload as Record<string, unknown>;
+      // Normalize gameplay fields only. The cue is authored content, never schema-repaired.
+      const normalized = normalize({ ...record, cue: null }) as Record<string, unknown>;
+      return this.decodeSemantic(artifact, { ...normalized, cue: record.cue === undefined ? null : record.cue }, "provider");
+    }
     return this.decodeSemantic(artifact, normalize(payload), "provider");
   }
 
@@ -296,7 +306,10 @@ export class ExactStructuredOutputRegistry {
     payload: unknown,
   ): Extract<ExactStructuredOutputResult<TValue>, { status: "invalid" }> | undefined {
     const validate = this.validator(artifact);
-    if (validate(payload)) return undefined;
+    const gameplayPayload = artifact.optionalPerformanceCue && payload !== null && typeof payload === "object" && !Array.isArray(payload)
+      ? { ...payload, cue: null }
+      : payload;
+    if (validate(gameplayPayload)) return undefined;
     const issues = copyIssues(validate.errors);
     return {
       status: "invalid",

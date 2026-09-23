@@ -13,7 +13,7 @@ import type {
   TranscriptEntry,
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
-import type { WatchConnStatus } from "./types";
+import type { FormatPresentationSnapshot, WatchConnStatus } from "./types";
 
 const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
@@ -151,7 +151,11 @@ export interface MatchWatchPhaseSegment {
 
 export type MatchWatchPlayerStatusTagKind =
   | GameWatchPlayerPressureStatus
-  | "shielded";
+  | "shielded"
+  | "nominee"
+  | "override"
+  | "safe"
+  | "vulnerable";
 
 export interface MatchWatchPlayerStatusTag {
   kind: MatchWatchPlayerStatusTagKind;
@@ -191,6 +195,7 @@ export interface MatchWatchPlaybackState {
   round: number;
   phase: PhaseKey;
   canonicalSequence?: number | null;
+  formatSnapshot?: FormatPresentationSnapshot | null;
   players: GamePlayer[];
   visibleMessages: TranscriptEntry[];
 }
@@ -359,7 +364,7 @@ export function getMatchWatchRouteDecision(
   completedMode: "replay" | "results" | null = null,
   replayFrames: readonly GameWatchReplayFrame[] = [],
 ): MatchWatchRouteDecision {
-  if (game.status === "in_progress") {
+  if (game.status === "in_progress" || (game.status === "suspended" && game.visualPaused)) {
     return {
       eligible: true,
       mode: "live",
@@ -443,7 +448,10 @@ export function buildMatchWatchModel({
   const gameKernel = getGamePresentationRouteDecision(game).route;
   const players = modelPlayers.map((player) => {
     const statusLabel = getPlayerStatusLabel(player.status);
-    const statusTags = buildPlayerStatusTags(player, gameKernel);
+    const formatSnapshot = playbackState?.formatSnapshot;
+    const statusTags = gameKernel === "format"
+      ? buildFormatPlayerStatusTags(player, formatSnapshot?.round === round && (phase === "VOTE" || phase.startsWith("FORMAT_")) ? formatSnapshot : null)
+      : buildPlayerStatusTags(player);
     return {
       player,
       statusLabel,
@@ -466,7 +474,7 @@ export function buildMatchWatchModel({
     players,
     selectedPlayer: players.find((card) => card.player.id === selectedPlayer?.id) ?? null,
     selectedPlayerId: selectedPlayer?.id ?? null,
-    connectionLabel: getConnectionLabel(live, connStatus),
+    connectionLabel: game.visualPaused ? "Paused" : getConnectionLabel(live, connStatus),
     sourceLabel: getSourceLabel(game),
     phaseSegments: buildPhaseSegments(
       phase,
@@ -632,7 +640,7 @@ function resolveSelectedPlayer(
 function getPlayerStatusLabel(status: PlayerState): string {
   switch (status) {
     case "alive":
-      return "Alive";
+      return "In";
     case "eliminated":
       return "Out";
     case "unknown":
@@ -642,7 +650,6 @@ function getPlayerStatusLabel(status: PlayerState): string {
 
 function buildPlayerStatusTags(
   player: GamePlayer,
-  gameKernel: GameKernel,
 ): MatchWatchPlayerStatusTag[] {
   const tags: MatchWatchPlayerStatusTag[] = [];
 
@@ -654,7 +661,6 @@ function buildPlayerStatusTags(
       title: "Empowered by the vote",
     });
   }
-  if (gameKernel === "format") return tags;
 
   if (player.pressureStatus === "locked_at_risk") {
     const exposeLabel = buildExposeLabel(player.exposeScore);
@@ -715,6 +721,33 @@ function buildPlayerStatusTags(
 
   if (tags.length > 0) return tags;
   return [];
+}
+
+/** Roles follow the staged canonical snapshot, never the transport's future state. */
+function buildFormatPlayerStatusTags(player: GamePlayer, snapshot?: FormatPresentationSnapshot | null): MatchWatchPlayerStatusTag[] {
+  if (!snapshot || player.status !== "alive") return [];
+  const tags: MatchWatchPlayerStatusTag[] = [];
+  if (snapshot.empoweredId === player.id) {
+    tags.push({ kind: "empowered", icon: "👑", label: "Empowered", title: "Empowered for this round" });
+  }
+  if (snapshot.activeFormatId === "two_names" && snapshot.twoNames) {
+    const state = snapshot.twoNames;
+    const nominees = state.finalistPlayerIds ?? state.initialNomineeIds?.filter((id) => id !== state.removedNomineeId) ?? [];
+    if (nominees.includes(player.id)) {
+      tags.push({ kind: "nominee", icon: "⚠", label: "Nominee", title: "Currently nominated in Two Names" });
+    }
+    if (state.overrideHolderId === player.id) {
+      tags.push({ kind: "override", icon: "↺", label: "Override", title: state.overrideAction === "used" ? "Override holder — used" : state.overrideAction === "declined" ? "Override holder — declined" : "May remove one nominee with Override" });
+    }
+  }
+  if (snapshot.activeFormatId === "safety_bounce" && snapshot.safetyBounce) {
+    if (snapshot.safetyBounce.safePlayerIds.includes(player.id)) {
+      tags.push({ kind: "safe", icon: "🛡", label: "Safe", title: "Safe in Safety Bounce" });
+    } else if (snapshot.safetyBounce.vulnerablePlayerIds.includes(player.id)) {
+      tags.push({ kind: "vulnerable", icon: "⚠", label: "Vulnerable", title: "In the Safety Bounce elimination pool" });
+    }
+  }
+  return tags;
 }
 
 function buildExposeLabel(exposeScore?: number): string {

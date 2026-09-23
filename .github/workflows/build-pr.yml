@@ -180,6 +180,9 @@ jobs:
               test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
             '
           fi
+          if [ "${{ matrix.target }}" = "api" ]; then
+            bash scripts/test-api-image.sh ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
+          fi
           docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
 
   trigger-deploy:

@@ -295,6 +295,7 @@ describe("WebSocket Manager", () => {
       phase: Phase.MINGLE,
       timestamp: Date.now(),
       from: "Alice",
+      speakerPlayerId: "p1",
       scope: "mingle",
       to: ["p2"],
       roomId: 3,
@@ -377,7 +378,7 @@ describe("WebSocket Manager", () => {
         round: 2,
         phase: Phase.MINGLE,
         timestamp: entry.timestamp,
-        from: "Alice",
+        from: "Anonymous",
         scope: "mingle",
         to: ["p2"],
         roomId: 3,
@@ -392,6 +393,7 @@ describe("WebSocket Manager", () => {
       },
     });
 
+    expect(parsed.entry.speakerPlayerId).toBeUndefined();
     const serialized = JSON.stringify(parsed);
     expect(serialized).toContain("PUBLIC_THINKING_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_REASONING_SENTINEL");

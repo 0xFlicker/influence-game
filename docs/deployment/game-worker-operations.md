@@ -5,6 +5,22 @@ resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
 leases. Render workers remain a separate image/service.
 
+## Ephemeral PR previews
+
+Ephemeral previews need the same gateway/worker separation. Their IaC deployment
+runs one private `game-worker` using the gateway's API image and the preview's
+local `postgres:5432/influence_ephemeral` database. Both roles use active startup;
+staging database settings must never override that explicit preview database.
+The worker starts after gateway health (and migrations), and deployment verifies
+both runtime roles and matching images before declaring the preview ready.
+
+If a preview accepts Start but stays at Round 0 / INIT with no canonical events,
+check for a missing worker before treating it as a visual pause or replay bug.
+Redeploy the preview with its existing database volume. The worker adopts the
+admitted game through normal durable ownership; do not recreate it or edit its
+status. See the IaC [ephemeral game runbook](https://github.com/0xFlicker/linode-iac/blob/main/docs/ephemeral-games.md).
+Staging and production continue using their existing worker handoff below.
+
 ## Drain contract
 
 Authenticated `GET /api/internal/deployment-control/game-worker-drain-status`
@@ -266,3 +282,14 @@ completion. Verification must include operating-system process exit, not just
 return from the polling loop. Local subprocess tests cover signal isolation and
 CLI exit with a retained handle; the next deployed active-render drain remains
 live operational proof.
+
+
+## Independent visual media queue
+
+The existing game-worker process starts `startVisualMediaWorker` alongside its gameplay scanner. Runtime activation gates new claims; stopping the runtime stops both loops. Media jobs use `visual_repair_jobs`, a separate claim owner token, 60-second lease and 15-second heartbeat. A PostgreSQL advisory claim lock limits media concurrency to one across processes. They never acquire a game owner epoch or resume a game. The per-scene active unique index prevents overlapping repairs to the same scene.
+
+Jobs expose queued, rendering, verifying, ready, failed and needs_reconciliation. The maximum running interval is 15 minutes; each provider retains its existing per-request timeout. Shutdown aborts media work, stops heartbeats and expires the held lease. A restarted worker adopts expired jobs and loads durable operation successes before further dispatch. Owner checks guard each provider reservation and every progress/candidate acceptance transaction. Late receipts and pixels are retained by the journal, but an old owner cannot accept or publish them.
+
+A missing receipt after dispatch yields needs_reconciliation. Inspect provider request/billing evidence in Visual production, then record the reconciliation using the existing attempt endpoint; unknown costs must remain unknown until evidence establishes them. Never record zero as a substitute for missing evidence. Continue failed repair is an explicit new job that reuses successful source steps; it does not repeat unresolved attempts. Each job gets one generation pass with at most one eligible provider-availability fallback under the existing provider policy, and no composition-rejection regeneration loop.
+
+Independent regeneration starts immediately after queue acceptance. **Prepare game recovery** retains the separate paused-game preparation plus explicit **Resume game** flow. Publishing a media version affects viewers only; it cannot satisfy agent-context recovery requirements. See [Visual Mode](../visual-mode.md#independent-scene-repair-and-reviewed-publication) for card operations, API receipts, version review and automatic publication updates between playback beats.

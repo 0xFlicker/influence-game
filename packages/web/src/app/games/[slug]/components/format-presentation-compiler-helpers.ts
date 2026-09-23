@@ -234,6 +234,19 @@ export function applyResolution(input: {
       tiebreakerId: payload.tiebreakerId,
       tiedPlayerIds: [...payload.tiedPlayerIds],
     });
+    cues.push({
+      source: "format",
+      key: cueKey(gameId, decision.sequence, "deciding-vote"),
+      canonicalSequence: decision.sequence,
+      round: decision.round,
+      phase,
+      kind: "format_deciding_vote",
+      baseDurationMs: FIXED_CUE_DURATION_MS.format_tiebreak,
+      before: cloneSnapshot(snapshot),
+      after: cloneSnapshot(snapshot),
+      tiebreakerId: payload.tiebreakerId,
+      targetId: payload.eliminatedId,
+    });
   }
 
   before = cloneSnapshot(snapshot);
@@ -266,6 +279,7 @@ export function appendEmpoweredTallyCue(input: {
   empoweredId: string;
   counts: Readonly<Record<string, number>>;
   receipts: readonly FormatEmpowerVoteReceipt[];
+  resolutionMethod?: "revote" | "wheel" | "manual";
   snapshot: FormatPresentationSnapshot;
   cues: FormatPresentationCue[];
 }): FormatPresentationSnapshot {
@@ -290,6 +304,7 @@ export function appendEmpoweredTallyCue(input: {
     empoweredId: input.empoweredId,
     counts: { ...input.counts },
     receipts: input.receipts.map((receipt) => ({ ...receipt })),
+    resolutionMethod: input.resolutionMethod,
   });
   return snapshot;
 }

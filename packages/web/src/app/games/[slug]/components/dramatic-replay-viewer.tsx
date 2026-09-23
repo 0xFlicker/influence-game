@@ -1,6 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { FitPresentation } from "./fit-presentation";
+import { usePlayerFullscreen } from "./use-player-fullscreen";
+import { VisualPresentation } from "./visual-presentation";
+import { useVisualWatch } from "./use-visual-watch";
+import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, isSoloTranscript } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
   TranscriptEntry,
@@ -9,51 +14,26 @@ import type {
   GameWatchReplayFrame,
   PhaseKey,
 } from "@/lib/api";
-import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import type {
   ClassicPresentationCue,
-  EndgameStage,
-  EndgameScreenState,
   FormatPresentationCue,
   PresentationCue,
   ReplayScene,
-  TransitionState,
 } from "./types";
 import {
   PHASE_TRANSITION_LABELS,
-  PHASE_FLAVORS,
   phaseColor,
+  phaseToRoomType,
   setPhaseAttr,
   setEndgameAttr,
   ENDGAME_PHASES,
   ROOM_TYPE_COLORS,
   SPEED_OPTIONS,
-  INTER_SCENE_PAUSE_MS,
-  TYPING_HOLD_MS,
-  POST_REVEAL_BASE_MS,
-  POST_REVEAL_PER_CHAR_MS,
-  DRAMATIC_PHASE_MULTIPLIER,
-  DRAMATIC_PHASES,
-  CHAT_FEED_PHASES,
-  CHAT_TYPING_HOLD_MS,
-  CHAT_POST_MSG_BASE_MS,
-  CHAT_POST_MSG_PER_CHAR_MS,
-  DIARY_WHISPER_SCENE_END_HOLD_MS,
-  PACED_PHASES,
-  PHASE_END_PAUSE_MS,
 } from "./constants";
-import { PhaseEndingCue } from "./phase-ending-cue";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
-import { PhaseTransitionOverlay } from "./phase-transition";
-import { EndgameEntryScreen } from "./endgame-entry";
-import { GroupChatFeed, JuryDMView } from "./chat-feeds";
-import { OpenWhisperRoomsView, WhisperRoomDM, WhisperAllocationOverview, buildWhisperStageData } from "./whisper-phase";
-import { buildDiaryRooms, DiaryRoomChat } from "./diary-room";
-import type { WhisperRoomStage } from "./types";
-import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
-import { buildReplayScenes } from "./spectacle-viewer";
+import { buildStoryScenes, withHouseBridges } from "./house-story";
+import { buildEndgamePresentationCues } from "./endgame-presentation";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
-import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
 import {
   MATCH_WATCH_FORMAT_PHASES,
   REPLAY_FRAME_PHASE_ORDER,
@@ -71,13 +51,6 @@ import { FormatPresentation } from "./format-presentation";
 import { ActiveFormatLabel } from "./active-format-label";
 import { findPresentationCueIndexForSequence } from "./presentation-sequence";
 
-function isRoomReplayPhase(phase: string): boolean {
-  return phase === "MINGLE_I"
-    || phase === "MINGLE"
-    || phase === "POST_VOTE_MINGLE"
-    || phase === "FORMAT_MINGLE";
-}
-
 const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
   "VOTE",
   "FORMAT_MENU",
@@ -86,9 +59,11 @@ const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
 ]);
 
 export function isFormatSocialTranscriptMessage(
-  message: Pick<TranscriptEntry, "phase">,
+  message: Pick<TranscriptEntry, "phase" | "presentationPurpose" | "dialogueKind">,
 ): boolean {
-  return !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
+  return message.dialogueKind === "house_summary"
+    || message.presentationPurpose === "farewell"
+    || !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
 }
 
 interface DramaticReplayViewerProps {
@@ -113,9 +88,10 @@ export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
   );
 }
 
-function buildClassicPresentationCues(
-  scenes: ReturnType<typeof buildReplayScenes>,
+export function buildClassicPresentationCues(
+  scenes: ReplayScene[],
   replayFrames: readonly GameWatchReplayFrame[],
+  players: readonly GamePlayer[] = [],
 ): ClassicPresentationCue[] {
   const framesByRound = new Map<number, GameWatchReplayFrame[]>();
   for (const frame of replayFrames) {
@@ -124,69 +100,23 @@ function buildClassicPresentationCues(
     framesByRound.set(frame.round, roundFrames);
   }
   return scenes.flatMap((scene, sceneIndex) =>
-    scene.messages.flatMap((message, messageIndex) => {
-      const isLastInScene = messageIndex === scene.messages.length - 1;
-      const isChatStyle =
-        CHAT_FEED_PHASES.has(scene.phase)
-        || isRoomReplayPhase(scene.phase)
-        || scene.phase === "DIARY_ROOM"
-        || scene.phase === "JURY_QUESTIONS";
-      const typingMs = message.scope === "system" || !message.fromPlayerId
-        ? 0
-        : isChatStyle
-          ? CHAT_TYPING_HOLD_MS
-          : TYPING_HOLD_MS * (
-              DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1
-            );
-      const extraHoldMs =
-        getHouseSummaryExtraHoldMs(message, scene.messages, messageIndex)
-        + getJuryOpeningStatementsExtraHoldMs(message, scene.messages, messageIndex)
-        + getJuryQuestionsExtraHoldMs(message, scene.messages, messageIndex)
-        + getJuryClosingStatementsExtraHoldMs(message, scene.messages, messageIndex);
-      const holdMs = isLastInScene
-        ? (
-            isRoomReplayPhase(scene.phase) || scene.phase === "DIARY_ROOM"
-              ? DIARY_WHISPER_SCENE_END_HOLD_MS
-              : INTER_SCENE_PAUSE_MS
-          ) + (PACED_PHASES.has(scene.phase) ? PHASE_END_PAUSE_MS : 0)
-        : isChatStyle
-          ? Math.max(CHAT_POST_MSG_BASE_MS, message.text.length * CHAT_POST_MSG_PER_CHAR_MS)
-          : Math.max(POST_REVEAL_BASE_MS, message.text.length * POST_REVEAL_PER_CHAR_MS)
-            * (DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1);
-      const canonicalSequence = latestFrameSequenceAtOrBefore(
-        framesByRound.get(scene.round) ?? [],
-        message.timestamp,
-      );
-
-      const stages: Array<{
-        stage: ClassicPresentationCue["stage"];
-        durationMs: number;
-      }> = [];
-      if (typingMs > 0) {
-        stages.push({ stage: "typing", durationMs: typingMs });
-      }
-      if (!isChatStyle) {
-        stages.push({
-          stage: "revealing",
-          durationMs: Math.max(600, message.text.length * 18),
-        });
-      }
-      stages.push({ stage: "done", durationMs: holdMs + extraHoldMs });
-
-      return stages.map(({ stage, durationMs }) => ({
-        source: "classic" as const,
-        liveCatchUp: message.liveCatchUp,
-        key: `classic:${message.id}:${stage}`,
-        canonicalSequence,
-        round: scene.round,
-        phase: scene.phase,
-        kind: "classic_transcript" as const,
-        stage,
-        baseDurationMs: durationMs,
-        sceneIndex,
-        messageIndex,
-      }));
-    }),
+    scene.messages.map((message, messageIndex) => ({
+      source: "classic" as const,
+      liveCatchUp: message.liveCatchUp,
+      key: `classic:${message.entrySequence ?? message.id}:done`,
+      houseSummary: message.dialogueKind === "house_summary",
+      canonicalSequence: message.firstDurableEventSequence ?? latestFrameSequenceAtOrBefore(
+        framesByRound.get(scene.round) ?? [], message.timestamp,
+      ),
+      round: scene.round,
+      phase: scene.phase,
+      kind: "classic_transcript" as const,
+      stage: "done" as const,
+      baseDurationMs: transcriptPresentationDurationMs(message, players),
+      soloSpeech: isSoloTranscript(message),
+      sceneIndex,
+      messageIndex,
+    })),
   );
 }
 
@@ -224,7 +154,12 @@ export function comparePresentationCues(
   const phaseDifference =
     phaseIndex(left.phase) - phaseIndex(right.phase);
   if (phaseDifference !== 0) return phaseDifference;
-  if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
+  if (left.source !== right.source) {
+    // Summaries sharing a commit with a result follow every reveal stage.
+    if (left.source === "classic") return left.houseSummary ? 1 : -1;
+    if (right.source === "classic") return right.houseSummary ? -1 : 1;
+    return left.source === "house" ? -1 : 1;
+  }
   if (left.source === "format" && right.source === "format") {
     return left.canonicalSequence - right.canonicalSequence;
   }
@@ -261,7 +196,7 @@ export function buildReplayPlayersForCue(input: {
 function mergeFormatAndSocialCues(
   formatCues: readonly FormatPresentationCue[],
   classicCues: readonly ClassicPresentationCue[],
-  scenes: ReturnType<typeof buildReplayScenes>,
+  scenes: ReplayScene[],
 ): PresentationCue[] {
   const socialCues = classicCues.filter((cue) => {
     const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
@@ -270,14 +205,13 @@ function mergeFormatAndSocialCues(
   return [...socialCues, ...formatCues].sort(comparePresentationCues);
 }
 
-function formatCueScene(cue: FormatPresentationCue): ReplayScene {
+function formatCueScene(cue: Exclude<PresentationCue, ClassicPresentationCue>): ReplayScene {
   return {
     id: cue.key,
     round: cue.round,
     phase: cue.phase,
-    roomType: "tribunal" as const,
-    messages: [] as TranscriptEntry[],
-    houseIntro: null,
+    roomType: phaseToRoomType(cue.phase),
+    messages: [],
   };
 }
 
@@ -314,7 +248,7 @@ function cueSceneIdentity(cue: PresentationCue): string {
     : cue.key;
 }
 
-export function activeFormatIdForPresentationCursor(
+export function formatSnapshotForPresentationCursor(
   cues: readonly PresentationCue[],
   cursor: number,
   round: number,
@@ -322,8 +256,8 @@ export function activeFormatIdForPresentationCursor(
   for (let index = Math.min(cursor, cues.length - 1); index >= 0; index -= 1) {
     const cue = cues[index]!;
     if (cue.round !== round) continue;
-    if (cue.source === "format" && cue.after.activeFormatId) {
-      return cue.after.activeFormatId;
+    if (cue.source === "format") {
+      return cue.after;
     }
   }
   return null;
@@ -357,7 +291,6 @@ function DramaticReplayTheater({
   startSequence,
   onPlaybackStateChange,
 }: DramaticReplayViewerProps) {
-  const [showThinking, setShowThinking] = useState(!live); // default true for replay
   const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
@@ -377,10 +310,10 @@ function DramaticReplayTheater({
     })),
     [players],
   );
-  const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
+  const scenes = useMemo(() => buildStoryScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
-    () => buildClassicPresentationCues(scenes, replayFrames),
-    [replayFrames, scenes],
+    () => buildClassicPresentationCues(scenes, replayFrames, players),
+    [replayFrames, scenes, players],
   );
   const formatCompilation = useMemo(
     () => compileFormatPresentationPrefix({
@@ -400,66 +333,60 @@ function DramaticReplayTheater({
       replayFrames,
     ],
   );
-  const presentationCues = useMemo(
-    () => isFormatGame
+  const canonicalPresentationCues = useMemo(
+    () => [...(isFormatGame
       ? mergeFormatAndSocialCues(formatCompilation.cues, classicCues, scenes)
-      : classicCues,
+      : classicCues), ...buildEndgamePresentationCues(replayFrames)].sort(comparePresentationCues),
     [
       classicCues,
       formatCompilation.cues,
       isFormatGame,
       scenes,
+      replayFrames,
     ],
   );
+  const presentationCues = useMemo(() => withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes), [canonicalPresentationCues, players, scenes]);
   const {
     director,
     snapshot: directorSnapshot,
     scope: animationScope,
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
-  // Check if any per-message thinking exists (to decide whether to show toggle)
-  const hasThinkingMessages = useMemo(() => messages.some((m) => m.thinking), [messages]);
-  const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
-  const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
-  const resumeAfterTransitionRef = useRef(false);
-  const seenEndgameStages = useRef<Set<string>>(new Set());
+  const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const controlsHovered = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectHydrationPendingRef = useRef(false);
   // Scroll ref for stacked diary/mingle content (INF-93)
-  const stackedScrollRef = useRef<HTMLDivElement>(null);
 
   const fallbackCue = presentationCues[0] ?? null;
   const activeCue = director.getActiveCue() ?? fallbackCue;
   const classicCue = activeCue?.source === "classic" ? activeCue : null;
   const formatCue = activeCue?.source === "format" ? activeCue : null;
-  const activeFormatIdForSocialScene = useMemo(() => {
-    if (!classicCue) return null;
-    return activeFormatIdForPresentationCursor(
+  const presentedFormatSnapshot = useMemo(() => {
+    if (!isFormatGame || !activeCue) return null;
+    return formatSnapshotForPresentationCursor(
       presentationCues,
       directorSnapshot.cursor,
-      classicCue.round,
+      activeCue.round,
     );
-  }, [classicCue, directorSnapshot.cursor, presentationCues]);
-  const sceneIndex = classicCue?.sceneIndex ?? 0;
+  }, [activeCue, isFormatGame, directorSnapshot.cursor, presentationCues]);
+  const activeFormatIdForSocialScene = classicCue ? presentedFormatSnapshot?.activeFormatId ?? null : null;
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
     ? scenes[classicCue.sceneIndex]
-    : formatCue
-      ? formatCueScene(formatCue)
+    : activeCue && activeCue.source !== "classic"
+      ? formatCueScene(activeCue)
       : undefined;
-  const totalScenes = scenes.length;
   const currentMessage = scene?.messages[messageIndex] ?? null;
-  const messagePhase = classicCue?.stage ?? "done";
+  const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
+  const visual = visualWatchPresentation(
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players,
+  );
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
-  const showPhaseEndingCue = Boolean(
-    classicCue?.stage === "done"
-    && scene
-    && messageIndex === scene.messages.length - 1
-    && PACED_PHASES.has(scene.phase),
-  );
-  const isSystemMessage = !currentMessage?.fromPlayerId || currentMessage?.scope === "system";
+
 
   // Set data-phase on root for cinematic CSS cascade
   const scenePhase = scene?.phase;
@@ -488,7 +415,14 @@ function DramaticReplayTheater({
       return;
     }
     if (live && directorSnapshot.cueKeys.length === 0) {
-      director.reconnect(presentationCues);
+      const latest = presentationCues.at(-1);
+      if (latest?.source === "classic" && !latest.liveCatchUp) {
+        // A newly published first speech needs its full reading time. Historical
+        // catch-up uses hydration so old introductions are not replayed.
+        director.load(presentationCues, presentationCues.length - 1);
+      } else {
+        director.reconnect(presentationCues);
+      }
       director.play();
       return;
     }
@@ -550,17 +484,6 @@ function DramaticReplayTheater({
     presentationHydrationStatus,
   ]);
 
-  // Resolve current speaker (anonymous for RUMOR phase)
-  const isCurrentRumor = currentMessage?.phase === "RUMOR" && currentMessage?.scope === "public";
-  const currentPlayer = isCurrentRumor ? null : (currentMessage?.fromPlayerId
-    ? players.find((p) => p.id === currentMessage.fromPlayerId)
-      ?? players.find((p) => p.name === currentMessage.fromPlayerId)
-    : null);
-  const currentPlayerName = isCurrentRumor
-    ? "Anonymous"
-    : (currentMessage?.fromPlayerName ?? currentPlayer?.name ?? currentMessage?.fromPlayerId ?? "The House");
-
-  // All messages visible up to current point
   const allVisibleMessages = useMemo(() => {
     const msgs: TranscriptEntry[] = [];
     const seenMessages = new Set<string>();
@@ -579,74 +502,9 @@ function DramaticReplayTheater({
     return msgs;
   }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
 
-  // Determine rendering mode for current scene
-  // Thinking-only scenes (from MINGLE/DIARY phases) should render as a chat feed,
-  // not through mingle/diary-specific paths that expect room data.
-  const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
-  const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
-  const hasRoomSceneData = !!scene && (
-    !!scene.whisperRoom
-    || scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)
-  );
-  const isWhisperScene = !!scene
-    && isRoomReplayPhase(scene.phase)
-    && !scene.isOverview
-    && !isThinkingOnlyScene
-    && hasRoomSceneData;
-  const isOpenWhisperScene = !!scene && isRoomReplayPhase(scene.phase) && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
-  const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
-  const isOverviewScene = !!scene && !!scene.isOverview;
-  const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
-  const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
-  const usesFullHeightContent = isChatStyleScene || isOverviewScene || isOpenWhisperScene
-    || formatCue?.kind === "two_names_plea";
-
-  // Messages visible in current scene's chat feed (for chat-style phases)
-  const chatFeedMessages = useMemo(() => {
-    if (!scene || !isChatStyleScene) return [];
-    // During typing phase, show messages up to (but not including) current
-    // During revealing/done, include current message
-    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
-    return scene.messages.slice(0, endIdx);
-  }, [scene, isChatStyleScene, messageIndex, messagePhase]);
-
-  const openWhisperMessages = useMemo(() => {
-    if (!scene || !isOpenWhisperScene) return [];
-    const fallbackMetadata = scene.messages.filter((m) => m.roomMetadata).slice(0, 1);
-    return chatFeedMessages.some((m) => m.roomMetadata)
-      ? chatFeedMessages
-      : [...chatFeedMessages, ...fallbackMetadata];
-  }, [chatFeedMessages, isOpenWhisperScene, scene]);
-
-  // For per-room mingle scenes: build a WhisperRoomStage for single-room rendering
-  const whisperRoom = useMemo((): WhisperRoomStage | null => {
-    if (!scene || !scene.whisperRoom || !isWhisperScene) return null;
-    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
-    return {
-      roomId: scene.whisperRoom.roomId,
-      playerIds: scene.whisperRoom.playerNames, // names used as IDs (engine convention)
-      playerNames: scene.whisperRoom.playerNames,
-      messages: scene.messages.slice(0, endIdx),
-    };
-  }, [scene, isWhisperScene, messageIndex, messagePhase]);
-
-  // For overview scenes: build full mingle stage data for rich allocation display
-  const overviewStageData = useMemo(() => {
-    if (!scene || !isOverviewScene) return null;
-    // Gather only this phase's entries so multiple room phases in one round
-    // cannot overwrite each other's allocation.
-    const mingleEntries = messages.filter(
-      (m) => m.phase === scene.phase && m.round === scene.round,
-    );
-    return buildWhisperStageData(mingleEntries, players);
-  }, [scene, isOverviewScene, messages, players]);
-
-  // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
-  const rumorMessages = useMemo(() => {
-    if (!scene) return [];
-    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "RUMOR" && m.scope === "public");
-  }, [allVisibleMessages, scene]);
+  const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
+  const isSoloPresentation = visual.beat?.kind === "portrait";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -702,140 +560,17 @@ function DramaticReplayTheater({
       round: scene.round,
       phase: scene.phase,
       canonicalSequence: activeCue?.canonicalSequence ?? null,
+      formatSnapshot: presentedFormatSnapshot,
       players: replayPlayers,
       visibleMessages: allVisibleMessages,
     });
-  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
-
-  // For per-player diary scenes: build a DiaryRoomData for single-player rendering
-  const diaryRoomData = useMemo(() => {
-    if (!scene || !isDiaryScene) return null;
-    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
-    const visibleMsgs = scene.messages.slice(0, endIdx);
-    const rooms = buildDiaryRooms(visibleMsgs, replayPlayers);
-    return rooms[0] ?? null;
-  }, [scene, isDiaryScene, messageIndex, messagePhase, replayPlayers]);
-
-  // Stacked diary rooms: completed diary scenes from the same round (INF-93)
-  const previousDiaryRooms = useMemo(() => {
-    if (!scene || !isDiaryScene) return [];
-    const rooms = [];
-    for (let i = 0; i < sceneIndex; i++) {
-      const s = scenes[i]!;
-      if (s.phase === "DIARY_ROOM" && s.round === scene.round && s.diaryPlayer) {
-        const built = buildDiaryRooms(s.messages, replayPlayers);
-        if (built[0]) rooms.push(built[0]);
-      }
-    }
-    return rooms;
-  }, [scene, isDiaryScene, sceneIndex, scenes, replayPlayers]);
-
-  // Stacked mingle rooms: completed mingle scenes from the same round (INF-93)
-  const previousWhisperRooms = useMemo((): WhisperRoomStage[] => {
-    if (!scene || !isWhisperScene) return [];
-    const rooms: WhisperRoomStage[] = [];
-    for (let i = 0; i < sceneIndex; i++) {
-      const s = scenes[i]!;
-      if (s.phase === scene.phase && s.round === scene.round && s.whisperRoom) {
-        rooms.push({
-          roomId: s.whisperRoom.roomId,
-          playerIds: s.whisperRoom.playerNames,
-          playerNames: s.whisperRoom.playerNames,
-          messages: s.messages,
-        });
-      }
-    }
-    return rooms;
-  }, [scene, isWhisperScene, sceneIndex, scenes]);
-
-  // Auto-scroll stacked content to bottom when new rooms/messages arrive (INF-93)
-  const hasPreviousRooms = previousDiaryRooms.length > 0 || previousWhisperRooms.length > 0;
-  useEffect(() => {
-    if (hasPreviousRooms) {
-      requestAnimationFrame(() => {
-        stackedScrollRef.current?.scrollTo({ top: stackedScrollRef.current.scrollHeight, behavior: "smooth" });
-      });
-    }
-  }, [hasPreviousRooms, sceneIndex, messageIndex]);
-
-  // For jury scenes: gather all jury messages
-  const juryMessages = useMemo(() => {
-    if (!scene || scene.phase !== "JURY_QUESTIONS") return [];
-    return allVisibleMessages.filter(m => m.phase === "JURY_QUESTIONS");
-  }, [allVisibleMessages, scene]);
-
-  // Detect scene transitions
-  const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
-  const isNewRound = scene && prevScene && scene.round !== prevScene.round;
-  const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
-  const showHouseOverlay = Boolean(
-    classicCue
-    && classicCue.messageIndex === 0
-    && scene?.houseIntro
-    && isRoomChange,
-  );
-
-  // Phase transition overlay on room type changes
-  const replayTransitionHoldMs =
-    prevScene && PACED_PHASES.has(prevScene.phase) ? 2000 + PHASE_END_PAUSE_MS / speed : 2000;
-
-  useEffect(() => {
-    if (isRoomChange && scene) {
-      if (director.getSnapshot().isPlaying) {
-        resumeAfterTransitionRef.current = true;
-        director.pause();
-      }
-      const flavors = PHASE_FLAVORS[scene.phase] ?? [];
-      const flavorText = flavors.length > 0
-        ? flavors[Math.floor(Math.random() * flavors.length)]!
-        : "";
-      setActivePhaseTransition({
-        phase: scene.phase,
-        round: scene.round,
-        maxRounds: game.maxRounds,
-        aliveCount,
-        flavorText,
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIndex]);
-
-  const dismissPhaseTransition = useCallback(() => {
-    setActivePhaseTransition(null);
-    if (resumeAfterTransitionRef.current) {
-      resumeAfterTransitionRef.current = false;
-      director.play();
-    }
-  }, [director]);
-
-  // Endgame entry screens at player-count thresholds
-  useEffect(() => {
-    if (!scene || scene.roomType !== "endgame") return;
-    let stage: EndgameStage | null = null;
-    if (aliveCount <= 2 && !seenEndgameStages.current.has("judgment")) stage = "judgment";
-    else if (aliveCount <= 3 && !seenEndgameStages.current.has("tribunal")) stage = "tribunal";
-    else if (aliveCount <= 4 && !seenEndgameStages.current.has("reckoning")) stage = "reckoning";
-    if (stage) {
-      seenEndgameStages.current.add(stage);
-      const alivePlayers = players.filter((p) => !eliminatedIds.has(p.id));
-      const finalists = alivePlayers.length === 2
-        ? [alivePlayers[0]!.name, alivePlayers[1]!.name] as [string, string]
-        : undefined;
-      const jurors = stage === "judgment"
-        ? players.filter((p) => eliminatedIds.has(p.id)).map((p) => p.name)
-        : undefined;
-      setActiveEndgameScreen({ stage, finalists, jurors });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneIndex]);
+  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, presentedFormatSnapshot, replayPlayers, scene]);
 
   const advanceMessage = useCallback(() => {
     director.manualAdvance();
   }, [director]);
 
   const pausePresentation = useCallback(() => {
-    // An explicit audience pause wins over automatic transition/reconnect resume.
-    resumeAfterTransitionRef.current = false;
     director.pause();
   }, [director]);
 
@@ -870,46 +605,59 @@ function DramaticReplayTheater({
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
-    if (embedded) {
+    if (embedded && !fullscreen) {
       setControlsVisible(true);
       return;
     }
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
-    controlsTimer.current = setTimeout(() => setControlsVisible(false), 3000);
-  }, [embedded]);
+    controlsTimer.current = setTimeout(() => {
+      if (!controlsHovered.current && !controlsRef.current?.contains(document.activeElement)) setControlsVisible(false);
+    }, 3000);
+  }, [embedded, fullscreen]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setControlsVisible(true);
+      if (isPlaying) resetControlsTimer();
+    });
+    return () => { cancelAnimationFrame(frame); if (controlsTimer.current) clearTimeout(controlsTimer.current); };
+  }, [fullscreen, isPlaying, resetControlsTimer]);
 
   // Click/tap handler — if controls are hidden, show them first (don't advance).
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
+    if (fullscreen) { setControlsVisible((visible) => !visible); resetControlsTimer(); return; }
     if (!controlsVisible && isPlaying) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, fullscreen, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
-    if (embedded) return;
+    if (embedded && !fullscreen) return;
     setControlsVisible(true);
     resetControlsTimer();
-  }, [embedded, resetControlsTimer]);
+  }, [embedded, fullscreen, resetControlsTimer]);
 
   // Auto-hide controls (touch for mobile)
   const handleTouchStart = useCallback(() => {
-    if (embedded) return;
+    if (embedded && !fullscreen) return;
     if (controlsVisible) {
       resetControlsTimer();
     }
-  }, [controlsVisible, embedded, resetControlsTimer]);
+  }, [controlsVisible, embedded, fullscreen, resetControlsTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (activePhaseTransition || activeEndgameScreen) return;
+      setControlsVisible(true);
+      resetControlsTimer();
+      if ((e.key === "Enter" || e.key === " ") && shouldSuppressDramaticAdvance(e.target)) return;
       switch (e.key) {
         case " ":
           e.preventDefault();
@@ -943,14 +691,13 @@ function DramaticReplayTheater({
     return () => window.removeEventListener("keydown", handleKey);
   }, [
     advanceMessage,
-    activeEndgameScreen,
-    activePhaseTransition,
     director,
     directorSnapshot.cursor,
     goToNextScene,
     isPlaying,
     pausePresentation,
     presentationCues,
+    resetControlsTimer,
   ]);
 
   const formatCompilationNotice =
@@ -992,30 +739,6 @@ function DramaticReplayTheater({
     );
   }
 
-  // Whisper room label
-  const roomLabel = scene.whisperRoom
-    ? `Room ${scene.whisperRoom.roomId} — ${scene.whisperRoom.playerNames.join(" × ")}`
-    : null;
-
-  // Is the current message an elimination announcement?
-  const isElimination = currentMessage?.scope === "system" && (currentMessage.text.includes("ELIMINATED:") || currentMessage.text.includes("AUTO-ELIMINATE:"));
-
-  const chatTypingIndicator = messagePhase === "typing" && currentMessage && !isSystemMessage ? (
-    <div className="flex items-center gap-2 px-1 py-1 animate-[fadeIn_0.2s_ease-out]">
-      {isCurrentRumor ? (
-        <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-xs">🗣</span>
-      ) : currentPlayer ? (
-        <GamePlayerAvatarPreview player={currentPlayer} size="6" />
-      ) : null}
-      <span className={`text-xs ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/40"}`}>{currentPlayerName}</span>
-      <div className="flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
-      </div>
-    </div>
-  ) : null;
-
   return (
     <div
       ref={animationScope}
@@ -1026,11 +749,13 @@ function DramaticReplayTheater({
           ? "relative h-full min-h-0 overflow-hidden"
           : "fixed inset-0 z-30 influence-shell"
       }`}
+      data-player-fullscreen={fullscreen || undefined}
+      style={fullscreen ? { position: "fixed", inset: 0, width: "100vw", height: "100dvh", maxWidth: "none", maxHeight: "none", margin: 0, padding: 0, border: 0, zIndex: 1000, background: "black" } : undefined}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
     >
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <>
           <div className="influence-phase-atmosphere" />
           <div className="influence-phase-vignette" />
@@ -1038,37 +763,8 @@ function DramaticReplayTheater({
         </>
       )}
 
-      {/* Overlays */}
-      {activePhaseTransition && (
-        <PhaseTransitionOverlay
-          transition={activePhaseTransition}
-          onDismiss={dismissPhaseTransition}
-          holdMs={replayTransitionHoldMs}
-        />
-      )}
-      {activeEndgameScreen && (
-        <EndgameEntryScreen
-          endgame={activeEndgameScreen}
-          onDismiss={() => setActiveEndgameScreen(null)}
-        />
-      )}
-      {showPhaseEndingCue && (
-        <PhaseEndingCue
-          durationMs={live && sceneIndex >= totalScenes - 1 ? 0 : PHASE_END_PAUSE_MS / speed}
-          label={live && sceneIndex >= totalScenes - 1 ? "Waiting for next phase" : "Phase complete"}
-        />
-      )}
-      {showHouseOverlay && scene.houseIntro && (
-        <div className={`${embedded ? "absolute" : "fixed"} inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]`}>
-          <p className="text-white/20 text-xs tracking-[0.4em] uppercase mb-4">◆ THE HOUSE ◆</p>
-          <p className="text-white/60 italic text-lg max-w-lg text-center px-6 leading-relaxed">
-            {scene.houseIntro}
-          </p>
-        </div>
-      )}
-
       {/* Exit button — top-left, auto-hides with controls */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <button
           type="button"
           data-replay-controls
@@ -1088,19 +784,16 @@ function DramaticReplayTheater({
       )}
 
       {/* Top bar — phase context */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] pointer-events-none transition-opacity duration-500 ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
         }`}>
           <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
             <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
-              {isOpenWhisperScene ? "MINGLE" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
+              {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
             </span>
-            {roomLabel && (
-              <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
-            )}
-            {isNewRound && (
+            {scene.round > 0 && (
               <span className="text-xs text-white/25 uppercase tracking-wider hidden md:inline">
                 Round {scene.round}
               </span>
@@ -1117,9 +810,14 @@ function DramaticReplayTheater({
       )}
 
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
-      {!embedded && (
+      {!embedded && !fullscreen && (
         <div
           data-replay-controls
+        ref={controlsRef}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
+        onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={resetControlsTimer}
           className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
             controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
@@ -1135,7 +833,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Scene progress bar */}
-      <div className="shrink-0 px-6 z-[60]">
+      <div className={`shrink-0 px-6 z-[60] ${fullscreen ? "hidden" : ""}`}>
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
           {presentationCues.map((cue, i) => (
             <div
@@ -1157,21 +855,17 @@ function DramaticReplayTheater({
         className={`flex-1 min-h-0 flex ${
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
-            : `${isTwoNamesPresentation ? "items-start" : "items-center"} overflow-y-auto overscroll-y-contain`
-        } justify-center ${isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+            : "items-start overflow-y-auto overscroll-y-contain"
+        } justify-center ${fullscreen ? visual.beat?.kind === "scene" || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${isTwoNamesPresentation && !usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {activeFormatIdForSocialScene ? (
-            <div className="mb-3 flex shrink-0 justify-center">
-              <ActiveFormatLabel formatId={activeFormatIdForSocialScene} />
-            </div>
-          ) : null}
+          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
-              <FormatPresentation
+              <FitPresentation enabled={fullscreen}><FormatPresentation
                 cue={formatCue}
                 roster={formatRoster}
                 currentStateEntry={Boolean(
@@ -1180,175 +874,38 @@ function DramaticReplayTheater({
                   && formatCue.canonicalSequence
                     <= directorSnapshot.hydrationWatermark,
                 )}
-              />
+              /></FitPresentation>
             </div>
           )}
 
-          {/* --- Chat-style: Group Chat Feed --- */}
-          {!formatCue && isChatFeedScene && (
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <GroupChatFeed
-                messages={chatFeedMessages}
-                players={replayPlayers}
-                phase={scene.phase}
-                showThinking={showThinking}
-                typingIndicator={chatTypingIndicator}
-              />
-            </div>
-          )}
+          </>}
 
-          {/* --- Chat-style: open Mingle rooms — feed fills remaining height */}
-          {!formatCue && isOpenWhisperScene && (
-            <div className="min-h-0 flex-1">
-              <OpenWhisperRoomsView
-                phaseEntries={openWhisperMessages}
-                players={replayPlayers}
-                phaseKey={scene.id}
-                live={live}
-                showThinking={showThinking}
-              />
-            </div>
-          )}
-
-          {!formatCue && isWhisperScene && !isOpenWhisperScene && (
-            <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-              {previousWhisperRooms.map((prevRoom) => (
-                <div key={`mingle-prev-${prevRoom.roomId}`} className="opacity-60">
-                  <WhisperRoomDM room={prevRoom} players={replayPlayers} showThinking={showThinking} />
-                </div>
-              ))}
-              {whisperRoom && (
-                <WhisperRoomDM room={whisperRoom} players={replayPlayers} showThinking={showThinking} />
-              )}
-            </div>
-          )}
-
-          {/* --- Chat-style: Diary Room DM (stacked) --- */}
-          {!formatCue && isDiaryScene && (
-            <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-              {previousDiaryRooms.map((prevRoom) => (
-                <div key={`diary-prev-${prevRoom.playerName}`} className="flex max-h-full min-h-0 flex-shrink-0 flex-col opacity-60">
-                  <DiaryRoomChat room={prevRoom} showThinking={showThinking} />
-                </div>
-              ))}
-              {diaryRoomData && (
-                <div className="flex max-h-full min-h-0 flex-shrink-0 flex-col">
-                  <DiaryRoomChat room={diaryRoomData} showThinking={showThinking} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* --- Chat-style: Jury Questions DM --- */}
-          {!formatCue && isJuryScene && (
-            <JuryDMView
-              messages={juryMessages}
-              players={replayPlayers}
-              showThinking={showThinking}
-            />
-          )}
-
-          {/* --- Whisper Overview: Rich allocation display --- */}
-          {!formatCue && isOverviewScene && !isOpenWhisperScene && overviewStageData && (
-            <WhisperAllocationOverview
-              stage={overviewStageData}
-              players={replayPlayers}
-              mode={
-                scene.phase === "MINGLE" || scene.phase === "FORMAT_MINGLE"
-                  ? "mingle"
-                  : "legacy-whisper"
-              }
-            />
-          )}
-
-          {/* --- Dramatic: Single-message spotlight (votes/reveals/power/end) --- */}
-          {!formatCue && !isChatStyleScene && !isOverviewScene && (
-            <>
-              {/* Typing indicator */}
-              {messagePhase === "typing" && currentMessage && !isSystemMessage && (
-                <div className="text-center animate-[fadeIn_0.3s_ease-out]">
-                  <div className="flex items-center justify-center gap-3 mb-8">
-                    {isCurrentRumor ? (
-                      <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
-                    ) : currentPlayer ? (
-                      <GamePlayerAvatarPreview player={currentPlayer} size="10" />
-                    ) : null}
-                    <span className={`text-lg font-semibold ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/60"}`}>{currentPlayerName}</span>
-                    {isCurrentRumor && (
-                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
-                    )}
-                    {currentMessage.scope === "mingle" && (
-                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">mingle</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
-                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
-                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
-                  </div>
-                </div>
-              )}
-
-              {/* Message reveal / done */}
-              {(messagePhase === "revealing" || messagePhase === "done") && currentMessage && (
-                <SpectacleMessageContent
-                  message={currentMessage}
-                  scene={scene}
-                  players={players}
-                  messagePhase={messagePhase}
-                  onRevealComplete={() => undefined}
-                  isSystemMessage={isSystemMessage}
-                  isElimination={isElimination}
-                  currentPlayer={currentPlayer}
-                  currentPlayerName={currentPlayerName}
-                  speedMultiplier={speed}
-                  rumorMessages={rumorMessages}
-                  showThinking={showThinking}
-                />
-              )}
-
-              {/* Vote/council/jury tally overlay */}
-              {scene && currentMessage && DRAMATIC_PHASES.has(scene.phase) && messagePhase === "done" && (
-                <VoteTallyOverlay
-                  sceneMessages={scene.messages}
-                  upToIndex={messageIndex}
-                  players={players}
-                  scenePhase={scene.phase}
-                />
-              )}
-            </>
-          )}
-
-          {/* Paused indicator */}
-          {!formatCue
-            && !isChatStyleScene
-            && !isOverviewScene
-            && !isPlaying
-            && messagePhase === "done"
-            && (
-            <p className="text-center text-xs text-white/15 mt-8 animate-pulse">
-              Click or press → to advance
-            </p>
-          )}
-          {/* Live: waiting for new messages */}
-          {live && isPlaying && messagePhase === "done" && sceneIndex >= totalScenes - 1 && messageIndex >= (scene?.messages.length ?? 0) - 1 && (
-            <div className="text-center mt-8 animate-pulse">
-              <div className="flex items-center justify-center gap-1.5 mb-1">
-                <span className="w-2 h-2 rounded-full bg-green-400/50 animate-pulse" />
-                <span className="text-xs text-green-400/50">Waiting for messages…</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {live && !fullscreen && directorSnapshot.waitingAtTail && (
+        <div role="status" className="shrink-0 py-3 text-center text-xs text-white/40">Waiting for messages…</div>
+      )}
 
       {/* Bottom scrub controls — pinned under the scrollable content region */}
       <div
         data-replay-controls
-        className={`shrink-0 border-t border-white/5 bg-black/70 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
+        ref={controlsRef}
+        onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
+        onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
+        onFocusCapture={() => setControlsVisible(true)}
+        onBlurCapture={resetControlsTimer}
+        className={`${fullscreen ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
+        <button ref={fullscreenButton} type="button" aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={() => void toggleFullscreen()} className="mb-2 ml-auto flex h-12 w-12 items-center justify-center rounded-lg text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-white">
+          <svg aria-hidden="true" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square">
+            <path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} />
+          </svg>
+        </button>
+        {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
+        {!fullscreen && activeFormatIdForSocialScene && <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div>}
         {/* Mobile: compact 2-row layout */}
         <div className="md:hidden flex flex-col gap-2 max-w-sm mx-auto">
           <div className="flex items-center justify-between gap-2">
@@ -1422,20 +979,7 @@ function DramaticReplayTheater({
                   {opt.label}
                 </button>
               ))}
-              {hasThinkingMessages && !live && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setShowThinking((v) => !v); }}
-                  className={`text-[10px] px-1.5 py-1.5 rounded transition-colors ml-1 ${
-                    showThinking
-                      ? "bg-indigo-900/40 text-indigo-300 border border-indigo-500/30"
-                      : "text-white/40 border border-indigo-500/20 bg-indigo-950/20"
-                  }`}
-                  title={showThinking ? "Hide agent thinking" : "Show agent thinking"}
-                >
-                  {showThinking ? "🧠" : "🧠"}
-                </button>
-              )}
+
             </div>
           </div>
         </div>
@@ -1511,21 +1055,9 @@ function DramaticReplayTheater({
             ))}
           </div>
 
-          {hasThinkingMessages && !live && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setShowThinking((v) => !v); }}
-              className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${
-                showThinking
-                  ? "bg-indigo-900/40 text-indigo-300 border-indigo-500/30"
-                  : "text-indigo-300/50 hover:text-indigo-200 border-indigo-500/20 hover:border-indigo-500/40 bg-indigo-950/20"
-              }`}
-            >
-              🧠 {showThinking ? "Hide Thinking" : "Show Thinking"}
-            </button>
-          )}
+
         </div>
-        <p className="text-[10px] text-white/10 text-center mt-2 hidden md:block">
+        <p className={`text-[10px] text-white/10 text-center mt-2 ${fullscreen ? "hidden" : "hidden md:block"}`}>
           Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
         </p>
       </div>

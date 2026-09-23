@@ -18,6 +18,28 @@ import {
 } from "../model-catalog";
 
 describe("model catalog", () => {
+  it("resolves GPT-6 Luna as an image-capable reasoning model for primary and fallback slots", () => {
+    const entry = modelCatalogEntryById("openai:gpt-6-luna")!;
+    expect(gameReadyCatalogEntries()).toContain(entry);
+    expect(inferModelCapabilities("gpt-6-luna")).toMatchObject({
+      supportsImageInput: true,
+      supportsOpenAIResponses: true,
+      supportsStructuredOutput: true,
+      supportsTools: true,
+      supportsReasoningEffort: true,
+      supportsToolReasoningEffort: false,
+      supportsTemperature: false,
+      supportsPromptCacheRetention: true,
+    });
+    for (const manifest of [
+      [{ catalogId: entry.id, reasoningPolicy: "high" }],
+      [{ catalogId: "openai:gpt-5.6-luna" }, { catalogId: entry.id, maxCallsPerGame: 3 }],
+    ]) {
+      expect(resolveProviderManifest(manifest).every(slot => slot.model.capabilities.supportsImageInput)).toBe(true);
+    }
+    expect(inferModelCapabilities("gpt-6-unlisted").supportsImageInput).toBe(false);
+  });
+
   it("resolves the GPT-6 Luna default through hosted Responses with strict tools", () => {
     expect(DEFAULT_MODEL_ID).toBe("gpt-6-luna");
     expect(DEFAULT_MODEL_CATALOG_ID).toBe("openai:gpt-6-luna");

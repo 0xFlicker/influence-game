@@ -8,6 +8,17 @@ Use this workflow to test LM Studio or another OpenAI-compatible local model ser
 
 ## Provider Configuration
 
+When inspecting a bounded `--chatty` run, review Lobby, Mingle, and alliance-huddle dialogue for one short paragraph, usually 1–3 sentences, under the requested 100-token limit. All models receive this guidance once at the end of the prompt, after visual instructions when applicable. The limit concerns spoken `message` only; structured fields and completion budgets are unchanged, and longer valid messages are preserved. Introductions and formal speeches are excluded. Inspect private prompt evidence for `# CONSTITUTION.md`; a passing prompt test alone does not establish shorter or punchier model output.
+
+The native model-message contract supports user image attachments only for explicitly
+registered image-capable catalog entries: OpenAI GPT-5.6 Luna, GPT-6 Luna and Katana Grok 4.6. Unknown or
+text-only entries reject image-bearing invocations rather than dropping attachments.
+[Visual Mode](visual-mode.md) uses this transport in API-created visual games. The standalone simulator does not enable visual generation.
+
+Select GPT-6 Luna explicitly with `--provider-entry openai:gpt-6-luna,reasoning=action-policy` in an authorized provider evaluation, or in the admin provider route for a visual game. It uses the existing OpenAI credential and Responses adapter. Adding the model does not rewrite Daily defaults or sealed game routes; provider access and game-quality evaluation remain separate from capability/transport tests.
+
+For API-backed endgame checks, verify Final 4 pleas use a scene containing exactly the four remaining players. Compare viewer ballots with canonical endgame/jury resolution tallies and IN/OUT status with elimination events, rather than speech or image membership. Provider-free and PostgreSQL tests cover these bindings and projections; they do not establish generated-image quality.
+
 The engine and API read LLM provider settings through a shared OpenAI-compatible client helper.
 
 | Variable | Default | Notes |
@@ -387,6 +398,16 @@ Local model evaluation is a first-class lane because Influence needs agents that
 New Override draws exclude Empowered and include every other living contestant, including both nominees. Inspect the canonical setup event to verify the accepted holder; previously recorded games retain their original holder and are never re-drawn during replay or recovery.
 
 Every agent call after initial nominations and before resolution receives the current round's canonical Two Names board: initial and current nominees, Empowered, Override holder and decision, pair finality, and ordinary-voter eligibility. The active board is removed after resolution and in endgame. Mingle and alliance prompts share this board; transcript prose does not establish nominations. Only the Empowered initial nomination request may say no pair is selected. The replacement request labels the pending removal explicitly until Override and replacement commit together. Provider-free outgoing-prompt regressions exercise this contract; old game dialogue cannot prove updated prompt behavior. Continue using direct House calls and no `as any` in simulation integrations.
+
+The Visual Mode runtime hook requires a durable turn store. Provider-free coverage is in `visual-turn-boundary.test.ts`; API ownership and audience checks are in `visual-turn-context.test.ts` and require local PostgreSQL. The current CLI still does not enable Visual Mode. Only matching committed Mingle membership permits image context. Under Best effort, missing or invalid imagery uses canonical participants and observable cues as text. Require visuals instead pauses for admin repair before agent dispatch. Both retain the same provider and verification evidence.
+
+`durable-game-runner.test.ts` also checks scene preparation before turn planning, including abort and preparation boundaries. `visual-scene-renderer.test.ts` uses mocked providers to check five-room preparation, source/destination-only updates after movement, and ownership loss before fallback. These checks make no paid provider calls and do not prove live visual quality.
+
+Durable-runner coverage now includes restart after a committed Mingle movement beat, Two Names initialization/completion replay, and preserved format pressure and revealed vote context across the split. `mingle-window-contract.test.ts` rejects malformed saved windows and inconsistent allocation histories. Local CLI simulations retain the same conversation and simultaneous movement rules without requiring the API's durable coordinator.
+
+### Character-authoring generation
+
+Agent editor refinement is a hosted authoring flow, separate from gameplay model selection. Its exact structured response now requires performance instructions and visual design alongside the profile fields. Existing artwork guides identity. Provider-free coverage lives in `agent-profile-generation.test.ts`, `character-image-generation.test.ts`, `character-portrait.test.ts` and `agent-form-draft-recovery.test.tsx`. See [character drafts](agent-content-submissions.md) for the one-full-body-image workflow, durable localization and editable pixel crops. No image provider is called by these required tests.
 
 ### GPT-6 Luna default (2026-09-22)
 

@@ -194,6 +194,7 @@ async function materializePayload(
     case "transcript_entry": {
       const row = (await db.select({
         entrySequence: schema.transcripts.entrySequence,
+        firstDurableEventSequence: schema.transcripts.firstDurableEventSequence,
         round: schema.transcripts.round,
         phase: schema.transcripts.phase,
         fromPlayerId: schema.transcripts.fromPlayerId,
@@ -206,6 +207,7 @@ async function materializePayload(
         thinking: schema.transcripts.thinking,
         timestamp: schema.transcripts.timestamp,
         dialogueKind: schema.transcripts.dialogueKind,
+        safeContext: schema.transcripts.safeContext,
       })
         .from(schema.transcripts)
         .where(and(
@@ -290,6 +292,7 @@ function assertStoredPublicationPayload(
 
 function publicTranscriptEntry(row: {
   entrySequence: number | null;
+  firstDurableEventSequence: number | null;
   round: number;
   phase: string;
   fromPlayerId: string | null;
@@ -301,15 +304,23 @@ function publicTranscriptEntry(row: {
   text: string;
   thinking: string | null;
   timestamp: number;
-  dialogueKind: string | null;
+  dialogueKind: PublicWsTranscriptEntry["dialogueKind"];
+  safeContext: { anonymous?: boolean; acceptedBallot?: import("@influence/engine").TranscriptDialogueContext["acceptedBallot"]; presentationPurpose?: "farewell"; visualScene?: import("@influence/engine").TranscriptDialogueContext["visualScene"] } | null;
 }): PublicWsTranscriptEntry {
-  const from = row.speakerPlayerId
+  const from = row.safeContext?.anonymous ? "Anonymous" : row.speakerPlayerId
     ?? row.fromPlayerId
     ?? (row.dialogueKind === "house_summary" ? "House" : "SYSTEM");
   const to = parseStringArray(row.toPlayerIds);
   const roomMetadata = parseRoomMetadata(row.roomMetadata);
   return {
+    dialogueKind: row.dialogueKind,
+    firstDurableEventSequence: row.firstDurableEventSequence,
+    ...(!row.safeContext?.anonymous && row.speakerPlayerId && { speakerPlayerId: row.speakerPlayerId }),
+    ...(row.safeContext?.anonymous && { anonymous: true }),
     ...(row.entrySequence !== null && { entrySequence: row.entrySequence }),
+    ...(row.safeContext?.acceptedBallot && { acceptedBallot: row.safeContext.acceptedBallot }),
+    ...(row.safeContext?.visualScene && { visualScene: row.safeContext.visualScene }),
+    ...(row.safeContext?.presentationPurpose && { presentationPurpose: row.safeContext.presentationPurpose }),
     round: row.round,
     phase: row.phase as PublicWsTranscriptEntry["phase"],
     from,

@@ -160,6 +160,12 @@ export async function runTwoNamesMingleWindow(
   actor: PhaseActor,
   window: "initial_names" | "final_names",
 ): Promise<void> {
+  beginTwoNamesMingleWindow(ctx, window);
+  await runMinglePhase(ctx, actor, { phase: Phase.FORMAT_MINGLE, completePhase: false });
+  await finishTwoNamesMingleWindow(ctx, actor, window);
+}
+
+export function beginTwoNamesMingleWindow(ctx: PhaseRunnerContext, window: "initial_names" | "final_names"): void {
   const current = projection(ctx);
   if (!current.finalistPlayerIds && !current.initialNomineeIds) {
     throw new Error("Two Names Mingle requires a nominee pair");
@@ -172,7 +178,12 @@ export async function runTwoNamesMingleWindow(
     window === "initial_names" ? "=== TWO NAMES: FIRST MINGLE ===" : "=== TWO NAMES: FINAL MINGLE ===",
     Phase.FORMAT_MINGLE,
   );
-  await runMinglePhase(ctx, actor, { phase: Phase.FORMAT_MINGLE, completePhase: false });
+}
+
+export async function finishTwoNamesMingleWindow(ctx: PhaseRunnerContext, actor: PhaseActor, window: "initial_names" | "final_names"): Promise<void> {
+  const current = projection(ctx);
+  const pair = window === "initial_names" ? current.initialNomineeIds : current.finalistPlayerIds;
+  if (!pair) throw new Error(`Two Names ${window} Mingle is missing its pair`);
   await runAllianceFormationPhase(ctx);
   await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE, { completePhase: false });
   await assertCanAcceptCommit(ctx);

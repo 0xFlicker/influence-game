@@ -6,22 +6,16 @@ import { useRouter } from "next/navigation";
 import {
   listAgents,
   deleteAgent,
-  requestAgentAvatarGeneration,
-  getAgentAvatarGenerations,
   getAuthToken,
   type SavedAgent,
-  type AvatarCompletion,
 } from "@/lib/api";
 import { AgentList } from "./agent-list";
-import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 
 export function AgentsContent() {
   const router = useRouter();
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
-  const [avatarCompletions, setAvatarCompletions] = useState<Record<string, AvatarCompletion>>({});
-  const [avatarGenerationBusy, setAvatarGenerationBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -39,72 +33,10 @@ export function AgentsContent() {
   }, []);
 
   useEffect(() => {
-    fetchAgents();
+    queueMicrotask(fetchAgents);
     window.addEventListener("auth:session-ready", fetchAgents);
     return () => window.removeEventListener("auth:session-ready", fetchAgents);
   }, [fetchAgents]);
-
-  useEffect(() => {
-    const visibleAgentIds = new Set(agents.map((agent) => agent.id));
-    setAvatarCompletions((current) => {
-      const next = { ...current };
-      let changed = false;
-
-      for (const id of Object.keys(next)) {
-        if (!visibleAgentIds.has(id)) {
-          delete next[id];
-          changed = true;
-        }
-      }
-
-      for (const agent of agents) {
-        if (agent.avatarUrl) {
-          if (next[agent.id]) {
-            delete next[agent.id];
-            changed = true;
-          }
-          continue;
-        }
-        if (!agent.avatarCompletion?.generationRequestId) continue;
-        if (!isSameAvatarCompletion(next[agent.id], agent.avatarCompletion)) {
-          next[agent.id] = agent.avatarCompletion;
-          changed = true;
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [agents]);
-
-  useEffect(() => {
-    const activeIds = Object.entries(avatarCompletions)
-      .filter(([, completion]) => isAvatarCompletionPending(completion))
-      .map(([id]) => id);
-    if (activeIds.length === 0) return;
-
-    let cancelled = false;
-    const interval = window.setInterval(() => {
-      void getAgentAvatarGenerations(activeIds)
-        .then((result) => {
-          if (cancelled) return;
-          setAvatarCompletions((current) => ({
-            ...current,
-            ...result.avatarCompletions,
-          }));
-          if (Object.values(result.avatarCompletions).some((completion) => completion.status === "completed")) {
-            fetchAgents();
-          }
-        })
-        .catch((err) => {
-          console.warn("[AgentsContent] Failed to poll avatar generation:", err);
-        });
-    }, 2500);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [avatarCompletions, fetchAgents]);
 
   async function handleDelete(agent: SavedAgent) {
     setError(null);
@@ -117,22 +49,6 @@ export function AgentsContent() {
     }
   }
 
-  async function handleGenerateAvatar(agent: SavedAgent) {
-    setAvatarGenerationBusy((current) => ({ ...current, [agent.id]: true }));
-    setError(null);
-    try {
-      const result = await requestAgentAvatarGeneration(agent.id);
-      setAvatarCompletions((current) => ({
-        ...current,
-        [agent.id]: result.avatarCompletion,
-      }));
-      fetchAgents();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to request avatar generation.");
-    } finally {
-      setAvatarGenerationBusy((current) => ({ ...current, [agent.id]: false }));
-    }
-  }
 
   return (
     <div>
@@ -182,9 +98,7 @@ export function AgentsContent() {
       ) : (
         <AgentList
           agents={agents}
-          avatarCompletions={avatarCompletions}
-          avatarGenerationBusy={avatarGenerationBusy}
-          onGenerateAvatar={handleGenerateAvatar}
+          onGenerateAvatar={(agent) => router.push(`/dashboard/agents/${agent.id}/edit`)}
           onEdit={(agent) => router.push(`/dashboard/agents/${agent.id}/edit`)}
           onDelete={(agent) => setDeleteConfirm(agent)}
         />

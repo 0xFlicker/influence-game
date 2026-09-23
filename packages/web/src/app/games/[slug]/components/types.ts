@@ -17,13 +17,7 @@ export interface ReplayScene {
   phase: PhaseKey;
   roomType: RoomType;
   messages: TranscriptEntry[];
-  houseIntro: string | null;
-  /** Present on per-room scenes (sequential presentation). Field name retained for historical data shape compatibility (see whisper-phase.tsx header comment). */
-  whisperRoom?: { roomId: number; playerNames: string[] };
-  /** Present on per-player diary scenes (sequential presentation). */
-  diaryPlayer?: { playerName: string };
-  /** When true, this scene is an overview/allocation screen with no chat messages. */
-  isOverview?: boolean;
+
 }
 
 export interface WhisperRoomStage {
@@ -42,26 +36,10 @@ export interface WhisperStageData {
   hasRoomMetadata?: boolean;
 }
 
-export interface TransitionState {
-  phase: PhaseKey;
-  round: number;
-  maxRounds: number;
-  aliveCount: number;
-  flavorText: string;
-}
-
 export type GroupedMessage =
   | { kind: "msg"; entry: TranscriptEntry }
   | { kind: "diary_pair"; question: TranscriptEntry; answer: TranscriptEntry | null; id: number }
   | { kind: "diary_orphan_answer"; answer: TranscriptEntry };
-
-export type EndgameStage = "reckoning" | "tribunal" | "judgment";
-
-export interface EndgameScreenState {
-  stage: EndgameStage;
-  finalists?: [string, string];
-  jurors?: string[];
-}
 
 export interface DiaryRoomData {
   playerName: string;
@@ -157,7 +135,13 @@ export interface FormatPresentationSnapshot {
   eliminatedId: string | null;
 }
 
-interface FormatPresentationCueBase {
+interface SoloSpeechCue {
+  /** Solo shot staging supports reveal-before-advance and readable seeks. */
+  soloSpeech?: boolean;
+}
+
+interface FormatPresentationCueBase extends SoloSpeechCue {
+  visualBallot?: { voterId: string; targetId: string; purpose: "empower"; revote?: boolean };
   source: "format";
   key: string;
   canonicalSequence: number;
@@ -173,6 +157,13 @@ export type FormatPresentationCue =
       kind: "empowered_tally";
       empoweredId: string;
       counts: Record<string, number>;
+      receipts: FormatEmpowerVoteReceipt[];
+      resolutionMethod?: "revote" | "wheel" | "manual";
+    })
+  | (FormatPresentationCueBase & {
+      kind: "empowered_tie";
+      counts: Record<string, number>;
+      tiedPlayerIds: string[];
       receipts: FormatEmpowerVoteReceipt[];
     })
   | (FormatPresentationCueBase & {
@@ -262,15 +253,21 @@ export type FormatPresentationCue =
       tiedPlayerIds: string[];
     })
   | (FormatPresentationCueBase & {
+      kind: "format_deciding_vote";
+      tiebreakerId: string;
+      targetId: string;
+    })
+  | (FormatPresentationCueBase & {
       kind: "format_elimination";
       eliminatedId: string;
       resolutionKind: "clear" | "auto";
     });
 
-export interface ClassicPresentationCue {
+export interface ClassicPresentationCue extends SoloSpeechCue {
   /** Historical dialogue is navigable but must not resume live playback. */
   liveCatchUp?: boolean;
   source: "classic";
+  houseSummary?: boolean;
   key: string;
   canonicalSequence: number | null;
   round: number;
@@ -282,4 +279,30 @@ export interface ClassicPresentationCue {
   messageIndex: number;
 }
 
-export type PresentationCue = ClassicPresentationCue | FormatPresentationCue;
+export interface HousePresentationCue extends SoloSpeechCue {
+  source: "house";
+  kind: "house_bridge";
+  followingCueKey: string;
+  key: string;
+  canonicalSequence: number | null;
+  round: number;
+  phase: PhaseKey;
+  title: string;
+  liveCatchUp?: boolean;
+  baseDurationMs: number;
+}
+
+export interface EndgamePresentationCue extends SoloSpeechCue {
+  source: "endgame";
+  key: string;
+  canonicalSequence: number;
+  round: number;
+  phase: PhaseKey;
+  baseDurationMs: number;
+  liveCatchUp?: boolean;
+  kind: "endgame_ballot" | "endgame_elimination" | "endgame_winner";
+  playerId: string;
+  ballot?: { voterId: string; targetId: string; purpose: "eliminate" | "winner"; juryTiebreaker: boolean };
+}
+
+export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue | EndgamePresentationCue;

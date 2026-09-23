@@ -82,3 +82,23 @@ without transcript repair.
 - `packages/engine/src/viewer-decision-events.ts`
 - `packages/engine/src/revealed-round-facts.ts`
 - `packages/web/src/app/games/[slug]/components/format-presentation-director.ts`
+
+## Fullscreen presentation (September 2026)
+
+Fullscreen is an element-level concern owned by `DramaticReplayViewer`, with the
+same mounted director and content in normal and immersive viewing. The camera
+and speech pagination sample base presentation time. Explicit director navigation
+increments a navigation revision to cut camera motion, while automatic advancement
+may pan between clear anchors on the same immutable image. Resize recalculates
+geometry and text pages without modifying canonical cues, speech duration or the
+publication snapshot. There is no independent camera or page timer.
+
+### Full-body solo performances
+
+`solo-presentation-timing.ts` defines the staged image entrance, settling hold, speech envelope, shorter exit hold and fade through black. Its duration is budgeted into transcript solo cues and canonical ballot/plea cues. `SoloPresentation` samples that same base clock and offsets `TimedSpeech` into the reading interval; no CSS transition or extra timer can continue while playback is paused.
+
+`SoloPresentation` owns the bounded character/bubble layout. It consumes frozen full-body media from `visualWatchPresentation`, falls back to a static portrait on absence/load failure, and delegates text pagination to `TimedSpeech`. `layoutSoloPresentation` uses the measured frame and loaded image dimensions to fill the stage vertically, letterbox wide screens and trim only the sides on narrow screens. The bubble overlays the image below the upper head region; controls reserve bubble space, not image space. Until source-bound confirmed geometry is available, only upright single-person references use the conservative upper-22% head-region fallback. Room images never use this fallback. No video clips, generated speech reasons, extra cues or independent speech timers are introduced. Canonical ballot targets supply the entire spoken ballot text; purpose and polarity remain separate captions. House segments divide the available stage into equal upper/logo and lower/copy regions. The fullscreen toggle uses the standard corner glyph with accessible labels.
+
+### Frozen solo head geometry
+
+The visual read model supplies `fullBodies` and `fullBodyHeads` together, selected from game-start profiles or prepared cast artifacts. The head rectangle is confirmed against the exact stored source hash at profile submission, frozen with the game, and carried to a prepared reference only when its bytes match. No current-profile lookup supplies historical placement. Solo layout transforms this rectangle with the image, clamps narrow framing around edge heads and places speech below (or above when a low head leaves more room there). These are layout calculations: media readiness, geometry, resize and recropping do not create cues or change the director clock.

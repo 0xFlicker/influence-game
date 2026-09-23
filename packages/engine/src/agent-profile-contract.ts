@@ -4,4 +4,5 @@ export const AGENT_PROFILE_LIMITS = {
   backstory: 2_000,
   personality: 8_000,
   strategyStyle: 2_000,
+  performanceInstructions: 2_000,
 } as const;

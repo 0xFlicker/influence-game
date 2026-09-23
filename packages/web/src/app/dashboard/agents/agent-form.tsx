@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import {
+  apiFetch,
   AGENT_GENDER_OPTIONS,
   ApiError,
   generatePersonality,
   getDraftAgentAvatarGeneration,
-  requestDraftAgentAvatarGeneration,
   type AgentGender,
+  type CharacterImageDraft,
   type AvatarCompletion,
   type AgentProfileWriteParams,
   type GeneratePersonalityParams,
@@ -17,13 +18,15 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { PERSONAS } from "@/lib/personas";
+import { CharacterPortraitEditor } from "./character-portrait-editor";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
-const DRAFT_VERSION = 1;
+const DRAFT_VERSION = 3;
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface StrategyComparison {
   baseline: string;
@@ -35,6 +38,7 @@ export interface StrategyComparison {
 interface AgentFormProps {
   initial?: SavedAgent;
   strategyComparison?: StrategyComparison;
+  showLiveChanges?: boolean;
   draftScope: string;
   onSubmit: (params: AgentProfileWriteParams, context: { creationRequestId: string }) => Promise<void>;
   onCancel: () => void;
@@ -42,17 +46,28 @@ interface AgentFormProps {
 }
 
 interface EditorSnapshot {
+  visualDesign?: string | null;
+  portraitCrop?: SavedAgent["portraitCrop"];
+  headPosition?: SavedAgent["headPosition"];
+  headSuggestion?: SavedAgent["headPosition"];
   name: string;
   backstory: string;
   personality: string;
   strategyStyle: string;
+  performanceInstructions: string;
+  fullBodyReferenceUrl: string | null;
   personaKey: PersonaKey | null;
   gender: AgentGender | "";
   explicitAvatarUrl?: string;
 }
 
 interface StoredEditorDraft {
-  version: 1;
+  version: 3;
+  baseContentRevisionId?: string | null;
+  generationDeadline?: number | null;
+  uploadPending?: boolean;
+  unfinishedReplacement?: boolean;
+  submission?: { id: string; fingerprint: string };
   savedAt: string;
   base: EditorSnapshot;
   current: EditorSnapshot;
@@ -84,9 +99,15 @@ function isUuid(value: string): boolean {
 
 function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
   return left.name === right.name
+    && (left.visualDesign ?? null) === (right.visualDesign ?? null)
+    && JSON.stringify(left.headPosition ?? null) === JSON.stringify(right.headPosition ?? null)
+    && JSON.stringify(left.headSuggestion ?? null) === JSON.stringify(right.headSuggestion ?? null)
+    && JSON.stringify(left.portraitCrop ?? null) === JSON.stringify(right.portraitCrop ?? null)
     && left.backstory === right.backstory
     && left.personality === right.personality
     && left.strategyStyle === right.strategyStyle
+    && left.performanceInstructions === right.performanceInstructions
+    && left.fullBodyReferenceUrl === right.fullBodyReferenceUrl
     && left.personaKey === right.personaKey
     && left.gender === right.gender
     && left.explicitAvatarUrl === right.explicitAvatarUrl;
@@ -116,6 +137,7 @@ function parseStoredDraft(value: string | null): StoredEditorDraft | null {
 export function AgentForm({
   initial,
   strategyComparison,
+  showLiveChanges = false,
   draftScope,
   onSubmit,
   onCancel,
@@ -123,31 +145,50 @@ export function AgentForm({
 }: AgentFormProps) {
   const { account } = useAuth();
   const isEditing = Boolean(initial);
+  const showStrategyComparison = showLiveChanges && Boolean(strategyComparison);
   const initialStrategy = strategyComparison?.initialWorking ?? initial?.strategyStyle ?? "";
   const initialPersona = initial ? initial.personaKey : "strategic";
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
+    visualDesign: initial?.visualDesign ?? null,
+    portraitCrop: initial?.portraitCrop ?? null,
+    headPosition: initial?.headPosition ?? null,
+    headSuggestion: null,
     name: initial?.name ?? "",
     backstory: initial?.backstory ?? "",
     personality: initial?.personality ?? "",
     strategyStyle: initialStrategy,
+    performanceInstructions: initial?.performanceInstructions ?? "",
+    fullBodyReferenceUrl: initial?.fullBodyReferenceUrl ?? null,
     personaKey: initialPersona,
     gender: initial?.gender ?? "",
     explicitAvatarUrl: initial?.avatarUrl ?? undefined,
   }), [initial, initialPersona, initialStrategy]);
 
+  const [visualDesign, setVisualDesign] = useState(initialSnapshot.visualDesign);
+  const [headPosition, setHeadPosition] = useState(initialSnapshot.headPosition);
+  const [headSuggestion, setHeadSuggestion] = useState(initialSnapshot.headSuggestion);
+  const [portraitCrop, setPortraitCrop] = useState(initialSnapshot.portraitCrop);
   const [name, setName] = useState(initialSnapshot.name);
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
   const [personality, setPersonality] = useState(initialSnapshot.personality);
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
+  const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
+  const [fullBodyReferenceUrl, setFullBodyReferenceUrl] = useState(initialSnapshot.fullBodyReferenceUrl);
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const referenceRequest = useRef<{ requestId: string; name: string; personaKey: string; avatarUrl: string | null; fullBodyReferenceUrl: string | null; performanceInstructions: string; visualDesign: string } | null>(null);
+  const [portraitEditorSource, setPortraitEditorSource] = useState<string | null>(null);
   const [personaKey, setPersonaKey] = useState<PersonaKey | null>(initialSnapshot.personaKey);
   const [gender, setGender] = useState<AgentGender | "">(initialSnapshot.gender);
   const [explicitAvatarUrl, setExplicitAvatarUrl] = useState<string | undefined>(initialSnapshot.explicitAvatarUrl);
   const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | undefined>();
   const [draftAvatarCompletion, setDraftAvatarCompletion] = useState<AvatarCompletion | null>(null);
+  const [baseContentRevisionId, setBaseContentRevisionId] = useState(initial?.contentRevisionId ?? null);
   const [creationRequestId, setCreationRequestId] = useState(createRequestId);
   const [profileGenerating, setProfileGenerating] = useState(false);
-  const [portraitStarting, setPortraitStarting] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [portraitUploading, setUploading] = useState(false);
+  const [fullBodyUploading, setFullBodyUploading] = useState(false);
+  const uploading = portraitUploading || fullBodyUploading;
   const [submitting, setSubmitting] = useState(false);
   const [personaExpanded, setPersonaExpanded] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -162,6 +203,46 @@ export function AgentForm({
   const [draftStorageError, setDraftStorageError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const pollFailures = useRef(0);
+  const generationEpoch = useRef(0);
+  const submission = useRef<{ id: string; fingerprint: string } | undefined>(undefined);
+  const [generationDeadline, setGenerationDeadline] = useState<number | null>(null);
+  const [unfinishedReplacement, setUnfinishedReplacement] = useState(false);
+  const [confirmGenerationCancel, setConfirmGenerationCancel] = useState(false);
+  const [confirmIncompleteSave, setConfirmIncompleteSave] = useState(false);
+  const confirmationRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!confirmGenerationCancel && !confirmIncompleteSave) return;
+    const dialog = confirmationRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"));
+    buttons[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setConfirmGenerationCancel(false);
+        setConfirmIncompleteSave(false);
+      } else if (event.key === "Tab") {
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.shiftKey ? index <= 0 : index === buttons.length - 1) {
+          event.preventDefault();
+          buttons[event.shiftKey ? buttons.length - 1 : 0]?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); previousFocus?.focus(); };
+  }, [confirmGenerationCancel, confirmIncompleteSave]);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const generationBusy = profileGenerating || referenceBusy || Boolean(draftAvatarCompletion && isAvatarCompletionPending(draftAvatarCompletion));
+  useEffect(() => () => { generationEpoch.current += 1; }, []);
+
+  function beginGeneration() {
+    const epoch = ++generationEpoch.current;
+    setGenerationDeadline(Date.now() + GENERATION_TIMEOUT_MS);
+    setGenerationNotice(null);
+    return epoch;
+  }
 
   const selectedPersona = PERSONAS.find((persona) => persona.key === personaKey);
   const previewPersona = personaKey ?? "strategic";
@@ -169,22 +250,42 @@ export function AgentForm({
   const portraitPending = draftAvatarCompletion
     ? isAvatarCompletionPending(draftAvatarCompletion)
     : false;
-  const boundPortraitPending = initial?.avatarCompletion
-    ? isAvatarCompletionPending(initial.avatarCompletion)
-    : false;
   const currentSnapshot: EditorSnapshot = useMemo(() => ({
+    visualDesign,
+    portraitCrop,
+    headPosition,
+    headSuggestion,
     name,
     backstory,
     personality,
     strategyStyle,
+    performanceInstructions,
+    fullBodyReferenceUrl,
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle]);
+  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const draftStorageKey = account?.id
     ? `influence:agent-editor:${DRAFT_VERSION}:${account.id}:${draftScope}`
     : null;
+
+  const interruptGeneration = useCallback((message: string) => {
+    generationEpoch.current += 1;
+    if (draftStorageKey) writeEditorStorage(`${draftStorageKey}:interrupted`, String(Date.now()));
+    setGenerationDeadline(null);
+    setProfileGenerating(false);
+    setReferenceBusy(false);
+    setDraftAvatarCompletion(null);
+    setUnfinishedReplacement(true);
+    setGenerationNotice(message);
+  }, [draftStorageKey]);
+  useEffect(() => {
+    if (!generationDeadline) return;
+    const timer = window.setTimeout(() => interruptGeneration("Generation timed out. Your selected assets and text are unchanged; late results will not be applied."), Math.max(0, generationDeadline - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [generationDeadline, interruptGeneration]);
+
 
   useEffect(() => {
     if (!draftStorageKey) return;
@@ -206,7 +307,7 @@ export function AgentForm({
   useEffect(() => {
     if (!draftStorageKey || !draftReady || pendingRestore) return;
     setDraftPersisted(false);
-    if (!dirty && !draftAvatarCompletion) {
+    if (!dirty && !draftAvatarCompletion && !generationDeadline && !unfinishedReplacement && !uploading) {
       if (!removeEditorStorage(draftStorageKey)) {
         setDraftStorageError("The old local draft could not be cleared. Saving the Agent still works.");
       }
@@ -219,8 +320,13 @@ export function AgentForm({
         base: initialSnapshot,
         current: currentSnapshot,
         creationRequestId,
+        baseContentRevisionId,
         draftAvatarUrl,
         draftAvatarCompletion,
+        generationDeadline,
+        uploadPending: uploading,
+        unfinishedReplacement,
+        submission: submission.current,
       };
       if (writeEditorStorage(draftStorageKey, JSON.stringify(stored))) {
         setDraftPersisted(true);
@@ -229,19 +335,20 @@ export function AgentForm({
         setDraftStorageError("This draft could not be stored locally. Save before leaving this page.");
       }
     }, 500);
-    return () => window.clearTimeout(timeout);
-  }, [creationRequestId, currentSnapshot, dirty, draftAvatarCompletion, draftAvatarUrl, draftReady, draftStorageKey, initialSnapshot, pendingRestore]);
+  return () => window.clearTimeout(timeout);
+  }, [baseContentRevisionId, generationDeadline, unfinishedReplacement, uploading, creationRequestId, currentSnapshot, dirty, draftAvatarCompletion, draftAvatarUrl, draftReady, draftStorageKey, initialSnapshot, pendingRestore]);
 
   useEffect(() => {
     const requestId = draftAvatarCompletion?.generationRequestId;
     if (!requestId || !portraitPending || portraitStatusUnavailable) return;
 
     let cancelled = false;
+    const epoch = generationEpoch.current;
     let timer: number | undefined;
     const poll = async () => {
       try {
         const result = await getDraftAgentAvatarGeneration(requestId);
-        if (cancelled) return;
+        if (cancelled || epoch !== generationEpoch.current) return;
         pollFailures.current = 0;
         setPortraitError(null);
         setPortraitStatusUnavailable(false);
@@ -250,15 +357,23 @@ export function AgentForm({
           : result.avatarCompletion);
         if (result.avatarCompletion.status === "completed" && result.avatarCompletion.avatarUrl) {
           setDraftAvatarUrl(result.avatarCompletion.avatarUrl);
+          setGenerationDeadline(null);
           return;
+        }
+        if (!isAvatarCompletionPending(result.avatarCompletion)) {
+          setGenerationDeadline(null);
+          setUnfinishedReplacement(true);
+          setPortraitError(result.avatarCompletion.reason ?? "Portrait generation did not complete.");
         }
         if (isAvatarCompletionPending(result.avatarCompletion)) {
           timer = window.setTimeout(() => void poll(), 2_500);
         }
       } catch (error) {
-        if (cancelled) return;
+        if (cancelled || epoch !== generationEpoch.current) return;
         if (error instanceof ApiError && error.status === 404) {
           setDraftAvatarCompletion(null);
+          setGenerationDeadline(null);
+          setUnfinishedReplacement(true);
           setPortraitError("The saved portrait request is no longer available. Your text draft is safe.");
           return;
         }
@@ -281,22 +396,57 @@ export function AgentForm({
 
   function applyDraft() {
     if (!pendingRestore) return;
+    setVisualDesign(pendingRestore.current.visualDesign ?? null);
+    setPortraitCrop(pendingRestore.current.portraitCrop ?? null);
+    setHeadPosition(pendingRestore.current.headPosition ?? null);
+    setHeadSuggestion(pendingRestore.current.headSuggestion ?? null);
     setName(pendingRestore.current.name);
     setBackstory(pendingRestore.current.backstory);
     setPersonality(pendingRestore.current.personality);
     setStrategyStyle(pendingRestore.current.strategyStyle);
+    setPerformanceInstructions(pendingRestore.current.performanceInstructions);
+    setFullBodyReferenceUrl(pendingRestore.current.fullBodyReferenceUrl);
     setPersonaKey(pendingRestore.current.personaKey);
     setGender(pendingRestore.current.gender);
     setExplicitAvatarUrl(pendingRestore.current.explicitAvatarUrl);
     setCreationRequestId(pendingRestore.creationRequestId);
+    setBaseContentRevisionId(pendingRestore.baseContentRevisionId ?? null);
     setDraftAvatarUrl(pendingRestore.draftAvatarUrl);
-    setDraftAvatarCompletion(pendingRestore.draftAvatarCompletion ?? null);
+    const pending = Boolean(pendingRestore.generationDeadline);
+    const interruption = draftStorageKey ? readEditorStorage(`${draftStorageKey}:interrupted`) : null;
+    const interruptedAt = interruption?.ok ? Number(interruption.value) : 0;
+    const canResume = pending && (pendingRestore.generationDeadline! - GENERATION_TIMEOUT_MS > interruptedAt) && pendingRestore.generationDeadline! > Date.now() && pendingRestore.draftAvatarCompletion && isAvatarCompletionPending(pendingRestore.draftAvatarCompletion);
+    setDraftAvatarCompletion(canResume ? pendingRestore.draftAvatarCompletion! : null);
+    setGenerationDeadline(canResume ? pendingRestore.generationDeadline! : null);
+    setUnfinishedReplacement(Boolean(pendingRestore.unfinishedReplacement || pendingRestore.uploadPending || (pending && !canResume)));
+    if (pendingRestore.uploadPending || (pending && !canResume)) setGenerationNotice("The previous preparation was interrupted. Its result will not be applied. Your draft is preserved.");
+    submission.current = pendingRestore.submission;
     setPendingRestore(null);
     setDraftReady(true);
   }
 
+  // Retire only this tab's active draft pointers. Server receipts remain durable,
+  // and the epoch prevents any outstanding request from applying a late result.
+  function retireDraft() {
+    if (draftStorageKey) {
+      // Keep the interruption fence if removing either recoverable pointer fails.
+      for (const suffix of ["", ":visual-reference", ":interrupted"]) {
+        if (!removeEditorStorage(`${draftStorageKey}${suffix}`)) return false;
+      }
+    }
+    generationEpoch.current += 1;
+    referenceRequest.current = null;
+    setDraftReady(false);
+    setGenerationDeadline(null);
+    setProfileGenerating(false);
+    setReferenceBusy(false);
+    setDraftAvatarCompletion(null);
+    setUnfinishedReplacement(false);
+    return true;
+  }
+
   function clearStoredDraft() {
-    if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+    if (!retireDraft()) {
       setDraftStorageError("The local draft could not be cleared. Browser storage may be unavailable.");
       return;
     }
@@ -304,31 +454,19 @@ export function AgentForm({
     setDraftReady(true);
   }
 
-  async function startDraftPortrait(profile: Parameters<typeof requestDraftAgentAvatarGeneration>[0]) {
-    setPortraitStarting(true);
-    setPortraitError(null);
-    setPortraitStatusUnavailable(false);
-    pollFailures.current = 0;
-    try {
-      const draft = await requestDraftAgentAvatarGeneration(profile);
-      setDraftAvatarCompletion(draft.avatarCompletion);
-      if (draft.avatarCompletion.status === "completed" && draft.avatarCompletion.avatarUrl) {
-        setDraftAvatarUrl(draft.avatarCompletion.avatarUrl);
-      }
-    } catch (error) {
-      setPortraitError(error instanceof Error ? error.message : "Portrait generation could not be started.");
-      setDraftAvatarCompletion({ status: "failed", retryable: true });
-    } finally {
-      setPortraitStarting(false);
-    }
-  }
-
   async function handleGenerate() {
+    const savedReference = draftStorageKey ? readEditorStorage(`${draftStorageKey}:visual-reference`) : null;
+    if (referenceRequest.current || (savedReference?.ok && savedReference.value)) {
+      setAiError("The previous image request is unfinished. Retry that reference request, submit the selected assets, or discard the draft before starting a different character generation.");
+      return;
+    }
+    const epoch = beginGeneration();
     setProfileGenerating(true);
     setAiError(null);
     try {
       const params: GeneratePersonalityParams = {};
-      if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim()) {
+      if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim()
+        || performanceInstructions.trim() || visualDesign?.trim() || avatarUrl || fullBodyReferenceUrl) {
         params.existingProfile = {
           name: name.trim() || undefined,
           backstory: backstory.trim() || undefined,
@@ -336,34 +474,36 @@ export function AgentForm({
           strategyStyle: strategyStyle.trim() || undefined,
           ...(personaKey ? { personaKey } : {}),
           gender: gender || undefined,
+          performanceInstructions,
+          visualDesign: visualDesign ?? "",
+          avatarUrl: avatarUrl ?? null,
+          fullBodyReferenceUrl,
         };
       } else {
         params.archetype = personaKey ?? "strategic";
         params.gender = gender || undefined;
       }
       const result = await generatePersonality(params);
+      if (epoch !== generationEpoch.current) return;
+      setGenerationDeadline(null);
       setName(result.name);
       setBackstory(result.backstory ?? "");
       setPersonality(result.personality);
       setStrategyStyle(result.strategyStyle ?? "");
       setPersonaKey(result.personaKey);
       setGender(result.gender);
+      setPerformanceInstructions(result.performanceInstructions);
+      setVisualDesign(result.visualDesign);
       setProfileGenerating(false);
 
-      if (!explicitAvatarUrl && !draftAvatarCompletion && !boundPortraitPending) {
-        await startDraftPortrait({
-          name: result.name,
-          gender: result.gender,
-          backstory: result.backstory ?? undefined,
-          personality: result.personality,
-          strategyStyle: result.strategyStyle ?? undefined,
-          personaKey: result.personaKey,
-        });
-      }
+      await generateReference({ name: result.name, personaKey: result.personaKey, performanceInstructions: result.performanceInstructions, visualDesign: result.visualDesign });
     } catch (error) {
+      if (epoch !== generationEpoch.current) return;
+      setGenerationDeadline(null);
+      setUnfinishedReplacement(true);
       setAiError(error instanceof Error ? error.message : "AI generation failed. Your existing text is unchanged.");
     } finally {
-      setProfileGenerating(false);
+      if (epoch === generationEpoch.current) setProfileGenerating(false);
     }
   }
 
@@ -371,8 +511,18 @@ export function AgentForm({
     requestAnimationFrame(() => document.getElementById(id)?.focus());
   }
 
+  const headConfirmationRequired = Boolean(fullBodyReferenceUrl && (!headPosition || headPosition.sourceUrl !== fullBodyReferenceUrl) && (fullBodyReferenceUrl !== initialSnapshot.fullBodyReferenceUrl || initialSnapshot.headPosition || headSuggestion));
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (generationBusy || uploading || submitting || headConfirmationRequired) return;
+    if (unfinishedReplacement) { setConfirmIncompleteSave(true); return; }
+    await submitDraft();
+  }
+
+  async function submitDraft() {
+    if (generationBusy || uploading || submitting || headConfirmationRequired) return;
+    setConfirmIncompleteSave(false);
     const errors: Record<string, string> = {};
     if (!name.trim()) errors.name = "Agent name is required.";
     if (!personality.trim()) errors.personality = "Personality is required.";
@@ -392,17 +542,26 @@ export function AgentForm({
     setSubmitting(true);
     setSaveError(null);
     try {
-      await onSubmit({
+      const params: AgentProfileWriteParams = {
         name: name.trim(),
         personality: personality.trim(),
         backstory: backstory.trim(),
         strategyStyle: strategyStyle.trim(),
+        performanceInstructions: performanceInstructions.trim(),
+        fullBodyReferenceUrl,
         personaKey: personaKey ?? undefined,
         gender: gender as AgentGender,
-        avatarUrl: explicitAvatarUrl === initial?.avatarUrl ? undefined : explicitAvatarUrl,
-        avatarGenerationRequestId: explicitAvatarUrl ? undefined : draftAvatarCompletion?.generationRequestId,
-      }, { creationRequestId });
-      if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+        avatarUrl: avatarUrl,
+        visualDesign,
+        portraitCrop,
+        headPosition,
+        expectedContentRevisionId: baseContentRevisionId,
+      };
+      const fingerprint = JSON.stringify(params);
+      if (!submission.current || submission.current.fingerprint !== fingerprint) submission.current = { id: createRequestId(), fingerprint };
+      saveLocalDraft();
+      await onSubmit({ ...params, submissionId: submission.current.id }, { creationRequestId });
+      if (!retireDraft()) {
         setDraftStorageError("The saved Agent is safe, but its local recovery draft could not be cleared.");
       }
     } catch (error) {
@@ -412,12 +571,12 @@ export function AgentForm({
   }
 
   function requestCancel() {
-    if (dirty || draftAvatarCompletion) setConfirmDiscard(true);
-    else onCancel();
+    if (dirty || draftAvatarCompletion || generationBusy || uploading || unfinishedReplacement) setConfirmDiscard(true);
+    else confirmCancel();
   }
 
   function confirmCancel() {
-    if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+    if (!retireDraft()) {
       setDraftStorageError("The local draft could not be cleared. Browser storage may be unavailable.");
       setConfirmDiscard(false);
       return;
@@ -430,10 +589,61 @@ export function AgentForm({
     && (normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
       || normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.baseline)));
   const submitDisabled = submitting
+    || generationBusy
+    || referenceBusy
     || profileGenerating
-    || portraitStarting
     || uploading
+    || headConfirmationRequired
     || requiredStrategyChangeMissing;
+
+  async function generateReference(refined?: { name: string; personaKey: string; performanceInstructions: string; visualDesign: string }) {
+    const epoch = beginGeneration();
+    setReferenceBusy(true);
+    setReferenceError(null);
+    const referenceStorageKey = `${draftStorageKey}:visual-reference`;
+    const saved = readEditorStorage(referenceStorageKey);
+    if (saved.ok && saved.value && !referenceRequest.current) {
+      try { referenceRequest.current = JSON.parse(saved.value); }
+      catch { setReferenceError("Saved reference request is unreadable. Restore the draft before generating again."); setReferenceBusy(false); setGenerationDeadline(null); setUnfinishedReplacement(true); return; }
+    }
+    referenceRequest.current ??= { requestId: createRequestId(), name, personaKey: personaKey ?? "", avatarUrl: avatarUrl ?? null, fullBodyReferenceUrl, performanceInstructions, visualDesign: visualDesign ?? "", ...refined };
+    if (!writeEditorStorage(referenceStorageKey, JSON.stringify(referenceRequest.current))) {
+      setReferenceError("The reference request could not be saved. Enable session storage before generating."); setReferenceBusy(false); setGenerationDeadline(null); setUnfinishedReplacement(true); return;
+    }
+    try {
+      const result = await apiFetch<CharacterImageDraft>("/api/agent-profiles/visual-reference", { method: "POST", body: JSON.stringify(referenceRequest.current) });
+      if (epoch !== generationEpoch.current) return;
+      setGenerationDeadline(null);
+      setFullBodyReferenceUrl(result.fullBodyReferenceUrl);
+      setHeadPosition(null);
+      setHeadSuggestion(result.headSuggestion ?? null);
+      setPortraitEditorSource(result.fullBodyReferenceUrl);
+      if (result.avatarUrl && result.portraitCrop) {
+        setExplicitAvatarUrl(result.avatarUrl);
+        setPortraitCrop(result.portraitCrop);
+        setUnfinishedReplacement(false);
+      } else {
+        setUnfinishedReplacement(true);
+        setReferenceError(result.cropWarning ?? "Choose a portrait crop to finish the character.");
+      }
+      removeEditorStorage(referenceStorageKey);
+      referenceRequest.current = null;
+    } catch (error) {
+      if (epoch !== generationEpoch.current) return;
+      setGenerationDeadline(null);
+      setUnfinishedReplacement(true);
+      setReferenceError(error instanceof Error ? error.message : "Reference generation failed");
+    } finally { if (epoch === generationEpoch.current) setReferenceBusy(false); }
+  }
+
+  function saveLocalDraft() {
+    if (!draftStorageKey) { setDraftStorageError("Sign in to save a draft in this tab."); return; }
+    const stored: StoredEditorDraft = { version: DRAFT_VERSION, savedAt: new Date().toISOString(), base: initialSnapshot,
+      current: currentSnapshot, creationRequestId, baseContentRevisionId, draftAvatarUrl, draftAvatarCompletion, generationDeadline, uploadPending: uploading, unfinishedReplacement, submission: submission.current };
+    const saved = writeEditorStorage(draftStorageKey, JSON.stringify(stored));
+    setDraftPersisted(saved);
+    setDraftStorageError(saved ? null : "This draft could not be stored locally. Keep this tab open.");
+  }
 
   return (
     <form onSubmit={handleSubmit} className="pb-28">
@@ -455,8 +665,8 @@ export function AgentForm({
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-8 xl:grid-cols-[19rem_minmax(0,1fr)]">
         <aside className="influence-panel order-1 rounded-2xl p-5 sm:p-6 lg:order-none lg:sticky lg:top-24">
           <div className="flex flex-col items-center">
-            <AvatarUpload currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={setExplicitAvatarUrl} onUploadingChange={setUploading} size="32" />
-            {(portraitStarting || portraitPending || boundPortraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
+            <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={(url) => { setExplicitAvatarUrl(url); setPortraitCrop(null); }} onUploadingChange={setUploading} size="32" />
+            {(portraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
             {draftAvatarCompletion?.status === "completed" && draftAvatarUrl && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-emerald-300" aria-live="polite">Portrait ready</p>}
           </div>
 
@@ -502,17 +712,12 @@ export function AgentForm({
               <section className="rounded-xl border border-white/10 bg-black/15 p-4">
                 <p className="text-sm font-semibold text-text-primary">AI profile help</p>
                 <p className="mt-1 text-xs leading-5 text-white/45">
-                  {explicitAvatarUrl
-                    ? "Generate replaces the current profile text."
-                    : "Generate replaces the current profile text and image."}
+                  Refines your profile, performance and look, then generates a full-body image and matching portrait. Changes stay in this draft.
                 </p>
-                <button type="button" onClick={() => void handleGenerate()} disabled={profileGenerating} className="influence-button-primary mt-3 min-h-11 w-full rounded-lg px-4 text-sm font-semibold">{profileGenerating ? "Generating…" : hasProfileText ? "Refine with AI" : "Generate with AI"}</button>
+                <button type="button" onClick={() => void handleGenerate()} disabled={generationBusy || uploading || submitting} className="influence-button-primary mt-3 min-h-11 w-full rounded-lg px-4 text-sm font-semibold">{profileGenerating ? "Generating…" : hasProfileText ? "Refine with AI" : "Generate with AI"}</button>
                 {aiError && <p role="alert" className="mt-2 text-xs leading-5 text-red-300">{aiError}</p>}
               </section>
 
-              {!explicitAvatarUrl && draftAvatarCompletion && !portraitPending && draftAvatarCompletion.status !== "completed" && gender && name.trim() && personality.trim() && (
-                <button type="button" onClick={() => void startDraftPortrait({ name: name.trim(), gender, backstory: backstory.trim() || undefined, personality: personality.trim(), strategyStyle: strategyStyle.trim() || undefined, personaKey: personaKey ?? "strategic" })} disabled={portraitStarting} className="influence-button-secondary min-h-11 w-full rounded-lg px-3 text-sm">Retry portrait</button>
-              )}
               {portraitStatusUnavailable && <button type="button" onClick={() => { pollFailures.current = 0; setPortraitStatusUnavailable(false); }} className="influence-button-secondary min-h-11 w-full rounded-lg px-3 text-sm">Refresh portrait status</button>}
               {portraitError && <p role="status" className="text-xs leading-5 text-amber-200/80">{portraitError}</p>}
             </div>
@@ -525,10 +730,10 @@ export function AgentForm({
               <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>
             </div>
-            <div className={strategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
-              {strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
+            <div className={showStrategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
+              {showStrategyComparison && strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
               <div className="order-1 xl:order-2">
-                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${strategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
+                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${showStrategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
                 {strategyComparison?.requireChange && (
                   <p className="mt-2 min-h-5 text-xs leading-5 text-white/45" aria-live="polite">
                     {requiredStrategyChangeMissing
@@ -551,19 +756,46 @@ export function AgentForm({
             <div className="flex items-end justify-between gap-4"><div><label htmlFor="agent-backstory" className="text-base font-semibold text-text-primary">Backstory <span className="text-sm font-normal text-white/35">optional</span></label><p id="agent-backstory-help" className="mt-1 text-sm leading-6 text-white/45">The history and motivation behind the Agent.</p></div><span className="font-mono text-xs tabular-nums text-white/40">{backstory.length}/{AGENT_PROFILE_LIMITS.backstory}</span></div>
             <GrowingTextarea id="agent-backstory" value={backstory} onChange={(event) => setBackstory(event.target.value)} placeholder="Where did this Agent come from, and what drives them?" maxLength={AGENT_PROFILE_LIMITS.backstory} aria-describedby="agent-backstory-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
           </section>
+          <section className="influence-panel order-5 rounded-2xl p-5 sm:p-6">
+            <label htmlFor="agent-performance" className="text-base font-semibold text-text-primary">Character performance</label>
+            <p id="agent-performance-help" className="mt-1 text-sm leading-6 text-white/45">How your character carries themselves: posture, gestures, mannerisms, movement and vocal delivery.</p>
+            <GrowingTextarea id="agent-performance" value={performanceInstructions} onChange={(event) => setPerformanceInstructions(event.target.value)} maxLength={AGENT_PROFILE_LIMITS.performanceInstructions} aria-describedby="agent-performance-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
+            <label htmlFor="agent-visual-design" className="mt-5 block text-base font-semibold text-text-primary">Visual design</label>
+            <p className="mt-1 text-sm leading-6 text-white/45">Appearance, clothing and distinctive details shared by the portrait and full-body reference.</p>
+            <GrowingTextarea id="agent-visual-design" value={visualDesign ?? ""} onChange={(event) => setVisualDesign(event.target.value)} maxLength={8000} className="influence-field mt-4 min-h-28 w-full rounded-xl px-4 py-4 text-base leading-7" />
+            <div className="mt-5">
+              <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
+              <button type="button" disabled={generationBusy || uploading || submitting || !name.trim()} onClick={() => void generateReference()} className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50">{referenceBusy ? "Generating reference…" : referenceRequest.current ? "Retry reference request" : "Generate full-body reference"}</button>
+              {referenceError && <p role="alert" className="mb-3 text-sm text-red-300">{referenceError}</p>}
+              <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={(url) => { setFullBodyReferenceUrl(url); setHeadPosition(null); setHeadSuggestion(null); setPortraitEditorSource(url); }} onUploadingChange={setFullBodyUploading} presentation="full-body" />
+            </div>
+          </section>
         </main>
       </div>
 
+      {headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
+      {portraitEditorSource && <CharacterPortraitEditor sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
+      {(generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
+      {generationNotice && <p role="status" className="mt-4 text-sm text-amber-200">{generationNotice}</p>}
       {saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}
       {draftStorageError && <p role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80">{draftStorageError}</p>}
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
         <div className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="hidden min-w-0 text-xs text-white/40 sm:block">{uploading ? "Uploading portrait…" : profileGenerating ? "Generating profile text…" : portraitPending ? "Portrait will finish after save." : dirty ? draftPersisted ? "Local draft saved in this tab." : "Unsaved changes." : "No unsaved changes."}</div>
-          <div className="ml-auto flex w-full gap-3 sm:w-auto"><button type="button" onClick={requestCancel} className="influence-button-secondary min-h-11 flex-1 rounded-lg px-5 text-sm sm:flex-none">Cancel</button><button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-11 flex-[1.35] rounded-lg px-6 text-sm font-semibold sm:flex-none">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button></div>
+          <div className="hidden min-w-0 text-xs text-white/40 sm:block">{uploading ? "Uploading image…" : profileGenerating ? "Generating profile text…" : generationBusy ? "Generation in progress. Save draft keeps changes in this tab; it does not update your Agent." : dirty ? draftPersisted ? "Local draft saved in this tab." : "Unsaved changes." : "No unsaved changes."}</div>
+          <div className="ml-auto flex w-full flex-wrap gap-3 sm:w-auto"><button type="button" onClick={saveLocalDraft} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Save draft</button>{generationBusy && <button type="button" onClick={() => setConfirmGenerationCancel(true)} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Cancel generation</button>}<button type="button" onClick={requestCancel} className="influence-button-secondary min-h-11 flex-1 rounded-lg px-5 text-sm sm:flex-none">Cancel</button><button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-11 flex-[1.35] rounded-lg px-6 text-sm font-semibold sm:flex-none">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button></div>
         </div>
       </div>
 
+      {(confirmGenerationCancel || confirmIncompleteSave) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <section ref={confirmationRef} role="dialog" aria-modal="true" aria-labelledby="generation-confirm-title" className="influence-modal w-full max-w-md rounded-2xl p-6">
+            <h2 id="generation-confirm-title" className="text-lg font-semibold">{confirmGenerationCancel ? "Cancel generation?" : "Save without the unfinished replacement?"}</h2>
+            <p className="mt-2 text-sm leading-6 text-white/55">{confirmGenerationCancel ? "Its result will not be applied. An already dispatched request may still consume your allowance. Your selected assets and text will be kept." : "The replacement did not complete. This saves your current text and selected assets; any late result will not be attached."}</p>
+            <div className="mt-5 flex gap-3"><button type="button" className="influence-button-secondary min-h-11 rounded-lg px-4" onClick={() => { setConfirmGenerationCancel(false); setConfirmIncompleteSave(false); }}>Keep editing</button><button type="button" className="influence-button-primary min-h-11 rounded-lg px-4" onClick={() => { if (confirmGenerationCancel) { interruptGeneration("Generation canceled. Late results will not be applied."); setConfirmGenerationCancel(false); } else void submitDraft(); }}>{confirmGenerationCancel ? "Cancel generation" : "Save selected assets"}</button></div>
+          </section>
+        </div>
+      )}
       {confirmDiscard && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="presentation">
           <section role="dialog" aria-modal="true" aria-labelledby="discard-agent-title" className="influence-modal w-full max-w-md rounded-2xl p-6">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
 import type { PresentationCue } from "./types";
+import { SOLO_READ_START_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
 
 export interface PresentationClock {
   now(): number;
@@ -200,13 +201,6 @@ export function usePresentationDirector({
       control.speed = director.getSnapshot().speed;
       controls.push({ control, release: animation.track(control) });
     };
-    const rootControl = animate(
-      scope.current,
-      { opacity: reducedMotion ? 1 : [0.985, 1] },
-      { duration: reducedMotion ? 0 : 0.18, ease: "easeOut" },
-    ) as RetainedMotionControl;
-    track(rootControl);
-
     const activeCue = director.getActiveCue();
     const currentStateEntry = scope.current.querySelector(
       '[data-presentation-current-entry="true"]',
@@ -335,6 +329,10 @@ export class PresentationDirector {
   private disposed = false;
   private waitingAtHydrationWatermark = false;
   private hasPlayed = false;
+  private navigationRevision = 0;
+
+  /** Explicit navigation cuts camera motion; automatic advances may pan. */
+  getNavigationRevision(): number { return this.navigationRevision; }
 
   constructor({
     clock = browserClock(),
@@ -383,7 +381,14 @@ export class PresentationDirector {
     return this.state.cues[this.state.cursor] ?? null;
   }
 
-  load(cues: readonly PresentationCue[]): void {
+  /** Base presentation time for timed overlays; freezes on pause and follows playback speed. */
+  getElapsedBaseMs(): number {
+    const duration = this.activeDurationMs();
+    const elapsed = this.timerId === null ? 0 : Math.max(0, this.clock.now() - this.scheduledAt) * this.state.speed;
+    return Math.max(0, Math.min(duration, duration - this.remainingBaseMs + elapsed));
+  }
+
+  load(cues: readonly PresentationCue[], cursor = 0): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
     if (sameCueKeys(this.state.cues, canonical)) {
@@ -393,7 +398,7 @@ export class PresentationDirector {
     const wasPlaying = this.state.isPlaying;
     this.clearTimer();
     this.waitingAtHydrationWatermark = false;
-    this.apply({ type: "load", cues: canonical });
+    this.apply({ type: "load", cues: canonical, cursor });
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.remainingBaseMs = this.activeDurationMs();
     if (wasPlaying) this.ensureTimer();
@@ -403,7 +408,7 @@ export class PresentationDirector {
     if (this.disposed || cues.length === 0) return;
     const existingKeys = new Set(this.state.cues.map((cue) => cue.key));
     const activeKey = this.getActiveCue()?.key;
-    const incoming = canonicalizeCues(cues);
+    const incoming = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
     // Reconcile the complete chronological timeline, including backfilled history.
     const nextCues = incoming;
     if (activeKey && !nextCues.some((cue) => cue.key === activeKey)) return;
@@ -412,10 +417,10 @@ export class PresentationDirector {
     const firstNewIndex = nextCues.findIndex((cue, index) =>
       index > nextCursor
       && !existingKeys.has(cue.key)
-      && !(cue.source === "classic" && cue.liveCatchUp)
+      && !(cue.source !== "format" && cue.liveCatchUp)
       && (watermark === null || cue.canonicalSequence === null
         || cue.canonicalSequence > watermark
-        || (cue.source === "classic" && cue.canonicalSequence === watermark)),
+        || (cue.source !== "format" && cue.canonicalSequence === watermark)),
     );
     if (firstNewIndex >= 0 && this.state.isPlaying
       && (this.waitingAtHydrationWatermark || this.state.waitingAtTail)) {
@@ -440,7 +445,7 @@ export class PresentationDirector {
     }
     if (this.waitingAtHydrationWatermark) {
       const next = this.state.cues.findIndex((cue, index) => index > this.state.cursor
-        && !(cue.source === "classic" && cue.liveCatchUp));
+        && !(cue.source !== "format" && cue.liveCatchUp));
       if (next >= 0) {
         this.waitingAtHydrationWatermark = false;
         this.apply({ type: "set_cursor", cursor: next });
@@ -455,7 +460,7 @@ export class PresentationDirector {
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
       this.remainingBaseMs = this.activeDurationMs();
     }
-    if (this.remainingBaseMs <= 0) {
+    if (this.remainingBaseMs <= 0 && !this.state.waitingAtTail) {
       this.remainingBaseMs = this.activeDurationMs();
     }
     this.ensureTimer();
@@ -471,8 +476,31 @@ export class PresentationDirector {
 
   manualAdvance(): void {
     if (this.disposed || this.state.cues.length === 0) return;
+    if (this.getActiveCue()?.soloSpeech && !this.state.waitingAtTail) {
+      const clockElapsed = this.getElapsedBaseMs();
+      // The initial paused frame already renders fully readable speech.
+      const elapsed = !this.state.isPlaying && clockElapsed === 0 ? SOLO_READ_START_MS : clockElapsed;
+      if (elapsed < SOLO_READ_START_MS) {
+        this.positionWithinCue(SOLO_READ_START_MS);
+        return;
+      }
+      if (this.state.isPlaying) {
+        const exitAt = this.activeDurationMs() - SOLO_EXIT_MS;
+        // Finish the exit on the shared clock; repeated clicks cannot skip it.
+        if (elapsed < exitAt) this.positionWithinCue(exitAt);
+        return;
+      }
+    }
+    this.navigationRevision++;
     this.animation.complete();
-    this.advanceOne();
+    this.advanceOne(true);
+  }
+
+  private positionWithinCue(elapsedMs: number): void {
+    this.clearTimer();
+    this.remainingBaseMs = Math.max(0, this.activeDurationMs() - elapsedMs);
+    this.ensureTimer();
+    for (const listener of this.listeners) listener();
   }
 
   setSpeed(speed: number): void {
@@ -510,29 +538,30 @@ export class PresentationDirector {
   }
 
   seek(cursor: number): void {
+    this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
     this.waitingAtHydrationWatermark = false;
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.remainingBaseMs = this.activeDurationMs();
-    this.ensureTimer();
+    this.positionWithinCue(this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
   }
 
   reconnect(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
-    const canonical = canonicalizeCues(cues);
+    const wasWaitingAtTail = this.state.waitingAtTail;
+    const canonical = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
     const activeKey = this.state.cues[this.state.cursor]?.key;
-    const retainedCursor = activeKey
-      ? canonical.findIndex((cue) => cue.key === activeKey)
-      : -1;
-    const cursor = retainedCursor >= 0
-      ? retainedCursor
-      : Math.max(0, canonical.length - 1);
+    const retainedCursor = activeKey ? canonical.findIndex((cue) => cue.key === activeKey) : -1;
+    const cursor = retainedCursor >= 0 ? retainedCursor : Math.max(0, canonical.length - 1);
     const watermark = highestCanonicalSequence(canonical);
+    this.captureRemainingTime();
     this.clearTimer();
     this.apply({ type: "hydrate", cues: canonical, cursor, watermark });
-    this.remainingBaseMs = retainedCursor >= 0 ? this.activeDurationMs() : 0;
+    if (wasWaitingAtTail && retainedCursor >= 0) {
+      this.apply({ type: "set_waiting_at_tail", waitingAtTail: true });
+    }
+    if (retainedCursor < 0) this.remainingBaseMs = 0;
     this.waitingAtHydrationWatermark = retainedCursor < 0;
   }
 
@@ -557,7 +586,7 @@ export class PresentationDirector {
     this.disposed = false;
   }
 
-  private advanceOne(): void {
+  private advanceOne(manual = false): void {
     this.clearTimer();
     const nextCursor = this.state.cursor + 1;
     if (nextCursor >= this.state.cues.length) {
@@ -570,8 +599,7 @@ export class PresentationDirector {
       return;
     }
     this.apply({ type: "set_cursor", cursor: nextCursor });
-    this.remainingBaseMs = this.activeDurationMs();
-    this.ensureTimer();
+    this.positionWithinCue(manual && this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
   }
 
   private activeDurationMs(): number {
@@ -668,4 +696,12 @@ function browserClock(): PresentationClock {
     setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
     clearTimeout: (timerId) => window.clearTimeout(timerId),
   };
+}
+
+/** Backfilled narration can replace a title in history, but cannot interrupt a title already on air. */
+function retainActiveHouseBridge(cues: PresentationCue[], active: PresentationCue | null): PresentationCue[] {
+  if (active?.source !== "house" || cues.some((cue) => cue.key === active.key)) return cues;
+  const following = cues.findIndex((cue) => cue.key === active.followingCueKey);
+  if (following >= 0) cues.splice(following, 0, active);
+  return cues;
 }

@@ -157,6 +157,11 @@ export async function projectOwnedSeatInTransaction(
     backstory: effectiveRuntimeSnapshot.backstory,
     strategyHints: effectiveRuntimeSnapshot.strategyInstructions,
     personaKey: effectiveRuntimeSnapshot.personaKey,
+    avatarUrl: profile.avatarUrl,
+    fullBodyReferenceUrl: profile.fullBodyReferenceUrl,
+    headPosition: profile.headPosition,
+    portraitCrop: profile.portraitCrop,
+    performanceInstructions: profile.performanceInstructions,
   });
   const agentConfig = JSON.stringify({
     model: effectiveRuntimeSnapshot.model,

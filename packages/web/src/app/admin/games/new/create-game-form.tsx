@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   FORMAT_PRESENTATION_METADATA,
@@ -79,7 +80,7 @@ type GameModelOption = Pick<
   | "available"
   | "defaultReasoningPolicy"
   | "allowedReasoningPolicies"
-> & { sublabel: string };
+> & { sublabel: string; supportsImageInput?: boolean };
 
 const GAME_MODELS: GameModelOption[] = [
   {
@@ -208,6 +209,8 @@ export function moveProviderRouteEntry(
 // ---------------------------------------------------------------------------
 
 interface FormState {
+  visualMode: boolean;
+  visualFailurePolicy: "best_effort" | "require_visuals";
   playerCount: CreateGameParams["playerCount"];
   formatManifest: LaunchFormatId[];
   providerRoute: ProviderRouteEntry[];
@@ -220,6 +223,8 @@ interface FormState {
 }
 
 const DEFAULT_STATE: FormState = {
+  visualMode: false,
+  visualFailurePolicy: "best_effort",
   playerCount: 6,
   formatManifest: [...LAUNCH_FORMAT_IDS],
   providerRoute: DEFAULT_PROVIDER_MANIFEST.map(providerRouteEntry),
@@ -429,7 +434,7 @@ function FormatManifestEditor({
 }
 
 function routeEntryError(
-  entry: ProviderRouteEntry,
+  entry: GameProviderManifestEntry,
   index: number,
   model?: GameModelOption,
 ): string | null {
@@ -445,15 +450,25 @@ function routeEntryError(
   return null;
 }
 
+function supportsVisualMode(catalogId: string, models: readonly GameModelOption[]): boolean {
+  return models.find(model => model.catalogId === catalogId)?.supportsImageInput
+    ?? modelCatalogEntryById(catalogId)?.capabilities.supportsImageInput
+    ?? false;
+}
+
 function ProviderRouteEditor({
   entries,
   models,
   inventoryUnavailable,
+  visualMode,
+  activeRoute,
   onChange,
 }: {
   entries: ProviderRouteEntry[];
   models: GameModelOption[];
   inventoryUnavailable: boolean;
+  visualMode: boolean;
+  activeRoute: GameProviderManifestEntry[];
   onChange: (entries: ProviderRouteEntry[]) => void;
 }) {
   const modelSelectRefs = useRef<Record<string, HTMLSelectElement | null>>({});
@@ -523,7 +538,7 @@ function ProviderRouteEditor({
           <p className="text-sm font-medium text-white">Provider route</p>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
             Every call starts with Primary. If it cannot return a usable result, the game follows
-            these fallbacks in order. This exact route is sealed when the game is created.
+            these fallbacks in order. Active slots are sealed when the game is created.
           </p>
         </div>
         <span className="text-xs tabular-nums text-white/35">
@@ -541,12 +556,15 @@ function ProviderRouteEditor({
         {entries.map((entry, index) => {
           const selectedModel = models.find((model) => model.catalogId === entry.catalogId);
           const allowedPolicies = selectedModel?.allowedReasoningPolicies ?? ["action-policy"];
-          const error = routeEntryError(entry, index, selectedModel);
+          const skipped = visualMode && !supportsVisualMode(entry.catalogId, models);
+          const activeIndex = activeRoute.findIndex(active => active.catalogId === entry.catalogId);
+          const error = skipped ? null : routeEntryError(entry, activeIndex, selectedModel);
           return (
             <fieldset
               key={entry.uiId}
+              data-visual-skipped={skipped || undefined}
               className={`rounded-xl border p-4 transition-colors ${
-                index === 0
+                skipped ? "border-white/5 bg-white/[0.01]" : activeIndex === 0
                   ? "border-indigo-500/45 bg-indigo-500/[0.08]"
                   : "border-white/10 bg-white/[0.025]"
               }`}
@@ -557,12 +575,13 @@ function ProviderRouteEditor({
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <span className={`rounded-sm px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
-                    index === 0
+                    !skipped && activeIndex === 0
                       ? "bg-indigo-500/25 text-indigo-100"
                       : "bg-white/[0.07] text-white/55"
                   }`}>
-                    {index === 0 ? "Primary" : `Fallback ${index}`}
+                    {skipped ? "Skipped" : activeIndex === 0 ? "Primary" : `Fallback ${activeIndex}`}
                   </span>
+                  {skipped && <span className="text-xs text-white/45">No image support · Skipped in Visual Mode</span>}
                   {selectedModel && !selectedModel.configured && (
                     <span className="text-xs text-amber-200/70">Credentials not detected</span>
                   )}
@@ -643,6 +662,7 @@ function ProviderRouteEditor({
                     </span>
                     <input
                       type="number"
+                      disabled={skipped || activeIndex === 0}
                       aria-label={`Fallback ${index} max calls per game`}
                       min={1}
                       max={10000}
@@ -724,6 +744,7 @@ export function CreateGameForm() {
       const staticById = new Map(GAME_MODELS.map((model) => [model.catalogId, model]));
       setModels(inventory.models.map((model) => ({
         catalogId: model.catalogId,
+        supportsImageInput: model.capabilities.supportsImageInput,
         displayName: model.displayName,
         configured: model.configured,
         available: model.available,
@@ -769,6 +790,21 @@ export function CreateGameForm() {
     });
   }
 
+  const { providerRoute, ...gameParams } = form;
+  const activeProviderRoute = form.visualMode
+    ? providerRoute.filter(entry => supportsVisualMode(entry.catalogId, models))
+    : providerRoute;
+  const skippedModels = form.visualMode
+    ? providerRoute.filter(entry => !supportsVisualMode(entry.catalogId, models))
+    : [];
+  const visualDefault = form.visualMode && activeProviderRoute.length === 0
+    ? [...models].sort((a, b) => Number(b.catalogId === DEFAULT_MODEL_CATALOG_ID) - Number(a.catalogId === DEFAULT_MODEL_CATALOG_ID))
+      .find(model => model.configured && model.available !== false && supportsVisualMode(model.catalogId, models))
+    : undefined;
+  const effectiveProviderRoute: GameProviderManifestEntry[] = visualDefault
+    ? [{ catalogId: visualDefault.catalogId, reasoningPolicy: visualDefault.defaultReasoningPolicy }]
+    : activeProviderRoute.map((entry, index) => ({ ...entry, ...(index === 0 ? { maxCallsPerGame: undefined } : {}) }));
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!hasOpeningFormat(form.formatManifest, form.playerCount)) {
@@ -779,7 +815,7 @@ export function CreateGameForm() {
       setError("Select at least 2 personas.");
       return;
     }
-    const routeError = form.providerRoute
+    const routeError = effectiveProviderRoute
       .map((entry, index) => routeEntryError(
         entry,
         index,
@@ -790,13 +826,16 @@ export function CreateGameForm() {
       setError(routeError);
       return;
     }
+    if (effectiveProviderRoute.length === 0) {
+      setError("No image-capable model is available. Configure an image-capable provider or turn off Visual Mode.");
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      const { providerRoute, ...gameParams } = form;
       const params: CreateGameParams = {
         ...gameParams,
-        providerManifest: providerRoute.map((entry) => ({
+        providerManifest: effectiveProviderRoute.map((entry) => ({
           catalogId: entry.catalogId,
           reasoningPolicy: entry.reasoningPolicy,
           ...(entry.maxCallsPerGame === undefined
@@ -860,6 +899,8 @@ export function CreateGameForm() {
           entries={form.providerRoute}
           models={models}
           inventoryUnavailable={inventoryUnavailable}
+          visualMode={form.visualMode}
+          activeRoute={effectiveProviderRoute}
           onChange={(providerRoute) => {
             providerRouteEdited.current = true;
             set("providerRoute", providerRoute);
@@ -939,6 +980,19 @@ export function CreateGameForm() {
 
       {/* Game Mode */}
       <SectionCard title="Game Mode">
+        <label className="mb-5 flex items-start gap-3">
+          <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
+          <span>Visual Mode<span className="block text-sm text-white/50">Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created.</span></span>
+        </label>
+        {skippedModels.length > 0 && <p role="status" className="mb-4 text-sm text-white/55">
+          Skipped for this game: {skippedModels.map(entry => models.find(model => model.catalogId === entry.catalogId)?.displayName ?? entry.catalogId).join(", ")}. You can change or remove these slots. Turning off Visual Mode restores them.
+        </p>}
+        {form.visualMode && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
+          {visualDefault ? "Using " : "Visual Primary: "}{models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}{visualDefault ? " as Primary because the selected models do not support images." : "."}
+        </p>}
+        {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
+          options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
+          onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
         <RadioGroup
           label="Viewer mode"
           value={form.viewerMode}

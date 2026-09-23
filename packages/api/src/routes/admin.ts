@@ -1174,6 +1174,8 @@ export function createAdminRoutes(
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
+        visualMode: config.visualMode === true,
+        visualPaused: game.status === "suspended" && Boolean(config.visualPause),
         trackType: game.trackType,
         seasonId: game.seasonId ?? undefined,
         season: game.seasonId ? seasonById.get(game.seasonId) : undefined,

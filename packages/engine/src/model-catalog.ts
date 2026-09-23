@@ -8,6 +8,7 @@ export type ModelReasoningPolicy = "action-policy" | ModelReasoningEffort;
 export type ModelEvaluationStatus = "game-ready" | "evaluation-candidate" | "disabled";
 
 export interface ModelRequestCapabilities {
+  supportsImageInput: boolean;
   supportsReasoningEffort: boolean;
   supportsToolReasoningEffort: boolean;
   usesMaxCompletionTokens: boolean;
@@ -103,6 +104,7 @@ export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
 };
 
 const OPENAI_GPT5_CAPABILITIES: ModelRequestCapabilities = {
+  supportsImageInput: false,
   supportsReasoningEffort: true,
   supportsToolReasoningEffort: true,
   usesMaxCompletionTokens: true,
@@ -124,6 +126,7 @@ const OPENAI_GPT56_CAPABILITIES: ModelRequestCapabilities = {
 };
 
 const STANDARD_CHAT_CAPABILITIES: ModelRequestCapabilities = {
+  supportsImageInput: false,
   supportsReasoningEffort: false,
   supportsToolReasoningEffort: false,
   usesMaxCompletionTokens: false,
@@ -135,6 +138,7 @@ const STANDARD_CHAT_CAPABILITIES: ModelRequestCapabilities = {
 };
 
 const KATANA_GROK_CAPABILITIES: ModelRequestCapabilities = {
+  supportsImageInput: false,
   supportsReasoningEffort: true,
   supportsToolReasoningEffort: true,
   usesMaxCompletionTokens: false,
@@ -205,7 +209,7 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT56_CAPABILITIES,
+    capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
     notes: "GPT-5.6 Luna — prior cost-sensitive high-volume tier.",
   },
   {
@@ -216,8 +220,21 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT56_CAPABILITIES,
-    notes: "Product baseline. GPT-6 Luna uses Responses for reasoning with strict tools and structured output.",
+    // Reasoning with function tools requires Responses; cache options match GPT-5.6.
+    // https://developers.openai.com/api/docs/models/gpt-6-luna
+    capabilities: { ...OPENAI_GPT56_CAPABILITIES, supportsImageInput: true },
+    notes: "Product baseline. GPT-6 Luna — text and image input with structured decisions through Responses.",
+  },
+  {
+    id: "katana:grok-4-6",
+    providerProfileId: "katana",
+    modelId: "grok-4-6",
+    displayName: "xAI Grok 4.6",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: { ...KATANA_GROK_CAPABILITIES, supportsImageInput: true },
+    notes: "Verified image-input and structured scene-awareness support through Katana.",
   },
   {
     id: "katana:grok-4-3",

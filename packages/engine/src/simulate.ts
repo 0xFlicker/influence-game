@@ -3,6 +3,16 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
+ * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).
+ * API Visual Mode uses the exact remaining cast for Final 4 lobby pleas. Verify
+ * endgame ballots and IN/OUT status against canonical resolution/elimination
+ * events; dialogue and scene membership are not accepted game-state evidence.
+ * Lobby, Mingle, and alliance huddle prompts end with one dialogue-only driver:
+ * one short paragraph, usually 1–3 sentences, under 100 tokens. This is guidance,
+ * not truncation or a structured-response token cap; inspect actual --chatty speech.
+ * API-backed durable games commit Mingle one simultaneous beat at a time;
+ * this local runner uses the same phase rules without the persistence boundary.
  *
  * Usage:
  *   bun run simulate
