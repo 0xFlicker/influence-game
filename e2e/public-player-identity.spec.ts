@@ -16,6 +16,7 @@ interface IdentityFixture {
   walletAddress: string;
   completeJwt: string;
   requiredJwt: string;
+  noQueueJwt: string;
   deferrableJwt: string;
   collisionJwt: string;
 }
@@ -158,7 +159,7 @@ test.describe("local public player identity", () => {
     }
   });
 
-  test("requires identity for post-cutoff users before downstream onboarding", async ({
+  test("requires terms and identity before prompting a new player to create an agent", async ({
     browser,
   }) => {
     const context = await authenticatedContext(browser, fixture.requiredJwt);
@@ -168,6 +169,9 @@ test.describe("local public player identity", () => {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
+      await expect(page.getByRole("heading", { name: "Review and accept" })).toBeVisible();
+      await page.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Accept and continue" }).click();
       const dialog = page.getByRole("dialog", {
         name: "Choose how players know you",
       });
@@ -185,6 +189,36 @@ test.describe("local public player identity", () => {
       await expect(dailyAgentDialog.getByRole("button", {
         name: "Create an agent",
       })).toBeVisible();
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("offers first-agent creation after onboarding when Daily Free is unavailable", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const context = await authenticatedContext(browser, fixture.noQueueJwt);
+    const page = await context.newPage();
+    try {
+      // A fresh ephemeral database has no active season, so this read is ineligible.
+      await page.route("**/api/free-queue", async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({
+          response,
+          json: { ...await response.json(), promptEligible: false },
+        });
+      });
+      await page.goto(`${servers.webUrl}/dashboard`, { waitUntil: "networkidle" });
+      await page.getByRole("checkbox").check();
+      await page.getByRole("button", { name: "Accept and continue" }).click();
+      const profile = page.getByRole("dialog", { name: "Choose how players know you" });
+      await profile.getByLabel("Display name").fill("No Queue Player");
+      await profile.getByLabel("Handle").fill("no-queue-player");
+      await profile.getByRole("button", { name: "Create public profile" }).click();
+      const agent = page.getByRole("dialog", { name: "Create your first Agent" });
+      await expect(agent).toBeVisible({ timeout: 2_500 });
+      await agent.getByRole("button", { name: "Create an Agent" }).click();
+      await expect(page).toHaveURL(`${servers.webUrl}/dashboard/agents/create`, { timeout: 30_000 });
+      await expect(page.locator("#agent-name")).toBeVisible();
     } finally {
       await context.close();
     }

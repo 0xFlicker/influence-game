@@ -16,6 +16,7 @@ import {
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
+import { createSessionToken } from "../middleware/auth.js";
 import { createSeason } from "../services/seasons.js";
 import { observeHarnessSignals } from "./harness-signals.js";
 import { cleanupE2eResources } from "./cleanup.js";
@@ -32,6 +33,7 @@ interface IdentityFixture {
   walletAddress: string;
   completeJwt: string;
   requiredJwt: string;
+  noQueueJwt: string;
   deferrableJwt: string;
   collisionJwt: string;
 }
@@ -161,6 +163,13 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     handle: null,
     createdAt: "2026-06-30T23:59:59.999Z",
   });
+  const noQueue = await createPlayerUser(db, 4, {
+    id: "e2e-no-queue-player",
+    publicId: randomUUID(),
+    displayName: null,
+    handle: null,
+    createdAt: LAUNCH_CUTOFF,
+  });
   const collision = await createPlayerUser(db, 3, {
     id: "e2e-collision-player",
     publicId: randomUUID(),
@@ -170,7 +179,6 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
   });
   for (const userId of [
     complete.userId,
-    required.userId,
     deferrable.userId,
     collision.userId,
   ]) {
@@ -196,7 +204,8 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     publicId: completePublicId,
     walletAddress: complete.wallet.address,
     completeJwt: complete.jwt,
-    requiredJwt: required.jwt,
+    requiredJwt: await createSessionToken(required.userId, { legalAcceptance: null }),
+    noQueueJwt: await createSessionToken(noQueue.userId, { legalAcceptance: null }),
     deferrableJwt: deferrable.jwt,
     collisionJwt: collision.jwt,
   };
