@@ -7,6 +7,7 @@ COPY package.json bun.lock bunfig.toml ./
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
 COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
+COPY packages/made-for-video/package.json packages/made-for-video/
 COPY packages/web/package.json packages/web/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun install --frozen-lockfile

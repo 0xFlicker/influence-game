@@ -182,6 +182,42 @@ describe("atomic character draft generation", () => {
     await waitFor(() => expect(submissions).toHaveLength(1));
     expect(submissions[0]!.fullBodyReferenceUrl).toBeNull();
     expect(submissions[0]!.avatarGenerationRequestId).toBeUndefined();
+    await waitFor(() => expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).toBeNull());
+    expect(domWindow.sessionStorage.getItem(`${draftKey}:interrupted`)).toBeNull();
+    expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
+    view.unmount();
+    const reopened = await renderForm(false);
+    let refinements = 0;
+    globalThis.fetch = (async () => { refinements++; return Response.json({ error: "Test stops before image generation" }, { status: 503 }); }) as unknown as typeof fetch;
+    fireEvent.click(reopened.getByRole("button", { name: "Refine with AI" }));
+    await waitFor(() => expect(refinements).toBe(1));
+  });
+  test.each(["clear", "discard"])("%s retires an abandoned reference and permits AI refinement", async (action) => {
+    domWindow.sessionStorage.setItem(`${draftKey}:visual-reference`, JSON.stringify({ requestId: "abandoned-request" }));
+    domWindow.sessionStorage.setItem(`${draftKey}:interrupted`, String(Date.now()));
+    const view = await renderForm(false);
+    if (action === "clear") {
+      fireEvent.click(view.getByRole("button", { name: "Clear draft" }));
+    } else {
+      fireEvent.click(view.getByRole("button", { name: "Apply draft" }));
+      fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(view.getByRole("button", { name: "Keep editing" }));
+      expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).not.toBeNull();
+      fireEvent.click(view.getByRole("button", { name: "Cancel" }));
+      fireEvent.click(view.getByRole("button", { name: "Discard" }));
+    }
+    expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).toBeNull();
+    expect(domWindow.sessionStorage.getItem(`${draftKey}:interrupted`)).toBeNull();
+    let refinements = 0;
+    globalThis.fetch = (async () => { refinements++; return Response.json({ error: "Test stops before image generation" }, { status: 503 }); }) as unknown as typeof fetch;
+    if (action === "discard") {
+      view.unmount();
+      const reopened = await renderForm(false);
+      fireEvent.click(reopened.getByRole("button", { name: "Refine with AI" }));
+    } else {
+      fireEvent.click(view.getByRole("button", { name: "Refine with AI" }));
+    }
+    await waitFor(() => expect(refinements).toBe(1));
   });
   test.each([false, true])("AI completes every field and both images while preserving the selected reference (text initially empty: %s)", async (emptyText) => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
@@ -278,6 +314,7 @@ describe("atomic character draft generation", () => {
     }
     expect(submissions[0]!.submissionId).toBe(submissions[1]!.submissionId);
     expect(domWindow.sessionStorage.getItem(draftKey)).not.toBeNull();
+    expect(domWindow.sessionStorage.getItem(`${draftKey}:visual-reference`)).not.toBeNull();
   });
   test("restoring an interrupted upload preserves the old assets and requires confirmation", async () => {
     const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);

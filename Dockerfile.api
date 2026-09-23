@@ -7,8 +7,12 @@ COPY package.json bun.lock bunfig.toml ./
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
 COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
+COPY packages/made-for-video/package.json packages/made-for-video/
 COPY packages/web/package.json packages/web/
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --linker=isolated
+# Preserve Sharp and its locked native dependency closure outside the JS bundle.
+RUN mkdir /sharp-runtime \
+  && cp -RL "$(dirname "$(readlink -f packages/api/node_modules/sharp)")/." /sharp-runtime/
 
 # Build a single bundled file
 FROM base AS build
@@ -24,14 +28,15 @@ COPY --from=deps /app/packages/api/node_modules ./packages/api/node_modules
 COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
 
 WORKDIR /app/packages/api
-RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external \
-  && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
-  && bun build src/scripts/backfill-agent-revisions.ts --target=bun --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external \
-  && bun build src/scripts/rotate-private-avatar-storage-keys.ts --target=bun --outdir=dist --entry-naming=rotate-private-avatar-storage-keys.js --sourcemap=external \
-  && bun build src/scripts/preflight-auth-identities.ts --target=bun --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external \
-  && bun build src/scripts/mint-deployment-control-token.ts --target=bun --outdir=dist --entry-naming=mint-deployment-control-token.js --sourcemap=external
+RUN bun build src/index.ts --target=bun --external sharp --outdir=dist --sourcemap=external \
+  && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --external sharp --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
+  && bun build src/scripts/backfill-agent-revisions.ts --target=bun --external sharp --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external \
+  && bun build src/scripts/rotate-private-avatar-storage-keys.ts --target=bun --external sharp --outdir=dist --entry-naming=rotate-private-avatar-storage-keys.js --sourcemap=external \
+  && bun build src/scripts/preflight-auth-identities.ts --target=bun --external sharp --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external \
+  && bun build src/scripts/mint-deployment-control-token.ts --target=bun --external sharp --outdir=dist --entry-naming=mint-deployment-control-token.js --sourcemap=external \
+  && bun build src/scripts/check-visual-runtime.ts --target=bun --external sharp --outdir=dist --sourcemap=external
 
-# Slim runtime — no node_modules needed
+# Slim runtime — only Sharp needs runtime node_modules
 FROM oven/bun:1-slim AS runtime
 WORKDIR /app
 
@@ -41,6 +46,11 @@ LABEL org.opencontainers.image.source=https://github.com/0xFlicker/influence-gam
 COPY --from=build /app/packages/api/dist/ ./dist/
 COPY --from=build /app/packages/api/drizzle/ ./drizzle/
 COPY --from=build /app/packages/api/package.json ./
+COPY --from=deps /sharp-runtime/ ./node_modules/
+COPY packages/web/public/avatars/personas/ ./assets/personas/
+ENV INFLUENCE_PERSONA_ASSET_DIR=/app/assets/personas
+# Provider-free: decode every bundled default and exercise the native image library.
+RUN bun dist/check-visual-runtime.js
 
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}

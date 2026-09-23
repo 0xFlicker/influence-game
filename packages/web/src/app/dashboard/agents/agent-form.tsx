@@ -425,8 +425,28 @@ export function AgentForm({
     setDraftReady(true);
   }
 
+  // Retire only this tab's active draft pointers. Server receipts remain durable,
+  // and the epoch prevents any outstanding request from applying a late result.
+  function retireDraft() {
+    if (draftStorageKey) {
+      // Keep the interruption fence if removing either recoverable pointer fails.
+      for (const suffix of ["", ":visual-reference", ":interrupted"]) {
+        if (!removeEditorStorage(`${draftStorageKey}${suffix}`)) return false;
+      }
+    }
+    generationEpoch.current += 1;
+    referenceRequest.current = null;
+    setDraftReady(false);
+    setGenerationDeadline(null);
+    setProfileGenerating(false);
+    setReferenceBusy(false);
+    setDraftAvatarCompletion(null);
+    setUnfinishedReplacement(false);
+    return true;
+  }
+
   function clearStoredDraft() {
-    if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+    if (!retireDraft()) {
       setDraftStorageError("The local draft could not be cleared. Browser storage may be unavailable.");
       return;
     }
@@ -437,7 +457,7 @@ export function AgentForm({
   async function handleGenerate() {
     const savedReference = draftStorageKey ? readEditorStorage(`${draftStorageKey}:visual-reference`) : null;
     if (referenceRequest.current || (savedReference?.ok && savedReference.value)) {
-      setAiError("The previous image request is unfinished. Retry that reference request or save the current draft before starting a different character generation.");
+      setAiError("The previous image request is unfinished. Retry that reference request, submit the selected assets, or discard the draft before starting a different character generation.");
       return;
     }
     const epoch = beginGeneration();
@@ -541,7 +561,7 @@ export function AgentForm({
       if (!submission.current || submission.current.fingerprint !== fingerprint) submission.current = { id: createRequestId(), fingerprint };
       saveLocalDraft();
       await onSubmit({ ...params, submissionId: submission.current.id }, { creationRequestId });
-      if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+      if (!retireDraft()) {
         setDraftStorageError("The saved Agent is safe, but its local recovery draft could not be cleared.");
       }
     } catch (error) {
@@ -551,12 +571,12 @@ export function AgentForm({
   }
 
   function requestCancel() {
-    if (dirty || draftAvatarCompletion || generationBusy || uploading) setConfirmDiscard(true);
-    else onCancel();
+    if (dirty || draftAvatarCompletion || generationBusy || uploading || unfinishedReplacement) setConfirmDiscard(true);
+    else confirmCancel();
   }
 
   function confirmCancel() {
-    if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
+    if (!retireDraft()) {
       setDraftStorageError("The local draft could not be cleared. Browser storage may be unavailable.");
       setConfirmDiscard(false);
       return;

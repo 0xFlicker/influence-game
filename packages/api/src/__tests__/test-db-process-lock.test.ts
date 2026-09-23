@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 async function waitForFile(path: string, processHandle: Bun.Subprocess): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (const deadline = Date.now() + 30_000; Date.now() < deadline;) {
     if (await Bun.file(path).exists()) return;
     if (processHandle.exitCode !== null) {
       const stderr = processHandle.stderr instanceof ReadableStream
@@ -39,9 +39,9 @@ async function waitForFile(path: string, processHandle: Bun.Subprocess): Promise
   throw new Error("Timed out waiting for DB lock probe");
 }
 
-function spawnProbe(holdMs: number, startedPath: string, readyPath: string): Bun.Subprocess {
+function spawnProbe(releasePath: string, startedPath: string, readyPath: string): Bun.Subprocess {
   const processHandle = Bun.spawn(
-    [process.execPath, "run", probePath, String(holdMs), startedPath, readyPath],
+    [process.execPath, "run", probePath, releasePath, startedPath, readyPath],
     {
       cwd: resolve(import.meta.dir, "../.."),
       env: {
@@ -60,7 +60,7 @@ function spawnProbe(holdMs: number, startedPath: string, readyPath: string): Bun
 async function waitForAdvisoryLockContention(): Promise<void> {
   const client = postgres(testDatabaseUrl, { max: 1, onnotice: () => {} });
   try {
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+    for (const deadline = Date.now() + 30_000; Date.now() < deadline;) {
       const rows = await client<{ granted: boolean }[]>`
         SELECT granted
         FROM pg_locks
@@ -88,15 +88,18 @@ describe("shared test database process lock", () => {
     const secondStartedPath = join(directory, "second-started");
     const secondReadyPath = join(directory, "second-ready");
 
-    const first = spawnProbe(1_500, firstStartedPath, firstReadyPath);
+    const releasePath = join(directory, "release-first");
+    const first = spawnProbe(releasePath, firstStartedPath, firstReadyPath);
     await waitForFile(firstReadyPath, first);
 
-    const second = spawnProbe(0, secondStartedPath, secondReadyPath);
+    const second = spawnProbe("-", secondStartedPath, secondReadyPath);
     await waitForFile(secondStartedPath, second);
     await waitForAdvisoryLockContention();
 
+    expect(await Bun.file(secondReadyPath).exists()).toBe(false);
+    await Bun.write(releasePath, "release");
     expect(await first.exited).toBe(0);
     await waitForFile(secondReadyPath, second);
     expect(await second.exited).toBe(0);
-  }, 10_000);
+  }, 120_000);
 });

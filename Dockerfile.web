@@ -8,6 +8,7 @@ COPY packages/web/package.json packages/web/
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
 COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
+COPY packages/made-for-video/package.json packages/made-for-video/
 RUN bun install --frozen-lockfile
 
 # Build Next.js

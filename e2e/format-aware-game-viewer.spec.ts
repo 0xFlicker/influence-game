@@ -156,11 +156,13 @@ test.describe("format-aware game viewer", () => {
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
-    await expect.poll(() => player.locator('blockquote').evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
-    const bounds = await player.locator('blockquote').evaluate((element) => ({ top: element.getBoundingClientRect().top, bottom: element.getBoundingClientRect().bottom, height: window.innerHeight, scroll: element.scrollHeight, client: element.clientHeight }));
-    expect(bounds.top).toBeGreaterThanOrEqual(0);
-    expect(bounds.bottom).toBeLessThanOrEqual(bounds.height);
-    expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
+    // ResizeObserver updates frame geometry and pagination in separate passes.
+    // Assert both together so an old page size cannot satisfy an earlier check.
+    await expect.poll(() => player.locator('blockquote').evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= window.innerHeight
+        && element.scrollHeight <= element.clientHeight + 1;
+    })).toBe(true);
     await player.getByRole("button", { name: /Play/ }).filter({ visible: true }).click();
     await player.getByRole("img").click();
     const controls = player.locator('[data-replay-controls]');
@@ -179,8 +181,36 @@ test.describe("format-aware game viewer", () => {
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   });
 
+  test("native fullscreen enters and exits without changing paused speech", async ({ page }) => {
+    const slug = "native-fullscreen-fixture";
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
+      entrySequence: 1, round: 0, phase: "INTRODUCTION", from: scenario.roster[0]!.id,
+      scope: "public", text: "The same speech stays on screen. ".repeat(20), timestamp: Date.now(),
+    } }));
+    const speech = page.locator('[data-solo-image] blockquote');
+    await expect(speech.locator('..')).toHaveCSS("opacity", "1");
+    await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+    await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await expect(speech).toContainText("The same speech stays on screen.");
+    await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+    await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
+    await expect(speech).toContainText("The same speech stays on screen.");
+    await expect(page.getByRole("button", { name: "Enter fullscreen", exact: true })).toBeFocused();
+  });
+
   for (const confirmedHead of [false, true]) {
     test(`full-body solo speech and House summary fit the fullscreen midline layout (${confirmedHead ? "confirmed head" : "legacy fallback"})`, async ({ page }) => {
+      // Chromium cannot resize its native fullscreen window. Exercise rotation
+      // in the viewport fallback; native entry/exit is covered separately.
+      await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
       const slug = "full-body-solo-fixture";
       const scenario = createFormatKernelViewerScenario("two_names_declined");
       const actor = scenario.roster[0]!;

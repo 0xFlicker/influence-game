@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { validHeadRectangle } from "@influence/engine/character-portrait";
 import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
+import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type FrozenVisualProfile } from "@influence/engine/visual-mode";
@@ -20,7 +21,10 @@ export async function readVisualProfileImage(url: string | null, profile: Pick<F
     let hash = 0;
     for (const char of profile.name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
     const key = PERSONAS.includes(profile.personaKey) ? profile.personaKey : PERSONAS[hash % PERSONAS.length]!;
-    return readFile(new URL(`../../../web/public/avatars/personas/${key}.png`, import.meta.url));
+    const directory = process.env.INFLUENCE_PERSONA_ASSET_DIR;
+    return readFile(directory
+      ? join(directory, `${key}.png`)
+      : new URL(`../../../web/public/avatars/personas/${key}.png`, import.meta.url));
   }
   const parsed = new URL(url, "http://visual.invalid");
   if (parsed.pathname === "/api/uploads/local") {
