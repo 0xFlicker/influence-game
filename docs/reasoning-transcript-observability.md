@@ -629,6 +629,10 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - `packages/engine/src/context-recall-plan.ts`, `prompt-reuse.ts` (`RecallPlanReceiptAggregate`) — pure compiler, structural receipts, and safe simulation aggregate.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.
 
+### Shared diary format rules
+
+All seven formats expose their existing rule sheet, public name, and active-or-resolved status through `buildDiaryFormatContext`. Contestant answers and House questions/follow-ups use the same block. An active locked format supplies live rules; the current round's canonical resolution supplies completed-round rules after active pressure is cleared. Completed rounds are explicitly retrospective. No block is emitted before selection or in endgame, and canonical resolved context does not carry into a new round. Actor-scoped knowledge boundaries are unchanged; no transcript prose supplies format identity. Outgoing-prompt tests cover every format in both states and preserve The Short List's separate strategic guidance. Continue using direct House calls and typed contracts, with no `as any`.
+
 ### The Short List coordination guidance
 
 The catalog owns one shared guidance text about decisive ballots, negotiated voter-to-target placements, intended totals, and broken commitments. All players receive both parts in active-format social prompts (Mingle, alliance discussions, huddles, and diaries) and in the sealed ballot prompt. No transcript parsing or spoken-target classification selects the advice. After resolution clears active format pressure, diary context uses only the current round's canonical `format.resolved` event to identify The Short List and labels the guidance as reflection on a completed vote. This diary context ends at the next round or endgame. Provider-free outgoing-prompt tests prove delivery, equal wording, and timing; they do not prove wider vote distributions. Keep direct House calls and typed contracts, with no `as any`.

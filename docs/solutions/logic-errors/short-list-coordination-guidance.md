@@ -21,3 +21,9 @@ current-round format ID from the canonical resolution event, with an explicit
 completed-vote label. The context ends at a new round or endgame. Outgoing-prompt
 tests cover all player roles, social and ballot delivery, and resolved diaries.
 Actual coordination and vote spread still require observation of fresh play.
+
+All formats now share their existing rule sheet, public name, and active/resolved
+status with both the House interviewer and the contestant. The shared diary block
+uses the locked format or current-round canonical resolution, excludes unselected
+menus and endgame, and explicitly treats completed rounds as reflection. This
+closes the general rules gap without replacing the Short List's strategic advice.

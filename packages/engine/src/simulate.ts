@@ -62,7 +62,10 @@
  * huddle, diary, and ballot prompts. Inspect specific voter-to-target commitments,
  * projected totals, and defections against canonical ballots. Resolved-round
  * diaries frame the advice as reflection; prompt coverage is not gameplay proof.
- * Its two Mingle windows retain separate semantic provider coordinates;
+ * Every format's diary questions, follow-ups, and answers share its existing
+ * rules and active/resolved status. Completed rounds are reflection context;
+ * offered formats and endgame do not receive a stale standard-round rule block.
+ * Two Names' two Mingle windows retain separate semantic provider coordinates;
  * alliance proposal/version and huddle schedule/session IDs derive from the
  * canonical event boundary so accepted calls retain identity after API restart.
  * Nullable structured fields normalize exact provider `"null"` before validation;

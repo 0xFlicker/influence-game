@@ -97,6 +97,7 @@ import {
   markStrategyReconciliationRequired,
 } from "./strategy-state";
 import { ruleSheetForFormat } from "./format-pressure";
+import { buildDiaryFormatContext } from "./diary-format-context";
 import type {
   LlmProviderRuntime,
   LlmToolChoiceMode,
@@ -5183,10 +5184,14 @@ Use the farewell_message tool. Keep the public message to 1-2 sentences.`;
     const emotionalRange = DIARY_EMOTIONAL_RANGE[this.personality];
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const resolvedFormatGuidance = ctx.resolvedRoundFormatId === "vote_bomb"
-      ? `\n## The Short List Reflection\nThe round has resolved. Use this guidance to reflect on coordination, commitments, and the outcome; the ballot is over.\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}\n`
+    const diaryFormat = buildDiaryFormatContext(ctx);
+    const diaryFormatSection = diaryFormat
+      ? `\n## Diary Round Format\n${JSON.stringify(diaryFormat, null, 2)}\n`
       : "";
-    const prompt = this.buildUserPrompt(ctx) + resolvedFormatGuidance + `
+    const resolvedFormatGuidance = diaryFormat?.status === "resolved" && ctx.resolvedRoundFormatId === "vote_bomb"
+      ? `\n## The Short List Reflection\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}\n`
+      : "";
+    const prompt = this.buildUserPrompt(ctx) + diaryFormatSection + resolvedFormatGuidance + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated

@@ -17,6 +17,7 @@ import { parsePlayerContinuityCapsule } from "../player-continuity";
 import { Phase } from "../types";
 import { modelCatalogEntryById } from "../model-catalog";
 import { ruleSheetForFormat } from "../format-pressure";
+import { LAUNCH_FORMAT_IDS, displayNameForFormat } from "../format-presentation-metadata";
 import {
   compileRecallPlan,
   emptyRecallContinuitySnapshot,
@@ -6941,6 +6942,45 @@ describe("U4 selective context recall rendering", () => {
   });
 });
 
+
+describe("diary round format rules", () => {
+  for (const formatId of LAUNCH_FORMAT_IDS) {
+    it.each(["active", "resolved"])(`includes ${formatId} rules and %s timing in contestant answers`, async (status) => {
+      const requests: Array<Record<string, unknown>> = [];
+      const ctx: PhaseContext = {
+        ...makeContext(Phase.DIARY_ROOM),
+        ...(status === "resolved" ? { resolvedRoundFormatId: formatId } : {
+          formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: [formatId], selectedFormat: formatId, ruleSheetSummary: ruleSheetForFormat(formatId) },
+        }),
+        ...(formatId === "restricted_history" && status === "active" ? { restrictedHistoryLegality: { priorTargetIds: [], priorTargetNames: [], legalTargetIds: ["mira-id", "vera-id"], legalTargetNames: ["Mira", "Vera"] } } : {}),
+      };
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the format.", message: "The placement mattered.", strategyDelta: null })), "gpt-5-nano");
+      agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+      await agent.getDiaryEntry(ctx, "What is your read on the round?");
+      const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+      expect(prompt).toContain("## Diary Round Format");
+      expect(prompt).toContain(`"name": "${displayNameForFormat(formatId)}"`);
+      expect(prompt).toContain(`"status": "${status}"`);
+      expect(prompt).toContain(JSON.stringify(ruleSheetForFormat(formatId)));
+      expect(prompt).toContain(status === "resolved" ? "not on casting another ballot" : "its outcome is not yet resolved");
+    });
+  }
+
+  it.each([false, true])("does not invent a diary format before selection or retain one in endgame (%s)", async (endgame) => {
+    const requests: Array<Record<string, unknown>> = [];
+    const ctx: PhaseContext = {
+      ...makeContext(Phase.DIARY_ROOM),
+      formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: ["vote_bomb", "safety_bounce"], selectedFormat: null, ruleSheetSummary: null },
+      ...(endgame ? { endgameStage: "reckoning", resolvedRoundFormatId: "vote_bomb" } : {}),
+    };
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the moment.", message: "I am watching the room.", strategyDelta: null })), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+    await agent.getDiaryEntry(ctx, "What are you thinking?");
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+    expect(prompt).not.toContain("## Diary Round Format");
+    expect(prompt).not.toContain("## The Short List Reflection");
+  });
+});
 
 describe("The Short List coordination guidance", () => {
   const responsibility = "Concentrating votes on one player can make that player's own ballot decide who exits. Consider whether you want that responsibility yourself, or want another player to have it. You can accept that role, bargain over it, or ask others for a different plan.";

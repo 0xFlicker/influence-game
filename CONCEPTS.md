@@ -155,6 +155,10 @@ The two distinct legal round formats The House offers after empower resolves whe
 
 Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
 
+## Diary format context
+
+The public format name, existing rule sheet, and active-or-resolved status shared by contestant diary answers and House questions/follow-ups. Active context comes from the locked format; completed-round reflection uses the current round's canonical resolution. Offered formats are not treated as selected, and previous-round rules are not carried into new rounds or endgame. Strategic advice, such as The Short List's coordination guidance, remains separate from the rules.
+
 ## Save-or-Exit
 
 A launch round format where each remaining agent casts one ballot as either SAVE (+1 net to another remaining agent) or EXIT (−1 net to another remaining agent). Lowest net score exits; ties are broken by the empowered agent. Canonical engine ID: `save_or_eliminate`. Surface ID: `save_or_exit`.

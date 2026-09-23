@@ -20,6 +20,8 @@ import { createEmptyHouseNarrativeContinuity } from "../house-summary-frontier";
 import { modelCatalogEntryById } from "../model-catalog";
 import { TokenTracker } from "../token-tracker";
 import { Phase } from "../types";
+import { LAUNCH_FORMAT_IDS, displayNameForFormat } from "../format-presentation-metadata";
+import { ruleSheetForFormat } from "../format-pressure";
 import {
   ProviderAcceptedValueIntegrityError,
   type ProviderAttemptRecord,
@@ -1283,6 +1285,49 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
         },
       },
     });
+  });
+
+  for (const formatId of LAUNCH_FORMAT_IDS) {
+    it.each(["active", "resolved"])(`supplies ${formatId} rules and %s timing to diary questions and follow-ups`, async (status) => {
+      const requests: Array<Record<string, unknown>> = [];
+      const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [
+        { content: "How did those rules affect your plan?" },
+        { content: JSON.stringify({ decision: "follow_up", text: "Which commitment mattered?" }) },
+      ]), "test-model");
+      const context = makeDiaryContext();
+      context.playerKnowledge = {
+        ...context.playerKnowledge,
+        ...(status === "resolved" ? { resolvedRoundFormatId: formatId } : {
+          formatPressure: { empoweredId: "nyx-id", empoweredName: "Nyx", offeredFormats: [formatId], selectedFormat: formatId, ruleSheetSummary: ruleSheetForFormat(formatId) },
+        }),
+      };
+      await house.generateQuestion(context);
+      await house.generateFollowUpOrClose(context, [{ question: "How did those rules affect your plan?", answer: "I needed a commitment." }]);
+      expect(requests).toHaveLength(2);
+      for (const request of requests) {
+        const prompt = (request.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+        expect(prompt).toContain('"roundFormat": {');
+        expect(prompt).toContain(`"name": "${displayNameForFormat(formatId)}"`);
+        expect(prompt).toContain(`"status": "${status}"`);
+        expect(prompt).toContain(JSON.stringify(ruleSheetForFormat(formatId)));
+        expect(prompt).toContain(status === "resolved" ? "not on casting another ballot" : "its outcome is not yet resolved");
+      }
+    });
+  }
+
+  it.each([false, true])("omits diary format rules before selection or during endgame (%s)", async (endgame) => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(makeOpenAIStub(requests, [{ content: "What matters now?" }]), "test-model");
+    const context = makeDiaryContext();
+    context.playerKnowledge = {
+      ...context.playerKnowledge,
+      formatPressure: { empoweredId: "nyx-id", empoweredName: "Nyx", offeredFormats: ["vote_bomb", "safety_bounce"], selectedFormat: null, ruleSheetSummary: null },
+      ...(endgame ? { endgameStage: "reckoning", resolvedRoundFormatId: "vote_bomb" } : {}),
+    };
+    await house.generateQuestion(context);
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+    expect(prompt).toContain('"roundFormat": null');
+    expect(prompt).not.toContain(ruleSheetForFormat("vote_bomb"));
   });
 
   it("uses safe diary board keys while preserving prior player-authored Q&A exactly", async () => {
