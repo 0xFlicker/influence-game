@@ -38,6 +38,7 @@ export function StandingDailyAgentPrompt({
   const { needsInvite } = useInvite();
   const router = useRouter();
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
+  const [creationOnly, setCreationOnly] = useState(false);
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [pending, setPending] = useState(false);
@@ -108,7 +109,7 @@ export function StandingDailyAgentPrompt({
     try {
       const status = await getFreeQueueStatus();
       if (generation !== requestGeneration.current) return;
-      if (!status.promptEligible) {
+      if (!status.promptEligible && immediateHandoffRef.current === null) {
         retryAttemptRef.current = 0;
         setOpen(false);
         transitionImmediateHandoff("ineligible");
@@ -117,8 +118,16 @@ export function StandingDailyAgentPrompt({
       const ownedAgents = await listAgents();
       if (generation !== requestGeneration.current) return;
       retryAttemptRef.current = 0;
+      // First-agent onboarding must not depend on an active Daily Free season.
+      // Existing owners still follow the queue's eligibility and suppression rules.
+      if (!status.promptEligible && ownedAgents.length > 0) {
+        setOpen(false);
+        transitionImmediateHandoff("ineligible");
+        return;
+      }
       const handoff = transitionImmediateHandoff("eligible");
       setAgents(ownedAgents);
+      setCreationOnly(!status.promptEligible);
       const openDelay = handoff.openDelayMs ?? DAILY_AGENT_PROMPT_DELAY_MS;
       if (openDelay === 0) {
         setOpen(true);
@@ -226,6 +235,10 @@ export function StandingDailyAgentPrompt({
   }
   async function maybeLater() {
     if (pending) return;
+    if (creationOnly) {
+      dismissForSession();
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -256,18 +269,26 @@ export function StandingDailyAgentPrompt({
         className="influence-panel max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl p-6 shadow-2xl sm:p-8"
       >
         <h2 id="daily-agent-title" className="text-xl font-bold text-text-primary">
-          Play for Free
+          {creationOnly ? "Create your first Agent" : "Play for Free"}
         </h2>
 
         <>
-          <p className="influence-copy mt-2 text-sm">Choose a saved Agent for the Daily Free queue.</p>
+          <p className="influence-copy mt-2 text-sm">
+            {promptBranch === "create"
+              ? creationOnly
+                ? "Give your Agent a name, personality, and strategy to play in The House."
+                : "Create your first Agent to enter the Daily Free queue."
+              : "Choose a saved Agent for the Daily Free queue."}
+          </p>
           <div className="mt-5 space-y-3">
               {promptBranch === "create" && (
                 <button
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    router.push("/dashboard/agents/create?flow=daily_free");
+                    router.push(creationOnly
+                      ? "/dashboard/agents/create"
+                      : "/dashboard/agents/create?flow=daily_free");
                   }}
                   className="influence-button-primary w-full rounded-lg px-4 py-3 text-sm font-semibold"
                 >

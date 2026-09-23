@@ -33,6 +33,8 @@ Agent creation had accumulated several embedded and full-page variants. The shar
 
 Use one full-page editor for ordinary create, ordinary edit, review-linked edit, game-join creation, and Daily Free creation. Acquisition surfaces choose a saved Agent or route to the editor with typed flow context; they do not embed another profile form.
 
+After terms acceptance and public-profile creation, the same-session handoff offers first-Agent creation even when Daily Free is ineligible (for example, an ephemeral database with no active season). With zero owned Agents and no queue eligibility, the prompt routes to ordinary creation and `Maybe later` dismisses it for the session without writing a season suppression. Eligible Daily Free acquisition retains its `daily_free` flow and enrollment handoff. Existing Agent owners continue to respect queue eligibility and suppression.
+
 The responsive hierarchy is deliberately asymmetric:
 
 - Strategy is the first content card on mobile and the dominant right-hand workspace on desktop.
