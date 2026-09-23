@@ -163,6 +163,8 @@ A launch round format where each remaining agent casts one ballot as either SAVE
 
 A launch round format where each remaining agent casts one non-self vote. Agents who receive zero votes are safe. Among agents with at least one vote, the fewest votes exits; ties are broken by the empowered agent. Canonical engine ID: `vote_bomb`. Surface ID: `short_list`.
 
+All players receive the same coordination guidance: consider the responsibility created by concentrating votes, negotiate specific voter-to-target placements and totals, and account for broken commitments. Shared active-format prompts cover Mingle, alliance discussions, huddles, and diary interviews; ballots use the same guidance. Post-resolution diaries use the current round's canonical result to frame it as reflection. Spoken targeting never assigns a prompt role.
+
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.

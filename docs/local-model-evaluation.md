@@ -393,6 +393,10 @@ Privacy contract for call sites and replay: historical Mingle eligibility requir
 
 Local model evaluation is a first-class lane because Influence needs agents that are fun for the user and friends to watch. The biggest qualitative gap is strategic depth. A cheaper or local model is only useful if it can sustain alliances, plans, betrayals, and endgame arguments across a complete game.
 
+### The Short List coordination guidance
+
+For a bounded `--formats vote_bomb --chatty --diary` evaluation (the CLI uses the canonical ID for The Short List), inspect Mingle and huddle negotiations for specific voter-to-target commitments, expected totals, alternative distributions, and contingencies for broken promises. Every player receives the same guidance, including accepting, bargaining over, or resisting a decisive-ballot role. Ballot prompts repeat the same advice; resolved-round diaries frame it as reflection using canonical format identity. Compare proposed placements with accepted canonical ballots to evaluate coordination and vote spread; the prompt tests alone do not establish improved play. Preserve direct House calls and typed contracts, with no `as any`.
+
 ### Two Names board context
 
 New Override draws exclude Empowered and include every other living contestant, including both nominees. Inspect the canonical setup event to verify the accepted holder; previously recorded games retain their original holder and are never re-drawn during replay or recovery.

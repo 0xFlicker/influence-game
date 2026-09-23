@@ -58,6 +58,10 @@
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
  * New Override draws exclude Empowered; both nominees remain eligible.
+ * The Short List gives every player shared coordination guidance in social,
+ * huddle, diary, and ballot prompts. Inspect specific voter-to-target commitments,
+ * projected totals, and defections against canonical ballots. Resolved-round
+ * diaries frame the advice as reflection; prompt coverage is not gameplay proof.
  * Its two Mingle windows retain separate semantic provider coordinates;
  * alliance proposal/version and huddle schedule/session IDs derive from the
  * canonical event boundary so accepted calls retain identity after API restart.

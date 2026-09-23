@@ -5183,7 +5183,10 @@ Use the farewell_message tool. Keep the public message to 1-2 sentences.`;
     const emotionalRange = DIARY_EMOTIONAL_RANGE[this.personality];
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `
+    const resolvedFormatGuidance = ctx.resolvedRoundFormatId === "vote_bomb"
+      ? `\n## The Short List Reflection\nThe round has resolved. Use this guidance to reflect on coordination, commitments, and the outcome; the ballot is over.\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}\n`
+      : "";
+    const prompt = this.buildUserPrompt(ctx) + resolvedFormatGuidance + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
@@ -5722,12 +5725,16 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 
     const lockedName =
       pressure.selectedFormatName ?? displayNameForFormat(pressure.selectedFormat);
+    // Ballot requests receive this same guidance from the sealed decision surface.
+    const coordinationGuidance = pressure.selectedFormat === "vote_bomb" && ctx.phase !== Phase.FORMAT_RESOLVE
+      ? `\n\n## The Short List Coordination\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}`
+      : "";
     return `## Current Format Pressure
 - Locked round format: ${lockedName} (tool id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
-Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
+Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}`;
   }
 
   private buildRestrictedHistoryLegalitySection(ctx: PhaseContext): string {

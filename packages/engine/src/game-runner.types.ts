@@ -1377,6 +1377,8 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Current format menu, locked rules, and public Safety Bounce board. */
   formatPressure?: FormatPressureProjection;
+  /** Current round's canonical resolved format, supplied for diary reflection. */
+  resolvedRoundFormatId?: LaunchFormatId;
   twoNamesBoard?: TwoNamesBoard;
   /** Actor-specific Restricted History exclusions and current legal targets. */
   restrictedHistoryLegality?: RestrictedHistoryLegalityProjection;

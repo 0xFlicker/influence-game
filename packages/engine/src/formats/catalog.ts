@@ -291,7 +291,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
       toolDescription: "Cast one sealed The Short List ballot for a remaining non-self contestant.",
       traceAction: "format-vote-bomb-ballot",
       strategyGuidance:
-        "The Short List rewards deliberate placement: loading several votes onto one contestant can leave a different contestant holding the fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.",
+        "Concentrating votes on one player can make that player's own ballot decide who exits. Consider whether you want that responsibility yourself, or want another player to have it. You can accept that role, bargain over it, or ask others for a different plan.\n\nCoordinate specific vote placements: who votes for whom, what totals that would produce, and who would exit. If the proposed outcome threatens you or an ally, negotiate an alternative distribution and seek commitments from the players needed to make it work. Votes are sealed, so consider what happens if someone breaks their commitment.",
       invalidTargetReason: "invalid_vote_bomb_target",
     },
     aggregate: sealedElimAggregateAdapter,

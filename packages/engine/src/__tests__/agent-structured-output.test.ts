@@ -2044,8 +2044,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[0]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[1]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[1]).not.toContain(ruleSheetForFormat("vote_bomb"));
-    expect(prompts[2]).toContain("loading");
-    expect(prompts[2]).toContain("stray vote");
+    expect(prompts[2]).toContain("Concentrating votes on one player");
+    expect(prompts[2]).toContain("Coordinate specific vote placements");
     expect(prompts[3]).toContain("Legal unclassified targets: Vera");
     expect(prompts[4]).toContain("Legal vulnerable targets: Mira, Vera");
     expect(prompts[5]).toContain("Legal tied targets: Mira, Vera");
@@ -2297,6 +2297,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("short_list");
     expect(prompt).toContain("safety_bounce");
     expect(prompt).not.toContain("Locked round format:");
+    expect(prompt).not.toContain("Concentrating votes on one player can make");
     expect(prompt).not.toContain(ruleSheetForFormat("save_or_eliminate"));
   });
 
@@ -2370,6 +2371,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[0]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[0]).toContain("ballot is sealed");
     expect(prompts[0]).not.toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[0]).not.toContain("Concentrating votes on one player can make");
     expect(prompts[1]).toContain("Locked round format: The Short List (tool id: short_list)");
     expect(prompts[1]).toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[1]).toContain("ballot is sealed");
@@ -2378,6 +2380,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[2]).toContain(ruleSheetForFormat("safety_bounce"));
     expect(prompts[2]).toContain("pointers are public");
     expect(prompts[2]).toContain("final exit ballot is sealed");
+    expect(prompts[2]).not.toContain("Concentrating votes on one player can make");
     for (const prompt of prompts) {
       expect(prompt).not.toContain("At Power, the empowered player");
       expect(prompt).not.toContain("Council decides");
@@ -6938,6 +6941,76 @@ describe("U4 selective context recall rendering", () => {
   });
 });
 
+
+describe("The Short List coordination guidance", () => {
+  const responsibility = "Concentrating votes on one player can make that player's own ballot decide who exits. Consider whether you want that responsibility yourself, or want another player to have it. You can accept that role, bargain over it, or ask others for a different plan.";
+  const coordination = "Coordinate specific vote placements: who votes for whom, what totals that would produce, and who would exit. If the proposed outcome threatens you or an ally, negotiate an alternative distribution and seek commitments from the players needed to make it work. Votes are sealed, so consider what happens if someone breaks their commitment.";
+  const guidance = `${responsibility}\n\n${coordination}`;
+
+  it("gives every player both guidelines during Mingle, alliances, huddles, ballots, and active diary interviews", async () => {
+    const players = makeContext().alivePlayers;
+    for (const player of players) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent(player.id, player.name, "strategic", makeToolSequenceOpenAIStub(requests, [
+        { toolName: "mingle_turn", args: { thinking: "Coordinate.", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, coordinationFact: null, noProposal: true, strategyDelta: null } },
+        { toolName: "take_alliance_action", args: { thinking: "Wait for a commitment.", decision: { action: "pass" }, strategyDelta: null } },
+        { toolName: "alliance_huddle_turn", args: { thinking: "Discuss placements.", message: "Let's compare our planned votes.", noReply: false, factAtoms: [], strategyDelta: null } },
+        { toolName: "short_list_ballot", args: { thinking: "Place my ballot.", target: players.find((other) => other.id !== player.id)!.name, strategyDelta: null } },
+      ]), "gpt-5-nano");
+      agent.onGameStart("game-1", players);
+      const ctx: PhaseContext = {
+        ...makeContext(Phase.FORMAT_MINGLE), selfId: player.id, selfName: player.name,
+        empoweredId: "mira-id",
+        formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: ["vote_bomb", "safety_bounce"], selectedFormat: "vote_bomb", ruleSheetSummary: ruleSheetForFormat("vote_bomb") },
+      };
+      await agent.takeMingleTurn(ctx, players.map((other) => other.name), []);
+      await agent.getAllianceAction(ctx, { kind: "proposer" });
+      await agent.getAllianceHuddleTurn(ctx, {
+        sessionId: "session", allianceId: "alliance", allianceName: "Our Plan", memberIds: players.map((other) => other.id), memberNames: players.map((other) => other.name),
+        purpose: "Coordinate placements.", window: "format", scheduleId: "schedule", pass: 1, priorFacts: [],
+      }, []);
+      await agent.getVoteBombBallot({ ...ctx, phase: Phase.FORMAT_RESOLVE }, players.map((other) => other.id));
+      const diaryAgent = new InfluenceAgent(player.id, player.name, "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the plan.", message: "I need commitments.", strategyDelta: null })), "gpt-5-nano");
+      diaryAgent.onGameStart("game-1", players);
+      await diaryAgent.getDiaryEntry({ ...ctx, phase: Phase.DIARY_ROOM }, "What is your plan?");
+      expect(requests).toHaveLength(5);
+      for (const request of requests) {
+        const prompt = (request.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+        expect(prompt.split(guidance)).toHaveLength(2);
+      }
+    }
+  });
+
+  it.each(["next round", "endgame"])("uses canonical resolution for diary reflection without retaining it into %s", async (boundary) => {
+    const players = makeContext().alivePlayers;
+    const state = new GameState(players, { gameId: "short-list-diary", formatManifest: ["vote_bomb"] });
+    const builder = new ContextBuilder(state, new TranscriptLogger(state), new Map(), 3);
+    state.startRound();
+    state.setEmpowered("atlas-id");
+    state.recordFormatSelected("atlas-id", "vote_bomb");
+    expect(builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM).resolvedRoundFormatId).toBeUndefined();
+    for (const player of players) state.recordFormatBallot({ formatId: "vote_bomb", voterId: player.id, targetId: player.id === "mira-id" ? "vera-id" : "mira-id" });
+    state.recordFormatResolution({ formatId: "vote_bomb", empoweredId: "atlas-id", eliminatedId: "vera-id", resolutionKind: "clear", tiedPlayerIds: ["vera-id"], tiebreakerId: null,
+      aggregate: { capability: "sealed_elim", totals: { "atlas-id": 0, "mira-id": 2, "vera-id": 1 }, eligiblePlayerIds: ["mira-id", "vera-id"] },
+    });
+    state.eliminatePlayer("vera-id");
+    const ctx = builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM);
+    expect(ctx.formatPressure).toBeUndefined();
+    expect(ctx.resolvedRoundFormatId).toBe("vote_bomb");
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Reflect on coordination.", message: "We agreed on placements.", strategyDelta: null })), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, players);
+    await agent.getDiaryEntry(ctx, "How did your plan work?");
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+    expect(prompt.split(guidance)).toHaveLength(2);
+    expect(prompt).toContain("The round has resolved.");
+    expect(prompt).not.toContain("Locked round format:");
+    expect(builder.buildPhaseContext("atlas-id", Phase.MINGLE).resolvedRoundFormatId).toBeUndefined();
+    if (boundary === "endgame") state.setEndgameStage("reckoning");
+    else state.startRound();
+    expect(builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM).resolvedRoundFormatId).toBeUndefined();
+  });
+});
 
 describe("Two Names canonical prompt board", () => {
   const players = [
