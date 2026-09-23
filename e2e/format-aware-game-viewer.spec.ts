@@ -110,7 +110,9 @@ test.describe("format-aware game viewer", () => {
     !RUN_FORMAT_VIEWER,
     "Set PLAYWRIGHT_FORMAT_VIEWER=1 to run the isolated local format viewer story.",
   );
-  test.describe.configure({ mode: "serial", retries: 0 });
+  // Each story owns its page/fixtures. Keep one worker, but run the remaining
+  // stories after a failure so CI reports the whole viewer's regressions.
+  test.describe.configure({ mode: "default", retries: 0 });
 
   test.beforeAll(async () => {
     test.setTimeout(180_000);
@@ -182,6 +184,7 @@ test.describe("format-aware game viewer", () => {
   });
 
   test("native fullscreen enters and exits without changing paused speech", async ({ page }) => {
+    await page.clock.install();
     const slug = "native-fullscreen-fixture";
     await page.setViewportSize({ width: 1280, height: 800 });
     const scenario = createFormatKernelViewerScenario("two_names_declined");
@@ -194,8 +197,14 @@ test.describe("format-aware game viewer", () => {
       scope: "public", text: "The same speech stays on screen. ".repeat(20), timestamp: Date.now(),
     } }));
     const speech = page.locator('[data-solo-image] blockquote');
+    await expect(page.getByRole("region", { name: "Introduction: Atlas", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Pause/ }).filter({ visible: true })).toBeVisible();
+    // Start within the reading interval, after the solo entrance/settling hold.
+    // Hydration can briefly render a readable paused seek at elapsed time zero.
+    await page.clock.runFor(1_500);
     await expect(speech.locator('..')).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
+    await expect(speech).toContainText("The same speech stays on screen.");
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
     await expect(speech).toContainText("The same speech stays on screen.");
@@ -282,13 +291,15 @@ test.describe("format-aware game viewer", () => {
         phase, from: actor.id, scope: "public", text: `Accepted dialogue ${index + 1}.`, timestamp: Date.now() + index,
       } }));
       const purpose = phase === "INTRODUCTION" ? "Introduction" : "Conversation";
-      await expect(page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true })).toBeVisible({ timeout: 15_000 });
+      const speech = page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true });
+      // Consecutive conversations share a speaker/region. Wait for this accepted
+      // line, not the previous line that may still be finishing its exit fade.
+      await expect(speech.getByText(`Accepted dialogue ${index + 1}.`, { exact: true })).toBeVisible({ timeout: 15_000 });
       const label = phase === "INTRODUCTION" ? "Introductions" : phase === "LOBBY" ? "Public Lobby" : "Format Mingle";
-      await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: label, level: 1, exact: true })).toBeVisible();
       await expect(page.locator(".influence-phase-title")).toHaveCount(0, { timeout: 15_000 });
-      await expect(page.getByRole("region", { name: `${purpose}: ${actor.name}`, exact: true }).getByText(`Accepted dialogue ${index + 1}.`, { exact: true })).toBeVisible();
       // Let this accepted speech finish before the next live publication arrives.
-      await page.waitForTimeout(4200);
+      await expect(page.getByRole("status").filter({ hasText: "Waiting for messages…" })).toBeVisible({ timeout: 15_000 });
     }
     expect(visualRequests).toBeGreaterThan(0);
     await expect(page.getByText("Waiting for messages…", { exact: true })).toHaveCount(1);
@@ -307,13 +318,16 @@ test.describe("format-aware game viewer", () => {
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect(page.locator("[data-format-cue]").first()).toBeVisible();
     await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
+    const pausedKind = await page.locator("[data-format-cue]").first().getAttribute("data-format-cue");
     fixture.setDecisionCount(scenario.decisions.length);
     fixture.sockets.at(-1)!.close({ code: 1001, reason: "test reconnect" });
     await expect.poll(() => fixture.sockets.length).toBe(2);
     await expect(page.getByRole("button", { name: "▶ Play", exact: true })).toBeVisible();
+    await expect(page.locator("[data-format-cue]").first()).toHaveAttribute("data-format-cue", pausedKind!);
     await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "▶ Play", exact: true }).click();
-    await expect(page.locator('[data-format-cue="format_roll_call"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("region", { name: "Ballot: Rex", exact: true })).toBeVisible({ timeout: 15_000 });
+    await assertSoloBallot(page, "Rex", "Lyra");
     await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
   });
 
@@ -457,26 +471,33 @@ test.describe("format-aware game viewer", () => {
           await expect(declined.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
           await expect(declined.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
         }
-        const plea = await seek("two_names_plea");
+        const speaker = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
+        const plea = page.getByRole("region", { name: `Plea: ${speaker}`, exact: true });
+        for (let i = 0; i < 30 && !await plea.count(); i++) await next();
         const quote = plea.getByRole("blockquote");
-        await expect(quote).toContainText("Judge the commitments I have actually kept");
-        const bounds = await quote.evaluate((element) => {
+        await expect(quote).toContainText("Keep me because the case against me");
+        // Image sizing and measured pagination settle in separate observers.
+        // Assert their combined result instead of sampling an intermediate page.
+        await expect.poll(() => quote.evaluate((element) => {
           const stage = element.closest('section')!.getBoundingClientRect();
           const rect = element.getBoundingClientRect();
-          return { fits: rect.bottom <= stage.bottom && rect.top >= stage.top, height: rect.height, overflow: getComputedStyle(element).overflowY };
-        });
-        expect(bounds.fits).toBe(true);
-        expect(bounds.height).toBeGreaterThan(40);
-        expect(bounds.overflow).toBe("auto");
+          return rect.bottom <= stage.bottom && rect.top >= stage.top
+            && rect.height > 40 && element.scrollHeight <= element.clientHeight + 1;
+        })).toBe(true);
         await expect(page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true })).toBeInViewport();
         await page.screenshot({ path: testInfo.outputPath("long-plea.png") });
         const sealing = await seek("two_names_ballots_sealing");
         await expect(sealing.locator("[data-nominee-id]")).toHaveCount(2);
         await expect(sealing).not.toContainText("Exit votes");
-        const roll = await seek("format_roll_call");
+        await expect(sealing.getByLabel("1 of 2 ballots sealed", { exact: true })).toBeVisible();
+        await next();
+        await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
+        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
-        await expect(roll.getByLabel(`${first}: 1 exit vote`, { exact: true })).toBeVisible();
-        await expect(roll.getByLabel("Echo: 0 exit votes", { exact: true })).toBeVisible();
+        await next();
+        await assertSoloBallot(page, scenarioId === "two_names_used_tie" ? "Lyra" : "Rex", first);
+        await next();
+        await assertSoloBallot(page, "Nova", scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
         await next();
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
@@ -493,6 +514,11 @@ test.describe("format-aware game viewer", () => {
       test.setTimeout(90_000);
       const scenario = createFormatKernelViewerScenario(entry.scenarioId);
       const liveDecisionCount = scenario.decisions.length - 1;
+      // Unrevealed ballots have no presentation beat. The player stays on the
+      // selected format (or the final public Safety Bounce pointer) until the
+      // canonical resolution arrives, rather than showing an operational card.
+      const livePhase = entry.scenarioId === "safety_bounce_tie"
+        ? "Format Resolution" : "Format Selection";
       await installDeterministicFormatGame(page, {
         slug: entry.slug,
         scenarioId: entry.scenarioId,
@@ -506,7 +532,7 @@ test.describe("format-aware game viewer", () => {
       const liveShell = page.getByTestId("match-watch-shell");
       await expect(liveShell).toBeVisible();
       await expect(liveShell).toHaveAttribute("data-watch-mode", "live");
-      await expect(liveShell.getByText("Format Resolution", { exact: true }).first())
+      await expect(liveShell.getByRole("heading", { name: livePhase, level: 1, exact: true }))
         .toBeVisible();
       await expect(liveShell.getByText(entry.formatName, { exact: true }).first())
         .toBeVisible();
@@ -527,7 +553,7 @@ test.describe("format-aware game viewer", () => {
       const reloadedShell = page.getByTestId("match-watch-shell");
       await expect(reloadedShell).toBeVisible();
       await expect(
-        reloadedShell.getByText("Format Resolution", { exact: true }).first(),
+        reloadedShell.getByRole("heading", { name: livePhase, level: 1, exact: true }),
       ).toBeVisible();
       await expect(
         reloadedShell.getByText(entry.formatName, { exact: true }).first(),
@@ -548,7 +574,7 @@ test.describe("format-aware game viewer", () => {
       await expect(
         replayShell.getByText(entry.formatName, { exact: true }).first(),
       ).toBeVisible();
-      await assertCompletedFormatReplayProgression(page, replayShell);
+      await assertCompletedFormatReplayProgression(page, replayShell, scenario);
 
       await page.goto(viewerUrl("/games/dark-coral-horn/results"), {
         waitUntil: "domcontentloaded",
@@ -617,7 +643,7 @@ test.describe("format-aware game viewer", () => {
         event: decision,
       }));
     }
-    const rollCall = page.locator('[data-format-cue="format_roll_call"]');
+    const rollCall = page.getByRole("region", { name: /^Ballot: / });
     await advanceClockUntilVisible(page, rollCall, "live format roll call");
 
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -746,17 +772,14 @@ test.describe("format-aware game viewer", () => {
     }
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    const rollCall = page.locator('[data-format-cue="format_roll_call"]');
+    const rollCall = page.getByRole("region", { name: /^Ballot: / });
     await advanceUntilVisible(page, rollCall, "format roll call");
-    await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(1);
+    const firstVoter = await rollCall.getAttribute("aria-label");
+    await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
     await page.keyboard.press("ArrowRight");
-    await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(2);
-    await expect(
-      rollCall.locator('[data-ledger-current="false"]'),
-    ).toHaveCount(1);
-    await expect(
-      rollCall.locator('[data-ledger-current="true"]'),
-    ).toHaveCount(1);
+    await expect(rollCall).not.toHaveAttribute("aria-label", firstVoter!);
+    await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
+    await expect(rollCall).toHaveCount(1);
     await expect(page.getByRole("button", { name: /audio|sound|mute/i })).toHaveCount(0);
     await captureSettledScreenshot(
       page,
@@ -864,13 +887,9 @@ test.describe("format-aware game viewer", () => {
     );
 
     await page.keyboard.press("ArrowRight");
-    const rollCall = page.locator('[data-format-cue="format_roll_call"]');
-    await expect(rollCall).toBeVisible();
-    await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(1);
-    const voterIds = await rollCall.locator("[data-ledger-voter]").evaluateAll(
-      (nodes) => nodes.map((node) => node.getAttribute("data-ledger-voter")),
-    );
-    expect(voterIds.every(Boolean)).toBe(true);
+    await assertSoloBallot(page, "Atlas", "Vera");
+    await page.keyboard.press("ArrowRight");
+    await assertSoloBallot(page, "Vera", "Finn");
   });
 
   test("keeps the classic replay/results route free of format presentation", async ({
@@ -941,6 +960,13 @@ test.describe("format-aware game viewer", () => {
   });
 });
 
+async function assertSoloBallot(page: Page, voter: string, target: string): Promise<void> {
+  const ballot = page.getByRole("region", { name: `Ballot: ${voter}`, exact: true });
+  await expect(ballot).toBeVisible();
+  await expect(ballot.getByRole("blockquote")).toHaveText(target);
+  await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+}
+
 async function advanceUntilVisible(
   page: Page,
   locator: Locator,
@@ -950,8 +976,7 @@ async function advanceUntilVisible(
   for (let index = 0; index < maxAdvances; index += 1) {
     if (await locator.isVisible().catch(() => false)) return;
     await page.keyboard.press("ArrowRight");
-    // Room-transition overlays intentionally block keyboard navigation. Let
-    // their deterministic timer settle before the next manual step.
+    // Flush director/render work before inspecting the next accepted beat.
     await page.clock.runFor(250);
   }
   throw new Error(
@@ -992,6 +1017,7 @@ async function pauseAutoplay(page: Page, accessibleName: string): Promise<void> 
 async function assertCompletedFormatReplayProgression(
   page: Page,
   replayShell: Locator,
+  scenario: ReturnType<typeof createFormatKernelViewerScenario>,
 ): Promise<void> {
   await pauseAutoplay(page, "⏸ Pause");
   const replayStart = page.getByRole("button", { name: "Go to replay start" });
@@ -1002,10 +1028,15 @@ async function assertCompletedFormatReplayProgression(
   await advanceUntilVisible(page, aggregate, "format aggregate");
   await expect(aggregate.locator("[data-ledger-voter]")).toHaveCount(0);
 
-  await page.keyboard.press("ArrowRight");
-  const rollCall = replayShell.locator('[data-format-cue="format_roll_call"]');
-  await expect(rollCall).toBeVisible();
-  await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(1);
+  // Every accepted ballot remains a separate roster-ordered speech beat.
+  // Expected speakers/targets come from fixture events, never transcript prose.
+  for (const voter of scenario.roster) {
+    const ballot = scenario.decisions.find(event => event.type === "format.ballot_cast" && event.payload.voterId === voter.id);
+    if (ballot?.type !== "format.ballot_cast") continue;
+    const target = scenario.roster.find(player => player.id === ballot.payload.targetId)!;
+    await page.keyboard.press("ArrowRight");
+    await assertSoloBallot(page, voter.name, target.name);
+  }
 
   const elimination = replayShell.locator(
     '[data-format-cue="format_elimination"]',
@@ -1020,9 +1051,9 @@ async function assertCompletedFormatReplayProgression(
 async function replayPlayerCounts(
   replayShell: Locator,
 ): Promise<{ alive: number; out: number }> {
-  const count = async (label: "Alive" | "Out") => {
+  const count = async (label: "In" | "Out") => {
     const value = await replayShell
-      .getByTestId(`match-watch-count-${label.toLowerCase()}`)
+      .getByLabel(new RegExp(`^\\d+ ${label}$`))
       .locator("strong:visible")
       .textContent();
     const parsed = Number(value);
@@ -1032,7 +1063,7 @@ async function replayPlayerCounts(
     return parsed;
   };
   return {
-    alive: await count("Alive"),
+    alive: await count("In"),
     out: await count("Out"),
   };
 }

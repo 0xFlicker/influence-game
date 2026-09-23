@@ -195,6 +195,13 @@ media remains pinned to the active beat through `useVisualWatch`.
 
 Provider-free fullscreen browser regression (portrait-only live fixture):
 `bun run test:e2e:format-viewer --grep 'fullscreen portrait player'`.
+Before updating the PR, run the complete `bun run test:e2e:format-viewer` suite:
+the fullscreen subset does not cover reconnects, format pleas, individual sealed
+votes, or persisted replay/results. Stories run with one worker and independent
+pages; a failing story does not skip the remaining stories. Vote assertions use
+canonical fixture speakers and targets in solo bubbles and check compact
+totals at their existing reveal position. Long pleas must fit their measured
+pages rather than an internal transcript scrollbar.
 When the usual dev server already owns `.next/dev`, run this route-mocked test
 with `PLAYWRIGHT_VIEWER_FIXTURE_WEB_URL=http://127.0.0.1:3001` to reuse that web
 server. Other tests that require seeded backend data still use the isolated
