@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import { Phase } from "@influence/engine";
-import type { GameWatchReplayFrame, ViewerDecisionEvent } from "../lib/api";
+import type { GameWatchReplayFrame, ViewerDecisionEvent, TranscriptEntry } from "../lib/api";
 import { buildEndgamePresentationCues } from "../app/games/[slug]/components/endgame-presentation";
 import { visualWatchPresentation } from "../app/games/[slug]/components/visual-watch-model";
-import { comparePresentationCues } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import { findPresentationCueIndexForSequence } from "../app/games/[slug]/components/presentation-sequence";
+import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/games/[slug]/components/house-story";
+import { createPresentationDirector } from "../app/games/[slug]/components/format-presentation-director";
+import { buildClassicPresentationCues, comparePresentationCues } from "../app/games/[slug]/components/dramatic-replay-viewer";
 
 const players = ["Arden", "Kaiya", "Marnie", "Ione"].map((name) => ({ id: name, name, persona: "strategic", status: "alive" as const, shielded: false }));
 function frame(event: ViewerDecisionEvent): GameWatchReplayFrame {
@@ -35,4 +38,34 @@ test("jury ballots precede the winner and cannot be confused with elimination vo
   expect(cues.map(c => c.kind)).toEqual(["endgame_ballot", "endgame_ballot", "endgame_winner"]);
   expect(cues[0]?.ballot?.purpose).toBe("winner");
   expect(visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cues[2]!, null, players).beat).toEqual({ kind: "house", text: "Ione wins The House." });
+});
+
+test("jury transcript receipts never duplicate canonical ballots, including live append and reconnect", () => {
+  const votes = { Arden: "Ione", Marnie: "Kaiya" };
+  const jury = frame({ ...base, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: { votes, winnerId: "Ione" } });
+  const receipts: TranscriptEntry[] = Object.entries(votes).map(([voterId, targetId], index) => ({
+    id: index + 1, entrySequence: index + 1, firstDurableEventSequence: 28 + index,
+    gameId: "endgame", round: 3, phase: "JURY_VOTE", scope: "system", dialogueKind: "system_announcement", fromPlayerId: null, fromPlayerName: "The House", toPlayerIds: null,
+    text: "Receipt wording is not authority", timestamp: index, acceptedBallot: { purpose: "winner", voterId, targetId },
+  }));
+  const summary: TranscriptEntry = { ...receipts[0]!, id: 3, entrySequence: 3, firstDurableEventSequence: 30, acceptedBallot: undefined, dialogueKind: "house_summary", text: "The jury has decided." };
+  const scenes = buildStoryScenes([...receipts, summary]);
+  const compile = (frames: GameWatchReplayFrame[]) => withHouseBridges([
+    ...buildClassicPresentationCues(scenes, frames, players), ...buildEndgamePresentationCues(frames),
+  ].sort(comparePresentationCues), scenes);
+  expect(buildStoryScenes(receipts)).toEqual([]);
+  const cues = compile([jury]);
+  expect(cues.map(c => c.kind)).toEqual(["endgame_ballot", "endgame_ballot", "endgame_winner", "classic_transcript"]);
+  expect(cues.filter(c => c.source === "endgame").map(c => c.ballot?.voterId)).toEqual(["Arden", "Marnie", undefined]);
+  const director = createPresentationDirector();
+  director.load(buildEndgamePresentationCues([]));
+  director.append(cues);
+  expect(findPresentationCueIndexForSequence(cues, 28)).toBe(0);
+  director.seek(1);
+  director.append(compile([jury]));
+  expect(director.getSnapshot().activeKey).toBe(cues[1]!.key);
+  expect(director.getSnapshot().cueKeys).toEqual(cues.map(c => c.key));
+  director.dispose();
+  expect(isStoryDialogue({ ...receipts[0]!, acceptedBallot: { voterId: "Arden", targetId: "Ione", purpose: "eliminate" } })).toBe(true);
+  expect(isStoryDialogue({ ...receipts[0]!, acceptedBallot: undefined, scope: "public", fromPlayerId: "Arden", text: "I vote for Ione." })).toBe(true);
 });

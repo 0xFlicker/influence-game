@@ -315,6 +315,35 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("jury transcript receipts produce only one canonical round of votes before the winner", async ({ page }) => {
+    const slug = "jury-single-reveal";
+    const scenario = createFormatKernelViewerScenario("majority_elimination_tie");
+    const voters = scenario.roster.slice(0, 3);
+    const votes = Object.fromEntries(voters.map(voter => [voter.id, "rex"]));
+    const decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"] = [{
+      type: "jury.winner_determined", sequence: 10, round: 2, phase: Phase.JURY_VOTE,
+      timestamp: "2026-09-23T00:00:00.000Z", payload: { votes, winnerId: "rex" },
+    }];
+    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
+    await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({ json: voters.map((voter, i) => ({
+      id: i + 1, gameId: slug, entrySequence: i + 1, firstDurableEventSequence: 7 + i,
+      phase: "JURY_VOTE", round: 2, scope: "system", dialogueKind: "system_announcement",
+      fromPlayerId: null, fromPlayerName: "The House", toPlayerIds: null, text: "Recorded vote receipt", timestamp: i,
+      acceptedBallot: { purpose: "winner", voterId: voter.id, targetId: "rex" },
+    })) }));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
+    await pauseAutoplay(page, "⏸ Pause");
+    const next = () => page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    for (const voter of voters) {
+      await assertSoloBallot(page, voter.name, "Rex");
+      await next();
+    }
+    await expect(page.getByText("Rex wins The House.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeDisabled();
+  });
+
   test("Empower tie separates original votes, nominees, revotes and final totals", async ({ page }, testInfo) => {
     const slug = "empower-revote-beats";
     const meta = { round: 1, phase: Phase.VOTE, timestamp: "2026-09-23T00:00:00.000Z" };

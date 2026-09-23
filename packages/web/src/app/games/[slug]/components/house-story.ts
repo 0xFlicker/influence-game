@@ -6,6 +6,9 @@ import { phaseToRoomType, PHASE_LABELS } from "./constants";
 export function isStoryDialogue(message: TranscriptEntry): boolean {
   // Diaries retain their existing inspector archive, outside the public story loop.
   if (message.scope === "thinking" || message.scope === "diary") return false;
+  // Jury ballots are revealed once by the canonical winner event. Their transcript
+  // receipts remain searchable, but must not also become individual story beats.
+  if (message.acceptedBallot?.purpose === "winner") return false;
   if (message.dialogueKind === "house_summary" || message.presentationPurpose === "farewell" || message.acceptedBallot) return true;
   return message.scope !== "system" && Boolean(message.anonymous || message.speakerPlayerId || message.fromPlayerId);
 }
