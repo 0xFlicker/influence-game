@@ -37,7 +37,7 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
         }
         const coordinate = execution.xstateSnapshot.value;
         const state = GameState.fromCanonicalEvents(snapshot.canonicalEvents);
-        const roomId: VisualRoomId | null = coordinate === "lobby" || coordinate === "reckoning_lobby" ? "lobby"
+        const roomId: VisualRoomId | null = coordinate === "lobby" || coordinate === "reckoning_lobby" || coordinate === "reckoning_plea" ? "lobby"
           : ["tribunal_lobby", "tribunal_accusation", "tribunal_defense"].includes(String(coordinate)) ? "tribunal"
           : ["judgment_opening", "judgment_jury_questions", "judgment_closing"].includes(String(coordinate)) ? "finals" : null;
         if (!roomId) return;

@@ -803,7 +803,7 @@ describe("match watch model", () => {
       connStatus: "live",
     });
 
-    expect(model.players.map((card) => card.statusLabel)).toEqual(["Alive", "Alive"]);
+    expect(model.players.map((card) => card.statusLabel)).toEqual(["In", "In"]);
     expect(model.players.map((card) => card.statusTags)).toEqual([[], []]);
     expect(model.players.map((card) => card.detail)).toEqual(["", ""]);
   });

@@ -671,6 +671,12 @@ export function GameViewer({
           break;
         }
         case "message": {
+          // Phase/elimination publications use dedicated WS shapes, not
+          // viewer_decision_event. Their following dialogue still needs fresh
+          // canonical status frames, including throughout the endgame.
+          if ((ev.entry.firstDurableEventSequence ?? 0) > (replayFramesRef.current.at(-1)?.sequence ?? 0)) {
+            void hydratePresentationFrames({ afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0, preserveScreen: replayFramesRef.current.length > 0 });
+          }
           const id = ev.publicationSequence !== undefined ? -ev.publicationSequence : msgIdRef.current--;
           const msg = {
             ...wsEntryToTranscriptEntry(ev.entry, gameId, id),

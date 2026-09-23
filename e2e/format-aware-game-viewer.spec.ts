@@ -305,6 +305,32 @@ test.describe("format-aware game viewer", () => {
     });
   }
 
+  test("live endgame dialogue refreshes canonical cast status without another format decision", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const slug = "live-endgame-cast";
+    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 1 });
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await pauseAutoplay(page, "⏸ Pause");
+    await expect(page.getByRole("button", { name: "Inspect Atlas", exact: true })).toContainText("In");
+    const players = fixture.currentGame().players.map(player => ({ ...player, status: player.id === "atlas" || player.id === "lyra" ? "eliminated" : "alive" }));
+    let reads = 0;
+    await page.route(`**/api/games/${slug}/replay-watch-frames*`, async route => {
+      reads++;
+      await route.fulfill({ json: [{ schemaVersion: 3, gameId: slug, sequence: 100, round: 4, phase: "OPENING_STATEMENTS", eventType: "game.phase_entered", timestamp: Date.now(), players,
+        counts: { totalPlayers: 5, alivePlayers: 3, eliminatedPlayers: 2, unknownPlayers: 0 } }] });
+    });
+    fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, firstDurableEventSequence: 100, round: 4, phase: "OPENING_STATEMENTS", from: "echo", speakerPlayerId: "echo", scope: "public", text: "This is my final case.", timestamp: Date.now() } }));
+    await expect.poll(() => reads).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) {
+      if (await page.getByRole("button", { name: "Inspect Atlas", exact: true }).textContent().then(text => text?.includes("Out"))) break;
+      await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    }
+    await expect(page.getByRole("button", { name: "Inspect Atlas", exact: true })).toContainText("Out");
+    await expect(page.getByRole("button", { name: "Inspect Lyra", exact: true })).toContainText("Out");
+    await expect(page.getByRole("button", { name: "Inspect Echo", exact: true })).toContainText("In");
+  });
+
   test("format cast badges follow reveals and backward seeks", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const slug = "cast-role-reveals";

@@ -640,7 +640,7 @@ function resolveSelectedPlayer(
 function getPlayerStatusLabel(status: PlayerState): string {
   switch (status) {
     case "alive":
-      return "Alive";
+      return "In";
     case "eliminated":
       return "Out";
     case "unknown":

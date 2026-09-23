@@ -336,12 +336,12 @@ function ShellHeader({
           </Link>
         ) : null}
         <span
-          aria-label={`${model.counts.alivePlayers} Alive`}
+          aria-label={`${model.counts.alivePlayers} In`}
           data-testid="match-watch-count-alive"
           className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.03] px-1.5 text-[9px] uppercase tracking-[0.1em] text-white/55"
         >
           <strong className="text-[10px] text-white/95">{model.counts.alivePlayers}</strong>
-          <span className="text-white/35">A</span>
+          <span className="text-white/35">In</span>
         </span>
         <span
           aria-label={`${model.counts.eliminatedPlayers} Out`}
@@ -386,7 +386,7 @@ function ShellHeader({
         >
           Exit
         </Link>
-        <StatusPill value={model.counts.alivePlayers} label="Alive" />
+        <StatusPill value={model.counts.alivePlayers} label="In" />
         <StatusPill value={model.counts.eliminatedPlayers} label="Out" />
         <span className="inline-flex h-8 items-center gap-2 rounded-md border border-phase/30 bg-phase/10 px-3 text-[10px] uppercase tracking-[0.14em] text-white/80">
           <span className="h-1.5 w-1.5 rounded-full bg-phase shadow-phase-sm" />

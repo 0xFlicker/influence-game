@@ -15,6 +15,8 @@ verified image-capable catalog entries: OpenAI Luna and Katana Grok 4.6. Unknown
 text-only entries reject image-bearing invocations rather than dropping attachments.
 [Visual Mode](visual-mode.md) uses this transport in API-created visual games. The standalone simulator does not enable visual generation.
 
+For API-backed endgame checks, verify Final 4 pleas use a scene containing exactly the four remaining players. Compare viewer ballots with canonical endgame/jury resolution tallies and IN/OUT status with elimination events, rather than speech or image membership. Provider-free and PostgreSQL tests cover these bindings and projections; they do not establish generated-image quality.
+
 The engine and API read LLM provider settings through a shared OpenAI-compatible client helper.
 
 | Variable | Default | Notes |

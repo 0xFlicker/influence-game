@@ -94,3 +94,9 @@ test("Empowered revotes follow every original receipt, and accepted pleas use so
     expect(visualWatchPresentation(data, cue, null, players).beat).toMatchObject({ kind: "portrait", purpose: "Plea", speech: { text: cue.text }, player: { id: cue.speakerId } });
   }
 });
+
+test("an exact cast binding beats a newer room image with other participants", () => {
+  const bound = visualWatchPresentation({ ...data, bindings: { 6: "old" }, scenes: data.scenes.map(scene => scene.id === "new" ? { ...scene, participantIds: ["a", "eliminated-player"] } : scene) }, null, { ...message, entrySequence: 6, visualScene: undefined, phase: "PLEA" }, [player]);
+  expect(bound.beat).toMatchObject({ kind: "scene", sceneId: "old" });
+  expect(bound.rooms.find(room => room.roomId === "lobby")?.participantIds).toEqual(["a"]);
+});

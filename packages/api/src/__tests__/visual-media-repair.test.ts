@@ -113,6 +113,25 @@ test("canonical bindings recover fallback dialogue, follow Mingle movement, and 
   await send({ action: "publish", expectedVersion: 1, expectedPublication: 0, versionId: receipt.jobId! });
   expect((await readViewerMedia(db, "media")).scenes[0]?.publicationRevision).toBe(1);
   expect(await db.select().from(schema.transcripts)).toEqual(before);
+  // Final 4 pleas must reuse exactly the surviving cast, even when a newer
+  // lobby image contains an extra eliminated contestant.
+  const four = await prepareVisualScene(db, { gameId: "media", boundarySequence: 7, plan: planVisualScene({ roomId: "lobby", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 4) }) });
+  await prepareVisualScene(db, { gameId: "media", boundarySequence: 8, plan: planVisualScene({ roomId: "lobby", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 5) }) });
+  for (const [index, event] of [
+    { type: "game.phase_entered", payload: { phase: Phase.LOBBY, remainingPlayers: scene.plan.cast.slice(0, 5).map(({ id, name }) => ({ id, name })) } },
+    { type: "player.eliminated", payload: { playerId: "p4", playerName: "Player 4" } },
+    { type: "endgame.stage_set", payload: { stage: "reckoning", lastEmpoweredFromRegularRounds: null } },
+  ].entries()) {
+    const sequence = index + 1;
+    await db.insert(schema.gameEvents).values({ gameId: "media", sequence, eventType: event.type, eventHash: hash, ownerEpoch, visibility: "public", payloadVersion: 1,
+      envelope: { ...event, gameId: "media", sequence, round: 3, phase: Phase.PLEA, timestamp: date, source: "engine", visibility: "public", payloadVersion: 1, sourcePointers: [] } });
+  }
+  await db.update(schema.gameTurns).set({ baseEventSequence: 3 }).where(eq(schema.gameTurns.id, intent.turnId));
+  await db.insert(schema.transcripts).values({ gameId: "media", round: 3, phase: Phase.PLEA, text: "The prose does not name the cast.", timestamp: 2, scope: "public",
+    gameTurnId: intent.turnId, gameTurnTranscriptOrdinal: 10, entrySequence: 10, speakerPlayerId: "p0", audiencePlayerIds: [], safeContext: { version: 1 } });
+  expect((await readViewerMedia(db, "media")).bindings[10]).toBe(four.id);
+  await db.delete(schema.visualScenes).where(eq(schema.visualScenes.id, four.id));
+  expect((await readViewerMedia(db, "media")).bindings[10]).toBeUndefined();
 });
 
 test("one lease, expired claim recovery, and late old-owner completion cannot accept", async () => {

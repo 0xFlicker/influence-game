@@ -47,6 +47,7 @@ export function mingleVisualRoom(roomId: number): VisualRoomId {
 export function visualRoomForPhase(phase: Phase, roomId?: number, endgameStage?: "reckoning" | "tribunal" | "judgment"): VisualRoomId | null {
   switch (phase) {
     case Phase.LOBBY: return endgameStage === "tribunal" ? "tribunal" : endgameStage === "judgment" ? "finals" : "lobby";
+    case Phase.PLEA: return endgameStage === "reckoning" ? "lobby" : null;
     case Phase.MINGLE:
     case Phase.MINGLE_I:
     case Phase.POST_VOTE_MINGLE:

@@ -40,6 +40,16 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     const player = players.find((entry) => entry.id === id);
     if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
+  if (cue?.source === "endgame") {
+    if (cue.ballot) {
+      const target = players.find((player) => player.id === cue.ballot!.targetId);
+      if (target) portrait(cue.ballot.voterId, target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
+    } else {
+      const name = players.find((player) => player.id === cue.playerId)?.name ?? "Player";
+      beat = { kind: "house", text: cue.kind === "endgame_winner" ? `${name} wins The House.` : `${name} is out.` };
+    }
+    return { rooms, beat };
+  }
   if (cue?.source === "format") {
     if (cue.kind === "two_names_plea" && cue.status === "accepted" && cue.text) {
       portrait(cue.speakerId, cue.text, "Plea", `Final plea · ${cue.ordinal + 1} of 2`);
@@ -68,11 +78,19 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   else if (message.scope === "diary" && speakerId) portrait(speakerId, message.text, "Diary");
   else {
     const binding = message.entrySequence !== undefined ? data.bindings?.[message.entrySequence] : undefined;
-    const target = binding ? data.scenes.find(scene => scene.id === binding) : message.visualScene;
-    if (target && rooms.some((room) => room.id === target.id)) beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
-      id: String(message.id), playerId: message.anonymous ? null : speakerId,
-      speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,
-    } : null };
+    const target = data.scenes.find(scene => scene.id === (binding ?? message.visualScene?.id)
+      && message.entrySequence !== undefined && scene.afterDialogueSequence < message.entrySequence);
+    if (target) {
+      // An explicit canonical binding wins over another version of this room.
+      // A newer image may have a different cast, even at the same watch step.
+      const index = rooms.findIndex(room => room.roomId === target.roomId);
+      if (index >= 0) rooms[index] = { ...target, annotatedImageUrl: "" };
+      else rooms.push({ ...target, annotatedImageUrl: "" });
+      beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
+        id: String(message.id), playerId: message.anonymous ? null : speakerId,
+        speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,
+      } : null };
+    }
     if (!beat && message.anonymous) beat = { kind: "anonymous", speech: { id: String(message.id), playerId: null, speaker: "Anonymous", text: message.text } };
     else if (!beat && speakerId) portrait(speakerId, message.text, "Conversation");
     if (!speakerId && !message.anonymous) beat = { kind: "house", text: message.text };

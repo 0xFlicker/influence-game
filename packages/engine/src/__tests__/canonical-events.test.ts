@@ -1453,3 +1453,23 @@ describe("AcceptedFormalSpeech factory", () => {
     ).toThrow(/non-empty/);
   });
 });
+
+describe("endgame viewer receipts", () => {
+  it("publishes only accepted resolution ballots and excludes private provenance", () => {
+    const event: Extract<CanonicalGameEvent, { type: "endgame.elimination_resolved" }> = { ...sampleEvent(), payloadVersion: 1, type: "endgame.elimination_resolved", phase: Phase.VOTE, payload: {
+      stage: "reckoning", tally: { votes: { atlas: "blair", cyra: "blair" } }, eliminated: "blair", method: "plurality",
+    } };
+    const projected = projectViewerDecisionEvent(event);
+    expect(projected?.payload).toEqual({ stage: "reckoning", votes: { atlas: "blair", cyra: "blair" }, juryTiebreakerVotes: {}, eliminatedId: "blair" });
+    expect(JSON.stringify(projected)).not.toContain("sourcePointers");
+    if (projected?.type !== "endgame.elimination_resolved") throw new Error("Expected endgame projection");
+    projected.payload.votes.atlas = "cyra";
+    expect(event.payload.tally.votes.atlas).toBe("blair");
+  });
+  it("publishes the jury's accepted winner ballots", () => {
+    const event: Extract<CanonicalGameEvent, { type: "jury.winner_determined" }> = { ...sampleEvent(), payloadVersion: 1, type: "jury.winner_determined", phase: Phase.JURY_VOTE, payload: {
+      tally: { votes: { atlas: "blair" } }, winnerId: "blair", method: "majority", voteCounts: [{ id: "blair", name: "Blair", votes: 1 }],
+    } };
+    expect(projectViewerDecisionEvent(event)?.payload).toEqual({ votes: { atlas: "blair" }, winnerId: "blair" });
+  });
+});

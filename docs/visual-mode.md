@@ -161,6 +161,19 @@ Safe and Vulnerable only after classification, with no safety inference for
 unclassified players or other formats. Backward seeks rewind badges, including
 reveals sharing one canonical event; new rounds and endgame clear old roles.
 
+Cast status uses IN/OUT. Each published dialogue boundary refreshes missing
+canonical frames, including endgame phases whose WebSocket notifications use
+dedicated phase/elimination messages. Displayed status follows the active cue,
+not the latest server head. Final 4 and Final 3 vote resolutions supply accepted
+ballots for solo vote segments, followed by the canonical elimination; jury
+ballots precede the winner. These segments never parse system transcript prose.
+
+Final 4 Reckoning pleas share the exact surviving cast's lobby image. Boundary
+preparation reuses a matching arrangement or generates it before the step;
+historical viewer binding selects only an image with exactly those participants.
+Without a match, portraits remain available. Finals images intentionally include
+both finalists and the active jury; appearing in that image does not mean IN.
+
 Scene framing measures the loaded immutable image and actual frame. Wide frames
 contain the whole scene; narrow frames cover and center on that version's clear
 head anchor. Unknown, uncertain and anonymous speakers retain the whole image.

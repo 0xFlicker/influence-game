@@ -17,7 +17,6 @@ import type {
 import type {
   ClassicPresentationCue,
   FormatPresentationCue,
-  HousePresentationCue,
   PresentationCue,
   ReplayScene,
 } from "./types";
@@ -33,6 +32,7 @@ import {
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { buildStoryScenes, withHouseBridges } from "./house-story";
+import { buildEndgamePresentationCues } from "./endgame-presentation";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   MATCH_WATCH_FORMAT_PHASES,
@@ -204,7 +204,7 @@ function mergeFormatAndSocialCues(
   return [...socialCues, ...formatCues].sort(comparePresentationCues);
 }
 
-function formatCueScene(cue: FormatPresentationCue | HousePresentationCue): ReplayScene {
+function formatCueScene(cue: Exclude<PresentationCue, ClassicPresentationCue>): ReplayScene {
   return {
     id: cue.key,
     round: cue.round,
@@ -333,14 +333,15 @@ function DramaticReplayTheater({
     ],
   );
   const canonicalPresentationCues = useMemo(
-    () => isFormatGame
+    () => [...(isFormatGame
       ? mergeFormatAndSocialCues(formatCompilation.cues, classicCues, scenes)
-      : classicCues,
+      : classicCues), ...buildEndgamePresentationCues(replayFrames)].sort(comparePresentationCues),
     [
       classicCues,
       formatCompilation.cues,
       isFormatGame,
       scenes,
+      replayFrames,
     ],
   );
   const presentationCues = useMemo(() => withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes), [canonicalPresentationCues, players, scenes]);

@@ -275,4 +275,17 @@ export interface HousePresentationCue {
   baseDurationMs: number;
 }
 
-export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue;
+export interface EndgamePresentationCue {
+  source: "endgame";
+  key: string;
+  canonicalSequence: number;
+  round: number;
+  phase: PhaseKey;
+  baseDurationMs: number;
+  liveCatchUp?: boolean;
+  kind: "endgame_ballot" | "endgame_elimination" | "endgame_winner";
+  playerId: string;
+  ballot?: { voterId: string; targetId: string; purpose: "eliminate" | "winner"; juryTiebreaker: boolean };
+}
+
+export type PresentationCue = ClassicPresentationCue | FormatPresentationCue | HousePresentationCue | EndgamePresentationCue;

@@ -19,6 +19,7 @@ describe("visual scenes", () => {
       expect(visualRoomForPhase(phase)).toBeNull();
     }
     expect(visualRoomForPhase(Phase.LOBBY)).toBe("lobby");
+    expect(visualRoomForPhase(Phase.PLEA, undefined, "reckoning")).toBe("lobby");
     expect(visualRoomForPhase(Phase.LOBBY, undefined, "tribunal")).toBe("tribunal");
     expect(visualRoomForPhase(Phase.DEFENSE)).toBe("tribunal");
     expect(visualRoomForPhase(Phase.JURY_QUESTIONS)).toBe("finals");

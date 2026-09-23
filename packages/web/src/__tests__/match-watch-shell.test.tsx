@@ -99,7 +99,7 @@ describe("MatchWatchShell", () => {
           },
         },
       },
-      statusLabel: "Alive",
+      statusLabel: "In",
       statusTags: [],
       isSelected: false,
       isAlive: true,
@@ -179,7 +179,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Alliance");
     expect(html).toContain("Diary");
     expect(html).not.toContain("Receipts");
-    expect(textHtml).toContain("Atlas is alive in round 1.");
+    expect(textHtml).toContain("Atlas is still competing in round 1.");
     expect(html).toContain("data-replay-controls");
     expect(html).toContain("Speed:");
     expect(html).toContain("Atlas");
@@ -283,7 +283,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-watch-mode="live"');
     expect(textHtml).toContain("Round 2 Live");
     expect(html).toContain("Mingle");
-    expect(html).toContain("<strong class=\"text-xs text-white/95\">3</strong>Alive");
+    expect(html).toContain("<strong class=\"text-xs text-white/95\">3</strong>In");
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Out");
     expect(textHtml).toContain("Empowered");
     expect(textHtml).toContain("Selected");

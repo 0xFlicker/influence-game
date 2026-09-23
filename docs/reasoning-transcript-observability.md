@@ -10,6 +10,8 @@ Lobby, every Mingle turn, and private alliance huddles use one final `# CONSTITU
 
 [Visual Mode](visual-mode.md) introduces a separate observable-performance contract.
 
+Final 4 pleas use the lobby scene with exactly the remaining four players. Viewer endgame ballots come from sanitized `endgame.elimination_resolved` and `jury.winner_determined` tallies; eliminations change cast status at `player.eliminated`. Narration and image membership never establish who is still competing, and jurors can appear in Finals imagery while remaining OUT.
+
 Scene preparation uses a committed-boundary hook before gameplay dispatch. The agent hook reads the accepted image afterward; waiting for scene generation is not an agent decision or an accepted cue. Paid render receipts remain durable even when a worker loses ownership before scene acceptance.
 
 Durable Mingle emits each beat's dialogue and movement diagnostics in one commit. Initial assignment, beat execution, and final alliance/huddle work have separate provider-turn identities. Recovery must reuse accepted results for the failed logical turn and must not dispatch a previously committed beat again.
