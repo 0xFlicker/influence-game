@@ -69,6 +69,8 @@ Both transcript REST responses and committed WebSocket publications expose the s
 
 One director owns the House logo segment, summary reading time and title-only bridges. The standalone phase/endgame overlays and random copy are removed. Live append, reconnect and media readiness preserve the current speech/House beat; historical backfill cannot interrupt a title already on air. No new provider invocation or gameplay boundary is introduced.
 
+Solo speech cues also carry an explicit presentation marker. The director uses it to reveal speech before a manual advance, run the existing exit on the same clock, and land seeks or paused steps within the reading interval. This applies to introductions and accepted ballot shots without inspecting their prose or changing canonical order.
+
 ## Verification status
 
 Automated model/component coverage proves:

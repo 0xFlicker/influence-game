@@ -6,11 +6,14 @@ import type { VisualPresentationBeat } from "./visual-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
+export function isSoloTranscript(message: TranscriptEntry): boolean {
+  return Boolean(!message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
+    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || !message.visualScene))));
+}
+
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
-  const solo = !message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
-    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || !message.visualScene)));
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
-  return solo ? soloPresentationDurationMs(text) : visualSpeechDurationMs(text);
+  return isSoloTranscript(message) ? soloPresentationDurationMs(text) : visualSpeechDurationMs(text);
 }
 
 export interface VisualWatchData {
@@ -102,7 +105,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
 /** Expand only at the canonical tally reveal, preserving the existing result cue. */
 export function paceVisualBallots(cues: readonly PresentationCue[], players: readonly GamePlayer[]): PresentationCue[] {
   return cues.flatMap((cue): PresentationCue[] => {
-    if (cue.source !== "format") return [cue];
+    if (cue.source !== "format") return [{ ...cue, soloSpeech: cue.soloSpeech || (cue.source === "endgame" && Boolean(cue.ballot)) }];
     if (cue.kind === "empowered_tally") {
       const receipts = [
         ...cue.receipts.map(receipt => ({ voterId: receipt.voterId, targetId: receipt.targetId, revote: false })),
@@ -111,13 +114,13 @@ export function paceVisualBallots(cues: readonly PresentationCue[], players: rea
       const portraits = receipts.map((receipt, index) => {
         const name = players.find((player) => player.id === receipt.targetId)?.name ?? "Player";
         return { ...cue, key: `${cue.key}:visual-ballot:${index}`, before: cue.before, after: cue.before,
-          visualBallot: { ...receipt, purpose: "empower" as const }, baseDurationMs: soloPresentationDurationMs(name) };
+          visualBallot: { ...receipt, purpose: "empower" as const }, soloSpeech: true, baseDurationMs: soloPresentationDurationMs(name) };
       });
       return [...portraits, cue];
     }
     if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea") {
       const beat = visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cue, null, players).beat;
-      if (beat?.kind === "portrait") return [{ ...cue, baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
+      if (beat?.kind === "portrait") return [{ ...cue, soloSpeech: true, baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
     }
     return [cue];
   });

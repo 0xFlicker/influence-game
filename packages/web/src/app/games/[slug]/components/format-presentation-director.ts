@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
 import type { PresentationCue } from "./types";
+import { SOLO_READ_START_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
 
 export interface PresentationClock {
   now(): number;
@@ -387,7 +388,7 @@ export class PresentationDirector {
     return Math.max(0, Math.min(duration, duration - this.remainingBaseMs + elapsed));
   }
 
-  load(cues: readonly PresentationCue[]): void {
+  load(cues: readonly PresentationCue[], cursor = 0): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
     if (sameCueKeys(this.state.cues, canonical)) {
@@ -397,7 +398,7 @@ export class PresentationDirector {
     const wasPlaying = this.state.isPlaying;
     this.clearTimer();
     this.waitingAtHydrationWatermark = false;
-    this.apply({ type: "load", cues: canonical });
+    this.apply({ type: "load", cues: canonical, cursor });
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.remainingBaseMs = this.activeDurationMs();
     if (wasPlaying) this.ensureTimer();
@@ -475,9 +476,31 @@ export class PresentationDirector {
 
   manualAdvance(): void {
     if (this.disposed || this.state.cues.length === 0) return;
+    if (this.getActiveCue()?.soloSpeech && !this.state.waitingAtTail) {
+      const clockElapsed = this.getElapsedBaseMs();
+      // The initial paused frame already renders fully readable speech.
+      const elapsed = !this.state.isPlaying && clockElapsed === 0 ? SOLO_READ_START_MS : clockElapsed;
+      if (elapsed < SOLO_READ_START_MS) {
+        this.positionWithinCue(SOLO_READ_START_MS);
+        return;
+      }
+      if (this.state.isPlaying) {
+        const exitAt = this.activeDurationMs() - SOLO_EXIT_MS;
+        // Finish the exit on the shared clock; repeated clicks cannot skip it.
+        if (elapsed < exitAt) this.positionWithinCue(exitAt);
+        return;
+      }
+    }
     this.navigationRevision++;
     this.animation.complete();
-    this.advanceOne();
+    this.advanceOne(true);
+  }
+
+  private positionWithinCue(elapsedMs: number): void {
+    this.clearTimer();
+    this.remainingBaseMs = Math.max(0, this.activeDurationMs() - elapsedMs);
+    this.ensureTimer();
+    for (const listener of this.listeners) listener();
   }
 
   setSpeed(speed: number): void {
@@ -521,8 +544,7 @@ export class PresentationDirector {
     this.waitingAtHydrationWatermark = false;
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.remainingBaseMs = this.activeDurationMs();
-    this.ensureTimer();
+    this.positionWithinCue(this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
   }
 
   reconnect(cues: readonly PresentationCue[]): void {
@@ -564,7 +586,7 @@ export class PresentationDirector {
     this.disposed = false;
   }
 
-  private advanceOne(): void {
+  private advanceOne(manual = false): void {
     this.clearTimer();
     const nextCursor = this.state.cursor + 1;
     if (nextCursor >= this.state.cues.length) {
@@ -577,8 +599,7 @@ export class PresentationDirector {
       return;
     }
     this.apply({ type: "set_cursor", cursor: nextCursor });
-    this.remainingBaseMs = this.activeDurationMs();
-    this.ensureTimer();
+    this.positionWithinCue(manual && this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
   }
 
   private activeDurationMs(): number {

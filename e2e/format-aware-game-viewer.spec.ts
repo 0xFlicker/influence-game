@@ -215,6 +215,47 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Enter fullscreen", exact: true })).toBeFocused();
   });
 
+  test("solo clicks reveal speech before exiting and seeks reveal votes immediately", async ({ page }) => {
+    await page.clock.install();
+    const slug = "solo-click-fixture";
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const actor = scenario.roster[0]!;
+    const target = scenario.roster[1]!;
+    const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
+    await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { [actor.id]: "/solo-click.svg" } } }));
+    await page.route("**/solo-click.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/></svg>' }));
+    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
+    const send = (entry: Record<string, unknown>) => fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry }));
+    send({ entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() });
+    const solo = page.locator('[data-solo-image="full-body"]');
+    await expect(solo).toBeVisible();
+    await page.clock.runFor(100);
+    await expect(solo.locator("blockquote")).toHaveCount(0);
+    await solo.click();
+    await expect(solo.locator("blockquote")).toContainText("I intend to win your trust.");
+    await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
+    send({ entrySequence: 2, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "Private thinking must not be spoken.", acceptedBallot: { voterId: actor.id, targetId: target.id, purpose: "empower" }, timestamp: Date.now() + 1 });
+    await solo.click();
+    await page.clock.runFor(125);
+    const opacity = Number(await solo.locator("blockquote").locator("..").evaluate(element => getComputedStyle(element).opacity));
+    expect(opacity).toBeGreaterThan(0);
+    expect(opacity).toBeLessThan(1);
+    await solo.click();
+    await expect(solo).toHaveAttribute("aria-label", `Introduction: ${actor.name}`);
+    await page.clock.runFor(725);
+    await expect(solo).toHaveAttribute("aria-label", `Ballot: ${actor.name}`);
+    await expect(solo.locator("blockquote")).toHaveCount(0);
+    await solo.click();
+    await expect(solo.locator("blockquote")).toContainText(target.name);
+    await expect(solo.locator("blockquote")).not.toContainText("Private thinking");
+    await page.getByRole("button", { name: "Go to replay start", exact: true }).click();
+    await expect(solo.locator("blockquote")).toContainText("I intend to win your trust.");
+    await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
+  });
+
   for (const confirmedHead of [false, true]) {
     test(`full-body solo speech and House summary fit the fullscreen midline layout (${confirmedHead ? "confirmed head" : "legacy fallback"})`, async ({ page }) => {
       // Chromium cannot resize its native fullscreen window. Exercise rotation

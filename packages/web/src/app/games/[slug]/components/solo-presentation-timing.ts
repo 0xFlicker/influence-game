@@ -5,6 +5,8 @@ export const SOLO_SETTLE_MS = 650;
 export const SOLO_SPEECH_FADE_MS = 250;
 export const SOLO_EXIT_HOLD_MS = 250;
 export const SOLO_SPEECH_START_MS = SOLO_IMAGE_FADE_MS + SOLO_SETTLE_MS;
+export const SOLO_READ_START_MS = SOLO_SPEECH_START_MS + SOLO_SPEECH_FADE_MS;
+export const SOLO_EXIT_MS = SOLO_SPEECH_FADE_MS + SOLO_EXIT_HOLD_MS + SOLO_IMAGE_FADE_MS;
 
 export function soloPresentationDurationMs(text: string) {
   return SOLO_SPEECH_START_MS + SOLO_SPEECH_FADE_MS * 2 + visualSpeechReadingMs(text) + SOLO_EXIT_HOLD_MS + SOLO_IMAGE_FADE_MS;

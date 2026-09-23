@@ -73,6 +73,7 @@ test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "
     if (cue.source !== "format" || cue.kind !== "format_roll_call") throw new Error("Expected ballot");
     const beat = visualWatchPresentation(data, cue, null, players).beat;
     expect(beat).toMatchObject({ kind: "portrait", purpose: "Ballot", player: { id: cue.ballot.voterId }, speech: { text: players.find(p => p.id === cue.ballot.targetId)!.name } });
+    expect(cue.soloSpeech).toBe(true);
     expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(players.find(p => p.id === cue.ballot.targetId)!.name));
   }
   expect(paced.filter(c => c.source === "format" && !c.visualBallot).map(c => c.key)).toEqual(compiled.cues.map(c => c.key));

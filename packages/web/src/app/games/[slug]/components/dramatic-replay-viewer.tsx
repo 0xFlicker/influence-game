@@ -5,7 +5,7 @@ import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "./use-player-fullscreen";
 import { VisualPresentation } from "./visual-presentation";
 import { useVisualWatch } from "./use-visual-watch";
-import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs } from "./visual-watch-model";
+import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, isSoloTranscript } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
 import type {
   TranscriptEntry,
@@ -113,6 +113,7 @@ export function buildClassicPresentationCues(
       kind: "classic_transcript" as const,
       stage: "done" as const,
       baseDurationMs: transcriptPresentationDurationMs(message, players),
+      soloSpeech: isSoloTranscript(message),
       sceneIndex,
       messageIndex,
     })),
@@ -418,8 +419,7 @@ function DramaticReplayTheater({
       if (latest?.source === "classic" && !latest.liveCatchUp) {
         // A newly published first speech needs its full reading time. Historical
         // catch-up uses hydration so old introductions are not replayed.
-        director.load(presentationCues);
-        director.seek(presentationCues.length - 1);
+        director.load(presentationCues, presentationCues.length - 1);
       } else {
         director.reconnect(presentationCues);
       }
