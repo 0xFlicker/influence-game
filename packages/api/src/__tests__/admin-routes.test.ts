@@ -754,7 +754,7 @@ describe("admin route RBAC", () => {
         dailyAdmissionPaused: true,
         affectedDailyPrimaryScopeKeys: [
           "provider:openai",
-          "entry:openai:gpt-5.6-luna",
+          "entry:openai:gpt-6-luna",
         ],
         providers: [{ scopeKey: "provider:openai", state: "open" }],
       });
