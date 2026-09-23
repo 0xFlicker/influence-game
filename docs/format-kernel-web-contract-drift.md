@@ -14,7 +14,7 @@ contradictions retain the stored route with an incomplete diagnostic.
 
 | Surface | Current behavior |
 | --- | --- |
-| Standard vote | Format rounds show Empowered totals and receipts only. Classic expose, Power, and Council remain classic-only. |
+| Standard vote | Original Empower votes precede a tied-nominees beat at `tie_pending`; only accepted revotes precede the final Empower result and revote totals. Classic expose, Power, and Council remain classic-only. |
 | Format offer | The two immutable House cards remain stable until the selected card becomes legible and expands into its concise fixed rules. |
 | Safety Bounce | Typed starter/pointer facts drive the center actor, bench, Safe/Vulnerable lanes, deterministic presentation-only cycling, and canonical landing. |
 | Phase-end ballot | The aggregate appears first, then the existing ballots reveal in trusted roster order. Save-or-Eliminate preserves Save/Eliminate polarity. |
@@ -96,3 +96,5 @@ The remaining runtime-only gate is one fresh controlled format game for
 end-to-end API/WebSocket progression, current-state entry, and reconnect at
 representative prefixes. It must use deterministic/local agents or approved
 mocks unless paid provider execution is explicitly authorized.
+
+Empower tie presentation is committed at `vote.empower_tally_resolved`, independently of the later `vote.empowered_set`. The placeholder winner on a pending tally never becomes viewer state. Final counts derive from validated canonical revote receipts; manual decisions retain explicitly labeled original totals. At format resolution, a tiebreak context beat is followed by a `format_deciding_vote` solo cue naming the validated eliminated target, then elimination. These are viewer cues only: no added event, decision, model call or gameplay transition.

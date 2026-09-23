@@ -298,6 +298,27 @@ function applyDecision(input: {
           );
         }
         empower.pendingTally = decision;
+        const before = cloneSnapshot(snapshot);
+        snapshot = {
+          ...snapshot,
+          phase: phaseKey(decision.phase),
+          canonicalSequence: decision.sequence,
+          empoweredTally: { ...decision.payload.counts },
+        };
+        cues.push({
+          source: "format",
+          key: cueKey(gameId, decision.sequence, "empowered-tie"),
+          canonicalSequence: decision.sequence,
+          round: decision.round,
+          phase: phaseKey(decision.phase),
+          kind: "empowered_tie",
+          baseDurationMs: FIXED_CUE_DURATION_MS.empowered_tie,
+          before,
+          after: cloneSnapshot(snapshot),
+          counts: { ...decision.payload.counts },
+          tiedPlayerIds: [...decision.payload.tied],
+          receipts: empowerReceipts(eligiblePlayerIds, empower),
+        });
         break;
       }
       if (decision.payload.tied !== null) {
@@ -381,11 +402,14 @@ function applyDecision(input: {
           "Final Empowered agent does not match the accepted revote state.",
         );
       }
+      const revoteCounts = Object.fromEntries((pending.payload.tied ?? []).map(id => [id, 0]));
+      for (const target of empower.revotes.values()) revoteCounts[target]! += 1;
       snapshot = appendEmpoweredTallyCue({
         gameId,
         decision,
         empoweredId: decision.payload.empowered,
-        counts: pending.payload.counts,
+        counts: decision.payload.method === "manual" ? pending.payload.counts : revoteCounts,
+        resolutionMethod: decision.payload.method === "initial" ? undefined : decision.payload.method,
         receipts: empowerReceipts(eligiblePlayerIds, empower),
         snapshot,
         cues,

@@ -406,6 +406,7 @@ describe("presentation director", () => {
       "format_roll_call",
       "format_roll_call",
       "format_tiebreak",
+      "format_deciding_vote",
       "format_elimination",
     ]);
   });

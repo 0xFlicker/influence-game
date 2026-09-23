@@ -216,6 +216,7 @@ describe("format presentation compiler", () => {
       "format_roll_call",
       "format_aggregate",
       "format_tiebreak",
+      "format_deciding_vote",
       "format_elimination",
     ]);
     expect(compiled.snapshot.twoNames).toMatchObject({
@@ -501,11 +502,15 @@ describe("format presentation compiler", () => {
     });
 
     expect(pending.status).toBe("ready");
-    expect(pending.cues).toHaveLength(0);
+    expect(pending.cues).toHaveLength(1);
+    expect(pending.cues[0]).toMatchObject({ kind: "empowered_tie", canonicalSequence: 5, counts: { atlas: 2, lyra: 2, echo: 0, rex: 0 }, tiedPlayerIds: ["atlas", "lyra"] });
+    expect(resolved.cues[0]).toEqual(pending.cues[0]);
     expect(pending.snapshot.empoweredId).toBeNull();
     expect(resolved.status).toBe("ready");
-    expect(resolved.cues[0]).toMatchObject({
+    expect(resolved.cues[1]).toMatchObject({
       kind: "empowered_tally",
+      counts: { atlas: 0, lyra: 2 },
+      resolutionMethod: "revote",
       canonicalSequence: 10,
       empoweredId: "lyra",
       receipts: [
@@ -515,10 +520,25 @@ describe("format presentation compiler", () => {
         { voterId: "rex", targetId: "lyra", revoteTargetId: "lyra" },
       ],
     });
-    expect(resolved.cues[1]).toMatchObject({
+    expect(resolved.cues[2]).toMatchObject({
       kind: "format_menu",
       empoweredId: "lyra",
     });
+
+    const wheelDecisions = tiedDecisions.slice(0, 10).map(decision => {
+      if (decision.sequence === 9 && decision.type === "vote.empower_revote_cast") return { ...decision, payload: { voterId: "rex", target: "atlas" } };
+      if (decision.type === "vote.empowered_set") return { ...decision, payload: { empowered: "atlas", method: "wheel" as const } };
+      return decision;
+    });
+    const wheel = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: tieRoster, decisions: wheelDecisions });
+    expect(wheel.status).toBe("ready");
+    expect(wheel.cues.at(-1)).toMatchObject({ kind: "empowered_tally", counts: { atlas: 1, lyra: 1 }, empoweredId: "atlas", resolutionMethod: "wheel" });
+    const manual = compileFormatPresentationPrefix({ gameId: "game-1", gameKernel: "format", roster: tieRoster, decisions: [
+      ...tiedDecisions.slice(0, 5),
+      event({ sequence: 6, phase: Phase.VOTE, type: "vote.empowered_set", payload: { empowered: "lyra", method: "manual" } }),
+    ] });
+    expect(manual.status).toBe("ready");
+    expect(manual.cues.at(-1)).toMatchObject({ kind: "empowered_tally", counts: { atlas: 2, lyra: 2, echo: 0, rex: 0 }, resolutionMethod: "manual" });
 
     const missingWinner = compileFormatPresentationPrefix({
       gameId: "game-1",
@@ -655,6 +675,7 @@ describe("format presentation compiler", () => {
         cue.kind === "format_aggregate"
         || cue.kind === "format_roll_call"
         || cue.kind === "format_tiebreak"
+        || cue.kind === "format_deciding_vote"
         || cue.kind === "format_elimination"
       )
       .map((cue) => cue.kind);
@@ -667,6 +688,7 @@ describe("format presentation compiler", () => {
       "format_roll_call",
       "format_roll_call",
       "format_tiebreak",
+      "format_deciding_vote",
       "format_elimination",
     ]);
     expect(
@@ -722,11 +744,12 @@ describe("format presentation compiler", () => {
       },
     });
     expect(tied.status).toBe("ready");
-    expect(tied.cues.at(-2)).toMatchObject({
+    expect(tied.cues.at(-3)).toMatchObject({
       kind: "format_tiebreak",
       tiebreakerId: "atlas",
       tiedPlayerIds: ["lyra", "echo"],
     });
+    expect(tied.cues.at(-2)).toMatchObject({ kind: "format_deciding_vote", tiebreakerId: "atlas", targetId: "echo" });
     expect(tied.cues.at(-1)).toMatchObject({
       kind: "format_elimination",
       eliminatedId: "echo",
@@ -764,11 +787,12 @@ describe("format presentation compiler", () => {
       },
     });
     expect(tied.status).toBe("ready");
-    expect(tied.cues.at(-2)).toMatchObject({
+    expect(tied.cues.at(-3)).toMatchObject({
       kind: "format_tiebreak",
       tiebreakerId: "atlas",
       tiedPlayerIds: ["lyra", "echo"],
     });
+    expect(tied.cues.at(-2)).toMatchObject({ kind: "format_deciding_vote", tiebreakerId: "atlas", targetId: "echo" });
     expect(tied.cues.at(-1)).toMatchObject({
       kind: "format_elimination",
       eliminatedId: "echo",

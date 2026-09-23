@@ -1,6 +1,7 @@
 import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
+import { createPresentationDirector } from "../app/games/[slug]/components/format-presentation-director";
 import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
 import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
@@ -80,13 +81,31 @@ test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "
 });
 
 
-test("Empowered revotes follow every original receipt, and accepted pleas use solo speech", () => {
+test("Empowered revotes follow the tie beat without repeating original votes, and accepted pleas use solo speech", () => {
   const scenario = createFormatKernelViewerScenario("two_names_declined");
   const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "diplomat", status: "alive", shielded: false }));
   const compiled = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions, formatManifest: ["two_names", "vote_bomb"] });
   const receipts = players.map((p, i) => ({ voterId: p.id, targetId: players[0]!.id, revoteTargetId: i === 0 ? players[1]!.id : null }));
   const tally = { ...compiled.cues[0]!, kind: "empowered_tally" as const, counts: { [players[0]!.id]: players.length }, empoweredId: players[0]!.id, receipts };
-  const paced = paceVisualBallots([{ ...tally, receipts }], players);
+  const tie = { ...tally, key: "tie", kind: "empowered_tie" as const, tiedPlayerIds: players.slice(0, 2).map(p => p.id) };
+  const paced = paceVisualBallots([tie, { ...tally, resolutionMethod: "revote" }], players);
+  expect(paced[receipts.length]?.key).toBe("tie");
+  expect(paced.at(-1)?.key).toBe(tally.key);
+  const pending = paceVisualBallots([tie], players);
+  expect(paced.slice(0, pending.length)).toEqual(pending);
+  expect(new Set(paced.map(c => c.key)).size).toBe(paced.length);
+  const director = createPresentationDirector();
+  director.load(pending);
+  director.seek(pending.length - 1);
+  const before = director.getSnapshot();
+  director.append(paced);
+  director.append(paced);
+  expect(director.getSnapshot().activeKey).toBe(before.activeKey);
+  expect(director.getSnapshot().isPlaying).toBe(false);
+  director.manualAdvance();
+  expect(director.getActiveCue()).toMatchObject({ visualBallot: { revote: true, targetId: players[1]!.id }, soloSpeech: true });
+  expect(director.getElapsedBaseMs()).toBeGreaterThan(0);
+  director.dispose();
   const ballots = paced.flatMap(c => c.source === "format" && c.visualBallot ? [c.visualBallot] : []);
   expect(ballots.map(b => b.targetId)).toEqual([...receipts.map(r => r.targetId), players[1]!.id]);
   expect(ballots.at(-1)?.revote).toBe(true);
@@ -100,4 +119,25 @@ test("an exact cast binding beats a newer room image with other participants", (
   const bound = visualWatchPresentation({ ...data, bindings: { 6: "old" }, scenes: data.scenes.map(scene => scene.id === "new" ? { ...scene, participantIds: ["a", "eliminated-player"] } : scene) }, null, { ...message, entrySequence: 6, visualScene: undefined, phase: "PLEA" }, [player]);
   expect(bound.beat).toMatchObject({ kind: "scene", sceneId: "old" });
   expect(bound.rooms.find(room => room.roomId === "lobby")?.participantIds).toEqual(["a"]);
+});
+
+test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s gives the deciding player a solo choice before elimination", scenarioId => {
+  const scenario = createFormatKernelViewerScenario(scenarioId);
+  const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "diplomat", status: "alive", shielded: false }));
+  const compiled = compileFormatPresentationPrefix({ gameId: "g", gameKernel: "format", roster: scenario.roster, decisions: scenario.decisions });
+  expect(compiled.diagnostic).toBeNull();
+  const cues = paceVisualBallots(compiled.cues, players);
+  const index = cues.findIndex(c => c.kind === "format_deciding_vote");
+  const cue = cues[index]!;
+  if (cue.source !== "format" || cue.kind !== "format_deciding_vote") throw new Error("Missing deciding vote");
+  expect(cues[index - 1]?.kind).toBe("format_tiebreak");
+  expect(cues[index + 1]?.kind).toBe("format_elimination");
+  const target = players.find(p => p.id === cue.targetId)!.name;
+  expect(cue.soloSpeech).toBe(true);
+  expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(target));
+  for (const fullBodies of [{}, { [cue.tiebreakerId]: "/body.png" }]) {
+    expect(visualWatchPresentation({ ...data, fullBodies }, cue, null, players).beat).toMatchObject({
+      kind: "portrait", caption: "Deciding vote · Vote to eliminate", player: { id: cue.tiebreakerId, fullBodyReferenceUrl: fullBodies[cue.tiebreakerId] }, speech: { text: target },
+    });
+  }
 });

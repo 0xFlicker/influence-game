@@ -158,6 +158,13 @@ export type FormatPresentationCue =
       empoweredId: string;
       counts: Record<string, number>;
       receipts: FormatEmpowerVoteReceipt[];
+      resolutionMethod?: "revote" | "wheel" | "manual";
+    })
+  | (FormatPresentationCueBase & {
+      kind: "empowered_tie";
+      counts: Record<string, number>;
+      tiedPlayerIds: string[];
+      receipts: FormatEmpowerVoteReceipt[];
     })
   | (FormatPresentationCueBase & {
       kind: "format_menu";
@@ -244,6 +251,11 @@ export type FormatPresentationCue =
       kind: "format_tiebreak";
       tiebreakerId: string;
       tiedPlayerIds: string[];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_deciding_vote";
+      tiebreakerId: string;
+      targetId: string;
     })
   | (FormatPresentationCueBase & {
       kind: "format_elimination";

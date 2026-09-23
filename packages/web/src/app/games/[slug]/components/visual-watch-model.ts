@@ -54,7 +54,10 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     return { rooms, beat };
   }
   if (cue?.source === "format") {
-    if (cue.kind === "two_names_plea" && cue.status === "accepted" && cue.text) {
+    if (cue.kind === "format_deciding_vote") {
+      const target = players.find(player => player.id === cue.targetId);
+      if (target) portrait(cue.tiebreakerId, target.name, "Ballot", "Deciding vote · Vote to eliminate");
+    } else if (cue.kind === "two_names_plea" && cue.status === "accepted" && cue.text) {
       portrait(cue.speakerId, cue.text, "Plea", `Final plea · ${cue.ordinal + 1} of 2`);
     } else if (cue.visualBallot) {
       const ballot = cue.visualBallot;
@@ -106,11 +109,11 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
 export function paceVisualBallots(cues: readonly PresentationCue[], players: readonly GamePlayer[]): PresentationCue[] {
   return cues.flatMap((cue): PresentationCue[] => {
     if (cue.source !== "format") return [{ ...cue, soloSpeech: cue.soloSpeech || (cue.source === "endgame" && Boolean(cue.ballot)) }];
-    if (cue.kind === "empowered_tally") {
-      const receipts = [
-        ...cue.receipts.map(receipt => ({ voterId: receipt.voterId, targetId: receipt.targetId, revote: false })),
-        ...cue.receipts.flatMap(receipt => receipt.revoteTargetId ? [{ voterId: receipt.voterId, targetId: receipt.revoteTargetId, revote: true }] : []),
-      ];
+    if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
+      const revote = cue.kind === "empowered_tally" && Boolean(cue.resolutionMethod);
+      const receipts = revote
+        ? cue.receipts.flatMap(receipt => receipt.revoteTargetId ? [{ voterId: receipt.voterId, targetId: receipt.revoteTargetId, revote: true }] : [])
+        : cue.receipts.map(receipt => ({ voterId: receipt.voterId, targetId: receipt.targetId, revote: false }));
       const portraits = receipts.map((receipt, index) => {
         const name = players.find((player) => player.id === receipt.targetId)?.name ?? "Player";
         return { ...cue, key: `${cue.key}:visual-ballot:${index}`, before: cue.before, after: cue.before,
@@ -118,7 +121,7 @@ export function paceVisualBallots(cues: readonly PresentationCue[], players: rea
       });
       return [...portraits, cue];
     }
-    if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea") {
+    if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea" || cue.kind === "format_deciding_vote") {
       const beat = visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cue, null, players).beat;
       if (beat?.kind === "portrait") return [{ ...cue, soloSpeech: true, baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
     }

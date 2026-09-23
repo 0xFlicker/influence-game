@@ -1,3 +1,4 @@
+import { Phase } from "../packages/engine/src/types";
 import {
   expect,
   test,
@@ -313,6 +314,87 @@ test.describe("format-aware game viewer", () => {
       expect(halves.textTop).toBeCloseTo(halves.mid, 0);
     });
   }
+
+  test("Empower tie separates original votes, nominees, revotes and final totals", async ({ page }, testInfo) => {
+    const slug = "empower-revote-beats";
+    const meta = { round: 1, phase: Phase.VOTE, timestamp: "2026-09-23T00:00:00.000Z" };
+    const decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"] = [
+      ...[["atlas", "lyra"], ["lyra", "atlas"], ["echo", "atlas"], ["rex", "lyra"]].map(([voterId, empowerTarget], i) => ({
+        ...meta, sequence: i + 1, type: "vote.cast" as const, payload: { voterId: voterId!, empowerTarget: empowerTarget! },
+      })),
+      { ...meta, sequence: 5, type: "vote.empower_tally_resolved", payload: { counts: { atlas: 2, lyra: 2, echo: 0, rex: 0 }, empowered: "atlas", tied: ["atlas", "lyra"], method: "tie_pending", cumulativeEmpowerVotes: { atlas: 2, lyra: 2, echo: 0, rex: 0 } } },
+      { ...meta, sequence: 6, type: "vote.empower_vote_cleared", payload: { voterId: "echo" } },
+      { ...meta, sequence: 7, type: "vote.empower_vote_cleared", payload: { voterId: "rex" } },
+      { ...meta, sequence: 8, type: "vote.empower_revote_cast", payload: { voterId: "echo", target: "lyra" } },
+      { ...meta, sequence: 9, type: "vote.empower_revote_cast", payload: { voterId: "rex", target: "lyra" } },
+      { ...meta, sequence: 10, type: "vote.empowered_set", payload: { empowered: "lyra", method: "revote" } },
+    ];
+    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions });
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
+    await pauseAutoplay(page, "⏸ Pause");
+    const start = page.getByRole("button", { name: "Go to replay start", exact: true });
+    if (await start.isEnabled()) await start.click();
+    const next = () => page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    for (const [voter, target] of [["Atlas", "Lyra"], ["Lyra", "Atlas"], ["Echo", "Atlas"], ["Rex", "Lyra"]]) {
+      await assertSoloBallot(page, voter!, target!);
+      await next();
+    }
+    const tie = page.locator('[data-format-cue="empowered_tie"]');
+    await expect(tie).toContainText("A tie for Empower");
+    await expect(tie).toContainText("Atlas · Lyra are tied");
+    await expect(tie).not.toContainText("is Empowered");
+    await expect(tie.locator('[data-empower-total="atlas"] dd')).toHaveText("2votes");
+    await page.screenshot({ path: testInfo.outputPath("empower-tie.png") });
+    const desktop = page.viewportSize()!;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(tie).toBeVisible();
+    await assertLocatorInsideViewport(tie, 390);
+    const totals = tie.getByLabel("Empowered vote totals");
+    await expect.poll(() => totals.evaluate(el => {
+      const stage = el.closest('[data-presentation-animation-boundary]')!.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return box.top >= stage.top && box.bottom <= stage.bottom;
+    })).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("empower-tie-mobile.png") });
+    await page.setViewportSize(desktop);
+    await next();
+    await assertSoloBallot(page, "Echo", "Lyra");
+    await expect(page.getByRole("region", { name: "Ballot: Echo" })).toContainText("Revote to empower");
+    await next();
+    await assertSoloBallot(page, "Rex", "Lyra");
+    await next();
+    const result = page.locator('[data-format-cue="empowered_tally"]');
+    await expect(result).toContainText("Empower revote");
+    await expect(result).toContainText("Lyra is Empowered");
+    await expect(result.locator('[data-empower-total="atlas"] dd')).toHaveText("0votes");
+    await expect(result.locator('[data-empower-total="lyra"] dd')).toHaveText("2votes");
+    await expect(result.locator('[data-empower-receipt]')).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
+  });
+
+  test("Empowered deciding vote gets a full-body speech beat before elimination", async ({ page }, testInfo) => {
+    const slug = "deciding-vote-beat";
+    await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed" });
+    await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { atlas: "/deciding-body.svg" } } }));
+    await page.route("**/deciding-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/></svg>' }));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await pauseAutoplay(page, "⏸ Pause");
+    const next = () => page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    const tie = page.locator('[data-format-cue="format_tiebreak"]');
+    for (let i = 0; i < 30 && !await tie.count(); i++) await next();
+    await expect(tie).toContainText("Atlas must break the tie");
+    await expect(tie).toContainText("Tied: Lyra · Echo");
+    await next();
+    await assertSoloBallot(page, "Atlas", "Echo");
+    const solo = page.locator('[data-solo-image="full-body"]');
+    await expect(solo).toBeVisible();
+    await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
+    await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toContainText("Deciding vote · Vote to eliminate");
+    await page.screenshot({ path: testInfo.outputPath("deciding-vote.png") });
+    await next();
+    await expect(page.locator('[data-format-cue="format_elimination"]')).toContainText("Echo is eliminated");
+  });
 
   test("nonvisual live portraits keep phase navigation on the presented dialogue", async ({ page }) => {
     const slug = "nonvisual-live-portraits";
