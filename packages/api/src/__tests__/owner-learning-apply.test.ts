@@ -67,7 +67,14 @@ describe("owner learning apply and resolution", () => {
     });
     const waitingSeat = (await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, "learning-waiting")))[0]!;
-    expect(waitingSeat.agentRevisionId).toBe(applied.resultingRevisionId);
+    // The waiting game keeps its sealed 5.6 model while the profile uses the new default.
+    expect(waitingSeat.agentRevisionId).not.toBe(applied.resultingRevisionId);
+    const waitingRevision = (await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, waitingSeat.agentRevisionId!)))[0]!;
+    expect(waitingRevision.effectiveRuntimeSnapshot).toMatchObject({
+      model: "gpt-5.6-luna",
+      strategyInstructions: ready.after,
+    });
     expect(JSON.parse(waitingSeat.persona).strategyHints).toBe(ready.after);
     const review = (await db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;

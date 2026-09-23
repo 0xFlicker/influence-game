@@ -1,9 +1,10 @@
 import {
+  DEFAULT_MODEL_ID,
   resolveProviderManifest,
   type ResolvedProviderManifestEntry,
 } from "@influence/engine";
 
-export const DAILY_FREE_MODEL = "gpt-5.6-luna";
+export const DAILY_FREE_MODEL = DEFAULT_MODEL_ID;
 
 export const DAILY_FREE_MODEL_SELECTION = {
   catalogId: `openai:${DAILY_FREE_MODEL}`,

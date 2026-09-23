@@ -488,7 +488,7 @@ Options:
   --games N        Number of games to run (default: 3)
   --players N      Players per game, 6-12 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
-  --model NAME     OpenAI-compatible model ID (default: gpt-5.6-luna)
+  --model NAME     OpenAI-compatible model ID (default: gpt-6-luna)
   --model-catalog ID
                    Catalog-backed provider/model selection, e.g. katana:grok-4-3
   --reasoning-policy low|medium|high|action-policy

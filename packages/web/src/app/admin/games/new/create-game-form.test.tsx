@@ -46,7 +46,7 @@ describe("new game form", () => {
       'select[aria-label$="model"]',
     ));
     expect(routeSelectors.map((select) => select.value)).toEqual([
-      "openai:gpt-5.6-luna",
+      "openai:gpt-6-luna",
       "katana:glm-5-2",
       "katana:grok-4-5",
     ]);
@@ -80,7 +80,7 @@ describe("new game form", () => {
     expect(createBody).not.toHaveProperty("modelSelection");
     expect(createBody.providerManifest).toEqual([
       { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy" },
-      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
       { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
     ]);
     expect(createBody.formatManifest).toEqual([
@@ -184,7 +184,7 @@ describe("new game form", () => {
 
     await waitFor(() => expect(pushed).toEqual(["/games/bright-coral-moon"]));
     expect(createBodies[0]?.providerManifest).toEqual([
-      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium" },
+      { catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" },
     ]);
   });
 
@@ -253,10 +253,10 @@ function providerInventory() {
     models: [
       {
         ...base,
-        catalogId: "openai:gpt-5.6-luna",
+        catalogId: "openai:gpt-6-luna",
         providerProfileId: "openai",
-        modelId: "gpt-5.6-luna",
-        displayName: "OpenAI gpt-5.6-luna",
+        modelId: "gpt-6-luna",
+        displayName: "OpenAI gpt-6-luna",
         defaultReasoningPolicy: "action-policy",
         allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
       },

@@ -117,7 +117,7 @@ describe("free queue season admission", () => {
     const { gameId } = await draw.json() as { gameId: string };
     await db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
       providerProfileId: "openai",
-      catalogId: "openai:gpt-5.6-luna",
+      catalogId: "openai:gpt-6-luna",
       outcome: { kind: "authentication", message: "expired key", retryable: false },
     }));
 
@@ -244,7 +244,7 @@ describe("free queue season admission", () => {
     expect(gameConfig.minPlayers).toBe(6);
     expect(gameConfig.maxPlayers).toBe(12);
     expect(gameConfig.modelSelection).toEqual({
-      catalogId: "openai:gpt-5.6-luna",
+      catalogId: "openai:gpt-6-luna",
       reasoningPolicy: "action-policy",
     });
     expect(gameConfig.providerManifest).toEqual([
@@ -262,7 +262,7 @@ describe("free queue season admission", () => {
     ]);
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
-      .toEqual(Array(10).fill("gpt-5.6-luna"));
+      .toEqual(Array(10).fill("gpt-6-luna"));
     const statusResponse = await app.request("/api/free-queue", {
       headers: { Authorization: `Bearer ${token}` },
     });

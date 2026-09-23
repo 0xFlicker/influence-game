@@ -51,7 +51,7 @@ describe("API-backed simulation config", () => {
     const flex = parseArgs([], {});
     const standard = parseArgs(["--no-flex"], {});
 
-    expect(catalogIdFromProviderAndModel("openai", undefined)).toBe("openai:gpt-5.6-luna");
+    expect(catalogIdFromProviderAndModel("openai", undefined)).toBe("openai:gpt-6-luna");
     expect(flex.serviceTier).toBe("flex");
     expect(standard.serviceTier).toBe("auto");
     expect(buildGameCreateBody(standard, "openai:gpt-5-nano").serviceTier).toBe("auto");
