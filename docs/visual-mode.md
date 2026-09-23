@@ -172,6 +172,23 @@ not the latest server head. Final 4 and Final 3 vote resolutions supply accepted
 ballots for solo vote segments, followed by the canonical elimination; jury
 ballots precede the winner. These segments never parse system transcript prose.
 
+The winner reveal becomes a persistent final standings scene: the winner's frozen
+full-body reference is contained without cropping, alongside saved headshots for
+the remaining cast in placement order (runner-up at 2, followed by reverse
+elimination order). Placements come from canonical `player.eliminated` events and
+the winner frame's surviving finalist, never narration or image membership.
+Missing placement evidence is labeled unavailable. Missing or failed full-body
+art uses the winner's portrait. Closing narration and elapsed playback cannot
+fade this final scene to black; seeking before the winner reveal hides it again.
+The winner occupies 46% of the wide stage (half on narrow screens). Places 2–4
+form a descending portrait group, while places 5 onward use separate compact
+Jury and Rest of the cast groups. Jury participation comes from the accepted
+voters in `jury.winner_determined`, not elimination order. Final-four jurors carry
+a Jury caption and are not duplicated in the lower groups. Container-based
+layout supports mobile, fullscreen and rotation, with scrolling for a large
+cast. Deterministic browser checks cover the final vote, backward seeking,
+closing narration and the stopped final frame.
+
 Final 4 Reckoning pleas share the exact surviving cast's lobby image. Boundary
 preparation reuses a matching arrangement or generates it before the step;
 historical viewer binding selects only an image with exactly those participants.

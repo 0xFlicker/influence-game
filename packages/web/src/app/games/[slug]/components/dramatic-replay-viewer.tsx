@@ -32,7 +32,7 @@ import {
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { buildStoryScenes, withHouseBridges } from "./house-story";
-import { buildEndgamePresentationCues } from "./endgame-presentation";
+import { buildEndgamePresentationCues, revealedWinnerCue } from "./endgame-presentation";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   MATCH_WATCH_FORMAT_PHASES,
@@ -387,7 +387,7 @@ function DramaticReplayTheater({
       && cue.canonicalSequence !== null && cue.canonicalSequence <= formatCue.canonicalSequence)
     .map(cue => scenes[cue.sceneIndex]!.messages[cue.messageIndex]!), [classicCues, formatCue, scenes]);
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players, priorLobbyMessages,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinnerCue(presentationCues, directorSnapshot.cursor) ?? activeCue, currentMessage, players, priorLobbyMessages,
   );
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
@@ -512,7 +512,7 @@ function DramaticReplayTheater({
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait";
-  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "safety-bounce";
+  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;

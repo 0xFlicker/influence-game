@@ -48,12 +48,20 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
   if (cue?.source === "endgame") {
-    if (cue.ballot) {
+    if (cue.kind === "endgame_winner") {
+      const winner = players.find(player => player.id === cue.playerId);
+      if (winner) beat = { kind: "winner", winner: { ...winner, avatarUrl: data.portraits[winner.id] ?? winner.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[winner.id] },
+        standings: players.filter(player => player.id !== winner.id).map(player => ({ ...player,
+          avatarUrl: data.portraits[player.id] ?? player.avatarUrl,
+          placement: cue.standings?.find(entry => entry.playerId === player.id)?.placement ?? null,
+          juryMember: cue.juryVoterIds?.includes(player.id) ?? false,
+        })).sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity)) };
+    } else if (cue.ballot) {
       const target = players.find((player) => player.id === cue.ballot!.targetId);
       if (target) portrait(cue.ballot.voterId, target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
     } else {
       const name = players.find((player) => player.id === cue.playerId)?.name ?? "Player";
-      beat = { kind: "house", text: cue.kind === "endgame_winner" ? `${name} wins The House.` : `${name} is out.` };
+      beat = { kind: "house", text: `${name} is out.` };
     }
     return { rooms, beat };
   }

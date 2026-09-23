@@ -27,6 +27,7 @@ export async function installDeterministicFormatGame(
     status: DeterministicGameStatus;
     initialDecisionCount?: number;
     decisions?: ReturnType<typeof createFormatKernelViewerScenario>["decisions"];
+    roster?: ReturnType<typeof createFormatKernelViewerScenario>["roster"];
     historicalCatchUp?: boolean;
     frameResponseDelayMs?: number;
   },
@@ -37,6 +38,7 @@ export async function installDeterministicFormatGame(
 }> {
   const scenario = createFormatKernelViewerScenario(options.scenarioId);
   if (options.decisions) scenario.decisions = options.decisions;
+  if (options.roster) scenario.roster = options.roster;
   let decisionCount = options.initialDecisionCount ?? scenario.decisions.length;
   const sockets: WebSocketRoute[] = [];
   const currentDecisions = () => scenario.decisions.slice(0, decisionCount);

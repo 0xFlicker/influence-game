@@ -31,6 +31,20 @@ const rooms: AcceptedVisualScene[] = [1, 2].map((number) => ({
 const speech = { id: "speech-1", playerId: "p1", speaker: "Arden", text: "I want to hear your plan." };
 const beat: VisualPresentationBeat = { kind: "scene", sceneId: "scene-1", roomId: "mingle-1", speech };
 
+test("winner tableau survives elapsed playback and failed full-body art without losing headshots or ranks", () => {
+  const body = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGz4AAAAASUVORK5CYII=";
+  const winner: VisualPresentationBeat = { kind: "winner", winner: { id: "w", name: "Winner", persona: "social", status: "alive", shielded: false, fullBodyReferenceUrl: body, avatarUrl: "/winner-head.png" },
+    standings: [{ id: "r", name: "Runner-up", persona: "social", status: "alive", shielded: false, avatarUrl: "/runner-head.png", placement: 2, juryMember: false }] };
+  const view = render(<VisualPresentationFrame beat={winner} rooms={[]} elapsedMs={0} />);
+  expect(view.getByRole("img", { name: "Winner" }).getAttribute("src")).toBe(body);
+  view.rerender(<VisualPresentationFrame beat={winner} rooms={[]} elapsedMs={60_000} paused fullscreen reducedMotion />);
+  expect(view.getByRole("region", { name: "Final standings" }).style.opacity).not.toBe("0");
+  fireEvent.error(view.getByRole("img", { name: "Winner" }));
+  expect(view.getByRole("img", { name: "Winner" }).getAttribute("src")).toBe("/winner-head.png");
+  expect(view.getByRole("img", { name: "Runner-up" }).getAttribute("src")).toBe("/runner-head.png");
+  expect(view.getByText("Place 2")).not.toBeNull();
+});
+
 test.each([false, true])("room bubbles leave a clear camera interval and hold the scene after hiding (reduced motion: %s)", reducedMotion => {
   const hiddenAt = sceneSpeechDurationMs(speech.text) - SCENE_EXIT_HOLD_MS;
   const view = render(<VisualPresentationFrame beat={beat} rooms={rooms} elapsedMs={SCENE_SPEECH_START_MS} reducedMotion={reducedMotion} paused />);

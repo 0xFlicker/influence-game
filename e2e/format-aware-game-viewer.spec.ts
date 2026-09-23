@@ -408,6 +408,83 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeDisabled();
   });
 
+  for (const mobile of [false, true]) {
+    test(`winner tableau persists with canonical placements (${mobile ? "mobile" : "desktop"})`, async ({ page }, testInfo) => {
+      await page.clock.install();
+      await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
+      await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 });
+      const slug = `winner-tableau-${mobile}`;
+      const meta = { round: 2, phase: Phase.JURY_VOTE, timestamp: "2026-09-23T00:00:00.000Z" };
+      const decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"] = [
+        { ...meta, sequence: 1, type: "player.eliminated", payload: { playerId: "nova", playerName: "Nova" } },
+        { ...meta, sequence: 2, type: "player.eliminated", payload: { playerId: "sage", playerName: "Sage" } },
+        { ...meta, sequence: 3, type: "player.eliminated", payload: { playerId: "atlas", playerName: "Atlas" } },
+        { ...meta, sequence: 4, type: "player.eliminated", payload: { playerId: "echo", playerName: "Echo" } },
+        { ...meta, sequence: 10, type: "jury.winner_determined", payload: { votes: { atlas: "rex", echo: "rex", sage: "rex" }, winnerId: "rex" } },
+      ];
+      await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed", decisions,
+        roster: [...createFormatKernelViewerScenario("majority_elimination_tie").roster, { id: "sage", name: "Sage" }, { id: "nova", name: "Nova" }],
+      });
+      await page.route(`**/api/games/${slug}/transcript*`, route => route.fulfill({ json: [{
+        id: 1, gameId: slug, entrySequence: 1, firstDurableEventSequence: 11, phase: "JURY_VOTE", round: 2,
+        scope: "system", dialogueKind: "house_summary", fromPlayerId: null, fromPlayerName: "The House", toPlayerIds: null,
+        text: "The game is complete.", timestamp: 1,
+      }] }));
+      await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: true, status: null, portraits: Object.fromEntries(["atlas", "echo", "lyra", "sage", "nova"].map(id => [id, "/winner-head.svg"])), fullBodies: { rex: "/winner-body.svg" }, scenes: [] } }));
+      await page.route("**/winner-head.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><rect width="128" height="128" fill="#403b32"/><circle cx="64" cy="52" r="30" fill="#bd9d70"/><path d="M20 128V110Q64 64 108 110V128Z" fill="#ded4c0"/></svg>' }));
+      await page.route("**/winner-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><circle cx="200" cy="70" r="45" fill="#bd9d70"/><path d="M160 120H240L260 350H230V570H205V350H195V570H170V350H140Z" fill="#ded4c0"/></svg>' }));
+      await page.goto(viewerUrl(`/games/${slug}/replay`));
+      await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
+      await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toBeVisible();
+      await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
+      const next = page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true });
+      await next.click();
+      await expect(page.getByRole("region", { name: "Ballot: Echo" })).toBeVisible();
+      await expect(page.locator("[data-winner-scene]")).toHaveCount(0);
+      await next.click();
+      await expect(page.getByRole("region", { name: "Ballot: Sage" })).toBeVisible();
+      await next.click();
+      const tableau = page.getByRole("region", { name: "Final standings" });
+      await expect(tableau).toBeVisible();
+      await expect(tableau.locator('[data-winner-image="full-body"] img')).toBeVisible();
+      await expect(tableau.locator('[data-placement="2"]')).toContainText("Lyra");
+      await expect(tableau.locator('[data-placement="3"]')).toContainText("Echo");
+      await expect(tableau.locator('[data-placement="4"]')).toContainText("Atlas");
+      await expect(tableau.getByRole("list", { name: "Final four placements" }).getByRole("listitem")).toHaveCount(3);
+      await expect(tableau.getByRole("list", { name: "Jury", exact: true }).getByRole("listitem")).toHaveCount(1);
+      await expect(tableau.getByRole("list", { name: "Jury", exact: true })).toContainText("Sage");
+      await expect(tableau.getByRole("list", { name: "Rest of the cast" }).getByRole("listitem")).toHaveCount(1);
+      await expect(tableau.getByRole("list", { name: "Rest of the cast" })).toContainText("Nova");
+      await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
+      await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
+      await expect(tableau.locator('[data-placement="6"]')).toContainText("Nova");
+      await page.keyboard.press("ArrowLeft");
+      await expect(tableau).toHaveCount(0);
+      await next.click();
+      await next.click(); // Closing narration must not replace the result with fading text.
+      await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
+      await page.clock.runFor(30_000);
+      await expect(tableau).toBeVisible();
+      await expect(tableau).toHaveCSS("opacity", "1");
+      await tableau.screenshot({ path: testInfo.outputPath("winner-tableau.png") });
+      await page.getByRole("button", { name: "Enter fullscreen" }).click();
+      const winnerBox = await tableau.locator('[data-winner-image]').boundingBox();
+      const sceneBox = await tableau.boundingBox();
+      expect(winnerBox!.width / sceneBox!.width).toBeGreaterThan(.33);
+      expect(winnerBox!.width / sceneBox!.width).toBeLessThanOrEqual(.5);
+      const heads = await Promise.all([2, 3, 4].map(rank => tableau.locator(`[data-placement="${rank}"] img`).boundingBox()));
+      expect(heads[0]!.width).toBeGreaterThan(heads[1]!.width);
+      expect(heads[1]!.width).toBeGreaterThan(heads[2]!.width);
+      await tableau.screenshot({ path: testInfo.outputPath("winner-fullscreen.png") });
+      if (mobile) await page.setViewportSize({ width: 844, height: 390 });
+      await expect(tableau.getByRole("img", { name: "Rex", exact: true })).toBeInViewport();
+      await expect(tableau.locator('[data-placement="2"]')).toBeInViewport();
+      await page.getByRole("button", { name: "Exit fullscreen" }).click();
+      await page.reload();
+      await expect(page.locator("[data-winner-scene]")).toHaveCount(0);
+    });
+  }
+
   test("Empower tie separates original votes, nominees, revotes and final totals", async ({ page }, testInfo) => {
     const slug = "empower-revote-beats";
     const meta = { round: 1, phase: Phase.VOTE, timestamp: "2026-09-23T00:00:00.000Z" };

@@ -303,6 +303,8 @@ export interface EndgamePresentationCue extends SpeechCue {
   liveCatchUp?: boolean;
   kind: "endgame_ballot" | "endgame_elimination" | "endgame_winner";
   playerId: string;
+  standings?: Array<{ playerId: string; placement: number | null }>;
+  juryVoterIds?: string[];
   ballot?: { voterId: string; targetId: string; purpose: "eliminate" | "winner"; juryTiebreaker: boolean };
 }
 
