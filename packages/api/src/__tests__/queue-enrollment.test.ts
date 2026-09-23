@@ -222,7 +222,7 @@ describe("queue enrollment service", () => {
     expect(revision.fingerprint).toBe(fingerprintEffectiveRuntimeSnapshot(
       resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
         modelSelection: {
-          catalogId: "openai:gpt-5.6-luna",
+          catalogId: "openai:gpt-6-luna",
           reasoningPolicy: "action-policy",
         },
         temperature: persistedConfig.temperature,

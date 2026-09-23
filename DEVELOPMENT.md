@@ -459,7 +459,7 @@ The fuller checklist and triage live in `docs/local-model-evaluation.md`.
 
 ```bash
 # Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
-bun run simulate -- --games 1 --players 6 --model gpt-5.6-luna
+bun run simulate -- --games 1 --players 6 --model gpt-6-luna
 
 # Local LM Studio validation bypasses Doppler:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -538,13 +538,13 @@ Provider failures use a separate private evidence type. Admin and sysop can open
 
 `InfluenceAgent` and the House build provider-neutral model invocations selected from the per-game model catalog. The retry/budget coordinator selects one sealed manifest entry, then that entry's native adapter compiles and dispatches the invocation. Hosted OpenAI models that support Responses always use the Responses API, including when Katana fallbacks are present; Katana uses its native `/v1/chat/completions` contract. Adding, removing, or reordering fallbacks cannot change another entry's endpoint, reasoning, tools, structured-output format, token limit, service tier, or response decoding. Unsupported essential capabilities skip only the incompatible entry without downgrading the invocation. Hosted OpenAI uses `OPENAI_API_KEY`; local OpenAI-compatible servers use `INFLUENCE_LLM_BASE_URL` with LM Studio; Katana / IMGNAI uses `API_KAT_IMGNAI_KEY` plus `API_KAT_IMGNAI_SECRET` only when a game or simulator run explicitly selects a Katana catalog entry. API game start preflights the selected provider/model before claiming the durable run owner; set `INFLUENCE_LLM_PREFLIGHT=off` only for local OpenAI-compatible servers that can generate normally but do not implement model metadata retrieval. Hosted OpenAI agent prompts request Responses API reasoning summaries by default with `INFLUENCE_OPENAI_REASONING_SUMMARY=auto`; accepted values are `auto`, `concise`, `detailed`, and `off`, with `INFLUENCE_LLM_REASONING_SUMMARY` accepted as an alias. Local base URLs stay on Chat Completions compatibility paths and do not request hosted OpenAI reasoning summaries.
 
-New games seal an ordered `providerManifest`. Each entry uses `catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`, labeled **Adaptive** in the UI); fallback entries also require a bounded `maxCallsPerGame`. GPT-5.6 Luna (`openai:gpt-5.6-luna`) remains the primary product baseline. Current game-ready entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, `katana:grok-4-3`, `katana:grok-4-5`, and `katana:glm-5-2`. The unattended Daily default is Luna → Grok 4.5 (12 calls) → GLM 5.2 (24 calls); live Katana qualification for both fallbacks is recorded in `docs/local-model-evaluation.md`. `katana:grok-4-20-multi-agent` remains an evaluation candidate, and `katana:q-naifu-a3b` remains disabled after repeated semantic decision failures. Existing OpenAI and Katana catalog access remains available for explicit manual/test manifests.
+New games seal an ordered `providerManifest`. Each entry uses `catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`, labeled **Adaptive** in the UI); fallback entries also require a bounded `maxCallsPerGame`. GPT-6 Luna (`openai:gpt-6-luna`) is the primary product baseline. Current game-ready entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, `openai:gpt-6-luna`, `katana:grok-4-3`, `katana:grok-4-5`, and `katana:glm-5-2`. The unattended Daily default is Luna → GLM 5.2 (24 calls) → Grok 4.5 (12 calls); live Katana qualification for both fallbacks is recorded in `docs/local-model-evaluation.md`. `katana:grok-4-20-multi-agent` remains an evaluation candidate, and `katana:q-naifu-a3b` remains disabled after repeated semantic decision failures. Existing OpenAI and Katana catalog access remains available for explicit manual/test manifests.
 
 Create an API-backed simulation with the same ordered fallback shape using data-only CLI arguments:
 
 ```bash
 bun run simulate:api -- \
-  --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+  --provider-entry openai:gpt-6-luna,reasoning=action-policy \
   --provider-entry katana:grok-4-5,reasoning=action-policy,max-calls=12 \
   --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
 ```
@@ -576,7 +576,7 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 The root `simulate` script passes `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Hosted-provider tests are excluded from every required test command; when a task explicitly requires paid validation, run `doppler run -- bun run test:live-provider` from a trusted environment. Run hosted simulator batches from the repo root with:
 
 ```bash
-bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5.6-luna
+bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-6-luna
 ```
 
 Run the Katana Grok smoke through the catalog/provider path with:

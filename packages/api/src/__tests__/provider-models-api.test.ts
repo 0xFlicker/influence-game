@@ -26,7 +26,7 @@ describe("provider model inventory", () => {
       {
         async listModelIds(providerProfileId) {
           calls.push(providerProfileId);
-          return ["gpt-5-nano", "gpt-5-mini", "gpt-5.4-nano", "gpt-5.4-mini", "gpt-5.6-luna"];
+          return ["gpt-5-nano", "gpt-5-mini", "gpt-5.4-nano", "gpt-5.4-mini", "gpt-5.6-luna", "gpt-6-luna"];
         },
       },
     ));
@@ -49,6 +49,8 @@ describe("provider model inventory", () => {
     };
     expect(body.status).toBe("complete");
     expect(calls).toEqual(["openai"]);
+    expect(body.models.find((model) => model.catalogId === "openai:gpt-6-luna"))
+      .toMatchObject({ configured: true, available: true, allowedReasoningPolicies: ["action-policy", "low", "medium", "high"] });
     expect(body.models.find((model) => model.catalogId === "openai:gpt-5.6-luna"))
       .toMatchObject({ configured: true, available: true });
     expect(body.models.find((model) => model.catalogId === "katana:grok-4-5"))

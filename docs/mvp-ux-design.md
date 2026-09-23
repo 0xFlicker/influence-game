@@ -52,7 +52,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 │                                                                       │
 │  PROVIDER MANIFEST                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  Primary     OpenAI GPT-5.6 Luna          [Adaptive]          │    │
+│  │  Primary     OpenAI GPT-6 Luna          [Adaptive]          │    │
 │  │  Fallback 1  Katana Grok 4.5      [12 calls] [Adaptive]       │    │
 │  │  Fallback 2  Katana GLM 5.2       [24 calls] [Adaptive]       │    │
 │  │  [Add fallback]        [Move up/down] [Remove]                │    │
@@ -92,7 +92,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 |:------|:-----|:-----------|:--------|
 | `playerCount` | `6 \| 8 \| 10 \| 12` | required | 6 |
 | `slotType` | `all_ai \| mixed` | required | `all_ai` |
-| `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium" }` |
+| `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }` |
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |
 | `fillStrategy` | `random \| balanced` | required | `balanced` |
 | `timingPreset` | `fast \| standard \| slow \| custom` | required | `standard` |

@@ -130,7 +130,7 @@ describe("simulation variant config", () => {
     expect(args.chatty).toBe(false);
     expect(args.operatorFeed).toBe(true);
     expect(args.houseSummaries).toBe(true);
-    expect(args.model).toBe("gpt-5.6-luna");
+    expect(args.model).toBe("gpt-6-luna");
   });
 
   it("can disable operator feed and house summaries", () => {
