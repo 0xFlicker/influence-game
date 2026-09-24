@@ -102,6 +102,7 @@ function pointerCue(): Extract<
   const before = snapshot({
     canonicalSequence: 42,
     safetyBounce: {
+      pointers: [],
       starterId: "atlas",
       currentActorId: "atlas",
       safePlayerIds: ["atlas"],
@@ -112,6 +113,7 @@ function pointerCue(): Extract<
   const after = snapshot({
     canonicalSequence: 44,
     safetyBounce: {
+      pointers: [],
       starterId: "atlas",
       currentActorId: "echo",
       safePlayerIds: ["atlas"],

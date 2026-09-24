@@ -1,4 +1,5 @@
 import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/format-kernel-viewer";
+import { sceneSpeechDurationMs } from "../app/games/[slug]/components/scene-speech-timing";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
 import { createPresentationDirector } from "../app/games/[slug]/components/format-presentation-director";
@@ -53,8 +54,8 @@ test("all accepted ballot purposes say only the target name using the frozen bod
   }
 });
 
-test("solo cues budget their full shot sequence while room and House speech keep their timing", () => {
-  expect(transcriptPresentationDurationMs(message, [player])).toBe(visualSpeechDurationMs(message.text));
+test("solo and room cues budget their staging while House speech keeps its timing", () => {
+  expect(transcriptPresentationDurationMs(message, [player])).toBe(sceneSpeechDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined }, [player])).toBe(soloPresentationDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, phase: "INTRODUCTION" }, [player])).toBe(soloPresentationDurationMs(message.text));
   expect(transcriptPresentationDurationMs({ ...message, visualScene: undefined, fromPlayerId: null, scope: "system", dialogueKind: "house_summary" }, [player])).toBe(visualSpeechDurationMs(message.text));
@@ -74,7 +75,7 @@ test.each(["two_names_declined", "save_or_eliminate_clear", "vote_bomb_clear", "
     if (cue.source !== "format" || cue.kind !== "format_roll_call") throw new Error("Expected ballot");
     const beat = visualWatchPresentation(data, cue, null, players).beat;
     expect(beat).toMatchObject({ kind: "portrait", purpose: "Ballot", player: { id: cue.ballot.voterId }, speech: { text: players.find(p => p.id === cue.ballot.targetId)!.name } });
-    expect(cue.soloSpeech).toBe(true);
+    expect(cue.speechPresentation).toBe("solo");
     expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(players.find(p => p.id === cue.ballot.targetId)!.name));
   }
   expect(paced.filter(c => c.source === "format" && !c.visualBallot).map(c => c.key)).toEqual(compiled.cues.map(c => c.key));
@@ -103,7 +104,7 @@ test("Empowered revotes follow the tie beat without repeating original votes, an
   expect(director.getSnapshot().activeKey).toBe(before.activeKey);
   expect(director.getSnapshot().isPlaying).toBe(false);
   director.manualAdvance();
-  expect(director.getActiveCue()).toMatchObject({ visualBallot: { revote: true, targetId: players[1]!.id }, soloSpeech: true });
+  expect(director.getActiveCue()).toMatchObject({ visualBallot: { revote: true, targetId: players[1]!.id }, speechPresentation: "solo" });
   expect(director.getElapsedBaseMs()).toBeGreaterThan(0);
   director.dispose();
   const ballots = paced.flatMap(c => c.source === "format" && c.visualBallot ? [c.visualBallot] : []);
@@ -133,7 +134,7 @@ test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "
   expect(cues[index - 1]?.kind).toBe("format_tiebreak");
   expect(cues[index + 1]?.kind).toBe("format_elimination");
   const target = players.find(p => p.id === cue.targetId)!.name;
-  expect(cue.soloSpeech).toBe(true);
+  expect(cue.speechPresentation).toBe("solo");
   expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(target));
   for (const fullBodies of [{}, { [cue.tiebreakerId]: "/body.png" }]) {
     expect(visualWatchPresentation({ ...data, fullBodies }, cue, null, players).beat).toMatchObject({

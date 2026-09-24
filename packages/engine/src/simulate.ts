@@ -58,7 +58,14 @@
  * Two Names requires at least five living players and proves nominations,
  * Override/replacement branching, ordered pleas, finalist ballots, and tiebreak.
  * New Override draws exclude Empowered; both nominees remain eligible.
- * Its two Mingle windows retain separate semantic provider coordinates;
+ * The Short List gives every player shared coordination guidance in social,
+ * huddle, diary, and ballot prompts. Inspect specific voter-to-target commitments,
+ * projected totals, and defections against canonical ballots. Resolved-round
+ * diaries frame the advice as reflection; prompt coverage is not gameplay proof.
+ * Every format's diary questions, follow-ups, and answers share its existing
+ * rules and active/resolved status. Completed rounds are reflection context;
+ * offered formats and endgame do not receive a stale standard-round rule block.
+ * Two Names' two Mingle windows retain separate semantic provider coordinates;
  * alliance proposal/version and huddle schedule/session IDs derive from the
  * canonical event boundary so accepted calls retain identity after API restart.
  * Nullable structured fields normalize exact provider `"null"` before validation;
@@ -76,6 +83,9 @@
  *
  * Two Names prompts carry canonical initial/current nominees and Override state for
  * every social decision; only the Empowered initial nomination has no selected pair.
+ * A nominated holder with Override pending receives neutral self-removal/replacement
+ * guidance; other players are told self-rescue is most likely. This strategic advice
+ * ends at use/decline, including pending replacement; it is not an accepted decision.
  * Inspect fresh outgoing prompts for this contract, not historical transcript prose.
  * Keep direct House calls and no `as any` in simulation integrations.
  *

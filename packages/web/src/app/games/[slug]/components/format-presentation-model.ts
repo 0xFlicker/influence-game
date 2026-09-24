@@ -984,6 +984,7 @@ function applyDecision(input: {
         safetyBounce: {
           starterId: decision.payload.starterId,
           currentActorId: decision.payload.starterId,
+          pointers: [],
           safePlayerIds: [decision.payload.starterId],
           vulnerablePlayerIds: [],
           benchPlayerIds: eligiblePlayerIds.filter(
@@ -1070,6 +1071,7 @@ function applyDecision(input: {
         safetyBounce: {
           ...board,
           currentActorId: decision.payload.targetId,
+          pointers: [...board.pointers, { ...decision.payload }],
           safePlayerIds,
           vulnerablePlayerIds,
           benchPlayerIds: board.benchPlayerIds.filter(

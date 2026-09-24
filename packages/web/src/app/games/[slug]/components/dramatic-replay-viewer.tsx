@@ -32,7 +32,7 @@ import {
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { buildStoryScenes, withHouseBridges } from "./house-story";
-import { buildEndgamePresentationCues } from "./endgame-presentation";
+import { buildEndgamePresentationCues, revealedWinnerCue } from "./endgame-presentation";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   MATCH_WATCH_FORMAT_PHASES,
@@ -113,7 +113,8 @@ export function buildClassicPresentationCues(
       kind: "classic_transcript" as const,
       stage: "done" as const,
       baseDurationMs: transcriptPresentationDurationMs(message, players),
-      soloSpeech: isSoloTranscript(message),
+      speechPresentation: isSoloTranscript(message) ? "solo" as const
+        : message.anonymous || message.speakerPlayerId || message.fromPlayerId ? "scene" as const : undefined,
       sceneIndex,
       messageIndex,
     })),
@@ -381,9 +382,15 @@ function DramaticReplayTheater({
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
+  const priorLobbyMessages = useMemo(() => !formatCue ? [] : classicCues
+    .filter(cue => cue.round === formatCue.round && cue.phase === "LOBBY"
+      && cue.canonicalSequence !== null && cue.canonicalSequence <= formatCue.canonicalSequence)
+    .map(cue => scenes[cue.sceneIndex]!.messages[cue.messageIndex]!), [classicCues, formatCue, scenes]);
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, activeCue, currentMessage, players,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinnerCue(presentationCues, directorSnapshot.cursor) ?? activeCue, currentMessage, players, priorLobbyMessages,
   );
+  const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
+    && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
   const speed = directorSnapshot.speed;
 
@@ -505,6 +512,7 @@ function DramaticReplayTheater({
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
   const isSoloPresentation = visual.beat?.kind === "portrait";
+  const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
 
   const canonicalReplayFrame = useMemo(() => {
     if (!isFormatGame || replayFrames.length === 0) return null;
@@ -627,14 +635,13 @@ function DramaticReplayTheater({
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (shouldSuppressDramaticAdvance(e.target)) return;
-    if (fullscreen) { setControlsVisible((visible) => !visible); resetControlsTimer(); return; }
     if (!controlsVisible && isPlaying) {
       setControlsVisible(true);
       resetControlsTimer();
       return;
     }
     advanceMessage();
-  }, [advanceMessage, controlsVisible, fullscreen, isPlaying, resetControlsTimer]);
+  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
@@ -856,13 +863,13 @@ function DramaticReplayTheater({
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
             : "items-start overflow-y-auto overscroll-y-contain"
-        } justify-center ${fullscreen ? visual.beat?.kind === "scene" || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
+        } justify-center ${fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : visual.beat?.kind === "scene" ? "max-w-7xl" : "max-w-3xl"}`}>
+        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${fullscreen || isSoloPresentation ? "" : isRoomPresentation ? "max-w-7xl" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
+          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={fullscreen}><FormatPresentation
@@ -1058,7 +1065,7 @@ function DramaticReplayTheater({
 
         </div>
         <p className={`text-[10px] text-white/10 text-center mt-2 ${fullscreen ? "hidden" : "hidden md:block"}`}>
-          Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
+          Space: play/pause · Click/→: show/hide speech · ←: back · []: rounds · 1234: speed
         </p>
       </div>
     </div>

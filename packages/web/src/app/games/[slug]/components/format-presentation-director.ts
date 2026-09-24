@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
 import type { PresentationCue } from "./types";
-import { SOLO_READ_START_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
+import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
+import { SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
+import { SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "./scene-speech-timing";
 
 export interface PresentationClock {
   now(): number;
@@ -330,9 +332,17 @@ export class PresentationDirector {
   private waitingAtHydrationWatermark = false;
   private hasPlayed = false;
   private navigationRevision = 0;
+  private manualTransition: { stopAtMs: number; advance: boolean } | null = null;
+  private exitReadingPositionMs: number | null = null;
 
-  /** Explicit navigation cuts camera motion; automatic advances may pan. */
+  /** Explicit seeks cut camera motion; timed and click-driven speech may pan. */
   getNavigationRevision(): number { return this.navigationRevision; }
+
+  /** Click-requested fades run to a boundary even while playback is paused. */
+  isAnimating(): boolean { return this.timerId !== null; }
+
+  /** Skipping reading time must fade the visible page, not flash the final page. */
+  getSpeechElapsedBaseMs(): number { return this.exitReadingPositionMs ?? this.getElapsedBaseMs(); }
 
   constructor({
     clock = browserClock(),
@@ -397,6 +407,8 @@ export class PresentationDirector {
     }
     const wasPlaying = this.state.isPlaying;
     this.clearTimer();
+    this.manualTransition = null;
+    this.exitReadingPositionMs = null;
     this.waitingAtHydrationWatermark = false;
     this.apply({ type: "load", cues: canonical, cursor });
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
@@ -425,6 +437,7 @@ export class PresentationDirector {
     if (firstNewIndex >= 0 && this.state.isPlaying
       && (this.waitingAtHydrationWatermark || this.state.waitingAtTail)) {
       nextCursor = firstNewIndex;
+      this.exitReadingPositionMs = null;
       this.waitingAtHydrationWatermark = false;
       this.remainingBaseMs = cueDurationMs(nextCues[nextCursor]);
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
@@ -435,6 +448,11 @@ export class PresentationDirector {
 
   play(): void {
     if (this.disposed || this.state.cues.length === 0) return;
+    if (this.manualTransition) {
+      this.captureRemainingTime();
+      this.clearTimer();
+      this.manualTransition = null;
+    }
     if (!this.state.isPlaying) {
       this.apply({ type: "set_playing", isPlaying: true });
       if (this.hasPlayed) {
@@ -448,6 +466,7 @@ export class PresentationDirector {
         && !(cue.source !== "format" && cue.liveCatchUp));
       if (next >= 0) {
         this.waitingAtHydrationWatermark = false;
+        this.exitReadingPositionMs = null;
         this.apply({ type: "set_cursor", cursor: next });
         this.remainingBaseMs = this.activeDurationMs();
       }
@@ -456,6 +475,7 @@ export class PresentationDirector {
       this.state.waitingAtTail
       && this.state.cursor + 1 < this.state.cues.length
     ) {
+      this.exitReadingPositionMs = null;
       this.apply({ type: "set_cursor", cursor: this.state.cursor + 1 });
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
       this.remainingBaseMs = this.activeDurationMs();
@@ -476,24 +496,52 @@ export class PresentationDirector {
 
   manualAdvance(): void {
     if (this.disposed || this.state.cues.length === 0) return;
-    if (this.getActiveCue()?.soloSpeech && !this.state.waitingAtTail) {
-      const clockElapsed = this.getElapsedBaseMs();
-      // The initial paused frame already renders fully readable speech.
-      const elapsed = !this.state.isPlaying && clockElapsed === 0 ? SOLO_READ_START_MS : clockElapsed;
-      if (elapsed < SOLO_READ_START_MS) {
-        this.positionWithinCue(SOLO_READ_START_MS);
+    // Repeated clicks cannot discard either fade or the clear scene between lines.
+    if (this.manualTransition) return;
+    if (this.state.waitingAtTail || this.waitingAtHydrationWatermark) {
+      if (this.state.cursor + 1 >= this.state.cues.length) return;
+      this.waitingAtHydrationWatermark = false;
+      this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
+      this.advanceOne();
+      const nextSpeech = speechBoundaries(this.getActiveCue());
+      if (!this.state.isPlaying && nextSpeech) this.transitionWhilePaused(0, nextSpeech.readAtMs);
+      return;
+    }
+    const speech = speechBoundaries(this.getActiveCue());
+    if (speech) {
+      const elapsed = this.getElapsedBaseMs();
+      if (elapsed < speech.readAtMs) {
+        if (this.state.isPlaying) {
+          if (elapsed < speech.showAtMs) this.positionWithinCue(speech.showAtMs);
+        } else {
+          this.transitionWhilePaused(Math.max(elapsed, speech.showAtMs), speech.readAtMs);
+        }
         return;
       }
-      if (this.state.isPlaying) {
-        const exitAt = this.activeDurationMs() - SOLO_EXIT_MS;
-        // Finish the exit on the shared clock; repeated clicks cannot skip it.
-        if (elapsed < exitAt) this.positionWithinCue(exitAt);
+      if (elapsed < speech.hiddenAtMs) {
+        this.exitReadingPositionMs ??= elapsed;
+        if (this.state.isPlaying) {
+          if (elapsed < speech.hideAtMs) this.positionWithinCue(speech.hideAtMs);
+        } else {
+          this.transitionWhilePaused(Math.max(elapsed, speech.hideAtMs), speech.hiddenAtMs);
+        }
         return;
       }
+      if (this.state.isPlaying) return;
+      // Keep the final image available for a snapshot until more content exists.
+      if (this.state.cursor + 1 >= this.state.cues.length) return;
+      this.transitionWhilePaused(elapsed, this.activeDurationMs(), true);
+      return;
     }
     this.navigationRevision++;
     this.animation.complete();
     this.advanceOne(true);
+  }
+
+  private transitionWhilePaused(fromMs: number, stopAtMs: number, advance = false): void {
+    this.clearTimer();
+    this.manualTransition = { stopAtMs, advance };
+    this.positionWithinCue(fromMs);
   }
 
   private positionWithinCue(elapsedMs: number): void {
@@ -541,10 +589,12 @@ export class PresentationDirector {
     this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
+    this.manualTransition = null;
+    this.exitReadingPositionMs = null;
     this.waitingAtHydrationWatermark = false;
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.positionWithinCue(this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
+    this.positionWithinCue(speechBoundaries(this.getActiveCue())?.showAtMs ?? 0);
   }
 
   reconnect(cues: readonly PresentationCue[]): void {
@@ -562,13 +612,20 @@ export class PresentationDirector {
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: true });
     }
     if (retainedCursor < 0) this.remainingBaseMs = 0;
+    if (retainedCursor < 0) {
+      this.manualTransition = null;
+      this.exitReadingPositionMs = null;
+    }
     this.waitingAtHydrationWatermark = retainedCursor < 0;
+    if (this.manualTransition) this.ensureTimer();
   }
 
   resetRound(cues: readonly PresentationCue[]): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
     this.clearTimer();
+    this.manualTransition = null;
+    this.exitReadingPositionMs = null;
     this.apply({ type: "reset_round", cues: canonical });
     this.remainingBaseMs = this.activeDurationMs();
     this.waitingAtHydrationWatermark = false;
@@ -579,6 +636,7 @@ export class PresentationDirector {
     if (this.disposed) return;
     this.disposed = true;
     this.clearTimer();
+    this.manualTransition = null;
     this.listeners.clear();
   }
 
@@ -599,7 +657,8 @@ export class PresentationDirector {
       return;
     }
     this.apply({ type: "set_cursor", cursor: nextCursor });
-    this.positionWithinCue(manual && this.getActiveCue()?.soloSpeech ? SOLO_READ_START_MS : 0);
+    this.exitReadingPositionMs = null;
+    this.positionWithinCue(manual ? speechBoundaries(this.getActiveCue())?.showAtMs ?? 0 : 0);
   }
 
   private activeDurationMs(): number {
@@ -610,7 +669,7 @@ export class PresentationDirector {
     if (
       this.disposed
       || this.timerId !== null
-      || !this.state.isPlaying
+      || (!this.state.isPlaying && !this.manualTransition)
       || this.state.waitingAtTail
       || this.waitingAtHydrationWatermark
       || !this.state.cues[this.state.cursor]
@@ -618,14 +677,29 @@ export class PresentationDirector {
       return;
     }
     if (this.remainingBaseMs < 0) this.remainingBaseMs = 0;
+    const transition = this.manualTransition;
+    const remainingMs = transition
+      ? Math.max(0, transition.stopAtMs - (this.activeDurationMs() - this.remainingBaseMs))
+      : this.remainingBaseMs;
     this.scheduledAt = this.clock.now();
     this.timerId = this.clock.setTimeout(
       () => {
         this.timerId = null;
+        if (transition) {
+          this.manualTransition = null;
+          this.remainingBaseMs = Math.max(0, this.activeDurationMs() - transition.stopAtMs);
+          if (transition.advance) {
+            this.advanceOne();
+            const nextSpeech = speechBoundaries(this.getActiveCue());
+            if (nextSpeech) this.transitionWhilePaused(0, nextSpeech.readAtMs);
+          }
+          for (const listener of this.listeners) listener();
+          return;
+        }
         this.remainingBaseMs = 0;
         this.advanceOne();
       },
-      this.remainingBaseMs / this.state.speed,
+      remainingMs / this.state.speed,
     );
   }
 
@@ -653,6 +727,18 @@ export class PresentationDirector {
     this.state = next;
     for (const listener of this.listeners) listener();
   }
+}
+
+function speechBoundaries(cue: PresentationCue | null) {
+  if (!cue?.speechPresentation) return null;
+  const solo = cue.speechPresentation === "solo";
+  const hideAtMs = cue.baseDurationMs - (solo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + VISUAL_SPEECH_FADE_MS);
+  return {
+    showAtMs: solo ? SOLO_SPEECH_START_MS : SCENE_SPEECH_START_MS,
+    readAtMs: solo ? SOLO_READ_START_MS : SCENE_READ_START_MS,
+    hideAtMs,
+    hiddenAtMs: hideAtMs + (solo ? SOLO_SPEECH_FADE_MS : VISUAL_SPEECH_FADE_MS),
+  };
 }
 
 function cueDurationMs(cue: PresentationCue | undefined): number {

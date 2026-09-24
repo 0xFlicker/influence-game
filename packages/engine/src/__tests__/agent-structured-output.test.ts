@@ -17,6 +17,7 @@ import { parsePlayerContinuityCapsule } from "../player-continuity";
 import { Phase } from "../types";
 import { modelCatalogEntryById } from "../model-catalog";
 import { ruleSheetForFormat } from "../format-pressure";
+import { LAUNCH_FORMAT_IDS, displayNameForFormat } from "../format-presentation-metadata";
 import {
   compileRecallPlan,
   emptyRecallContinuitySnapshot,
@@ -2044,8 +2045,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[0]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[1]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[1]).not.toContain(ruleSheetForFormat("vote_bomb"));
-    expect(prompts[2]).toContain("loading");
-    expect(prompts[2]).toContain("stray vote");
+    expect(prompts[2]).toContain("Concentrating votes on one player");
+    expect(prompts[2]).toContain("Coordinate specific vote placements");
     expect(prompts[3]).toContain("Legal unclassified targets: Vera");
     expect(prompts[4]).toContain("Legal vulnerable targets: Mira, Vera");
     expect(prompts[5]).toContain("Legal tied targets: Mira, Vera");
@@ -2297,6 +2298,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("short_list");
     expect(prompt).toContain("safety_bounce");
     expect(prompt).not.toContain("Locked round format:");
+    expect(prompt).not.toContain("Concentrating votes on one player can make");
     expect(prompt).not.toContain(ruleSheetForFormat("save_or_eliminate"));
   });
 
@@ -2370,6 +2372,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[0]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[0]).toContain("ballot is sealed");
     expect(prompts[0]).not.toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[0]).not.toContain("Concentrating votes on one player can make");
     expect(prompts[1]).toContain("Locked round format: The Short List (tool id: short_list)");
     expect(prompts[1]).toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[1]).toContain("ballot is sealed");
@@ -2378,6 +2381,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[2]).toContain(ruleSheetForFormat("safety_bounce"));
     expect(prompts[2]).toContain("pointers are public");
     expect(prompts[2]).toContain("final exit ballot is sealed");
+    expect(prompts[2]).not.toContain("Concentrating votes on one player can make");
     for (const prompt of prompts) {
       expect(prompt).not.toContain("At Power, the empowered player");
       expect(prompt).not.toContain("Council decides");
@@ -6939,6 +6943,115 @@ describe("U4 selective context recall rendering", () => {
 });
 
 
+describe("diary round format rules", () => {
+  for (const formatId of LAUNCH_FORMAT_IDS) {
+    it.each(["active", "resolved"])(`includes ${formatId} rules and %s timing in contestant answers`, async (status) => {
+      const requests: Array<Record<string, unknown>> = [];
+      const ctx: PhaseContext = {
+        ...makeContext(Phase.DIARY_ROOM),
+        ...(status === "resolved" ? { resolvedRoundFormatId: formatId } : {
+          formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: [formatId], selectedFormat: formatId, ruleSheetSummary: ruleSheetForFormat(formatId) },
+        }),
+        ...(formatId === "restricted_history" && status === "active" ? { restrictedHistoryLegality: { priorTargetIds: [], priorTargetNames: [], legalTargetIds: ["mira-id", "vera-id"], legalTargetNames: ["Mira", "Vera"] } } : {}),
+      };
+      const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the format.", message: "The placement mattered.", strategyDelta: null })), "gpt-5-nano");
+      agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+      await agent.getDiaryEntry(ctx, "What is your read on the round?");
+      const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+      expect(prompt).toContain("## Diary Round Format");
+      expect(prompt).toContain(`"name": "${displayNameForFormat(formatId)}"`);
+      expect(prompt).toContain(`"status": "${status}"`);
+      expect(prompt).toContain(JSON.stringify(ruleSheetForFormat(formatId)));
+      expect(prompt).toContain(status === "resolved" ? "not on casting another ballot" : "its outcome is not yet resolved");
+    });
+  }
+
+  it.each([false, true])("does not invent a diary format before selection or retain one in endgame (%s)", async (endgame) => {
+    const requests: Array<Record<string, unknown>> = [];
+    const ctx: PhaseContext = {
+      ...makeContext(Phase.DIARY_ROOM),
+      formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: ["vote_bomb", "safety_bounce"], selectedFormat: null, ruleSheetSummary: null },
+      ...(endgame ? { endgameStage: "reckoning", resolvedRoundFormatId: "vote_bomb" } : {}),
+    };
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the moment.", message: "I am watching the room.", strategyDelta: null })), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, ctx.alivePlayers);
+    await agent.getDiaryEntry(ctx, "What are you thinking?");
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+    expect(prompt).not.toContain("## Diary Round Format");
+    expect(prompt).not.toContain("## The Short List Reflection");
+  });
+});
+
+describe("The Short List coordination guidance", () => {
+  const responsibility = "Concentrating votes on one player can make that player's own ballot decide who exits. Consider whether you want that responsibility yourself, or want another player to have it. You can accept that role, bargain over it, or ask others for a different plan.";
+  const coordination = "Coordinate specific vote placements: who votes for whom, what totals that would produce, and who would exit. If the proposed outcome threatens you or an ally, negotiate an alternative distribution and seek commitments from the players needed to make it work. Votes are sealed, so consider what happens if someone breaks their commitment.";
+  const guidance = `${responsibility}\n\n${coordination}`;
+
+  it("gives every player both guidelines during Mingle, alliances, huddles, ballots, and active diary interviews", async () => {
+    const players = makeContext().alivePlayers;
+    for (const player of players) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent(player.id, player.name, "strategic", makeToolSequenceOpenAIStub(requests, [
+        { toolName: "mingle_turn", args: { thinking: "Coordinate.", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, coordinationFact: null, noProposal: true, strategyDelta: null } },
+        { toolName: "take_alliance_action", args: { thinking: "Wait for a commitment.", decision: { action: "pass" }, strategyDelta: null } },
+        { toolName: "alliance_huddle_turn", args: { thinking: "Discuss placements.", message: "Let's compare our planned votes.", noReply: false, factAtoms: [], strategyDelta: null } },
+        { toolName: "short_list_ballot", args: { thinking: "Place my ballot.", target: players.find((other) => other.id !== player.id)!.name, strategyDelta: null } },
+      ]), "gpt-5-nano");
+      agent.onGameStart("game-1", players);
+      const ctx: PhaseContext = {
+        ...makeContext(Phase.FORMAT_MINGLE), selfId: player.id, selfName: player.name,
+        empoweredId: "mira-id",
+        formatPressure: { empoweredId: "mira-id", empoweredName: "Mira", offeredFormats: ["vote_bomb", "safety_bounce"], selectedFormat: "vote_bomb", ruleSheetSummary: ruleSheetForFormat("vote_bomb") },
+      };
+      await agent.takeMingleTurn(ctx, players.map((other) => other.name), []);
+      await agent.getAllianceAction(ctx, { kind: "proposer" });
+      await agent.getAllianceHuddleTurn(ctx, {
+        sessionId: "session", allianceId: "alliance", allianceName: "Our Plan", memberIds: players.map((other) => other.id), memberNames: players.map((other) => other.name),
+        purpose: "Coordinate placements.", window: "format", scheduleId: "schedule", pass: 1, priorFacts: [],
+      }, []);
+      await agent.getVoteBombBallot({ ...ctx, phase: Phase.FORMAT_RESOLVE }, players.map((other) => other.id));
+      const diaryAgent = new InfluenceAgent(player.id, player.name, "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Consider the plan.", message: "I need commitments.", strategyDelta: null })), "gpt-5-nano");
+      diaryAgent.onGameStart("game-1", players);
+      await diaryAgent.getDiaryEntry({ ...ctx, phase: Phase.DIARY_ROOM }, "What is your plan?");
+      expect(requests).toHaveLength(5);
+      for (const request of requests) {
+        const prompt = (request.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+        expect(prompt.split(guidance)).toHaveLength(2);
+      }
+    }
+  });
+
+  it.each(["next round", "endgame"])("uses canonical resolution for diary reflection without retaining it into %s", async (boundary) => {
+    const players = makeContext().alivePlayers;
+    const state = new GameState(players, { gameId: "short-list-diary", formatManifest: ["vote_bomb"] });
+    const builder = new ContextBuilder(state, new TranscriptLogger(state), new Map(), 3);
+    state.startRound();
+    state.setEmpowered("atlas-id");
+    state.recordFormatSelected("atlas-id", "vote_bomb");
+    expect(builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM).resolvedRoundFormatId).toBeUndefined();
+    for (const player of players) state.recordFormatBallot({ formatId: "vote_bomb", voterId: player.id, targetId: player.id === "mira-id" ? "vera-id" : "mira-id" });
+    state.recordFormatResolution({ formatId: "vote_bomb", empoweredId: "atlas-id", eliminatedId: "vera-id", resolutionKind: "clear", tiedPlayerIds: ["vera-id"], tiebreakerId: null,
+      aggregate: { capability: "sealed_elim", totals: { "atlas-id": 0, "mira-id": 2, "vera-id": 1 }, eligiblePlayerIds: ["mira-id", "vera-id"] },
+    });
+    state.eliminatePlayer("vera-id");
+    const ctx = builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM);
+    expect(ctx.formatPressure).toBeUndefined();
+    expect(ctx.resolvedRoundFormatId).toBe("vote_bomb");
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", makeTextOpenAIStub(requests, JSON.stringify({ thinking: "Reflect on coordination.", message: "We agreed on placements.", strategyDelta: null })), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, players);
+    await agent.getDiaryEntry(ctx, "How did your plan work?");
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).map((message) => message.content).join("\n");
+    expect(prompt.split(guidance)).toHaveLength(2);
+    expect(prompt).toContain("The round has resolved.");
+    expect(prompt).not.toContain("Locked round format:");
+    expect(builder.buildPhaseContext("atlas-id", Phase.MINGLE).resolvedRoundFormatId).toBeUndefined();
+    if (boundary === "endgame") state.setEndgameStage("reckoning");
+    else state.startRound();
+    expect(builder.buildPhaseContext("atlas-id", Phase.DIARY_ROOM).resolvedRoundFormatId).toBeUndefined();
+  });
+});
+
 describe("Two Names canonical prompt board", () => {
   const players = [
     { id: "atlas", name: "Atlas" }, { id: "mira", name: "Mira" },
@@ -6993,6 +7106,58 @@ describe("Two Names canonical prompt board", () => {
       expect(prompt).toContain("initial nominations; Override pending");
       expect(prompt).toContain("Nyx and Sage");
       expect(prompt).not.toContain("no pair has been selected");
+      expect(prompt).not.toContain("## Two Names Strategic Context");
+    }
+  });
+  it.each(["mira", "vera"])("gives nominee Override %s neutral self-rescue guidance and everyone else the likely outcome", async (holderId) => {
+    const { state, builder } = harness();
+    state.recordTwoNamesSetup({ empoweredId: "atlas", initialNomineeIds: ["mira", "vera"], overrideHolderId: holderId });
+    const holderGuidance = "You are both nominated and, by luck, the Override holder. That means you can take yourself off the nomination block and return the decision to the Empowered player, who must nominate another player. Think about who might be the replacement nominee.";
+    const othersGuidance = "The Override is also a nominee, so they will most likely use the Override on themselves.";
+    for (const { id } of players) {
+      const prompt = await minglePrompt(builder.buildPhaseContext(id, Phase.FORMAT_MINGLE));
+      expect(prompt).toContain(id === holderId ? holderGuidance : othersGuidance);
+      expect(prompt).not.toContain(id === holderId ? othersGuidance : holderGuidance);
+      expect(prompt).toContain("Override decision: pending");
+    }
+
+    state.recordTwoNamesMingleCompleted("initial_names", ["mira", "vera"]);
+    const ctx = builder.buildPhaseContext(holderId, Phase.FORMAT_MINGLE);
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(holderId, ctx.selfName, "strategic", makeToolOpenAIStub(requests, "two_names_override", {
+      thinking: "Consider the replacement.", useOverride: false, removed: null, strategyDelta: null,
+    }), "gpt-5-nano");
+    agent.onGameStart(ctx.gameId, players);
+    const decision = await agent.getTwoNamesOverride(ctx, ["mira", "vera"]);
+    const prompt = JSON.stringify(requests[0]?.messages);
+    expect(prompt).toContain(holderGuidance);
+    expect(prompt).not.toContain(othersGuidance);
+    expect(decision.action).toBe("decline");
+  });
+  it.each([null, "mira", "vera"])("retires nominee Override guidance after the decision (removed: %s)", async (removedId) => {
+    const { state, builder } = harness();
+    state.recordTwoNamesSetup({ empoweredId: "atlas", initialNomineeIds: ["mira", "vera"], overrideHolderId: "mira" });
+    state.recordTwoNamesMingleCompleted("initial_names", ["mira", "vera"]);
+    if (removedId) {
+      const pending = builder.buildPhaseContext("atlas", Phase.FORMAT_MINGLE, { twoNamesReplacementRemovedId: removedId });
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent("atlas", "Atlas", "strategic", makeToolOpenAIStub(requests, "two_names_replacement", {
+        thinking: "Name a replacement.", target: "Sage", strategyDelta: null,
+      }), "gpt-5-nano");
+      agent.onGameStart(pending.gameId, players);
+      await agent.getTwoNamesReplacement(pending, ["sage"]);
+      expect(JSON.stringify(requests[0]?.messages)).not.toContain("## Two Names Strategic Context");
+      state.recordTwoNamesOverrideUsed({
+        overrideHolderId: "mira", removedNomineeId: removedId, empoweredId: "atlas", replacementNomineeId: "sage",
+        finalistPlayerIds: removedId === "mira" ? ["sage", "vera"] : ["mira", "sage"],
+      }, { override: [], replacement: [] });
+    } else {
+      state.recordTwoNamesOverrideDeclined("mira", ["mira", "vera"]);
+    }
+    for (const { id } of players) {
+      const prompt = await minglePrompt(builder.buildPhaseContext(id, Phase.FORMAT_MINGLE));
+      expect(prompt).not.toContain("## Two Names Strategic Context");
+      expect(prompt).toContain(`Override decision: ${removedId ? "used" : "declined"}`);
     }
   });
   it("removes resolved nominees from the active board before diary and endgame prompts", async () => {

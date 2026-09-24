@@ -18,9 +18,9 @@ test("solo shot fades in, settles, reads the complete line, then reverses throug
   expect(soloPresentationMotion(text, duration)).toMatchObject({ imageOpacity: 0, speechOpacity: 0 });
 });
 
-test("pause freezes a fade, while paused seeking starts with readable speech", () => {
+test("pause freezes a fade, while the initial paused image waits for a speech click", () => {
   expect(soloPresentationMotion(text, 125, true)).toEqual(soloPresentationMotion(text, 125));
-  expect(soloPresentationMotion(text, 0, true)).toMatchObject({ imageOpacity: 1, speechOpacity: 1 });
+  expect(soloPresentationMotion(text, 0, true)).toMatchObject({ imageOpacity: 1, speechOpacity: 0 });
   expect(soloPresentationMotion(text, soloPresentationDurationMs(text), true)).toMatchObject({ imageOpacity: 0, speechOpacity: 0 });
 });
 

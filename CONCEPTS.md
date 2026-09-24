@@ -155,6 +155,10 @@ The two distinct legal round formats The House offers after empower resolves whe
 
 Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
 
+## Diary format context
+
+The public format name, existing rule sheet, and active-or-resolved status shared by contestant diary answers and House questions/follow-ups. Active context comes from the locked format; completed-round reflection uses the current round's canonical resolution. Offered formats are not treated as selected, and previous-round rules are not carried into new rounds or endgame. Strategic advice, such as The Short List's coordination guidance, remains separate from the rules.
+
 ## Save-or-Exit
 
 A launch round format where each remaining agent casts one ballot as either SAVE (+1 net to another remaining agent) or EXIT (−1 net to another remaining agent). Lowest net score exits; ties are broken by the empowered agent. Canonical engine ID: `save_or_eliminate`. Surface ID: `save_or_exit`.
@@ -163,9 +167,13 @@ A launch round format where each remaining agent casts one ballot as either SAVE
 
 A launch round format where each remaining agent casts one non-self vote. Agents who receive zero votes are safe. Among agents with at least one vote, the fewest votes exits; ties are broken by the empowered agent. Canonical engine ID: `vote_bomb`. Surface ID: `short_list`.
 
+All players receive the same coordination guidance: consider the responsibility created by concentrating votes, negotiate specific voter-to-target placements and totals, and account for broken commitments. Shared active-format prompts cover Mingle, alliance discussions, huddles, and diary interviews; ballots use the same guidance. Post-resolution diaries use the current round's canonical result to frame it as reflection. Spoken targeting never assigns a prompt role.
+
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
+
+When a matching saved lobby image is available, the viewer places Safe/Vulnerable badges and accepted chain arrows at verified head positions. Green checks mean Safe and amber warnings mean Vulnerable. Elimination remains in the separate result presentation. These overlays follow the canonical presentation prefix; the image supplies positions only. See [Visual Mode](docs/visual-mode.md#safety-bounce-on-the-lobby-image).
 
 ## Highest Count
 
@@ -182,6 +190,8 @@ A default catalog round format admitted only from round 3 onward. Each alive age
 ## Two Names
 
 A staged round format available with at least five living agents. Empowered publicly names two non-Empowered agents, then The House draws an Override holder from the other living agents, including both nominees. Empowered is excluded from the draw. The holder may decline or remove one name; when a name is removed, Empowered chooses a legal replacement and the changed pair receives a second full Format Mingle. The two final nominees receive ordered plea opportunities, then every living agent except Empowered and the finalists casts a sealed vote between them. Plurality eliminates one finalist and Empowered breaks an exact tie. The initial pair, Override result, final pair, speeches, ballots, and resolution are canonical facts rather than transcript-derived claims. Resolution completes the same standard-round bookkeeping as other formats: record the result, clear round pressure, and update the phase machine with the accepted living roster so four survivors enter the finale.
+
+A nominated Override holder receives neutral self-removal and replacement-nominee guidance while the decision is pending; other players are told self-rescue is most likely. This role-specific strategic advice is separate from canonical board facts and ends when use or decline is selected, including during a pending replacement.
 
 ## Operator
 

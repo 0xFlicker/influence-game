@@ -892,6 +892,9 @@ export class ContextBuilder {
     const formatPressure = extra && "formatPressure" in extra
       ? extra.formatPressure ?? undefined
       : this.currentFormatPressure ?? undefined;
+    const resolvedFormat = phase === Phase.DIARY_ROOM && !this.gameState.endgameStage
+      ? this.gameState.getCanonicalEvents().find((event) => event.type === "format.resolved" && event.round === this.gameState.round)
+      : undefined;
 
     return {
       gameId: this.gameState.gameId,
@@ -911,6 +914,7 @@ export class ContextBuilder {
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
       formatPressure,
+      resolvedRoundFormatId: resolvedFormat?.type === "format.resolved" ? resolvedFormat.payload.formatId : undefined,
       twoNamesBoard: this.buildTwoNamesBoard(agentId, phase, extra?.twoNamesReplacementRemovedId),
       restrictedHistoryLegality: this.buildRestrictedHistoryLegality(agentId, formatPressure),
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),

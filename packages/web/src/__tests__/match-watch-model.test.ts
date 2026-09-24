@@ -1365,7 +1365,7 @@ describe("format cast roles follow the presented snapshot", () => {
   it("labels only classified Safety Bounce players and supports Empowered plus Vulnerable", () => {
     const snapshot: FormatPresentationSnapshot = {
       ...compilation.snapshot, activeFormatId: "safety_bounce", twoNames: null,
-      safetyBounce: { starterId: "lyra", currentActorId: "atlas", safePlayerIds: ["lyra"], vulnerablePlayerIds: ["atlas"], benchPlayerIds: ["echo", "rex", "nova"] },
+      safetyBounce: { pointers: [], starterId: "lyra", currentActorId: "atlas", safePlayerIds: ["lyra"], vulnerablePlayerIds: ["atlas"], benchPlayerIds: ["echo", "rex", "nova"] },
     };
     expect(labels(snapshot)).toMatchObject({ atlas: ["Empowered", "Vulnerable"], lyra: ["Safe"], echo: [], rex: [] });
     expect(labels({ ...snapshot, safetyBounce: null })).toMatchObject({ atlas: ["Empowered"], lyra: [], echo: [] });

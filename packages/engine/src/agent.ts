@@ -97,6 +97,7 @@ import {
   markStrategyReconciliationRequired,
 } from "./strategy-state";
 import { ruleSheetForFormat } from "./format-pressure";
+import { buildDiaryFormatContext } from "./diary-format-context";
 import type {
   LlmProviderRuntime,
   LlmToolChoiceMode,
@@ -5183,7 +5184,14 @@ Use the farewell_message tool. Keep the public message to 1-2 sentences.`;
     const emotionalRange = DIARY_EMOTIONAL_RANGE[this.personality];
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `
+    const diaryFormat = buildDiaryFormatContext(ctx);
+    const diaryFormatSection = diaryFormat
+      ? `\n## Diary Round Format\n${JSON.stringify(diaryFormat, null, 2)}\n`
+      : "";
+    const resolvedFormatGuidance = diaryFormat?.status === "resolved" && ctx.resolvedRoundFormatId === "vote_bomb"
+      ? `\n## The Short List Reflection\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}\n`
+      : "";
+    const prompt = this.buildUserPrompt(ctx) + diaryFormatSection + resolvedFormatGuidance + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
@@ -5578,6 +5586,14 @@ IMPORTANT: Treat remaining contestants as the only current game actors for messa
       : "not in endgame";
 
     const twoNames = ctx.twoNamesBoard;
+    const nominatedOverrideGuidance = twoNames?.overrideAction === null
+      && !twoNames.replacementPending
+      && twoNames.overrideHolderId !== null
+      && twoNames.currentNomineeIds.includes(twoNames.overrideHolderId)
+      ? `\n\n## Two Names Strategic Context\n${twoNames.overrideHolderId === this.id
+        ? "You are both nominated and, by luck, the Override holder. That means you can take yourself off the nomination block and return the decision to the Empowered player, who must nominate another player. Think about who might be the replacement nominee."
+        : "The Override is also a nominee, so they will most likely use the Override on themselves."}`
+      : "";
     const names = (ids: readonly UUID[]) => ids.map((id) => playerNameById.get(id) ?? id).join(" and ");
     const twoNamesSection = !twoNames ? "" : !twoNames.initialNomineeIds
       ? "- Two Names: no pair has been selected. You are Empowered and must select the initial nominees.\n"
@@ -5601,7 +5617,7 @@ ${twoNamesSection}${classicCouncilStatusLine}- Latest resolved exit: ${latestEli
 - Current endgame status: ${endgameStatus}
 - Active jurors: ${activeJuryNames.length > 0 ? activeJuryNames.join(", ") : "none"}
 - Exited contestants who are not jurors: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}
-- Exited-contestant rule: exited contestants may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not current targets, active allies, shield recipients, room targets, or normal-round voters.`;
+- Exited-contestant rule: exited contestants may be cited as history, evidence, motive, jury members, betrayed allies, accusations, or social context. They are not current targets, active allies, shield recipients, room targets, or normal-round voters.${nominatedOverrideGuidance}`;
   }
 
   private buildRecentDecisionsSection(ctx: PhaseContext): string {
@@ -5714,12 +5730,16 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 
     const lockedName =
       pressure.selectedFormatName ?? displayNameForFormat(pressure.selectedFormat);
+    // Ballot requests receive this same guidance from the sealed decision surface.
+    const coordinationGuidance = pressure.selectedFormat === "vote_bomb" && ctx.phase !== Phase.FORMAT_RESOLVE
+      ? `\n\n## The Short List Coordination\n${getFormatRegistration("vote_bomb").decision.strategyGuidance}`
+      : "";
     return `## Current Format Pressure
 - Locked round format: ${lockedName} (tool id: ${formatSurfaceId(pressure.selectedFormat)})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
-Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
+Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.${coordinationGuidance}`;
   }
 
   private buildRestrictedHistoryLegalitySection(ctx: PhaseContext): string {

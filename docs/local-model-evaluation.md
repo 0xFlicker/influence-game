@@ -393,9 +393,19 @@ Privacy contract for call sites and replay: historical Mingle eligibility requir
 
 Local model evaluation is a first-class lane because Influence needs agents that are fun for the user and friends to watch. The biggest qualitative gap is strategic depth. A cheaper or local model is only useful if it can sustain alliances, plans, betrayals, and endgame arguments across a complete game.
 
+### Shared diary format rules
+
+When evaluating a format with `--chatty --diary`, inspect fresh House question/follow-up and contestant-answer prompts for the same format name, complete existing rule sheet, and active-or-resolved status. After `FORMAT RESOLVE`, the block must describe a completed round rather than invite another ballot. Offered-but-unselected formats, previous rounds, and endgame must not supply stale live rules. Provider-free prompt tests cover all seven formats; fresh diary quality remains a separate gameplay observation. Keep direct House calls and typed contracts, with no `as any`.
+
+### The Short List coordination guidance
+
+For a bounded `--formats vote_bomb --chatty --diary` evaluation (the CLI uses the canonical ID for The Short List), inspect Mingle and huddle negotiations for specific voter-to-target commitments, expected totals, alternative distributions, and contingencies for broken promises. Every player receives the same guidance, including accepting, bargaining over, or resisting a decisive-ballot role. Ballot prompts repeat the same advice; resolved-round diaries frame it as reflection using canonical format identity. Compare proposed placements with accepted canonical ballots to evaluate coordination and vote spread; the prompt tests alone do not establish improved play. Preserve direct House calls and typed contracts, with no `as any`.
+
 ### Two Names board context
 
 New Override draws exclude Empowered and include every other living contestant, including both nominees. Inspect the canonical setup event to verify the accepted holder; previously recorded games retain their original holder and are never re-drawn during replay or recovery.
+
+For `--formats two_names --chatty` evaluation with a nominated Override holder, inspect fresh Mingle and Override requests: the holder receives neutral self-removal guidance and a replacement-nominee question; every other player is told self-rescue is most likely. Check that reasoning considers the possible replacement. This advice must disappear once use or decline is selected, including during the Empowered replacement request. Provider-free prompt tests prove delivery and timing; actual model play is a separate evaluation.
 
 Every agent call after initial nominations and before resolution receives the current round's canonical Two Names board: initial and current nominees, Empowered, Override holder and decision, pair finality, and ordinary-voter eligibility. The active board is removed after resolution and in endgame. Mingle and alliance prompts share this board; transcript prose does not establish nominations. Only the Empowered initial nomination request may say no pair is selected. The replacement request labels the pending removal explicitly until Override and replacement commit together. Provider-free outgoing-prompt regressions exercise this contract; old game dialogue cannot prove updated prompt behavior. Continue using direct House calls and no `as any` in simulation integrations.
 

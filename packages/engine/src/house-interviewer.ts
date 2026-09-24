@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { withInfluenceGamePromptContext } from "./game-prompt-context";
+import { buildDiaryFormatContext } from "./diary-format-context";
 import {
   displayNameForFormat,
   type LaunchFormatId,
@@ -2242,6 +2243,7 @@ Return the decision and text through the required structured response:
         round: context.round,
         precedingPhase,
       },
+      roundFormat: buildDiaryFormatContext(playerKnowledge),
       playerVisibleBoard: {
         remainingPlayers: playerKnowledge.alivePlayers,
         empoweredId: playerKnowledge.empoweredId ?? null,

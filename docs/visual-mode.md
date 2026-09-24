@@ -39,7 +39,7 @@ Existing Mingle room-count rules remain authoritative. Position inventories do n
 
 Introductions, accepted ballots, diaries and farewells use framed PFPs. Conversations use a matching verified scene when available, otherwise the same portrait treatment. Format results retain canonical choreography. Ballot wording comes from accepted structured facts at existing reveal points, without a model call or invented quotation. House text appears separately. Anonymous speech remains unidentified.
 
-Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with 200 ms fades and no upper cap. Their clock follows playback pause, speed and seeking. A visual becoming available cannot switch the active speech beat away from its chosen presentation. The scene fits the available watch frame and measures the complete rendered bubble: prefer above the verified head when it fits, otherwise below when that fits. If neither fits, reserve headroom by moving the image down and reducing it proportionally. Speech has no internal scrollbar or truncation; exceptionally tall speech remains accessible through the outer scene scroll. Narrow frames and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
+Bubbles use a reading duration of 200 words/minute plus one second, at least three seconds, with no upper cap. Room speech reserves 650 ms for camera settling before its 200 ms fade-in, retains the complete reading duration, then fades out over 200 ms and holds the unobstructed scene for 400 ms. Their clock follows playback pause, speed and seeking. A visual becoming available cannot switch the active speech beat away from its chosen presentation. The scene fits the available watch frame and measures the complete rendered bubble: prefer above the verified head when it fits, otherwise below when that fits. If neither fits, reserve headroom by moving the image down and reducing it proportionally. Speech has no internal scrollbar or truncation; exceptionally tall speech remains accessible through the outer scene scroll. Narrow frames and scenes without reliable anchors use a named speech panel below the image. Replay only reads saved artifacts and canonical speech bindings; it never generates media.
 
 ## House-hosted playback
 
@@ -151,8 +151,10 @@ Browser fullscreen falls back to a top-layer viewport presentation; neither path
 remounts the director. Escape restores the trigger focus and page scroll. Cast,
 inspector, navigation and surrounding progress stay outside. Playback controls
 float over a gradient, hide after three idle seconds while playing, and remain
-available on pointer, touch, keyboard, focus or pause. Tapping fullscreen content
-only changes control visibility. Fullscreen Mingle temporarily follows the active
+available on pointer, touch, keyboard, focus or pause. Content clicks use the same
+speech staging inside and outside fullscreen. While playing, the first click when
+controls are hidden reveals controls; subsequent clicks advance the speech stage.
+While paused, each click shows or hides speech. Fullscreen Mingle temporarily follows the active
 speaker; leaving restores the normal pinned-room selection.
 
 Cast and inspector badges follow the director's last revealed format snapshot in
@@ -170,6 +172,23 @@ not the latest server head. Final 4 and Final 3 vote resolutions supply accepted
 ballots for solo vote segments, followed by the canonical elimination; jury
 ballots precede the winner. These segments never parse system transcript prose.
 
+The winner reveal becomes a persistent final standings scene: the winner's frozen
+full-body reference is contained without cropping, alongside saved headshots for
+the remaining cast in placement order (runner-up at 2, followed by reverse
+elimination order). Placements come from canonical `player.eliminated` events and
+the winner frame's surviving finalist, never narration or image membership.
+Missing placement evidence is labeled unavailable. Missing or failed full-body
+art uses the winner's portrait. Closing narration and elapsed playback cannot
+fade this final scene to black; seeking before the winner reveal hides it again.
+The winner occupies 46% of the wide stage (half on narrow screens). Places 2–4
+form a descending portrait group, while places 5 onward use separate compact
+Jury and Rest of the cast groups. Jury participation comes from the accepted
+voters in `jury.winner_determined`, not elimination order. Final-four jurors carry
+a Jury caption and are not duplicated in the lower groups. Container-based
+layout supports mobile, fullscreen and rotation, with scrolling for a large
+cast. Deterministic browser checks cover the final vote, backward seeking,
+closing narration and the stopped final frame.
+
 Final 4 Reckoning pleas share the exact surviving cast's lobby image. Boundary
 preparation reuses a matching arrangement or generates it before the step;
 historical viewer binding selects only an image with exactly those participants.
@@ -180,8 +199,8 @@ Scene framing measures the loaded immutable image and actual frame. Wide frames
 contain the whole scene; narrow frames cover and center on that version's clear
 head anchor. Unknown, uncertain and anonymous speakers retain the whole image.
 `visual-scene-layout.ts` owns pure framing, coordinate transforms, bounded bubble
-placement and the 450 ms pan interpolation. Same-image automatic speech changes
-pan on director time; explicit navigation and resizing set framing directly.
+placement and the 450 ms pan interpolation. Same-image automatic and click-driven
+speech changes pan on director time while bubbles are absent; explicit seeks and resizing set framing directly.
 Room and scene-image changes crossfade over 250 ms in independently framed layers,
 without carrying the outgoing camera position into the incoming room. Reduced
 motion switches immediately. No provider inference or transcript parsing supplies anchors.
@@ -190,6 +209,8 @@ Speech stays in named bubbles. `TimedSpeech` measures at the rendered font size,
 prefers sentence boundaries then word boundaries, and preserves the entire text.
 Pages divide the existing reading interval by word count, so pause/speed/seek and
 rotation share the same reading position instead of starting separate timers.
+Clicking to hide a paginated line preserves its visible page throughout fade-out;
+skipping the remaining reading interval never flashes its final page.
 Fullscreen portraits and House summaries use the same bounded pages. Scene
 bubbles reserve room for controls and prefer above the head, then below; extreme
 close-ups without room for readable speech use an unanchored panel. Published
@@ -210,13 +231,27 @@ server. Other tests that require seeded backend data still use the isolated
 harness. The fixture checks fallback fullscreen, unchanged speech, paged long
 text, rotation, control visibility, Escape focus and scroll restoration.
 
+### Safety Bounce on the lobby image
+
+Safety Bounce reuses the saved lobby from the current round's preceding dialogue when its participant set exactly matches the canonical chain. An explicit dialogue scene binding selects that image version; later publications and future dialogue cannot substitute a different room while seeking backward. Games without an applicable lobby keep the existing classification picker. A failed image also returns to the picker without changing the presentation cursor.
+
+The lobby stays fully in view, including on narrow screens. Saved, clear head rectangles anchor small badges below each face: a green check for Safe, an amber warning triangle for Vulnerable, and a neutral dotted circle for Unclassified. A white ring identifies the chooser. Numbered chain positions match the named strip below the scene. Uncertain or missing head rectangles remain represented in that strip and never receive invented coordinates or arrows.
+
+Each accepted pointer adds a directed arrow, colored by the target's new classification: Safe chooses Vulnerable; Vulnerable chooses Safe. The latest link is emphasized and draws over 450 ms on the director clock; earlier links remain subdued. Paused seeks, reduced motion and live current-state hydration show settled links. Only the trusted pointer prefix is retained in presentation snapshots, so backward seeks remove later links and classifications. This is a visualization of accepted choices, not a simulation of candidate selection.
+
+The completed chain remains on the lobby for the vote tally and tie announcement. Vote totals appear only at the canonical aggregate reveal; automatic sole-vulnerable elimination does not invent a vote total. Elimination uses the existing result presentation; the lobby never marks someone eliminated. Individual ballot and deciding-vote speech retains the existing portrait treatment. No new images, model calls, game rules or event types are introduced.
+
+Browser coverage verifies desktop/mobile geometry against the loaded image, alternating Safe/Vulnerable arrows, backward seeking, tally/tie reveals, the transition to the existing elimination presentation, uncertain anchors and failed-image fallback. The existing viewer suite continues to cover games without lobby media.
+
 ### Solo character presentation
 
 Introductions, accepted ballot reveals, diaries, farewells and isolated dialogue use saved full-body art with a speech bubble. The image fills the content frame vertically, with black side bars on wide frames. Narrow frames trim the image's sides while preserving its full height. Speech overlays the image below the head region, with its tail pointing upward. It never becomes a talking-head clip or a separate image/text column. A missing or failed full-body image uses the static portrait with speech below it. Both use measured, director-timed text pages, including outside fullscreen; fullscreen controls reserve bubble space without shrinking the image.
 
 Existing upright single-character references, including `odd-lime-vine`, do not carry saved head rectangles. Their temporary presentation-only fallback reserves the top 22% of the source for the head. This is not localization evidence, must not be used for room scenes, and does not change historical assets or game state. New selections now use [confirmed character head positions](plans/2026-09-22-confirmed-character-head-positions.md). Historical games are not backfilled from current profiles.
 
-Solo shots use the director's base clock: 350 ms image fade-in, 650 ms settling hold, 250 ms speech fade-in, the complete existing reading duration, 250 ms speech fade-out, a shorter 250 ms hold, then 350 ms image fade-out to black. The next shot starts from black. Bubble pages consume only the reading interval. Pausing during a fade freezes it; seeking to a solo beat shows the line immediately, whether playing or paused. During playback, the first advance click during entrance reveals the image and speech at full opacity; a subsequent click starts the existing exit sequence. Repeated clicks during exit do not skip it. Paused stepping cuts directly to the next readable beat. Speed scales the entire sequence, and reduced motion preserves the holds and reading time with immediate opacity changes. Cue duration comes from committed dialogue/ballot metadata, so media loading and publication refreshes cannot restart or resize the active clock. A historical portrait beat later published as a room scene retains its original duration.
+Solo shots use the director's base clock: 350 ms image fade-in, 650 ms settling hold, 250 ms speech fade-in, the complete existing reading duration, 250 ms speech fade-out, a 400 ms unobstructed-image hold, then 350 ms image fade-out to black. The next shot starts from black. Bubble pages consume only the reading interval. Cue duration and speech staging come from committed dialogue/ballot metadata, so media loading and publication refreshes cannot restart or resize the active clock. A historical portrait beat later published as a room scene, or a room beat displayed with a fallback portrait, retains its original speech timing.
+
+Room dialogue (including Lobby, Mingle and Finals), anonymous dialogue, and solo speech/ballots share a show/hide interaction. During playback, clicking before speech starts begins its fade-in; clicking readable speech begins its fade-out. Repeated clicks cannot skip a running fade or the clear interval. Pausing freezes automatic playback. A subsequent click runs only the requested fade on the director clock, then holds: show the current line, hide it while retaining the fully visible image, then transition and show the next line on the following click. The final hidden image remains available while paused, including while live dialogue buffers. Seeking cancels a pending click transition and lands on an unobstructed image; speech needs a reveal click when paused. Resume continues normal playback from the current position. Speed scales transitions, and reduced motion preserves clear intervals and reading time without intermediate opacity. No independent bubble timer or gameplay events are introduced. These clear image states prepare the viewer for a future scene-sharing control; this change adds no export or share action.
 
 The visual endpoint supplies `fullBodies` for every game, including games without generated room scenes. It selects immutable prepared cast artifacts (excluding references marked as portrait fallbacks), then game-start profile references. Current agent edits never supply these images. The public artifact handler allows these cast images but still excludes private annotations, unpublished scene candidates and performance instructions. Initial media hydration fills an empty selection once; subsequent refreshes remain pinned until the next beat.
 

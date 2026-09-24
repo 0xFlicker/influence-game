@@ -4,6 +4,8 @@ import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { PresentationCue } from "./types";
 import type { VisualPresentationBeat } from "./visual-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
+import { sceneSpeechDurationMs } from "./scene-speech-timing";
+import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
 
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
@@ -13,7 +15,9 @@ export function isSoloTranscript(message: TranscriptEntry): boolean {
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
   const text = message.acceptedBallot ? players.find(player => player.id === message.acceptedBallot!.targetId)?.name ?? message.text : message.text;
-  return isSoloTranscript(message) ? soloPresentationDurationMs(text) : visualSpeechDurationMs(text);
+  return isSoloTranscript(message) ? soloPresentationDurationMs(text)
+    : message.anonymous || message.speakerPlayerId || message.fromPlayerId
+      ? sceneSpeechDurationMs(text) : visualSpeechDurationMs(text);
 }
 
 export interface VisualWatchData {
@@ -27,7 +31,7 @@ export interface VisualWatchData {
   scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
 
-export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[]): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
+export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[], priorMessages: readonly TranscriptEntry[] = []): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
   const rooms: AcceptedVisualScene[] = [];
   if (message?.entrySequence !== undefined) {
     for (const scene of data.scenes) {
@@ -44,16 +48,28 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
   if (cue?.source === "endgame") {
-    if (cue.ballot) {
+    if (cue.kind === "endgame_winner") {
+      const winner = players.find(player => player.id === cue.playerId);
+      if (winner) beat = { kind: "winner", winner: { ...winner, avatarUrl: data.portraits[winner.id] ?? winner.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[winner.id] },
+        standings: players.filter(player => player.id !== winner.id).map(player => ({ ...player,
+          avatarUrl: data.portraits[player.id] ?? player.avatarUrl,
+          placement: cue.standings?.find(entry => entry.playerId === player.id)?.placement ?? null,
+          juryMember: cue.juryVoterIds?.includes(player.id) ?? false,
+        })).sort((a, b) => (a.placement ?? Infinity) - (b.placement ?? Infinity)) };
+    } else if (cue.ballot) {
       const target = players.find((player) => player.id === cue.ballot!.targetId);
       if (target) portrait(cue.ballot.voterId, target.name, "Ballot", cue.ballot.purpose === "winner" ? "Vote for winner" : cue.ballot.juryTiebreaker ? "Jury tiebreak · Vote to eliminate" : "Vote to eliminate");
     } else {
       const name = players.find((player) => player.id === cue.playerId)?.name ?? "Player";
-      beat = { kind: "house", text: cue.kind === "endgame_winner" ? `${name} wins The House.` : `${name} is out.` };
+      beat = { kind: "house", text: `${name} is out.` };
     }
     return { rooms, beat };
   }
   if (cue?.source === "format") {
+    if (isSafetyBounceSceneCue(cue)) {
+      const lobby = safetyBounceLobbyScene(data, cue, priorMessages);
+      if (lobby) return { rooms: [lobby], beat: { kind: "safety-bounce", scene: lobby, cue, roster: players } };
+    }
     if (cue.kind === "format_deciding_vote") {
       const target = players.find(player => player.id === cue.targetId);
       if (target) portrait(cue.tiebreakerId, target.name, "Ballot", "Deciding vote · Vote to eliminate");
@@ -108,7 +124,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
 /** Expand only at the canonical tally reveal, preserving the existing result cue. */
 export function paceVisualBallots(cues: readonly PresentationCue[], players: readonly GamePlayer[]): PresentationCue[] {
   return cues.flatMap((cue): PresentationCue[] => {
-    if (cue.source !== "format") return [{ ...cue, soloSpeech: cue.soloSpeech || (cue.source === "endgame" && Boolean(cue.ballot)) }];
+    if (cue.source !== "format") return [cue.source === "endgame" && cue.ballot ? { ...cue, speechPresentation: "solo" } : cue];
     if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
       const revote = cue.kind === "empowered_tally" && Boolean(cue.resolutionMethod);
       const receipts = revote
@@ -117,13 +133,13 @@ export function paceVisualBallots(cues: readonly PresentationCue[], players: rea
       const portraits = receipts.map((receipt, index) => {
         const name = players.find((player) => player.id === receipt.targetId)?.name ?? "Player";
         return { ...cue, key: `${cue.key}:visual-ballot:${index}`, before: cue.before, after: cue.before,
-          visualBallot: { ...receipt, purpose: "empower" as const }, soloSpeech: true, baseDurationMs: soloPresentationDurationMs(name) };
+          visualBallot: { ...receipt, purpose: "empower" as const }, speechPresentation: "solo" as const, baseDurationMs: soloPresentationDurationMs(name) };
       });
       return [...portraits, cue];
     }
     if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea" || cue.kind === "format_deciding_vote") {
       const beat = visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cue, null, players).beat;
-      if (beat?.kind === "portrait") return [{ ...cue, soloSpeech: true, baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
+      if (beat?.kind === "portrait") return [{ ...cue, speechPresentation: "solo", baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
     }
     return [cue];
   });

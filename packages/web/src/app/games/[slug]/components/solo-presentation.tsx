@@ -6,17 +6,22 @@ import { TimedSpeech } from "./timed-speech";
 import type { VisualPresentationBeat } from "./visual-presentation";
 import { layoutSoloPresentation } from "./solo-presentation-layout";
 import { soloPresentationMotion } from "./solo-presentation-timing";
+import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing";
 
 /** Frozen character art, never a generated talking-head clip or an inferred crop. */
-export function SoloPresentation({ beat, elapsedMs, paused = false, reducedMotion = false, controlsInset = 0 }: {
+export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo" }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   elapsedMs: number;
+  readingElapsedMs?: number;
   paused?: boolean;
   reducedMotion?: boolean;
   controlsInset?: number;
+  speechPresentation?: "solo" | "scene";
 }) {
   const { player, speech } = beat;
-  const motion = soloPresentationMotion(speech.text, elapsedMs, paused, reducedMotion);
+  const motion = speechPresentation === "scene"
+    ? { imageOpacity: 1, speechOpacity: sceneSpeechOpacity(speech.text, elapsedMs, reducedMotion), speechElapsedMs: elapsedMs - SCENE_SPEECH_START_MS }
+    : soloPresentationMotion(speech.text, elapsedMs, paused, reducedMotion);
   const [naturalHeight, setNaturalHeight] = useState<number>();
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const fullBody = player.fullBodyReferenceUrl && failedImage !== player.fullBodyReferenceUrl ? player.fullBodyReferenceUrl : null;
@@ -43,10 +48,10 @@ export function SoloPresentation({ beat, elapsedMs, paused = false, reducedMotio
       onLoad={event => setLoaded({ source, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
       onError={fullBody ? () => setFailedImage(fullBody) : undefined}
       className="absolute max-w-none object-contain" style={{ ...geometry.image, opacity: motion.imageOpacity }} />
-    {motion.speechOpacity > 0 && <div style={{ ...geometry.bubble, opacity: motion.speechOpacity }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 px-5 py-4 text-lg leading-relaxed shadow-xl">
+    {motion.speechOpacity > 0 && <div data-speech-bubble style={{ ...geometry.bubble, opacity: motion.speechOpacity }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 px-5 py-4 text-lg leading-relaxed shadow-xl">
       <p className="mb-2 flex shrink-0 flex-wrap items-baseline gap-x-2 text-sm font-semibold leading-5"><span>{player.name}</span><span className="text-xs font-normal text-white/50">{beat.caption ?? beat.purpose}</span></p>
       <blockquote className="flex min-h-0 flex-1 flex-col">
-        <TimedSpeech text={speech.text} elapsedMs={motion.speechElapsedMs} onNaturalHeight={setNaturalHeight} />
+        <TimedSpeech text={speech.text} elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs} onNaturalHeight={setNaturalHeight} />
       </blockquote>
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={{ left: geometry.tailLeft - 8 }} />
     </div>}

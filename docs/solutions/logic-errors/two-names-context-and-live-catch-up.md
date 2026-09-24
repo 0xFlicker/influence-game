@@ -20,6 +20,12 @@ round projection. Only the Empowered initial nomination decision may have no pai
 Replacement requests distinguish pending choices from committed facts. The active
 board ends at resolution/endgame; private ballots are not exposed.
 
+When the pending Override holder is also nominated, shared prompts separately give
+the holder neutral self-rescue/replacement guidance and everyone else the likely
+self-rescue outcome. Gate this advice on canonical nomination and decision fields,
+and remove it for pending replacement, use, or decline so predictions never outlive
+the decision. Outgoing-prompt tests cover both nominee slots and all player roles.
+
 Live publication envelopes retain their identity. Catch-up waits for the snapshot's
 publication boundary and a contiguous suffix, then delivers historical dialogue
 without fresh-event effects. The director reconciles the complete ordered timeline,
