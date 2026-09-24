@@ -49,6 +49,45 @@ const PREBAKED_STUDIO_CHATTER = [
   "Spinning up a highly unofficial drama simulator…",
 ];
 
+const PREBAKED_IMAGE_CHATTER = [
+  "Finding the exact shade of ‘definitely plotting something’…",
+  "Giving those horns excellent screen presence…",
+  "Making room for one more dramatic accessory…",
+  "Checking the silhouette from the cheap seats…",
+  "Adding a little more main-character energy…",
+  "Making sure the tail has somewhere to go…",
+  "Tuning the outfit for a very memorable entrance…",
+  "Negotiating with the lighting for a heroic rim glow…",
+  "The tiny art goblins are comparing color swatches…",
+  "Making the boots look like they have a backstory…",
+  "Ensuring the cape obeys at least some laws of physics…",
+  "Searching for the perfect balance of cute and catastrophic…",
+  "Checking that the scales catch the light just right…",
+  "Giving the ears, horns, and eyebrows equal opportunity…",
+  "Composing a portrait worthy of an extremely niche fan club…",
+  "Making sure the character looks ready for their close-up…",
+  "The wardrobe department has found one more buckle…",
+  "Testing whether that smirk says ‘charming’ or ‘stole your snacks’…",
+  "Adding texture, attitude, and a suspiciously good jacket…",
+  "Making the background interesting without stealing the scene…",
+  "Asking the imaginary wind machine to take it down a notch…",
+  "Giving every tuft of fur its own tiny career opportunity…",
+  "Checking the dragon-to-drama ratio one last time…",
+  "Saving a little mystery for the first time you meet them…",
+];
+
+function mixImageChatter(quips: readonly string[]): string[] {
+  const mixed: string[] = [];
+  const count = Math.max(quips.length, PREBAKED_IMAGE_CHATTER.length);
+  for (let index = 0; index < count; index += 1) {
+    const quip = quips[index];
+    const studioLine = PREBAKED_IMAGE_CHATTER[index];
+    if (quip) mixed.push(quip);
+    if (studioLine) mixed.push(studioLine);
+  }
+  return mixed;
+}
+
 interface AgentAIEditorProps {
   isEditing: boolean;
   creationTraitIds: AgentCreationTraitId[];
@@ -116,8 +155,8 @@ export function AgentAIEditor({
   const [suggestions, setSuggestions] = useState<TraitSuggestion[]>(isEditing ? [] : INITIAL_SUGGESTIONS);
   const selectedPersona = PERSONAS.find((persona) => persona.key === personaKey);
   const selectedArchetypeLabel = allowAIChoose ? "Let AI choose" : selectedPersona?.name ?? "Strategist";
-  const activityLines = activityPhase === "images" && generationQuips.length > 0
-    ? generationQuips
+  const activityLines = activityPhase === "images"
+    ? mixImageChatter(generationQuips)
     : PREBAKED_STUDIO_CHATTER;
 
   useEffect(() => {
@@ -200,11 +239,11 @@ export function AgentAIEditor({
 
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-      <div className="mx-auto w-full px-4 pb-3 pt-4 sm:px-6 lg:px-8">
+    <div className={`fixed inset-x-0 bottom-0 z-30 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl ${activityPhase ? "bg-background/80" : "border-t border-white/10 bg-background/90"}`}>
+      <div className={`mx-auto w-full px-4 sm:px-6 lg:px-8 ${activityPhase ? "py-3" : "pb-3 pt-4"}`}>
         <section
           ref={editorRef}
-          className={`w-full ${expanded ? "rounded-2xl border border-white/12 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-4" : ""}`}
+          className={`w-full ${activityPhase ? "mx-auto max-w-3xl rounded-2xl border border-phase/20 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-3.5" : expanded ? "rounded-2xl border border-white/12 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-4" : ""}`}
           aria-label="Agent Workshop"
           onClick={(event) => {
             if (!expanded && !(event.target instanceof HTMLButtonElement)) expandAndFocusPrompt();
@@ -214,7 +253,7 @@ export function AgentAIEditor({
             if (expanded && !busy && !activityPhase && (!nextTarget || !event.currentTarget.contains(nextTarget as Node))) setExpanded(false);
           }}
         >
-          {expanded && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
+          {expanded && !activityPhase && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
             <div>
               <p className="text-sm font-semibold text-text-primary">Agent Workshop</p>
               <p className="mt-0.5 text-xs text-white/45">{isEditing ? "Tell me what you want to change." : "Bring your next character to life."}</p>
@@ -294,8 +333,8 @@ export function AgentAIEditor({
               <p className="hidden text-xs text-white/40 lg:block" aria-live="polite">{status}</p>
             </div>
           </div>}
-          {expanded && activityPhase && <div className="mb-3 flex items-center gap-3 overflow-hidden rounded-xl border border-phase/20 bg-gradient-to-r from-phase/[0.10] via-white/[0.035] to-transparent px-3 py-3 sm:px-4" aria-label="AI generation activity">
-            <div className="relative grid size-10 shrink-0 place-items-center rounded-full border border-phase/25 bg-phase/10 text-lg text-phase">
+          {activityPhase && <div className="flex items-center gap-3 overflow-hidden rounded-xl border border-phase/20 bg-gradient-to-r from-phase/[0.10] via-white/[0.035] to-transparent px-3 py-2.5 sm:px-4" aria-label="AI generation activity">
+            <div className="relative grid size-9 shrink-0 place-items-center rounded-full border border-phase/25 bg-phase/10 text-base text-phase">
               <span className="absolute inset-0 rounded-full border border-phase/30 motion-safe:animate-ping motion-reduce:animate-none" aria-hidden="true" />
               <span className="relative" aria-hidden="true">✦</span>
             </div>
@@ -304,7 +343,7 @@ export function AgentAIEditor({
                 {activityPhase === "profile" ? "Inventing your character" : "Making your character’s look"}
               </p>
               <p className="mt-1 truncate text-sm text-white/75" aria-live="off" key={`${activityPhase}-${activityLineIndex}`}>
-                {activityPhase === "images" && generationQuips.length > 0
+                {activityPhase === "images"
                   ? `“${activityLines[activityLineIndex % activityLines.length]}”`
                   : activityLines[activityLineIndex % activityLines.length]}
               </p>
@@ -313,7 +352,7 @@ export function AgentAIEditor({
               {[0, 1, 2].map((dot) => <span key={dot} className={`size-1.5 rounded-full bg-phase/80 motion-safe:animate-pulse motion-reduce:animate-none ${dot === 1 ? "[animation-delay:180ms]" : dot === 2 ? "[animation-delay:360ms]" : ""}`} />)}
             </div>
           </div>}
-          {expanded && !isEditing && <div className="mb-2 flex min-w-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Character ingredient suggestions">
+          {expanded && !activityPhase && !isEditing && <div className="mb-2 flex min-w-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Character ingredient suggestions">
             <button
               type="button"
               onClick={rollAllSuggestions}
@@ -337,8 +376,8 @@ export function AgentAIEditor({
               </button>;
             })}
           </div>}
-          {expanded && assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
-          <div className={expanded ? "flex items-end gap-3" : ""}>
+          {expanded && !activityPhase && assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
+          {!activityPhase && <div className={expanded ? "flex items-end gap-3" : ""}>
             <label htmlFor="agent-ai-change-request" className="sr-only">{isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"}</label>
             <div className={`min-w-0 ${expanded ? "flex-1 rounded-xl" : "w-full rounded-full shadow-lg shadow-black/25"} overflow-hidden border border-white/15 bg-black/30 transition-colors focus-within:border-phase/60 ${expanded ? "focus-within:ring-1 focus-within:ring-phase/25" : ""}`}>
               {expanded && selectedTraits.length > 0 && <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Selected character ingredients">
@@ -378,19 +417,19 @@ export function AgentAIEditor({
               />
             </div>
             {expanded && <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className="influence-button-primary min-h-12 shrink-0 rounded-xl px-5 text-sm font-semibold sm:px-7">{busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send"}</button>}
-          </div>
-          {expanded && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
+          </div>}
+          {expanded && !activityPhase && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
             <input type="checkbox" checked={regenerateImages} onChange={(event) => onRegenerateImagesChange(event.target.checked)} disabled={busy || submitting} className="size-4 accent-phase" />
             Also generate {isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
           </label>}
-          {expanded && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
-          <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
+          {expanded && !activityPhase && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
+          {!activityPhase && <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
             {expanded && <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>}
             {expanded && <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Save draft</button>}
             {expanded && generationBusy && <button type="button" onClick={onCancelGeneration} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel generation</button>}
             <button type="button" onClick={onCancel} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel</button>
             <button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-10 rounded-lg px-4 text-xs font-semibold sm:px-5 sm:text-sm">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button>
-          </div>
+          </div>}
         </section>
       </div>
     </div>
