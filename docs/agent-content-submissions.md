@@ -70,3 +70,11 @@ Game-start profiles freeze the head metadata. Visual preparation retains it only
 ## Intake naming
 
 The navigation, footer, page title, and links to `/games/free` use **Intake**. The agent selection section retains one **Influence Queue** heading; its status and actions refer simply to the queue. Historical rebrand plans and ideation mockups retain their original wording.
+
+## Dashboard toolbox
+
+On `/dashboard`, desktop header creation shortcuts are hidden because Mission Control already provides them. The mobile menu retains its creation shortcuts.
+
+Game browsing views use the shared header/menu creation action; their filter toolbars do not repeat a New Game button.
+
+Mission Control leads the dashboard with Create agent and permission-gated Create game shortcuts. Daily Free enrollment is inline: an existing entry shows its agent and status without a redundant queue-navigation button; an absent entry offers an owned-agent picker and Enter queue. Accounts without agents can create one and enter through the existing daily-free assistant flow. Unavailable queue or agent data shows a retry state, and accepted enrollment refreshes canonical queue status. The MCP setup card follows gameplay modules.

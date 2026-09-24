@@ -98,7 +98,9 @@ test.describe("local public player identity", () => {
           await expect(card.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
           await expect(card.getByRole("link", { name: /Watch Replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
           await card.getByRole("link", { name: "Open Good Company", exact: true }).click();
-          await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`);
+          // The isolated Next dev server compiles this route on its first visit.
+          // CI can exceed the default 5s while the navigation request is pending.
+          await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`, { timeout: 30_000 });
           await expect(page.getByRole("heading", { name: "Good Company", exact: true })).toBeVisible();
           await expect(page.getByRole("link", { name: "See Results" })).toHaveAttribute("href", "/games/quiet-sage-room/results");
           await expect(page.locator("video")).toHaveAttribute("data-play-called", "true");

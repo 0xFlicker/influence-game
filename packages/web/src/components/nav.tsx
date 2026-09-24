@@ -44,12 +44,12 @@ export function Nav() {
   const navLinks = (
     <>
       {showCreateActions && (
-        <Link href="/dashboard/agents/create" className="influence-button-primary rounded-md px-4 py-2 whitespace-nowrap" onClick={() => setMobileOpen(false)}>
+        <Link href="/dashboard/agents/create" className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
           <span aria-hidden="true">＋ </span>Create agent
         </Link>
       )}
       {showCreateActions && hasPermission("create_game") && (
-        <Link href="/games/new" className="influence-copy whitespace-nowrap hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
+        <Link href="/games/new" className={`influence-copy whitespace-nowrap hover:text-text-primary transition-colors ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
           <span aria-hidden="true">＋ </span>Create game
         </Link>
       )}

@@ -21,8 +21,8 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("games tied to your account");
   });
 
-  it("places the setup card before Mission Control", () => {
-    expect(source.indexOf("<McpSetupCard")).toBeLessThan(
+  it("places the setup card after Mission Control", () => {
+    expect(source.indexOf("<McpSetupCard")).toBeGreaterThan(
       source.indexOf("<MissionControlOverview"),
     );
   });

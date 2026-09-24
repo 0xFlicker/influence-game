@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthenticatedPublicIdentity } from "@/app/providers";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   getAuthToken,
   getFreeQueueStatus,
   getPlayerGames,
   listAgents,
   listGames,
+  joinFreeQueue,
   type FreeQueueStatus,
   type GameSummary,
   type PlayerGameResult,
@@ -25,6 +27,7 @@ import { DashboardAgentBench, DashboardRecentResult } from "./dashboard-agent-be
 import { DashboardGamePreview } from "./dashboard-game-preview";
 import { JoinGameModal } from "./join-game-modal";
 import { MissionControlOverview } from "./mission-control-overview";
+import { DashboardQueueEntry } from "./dashboard-queue-entry";
 import { OwnerLearningActivation } from "./agents/[id]/review/owner-learning-activation";
 
 export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
@@ -58,6 +61,7 @@ export function DashboardContent() {
   const searchParams = useSearchParams();
   const { account, authenticated, openSignIn } = useAuth();
   const publicIdentity = useAuthenticatedPublicIdentity();
+  const { hasPermission } = usePermissions();
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
 
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
@@ -73,6 +77,10 @@ export function DashboardContent() {
   const [gamesError, setGamesError] = useState<string | null>(null);
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
+  const [queueLoading, setQueueLoading] = useState(true);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const queueRequest = useRef(0);
+  const invalidateQueueRequest = useCallback(() => { ++queueRequest.current; }, []);
   const requestedJoinGameId = searchParams.get("joinGameId");
 
   const fetchHistory = useCallback(() => {
@@ -119,18 +127,27 @@ export function DashboardContent() {
   }, []);
 
   const fetchQueueStatus = useCallback(() => {
+    const request = ++queueRequest.current;
     if (!authenticated || !getAuthToken()) {
       setQueueStatus(null);
+      setQueueLoading(false);
       return;
     }
-
+    setQueueLoading(true);
+    setQueueError(null);
     getFreeQueueStatus()
-      .then(setQueueStatus)
+      .then(status => { if (request === queueRequest.current) setQueueStatus(status); })
       .catch((err) => {
         console.warn("[DashboardContent] Failed to load free queue status:", err);
-        setQueueStatus(null);
-      });
+        if (request === queueRequest.current) { setQueueStatus(null); setQueueError("Could not load queue status."); }
+      })
+      .finally(() => { if (request === queueRequest.current) setQueueLoading(false); });
   }, [authenticated]);
+
+  async function handleQueueJoin(agentId: string) {
+    await joinFreeQueue(agentId);
+    window.dispatchEvent(new Event("free-queue:changed"));
+  }
 
   useEffect(() => {
     const initialFetch = window.setTimeout(fetchGames, 0);
@@ -171,11 +188,12 @@ export function DashboardContent() {
     window.addEventListener("auth:session-ready", handleSessionReady);
     window.addEventListener("free-queue:changed", handleQueueChanged);
     return () => {
+      invalidateQueueRequest();
       window.clearTimeout(initialFetch);
       window.removeEventListener("auth:session-ready", handleSessionReady);
       window.removeEventListener("free-queue:changed", handleQueueChanged);
     };
-  }, [authenticated, fetchAgents, fetchHistory, fetchQueueStatus]);
+  }, [authenticated, fetchAgents, fetchHistory, fetchQueueStatus, invalidateQueueRequest]);
 
   const control = useMemo(
     () =>
@@ -236,8 +254,6 @@ export function DashboardContent() {
 
       <div className="space-y-5">
         <OwnerLearningActivation enabled={authenticated} />
-        <McpSetupCard hasHistory={control.stats.gamesPlayed > 0} />
-
         <MissionControlOverview
           control={control}
           user={account}
@@ -245,6 +261,8 @@ export function DashboardContent() {
           errors={errors}
           onJoinPrimary={handlePrimaryAction}
           publicIdentity={publicIdentity}
+          canCreateGame={hasPermission("create_game")}
+          queueEntry={<DashboardQueueEntry status={queueStatus} agents={agents} loading={queueLoading || agentsLoading} error={queueError ?? agentsError} onJoin={handleQueueJoin} onRetry={() => { fetchQueueStatus(); fetchAgents(); }} />}
         />
 
         <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
@@ -269,6 +287,7 @@ export function DashboardContent() {
             />
           </div>
         </div>
+        <McpSetupCard hasHistory={control.stats.gamesPlayed > 0} />
       </div>
     </>
   );

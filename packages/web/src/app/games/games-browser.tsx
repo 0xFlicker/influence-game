@@ -291,7 +291,6 @@ export function GamesBrowser({ onJoin, compact = false, collection }: GamesBrows
     };
   }, []);
 
-  const canCreate = hasPermission("create_game");
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game");
   const canStop = hasPermission("stop_game");
@@ -368,7 +367,6 @@ export function GamesBrowser({ onJoin, compact = false, collection }: GamesBrows
         <input aria-label="Search games" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} placeholder="Search titles, Agents, or code words…" />
         <select aria-label="Game status" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value as StatusFilter }))}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
         <select aria-label="Game category" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value as CategoryFilter }))}>{categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
-        {canCreate && <Link href="/games/new" className="influence-button-primary rounded-lg px-4 py-3 text-sm">+ New Game</Link>}
         {collection && <Link href="/games">All shelves</Link>}
       </div>}
       {filtered.length === 0 ? (
