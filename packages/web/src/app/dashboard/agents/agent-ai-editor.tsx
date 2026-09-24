@@ -204,7 +204,7 @@ export function AgentAIEditor({
       <div className="mx-auto w-full px-4 pb-3 pt-4 sm:px-6 lg:px-8">
         <section
           ref={editorRef}
-          className={`w-full rounded-2xl border border-white/12 bg-surface/95 shadow-2xl shadow-black/30 ${expanded ? "p-3 sm:p-4" : "p-2"}`}
+          className={`w-full ${expanded ? "rounded-2xl border border-white/12 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-4" : ""}`}
           aria-label="Agent Workshop"
           onClick={(event) => {
             if (!expanded && !(event.target instanceof HTMLButtonElement)) expandAndFocusPrompt();
@@ -338,9 +338,9 @@ export function AgentAIEditor({
             })}
           </div>}
           {expanded && assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
-          <div className={`flex ${expanded ? "items-end gap-3" : "items-center gap-2"}`}>
+          <div className={expanded ? "flex items-end gap-3" : ""}>
             <label htmlFor="agent-ai-change-request" className="sr-only">{isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"}</label>
-            <div className={`min-w-0 flex-1 overflow-hidden rounded-xl border border-white/15 bg-black/20 transition-colors focus-within:border-phase/60 ${expanded ? "focus-within:ring-1 focus-within:ring-phase/25" : ""}`}>
+            <div className={`min-w-0 ${expanded ? "flex-1 rounded-xl" : "w-full rounded-full shadow-lg shadow-black/25"} overflow-hidden border border-white/15 bg-black/30 transition-colors focus-within:border-phase/60 ${expanded ? "focus-within:ring-1 focus-within:ring-phase/25" : ""}`}>
               {expanded && selectedTraits.length > 0 && <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Selected character ingredients">
                 {selectedTraits.map((trait) => <span key={trait.id} className="inline-flex min-h-9 items-center gap-1 rounded-full border border-phase/40 bg-phase/15 pl-3 pr-1 text-sm font-medium text-white shadow-sm shadow-black/20">
                   <span>{trait.label}</span>
@@ -364,7 +364,8 @@ export function AgentAIEditor({
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    if (canSend) send();
+                    if (!expanded) expandAndFocusPrompt();
+                    else if (canSend) send();
                   }
                 }}
                 maxLength={2_000}
@@ -372,24 +373,24 @@ export function AgentAIEditor({
                 placeholder={expanded
                   ? isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"
                   : isEditing ? "Tell me what to change…" : "Describe your Agent…"}
-                className={`block w-full border-0 bg-transparent text-base leading-6 text-white outline-none placeholder:text-white/35 focus:outline-none focus:ring-0 ${expanded ? "min-h-24 resize-y px-4 py-3 sm:min-h-28" : "h-11 resize-none px-3 py-2.5"}`}
+                className={`block w-full border-0 bg-transparent text-base leading-6 text-white outline-none placeholder:text-white/35 focus:outline-none focus:ring-0 ${expanded ? "min-h-24 resize-y px-4 py-3 sm:min-h-28" : "h-12 resize-none px-5 py-3"}`}
                 disabled={busy || submitting}
               />
             </div>
-            <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className={`influence-button-primary shrink-0 font-semibold ${expanded ? "min-h-12 rounded-xl px-5 text-sm sm:px-7" : "grid size-10 place-items-center rounded-full text-lg"}`}>{expanded ? busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send" : "↑"}</button>
+            {expanded && <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className="influence-button-primary min-h-12 shrink-0 rounded-xl px-5 text-sm font-semibold sm:px-7">{busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send"}</button>}
           </div>
           {expanded && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
             <input type="checkbox" checked={regenerateImages} onChange={(event) => onRegenerateImagesChange(event.target.checked)} disabled={busy || submitting} className="size-4 accent-phase" />
             Also generate {isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
           </label>}
           {expanded && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
-          {expanded && <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
-            <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>
-            <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Save draft</button>
-            {generationBusy && <button type="button" onClick={onCancelGeneration} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel generation</button>}
+          <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
+            {expanded && <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>}
+            {expanded && <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Save draft</button>}
+            {expanded && generationBusy && <button type="button" onClick={onCancelGeneration} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel generation</button>}
             <button type="button" onClick={onCancel} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel</button>
             <button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-10 rounded-lg px-4 text-xs font-semibold sm:px-5 sm:text-sm">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button>
-          </div>}
+          </div>
         </section>
       </div>
     </div>
