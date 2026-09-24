@@ -74,7 +74,10 @@ export function AgentAIEditor({
   submitLabel,
 }: AgentAIEditorProps) {
   const ingredientPickerRef = useRef<HTMLDetailsElement>(null);
+  const archetypePickerRef = useRef<HTMLDetailsElement>(null);
   const [activityLineIndex, setActivityLineIndex] = useState(0);
+  const selectedPersona = PERSONAS.find((persona) => persona.key === personaKey);
+  const selectedArchetypeLabel = allowAIChoose ? "Let AI choose" : selectedPersona?.name ?? "Strategist";
   const activityLines = activityPhase === "images" && generationQuips.length > 0
     ? generationQuips
     : PREBAKED_STUDIO_CHATTER;
@@ -86,6 +89,16 @@ export function AgentAIEditor({
     }, 2_800);
     return () => window.clearInterval(timer);
   }, [activityPhase, activityLines.length]);
+
+  useEffect(() => {
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!archetypePickerRef.current?.contains(event.target as Node)) {
+        archetypePickerRef.current?.removeAttribute("open");
+      }
+    }
+    window.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => window.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, []);
 
   function send() {
     ingredientPickerRef.current?.removeAttribute("open");
@@ -126,24 +139,77 @@ export function AgentAIEditor({
               <p className="mt-0.5 text-xs text-white/45">{isEditing ? "Describe a change and I’ll update this draft." : "Describe the Agent you want to create."}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <label htmlFor="agent-base-archetype" className="text-xs text-white/45">Archetype</label>
-              <select
-                id="agent-base-archetype"
-                aria-label="Base archetype"
-                value={allowAIChoose ? "__ai__" : personaKey ?? "strategic"}
-                onChange={(event) => {
-                  if (event.target.value === "__ai__") onAllowAIChooseChange(true);
-                  else {
-                    const selected = PERSONAS.find((persona) => persona.key === event.target.value);
-                    if (selected) onPersonaKeyChange(selected.key);
+              <span className="text-xs text-white/45">Archetype</span>
+              <details
+                ref={archetypePickerRef}
+                className="group relative"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    archetypePickerRef.current?.removeAttribute("open");
+                    archetypePickerRef.current?.querySelector("summary")?.focus();
                   }
                 }}
-                className="influence-field min-h-10 max-w-48 rounded-lg px-3 py-2 text-sm"
-                disabled={busy || submitting}
               >
-                <option value="__ai__">Let AI choose</option>
-                {PERSONAS.map((persona) => <option key={persona.key} value={persona.key}>{persona.name}</option>)}
-              </select>
+                <summary
+                  aria-label="Base archetype"
+                  aria-disabled={busy || submitting}
+                  onClick={(event) => {
+                    if (busy || submitting) event.preventDefault();
+                  }}
+                  className={`flex min-h-10 max-w-56 cursor-pointer list-none items-center gap-2 rounded-lg border border-white/15 bg-white/[0.035] px-3 py-2 text-sm text-white/85 transition-colors hover:border-white/25 hover:bg-white/[0.06] marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phase/70 ${busy || submitting ? "cursor-not-allowed opacity-50" : ""}`}
+                >
+                  <span className="max-w-40 truncate">{allowAIChoose ? "✦ " : `${selectedPersona?.icon ?? "♟️"} `}{selectedArchetypeLabel}</span>
+                  <span aria-hidden="true" className="ml-auto text-xs text-white/40 transition-transform group-open:rotate-180">⌄</span>
+                </summary>
+                <div aria-label="Archetype choices" className="absolute bottom-full right-0 z-50 mb-2 max-h-[min(52vh,26rem)] w-[min(34rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-white/15 bg-[#14141b] p-3 shadow-2xl shadow-black/50 ring-1 ring-black/30 sm:p-3.5">
+                  <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">Choose a play style</p>
+                  <button
+                    type="button"
+                    aria-pressed={allowAIChoose}
+                    onClick={() => {
+                      onAllowAIChooseChange(true);
+                      archetypePickerRef.current?.removeAttribute("open");
+                      archetypePickerRef.current?.querySelector("summary")?.focus();
+                    }}
+                    disabled={busy || submitting}
+                    className={`mb-2 flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:opacity-50 ${allowAIChoose ? "border-phase/55 bg-phase/10" : "border-white/10 bg-white/[0.025] hover:border-white/25 hover:bg-white/[0.05]"}`}
+                  >
+                    <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-lg bg-phase/15 text-base text-phase">✦</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-white/90">Let AI choose</span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-white/45">Pick the best fit from all valid archetypes.</span>
+                    </span>
+                    {allowAIChoose && <span aria-hidden="true" className="text-sm text-phase">✓</span>}
+                  </button>
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {PERSONAS.map((persona) => {
+                      const selected = !allowAIChoose && (personaKey ?? "strategic") === persona.key;
+                      return <button
+                        key={persona.key}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => {
+                          onPersonaKeyChange(persona.key);
+                          archetypePickerRef.current?.removeAttribute("open");
+                          archetypePickerRef.current?.querySelector("summary")?.focus();
+                        }}
+                        disabled={busy || submitting}
+                        className={`flex min-w-0 items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors disabled:opacity-50 ${selected ? "border-phase/50 bg-phase/[0.09]" : "border-transparent bg-white/[0.02] hover:border-white/12 hover:bg-white/[0.05]"}`}
+                      >
+                        <span aria-hidden="true" className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-white/[0.06] text-sm">{persona.icon}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5 text-xs font-medium text-white/85">
+                            <span className="truncate">{persona.name}</span>
+                            {selected && <span aria-hidden="true" className="text-phase">✓</span>}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] leading-4 text-white/45">{persona.description}</span>
+                        </span>
+                      </button>;
+                    })}
+                  </div>
+                </div>
+              </details>
               <p className="hidden text-xs text-white/40 lg:block" aria-live="polite">{status}</p>
             </div>
           </div>
