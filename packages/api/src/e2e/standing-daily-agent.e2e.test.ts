@@ -134,7 +134,16 @@ describe("E2E: Standing Daily Agent", () => {
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
     await page.click('button[role="radio"][aria-checked="false"]');
+    const creationResponsePromise = page.waitForResponse((response) => {
+      const request = response.request();
+      return request.method() === "POST"
+        && new URL(response.url()).pathname === "/api/agent-profiles";
+    }, { timeout: 15_000 });
     await clickButton(page, "Create & enter");
+    const creationResponse = await creationResponsePromise;
+    if (!creationResponse.ok()) {
+      throw new Error(`Agent creation returned ${creationResponse.status()}: ${await creationResponse.text()}`);
+    }
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);
