@@ -109,6 +109,7 @@ export function AgentAIEditor({
   const editorRef = useRef<HTMLElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const focusPromptOnExpand = useRef(false);
+  const collapseAfterGeneration = useRef(false);
   const archetypePickerRef = useRef<HTMLDetailsElement>(null);
   const [activityLineIndex, setActivityLineIndex] = useState(0);
   const [expanded, setExpanded] = useState(true);
@@ -140,11 +141,25 @@ export function AgentAIEditor({
   useEffect(() => {
     if (!expanded) return;
     function collapseOnOutsidePointer(event: PointerEvent) {
-      if (!editorRef.current?.contains(event.target as Node)) setExpanded(false);
+      if (editorRef.current?.contains(event.target as Node)) return;
+      if (busy || activityPhase) {
+        collapseAfterGeneration.current = true;
+        return;
+      }
+      setExpanded(false);
     }
     window.addEventListener("pointerdown", collapseOnOutsidePointer, true);
     return () => window.removeEventListener("pointerdown", collapseOnOutsidePointer, true);
-  }, [expanded, isEditing]);
+  }, [expanded, busy, activityPhase]);
+
+  useEffect(() => {
+    if (busy || activityPhase || !collapseAfterGeneration.current) return;
+    const timer = window.setTimeout(() => {
+      collapseAfterGeneration.current = false;
+      setExpanded(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [busy, activityPhase]);
 
   useEffect(() => {
     if (!expanded || !focusPromptOnExpand.current) return;
@@ -196,7 +211,7 @@ export function AgentAIEditor({
           }}
           onBlurCapture={(event) => {
             const nextTarget = event.relatedTarget;
-            if (expanded && (!nextTarget || !event.currentTarget.contains(nextTarget as Node))) setExpanded(false);
+            if (expanded && !busy && !activityPhase && (!nextTarget || !event.currentTarget.contains(nextTarget as Node))) setExpanded(false);
           }}
         >
           {expanded && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
