@@ -373,7 +373,6 @@ test.describe("local public player identity", () => {
           return route.fulfill({ json: { avatarUrl: sourceUrl, portraitCrop, headPosition: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: headRectangle } } });
         });
         await page.goto(`${servers.webUrl}/dashboard/agents/create`, { waitUntil: "networkidle" });
-        await page.getByRole("button", { name: /Create with an AI assistant/ }).click();
         // The global acquisition prompt must not interrupt a longer creation session.
         await page.evaluate(() => window.dispatchEvent(new Event("free-queue:changed")));
         await page.waitForTimeout(3500);

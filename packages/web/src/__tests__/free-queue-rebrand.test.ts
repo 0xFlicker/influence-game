@@ -13,9 +13,11 @@ const freePageSource = readFileSync(
 const combinedSource = `${freeContentSource}\n${freePageSource}`;
 
 describe("free queue Influence framing", () => {
-  it("names the Influence queue across entry states", () => {
+  it("keeps one Influence Queue heading within Intake", () => {
     expect(combinedSource).toContain("ACTIVE_GAME.queueLabel");
-    expect(combinedSource).toContain("Join ${ACTIVE_GAME.name} Queue");
+    expect(combinedSource).toContain("Join queue");
+    expect(freePageSource).toContain("Intake");
+    expect(freeContentSource.match(/ACTIVE_GAME\.queueLabel/g)).toHaveLength(1);
     expect(combinedSource).toContain("Today&apos;s {ACTIVE_GAME.name} Game");
     expect(combinedSource).toContain("Next {ACTIVE_GAME.name} game in");
   });

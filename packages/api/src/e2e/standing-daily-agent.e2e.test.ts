@@ -267,13 +267,13 @@ describe("E2E: Standing Daily Agent", () => {
     });
     await clickButton(playerPage, "Leave queue");
     await waitForQueueAgent(player.userId, null);
-    await waitForText(playerPage, "Select an agent for the Influence Queue");
+    await waitForText(playerPage, "Select an agent for the queue");
     expect(ownerDialogs).toEqual([]);
     expect(await pageText(playerPage)).not.toContain("next season");
     expect(await pageText(playerPage)).not.toContain("Are you sure");
 
     await clickAgentCard(playerPage, "Daily Beta");
-    await clickButton(playerPage, "Join Influence Queue");
+    await clickButton(playerPage, "Join queue");
     await waitForQueueAgent(player.userId, secondAgentId);
     await waitForText(playerPage, "Daily Beta");
     await waitForText(playerPage, "Leave queue");
@@ -367,7 +367,7 @@ describe("E2E: Standing Daily Agent", () => {
     await playerPage.reload({ waitUntil: "domcontentloaded" });
     await playerPage.waitForSelector('button[aria-label="Select Daily Alpha"]', { timeout: 45_000 });
     await clickAgentCard(playerPage, "Daily Alpha");
-    await clickButton(playerPage, "Join Influence Queue");
+    await clickButton(playerPage, "Join queue");
     await waitForQueueAgent(player.userId, firstAgentId);
     await waitForText(playerPage, "Daily Alpha");
 

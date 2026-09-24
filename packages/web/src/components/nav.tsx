@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
 import { useMiniApp } from "@/components/farcaster-miniapp-provider";
@@ -29,17 +30,35 @@ function CloseIcon() {
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, loading: permissionsLoading, hasPermission } = usePermissions();
+  const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
+  const gameRoute = pathname?.split("/")[2];
+  const focusedFlow = !pathname || pathname === "/dashboard/agents/create"
+    || /^\/dashboard\/agents\/[^/]+\/edit(?:\/|$)/.test(pathname)
+    || pathname === "/games/new"
+    || pathname === "/admin/games/new"
+    || (pathname.startsWith("/games/") && !["free", "public", "private", "season"].includes(gameRoute));
+  const showCreateActions = authenticated && !permissionsLoading && !focusedFlow;
 
   const navLinks = (
     <>
+      {showCreateActions && (
+        <Link href="/dashboard/agents/create" className="influence-button-primary rounded-md px-4 py-2 whitespace-nowrap" onClick={() => setMobileOpen(false)}>
+          <span aria-hidden="true">＋ </span>Create agent
+        </Link>
+      )}
+      {showCreateActions && hasPermission("create_game") && (
+        <Link href="/games/new" className="influence-copy whitespace-nowrap hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
+          <span aria-hidden="true">＋ </span>Create game
+        </Link>
+      )}
       <Link href="/games" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         Games
       </Link>
 
       <Link href="/games/free" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-        Influence Queue
+        Intake
       </Link>
 
       <Link href="/rules" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
@@ -98,15 +117,16 @@ export function Nav() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden lg:flex items-center gap-6 text-sm">
+        <div className="hidden xl:flex items-center gap-5 text-sm">
           {navLinks}
         </div>
 
         {/* Mobile hamburger */}
         <button
-          className="lg:hidden influence-copy hover:text-text-primary transition-colors"
+          className="xl:hidden influence-copy hover:text-text-primary transition-colors"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
         >
           {mobileOpen ? <CloseIcon /> : <HamburgerIcon />}
         </button>
@@ -114,7 +134,7 @@ export function Nav() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="lg:hidden mt-4 flex flex-col gap-4 text-sm border-t border-border-active/60 pt-4">
+        <div className="xl:hidden mt-4 flex flex-col items-start gap-4 text-sm border-t border-border-active/60 pt-4">
           {navLinks}
         </div>
       )}

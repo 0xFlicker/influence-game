@@ -10,6 +10,8 @@ Generated portraits now finish as selectable assets. Neither web creation nor ag
 
 ## Submission contract
 
+The global header (or flat menu on smaller screens) links signed-in users directly to the agent creation assistant; **Advanced create** remains available inside that flow. **Create game** links to `/games/new` only for accounts with `create_game`. Both shortcuts are hidden during agent creation/editing, game creation, and individual game viewing (including live games and replays). The bottom of the screen remains available for future assistant UI.
+
 `submissionId` identifies an update attempt; reuse it with the exact same payload after response loss. The editor persists that ID before sending. A changed payload gets a new ID. `expectedContentRevisionId` identifies the content from which the edit started (null before the first content revision); the editor preserves that value when restoring a draft. Conflicts preserve the draft and return HTTP 409. Agent tools expose both fields. Trusted internal operations still execute under the existing profile/roster locks.
 
 `creationRequestId` remains the create identity and retry key; a standalone `submissionId` can serve as that key too. Create retries return the original saved result even after later profile edits. Existing competitive revision preconditions remain valid for strategy-review workflows.
@@ -64,3 +66,7 @@ New full-body selections (generated or uploaded) open Character images and requi
 The confirmation is stored with the active profile and immutable content/moderation snapshot in the same transaction. Exact retries preserve the original receipt and timestamp; unchanged geometry retains its confirmation. Head-only edits do not recalibrate ratings. Source replacement requires new confirmation; a portrait recrop on the same original preserves head geometry. Existing profiles without geometry can receive unrelated text edits. Apply migration `0089_character_head_position` before serving the updated API.
 
 Game-start profiles freeze the head metadata. Visual preparation retains it only when its source hash matches the selected full-body bytes; EXIF normalization during artifact storage preserves those coordinates. A freshly generated replacement cannot inherit geometry from an old reference. The visual endpoint returns only the selected image's `fullBodyHeads` rectangles, without confirmation actor information. Existing games retain their original frozen evidence and the single-person viewer fallback; current profile edits never backfill a historical game.
+
+## Intake naming
+
+The navigation, footer, page title, and links to `/games/free` use **Intake**. The agent selection section retains one **Influence Queue** heading; its status and actions refer simply to the queue. Historical rebrand plans and ideation mockups retain their original wording.
