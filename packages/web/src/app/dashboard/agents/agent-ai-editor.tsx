@@ -7,8 +7,17 @@ import { useEffect, useRef, useState } from "react";
 
 const SUGGESTION_GROUP_IDS = ["form", "vibe", "scene", "style", "roots", "background"] as const;
 type SuggestionGroupId = (typeof SUGGESTION_GROUP_IDS)[number];
-const INITIAL_SUGGESTIONS: AgentCreationTraitId[] = [
-  "dragon", "heroic", "gamer", "neon-noir", "multicultural", "aristocrat",
+interface TraitSuggestion {
+  groupId: SuggestionGroupId;
+  traitId: AgentCreationTraitId;
+}
+const INITIAL_SUGGESTIONS: TraitSuggestion[] = [
+  { groupId: "form", traitId: "dragon" },
+  { groupId: "vibe", traitId: "heroic" },
+  { groupId: "scene", traitId: "gamer" },
+  { groupId: "style", traitId: "neon-noir" },
+  { groupId: "roots", traitId: "multicultural" },
+  { groupId: "background", traitId: "aristocrat" },
 ];
 
 function randomTraitForGroup(groupId: SuggestionGroupId, excluded: readonly AgentCreationTraitId[]): AgentCreationTraitId {
@@ -20,12 +29,12 @@ function randomTraitForGroup(groupId: SuggestionGroupId, excluded: readonly Agen
   return picked.id;
 }
 
-function rollSuggestionSet(excluded: readonly AgentCreationTraitId[] = []): AgentCreationTraitId[] {
+function rollSuggestionSet(excluded: readonly AgentCreationTraitId[] = []): TraitSuggestion[] {
   const picked = [...excluded];
   return SUGGESTION_GROUP_IDS.map((groupId) => {
     const id = randomTraitForGroup(groupId, picked);
     picked.push(id);
-    return id;
+    return { groupId, traitId: id };
   });
 }
 
@@ -97,9 +106,13 @@ export function AgentAIEditor({
   submitDisabled,
   submitLabel,
 }: AgentAIEditorProps) {
+  const editorRef = useRef<HTMLElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement>(null);
+  const focusPromptOnExpand = useRef(false);
   const archetypePickerRef = useRef<HTMLDetailsElement>(null);
   const [activityLineIndex, setActivityLineIndex] = useState(0);
-  const [suggestionTraitIds, setSuggestionTraitIds] = useState<AgentCreationTraitId[]>(isEditing ? [] : INITIAL_SUGGESTIONS);
+  const [expanded, setExpanded] = useState(true);
+  const [suggestions, setSuggestions] = useState<TraitSuggestion[]>(isEditing ? [] : INITIAL_SUGGESTIONS);
   const selectedPersona = PERSONAS.find((persona) => persona.key === personaKey);
   const selectedArchetypeLabel = allowAIChoose ? "Let AI choose" : selectedPersona?.name ?? "Strategist";
   const activityLines = activityPhase === "images" && generationQuips.length > 0
@@ -124,31 +137,46 @@ export function AgentAIEditor({
     return () => window.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, []);
 
+  useEffect(() => {
+    if (!expanded) return;
+    function collapseOnOutsidePointer(event: PointerEvent) {
+      if (!editorRef.current?.contains(event.target as Node)) setExpanded(false);
+    }
+    window.addEventListener("pointerdown", collapseOnOutsidePointer, true);
+    return () => window.removeEventListener("pointerdown", collapseOnOutsidePointer, true);
+  }, [expanded, isEditing]);
+
+  useEffect(() => {
+    if (!expanded || !focusPromptOnExpand.current) return;
+    focusPromptOnExpand.current = false;
+    promptRef.current?.focus();
+  }, [expanded]);
+
   function send() {
     onSend();
   }
 
-  function replaceSuggestion(index: number, additionallyExcluded: readonly AgentCreationTraitId[] = []) {
-    const groupId = SUGGESTION_GROUP_IDS[index];
-    if (!groupId) return;
-    const excluded = [
-      ...creationTraitIds,
-      ...additionallyExcluded,
-      ...suggestionTraitIds.filter((_, suggestionIndex) => suggestionIndex !== index),
-    ];
-    const replacement = randomTraitForGroup(groupId, excluded);
-    setSuggestionTraitIds((current) => current.map((id, suggestionIndex) => suggestionIndex === index ? replacement : id));
-  }
-
-  function addSuggestion(id: AgentCreationTraitId, index: number) {
-    if (!creationTraitIds.includes(id) && creationTraitIds.length < 12) {
-      onCreationTraitIdsChange([...creationTraitIds, id]);
+  function addSuggestion(suggestion: TraitSuggestion, index: number) {
+    const { traitId, groupId } = suggestion;
+    if (!creationTraitIds.includes(traitId) && creationTraitIds.length < 12) {
+      onCreationTraitIdsChange([...creationTraitIds, traitId]);
     }
-    replaceSuggestion(index, [id]);
+    const remaining = suggestions.filter((_, suggestionIndex) => suggestionIndex !== index);
+    const replacement = randomTraitForGroup(groupId, [
+      ...creationTraitIds,
+      traitId,
+      ...remaining.map(({ traitId: remainingId }) => remainingId),
+    ]);
+    setSuggestions([...remaining, { groupId, traitId: replacement }]);
   }
 
   function rollAllSuggestions() {
-    setSuggestionTraitIds(rollSuggestionSet([...creationTraitIds, ...suggestionTraitIds]));
+    setSuggestions(rollSuggestionSet([...creationTraitIds, ...suggestions.map(({ traitId }) => traitId)]));
+  }
+
+  function expandAndFocusPrompt() {
+    focusPromptOnExpand.current = true;
+    setExpanded(true);
   }
 
   const selectedTraits = creationTraitIds
@@ -159,11 +187,22 @@ export function AgentAIEditor({
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
       <div className="mx-auto w-full px-4 pb-3 pt-4 sm:px-6 lg:px-8">
-        <section className="w-full rounded-2xl border border-white/12 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-4" aria-label="AI Agent editor">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
+        <section
+          ref={editorRef}
+          className={`w-full rounded-2xl border border-white/12 bg-surface/95 shadow-2xl shadow-black/30 ${expanded ? "p-3 sm:p-4" : "p-2"}`}
+          aria-label="Agent Workshop"
+          onClick={(event) => {
+            if (!expanded && !(event.target instanceof HTMLButtonElement)) expandAndFocusPrompt();
+          }}
+          onBlurCapture={(event) => {
+            const nextTarget = event.relatedTarget;
+            if (expanded && (!nextTarget || !event.currentTarget.contains(nextTarget as Node))) setExpanded(false);
+          }}
+        >
+          {expanded && <div className="mb-3 flex flex-wrap items-center justify-between gap-3 px-1">
             <div>
-              <p className="text-sm font-semibold text-text-primary">AI editor</p>
-              <p className="mt-0.5 text-xs text-white/45">{isEditing ? "Describe a change and I’ll update this draft." : "Describe the Agent you want to create."}</p>
+              <p className="text-sm font-semibold text-text-primary">Agent Workshop</p>
+              <p className="mt-0.5 text-xs text-white/45">{isEditing ? "Tell me what you want to change." : "Bring your next character to life."}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <span className="text-xs text-white/45">Archetype</span>
@@ -239,8 +278,8 @@ export function AgentAIEditor({
               </details>
               <p className="hidden text-xs text-white/40 lg:block" aria-live="polite">{status}</p>
             </div>
-          </div>
-          {activityPhase && <div className="mb-3 flex items-center gap-3 overflow-hidden rounded-xl border border-phase/20 bg-gradient-to-r from-phase/[0.10] via-white/[0.035] to-transparent px-3 py-3 sm:px-4" aria-label="AI generation activity">
+          </div>}
+          {expanded && activityPhase && <div className="mb-3 flex items-center gap-3 overflow-hidden rounded-xl border border-phase/20 bg-gradient-to-r from-phase/[0.10] via-white/[0.035] to-transparent px-3 py-3 sm:px-4" aria-label="AI generation activity">
             <div className="relative grid size-10 shrink-0 place-items-center rounded-full border border-phase/25 bg-phase/10 text-lg text-phase">
               <span className="absolute inset-0 rounded-full border border-phase/30 motion-safe:animate-ping motion-reduce:animate-none" aria-hidden="true" />
               <span className="relative" aria-hidden="true">✦</span>
@@ -259,7 +298,7 @@ export function AgentAIEditor({
               {[0, 1, 2].map((dot) => <span key={dot} className={`size-1.5 rounded-full bg-phase/80 motion-safe:animate-pulse motion-reduce:animate-none ${dot === 1 ? "[animation-delay:180ms]" : dot === 2 ? "[animation-delay:360ms]" : ""}`} />)}
             </div>
           </div>}
-          {!isEditing && <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Character ingredient suggestions">
+          {expanded && !isEditing && <div className="mb-2 flex min-w-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Character ingredient suggestions">
             <button
               type="button"
               onClick={rollAllSuggestions}
@@ -268,37 +307,26 @@ export function AgentAIEditor({
             >
               <span aria-hidden="true">✦</span> Surprise me
             </button>
-            {suggestionTraitIds.map((id, index) => {
-              const trait = ALL_AGENT_CREATION_TRAITS.find((candidate) => candidate.id === id);
+            {suggestions.map((suggestion, index) => {
+              const trait = ALL_AGENT_CREATION_TRAITS.find((candidate) => candidate.id === suggestion.traitId);
               if (!trait) return null;
-              return <span key={`${index}-${id}`} className="inline-flex min-h-8 items-center overflow-hidden rounded-full border border-white/12 bg-white/[0.035] text-xs text-white/65 transition-colors hover:border-phase/35 hover:bg-phase/[0.06]">
-                <button
-                  type="button"
-                  onClick={() => addSuggestion(id, index)}
-                  disabled={busy || submitting || creationTraitIds.length >= 12}
-                  aria-label={`Add ${trait.label} ingredient`}
-                  className="min-h-8 px-3 text-left transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {trait.label}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => replaceSuggestion(index)}
-                  disabled={busy || submitting}
-                  aria-label={`Roll another ${trait.label} ingredient`}
-                  title="Roll another idea"
-                  className="grid min-h-8 min-w-8 place-items-center border-l border-white/8 text-sm text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white/80 disabled:opacity-45"
-                >
-                  ×
-                </button>
-              </span>;
+              return <button
+                key={`${index}-${suggestion.groupId}-${suggestion.traitId}`}
+                type="button"
+                onClick={() => addSuggestion(suggestion, index)}
+                disabled={busy || submitting || creationTraitIds.length >= 12}
+                aria-label={`Add ${trait.label} ingredient`}
+                className="inline-flex min-h-7 shrink-0 items-center rounded-full border border-white/12 bg-white/[0.025] px-2.5 text-[11px] text-white/60 transition-colors hover:border-phase/35 hover:bg-phase/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {trait.label}
+              </button>;
             })}
           </div>}
-          {assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
-          <div className="flex items-end gap-3">
+          {expanded && assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
+          <div className={`flex ${expanded ? "items-end gap-3" : "items-center gap-2"}`}>
             <label htmlFor="agent-ai-change-request" className="sr-only">{isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"}</label>
-            <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-white/15 bg-black/20 transition-colors focus-within:border-phase/60 focus-within:ring-1 focus-within:ring-phase/25">
-              {selectedTraits.length > 0 && <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Selected character ingredients">
+            <div className={`min-w-0 flex-1 overflow-hidden rounded-xl border border-white/15 bg-black/20 transition-colors focus-within:border-phase/60 ${expanded ? "focus-within:ring-1 focus-within:ring-phase/25" : ""}`}>
+              {expanded && selectedTraits.length > 0 && <div className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Selected character ingredients">
                 {selectedTraits.map((trait) => <span key={trait.id} className="inline-flex min-h-9 items-center gap-1 rounded-full border border-phase/40 bg-phase/15 pl-3 pr-1 text-sm font-medium text-white shadow-sm shadow-black/20">
                   <span>{trait.label}</span>
                   <button
@@ -313,9 +341,11 @@ export function AgentAIEditor({
                 </span>)}
               </div>}
               <textarea
+                ref={promptRef}
                 id="agent-ai-change-request"
                 value={value}
                 onInput={(event) => onChange(event.currentTarget.value)}
+                onFocus={() => { if (!expanded) setExpanded(true); }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
@@ -323,26 +353,28 @@ export function AgentAIEditor({
                   }
                 }}
                 maxLength={2_000}
-                rows={3}
-                placeholder={isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"}
-                className="block min-h-24 w-full resize-y border-0 bg-transparent px-4 py-3 text-base leading-6 text-white outline-none placeholder:text-white/35 focus:outline-none focus:ring-0 sm:min-h-28"
+                rows={expanded ? 3 : 1}
+                placeholder={expanded
+                  ? isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"
+                  : isEditing ? "Tell me what to change…" : "Describe your Agent…"}
+                className={`block w-full border-0 bg-transparent text-base leading-6 text-white outline-none placeholder:text-white/35 focus:outline-none focus:ring-0 ${expanded ? "min-h-24 resize-y px-4 py-3 sm:min-h-28" : "h-11 resize-none px-3 py-2.5"}`}
                 disabled={busy || submitting}
               />
             </div>
-            <button type="button" onClick={send} disabled={!canSend} className="influence-button-primary min-h-12 shrink-0 rounded-xl px-5 text-sm font-semibold sm:px-7">{busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send"}</button>
+            <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className={`influence-button-primary shrink-0 font-semibold ${expanded ? "min-h-12 rounded-xl px-5 text-sm sm:px-7" : "grid size-10 place-items-center rounded-full text-lg"}`}>{expanded ? busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send" : "↑"}</button>
           </div>
-          <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
+          {expanded && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
             <input type="checkbox" checked={regenerateImages} onChange={(event) => onRegenerateImagesChange(event.target.checked)} disabled={busy || submitting} className="size-4 accent-phase" />
             Also generate {isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
-          </label>
-          {error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
+          </label>}
+          {expanded && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
+          {expanded && <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/8 pt-3">
             <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>
             <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Save draft</button>
             {generationBusy && <button type="button" onClick={onCancelGeneration} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel generation</button>}
             <button type="button" onClick={onCancel} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Cancel</button>
             <button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-10 rounded-lg px-4 text-xs font-semibold sm:px-5 sm:text-sm">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button>
-          </div>
+          </div>}
         </section>
       </div>
     </div>
