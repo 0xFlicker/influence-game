@@ -1125,3 +1125,13 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+@keyframes creation-section-pill-in {
+  0% { transform: translateY(-10px) scale(.85); background-color: rgb(167 139 250 / .5); }
+  60% { transform: translateY(0) scale(1.06); }
+  100% { transform: translateY(0) scale(1); }
+}
+.creation-section-pill { animation: creation-section-pill-in 450ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .creation-section-pill { animation: none; }
+}

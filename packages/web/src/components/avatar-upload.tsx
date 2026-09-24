@@ -8,6 +8,7 @@ const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 interface AvatarUploadProps {
+  editLabel?: string;
   disabled?: boolean;
   onEdit?: () => void;
   currentUrl?: string | null;
@@ -21,6 +22,7 @@ interface AvatarUploadProps {
 }
 
 export function AvatarUpload({
+  editLabel,
   disabled = false,
   onEdit,
   currentUrl,
@@ -132,11 +134,11 @@ export function AvatarUpload({
 
       <button
         type="button"
-        onClick={() => inputRef.current?.click()}
+        onClick={() => editLabel && onEdit ? onEdit() : inputRef.current?.click()}
         disabled={disabled || uploading}
         className="min-h-11 rounded-lg px-3 text-xs font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
       >
-        {uploading ? "Uploading..." : presentation === "full-body" ? "Change full-body reference" : "Change portrait"}
+        {uploading ? "Uploading..." : editLabel ?? (presentation === "full-body" ? "Change full-body reference" : "Change portrait")}
       </button>
 
       {error && <p role="alert" className="text-red-400 text-xs text-center max-w-48">{error}</p>}

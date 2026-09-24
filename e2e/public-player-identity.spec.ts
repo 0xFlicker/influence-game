@@ -218,9 +218,173 @@ test.describe("local public player identity", () => {
       await expect(agent).toBeVisible({ timeout: 2_500 });
       await agent.getByRole("button", { name: "Create an Agent" }).click();
       await expect(page).toHaveURL(`${servers.webUrl}/dashboard/agents/create`, { timeout: 30_000 });
+      await page.getByRole("button", { name: "Advanced create", exact: false }).click();
       await expect(page.locator("#agent-name")).toBeVisible();
     } finally {
       await context.close();
+    }
+  });
+
+  test("guides character approval and headshot confirmation on desktop and mobile", async ({ browser }) => {
+    test.setTimeout(120_000);
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      const context = await authenticatedContext(browser, fixture.completeJwt);
+      const page = await context.newPage();
+      await page.setViewportSize(viewport);
+      const sourceUrl = `${servers.webUrl}/creation-fixture.svg`;
+      const character = { name: "Mira Vale", gender: "female", personaKey: "diplomat", personality: "A warm diplomat with a long memory and a secret fear of betrayal. She listens carefully, records promises, and tests trust through small favors.", backstory: "An exiled ambassador building a new coalition.", strategyStyle: "Build trust before asking for a decisive vote.", performanceInstructions: "Quiet, precise gestures.", visualDesign: "A blue dragon in a gold coat.", introQuips: ["A promise is a beginning.", "I remember our deal.", "Tea before betrayal?"] };
+      const imageReady = Promise.withResolvers<void>();
+      let generated = 0;
+      let imageRequests = 0;
+      let exported: Record<string, unknown> | null = null;
+      try {
+        await page.route("**/creation-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#333950"/><circle cx="300" cy="165" r="85" fill="#8faee0"/><rect x="175" y="270" width="250" height="480" rx="60" fill="#d0a646"/></svg>' }));
+        await page.route("**/api/agent-profiles/creation-assistant", route => {
+          const { stage, message } = route.request().postDataJSON();
+          return route.fulfill({ json: { command: stage === "character" ? "revise_character" : stage === "review" ? message.startsWith("Yes") ? "accept_character" : "revise_character" : "generate_appearance" } });
+        });
+        await page.route("**/api/agent-profiles/generate", route => {
+          if (generated === 0) {
+            expect(route.request().postDataJSON().creationTraitIds).toEqual(["gender-non-binary", "streamer", "gamer"]);
+          }
+          return route.fulfill({ json: { ...character, personality: ++generated >= 2 ? "A suspicious diplomat who verifies every promise." : character.personality } });
+        });
+        await page.route("**/api/agent-profiles/visual-reference", async route => {
+          imageRequests++;
+          await imageReady.promise;
+          await route.fulfill({ json: { fullBodyReferenceUrl: sourceUrl, avatarUrl: sourceUrl, portraitCrop: { sourceUrl, x: 0.2, y: 0.02, width: 0.6, height: 0.4 }, headSuggestion: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: { x: 0.36, y: 0.09, width: 0.28, height: 0.2 } } } });
+        });
+        await page.route("**/api/agent-profiles/portrait-crop", route => {
+          const { headRectangle, ...portraitCrop } = route.request().postDataJSON();
+          exported = portraitCrop;
+          return route.fulfill({ json: { avatarUrl: sourceUrl, portraitCrop, headPosition: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: headRectangle } } });
+        });
+        await page.goto(`${servers.webUrl}/dashboard/agents/create`, { waitUntil: "networkidle" });
+        await page.getByRole("button", { name: /Create with an AI assistant/ }).click();
+        const composer = page.getByLabel("Message the character assistant", { exact: true });
+        await expect(page.getByText("Interests", { exact: true })).toHaveCount(0);
+        await expect(page.getByText("Background", { exact: true })).toHaveCount(1);
+        await page.getByRole("button", { name: "Add Non-binary ingredient", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Remove Non-binary ingredient", exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "Add Streamer ingredient", exact: true }).click();
+        await page.getByRole("button", { name: "Add Gamer ingredient", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Remove Streamer ingredient", exact: true })).toBeVisible();
+        await page.screenshot({ path: `/tmp/agent-starter-pills-${viewport.width}.png` });
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
+        await page.getByRole("button", { name: "Read Name", exact: true }).click();
+        const nameReader = page.getByRole("dialog", { name: "Name", exact: true });
+        await expect(nameReader.getByText("Mira Vale", { exact: true })).toBeVisible();
+        await nameReader.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Remove change Name" })).toHaveCount(0);
+        await page.getByRole("button", { name: "Read Character prompt", exact: true }).click();
+        const reader = page.getByRole("dialog", { name: "Character prompt", exact: true });
+        await expect(reader.getByText(character.personality, { exact: true })).toBeVisible();
+        expect((await reader.boundingBox())?.height).toBe(viewport.height);
+        await page.screenshot({ path: `/tmp/character-section-reader-${viewport.width}.png` });
+        await reader.getByRole("button", { name: "Edit Character prompt", exact: true }).click();
+        await expect(reader).toBeHidden();
+        await expect(composer).toBeFocused();
+        await expect(page.getByRole("button", { name: "Remove change Character prompt" })).toBeVisible();
+        await composer.fill("No, make her suspicious");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(page.getByText("A suspicious diplomat who verifies every promise.")).toBeVisible();
+        await page.getByRole("button", { name: "Yes, that feels right" }).click();
+        await expect(page.getByText(/What do they look like/)).toBeVisible();
+        await expect(page.getByRole("button", { name: "Add Dragon ingredient", exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "Add Dragon ingredient", exact: true }).click();
+        await composer.fill("A blue dragon in a gold coat");
+        await page.screenshot({ path: `/tmp/agent-visual-tags-${viewport.width}.png` });
+        const inputBounds = await composer.boundingBox();
+        const sendBounds = await page.getByRole("button", { name: "Send", exact: true }).boundingBox();
+        expect(inputBounds && sendBounds && sendBounds.x > inputBounds.x && sendBounds.x + sendBounds.width < inputBounds.x + inputBounds.width).toBeTruthy();
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Assistant working", exact: true })).toBeDisabled();
+        await expect(composer).toHaveValue("");
+        await expect(composer).toBeHidden();
+        await expect(page.getByText("Visual ingredients", { exact: true })).toBeHidden();
+        await expect(page.getByRole("status", { name: "Assistant typing" })).toBeVisible();
+        const formation = page.getByRole("status", { name: "Creating character image" });
+        await expect(formation).toBeVisible();
+        await expect(page.getByRole("button", { name: "Read Name", exact: true })).toHaveCount(0);
+        await page.screenshot({ path: `/tmp/character-formation-${viewport.width}.png` });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await expect(formation.locator("svg")).toBeVisible();
+        await page.screenshot({ path: `/tmp/character-formation-reduced-${viewport.width}.png` });
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        imageReady.resolve();
+        const dialog = page.getByRole("dialog", { name: "Adjust character images" });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Head position", exact: true })).toBeVisible();
+        await expect(dialog.getByRole("button", { name: "Confirm this headshot", exact: true })).toBeEnabled();
+        await dialog.getByText("Precise adjustments", { exact: true }).click();
+        const frame = dialog.getByRole("slider", { name: "Frame size", exact: true });
+        const originalFrameSize = await frame.inputValue();
+        const confirm = dialog.getByRole("button", { name: "Confirm this headshot", exact: true });
+        const beforeWarning = await confirm.evaluate(element => element.getBoundingClientRect().top + (element.closest("dialog")?.scrollTop ?? 0));
+        await frame.evaluate(element => { (element as HTMLInputElement).value = "32"; element.dispatchEvent(new Event("input", { bubbles: true })); });
+        await expect(dialog.getByRole("img", { name: "Head outside portrait crop" })).toBeVisible();
+        await expect(confirm).toBeDisabled();
+        const duringWarning = await confirm.evaluate(element => element.getBoundingClientRect().top + (element.closest("dialog")?.scrollTop ?? 0));
+        expect(duringWarning).toBeCloseTo(beforeWarning, 1);
+        await page.screenshot({ path: `/tmp/crop-warning-${viewport.width}.png` });
+        await frame.evaluate((element, value) => { (element as HTMLInputElement).value = value; element.dispatchEvent(new Event("input", { bubbles: true })); }, originalFrameSize);
+        await expect(dialog.getByRole("img", { name: "Head outside portrait crop" })).toHaveCount(0);
+        await expect(confirm).toBeEnabled();
+        await dialog.getByText("Precise adjustments", { exact: true }).click();
+        const dialogBounds = await dialog.boundingBox();
+        expect(dialogBounds?.height).toBe(viewport.height);
+        await page.screenshot({ path: `/tmp/agent-auto-crop-${viewport.width}.png` });
+        if (viewport.width < 500) {
+          const box = dialog.getByLabel("Portrait box; drag to move");
+          await expect(box).toBeVisible();
+          const rect = await box.boundingBox();
+          if (!rect) throw new Error("Portrait box has no bounds");
+          // Native touch events exercise pointer capture and touch-action, not synthetic DOM events.
+          const cdp = await context.newCDPSession(page);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }] });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: rect.x + rect.width / 2 + 4, y: rect.y + rect.height / 2 + 4 }] });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          const corner = await dialog.getByLabel("Resize portrait box").boundingBox();
+          if (!corner) throw new Error("Portrait resize handle has no bounds");
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: corner.x + 8, y: corner.y + 8 }] });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: corner.x + 13, y: corner.y + 13 }] });
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          await cdp.detach();
+          await dialog.getByRole("button", { name: "Head position", exact: true }).click();
+          const head = await dialog.getByLabel("Head box; drag to move").boundingBox();
+          if (!head) throw new Error("Head box has no bounds");
+          await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
+          await page.mouse.down(); await page.mouse.move(head.x + head.width / 2 + 3, head.y + head.height / 2 + 3); await page.mouse.up();
+          const headCorner = await dialog.getByLabel("Resize head box").boundingBox();
+          if (!headCorner) throw new Error("Head resize handle has no bounds");
+          await page.mouse.move(headCorner.x + 8, headCorner.y + 8);
+          await page.mouse.down(); await page.mouse.move(headCorner.x + 6, headCorner.y + 6); await page.mouse.up();
+          await page.screenshot({ path: "/tmp/agent-crop-mobile.png", fullPage: false });
+        }
+        await dialog.getByRole("button", { name: "Confirm this headshot", exact: true }).click();
+        await expect(page.getByRole("dialog")).toBeHidden();
+        expect(exported).not.toBeNull();
+        if (viewport.width < 500) {
+          expect(Number(exported?.["x"])).toBeGreaterThan(0.2);
+          expect(Number(exported?.["width"])).toBeGreaterThan(0.6);
+        }
+        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
+        await page.getByRole("button", { name: "Read Strategy", exact: true }).click();
+        await page.getByRole("dialog", { name: "Strategy", exact: true }).getByRole("button", { name: "Edit Strategy", exact: true }).click();
+        await composer.fill("Be more patient with allies");
+        await page.getByRole("button", { name: "Send", exact: true }).click();
+        await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
+        await page.getByRole("button", { name: "Yes, that feels right" }).click();
+        await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
+        await expect(page.getByText("Visual ingredients", { exact: true })).toHaveCount(0);
+        expect(imageRequests).toBe(1);
+        // Appearance generation must not replace the approved character prompt.
+        await expect(page.getByText("A suspicious diplomat who verifies every promise.")).toBeVisible();
+        await page.getByRole("button", { name: "Advanced create", exact: true }).click();
+        await expect(page.locator("#agent-personality")).toHaveValue("A suspicious diplomat who verifies every promise.");
+        await expect(page.locator("#agent-name")).toHaveValue("Mira Vale");
+      } finally { await context.close(); }
     }
   });
 

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep the authenticated browser harness from taking the local dev server's lock.
+  distDir: process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? ".next/e2e" : ".next",
   // Transpile Privy + wagmi packages as needed
   transpilePackages: [],
   images: {

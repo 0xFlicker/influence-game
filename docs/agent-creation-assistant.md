@@ -1,0 +1,88 @@
+# Guided Agent creation
+
+All creation entry points (ordinary, join-game and Daily Free) offer an AI
+assistant or Advanced create. Advanced uses the existing full editor and save
+contract. Switching from the assistant preserves the current draft.
+
+The assistant fills the viewport. A compact, scrollable character summary stays
+above a compact stack of the latest two conversation speech bubbles, anchored just
+above the composer. Older replies leave the display but remain in the bounded
+model context. The inset circular send arrow becomes the activity indicator while
+working; mobile generation messages use the full width without a separate icon.
+Clicking anywhere on a fixture opens its full text in a full-screen reader.
+Close returns without changes. Edit closes the reader, focuses the composer,
+and adds a removable “Change” section pill with a brief highlight animation
+(respecting reduced motion). Selected sections constrain
+which generated fields the client applies.
+
+Submitted messages appear on the right and clear the composer immediately, with
+an assistant typing bubble while awaiting a response. While working, the pills,
+textarea, and secondary actions collapse to a compact activity bar. Failed requests restore
+the typed message for retry.
+
+Starter ingredient pills and “Surprise me” use the same curated traits as
+Advanced create. Background (including interests), Strategy, and Gender rows start the
+conversation; the appearance question offers form and visual-style pills.
+Both character and portrait review hide the ingredient picker so the player can
+focus on approval or describe a specific change.
+Pill rows hide native scrollbars and subtly fade only edges with more content;
+swipe, trackpad, and keyboard navigation remain available.
+Gender uses the same independently selectable tags, including multiple gender
+directions. Selecting a suggestion consumes it until the next shuffle, even if
+the active tag is removed. Shuffling excludes all active tags.
+Selected ingredients become removable tags and can be sent
+without typing a prompt. Successful turns clear them; failed
+requests preserve the tags and typed message for retry.
+
+The conversation proceeds through character direction, character approval,
+appearance and portrait review. Character feedback regenerates the draft and
+asks for approval again. The explicit “Yes, that feels right” button advances
+locally without a model call; typed replies still use the command router.
+Approval requests appearance only when no image exists. With an existing image,
+it returns to portrait review or submission, preserving the confirmed headshot
+after text refinements. Approval does not generate
+images automatically. Appearance generation preserves the approved character
+text. Appearance generation temporarily replaces the summary cards with a
+formation scene: a pulsing silhouette, rising light, and sparse particles. It is
+indeterminate, makes no percentage or timing claims, and becomes static for
+reduced-motion preferences. The previous/default portrait stays hidden. A failed image request can be retried with its existing request ID.
+
+`POST /api/agent-profiles/creation-assistant` is authenticated and returns only
+`{command}`. Each stage has an exact provider-native JSON schema and semantic
+decoder shared with the client. No general chatbot prose or user-text regexes
+control transitions. Invalid, extra-field, fenced, incomplete or out-of-stage
+output fails the turn without applying effects. The application renders replies
+and owns generation and save actions. Abuse and repetitive loops can end chat;
+the draft remains available in Advanced create. Ordinary criticism and fictional
+villainous characters are not grounds for ending a conversation.
+
+The command router and character writer use low reasoning effort and explicitly
+request Standard (`service_tier: "default"`), bypassing the background Flex
+transport. Each provider call has a 45-second timeout and no SDK retries; the
+command request has a 60-second browser deadline. Timeouts return a readable retry message and
+leave the draft intact. Game and background generation policy is unchanged.
+[Flex processing](https://developers.openai.com/api/docs/guides/flex-processing)
+trades lower cost for slower responses and occasional resource unavailability;
+interactive character creation uses Standard instead.
+
+Profile data retains the existing local draft recovery and submission contract.
+Conversation history and approval are scoped to the open assistant; restoring
+a profile asks for approval again. The assistant never saves or enters a game
+on the model's authority; the user uses the final create button.
+
+After guided image generation, the full-screen image editor opens automatically
+with both crop and head controls available. Confirmation requires no edits.
+The Advanced editor retains its confirmation-first preview; “Adjust framing” opens two explicit
+modes: Portrait crop and Head position. Drag the active box to move it and its
+44px corner target to resize, with the same pointer controls for touch and mouse.
+The portrait remains square in source pixels. Only the active box receives
+pointer input, so overlapping boxes do not compete. The source stays visible
+while precise keyboard-accessible sliders are open. Export checks that the
+entire head fits inside the portrait and keeps the original full-body image.
+If the head extends outside the crop, amber stripes mark only the excluded
+area. The warning replaces the helper text in a shared reserved space, keeping
+the confirmation button and controls stationary.
+
+Validation uses strict-contract and interaction tests, mocked-provider API tests,
+and the local identity browser harness. No paid providers or external writes are
+needed for these checks. They do not establish live model quality.

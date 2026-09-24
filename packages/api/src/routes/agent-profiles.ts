@@ -1,4 +1,7 @@
 import sharp from "sharp";
+import { APIConnectionTimeoutError } from "openai";
+import { isCreationStage } from "@influence/engine/agent-creation-assistant";
+import { selectCreationCommand } from "../services/agent-creation-assistant.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -26,7 +29,7 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
-  resolveOpenAIBudgetGenerationLlm,
+  resolveAgentCreationLlm,
 } from "../lib/openai-budget-generation-llm.js";
 import {
   isUserSelectableAgentArchetype,
@@ -57,11 +60,11 @@ const GENERATED_AGENT_SURNAMES = [
   "Dunmore", "Ellery", "Fairchild", "Grantham", "Hollis", "Iverson", "Kestrel", "Lockwood",
   "Mercer", "North", "Orsini", "Prescott", "Quill", "Rutherford", "Sinclair", "Tallis",
 ] as const;
-/** @deprecated Prefer resolveOpenAIBudgetGenerationLlm — kept as a stable export for callers/tests. */
+/** Interactive character creation uses Standard processing with a bounded timeout. */
 export function resolveAgentProfileGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  return resolveOpenAIBudgetGenerationLlm(env);
+  return resolveAgentCreationLlm(env);
 }
 
 function buildAgentProfileGenerationSystemPrompt(
@@ -82,7 +85,7 @@ Respond with JSON only:
 {
   "name": "A distinctive full first and last name for the character (creative, memorable, ${MAX_AGENT_DISPLAY_NAME_LENGTH} characters or fewer)",
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
-  "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
+  "personality": "A detailed character prompt in 4-6 sentences: motivations, contradictions, flaws, voice, social habits and how they react under pressure. Include concrete behaviors that make them distinctive to play and watch. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
   "personaKey": "Return exactly one of the valid archetype keys listed below.",
   "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
@@ -101,6 +104,21 @@ ${archetypeChoices}`;
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.post("/api/agent-profiles/creation-assistant", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
+    if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
+      || !Array.isArray(body.history) || body.history.length > 24 || body.history.some((value: unknown) => typeof value !== "string" || value.length > 2000)
+      || !Array.isArray(body.sections) || body.sections.length > 8 || body.sections.some((value: unknown) => typeof value !== "string" || !["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "performanceInstructions", "visualDesign"].includes(value))) {
+      return c.json({ error: "Invalid creation assistant turn" }, 400);
+    }
+    try {
+      return c.json({ command: await selectCreationCommand(body.stage, body.message, body.history as string[], body.sections as string[], c.req.raw.signal) });
+    } catch (error) {
+      console.error("[creation-assistant] Turn failed", error);
+      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
+      return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create." }, 502);
+    }
+  });
   app.post("/api/agent-profiles/portrait-crop", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/portrait-crop");
     if (!body) return c.json({ error: "A portrait crop is required" }, 400);
@@ -256,6 +274,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
       const response = await openai.chat.completions.create({
         model: llmConfig.modelId,
+        service_tier: "default",
+        reasoning_effort: "low",
         max_completion_tokens: 5200,
         messages: [
           { role: "system", content: systemPrompt },
@@ -272,7 +292,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
             schema: characterProfileSchemaFor(allowedPersonaKeys),
           },
         },
-      });
+      }, { signal: c.req.raw.signal });
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
@@ -308,6 +328,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       });
     } catch (err) {
       console.error("[agent-profiles] AI generation failed:", err);
+      if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again." }, 504);
       return c.json({ error: "AI generation failed" }, 502);
     }
   });

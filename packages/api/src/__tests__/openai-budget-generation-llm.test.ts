@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   OPENAI_BUDGET_GENERATION_CATALOG_ID,
   resolveOpenAIBudgetGenerationLlm,
+  resolveAgentCreationLlm,
 } from "../lib/openai-budget-generation-llm.js";
 import { resolveAgentProfileGenerationLlm } from "../routes/agent-profiles.js";
 
@@ -33,17 +34,25 @@ describe("openai budget generation LLM selection", () => {
     expect(generationLlm).toBeNull();
   });
 
-  test("agent-profile helper stays an alias of the shared budget resolver", () => {
+  test("interactive creation uses Standard and bounded requests while budget calls retain Flex", () => {
     const env = {
       OPENAI_API_KEY: "openai-key",
       INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1",
     };
     const shared = resolveOpenAIBudgetGenerationLlm(env);
     const agentProfile = resolveAgentProfileGenerationLlm(env);
+    const assistant = resolveAgentCreationLlm(env);
 
     expect(agentProfile?.providerProfileId).toBe(shared?.providerProfileId);
     expect(agentProfile?.modelId).toBe(shared?.modelId);
     expect(agentProfile?.baseURL).toBe(shared?.baseURL);
     expect(agentProfile?.apiKeySource).toBe(shared?.apiKeySource);
+    expect(shared?.flexProcessingEnabled).toBe(true);
+    for (const interactive of [agentProfile, assistant]) {
+      expect(interactive?.flexProcessingEnabled).toBe(false);
+      expect(interactive?.openAIServiceTier).toBe("auto");
+      expect(interactive?.client.timeout).toBe(45_000);
+      expect(interactive?.client.maxRetries).toBe(0);
+    }
   });
 });
