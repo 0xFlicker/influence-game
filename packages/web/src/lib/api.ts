@@ -2308,6 +2308,9 @@ export interface CharacterImageDraft {
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
 }
 export interface GeneratePersonalityParams {
+  changeRequest?: string;
+  allowPersonaChange?: boolean;
+  creationTraitIds?: string[];
   traits?: string;
   occupation?: string;
   backstoryIdea?: string;
@@ -2329,6 +2332,7 @@ export interface GeneratePersonalityParams {
 }
 
 export interface GeneratePersonalityResult {
+  introQuips: string[];
   performanceInstructions: string;
   visualDesign: string;
   name: string;

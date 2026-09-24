@@ -32,7 +32,7 @@ describe("AgentForm", () => {
     expect(html).toContain("min-h-11");
     expect(html).toContain("flex-[1_1_auto]");
     expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("generates a full-body image and matching portrait. Changes stay in this draft.");
+    expect(html).toContain("Also generate <!-- -->the portrait and full-body reference");
   });
 
   test("shows the saved gender as selected on edit", () => {
@@ -54,8 +54,8 @@ describe("AgentForm", () => {
     });
 
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>Female<\/button>/);
-    expect(html).toContain("Refines your profile, performance and look");
-    expect(html).toContain("generates a full-body image and matching portrait. Changes stay in this draft.");
+    expect(html).toContain("Tell me what you want to change.");
+    expect(html).toContain("Also generate <!-- -->a new portrait and full-body reference");
   });
 
   test("makes Strategy the dominant long-form field and shares server limits", () => {
@@ -71,12 +71,11 @@ describe("AgentForm", () => {
   test("keeps the core Agent controls ahead of Strategy and never collapses Persona or AI tools", () => {
     const html = renderForm();
 
-    expect(html).toContain("order-1 rounded-2xl");
-    expect(html).toContain("order-2 rounded-2xl");
     expect(html.indexOf('id="agent-name"')).toBeLessThan(html.indexOf('id="agent-strategyStyle"'));
-    expect(html).toContain("Base persona");
-    expect(html).toContain("AI profile help");
-    expect(html).not.toContain("Persona &amp; AI tools");
+    expect(html).toContain('aria-label="Base archetype"');
+    expect(html).toContain('aria-label="Agent Workshop"');
+    expect(html).toContain('aria-label="Character ingredient suggestions"');
+    expect(html).toContain("Surprise me");
   });
 
   test("starts a review edit from the proposal and keeps the baseline visible", () => {

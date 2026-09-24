@@ -147,6 +147,21 @@ describe("presentation director", () => {
     director.dispose();
   });
 
+  it("cuts retained scene animations synchronously when seeking", () => {
+    const clock = new FakeClock();
+    const animation = new FakeAnimationAdapter();
+    const director = createPresentationDirector({ clock, animation });
+    director.load([cue("scene:1", 1), cue("scene:2", 2)]);
+    director.play();
+
+    director.seek(1);
+
+    expect(animation.completes).toBe(1);
+    expect(director.getSnapshot()).toMatchObject({ cursor: 1, activeKey: "scene:2" });
+    expect(clock.timers.size).toBe(1);
+    director.dispose();
+  });
+
   it("uses one fake-clock timer for classic and format cues", () => {
     const clock = new FakeClock();
     const director = createPresentationDirector({ clock });

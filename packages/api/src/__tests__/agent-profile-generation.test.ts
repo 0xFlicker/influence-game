@@ -88,7 +88,7 @@ describe("generated agent names", () => {
 });
 
 import { decodeCharacterProfile } from "../services/character-profile-contract.js";
-const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket" } as const;
+const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket", introQuips: ["The snacks are an alliance opportunity.", "I brought a plan and backup snacks.", "Trust is great; receipts are better."] as string[] } as const;
 describe("complete character contract", () => {
   test("requires performance and visual design alongside the original fields", () => {
     expect(decodeCharacterProfile(JSON.stringify(character))).toEqual(character);

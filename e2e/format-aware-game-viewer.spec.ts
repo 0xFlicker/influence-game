@@ -686,7 +686,7 @@ test.describe("format-aware game viewer", () => {
     await expect(card("Atlas")).toContainText("Empowered");
     await expect(card("Lyra")).toContainText("Nominee");
     await expect(card("Atlas")).not.toContainText("Override");
-    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
     await expect(card("Lyra")).not.toContainText("Nominee");
     await seek("two_names_override_draw");
     await expect(card("Atlas")).toContainText("Override");
@@ -717,7 +717,7 @@ test.describe("format-aware game viewer", () => {
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
     await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
     await expect(card(pointer.payload.targetId)).toContainText("Vulnerable");
-    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
   });
 
@@ -733,6 +733,7 @@ test.describe("format-aware game viewer", () => {
         await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
         await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
         const next = async () => page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true }).click();
+        const nextDialogueStep = async () => page.getByRole("button", { name: "Next dialogue step", exact: true }).click();
         const seek = async (kind: string) => {
           const stage = page.locator(`[data-format-cue="${kind}"]`);
           for (let i = 0; i < 30; i++) {
@@ -746,7 +747,7 @@ test.describe("format-aware game viewer", () => {
         await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
         await expect(initial).toContainText("Atlas nominates:");
         // Re-enter while playing: exercise animation completion, then seek back while paused.
-        await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+        await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
         await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
         await expect(initial).toBeVisible({ timeout: 8_000 });
         await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
@@ -789,11 +790,10 @@ test.describe("format-aware game viewer", () => {
         await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
         await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
-        await next();
+        await nextDialogueStep();
         await assertSoloBallot(page, scenarioId === "two_names_used_tie" ? "Lyra" : "Rex", first);
-        await next();
+        await nextDialogueStep();
         await assertSoloBallot(page, "Nova", scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
-        await next();
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
         await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();

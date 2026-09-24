@@ -133,8 +133,39 @@ describe("E2E: Standing Daily Agent", () => {
     await page.waitForSelector("#agent-name");
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
-    await page.click('button[role="radio"][aria-checked="false"]');
+    await clickButton(page, "Male");
+    await page.waitForFunction(
+      "document.querySelector('#agent-gender-male')?.getAttribute('aria-checked') === 'true'",
+    );
+    const submitState = await page.evaluate(`(() => {
+      const button = [...document.querySelectorAll("button")]
+        .find((candidate) => candidate.textContent?.trim() === "Create & enter");
+      return button ? { disabled: button.disabled, text: button.textContent?.trim() ?? "" } : null;
+    })()`) as { disabled: boolean; text: string } | null;
+    if (!submitState || submitState.disabled) {
+      throw new Error(`Create & enter was not enabled before submit: ${JSON.stringify(submitState)}`);
+    }
+    const creationResponsePromise = page.waitForResponse((response) => {
+      const request = response.request();
+      return request.method() === "POST"
+        && new URL(response.url()).pathname === "/api/agent-profiles";
+    }, { timeout: 15_000 });
     await clickButton(page, "Create & enter");
+    let creationResponse: Awaited<typeof creationResponsePromise>;
+    try {
+      creationResponse = await creationResponsePromise;
+    } catch (error) {
+      const formState = await page.evaluate(`(() => ({
+        alerts: [...document.querySelectorAll('[role="alert"]')]
+          .map((element) => element.textContent?.trim())
+          .filter(Boolean),
+        visibleText: document.body.innerText.slice(-1_500),
+      }))()`) as { alerts: string[]; visibleText: string };
+      throw new Error(`No Agent create response after submit. Form state: ${JSON.stringify(formState)}. ${String(error)}`);
+    }
+    if (!creationResponse.ok()) {
+      throw new Error(`Agent creation returned ${creationResponse.status()}: ${await creationResponse.text()}`);
+    }
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);

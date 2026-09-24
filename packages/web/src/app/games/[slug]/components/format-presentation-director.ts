@@ -592,6 +592,9 @@ export class PresentationDirector {
     this.manualTransition = null;
     this.exitReadingPositionMs = null;
     this.waitingAtHydrationWatermark = false;
+    // A seek is an immediate cut. Complete retained entrance effects before
+    // publishing the next cue so the old scene cannot animate over the new one.
+    this.animation.complete();
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
     this.positionWithinCue(speechBoundaries(this.getActiveCue())?.showAtMs ?? 0);
