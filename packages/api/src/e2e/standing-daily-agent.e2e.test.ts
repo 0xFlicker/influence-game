@@ -134,11 +134,11 @@ describe("E2E: Standing Daily Agent", () => {
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
     await page.click('button[role="radio"][aria-checked="false"]');
-    const submitState = await page.evaluate(() => {
+    const submitState = await page.evaluate(`(() => {
       const button = [...document.querySelectorAll("button")]
         .find((candidate) => candidate.textContent?.trim() === "Create & enter");
       return button ? { disabled: button.disabled, text: button.textContent?.trim() ?? "" } : null;
-    });
+    })()`) as { disabled: boolean; text: string } | null;
     if (!submitState || submitState.disabled) {
       throw new Error(`Create & enter was not enabled before submit: ${JSON.stringify(submitState)}`);
     }
@@ -152,12 +152,12 @@ describe("E2E: Standing Daily Agent", () => {
     try {
       creationResponse = await creationResponsePromise;
     } catch (error) {
-      const formState = await page.evaluate(() => ({
+      const formState = await page.evaluate(`(() => ({
         alerts: [...document.querySelectorAll('[role="alert"]')]
           .map((element) => element.textContent?.trim())
           .filter(Boolean),
         visibleText: document.body.innerText.slice(-1_500),
-      }));
+      }))()`) as { alerts: string[]; visibleText: string };
       throw new Error(`No Agent create response after submit. Form state: ${JSON.stringify(formState)}. ${String(error)}`);
     }
     if (!creationResponse.ok()) {
