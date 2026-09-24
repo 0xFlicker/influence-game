@@ -1,7 +1,7 @@
 /**
  * Shared OpenAI budget generation client for cheap flavor/copy LLM calls.
  *
- * Always pairs the GPT-5.6 Luna baseline catalog entry with the hosted OpenAI provider
+ * Always pairs the default baseline catalog entry with the hosted OpenAI provider
  * profile, even when `INFLUENCE_LLM_BASE_URL` points at LM Studio for game runs.
  * Call sites that need game-runtime models must use the game's modelSelection
  * path instead of this helper.
@@ -29,15 +29,24 @@ export type OpenAIBudgetGenerationLlm = LlmClientConfig & {
  */
 export function resolveOpenAIBudgetGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
+  options: Pick<LlmClientConfig, "openAIServiceTier"> & { timeout?: number; maxRetries?: number } = {},
 ): OpenAIBudgetGenerationLlm | null {
   const selection = resolveModelSelection(
     { catalogId: OPENAI_BUDGET_GENERATION_CATALOG_ID },
   );
   const llmConfig = createLlmClientFromEnv(env, {
+    ...options,
     providerProfileId: selection.providerProfile.id,
   });
 
   return llmConfig
     ? { ...llmConfig, modelId: selection.modelId }
     : null;
+}
+
+/** User-facing character turns must finish before the browser's 60s deadline. */
+export function resolveAgentCreationLlm(env: NodeJS.ProcessEnv = process.env) {
+  return resolveOpenAIBudgetGenerationLlm(env, {
+    openAIServiceTier: "auto", timeout: 45_000, maxRetries: 0,
+  });
 }

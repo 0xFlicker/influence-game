@@ -44,6 +44,27 @@ export const AGENT_CREATION_TRAIT_GROUPS = [
     ],
   },
   {
+    id: "gender",
+    label: "Gender",
+    traits: [
+      { id: "gender-male", label: "Male", instruction: "Male is one of the player's gender directions. If multiple gender ingredients are selected, treat them as creative options and choose a coherent identity within the output contract." },
+      { id: "gender-female", label: "Female", instruction: "Female is one of the player's gender directions. If multiple gender ingredients are selected, treat them as creative options and choose a coherent identity within the output contract." },
+      { id: "gender-non-binary", label: "Non-binary", instruction: "Non-binary is one of the player's gender directions. If multiple gender ingredients are selected, treat them as creative options and choose a coherent identity within the output contract." },
+    ],
+  },
+  {
+    id: "strategy",
+    label: "Game strategy",
+    traits: [
+      { id: "alliance-builder", label: "Alliance builder", instruction: "Build durable alliances through reciprocal favors and clear commitments." },
+      { id: "social-chameleon", label: "Social chameleon", instruction: "Adapt their social approach to each player while balancing conflicting loyalties." },
+      { id: "calculated-risk", label: "Calculated risk-taker", instruction: "Take bold strategic risks when the potential reward justifies exposure." },
+      { id: "under-the-radar", label: "Under the radar", instruction: "Keep their threat level low while quietly positioning for the endgame." },
+      { id: "deal-maker", label: "Deal maker", instruction: "Trade useful information and promises to negotiate advantageous deals." },
+      { id: "chaos-agent", label: "Chaos agent", instruction: "Disrupt comfortable alliances with purposeful surprises that improve their position." },
+    ],
+  },
+  {
     id: "style",
     label: "Visual flavor",
     traits: [

@@ -24,6 +24,7 @@ import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-comp
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
 import { AgentAIEditor } from "./agent-ai-editor";
+import { AgentCreationChat, type CharacterSection } from "./agent-creation-chat";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
 const DRAFT_VERSION = 3;
@@ -37,6 +38,8 @@ export interface StrategyComparison {
 }
 
 interface AgentFormProps {
+  guided?: boolean;
+  onAdvanced?: () => void;
   initial?: SavedAgent;
   strategyComparison?: StrategyComparison;
   showLiveChanges?: boolean;
@@ -136,6 +139,8 @@ function parseStoredDraft(value: string | null): StoredEditorDraft | null {
 }
 
 export function AgentForm({
+  guided = false,
+  onAdvanced,
   initial,
   strategyComparison,
   showLiveChanges = false,
@@ -145,6 +150,40 @@ export function AgentForm({
   submitLabel = "Save Agent",
 }: AgentFormProps) {
   const { account } = useAuth();
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (!guided || !formRef.current) return;
+    const form = formRef.current;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const outside: { element: HTMLElement; inert: boolean }[] = [];
+    for (let branch: HTMLElement | null = form; branch && branch !== document.body; branch = branch.parentElement) {
+      for (const sibling of Array.from(branch.parentElement?.children ?? [])) {
+        if (sibling !== branch && sibling instanceof HTMLElement) {
+          outside.push({ element: sibling, inert: sibling.inert });
+          sibling.inert = true;
+        }
+      }
+    }
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const viewport = window.visualViewport;
+    const fitViewport = () => {
+      form.style.height = viewport ? `${viewport.height}px` : "100dvh";
+      form.style.top = viewport ? `${viewport.offsetTop}px` : "0px";
+    };
+    fitViewport();
+    viewport?.addEventListener("resize", fitViewport);
+    viewport?.addEventListener("scroll", fitViewport);
+    form.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => {
+      for (const { element, inert } of outside) element.inert = inert;
+      document.body.style.overflow = overflow;
+      viewport?.removeEventListener("resize", fitViewport);
+      viewport?.removeEventListener("scroll", fitViewport);
+      form.style.height = ""; form.style.top = "";
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [guided]);
   const isEditing = Boolean(initial);
   const showStrategyComparison = showLiveChanges && Boolean(strategyComparison);
   const initialStrategy = strategyComparison?.initialWorking ?? initial?.strategyStyle ?? "";
@@ -459,8 +498,9 @@ export function AgentForm({
     setDraftReady(true);
   }
 
-  async function handleGenerate() {
-    if (!changeRequest.trim() && (isEditing || creationTraitIds.length === 0)) {
+  async function handleGenerate(options?: { message: string; sections?: CharacterSection[]; appearance?: boolean }) {
+    const request = options?.message ?? changeRequest;
+    if (!request.trim() && (isEditing || creationTraitIds.length === 0)) {
       setAiError(isEditing
         ? "Describe what you want changed before asking AI to update this Agent."
         : "Choose a few character ingredients or describe the Agent you want to create.");
@@ -478,8 +518,8 @@ export function AgentForm({
     setGenerationQuips([]);
     try {
       const params: GeneratePersonalityParams = {
-        changeRequest: changeRequest.trim() || undefined,
-        allowPersonaChange: allowAIChoose,
+        changeRequest: options ? `${options.appearance ? "Update visualDesign using this appearance request. Preserve the character's identity. " : "Develop a rich character prompt with concrete motivations, voice, flaws, relationships and game behavior. "}${options.sections?.length ? `Change only these sections: ${options.sections.join(", ")}. ` : ""}${request}` : request.trim() || undefined,
+        allowPersonaChange: options ? !options.appearance && (!options.sections?.length || options.sections.includes("personaKey")) : allowAIChoose,
         ...(isEditing ? {} : { creationTraitIds }),
       };
       if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim()
@@ -504,28 +544,32 @@ export function AgentForm({
       if (epoch !== generationEpoch.current) return;
       setGenerationQuips(result.introQuips);
       setGenerationDeadline(null);
-      setName(result.name);
-      setBackstory(result.backstory ?? "");
-      setPersonality(result.personality);
-      setStrategyStyle(result.strategyStyle ?? "");
-      setPersonaKey(result.personaKey);
+      const change = (section: CharacterSection) => !options?.appearance && (!options?.sections?.length || options.sections.includes(section));
+      if (change("name")) setName(result.name);
+      if (change("backstory")) setBackstory(result.backstory ?? "");
+      if (change("personality")) setPersonality(result.personality);
+      if (change("strategyStyle")) setStrategyStyle(result.strategyStyle ?? "");
+      if (change("personaKey")) setPersonaKey(result.personaKey);
       setAllowAIChoose(false);
-      setGender(result.gender);
-      setPerformanceInstructions(result.performanceInstructions);
-      setVisualDesign(result.visualDesign);
+      if (change("gender")) setGender(result.gender);
+      if (change("performanceInstructions")) setPerformanceInstructions(result.performanceInstructions);
+      if (options?.appearance || change("visualDesign")) setVisualDesign(result.visualDesign);
       setProfileGenerating(false);
 
-      if (regenerateImages) {
-        await generateReference({ name: result.name, personaKey: result.personaKey, performanceInstructions: result.performanceInstructions, visualDesign: result.visualDesign });
+      if (options?.appearance || (!options && regenerateImages)) {
+        const success = await generateReference({ name: options?.appearance ? name : result.name, personaKey: options?.appearance ? personaKey ?? "strategic" : result.personaKey, performanceInstructions: options?.appearance ? performanceInstructions : result.performanceInstructions, visualDesign: result.visualDesign });
+        if (!success) return false;
       }
       setChangeRequest("");
       setRegenerateImages(false);
       setAssistantNote("I applied the requested profile changes to this draft. Review them above before saving.");
+      return true;
     } catch (error) {
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
       setUnfinishedReplacement(true);
       setAiError(error instanceof Error ? error.message : "AI generation failed. Your existing text is unchanged.");
+      return false;
     } finally {
       if (epoch === generationEpoch.current) setProfileGenerating(false);
     }
@@ -651,11 +695,13 @@ export function AgentForm({
       }
       removeEditorStorage(referenceStorageKey);
       referenceRequest.current = null;
+      return true;
     } catch (error) {
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
       setUnfinishedReplacement(true);
       setReferenceError(error instanceof Error ? error.message : "Reference generation failed");
+      return false;
     } finally { if (epoch === generationEpoch.current) setReferenceBusy(false); }
   }
 
@@ -669,7 +715,7 @@ export function AgentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="pb-[22rem]">
+    <form ref={formRef} onSubmit={handleSubmit} className={guided ? "fixed inset-0 z-40 flex h-dvh flex-col overflow-hidden bg-[#11111b] text-white" : "pb-[22rem]"}>
       {pendingRestore && (
         <section className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4" aria-label="Saved local draft">
           <p className="text-sm font-semibold text-text-primary">
@@ -685,10 +731,20 @@ export function AgentForm({
         </section>
       )}
 
-      <div className="flex flex-col gap-6">
+      {guided ? <AgentCreationChat
+        creationTraitIds={creationTraitIds} onCreationTraitIdsChange={setCreationTraitIds}
+        profile={{ name, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
+        onGenerate={async (message, sections) => Boolean(await handleGenerate({ message, sections }))}
+        onAppearance={async message => Boolean(referenceRequest.current ? await generateReference() : await handleGenerate({ message, appearance: true }))}
+        avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting}
+        headRequired={headConfirmationRequired} hasImage={Boolean(fullBodyReferenceUrl)}
+        onHeadshot={() => setPortraitEditorSource(fullBodyReferenceUrl ?? portraitCrop?.sourceUrl ?? avatarUrl ?? null)}
+        onAdvanced={() => onAdvanced?.()} onCancel={requestCancel} onSaveDraft={saveLocalDraft}
+        submitDisabled={submitDisabled} submitLabel={submitLabel}
+      /> : <div className="flex flex-col gap-6">
         <aside className="influence-panel grid gap-6 rounded-2xl p-5 sm:p-6 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <div className="flex flex-col items-center">
-            <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={(url) => { setExplicitAvatarUrl(url); setPortraitCrop(null); }} onUploadingChange={setUploading} size="32" />
+            {generationBusy ? <div role="status" className="flex h-32 w-32 flex-col items-center justify-center gap-3 rounded-full bg-violet-400/10 text-xs text-violet-200"><span className="h-8 w-8 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />Creating character…</div> : <AvatarUpload editLabel={headConfirmationRequired ? "Confirm this headshot" : undefined} onUploadError={() => setUnfinishedReplacement(true)} disabled={submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={(url) => { setExplicitAvatarUrl(url); setPortraitCrop(null); }} onUploadingChange={setUploading} size="32" />}
             {(portraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
             {draftAvatarCompletion?.status === "completed" && draftAvatarUrl && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-emerald-300" aria-live="polite">Portrait ready</p>}
           </div>
@@ -766,16 +822,18 @@ export function AgentForm({
             </div>
           </section>
         </main>
-      </div>
+      </div>}
 
-      {headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
-      {portraitEditorSource && <CharacterPortraitEditor sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
-      {(generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
+      {!guided && headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
+      {portraitEditorSource && <CharacterPortraitEditor fullScreen={guided} startEditing={guided} sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
+      {!guided && (generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
       {generationNotice && <p role="status" className="mt-4 text-sm text-amber-200">{generationNotice}</p>}
       {saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}
       {draftStorageError && <p role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80">{draftStorageError}</p>}
 
-      <AgentAIEditor
+      {guided && (aiError || referenceError) && <p role="alert" className="shrink-0 bg-red-400/10 px-4 py-2 text-sm text-red-300">{aiError || referenceError}{referenceRequest.current && " Send again to retry the unfinished image request."}</p>}
+      {guided && Object.values(validationErrors).some(Boolean) && <p role="alert" className="shrink-0 px-4 py-2 text-sm text-red-300">{Object.values(validationErrors).filter(Boolean).join(" ")}</p>}
+      {!guided && <AgentAIEditor
         isEditing={isEditing}
         creationTraitIds={creationTraitIds}
         onCreationTraitIdsChange={setCreationTraitIds}
@@ -802,7 +860,7 @@ export function AgentForm({
         onCancel={requestCancel}
         submitDisabled={submitDisabled}
         submitLabel={submitLabel}
-      />
+      />}
 
       {(confirmGenerationCancel || confirmIncompleteSave) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

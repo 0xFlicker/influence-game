@@ -38,8 +38,9 @@ export function shouldLoadDailyAgentPrompt(input: {
   needsInvite: boolean;
   hasAuthToken: boolean;
   sessionDismissed: boolean;
+  pathname: string | null;
 }): boolean {
-  return input.signedIn && !input.needsInvite && input.hasAuthToken && !input.sessionDismissed;
+  return input.pathname !== "/dashboard/agents/create" && input.signedIn && !input.needsInvite && input.hasAuthToken && !input.sessionDismissed;
 }
 
 export function containedFocusTargetIndex(

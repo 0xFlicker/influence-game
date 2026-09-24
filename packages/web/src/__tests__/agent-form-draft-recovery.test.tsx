@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, waitFor, type RenderResult } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor, within, type RenderResult } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { AgentForm } from "../app/dashboard/agents/agent-form";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
@@ -419,13 +419,18 @@ describe("atomic character draft generation", () => {
 });
 
 async function confirmHeadInEditor(view: RenderResult) {
-  await waitFor(() => expect(Boolean(view.getByRole("button", { name: "Confirm head and portrait" }))).toBe(true));
+  await waitFor(() => expect(view.getByRole("dialog")).toBeTruthy());
+  const editor = within(view.getByRole("dialog"));
   expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true);
   const source = view.getByAltText(/full image$/);
   Object.defineProperty(source, "naturalWidth", { value: 1000 });
   Object.defineProperty(source, "naturalHeight", { value: 1500 });
   fireEvent.load(source);
+  const adjustButton = editor.queryByRole("button", { name: "Adjust framing" });
+  if (adjustButton) fireEvent.click(adjustButton);
+  fireEvent.click(view.getByRole("button", { name: "Head position" }));
+  fireEvent.click(view.getByText("Precise adjustments"));
   fireEvent.input(view.getByRole("slider", { name: "Head vertical position" }), { target: { value: "0.12" } });
-  fireEvent.click(view.getByRole("button", { name: "Confirm head and portrait" }));
+  fireEvent.click(editor.getByRole("button", { name: "Confirm this headshot" }));
   await waitFor(() => expect(view.container.querySelector("dialog") === null).toBe(true));
 }

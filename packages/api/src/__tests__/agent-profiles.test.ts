@@ -1282,6 +1282,43 @@ describe("Agent Profile API", () => {
       }
     });
 
+    test("creation assistant validates stage, authentication and exact provider commands before effects", async () => {
+      const turn = { stage: "review", message: "Yes", history: [], sections: [] };
+      expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, ""))).status).toBe(401);
+      expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, stage: "constructor" }, tokenA))).status).toBe(400);
+      const savedKey = process.env.OPENAI_API_KEY;
+      const originalFetch = globalThis.fetch;
+      process.env.OPENAI_API_KEY = "test-openai-key";
+      let content = '{"command":"accept_character"}';
+      let finishReason = "stop";
+      const requests: Record<string, unknown>[] = [];
+      globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input.toString(), init);
+        requests.push(await request.json() as Record<string, unknown>);
+        return Response.json({ id: "test", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: finishReason }] });
+      }, { preconnect: originalFetch.preconnect });
+      try {
+        const accepted = await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA));
+        expect(accepted.status).toBe(200);
+        expect(await accepted.json()).toEqual({ command: "accept_character" });
+        expect(requests[0]).toMatchObject({ service_tier: "default", reasoning_effort: "low", max_completion_tokens: 1200 });
+        expect(requests[0]?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, schema: { additionalProperties: false, properties: { command: { enum: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"] } } } } });
+        for (const bad of ["Hello", "{}", '{"command":"generate_appearance"}', '{"command":"accept_character","text":"extra"}', '```json\n{"command":"accept_character"}\n```', 'Result: {"command":"accept_character"}']) {
+          content = bad;
+          expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        }
+        content = '{"command":"accept_character"}'; finishReason = "length";
+        expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+        globalThis.fetch = Object.assign(async () => { throw new DOMException("timed out", "AbortError"); }, { preconnect: originalFetch.preconnect });
+        const timedOut = await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA));
+        expect(timedOut.status).toBe(504);
+        expect(await timedOut.json()).toMatchObject({ error: expect.stringContaining("Your text is still here") });
+        const profileTimeout = await app.request("/api/agent-profiles/generate", jsonReq({ traits: "A patient fox" }, tokenA));
+        expect(profileTimeout.status).toBe(504);
+      } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
+    });
+
     test("sends GPT-6 Luna for new and refined profiles", async () => {
       const envKeys = [
         "OPENAI_API_KEY",
@@ -1354,6 +1391,7 @@ describe("Agent Profile API", () => {
         expect(generated.status).toBe(200);
         expect(refined.status).toBe(200);
         expect(requestBodies).toHaveLength(2);
+        for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         expect(requestBodies.map((body) => body.model)).toEqual([
           "gpt-6-luna",
           "gpt-6-luna",
