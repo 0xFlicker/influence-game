@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { characterProfileSchema, decodeCharacterProfile } from "../services/character-profile-contract.js";
+import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 /**
@@ -17,6 +17,7 @@ import { exportCharacterPortrait, generateVisualProfileReference } from "../serv
 import { Hono, type Context } from "hono";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
+import { describeAgentCreationTraits, isAgentCreationTraitId, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -28,8 +29,9 @@ import {
   resolveOpenAIBudgetGenerationLlm,
 } from "../lib/openai-budget-generation-llm.js";
 import {
-  formatUserSelectableAgentArchetypeKeys,
   isUserSelectableAgentArchetype,
+  USER_SELECTABLE_AGENT_ARCHETYPES,
+  USER_SELECTABLE_AGENT_ARCHETYPE_KEYS,
 } from "../services/agent-archetypes.js";
 import {
   AgentProfileManagementError,
@@ -62,10 +64,17 @@ export function resolveAgentProfileGenerationLlm(
   return resolveOpenAIBudgetGenerationLlm(env);
 }
 
-function buildAgentProfileGenerationSystemPrompt(isRefine: boolean): string {
-  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor but with rich, human-like personalities.
+function buildAgentProfileGenerationSystemPrompt(
+  isRefine: boolean,
+  allowedPersonaKeys: readonly string[],
+): string {
+  const archetypeChoices = USER_SELECTABLE_AGENT_ARCHETYPES
+    .filter((archetype) => allowedPersonaKeys.includes(archetype.key))
+    .map((archetype) => `- ${archetype.key} (${archetype.label}): ${archetype.description}`)
+    .join("\n");
+  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
 
-Generate a complete agent personality profile. The character should feel like a real person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations.
+Generate a complete agent personality profile. The character should feel like a vivid person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations. Distinctive non-human and anthropomorphic characters are welcome; never flatten a chosen creature or object form into a human wearing a costume. Honor all selected character ingredients throughout the profile and visualDesign.
 
 ${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
 
@@ -75,11 +84,15 @@ Respond with JSON only:
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
   "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
-  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
+  "personaKey": "Return exactly one of the valid archetype keys listed below.",
   "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
   "performanceInstructions": "Specific posture, gestures, movement, mannerisms and vocal delivery for performing this character; at most 2000 characters.",
-  "visualDesign": "A coherent full-body visual design: adult appearance, face, hair, build, clothing, colors, footwear and distinguishing features. Simple reproducible contemporary styling. Preserve the identity of supplied reference artwork; at most 8000 characters."
-}`;
+  "visualDesign": "A coherent full-body visual design that honors the selected species or object form: silhouette, face or defining features, clothing when appropriate, colors and distinctive details. Keep it reproducible and preserve the identity and form of supplied reference artwork; at most 8000 characters.",
+  "introQuips": ["Three short, entertaining first-person lines this character might say. Stay in character; these are dialogue, never explanations or private reasoning. Each line is at most 160 characters."]
+}
+
+Valid archetypes:
+${archetypeChoices}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,8 +171,11 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { traits, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+    const { changeRequest, allowPersonaChange, traits, creationTraitIds, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+      changeRequest?: string;
+      allowPersonaChange?: boolean;
       traits?: string;
+      creationTraitIds?: string[];
       occupation?: string;
       backstoryIdea?: string;
       archetype?: string;
@@ -179,8 +195,19 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       };
     };
 
-    if (!traits && !occupation && !backstoryIdea && !archetype && !existingProfile) {
-      return c.json({ error: "Provide at least one of: traits, occupation, backstoryIdea, archetype, or existingProfile to refine" }, 400);
+    if (changeRequest !== undefined && (typeof changeRequest !== "string" || changeRequest.trim().length === 0 || changeRequest.length > 2_000)) {
+      return c.json({ error: "changeRequest must be a non-empty string of at most 2000 characters" }, 400);
+    }
+
+    if (creationTraitIds !== undefined && (!Array.isArray(creationTraitIds)
+      || creationTraitIds.length > 12
+      || creationTraitIds.some((id) => !isAgentCreationTraitId(id))
+      || new Set(creationTraitIds).size !== creationTraitIds.length)) {
+      return c.json({ error: "creationTraitIds must contain up to 12 unique valid character ingredients" }, 400);
+    }
+
+    if (!traits && !creationTraitIds?.length && !occupation && !backstoryIdea && !archetype && !existingProfile && !changeRequest) {
+      return c.json({ error: "Provide a prompt, character ingredients, traits, occupation, backstory idea, archetype, or existing profile to refine" }, 400);
     }
 
     const llmConfig = resolveAgentProfileGenerationLlm();
@@ -190,18 +217,35 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
 
     const isRefine = !!existingProfile;
     const openai = llmConfig.client;
+    const selectedArchetype = isUserSelectableAgentArchetype(existingProfile?.personaKey)
+      ? existingProfile.personaKey
+      : isUserSelectableAgentArchetype(archetype) ? archetype : undefined;
+    const allowedPersonaKeys = selectedArchetype && allowPersonaChange !== true
+      ? [selectedArchetype]
+      : USER_SELECTABLE_AGENT_ARCHETYPE_KEYS;
     const requestedGender = isAgentGender(gender)
       ? gender
       : isAgentGender(existingProfile?.gender) ? existingProfile.gender : undefined;
 
-    const systemPrompt = buildAgentProfileGenerationSystemPrompt(isRefine);
+    const systemPrompt = buildAgentProfileGenerationSystemPrompt(isRefine, allowedPersonaKeys);
 
     const userParts: string[] = [];
     if (isRefine && existingProfile) {
       userParts.push(`Refine this existing profile:\n${JSON.stringify(existingProfile, null, 2)}`);
     }
+    if (changeRequest) userParts.push(`User's requested changes (follow these instructions while preserving unrelated profile details):\n${changeRequest.trim()}`);
+    if (selectedArchetype) {
+      userParts.push(allowPersonaChange === true
+        ? `Current base archetype: ${selectedArchetype}. The user has allowed you to choose from these valid archetypes: ${USER_SELECTABLE_AGENT_ARCHETYPE_KEYS.join(", ")}. Return one of these exact keys in personaKey.`
+        : `The user's selected base archetype is ${selectedArchetype}. Keep it fixed and return exactly ${selectedArchetype} in personaKey.`);
+    } else {
+      userParts.push(`Choose personaKey only from these valid archetypes: ${allowedPersonaKeys.join(", ")}.`);
+    }
     if (name) userParts.push(`Preferred name: ${name}`);
     if (traits) userParts.push(`Key traits: ${traits}`);
+    if (creationTraitIds?.length) {
+      userParts.push(`Selected character ingredients (honor each as a creative constraint in the profile and visualDesign):\n${describeAgentCreationTraits(creationTraitIds as AgentCreationTraitId[]).join("\n")}`);
+    }
     if (occupation) userParts.push(`Occupation/background: ${occupation}`);
     if (backstoryIdea) userParts.push(`Backstory idea: ${backstoryIdea}`);
     if (archetype) userParts.push(`Preferred archetype: ${archetype}`);
@@ -225,7 +269,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
           json_schema: {
             name: "agent_profile_generation",
             strict: true,
-            schema: characterProfileSchema,
+            schema: characterProfileSchemaFor(allowedPersonaKeys),
           },
         },
       });
@@ -236,7 +280,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       }
 
       if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
-      const generated = decodeCharacterProfile(content);
+      const generated = decodeCharacterProfile(content, allowedPersonaKeys);
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
@@ -259,6 +303,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         personaKey: generated.personaKey,
         performanceInstructions: generated.performanceInstructions,
         visualDesign: generated.visualDesign,
+        introQuips: generated.introQuips,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
       });
     } catch (err) {

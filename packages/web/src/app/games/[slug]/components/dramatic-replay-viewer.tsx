@@ -249,6 +249,51 @@ function cueSceneIdentity(cue: PresentationCue): string {
     : cue.key;
 }
 
+const MINGLE_ROOM_PHASES: ReadonlySet<PhaseKey> = new Set([
+  "MINGLE",
+  "MINGLE_I",
+  "POST_VOTE_MINGLE",
+  "FORMAT_MINGLE",
+]);
+
+function findPreviousMingleRoomCue(
+  cues: readonly PresentationCue[],
+  cursor: number,
+  scenes: readonly ReplayScene[],
+): number | null {
+  const current = cues[cursor];
+  if (current?.source !== "classic" || !MINGLE_ROOM_PHASES.has(current.phase)) return null;
+  const currentMessage = scenes[current.sceneIndex]?.messages[current.messageIndex];
+  if (currentMessage?.roomId == null) return null;
+
+  const isSameRoom = (index: number, cue: ClassicPresentationCue, roomId: number) => {
+    const candidate = cues[index];
+    if (candidate?.source !== "classic" || candidate.phase !== cue.phase || candidate.round !== cue.round) return false;
+    return scenes[candidate.sceneIndex]?.messages[candidate.messageIndex]?.roomId === roomId;
+  };
+
+  let currentRoomStart = cursor;
+  while (currentRoomStart > 0 && isSameRoom(currentRoomStart - 1, current, currentMessage.roomId)) {
+    currentRoomStart -= 1;
+  }
+  if (currentRoomStart < cursor) return currentRoomStart;
+
+  const previousIndex = currentRoomStart - 1;
+  const previousCue = cues[previousIndex];
+  if (previousCue?.source === "classic" && previousCue.phase === current.phase && previousCue.round === current.round) {
+    const previousMessage = scenes[previousCue.sceneIndex]?.messages[previousCue.messageIndex];
+    if (previousMessage?.roomId != null) {
+      let previousRoomStart = previousIndex;
+      while (previousRoomStart > 0 && isSameRoom(previousRoomStart - 1, previousCue, previousMessage.roomId)) {
+        previousRoomStart -= 1;
+      }
+      return previousRoomStart;
+    }
+  }
+
+  return findCueForAdjacentScene(cues, cursor, -1);
+}
+
 export function formatSnapshotForPresentationCursor(
   cues: readonly PresentationCue[],
   cursor: number,
@@ -578,6 +623,10 @@ function DramaticReplayTheater({
     director.manualAdvance();
   }, [director]);
 
+  const stepBackOneCue = useCallback(() => {
+    director.seek(directorSnapshot.cursor - 1);
+  }, [director, directorSnapshot.cursor]);
+
   const pausePresentation = useCallback(() => {
     director.pause();
   }, [director]);
@@ -603,13 +652,17 @@ function DramaticReplayTheater({
   }, [director]);
 
   const goToPrevScene = useCallback(() => {
-    const previousIndex = findCueForAdjacentScene(
+    const previousIndex = findPreviousMingleRoomCue(
+      presentationCues,
+      directorSnapshot.cursor,
+      scenes,
+    ) ?? findCueForAdjacentScene(
       presentationCues,
       directorSnapshot.cursor,
       -1,
     );
     if (previousIndex !== null) director.seek(previousIndex);
-  }, [director, directorSnapshot.cursor, presentationCues]);
+  }, [director, directorSnapshot.cursor, presentationCues, scenes]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
@@ -678,7 +731,7 @@ function DramaticReplayTheater({
           break;
         case "ArrowLeft":
           e.preventDefault();
-          director.seek(directorSnapshot.cursor - 1);
+          stepBackOneCue();
           break;
         case "]":
           e.preventDefault();
@@ -705,6 +758,7 @@ function DramaticReplayTheater({
     pausePresentation,
     presentationCues,
     resetControlsTimer,
+    stepBackOneCue,
   ]);
 
   const formatCompilationNotice =
@@ -928,46 +982,6 @@ function DramaticReplayTheater({
             >
               {isPlaying ? "⏸" : "▶"}
             </button>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                aria-label="Go to replay start"
-                onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
-                disabled={directorSnapshot.cursor === 0}
-                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
-              >
-                ⏮
-              </button>
-              <button
-                type="button"
-                aria-label="Previous scene"
-                onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
-                disabled={directorSnapshot.cursor === 0}
-                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
-              >
-                ◀◀
-              </button>
-              <span className="text-[10px] text-white/20 px-1 min-w-[3rem] text-center">
-                {directorSnapshot.cursor + 1}/{presentationCues.length}
-              </span>
-              <button
-                type="button"
-                aria-label="Next scene"
-                onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
-                disabled={directorSnapshot.cursor >= presentationCues.length - 1}
-                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
-              >
-                ▶▶
-              </button>
-              <button
-                type="button"
-                aria-label="Go to replay end"
-                onClick={(e) => { e.stopPropagation(); goToEnd(); }}
-                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10"
-              >
-                ⏭
-              </button>
-            </div>
             <div className="flex items-center gap-0.5">
               {SPEED_OPTIONS.map((opt) => (
                 <button
@@ -986,9 +1000,68 @@ function DramaticReplayTheater({
                   {opt.label}
                 </button>
               ))}
-
             </div>
           </div>
+          <div className="flex items-center justify-center gap-1.5">
+              <button
+                type="button"
+                aria-label="Go to replay start"
+                onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
+                disabled={directorSnapshot.cursor === 0}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ⏮
+              </button>
+              <button
+                type="button"
+                aria-label="Previous room or scene"
+                onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
+                disabled={directorSnapshot.cursor === 0}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ◀◀
+              </button>
+              <button
+                type="button"
+                aria-label="Previous dialogue step"
+                title="Previous dialogue step (←)"
+                onClick={(e) => { e.stopPropagation(); stepBackOneCue(); }}
+                disabled={directorSnapshot.cursor === 0}
+                className="text-sm text-white/50 active:text-white transition-colors size-9 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ◀
+              </button>
+              <span className="text-[10px] text-white/20 px-1 min-w-[3rem] text-center">
+                {directorSnapshot.cursor + 1}/{presentationCues.length}
+              </span>
+              <button
+                type="button"
+                aria-label="Next dialogue step"
+                title="Next dialogue step (→)"
+                onClick={(e) => { e.stopPropagation(); advanceMessage(); }}
+                disabled={directorSnapshot.cursor >= presentationCues.length - 1}
+                className="text-sm text-white/50 active:text-white transition-colors size-9 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ▶
+              </button>
+              <button
+                type="button"
+                aria-label="Next scene"
+                onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
+                disabled={directorSnapshot.cursor >= presentationCues.length - 1}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ▶▶
+              </button>
+              <button
+                type="button"
+                aria-label="Go to replay end"
+                onClick={(e) => { e.stopPropagation(); goToEnd(); }}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10"
+              >
+                ⏭
+              </button>
+            </div>
         </div>
 
         {/* Desktop: single-row layout */}
@@ -1017,12 +1090,32 @@ function DramaticReplayTheater({
             </button>
             <button
               type="button"
-              aria-label="Previous scene"
+              aria-label="Previous room or scene"
               onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
               disabled={directorSnapshot.cursor === 0}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
             >
               ◀◀ Prev
+            </button>
+            <button
+              type="button"
+              aria-label="Previous dialogue step"
+              title="Previous dialogue step (←)"
+              onClick={(e) => { e.stopPropagation(); stepBackOneCue(); }}
+              disabled={directorSnapshot.cursor === 0}
+              className="text-sm text-white/50 hover:text-white transition-colors size-9 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              aria-label="Next dialogue step"
+              title="Next dialogue step (→)"
+              onClick={(e) => { e.stopPropagation(); advanceMessage(); }}
+              disabled={directorSnapshot.cursor >= presentationCues.length - 1}
+              className="text-sm text-white/50 hover:text-white transition-colors size-9 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              ▶
             </button>
             <button
               type="button"

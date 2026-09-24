@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
+import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import {
   apiFetch,
   AGENT_GENDER_OPTIONS,
@@ -17,12 +18,12 @@ import {
   type SavedAgent,
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
-import { PERSONAS } from "@/lib/personas";
 import { CharacterPortraitEditor } from "./character-portrait-editor";
 import { AvatarUpload } from "@/components/avatar-upload";
 import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
+import { AgentAIEditor } from "./agent-ai-editor";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
 const DRAFT_VERSION = 3;
@@ -190,10 +191,15 @@ export function AgentForm({
   const [fullBodyUploading, setFullBodyUploading] = useState(false);
   const uploading = portraitUploading || fullBodyUploading;
   const [submitting, setSubmitting] = useState(false);
-  const [personaExpanded, setPersonaExpanded] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [assistantNote, setAssistantNote] = useState<string | null>(null);
+  const [generationQuips, setGenerationQuips] = useState<string[]>([]);
+  const [changeRequest, setChangeRequest] = useState("");
+  const [creationTraitIds, setCreationTraitIds] = useState<AgentCreationTraitId[]>([]);
+  const [regenerateImages, setRegenerateImages] = useState(!initial);
+  const [allowAIChoose, setAllowAIChoose] = useState(!initial);
   const [portraitError, setPortraitError] = useState<string | null>(null);
   const [portraitStatusUnavailable, setPortraitStatusUnavailable] = useState(false);
   const [pendingRestore, setPendingRestore] = useState<StoredEditorDraft | null>(null);
@@ -244,7 +250,6 @@ export function AgentForm({
     return epoch;
   }
 
-  const selectedPersona = PERSONAS.find((persona) => persona.key === personaKey);
   const previewPersona = personaKey ?? "strategic";
   const avatarUrl = explicitAvatarUrl ?? draftAvatarUrl;
   const portraitPending = draftAvatarCompletion
@@ -455,6 +460,12 @@ export function AgentForm({
   }
 
   async function handleGenerate() {
+    if (!changeRequest.trim() && (isEditing || creationTraitIds.length === 0)) {
+      setAiError(isEditing
+        ? "Describe what you want changed before asking AI to update this Agent."
+        : "Choose a few character ingredients or describe the Agent you want to create.");
+      return;
+    }
     const savedReference = draftStorageKey ? readEditorStorage(`${draftStorageKey}:visual-reference`) : null;
     if (referenceRequest.current || (savedReference?.ok && savedReference.value)) {
       setAiError("The previous image request is unfinished. Retry that reference request, submit the selected assets, or discard the draft before starting a different character generation.");
@@ -463,8 +474,14 @@ export function AgentForm({
     const epoch = beginGeneration();
     setProfileGenerating(true);
     setAiError(null);
+    setAssistantNote(null);
+    setGenerationQuips([]);
     try {
-      const params: GeneratePersonalityParams = {};
+      const params: GeneratePersonalityParams = {
+        changeRequest: changeRequest.trim() || undefined,
+        allowPersonaChange: allowAIChoose,
+        ...(isEditing ? {} : { creationTraitIds }),
+      };
       if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim()
         || performanceInstructions.trim() || visualDesign?.trim() || avatarUrl || fullBodyReferenceUrl) {
         params.existingProfile = {
@@ -472,7 +489,7 @@ export function AgentForm({
           backstory: backstory.trim() || undefined,
           personality: personality.trim() || undefined,
           strategyStyle: strategyStyle.trim() || undefined,
-          ...(personaKey ? { personaKey } : {}),
+          personaKey: personaKey ?? "strategic",
           gender: gender || undefined,
           performanceInstructions,
           visualDesign: visualDesign ?? "",
@@ -480,23 +497,30 @@ export function AgentForm({
           fullBodyReferenceUrl,
         };
       } else {
-        params.archetype = personaKey ?? "strategic";
+        if (!allowAIChoose) params.archetype = personaKey ?? "strategic";
         params.gender = gender || undefined;
       }
       const result = await generatePersonality(params);
       if (epoch !== generationEpoch.current) return;
+      setGenerationQuips(result.introQuips);
       setGenerationDeadline(null);
       setName(result.name);
       setBackstory(result.backstory ?? "");
       setPersonality(result.personality);
       setStrategyStyle(result.strategyStyle ?? "");
       setPersonaKey(result.personaKey);
+      setAllowAIChoose(false);
       setGender(result.gender);
       setPerformanceInstructions(result.performanceInstructions);
       setVisualDesign(result.visualDesign);
       setProfileGenerating(false);
 
-      await generateReference({ name: result.name, personaKey: result.personaKey, performanceInstructions: result.performanceInstructions, visualDesign: result.visualDesign });
+      if (regenerateImages) {
+        await generateReference({ name: result.name, personaKey: result.personaKey, performanceInstructions: result.performanceInstructions, visualDesign: result.visualDesign });
+      }
+      setChangeRequest("");
+      setRegenerateImages(false);
+      setAssistantNote("I applied the requested profile changes to this draft. Review them above before saving.");
     } catch (error) {
       if (epoch !== generationEpoch.current) return;
       setGenerationDeadline(null);
@@ -584,7 +608,6 @@ export function AgentForm({
     onCancel();
   }
 
-  const hasProfileText = Boolean(name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim());
   const requiredStrategyChangeMissing = Boolean(strategyComparison?.requireChange
     && (normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
       || normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.baseline)));
@@ -646,7 +669,7 @@ export function AgentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="pb-28">
+    <form onSubmit={handleSubmit} className="pb-[22rem]">
       {pendingRestore && (
         <section className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4" aria-label="Saved local draft">
           <p className="text-sm font-semibold text-text-primary">
@@ -662,15 +685,15 @@ export function AgentForm({
         </section>
       )}
 
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-8 xl:grid-cols-[19rem_minmax(0,1fr)]">
-        <aside className="influence-panel order-1 rounded-2xl p-5 sm:p-6 lg:order-none lg:sticky lg:top-24">
+      <div className="flex flex-col gap-6">
+        <aside className="influence-panel grid gap-6 rounded-2xl p-5 sm:p-6 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <div className="flex flex-col items-center">
             <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={(url) => { setExplicitAvatarUrl(url); setPortraitCrop(null); }} onUploadingChange={setUploading} size="32" />
             {(portraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
             {draftAvatarCompletion?.status === "completed" && draftAvatarUrl && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-emerald-300" aria-live="polite">Portrait ready</p>}
           </div>
 
-          <div className="mt-6 space-y-5">
+          <div className="grid gap-5 lg:grid-cols-2">
             <div>
               <label htmlFor="agent-name" className="influence-section-title block mb-2">Agent name</label>
               <input id="agent-name" type="text" value={name} onChange={(event) => { setName(event.target.value); setValidationErrors((current) => ({ ...current, name: "" })); }} placeholder="e.g. ShadowPlay-7" maxLength={AGENT_PROFILE_LIMITS.name} aria-invalid={Boolean(validationErrors.name)} aria-describedby={validationErrors.name ? "agent-name-error" : "agent-name-help"} className="influence-field min-h-11 w-full rounded-lg px-4 py-2.5 text-base sm:text-sm" />
@@ -690,42 +713,14 @@ export function AgentForm({
             </fieldset>
 
             <div className="space-y-5">
-              <div>
-                <p className="influence-section-title mb-2">Base persona</p>
-                <button type="button" aria-expanded={personaExpanded} onClick={() => setPersonaExpanded((expanded) => !expanded)} className="influence-selection-card flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left">
-                  <span className="flex min-w-0 items-center gap-2"><span aria-hidden="true">{selectedPersona?.icon ?? "○"}</span><span className="truncate text-sm font-medium text-text-primary">{selectedPersona?.name ?? "No base persona"}</span></span>
-                  <span className="text-xs text-white/40">{personaExpanded ? "Close" : "Change"}</span>
-                </button>
-                {selectedPersona && <p className="mt-2 text-xs leading-5 text-white/45">{selectedPersona.description}</p>}
-                {personaExpanded && (
-                  <fieldset className="mt-3">
-                    <legend className="sr-only">Choose a base persona</legend>
-                    <div role="radiogroup" className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-                      {PERSONAS.map((persona) => (
-                        <button key={persona.key} type="button" role="radio" aria-checked={personaKey === persona.key} data-selected={personaKey === persona.key} onClick={() => { setPersonaKey(persona.key); setPersonaExpanded(false); }} className="influence-selection-card min-h-11 rounded-lg p-2 text-center text-xs influence-copy data-[selected=true]:text-text-primary"><span className="mr-1" aria-hidden="true">{persona.icon}</span>{persona.name}</button>
-                      ))}
-                    </div>
-                  </fieldset>
-                )}
-              </div>
-
-              <section className="rounded-xl border border-white/10 bg-black/15 p-4">
-                <p className="text-sm font-semibold text-text-primary">AI profile help</p>
-                <p className="mt-1 text-xs leading-5 text-white/45">
-                  Refines your profile, performance and look, then generates a full-body image and matching portrait. Changes stay in this draft.
-                </p>
-                <button type="button" onClick={() => void handleGenerate()} disabled={generationBusy || uploading || submitting} className="influence-button-primary mt-3 min-h-11 w-full rounded-lg px-4 text-sm font-semibold">{profileGenerating ? "Generating…" : hasProfileText ? "Refine with AI" : "Generate with AI"}</button>
-                {aiError && <p role="alert" className="mt-2 text-xs leading-5 text-red-300">{aiError}</p>}
-              </section>
-
               {portraitStatusUnavailable && <button type="button" onClick={() => { pollFailures.current = 0; setPortraitStatusUnavailable(false); }} className="influence-button-secondary min-h-11 w-full rounded-lg px-3 text-sm">Refresh portrait status</button>}
               {portraitError && <p role="status" className="text-xs leading-5 text-amber-200/80">{portraitError}</p>}
             </div>
           </div>
         </aside>
 
-        <main className="contents min-w-0 lg:block lg:space-y-6">
-          <section className="influence-panel order-2 rounded-2xl p-5 sm:p-6">
+        <main className="min-w-0 space-y-6">
+          <section className="influence-panel rounded-2xl p-5 sm:p-6">
             <div className="mb-4 flex items-end justify-between gap-4">
               <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>
@@ -746,17 +741,17 @@ export function AgentForm({
             </div>
           </section>
 
-          <section className="influence-panel order-3 rounded-2xl p-5 sm:p-6">
+          <section className="influence-panel rounded-2xl p-5 sm:p-6">
             <div className="flex items-end justify-between gap-4"><div><label htmlFor="agent-personality" className="text-base font-semibold text-text-primary">Personality</label><p id="agent-personality-help" className="mt-1 text-sm leading-6 text-white/45">How the Agent speaks, reacts, and behaves around other players.</p></div><span className="font-mono text-xs tabular-nums text-white/40">{personality.length}/{AGENT_PROFILE_LIMITS.personality}</span></div>
             <GrowingTextarea id="agent-personality" value={personality} onChange={(event) => { setPersonality(event.target.value); setValidationErrors((current) => ({ ...current, personality: "" })); }} placeholder="Describe how your Agent behaves, speaks, and makes decisions." maxLength={AGENT_PROFILE_LIMITS.personality} aria-invalid={Boolean(validationErrors.personality)} aria-describedby={validationErrors.personality ? "agent-personality-error" : "agent-personality-help"} className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
             {validationErrors.personality && <p id="agent-personality-error" className="mt-2 text-sm text-red-300">{validationErrors.personality}</p>}
           </section>
 
-          <section className="influence-panel order-4 rounded-2xl p-5 sm:p-6">
+          <section className="influence-panel rounded-2xl p-5 sm:p-6">
             <div className="flex items-end justify-between gap-4"><div><label htmlFor="agent-backstory" className="text-base font-semibold text-text-primary">Backstory <span className="text-sm font-normal text-white/35">optional</span></label><p id="agent-backstory-help" className="mt-1 text-sm leading-6 text-white/45">The history and motivation behind the Agent.</p></div><span className="font-mono text-xs tabular-nums text-white/40">{backstory.length}/{AGENT_PROFILE_LIMITS.backstory}</span></div>
             <GrowingTextarea id="agent-backstory" value={backstory} onChange={(event) => setBackstory(event.target.value)} placeholder="Where did this Agent come from, and what drives them?" maxLength={AGENT_PROFILE_LIMITS.backstory} aria-describedby="agent-backstory-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
           </section>
-          <section className="influence-panel order-5 rounded-2xl p-5 sm:p-6">
+          <section className="influence-panel rounded-2xl p-5 sm:p-6">
             <label htmlFor="agent-performance" className="text-base font-semibold text-text-primary">Character performance</label>
             <p id="agent-performance-help" className="mt-1 text-sm leading-6 text-white/45">How your character carries themselves: posture, gestures, mannerisms, movement and vocal delivery.</p>
             <GrowingTextarea id="agent-performance" value={performanceInstructions} onChange={(event) => setPerformanceInstructions(event.target.value)} maxLength={AGENT_PROFILE_LIMITS.performanceInstructions} aria-describedby="agent-performance-help" className="influence-field mt-4 min-h-36 w-full rounded-xl px-4 py-4 text-base leading-7" />
@@ -780,12 +775,34 @@ export function AgentForm({
       {saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}
       {draftStorageError && <p role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80">{draftStorageError}</p>}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <div className="hidden min-w-0 text-xs text-white/40 sm:block">{uploading ? "Uploading image…" : profileGenerating ? "Generating profile text…" : generationBusy ? "Generation in progress. Save draft keeps changes in this tab; it does not update your Agent." : dirty ? draftPersisted ? "Local draft saved in this tab." : "Unsaved changes." : "No unsaved changes."}</div>
-          <div className="ml-auto flex w-full flex-wrap gap-3 sm:w-auto"><button type="button" onClick={saveLocalDraft} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Save draft</button>{generationBusy && <button type="button" onClick={() => setConfirmGenerationCancel(true)} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Cancel generation</button>}<button type="button" onClick={requestCancel} className="influence-button-secondary min-h-11 flex-1 rounded-lg px-5 text-sm sm:flex-none">Cancel</button><button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-11 flex-[1.35] rounded-lg px-6 text-sm font-semibold sm:flex-none">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button></div>
-        </div>
-      </div>
+      <AgentAIEditor
+        isEditing={isEditing}
+        creationTraitIds={creationTraitIds}
+        onCreationTraitIdsChange={setCreationTraitIds}
+        value={changeRequest}
+        onChange={(value) => { setChangeRequest(value); setAiError(null); }}
+        onSend={() => void handleGenerate()}
+        canSend={Boolean(changeRequest.trim() || (!isEditing && creationTraitIds.length > 0)) && !generationBusy && !uploading && !submitting}
+        busy={generationBusy || uploading}
+        submitting={submitting}
+        regenerateImages={regenerateImages}
+        onRegenerateImagesChange={setRegenerateImages}
+        personaKey={personaKey}
+        onPersonaKeyChange={(value) => { setPersonaKey(value); setAllowAIChoose(false); }}
+        allowAIChoose={allowAIChoose}
+        onAllowAIChooseChange={setAllowAIChoose}
+        status={uploading ? "Uploading image…" : profileGenerating ? "Updating the profile…" : generationBusy ? "Preparing images…" : dirty ? draftPersisted ? "Draft saved in this tab" : "Unsaved changes" : "Draft is up to date"}
+        activityPhase={profileGenerating ? "profile" : referenceBusy || portraitPending ? "images" : null}
+        generationQuips={generationQuips}
+        assistantNote={assistantNote}
+        error={aiError}
+        onSaveDraft={saveLocalDraft}
+        onCancelGeneration={() => setConfirmGenerationCancel(true)}
+        generationBusy={generationBusy}
+        onCancel={requestCancel}
+        submitDisabled={submitDisabled}
+        submitLabel={submitLabel}
+      />
 
       {(confirmGenerationCancel || confirmIncompleteSave) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

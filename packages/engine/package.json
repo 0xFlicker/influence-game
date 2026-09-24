@@ -12,6 +12,7 @@
     "./visual-speech": "./src/visual-speech.ts",
     "./alliance-huddle-outcome": "./src/alliance-huddle-outcome.ts",
     "./agent-profile-contract": "./src/agent-profile-contract.ts",
+    "./agent-creation-traits": "./src/agent-creation-traits.ts",
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./format-selection-policy": "./src/format-selection-policy.ts",

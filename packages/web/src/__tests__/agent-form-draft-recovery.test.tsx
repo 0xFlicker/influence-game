@@ -152,6 +152,19 @@ describe("atomic character draft generation", () => {
     domWindow.sessionStorage.removeItem(draftKey);
     return renderForm(false, onSubmit);
   }
+  async function sendChangeRequest(view: RenderResult, prompt = "Make Arden more decisive in Mingle.") {
+    const input = view.getByRole("textbox", { name: "What would you like to change about this Agent?" });
+    expect((input as HTMLTextAreaElement).disabled).toBe(false);
+    await act(async () => {
+      fireEvent.input(input, { target: { value: prompt } });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect((view.getByRole("textbox", { name: "What would you like to change about this Agent?" }) as HTMLTextAreaElement).value).toBe(prompt);
+      expect((view.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(view.getByRole("button", { name: "Send" }));
+  }
   test("in-flight generation permits draft saving but blocks profile submission; cancellation is confirmed and late results are fenced", async () => {
     let resolve!: (response: Response) => void;
     globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
@@ -189,7 +202,7 @@ describe("atomic character draft generation", () => {
     const reopened = await renderForm(false);
     let refinements = 0;
     globalThis.fetch = (async () => { refinements++; return Response.json({ error: "Test stops before image generation" }, { status: 503 }); }) as unknown as typeof fetch;
-    fireEvent.click(reopened.getByRole("button", { name: "Refine with AI" }));
+    await sendChangeRequest(reopened);
     await waitFor(() => expect(refinements).toBe(1));
   });
   test.each(["clear", "discard"])("%s retires an abandoned reference and permits AI refinement", async (action) => {
@@ -213,15 +226,15 @@ describe("atomic character draft generation", () => {
     if (action === "discard") {
       view.unmount();
       const reopened = await renderForm(false);
-      fireEvent.click(reopened.getByRole("button", { name: "Refine with AI" }));
+      await sendChangeRequest(reopened);
     } else {
-      fireEvent.click(view.getByRole("button", { name: "Refine with AI" }));
+      await sendChangeRequest(view);
     }
     await waitFor(() => expect(refinements).toBe(1));
   });
   test.each([false, true])("AI completes every field and both images while preserving the selected reference (text initially empty: %s)", async (emptyText) => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat" };
+    const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat", introQuips: ["I have a plan.", "Let's make this interesting.", "I keep my promises and my options open."] };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/portrait-crop")) {
         const { headRectangle, ...portraitCrop } = JSON.parse(String(init?.body));
@@ -233,7 +246,8 @@ describe("atomic character draft generation", () => {
     const submissions: AgentProfileWriteParams[] = [];
     domWindow.sessionStorage.removeItem(draftKey);
     const view = await renderForm(false, async (params) => { submissions.push(params); }, emptyText);
-    fireEvent.click(view.getByRole("button", { name: emptyText ? "Generate with AI" : "Refine with AI" }));
+    fireEvent.click(view.getByLabelText("Also generate a new portrait and full-body reference"));
+    await sendChangeRequest(view, emptyText ? "Create a charming negotiator." : "Make Arden more decisive in Mingle.");
     await waitFor(() => expect(calls).toHaveLength(2));
     await confirmHeadInEditor(view);
     await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
@@ -244,7 +258,8 @@ describe("atomic character draft generation", () => {
     expect(submissions).toHaveLength(0);
     fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
     await waitFor(() => expect(submissions).toHaveLength(1));
-    expect(submissions[0]).toMatchObject({ ...profile, avatarUrl: "/face.png", fullBodyReferenceUrl: "/body.png", portraitCrop: { sourceUrl: "/body.png" } });
+    const savedProfile = { name: profile.name, backstory: profile.backstory, personality: profile.personality, strategyStyle: profile.strategyStyle, personaKey: profile.personaKey, gender: profile.gender, performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign };
+    expect(submissions[0]).toMatchObject({ ...savedProfile, avatarUrl: "/face.png", fullBodyReferenceUrl: "/body.png", portraitCrop: { sourceUrl: "/body.png" } });
   });
   test("the larger portrait editor exports the selected source crop into the draft only", async () => {
     const submissions: AgentProfileWriteParams[] = [];

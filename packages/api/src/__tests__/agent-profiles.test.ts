@@ -1319,6 +1319,7 @@ describe("Agent Profile API", () => {
                   strategyStyle: "Nova builds a coalition and waits for leverage.",
                   performanceInstructions: "Measured delivery and open posture.",
                   visualDesign: "Short dark hair and a green coat.",
+                  introQuips: ["I brought a plan and excellent snacks.", "Let's make this interesting.", "I know a shortcut to the good chairs."],
                   personaKey: "strategic",
                   gender: "female",
                 }),
