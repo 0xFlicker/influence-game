@@ -133,7 +133,10 @@ describe("E2E: Standing Daily Agent", () => {
     await page.waitForSelector("#agent-name");
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
-    await page.click('button[role="radio"][aria-checked="false"]');
+    await page.click("#agent-gender-male");
+    await page.waitForFunction(
+      "document.querySelector('#agent-gender-male')?.getAttribute('aria-checked') === 'true'",
+    );
     const submitState = await page.evaluate(`(() => {
       const button = [...document.querySelectorAll("button")]
         .find((candidate) => candidate.textContent?.trim() === "Create & enter");
