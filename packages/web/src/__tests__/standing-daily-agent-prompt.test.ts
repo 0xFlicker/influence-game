@@ -110,8 +110,9 @@ describe("standing Daily Agent acquisition", () => {
   });
 
   it("does not arm until authentication and the root invite gate resolve", () => {
-    const ready = { signedIn: true, needsInvite: false, hasAuthToken: true, sessionDismissed: false };
+    const ready = { pathname: "/about", signedIn: true, needsInvite: false, hasAuthToken: true, sessionDismissed: false };
     expect(shouldLoadDailyAgentPrompt(ready)).toBe(true);
+    expect(shouldLoadDailyAgentPrompt({ ...ready, pathname: "/dashboard/agents/create" })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, needsInvite: true })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, signedIn: false })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, hasAuthToken: false })).toBe(false);

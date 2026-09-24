@@ -130,6 +130,8 @@ describe("E2E: Standing Daily Agent", () => {
     await waitForText(page, "Play for Free", 15_000);
     await waitForText(page, "Create an Agent");
     await clickButton(page, "Create an Agent");
+    await waitForText(page, "Advanced create");
+    await clickButton(page, "Advanced createOpen the full editor and write your Agent’s profile yourself.");
     await page.waitForSelector("#agent-name");
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");

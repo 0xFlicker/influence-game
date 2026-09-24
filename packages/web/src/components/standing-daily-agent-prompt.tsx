@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useInvite } from "@/app/providers";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -37,6 +37,7 @@ export function StandingDailyAgentPrompt({
   const { authenticated, ready } = useAuth();
   const { needsInvite } = useInvite();
   const router = useRouter();
+  const pathname = usePathname();
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
   const [creationOnly, setCreationOnly] = useState(false);
   const [open, setOpen] = useState(false);
@@ -79,6 +80,7 @@ export function StandingDailyAgentPrompt({
       needsInvite,
       hasAuthToken: authenticated,
       sessionDismissed,
+      pathname,
     })) {
       requestGeneration.current += 1;
       if (timerRef.current !== null) {
@@ -150,6 +152,7 @@ export function StandingDailyAgentPrompt({
     }
   }, [
     authenticated,
+    pathname,
     needsInvite,
     sessionDismissed,
     signedIn,
@@ -251,7 +254,7 @@ export function StandingDailyAgentPrompt({
     }
   }
 
-  if (!open || agents === null) return null;
+  if (!open || agents === null || pathname === "/dashboard/agents/create") return null;
   const promptBranch = dailyAgentPromptBranch(agents.length);
 
   return (

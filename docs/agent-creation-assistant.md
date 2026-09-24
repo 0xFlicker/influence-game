@@ -2,7 +2,9 @@
 
 All creation entry points (ordinary, join-game and Daily Free) offer an AI
 assistant or Advanced create. Advanced uses the existing full editor and save
-contract. Switching from the assistant preserves the current draft.
+contract. Switching from the assistant preserves the current draft. The global
+Daily Free acquisition prompt is suppressed on the creation route so its delayed
+reminder cannot interrupt either creation mode.
 
 The assistant fills the viewport. A compact, scrollable character summary stays
 above a compact stack of the latest two conversation speech bubbles, anchored just

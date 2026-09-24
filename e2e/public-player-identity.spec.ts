@@ -261,6 +261,10 @@ test.describe("local public player identity", () => {
         });
         await page.goto(`${servers.webUrl}/dashboard/agents/create`, { waitUntil: "networkidle" });
         await page.getByRole("button", { name: /Create with an AI assistant/ }).click();
+        // The global acquisition prompt must not interrupt a longer creation session.
+        await page.evaluate(() => window.dispatchEvent(new Event("free-queue:changed")));
+        await page.waitForTimeout(3500);
+        await expect(page.getByRole("dialog", { name: "Play for Free", exact: true })).toHaveCount(0);
         const composer = page.getByLabel("Message the character assistant", { exact: true });
         await expect(page.getByText("Interests", { exact: true })).toHaveCount(0);
         await expect(page.getByText("Background", { exact: true })).toHaveCount(1);
