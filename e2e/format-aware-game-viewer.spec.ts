@@ -686,7 +686,7 @@ test.describe("format-aware game viewer", () => {
     await expect(card("Atlas")).toContainText("Empowered");
     await expect(card("Lyra")).toContainText("Nominee");
     await expect(card("Atlas")).not.toContainText("Override");
-    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
     await expect(card("Lyra")).not.toContainText("Nominee");
     await seek("two_names_override_draw");
     await expect(card("Atlas")).toContainText("Override");
@@ -717,7 +717,7 @@ test.describe("format-aware game viewer", () => {
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
     await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
     await expect(card(pointer.payload.targetId)).toContainText("Vulnerable");
-    await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+    await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
   });
 
@@ -746,7 +746,7 @@ test.describe("format-aware game viewer", () => {
         await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
         await expect(initial).toContainText("Atlas nominates:");
         // Re-enter while playing: exercise animation completion, then seek back while paused.
-        await page.getByRole("button", { name: "Previous scene", exact: true }).click();
+        await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
         await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
         await expect(initial).toBeVisible({ timeout: 8_000 });
         await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");

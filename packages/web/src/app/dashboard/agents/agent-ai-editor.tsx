@@ -246,7 +246,8 @@ export function AgentAIEditor({
           className={`w-full ${activityPhase ? "mx-auto max-w-3xl rounded-2xl border border-phase/20 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-3.5" : expanded ? "rounded-2xl border border-white/12 bg-surface/95 p-3 shadow-2xl shadow-black/30 sm:p-4" : ""}`}
           aria-label="Agent Workshop"
           onClick={(event) => {
-            if (!expanded && !(event.target instanceof HTMLButtonElement)) expandAndFocusPrompt();
+            const target = event.target;
+            if (!expanded && !(target instanceof HTMLElement && target.closest("button"))) expandAndFocusPrompt();
           }}
           onBlurCapture={(event) => {
             const nextTarget = event.relatedTarget;
@@ -351,6 +352,12 @@ export function AgentAIEditor({
             <div className="hidden shrink-0 items-center gap-1.5 sm:flex" aria-hidden="true">
               {[0, 1, 2].map((dot) => <span key={dot} className={`size-1.5 rounded-full bg-phase/80 motion-safe:animate-pulse motion-reduce:animate-none ${dot === 1 ? "[animation-delay:180ms]" : dot === 2 ? "[animation-delay:360ms]" : ""}`} />)}
             </div>
+          </div>}
+          {activityPhase && <div className="mt-2 flex flex-wrap items-center justify-end gap-2 px-1">
+            <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-9 rounded-lg px-3 text-xs">Save draft</button>
+            {generationBusy && <button type="button" onClick={onCancelGeneration} className="influence-button-secondary min-h-9 rounded-lg px-3 text-xs">Cancel generation</button>}
+            <button type="button" onClick={onCancel} className="influence-button-secondary min-h-9 rounded-lg px-3 text-xs">Cancel</button>
+            <button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-9 rounded-lg px-3 text-xs font-semibold sm:px-4">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button>
           </div>}
           {expanded && !activityPhase && !isEditing && <div className="mb-2 flex min-w-0 items-center gap-1.5 overflow-x-auto whitespace-nowrap pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Character ingredient suggestions">
             <button

@@ -156,14 +156,20 @@ describe("atomic character draft generation", () => {
     const input = view.getByRole("textbox", { name: "What would you like to change about this Agent?" });
     expect((input as HTMLTextAreaElement).disabled).toBe(false);
     await act(async () => {
+      fireEvent.click(input);
+      fireEvent.focus(input);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(view.getByRole("button", { name: "Send Agent request" })).toBeTruthy());
+    await act(async () => {
       fireEvent.input(input, { target: { value: prompt } });
       await Promise.resolve();
     });
     await waitFor(() => {
       expect((view.getByRole("textbox", { name: "What would you like to change about this Agent?" }) as HTMLTextAreaElement).value).toBe(prompt);
-      expect((view.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((view.getByRole("button", { name: "Send Agent request" }) as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(view.getByRole("button", { name: "Send" }));
+    fireEvent.click(view.getByRole("button", { name: "Send Agent request" }));
   }
   test("in-flight generation permits draft saving but blocks profile submission; cancellation is confirmed and late results are fenced", async () => {
     let resolve!: (response: Response) => void;

@@ -54,7 +54,7 @@ describe("AgentForm", () => {
     });
 
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>Female<\/button>/);
-    expect(html).toContain("Describe a change and I’ll update this draft.");
+    expect(html).toContain("Tell me what you want to change.");
     expect(html).toContain("Also generate <!-- -->a new portrait and full-body reference");
   });
 
@@ -73,9 +73,9 @@ describe("AgentForm", () => {
 
     expect(html.indexOf('id="agent-name"')).toBeLessThan(html.indexOf('id="agent-strategyStyle"'));
     expect(html).toContain('aria-label="Base archetype"');
-    expect(html).toContain('aria-label="AI Agent editor"');
-    expect(html).toContain("Character ingredients");
-    expect(html).toContain("Browse pills");
+    expect(html).toContain('aria-label="Agent Workshop"');
+    expect(html).toContain('aria-label="Character ingredient suggestions"');
+    expect(html).toContain("Surprise me");
   });
 
   test("starts a review edit from the proposal and keeps the baseline visible", () => {
