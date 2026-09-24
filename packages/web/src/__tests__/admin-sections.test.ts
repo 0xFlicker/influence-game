@@ -6,6 +6,7 @@ describe("admin section routes", () => {
     expect(ADMIN_TABS.map((tab) => adminTabHref(tab.id))).toEqual([
       "/admin/seasons",
       "/admin/games",
+      "/admin/production",
       "/admin/providers",
       "/admin/reviews",
       "/admin/free-queue",

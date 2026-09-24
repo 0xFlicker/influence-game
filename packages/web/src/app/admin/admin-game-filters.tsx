@@ -36,6 +36,8 @@ export function filterAdminGames(
     if (filters.settlement !== "all" && game.completionSettlement.state !== filters.settlement) return false;
     if (!query) return true;
     return game.slug.toLowerCase().includes(query)
+      || game.episode?.title.toLowerCase().includes(query) === true
+      || game.episode?.description.toLowerCase().includes(query) === true
       || game.winner?.toLowerCase().includes(query) === true
       || game.modelLabel.toLowerCase().includes(query)
       || game.season?.name.toLowerCase().includes(query) === true;

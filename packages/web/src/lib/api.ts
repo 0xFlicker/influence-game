@@ -476,7 +476,26 @@ export interface ProviderModelInventory {
   models: ProviderModelInventoryEntry[];
 }
 
+export interface EpisodeCast { id: string; name: string; avatarUrl: string | null; personaKey: string | null }
+export interface EpisodeFrame { id: string; kind: "scene" | "cast" | "house"; label: string; imageUrl?: string; players?: EpisodeCast[]; text?: string }
+export interface EpisodePresentation {
+  title: string; description: string; episodeNumber: number | null;
+  cast: EpisodeCast[]; coverUrl: string | null;
+  status: "unrequested" | "queued" | "generating" | "ready" | "failed";
+  locked: boolean; revision: number; frameOrder: string[];
+}
+export interface EpisodePreview { episode: EpisodePresentation; frames: EpisodeFrame[]; media: PublicPostgameMediaResponse }
+export function getEpisodePreview(id: string): Promise<EpisodePreview> { return apiFetch(`/api/games/${gamePathSegment(id)}/episode`); }
+export function getAdminEpisode(id: string): Promise<EpisodePreview & { failure: string | null }> { return apiFetch(`/api/admin/games/${gamePathSegment(id)}/episode`); }
+export function saveEpisode(id: string, body: Pick<EpisodePresentation, "title" | "description" | "coverUrl" | "locked" | "revision" | "frameOrder">) {
+  return apiFetch(`/api/admin/games/${gamePathSegment(id)}/episode`, { method: "PATCH", body: JSON.stringify(body) });
+}
+export function backfillEpisodes(gameIds: string[], regenerate: boolean, preview: boolean): Promise<{ gameIds: string[]; calls: number; skipped: number; queued: boolean }> {
+  return apiFetch("/api/admin/episodes/backfill", { method: "POST", body: JSON.stringify({ gameIds, regenerate, preview }) });
+}
+
 export interface GameSummary {
+  episode?: EpisodePresentation;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;
@@ -2651,6 +2670,7 @@ export interface TranscriptEntry {
 }
 
 export interface GameDetail {
+  episode?: EpisodePresentation;
   visualMode?: boolean;
   visualFailurePolicy?: "best_effort" | "require_visuals";
   visualPaused?: boolean;

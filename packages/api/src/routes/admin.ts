@@ -1,3 +1,4 @@
+import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Admin routes for RBAC management.
  *
@@ -1126,7 +1127,7 @@ export function createAdminRoutes(
       c.header("Cache-Control", "private, no-store");
       c.header("Pragma", "no-cache");
     }
-    const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId, providerFailureResult] = await Promise.all([
+    const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId, providerFailureResult, episodes] = await Promise.all([
       getRedactedKernelHealthByGameId(db, gameIds),
       getGameCostSummaryMap(db, gameIds),
       getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
@@ -1136,6 +1137,7 @@ export function createAdminRoutes(
           .then((summaries) => ({ ok: true as const, summaries }))
           .catch(() => ({ ok: false as const }))
         : Promise.resolve({ ok: false as const }),
+      readEpisodePresentations(db, rows),
     ]);
 
     const summaries = await Promise.all(rows.map(async (game) => {
@@ -1162,6 +1164,7 @@ export function createAdminRoutes(
       return {
         id: game.id,
         slug: game.slug,
+        episode: episodes.get(game.id),
         status: game.status,
         playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
         currentRound: result[0]?.roundsPlayed ?? 0,

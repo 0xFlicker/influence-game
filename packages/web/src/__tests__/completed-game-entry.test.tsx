@@ -13,11 +13,12 @@ import {
 } from "../app/games/[slug]/components/postgame-media-player";
 import {
   resolveApiUrl,
+  type GameDetail,
   setApiBase,
   type PublicPostgameMediaResponse,
 } from "../lib/api";
 import GameViewerPage, { generateMetadata } from "../app/games/[slug]/page";
-import { GameViewer } from "../app/games/[slug]/game-viewer";
+import { EpisodeLanding } from "../app/games/episode-landing";
 
 const gameId = "edge-smoke-dusk";
 
@@ -338,7 +339,7 @@ describe("CompletedGameEntry", () => {
     }
   });
 
-  it("server-loads media only for completed games and passes it to the root viewer", async () => {
+  it("server-loads the game and delegates the authenticated preview to the episode landing", async () => {
     const originalApiBackendUrl = process.env.API_BACKEND_URL;
     const originalApiBase = resolveApiUrl("/").replace(/\/$/, "");
     const originalFetch = globalThis.fetch;
@@ -370,13 +371,12 @@ describe("CompletedGameEntry", () => {
 
     try {
       const page = await GameViewerPage({ params: Promise.resolve({ slug: gameId }) });
-      const viewer = findElementByType(page, GameViewer);
+      const viewer = findElementByType(page, EpisodeLanding);
 
       expect(requestedUrls).toEqual([
         `http://api:3001/api/games/${gameId}`,
-        `http://api:3001/api/games/${gameId}/postgame/media`,
       ]);
-      expect(viewer?.props.initialPostgameMedia).toEqual(readyMedia());
+      expect(viewer?.props.initialGame?.slug).toBe(gameId);
     } finally {
       if (originalApiBackendUrl === undefined) {
         delete process.env.API_BACKEND_URL;
@@ -433,10 +433,12 @@ function findElementByType(
 ): ReactElement<{
   children?: ReactNode;
   initialPostgameMedia?: PublicPostgameMediaResponse;
+  initialGame?: GameDetail;
 }> | null {
   if (!isValidElement<{
     children?: ReactNode;
     initialPostgameMedia?: PublicPostgameMediaResponse;
+  initialGame?: GameDetail;
   }>(node)) return null;
   if (node.type === type) return node;
 

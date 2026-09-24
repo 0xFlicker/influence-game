@@ -1,5 +1,6 @@
 "use client";
 
+import { ProductionPanel } from "./production-panel";
 import Link from "next/link";
 import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
@@ -18,7 +19,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
     <div>
       {/* Tab bar */}
       <div
-        className="mb-8 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:grid-cols-4 xl:grid-cols-9"
+        className="mb-8 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:grid-cols-4 xl:grid-cols-10"
         aria-label="Admin sections"
       >
         {ADMIN_TABS.map((tab) => {
@@ -35,6 +36,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
 
       {/* Tab content */}
       {activeTab === "games" && <AdminPanel />}
+      {activeTab === "production" && <ProductionPanel />}
       {activeTab === "providers" && <AdminProviderHealth />}
       {activeTab === "reviews" && <AdminOwnerLearningReviews />}
       {activeTab === "seasons" && <SeasonAdminPanel />}

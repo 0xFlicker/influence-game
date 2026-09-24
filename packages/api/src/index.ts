@@ -1,3 +1,4 @@
+import { startEpisodeWorker } from "./services/episode-presentation.js";
 import { startVisualMediaWorker } from "./services/visual-media-worker.js";
 /**
  * Influence Game — HTTP API Server
@@ -429,6 +430,7 @@ async function finishBackgroundRuntimeStartup(
   const providerHealthProbeRuntime = activationFence
     ? null
     : await startProviderHealthProbeRuntime(db);
+  const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
   assertNotAborted();
@@ -488,6 +490,7 @@ async function finishBackgroundRuntimeStartup(
   return {
     async stop() {
       stopping = true;
+      await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
       if (executionScanTimer) clearInterval(executionScanTimer);

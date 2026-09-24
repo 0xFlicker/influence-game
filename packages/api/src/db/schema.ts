@@ -381,6 +381,22 @@ export const games = pgTable("games", {
   ),
 ]);
 
+/** Editorial packaging is independent of canonical game state. */
+export const gameEpisodePresentations = pgTable("game_episode_presentations", {
+  gameId: text("game_id").primaryKey().references(() => games.id, { onDelete: "cascade" }),
+  title: text("title"),
+  description: text("description"),
+  coverUrl: text("cover_url"),
+  frameOrder: jsonb("frame_order").notNull().$type<string[]>().default(sql`'[]'::jsonb`),
+  locked: boolean("locked").notNull().default(false),
+  revision: integer("revision").notNull().default(0),
+  status: text("status").notNull().$type<"queued" | "generating" | "ready" | "failed">().default("queued"),
+  leaseToken: text("lease_token"),
+  leaseUntil: text("lease_until"),
+  failure: text("failure"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, table => [check("episode_status_check", sql`${table.status} IN ('queued','generating','ready','failed')`)]);
+
 // ---------------------------------------------------------------------------
 // Agent Profiles (saved, reusable player agent identities)
 // ---------------------------------------------------------------------------
