@@ -270,6 +270,7 @@ function ConsentDetails({
   const grantableGroups = useMemo(() => ({
     agents: preview.grantableScopes.filter((scope) => scope.group === "agents"),
     games: preview.grantableScopes.filter((scope) => scope.group === "games"),
+    moderation: preview.grantableScopes.filter((scope) => scope.group === "moderation"),
     developer: preview.grantableScopes.filter((scope) => scope.group === "developer"),
   }), [preview.grantableScopes]);
 
@@ -319,6 +320,15 @@ function ConsentDetails({
           <ScopeGroup
             title="Games"
             scopes={grantableGroups.games}
+            selectedSet={selectedSet}
+            disabled={submitting !== null}
+            onToggle={toggleScope}
+          />
+        )}
+        {grantableGroups.moderation.length > 0 && (
+          <ScopeGroup
+            title="Moderation"
+            scopes={grantableGroups.moderation}
             selectedSet={selectedSet}
             disabled={submitting !== null}
             onToggle={toggleScope}

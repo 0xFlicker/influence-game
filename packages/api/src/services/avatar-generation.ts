@@ -954,7 +954,7 @@ async function requireOwnedAgentProfile(
       eq(schema.agentProfiles.userId, userId),
     ))
     .limit(1))[0];
-  if (!row) throw new Error("Agent profile not found.");
+  if (!row || row.archivedAt) throw new Error("Agent profile not found or archived.");
   return row;
 }
 

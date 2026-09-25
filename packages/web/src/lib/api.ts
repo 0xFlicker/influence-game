@@ -1829,13 +1829,13 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer";
+  group: "agents" | "games" | "developer" | "moderation";
   requiredScopes: McpOAuthScope[];
 }
 
@@ -1987,8 +1987,18 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+
 export interface SavedAgent {
+  ownerContent?: {
+    published: AgentContentSnapshot | null;
+    submitted: { revisionId: string; content: AgentContentSnapshot; disposition: "allowed" | "rejected" | null; held: boolean; status: string | null } | null;
+    availability: "archived" | "withheld" | "available";
+    moderationVersion: number;
+  };
   contentRevisionId?: string | null;
+  latestContentRevisionId?: string | null;
+  moderationRequired?: boolean;
   visualDesign?: string | null;
   headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
@@ -2014,6 +2024,7 @@ export interface SavedAgent {
 export interface AgentMutationReceipt {
   contentRevisionId?: string;
   moderationRecordId?: string;
+  publication?: "published" | "held";
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -3314,6 +3325,7 @@ export interface FreeQueueStatus {
     joinedAt: string;
   } | null;
   eligibility?: "eligible" | "temporarily-ineligible" | "absent" | null;
+  ineligibilityReason?: "moderation" | "active-game" | null;
   promptEligible?: boolean;
   relevantGame?: {
     id: string;
@@ -3337,6 +3349,7 @@ interface FreeQueueStatusResponse {
   userEntry?: FreeQueueStatus["userEntry"];
   todayGame?: FreeQueueStatus["todayGame"];
   eligibility?: FreeQueueStatus["eligibility"];
+  ineligibilityReason?: FreeQueueStatus["ineligibilityReason"];
   promptEligible?: boolean;
   relevantGame?: FreeQueueStatus["relevantGame"];
 }
@@ -3606,6 +3619,7 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
     nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
     userEntry: status.userEntry ?? null,
     eligibility: status.eligibility ?? null,
+    ineligibilityReason: status.ineligibilityReason ?? null,
     promptEligible: status.promptEligible ?? false,
     relevantGame: status.relevantGame ?? null,
     todayGame: status.todayGame ?? null,

@@ -1,8 +1,8 @@
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
-import { ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -258,6 +258,8 @@ export interface AgentCurrentRevisionSummary {
 
 export interface AgentSummary {
   contentRevisionId: string | null;
+  latestContentRevisionId: string | null;
+  moderationRequired: boolean;
   id: string;
   displayName: string;
   archetype: AgentArchetypeKey | null;
@@ -286,6 +288,7 @@ export interface AgentListRead {
 }
 
 export interface AgentRead {
+  ownerContent?: Awaited<ReturnType<typeof readOwnerContent>>;
   schemaVersion: 1;
   accountRating: AccountRatingSummary;
   agent: AgentSummary;
@@ -355,7 +358,7 @@ export async function listOwnedAgents(
   const profiles = await db
     .select()
     .from(schema.agentProfiles)
-    .where(eq(schema.agentProfiles.userId, input.userId))
+    .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
     .orderBy(desc(schema.agentProfiles.updatedAt))
     .limit(clampLimit(input.limit, DEFAULT_AGENT_LIMIT, MAX_AGENT_LIMIT));
 
@@ -378,6 +381,7 @@ export async function getOwnedAgent(
     schemaVersion: 1,
     accountRating,
     agent: serializeAgent(profile, serialization),
+    ownerContent: await readOwnerContent(db, profile),
   };
 }
 
@@ -399,7 +403,7 @@ export async function searchOwnedAgents(
   const profiles = await db
     .select()
     .from(schema.agentProfiles)
-    .where(eq(schema.agentProfiles.userId, input.userId))
+    .where(and(eq(schema.agentProfiles.userId, input.userId), isNull(schema.agentProfiles.archivedAt)))
     .orderBy(desc(schema.agentProfiles.updatedAt));
 
   const matchingProfiles = profiles
@@ -640,9 +644,10 @@ export async function updateOwnedAgentProfile(
   try { const replay = await replayContentSubmission(db, context.userId, agentId, contentSubmissionId, requestHash); if (replay) return replay; }
   catch (error) { if (error instanceof ContentSubmissionConflict) throw new AgentProfileManagementError("agent_profile_stale", error.message, 409); throw error; }
   if (context.avatarGenerationRequestId) throw new AgentProfileManagementError("invalid_agent_input", "Select the completed portrait before submitting.", 400);
-  const prepared = prepareAgentProfileUpdates(context, input, startingProfile.avatarUrl);
-  await assertAvailableProfileName(db, prepared.name ?? startingProfile.name, agentId);
-  const contentAssets = await prepareContentAssets({ ...startingProfile, ...prepared });
+  const startingDraft = await latestSubmittedProfile(db, startingProfile);
+  const prepared = prepareAgentProfileUpdates(context, input, startingDraft.avatarUrl);
+  await assertAvailableProfileName(db, prepared.name ?? startingDraft.name, agentId);
+  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared });
   const sourceReviewId = input.sourceReviewId === undefined
     ? undefined
     : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
@@ -664,8 +669,8 @@ export async function updateOwnedAgentProfile(
         });
         const replay = await replayContentSubmission(tx, context.userId, agentId, contentSubmissionId, requestHash);
         if (replay) return { mutation: replay, resolvedReviewId: null };
-        if (input.expectedContentRevisionId !== undefined && input.expectedContentRevisionId !== locked.existing.contentRevisionId) throw new ContentSubmissionConflict("This Agent changed in another session. Reload before submitting.");
-        if (startingProfile.updatedAt !== locked.existing.updatedAt) throw new ContentSubmissionConflict("This Agent changed while its assets were being prepared. Reload before submitting.");
+        if (input.expectedContentRevisionId !== undefined && input.expectedContentRevisionId !== locked.existing.latestContentRevisionId) throw new ContentSubmissionConflict("This Agent changed in another session. Reload before submitting.");
+        if (startingProfile.updatedAt !== locked.existing.updatedAt || startingProfile.moderationVersion !== locked.existing.moderationVersion) throw new ContentSubmissionConflict("This Agent changed while its assets were being prepared. Reload before submitting.");
         const learningReview = await lockOwnerLearningReviewForProfileMutation(tx, {
           ownerUserId: context.userId,
           agentProfileId: agentId,
@@ -689,6 +694,7 @@ export async function updateOwnedAgentProfile(
             },
           );
         }
+        if (mutation.receipt.publication === "held") return { mutation, resolvedReviewId: null };
         if (sourceReviewId && learningReview?.resolvedAt != null) {
           if (learningReview.resolution !== "manual_update" || profileChanged) {
             throw new OwnerLearningResolutionError("review_state_conflict", 409);
@@ -785,8 +791,26 @@ export async function updateOwnedAgentProfileInLockedTransaction(
   },
 ): Promise<AgentProfileMutationRead> {
   const { existing, lockedGames, candidateGames } = input.locked;
-  const updates = prepareAgentProfileUpdates(input.context, input.input, existing.avatarUrl);
-  updates.headPosition = await confirmProfileHead({ ...existing, ...updates }, existing, input.context.userId, input.context.contentAssets);
+  const draft = await latestSubmittedProfile(tx, existing);
+  const updates = prepareAgentProfileUpdates(input.context, input.input, draft.avatarUrl);
+  updates.headPosition = await confirmProfileHead({ ...draft, ...updates }, draft, input.context.userId, input.context.contentAssets);
+  if (existing.moderationRequired) {
+    // A correction is intake evidence, not a profile/rating/roster mutation.
+    const [current] = await tx.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, existing.currentRevisionId!));
+    if (!current) throw new AgentProfileManagementError("agent_update_conflict", "The character's current revision is unavailable.", 409);
+    const revision = { revision: current, created: false, ratingRecalibrated: false };
+    const receipt = emptyMutationReceipt(existing.id, revision, "updated");
+    const [standing] = await tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue).where(eq(schema.freeGameQueue.agentProfileId, existing.id)).limit(1);
+    receipt.dailyFree = standing ? "preserved_follows_profile" : "not_enrolled";
+    const [frozen] = await tx.select({ count: sql<number>`count(*)::int` }).from(schema.gamePlayers)
+      .innerJoin(schema.games, eq(schema.games.id, schema.gamePlayers.gameId))
+      .where(and(eq(schema.gamePlayers.agentProfileId, existing.id), inArray(schema.games.status, ["in_progress", "suspended"])));
+    receipt.frozenSeats.unchanged = frozen?.count ?? 0;
+    return recordContentSubmission(tx, profileMutationRead(existing, revision, receipt), {
+      id: submissionId(input.input.submissionId), requestHash: sha256StableJson(input.input), assets: input.context.contentAssets,
+      candidate: { ...draft, ...updates },
+    });
+  }
   const contentUpdates = Object.fromEntries(
     Object.entries(updates).filter(([key, value]) => existing[key as keyof AgentProfileRow] !== value),
   ) as Partial<typeof schema.agentProfiles.$inferInsert>;
@@ -1167,7 +1191,7 @@ export async function updateOwnedAgent(
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId })),
-    message: "Agent updated.",
+    message: receipt.publication === "held" ? "Correction submitted for moderation; the published character is unchanged." : "Agent updated.",
     receipt,
   };
 }
@@ -1205,7 +1229,7 @@ async function requireOwnedAgentProfile(
     ))
     .limit(1))[0];
 
-  if (!profile) {
+  if (!profile || profile.archivedAt) {
     throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
   }
   return profile;
@@ -1372,6 +1396,8 @@ function serializeAgent(
     id: profile.id,
     displayName: profile.name,
     contentRevisionId: profile.contentRevisionId,
+    latestContentRevisionId: profile.latestContentRevisionId,
+    moderationRequired: profile.moderationRequired,
     archetype,
     archetypeLabel: archetypeRecord?.label ?? null,
     publicBiography: profile.backstory,

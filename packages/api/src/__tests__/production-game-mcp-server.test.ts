@@ -749,6 +749,21 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(traceReads).toBe(0);
   });
 
+  test("moderation tools require explicit scopes, client envelope and current moderator authority", async () => {
+    const auth: GameMcpAuthContext = { ...GAMES_AUTH, scopes: ["moderation:read", "moderation:write"], scope: "moderation:read moderation:write" };
+    const eligibility: GameMcpEligibilitySnapshot = { clientScopes: ["moderation:read", "moderation:write"], hasProducerRole: false, hasModerationRole: true };
+    expect(resolveGameMcpToolAccess("read_moderation", auth, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("act_on_moderation", auth, eligibility).invocationAllowed).toBe(true);
+    expect(resolveGameMcpToolAccess("act_on_moderation", { ...auth, scopes: ["moderation:read"], scope: "moderation:read" }, eligibility).invocationAllowed).toBe(false);
+    expect(resolveGameMcpToolAccess("read_moderation", auth, { ...eligibility, hasModerationRole: false }).catalogEligible).toBe(false);
+    expect(resolveGameMcpToolAccess("read_moderation", auth, { ...eligibility, clientScopes: ["agents:read"] }).invocationAllowed).toBe(false);
+    const server = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => eligibility);
+    const names = (await listToolDescriptors(server, auth)).map(tool => tool.name);
+    expect(names).toContain("read_moderation"); expect(names).toContain("act_on_moderation");
+    const revoked = new ProductionGameMcpJsonRpcServerBase(fakeReadModel(), undefined, async () => ({ ...eligibility, hasModerationRole: false }));
+    expect((await listToolDescriptors(revoked, auth)).map(tool => tool.name)).not.toContain("read_moderation");
+  });
+
   test("resolves static and dynamic clients plus current producer role from authoritative records", async () => {
     const db = await setupTestDB();
     await seedRBAC(db);
@@ -788,8 +803,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer"],
-      hasProducerRole: false,
+      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      hasProducerRole: false, hasModerationRole: false,
     });
     await expect(resolveEligibility({
       userId: "producer-eligibility-user",
@@ -798,7 +813,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       needsProducerRole: true,
     })).resolves.toEqual({
       clientScopes: ["agents:read", "games:read"],
-      hasProducerRole: true,
+      hasProducerRole: true, hasModerationRole: false,
     });
     await expect(resolveEligibility({
       userId: "missing-eligibility-user",
@@ -806,8 +821,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer"],
-      hasProducerRole: false,
+      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      hasProducerRole: false, hasModerationRole: false,
     });
     await expect(resolveEligibility({
       userId: "missing-eligibility-user",

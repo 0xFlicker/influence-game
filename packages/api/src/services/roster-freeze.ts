@@ -26,6 +26,7 @@ export type RosterFreezeErrorReason =
   | "capacity"
   | "season_not_startable"
   | "malformed_owned_seat"
+  | "profile_unavailable"
   | "duplicate_owner"
   | "name_conflict"
   | "invalid_game_config"

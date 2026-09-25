@@ -1,3 +1,4 @@
+import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
 import { isCreationStage } from "@influence/engine/agent-creation-assistant";
@@ -18,7 +19,7 @@ import { exportCharacterPortrait, generateVisualProfileReference } from "../serv
  */
 
 import { Hono, type Context } from "hono";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import { describeAgentCreationTraits, isAgentCreationTraitId, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import type { DrizzleDB } from "../db/index.js";
@@ -45,14 +46,12 @@ import {
 import {
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
-  recordAvatarChange,
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
   resumeOwnedAttachedAvatarCompletions,
 } from "../services/avatar-generation.js";
-import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
-import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
+import { archiveOwnedAgentProfile } from "../services/agent-profile-lifecycle.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
 const GENERATED_AGENT_SURNAMES = [
@@ -479,7 +478,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const profiles = await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.userId, user.id));
+      .where(and(eq(schema.agentProfiles.userId, user.id), isNull(schema.agentProfiles.archivedAt)));
 
     const completions = await latestAvatarCompletionsByAgentProfileId(
       db,
@@ -537,6 +536,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
     return c.json({
       ...playerSafeAgentProfile(profile),
+      ownerContent: await readOwnerContent(db, profile),
       ...(avatarCompletion && { avatarCompletion }),
     });
   });
@@ -601,114 +601,29 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   app.delete("/api/agent-profiles/:id", requireAuth(db), async (c) => {
     const user = c.get("user");
     const profileId = c.req.param("id");
-    const result = await db.transaction(async (tx) => {
-      await tx.execute(sql`
-        SELECT id
-        FROM avatar_generation_requests
-        WHERE user_id = ${user.id}
-          AND agent_profile_id = ${profileId}
-          AND status IN ('queued', 'processing')
-        ORDER BY id
-        FOR UPDATE
-      `);
-      const activeAvatarRequests = await tx.select().from(schema.avatarGenerationRequests).where(and(
-        eq(schema.avatarGenerationRequests.userId, user.id),
-        eq(schema.avatarGenerationRequests.agentProfileId, profileId),
-        inArray(schema.avatarGenerationRequests.status, ["queued", "processing"]),
-      ));
-      await acquireDailyFreeLocks(tx);
-      const locked = await lockProfileAfterLiveRosterGames(tx, {
-        profileId,
-        userId: user.id,
-      });
-      if (!locked.profile) return "not-found" as const;
-      if (locked.liveGameIds.length > 0) return "active-game" as const;
-
-      const standingEntry = await tx.select({ id: schema.freeGameQueue.id })
-        .from(schema.freeGameQueue)
-        .where(eq(schema.freeGameQueue.agentProfileId, profileId))
-        .limit(1);
-      if (standingEntry.length > 0) return "standing" as const;
-
-      const [competitionReceipt, competitionRating, competitionSnapshot] = await Promise.all([
-        tx.select({ id: schema.competitionReceipts.id })
-          .from(schema.competitionReceipts)
-          .where(eq(schema.competitionReceipts.agentProfileId, profileId))
-          .limit(1),
-        tx.select({ agentProfileId: schema.agentCompetitionRatings.agentProfileId })
-          .from(schema.agentCompetitionRatings)
-          .where(eq(schema.agentCompetitionRatings.agentProfileId, profileId))
-          .limit(1),
-        tx.select({ id: schema.competitionRatingSnapshots.id })
-          .from(schema.competitionRatingSnapshots)
-          .where(eq(schema.competitionRatingSnapshots.agentProfileId, profileId))
-          .limit(1),
-      ]);
-      if (competitionReceipt.length > 0
-        || competitionRating.length > 0
-        || competitionSnapshot.length > 0) return "rated" as const;
-
-      if (activeAvatarRequests.length > 0) {
-        const now = new Date().toISOString();
-        await tx.update(schema.avatarGenerationRequests).set({
-          status: "skipped",
-          failureCode: "profile_deleted",
-          failureMessage: "The Agent was deleted before portrait generation completed.",
-          completedAt: now,
-          updatedAt: now,
-        }).where(inArray(
-          schema.avatarGenerationRequests.id,
-          activeAvatarRequests.map((request) => request.id),
-        ));
-        for (const request of activeAvatarRequests) {
-          await recordAvatarChange(tx, {
-            userId: user.id,
-            agentProfileId: profileId,
-            source: "generation_skipped",
-            status: "skipped",
-            generationRequestId: request.id,
-            previousAvatarUrl: locked.profile.avatarUrl,
-            newAvatarUrl: locked.profile.avatarUrl,
-            safeMetadata: { reason: "profile_deleted" },
-          });
-        }
-      }
-
-      // Unrated legacy seats may outlive a deleted unused profile. Rated
-      // competition rows retain restrictive references and will fail closed.
-      await tx.update(schema.gamePlayers)
-        .set({ agentProfileId: null, agentRevisionId: null })
-        .where(eq(schema.gamePlayers.agentProfileId, profileId));
-      await tx.update(schema.agentProfiles).set({ currentRevisionId: null })
-        .where(eq(schema.agentProfiles.id, profileId));
-      await tx.delete(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.agentProfileId, profileId));
-      await tx.delete(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, profileId));
-      return "deleted" as const;
-    });
+    const result = await archiveOwnedAgentProfile(db, user.id, profileId);
 
     if (result === "not-found") return c.json({ error: "Agent profile not found" }, 404);
     if (result === "active-game") {
       return c.json({
-        error: "An agent in a waiting or active game cannot be deleted.",
+        error: "An agent in a waiting or active game cannot be archived.",
         code: "active_game_exists",
       }, 409);
     }
     if (result === "standing") {
       return c.json({
-        error: "Leave Daily Free or switch agents before deleting this agent.",
+        error: "Leave Daily Free or switch agents before archiving this agent.",
         code: "daily_free_entry_exists",
       }, 409);
     }
     if (result === "rated") {
       return c.json({
-        error: "Agents with rated competition history cannot be deleted because producer season records still reference them.",
+        error: "Agents with rated competition history cannot be archived because producer season records still reference them.",
         code: "rated_history_exists",
       }, 409);
     }
 
-    return c.json({ deleted: true });
+    return c.json({ archived: true });
   });
 
   return app;

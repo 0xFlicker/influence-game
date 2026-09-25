@@ -17,6 +17,7 @@ import { eq, desc, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { eligibleAgentContent } from "../services/agent-content-eligibility.js";
 import {
   requireAuth,
   requireServiceAuth,
@@ -134,6 +135,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       count: queueCount,
       userEntry,
       eligibility: personalized?.queue.eligibility ?? null,
+      ineligibilityReason: personalized?.queue.ineligibilityReason ?? null,
       promptEligible: personalized?.promptEligible ?? false,
       relevantGame: personalized?.relevantGame ?? null,
       nextGameTime: getNextFreeGameTime(),
@@ -335,7 +337,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           gameSlug: waitingGame.slug,
         };
       }
-      const entries = await tx.select().from(schema.freeGameQueue);
+      const entries = (await tx.select({ entry: schema.freeGameQueue }).from(schema.freeGameQueue)
+        .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
+        .where(eligibleAgentContent())).map(row => row.entry);
       const busyOwners = await tx.select({ userId: schema.gamePlayers.userId })
         .from(schema.gamePlayers)
         .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))

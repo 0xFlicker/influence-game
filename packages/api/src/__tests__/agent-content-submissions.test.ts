@@ -35,13 +35,18 @@ describe("atomic character content submissions", () => {
     expect(result.profile.contentRevisionId).toBe(revision!.id);
     expect(result.receipt).toMatchObject({ contentRevisionId: revision!.id, moderationRecordId: review!.id });
     expect(review!.status).toBe("pending");
+    expect(revision!.parentRevisionId).toBeNull();
+    expect(revision!.ancestryKnown).toBe(true);
     expect(revision!.snapshot).toMatchObject({ name: initial.name, personality: initial.personality, performanceInstructions: null, avatarUrl: null });
     expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
   });
   test("replays the original creation receipt even after later edits", async () => {
     const input = { ...initial, creationRequestId: randomUUID() };
     const first = await createOwnedAgentProfile(db, context, input);
-    await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Changed", submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
+    const changed = await updateOwnedAgentProfile(db, context, first.profile.id, { personality: "Changed", submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId });
+    const [child] = await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, changed.profile.contentRevisionId!));
+    expect(child!.parentRevisionId).toBe(first.profile.contentRevisionId);
+    expect(child!.ancestryKnown).toBe(true);
     const replay = await createOwnedAgentProfile(db, context, input);
     expect(replay.receipt).toEqual(first.receipt);
     expect(replay.profile.personality).toBe(initial.personality);

@@ -28,7 +28,7 @@ import { setupTestDB } from "./test-utils.js";
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
 const MCP_OAUTH_AGENT_READ_SCOPE = "agents:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
-const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
+const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer moderation:read moderation:write";
 const MCP_OAUTH_SCOPE = "producer";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = RESOURCE_URI;

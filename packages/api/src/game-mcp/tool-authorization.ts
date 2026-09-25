@@ -1,3 +1,4 @@
+import { hasModerationAccess } from "../services/moderation-intake.js";
 import {
   invalidMcpOAuthScopeSetReason,
   mcpOAuthScopeSetIncludesAll,
@@ -40,6 +41,7 @@ export interface GameMcpEligibilityRequest extends GameMcpEligibilityIdentity {
 export interface GameMcpEligibilitySnapshot {
   clientScopes: readonly McpOAuthScope[];
   hasProducerRole: boolean;
+  hasModerationRole?: boolean;
 }
 
 export type GameMcpEligibilityResolver = (
@@ -54,9 +56,10 @@ export function createGameMcpEligibilityResolver(
       db,
       request.clientId,
     );
+    const hasModerationRole = await hasModerationAccess(db, request.userId);
     if (!request.needsProducerRole) {
       const clientScopes = await clientScopesPromise;
-      return clientScopes ? { clientScopes, hasProducerRole: false } : null;
+      return clientScopes ? { clientScopes, hasProducerRole: false, hasModerationRole } : null;
     }
 
     const [clientScopes, hasProducerRole] = await Promise.all([
@@ -64,7 +67,7 @@ export function createGameMcpEligibilityResolver(
       hasCurrentProducerRoleForUserId(db, request.userId),
     ]);
     if (!clientScopes || hasProducerRole === null) return null;
-    return { clientScopes, hasProducerRole };
+    return { clientScopes, hasProducerRole, hasModerationRole };
   };
 }
 
@@ -159,6 +162,7 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | "read_moderation" | "act_on_moderation"
   | typeof SHARED_GAME_READ_TOOLS[number]
   | typeof GAME_READ_TOOLS[number]
   | typeof AGENT_READ_TOOLS[number]
@@ -205,6 +209,8 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  read_moderation: { name: "read_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read"] }] },
+  act_on_moderation: { name: "act_on_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read", "moderation:write"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read", "moderation:write"] }] },
   ...specsFor(SHARED_GAME_READ_TOOLS, [PRODUCER_ALTERNATIVE, GAME_READ_ALTERNATIVE]),
   ...specsFor(GAME_READ_TOOLS, [GAME_READ_ALTERNATIVE]),
   ...specsFor(AGENT_READ_TOOLS, [AGENT_READ_ALTERNATIVE]),
@@ -327,6 +333,7 @@ interface GameMcpToolAccessContext {
   authScopes: ReadonlySet<McpOAuthScope>;
   clientScopes: ReadonlySet<McpOAuthScope>;
   hasProducerRole: boolean;
+  hasModerationRole?: boolean;
 }
 
 function accessContext(
@@ -337,6 +344,7 @@ function accessContext(
     authScopes: new Set(auth.scopes),
     clientScopes: new Set(eligibility.clientScopes),
     hasProducerRole: eligibility.hasProducerRole,
+    hasModerationRole: eligibility.hasModerationRole,
   };
 }
 
@@ -344,6 +352,7 @@ function roleAllows(
   alternative: GameMcpToolScopeAlternative,
   context: GameMcpToolAccessContext,
 ): boolean {
+  if (alternative.requiredRole === "moderator") return context.hasModerationRole === true;
   return alternative.requiredRole !== "producer" || context.hasProducerRole;
 }
 

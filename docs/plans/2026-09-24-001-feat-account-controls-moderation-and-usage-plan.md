@@ -2,8 +2,8 @@
 title: Account Controls, Moderation, and Admin Usage Navigation
 type: feat
 date: 2026-09-24
-status: draft
-reviewed: 2026-09-24
+status: in-progress
+reviewed: 2026-09-25
 ---
 
 # Account Controls, Moderation, and Admin Usage Navigation
@@ -16,7 +16,30 @@ The user has selected the moderator inbox and intake workflow as the first imple
 
 Current delivery priority: moderator inbox and intake first; account controls, generation admission, and richer metrics navigation remain follow-up tracks. The phase numbers below identify workstreams rather than their delivery order. Do not make the inbox depend on a general analytics platform or the full admin user explorer. Deployment is the rollout gate; no disabled features or feature flags.
 
-Review outcome: the moderator workflow is specified below, including operational defaults selected during review. The inbox is one product increment, but its enforcement reaches more than the inbox UI. Complete the source inventory, asset-access proof, and competitive-revision integration before enabling decisions in a deployment. Deferred generation-budget and analytics questions do not block this increment.
+Review outcome: the moderator workflow is specified below, including operational defaults selected during review. The inbox is one product increment, but its enforcement reaches more than the inbox UI. Complete the source inventory, protected-evidence proof, and competitive-revision integration before enabling decisions in a deployment. Deferred generation-budget and analytics questions do not block this increment.
+
+### Implementation progress
+
+- Plan checkpoint: committed as `35045899` before code changes; implementation branch `codex/moderation-inbox`.
+- First foundation implemented: migration `0092_moderation_intake`, moderator-only RBAC grants, current database permission resolution, one-item timed claims, paginated queue/evidence reads, Flag/Pass/Release/Extend/admin-return transitions, idempotent audit receipts, and explicit ancestry for new content revisions. Existing snapshots are marked ancestry-unknown without guessing parents.
+- Queue mutations currently use a short transaction-scoped advisory lock across intake writes. This deliberately serializes the small initial queue and enforces the cross-queue claim limit; there is no external I/O under the lock. Revisit finer locking only with measured contention.
+- Second foundation implemented: migration `0093_moderation_effective_content`, separate latest/effective content pointers, whole-snapshot selection and fingerprinted previews, transactional Accept/Reject, dependent holds with explicit reopen audit events, held owner corrections, admin reopen and rejection Undo. Fresh authorization and lease time are rechecked after roster/profile lock waits. Name conflicts withhold publication and route recovery to escalation. Unknown ancestry is conservative; no timestamp ordering is invented.
+- Current public-profile reads and future enrollment/draw/seat/freeze checks enforce unavailable characters. A held replacement leaves the earlier permitted character eligible; standing membership is retained while an unavailable character is skipped. Existing game snapshots are not rewritten. Editor concurrency checks use the latest submitted revision; MCP receipts distinguish held submissions.
+- Still required before operator review: owner reads/editor recovery for retained pending drafts and owner-safe status; reversible owner archival and admin restoration; protected HTTP/MCP moderation contracts, receipt recovery, inbox and admin history/recovery screens; remaining concurrency/evidence/role matrix and browser flow verification. No moderation decision endpoint or inbox UI is exposed. Do not release these backend foundations as the completed moderation experience.
+- This is cross-cutting enforcement work: publication pointers, rating revisions, roster freeze, immutable evidence, and owner draft receipts must agree before enabling a Reject button. The operator scope decision removes historical-media withdrawal from this increment; no further operator policy choice is currently blocking implementation.
+- Validation for the first foundation (superseded by the final verification record below): `bun run check` passed; `bun run test` passed (1,981 pass, 5 skip); `bun run test:postgres` passed (1,667 pass). Focused coverage includes 23 PostgreSQL tests across moderation intake and content submissions. These are local results; no moderation UI, production migration, deployment, or paid-provider verification has occurred.
+
+### Verification checkpoint — 2026-09-25
+
+- `bun run check`: passed after the final code changes.
+- `bun run test`: 1,981 passed, 5 skipped. The first sandbox attempt failed two local-socket harness tests; the rerun with loopback access passed.
+- `bun run test:postgres`: 1,679 passed, zero failures. The initial run caught the new receipt field missing from the strict MCP schema and one exact receipt expectation; both were corrected before this passing run.
+- Final focused PostgreSQL run after the last concurrency guards and historical-portrait change: 80 passed across moderation decisions/intake, submissions, queue enrollment, watch-state, and highlights. Stored game portraits take precedence over current-profile enrichment; an unavailable current profile does not remove a portrait retained in the game snapshot.
+- Local migrations and deterministic tests only. No production migration, paid provider call, browser verification, deployment, or exposed moderator decision endpoint. Implementation changes remain uncommitted on `codex/moderation-inbox`; the earlier planning checkpoint is committed.
+
+### Follow-up integration review — 2026-09-25
+
+See [Moderation integration review and recommendations](2026-09-25-001-review-moderation-integration-recommendations.md) for source-backed findings, recommended owner/lifecycle/API/UI contracts, flow, and browser acceptance matrix. Prerequisites identified by that review include editor snapshot/version mismatch, partial corrections using the wrong base, the remaining hard-delete path, escalated parent evidence exposed through ordinary children, and preview/execute outcome differences. These findings are not yet fixed by the backend verification above. The recommended next slice is owner draft recovery; no additional operator policy decision or worker infrastructure is needed.
 
 ## Verified starting point
 
@@ -141,7 +164,7 @@ Include a minimal admin/sysop-only Removed content/history view in the first pas
 
 This enforcement scope affects public profile/card reads, future queue/game admission, owner editing, and REST/MCP parity. Existing running games and historical events are not silently rewritten. Preserve publish-then-review for unrestricted submissions. Once a character has been rejected, replacement submissions remain held for human review; the owner cannot clear that hold by changing an unrelated field or resubmitting the same bytes. This is a character content hold, not the deferred account suspension feature.
 
-Rejection must cover direct public asset delivery, not only UI visibility. Current public asset URLs can remain reachable after a profile is hidden. Inventory public storage/CDN references and choose reversible withdrawal or access-controlled serving for rejected assets, while preserving restricted audit evidence and restorable original bytes. Do not destroy shared assets still referenced by other permitted revisions. Define the permitted scope of replay redaction separately: canonical game history remains unchanged, but public presentation can need removal of prohibited artwork. Do not claim content is removed while its public URL remains accessible.
+**Operator-confirmed scope (2026-09-24):** revision rejection affects the current profile and future game eligibility only. Historical games, frozen artwork, trailers, and existing public object URLs remain unchanged. Historical-media removal is a separate, future admin action; it is not part of this release. Show this boundary in the decision preview and receipt. Protected retained evidence still requires fresh authorization and `private, no-store`. Do not describe a revision rejection as a global asset ban or erasure. Cached/downloaded copies cannot be recalled. No storage/CDN withdrawal workflow is required for this initial scope.
 
 An AI intake stage is a later producer of the same review records and disposition evidence. Preserve source and reason/provenance fields now so humans can uphold or overturn an AI rejection through the same workflow. Record model/policy versions and uncertainty when an AI workflow exists. Do not build dead AI buttons or dispatch paid classifiers in this pass. Failed classification never implies approval. No new moderation vendor or automatic account ban is required for the first inbox.
 
@@ -251,8 +274,8 @@ Once an enforcement job is durable, claim expiry does not cancel it or make its 
 | Owner deletion | `routes/agent-profiles.ts` currently hard-deletes unused profiles and competitive revisions. Replace that path for moderation-managed character history with reversible archival, retaining existing active-game/rated-history protections. Archival must not erase claims, decisions, evidence, or identity, and ordinary Undo cannot override an independent owner archive. |
 | Queue and game start | Recheck effective eligibility under the owning transaction at enrollment, draw, seating, and start. Retain a standing enrollment record if held, but skip it and show the owner why. Already running games retain canonical seats; owner correction does not rewrite them. |
 | Public reads and tools | Profile, discovery, episode cards, current-agent replay enrichment, REST, and MCP agree on effective content. Owners see their held submissions and safe reasons. Internal reviewer notes/identity and escalation details are not owner-visible. |
-| Assets and caches | Use protected evidence routes with current authorization and `private, no-store`; use controlled public delivery/withdrawal for rejected artwork. Enumerate old object URLs, cropped variants, frozen portraits, posters, and CDN caches. Keep restorable originals; distinguish revision rejection from a global asset ban, since shared allowed references may still authorize the bytes. |
-| Historical presentation | Do not mutate canonical events or regenerate paid scenes automatically. Determine exactly which public copied assets contain rejected artwork and whether they require reversible redaction/withdrawal. Account/profile removal alone must not be described as global erasure. A complete inventory and tested withdrawal path for the promised scope is a release gate. |
+| Assets and caches | Use protected evidence routes with current authorization and `private, no-store`; retain original bytes for review and restoration. Public object URLs are outside the initial removal scope; do not claim they are revoked. |
+| Historical presentation | Do not mutate canonical events or regenerate paid scenes automatically. Preserve historical artwork and trailers. Historical-media removal is a separate future admin action, per the operator decision; no media withdrawal is a release gate for this inbox. |
 | Historical intake | Existing pending rows enter unchanged as ordinary unreviewed work. Do not infer exact parentage from UUID or tied timestamps. Preserve any proved ordering and mark uncertain histories; when safe rollback cannot be established, soft-withhold the character and escalate rather than guess. |
 
 Backfill required structural metadata only from recorded evidence, with a dry-run count and idempotent migration. Profiles predating content revisions are explicitly outside revision-review coverage until a baseline is captured; list that coverage gap for admins instead of treating them as approved. Missing/unreadable evidence permits Flag/Pass but blocks Accept/Reject until recovery. A baseline/evidence capture that requires reading production objects must be a separately reviewable operation with failures visible.
@@ -268,12 +291,12 @@ No raw prompt or image evidence in general telemetry. Display untrusted submitte
 | Undo could overwrite later edits | Versioned effect preview, compensating events, explicit selection rules, no automatic descendant restoration. |
 | Soft-delete promise conflicted with owner delete route | Include reversible archival and evidence retention in integration scope. |
 | Pass/Flag/lease behavior left stranded work or authority gaps | Define escalation-only access, no nested Pass, release rules, one global claim, bounded renewal, and fresh authorization. |
-| UI-only rejection could falsely imply asset removal | Make public delivery/cache inventory and tested reversible withdrawal a release gate. |
+| UI-only rejection could falsely imply asset removal | Explicitly scope rejection to current profile/future eligibility; preserve historical media and explain this in previews. |
 | Review could drift into unrelated rate-limit or analytics work | Keep those workstreams deferred; only role, inbox, evidence, enforcement, and recovery ship now. |
 
-Implement in reviewable steps within the same product increment: (1) schema/state transitions and authorization tests; (2) transactional decision/effective-revision and archival logic; (3) asset enforcement and recovery proof; (4) moderator inbox plus minimal admin recovery; (5) browser/tool end-to-end and migration rehearsal. Do not deploy an operational Reject button before its agreed enforcement is complete.
+Implement in reviewable steps within the same product increment: (1) schema/state transitions and authorization tests; (2) transactional decision/effective-revision and archival logic; (3) protected evidence and recovery proof; (4) moderator inbox plus minimal admin recovery; (5) browser/tool end-to-end and migration rehearsal. Do not deploy an operational Reject button before its agreed enforcement is complete.
 
-Add concrete tests for R1/R2/R3/R4 above; rejected initial creation; own-submission denial; role revocation while claimed; two tabs acquiring/renewing/deciding; claim expiry at the decision boundary; stale undo versus active enforcement; unrelated user updates; unavailable names/assets on restore; same rejected content resubmission; owner archive then admin undo; queued/drawing games versus rejection; copied/public assets and stale caches; and old histories with missing ancestry/evidence.
+Add concrete tests for R1/R2/R3/R4 above; rejected initial creation; own-submission denial; role revocation while claimed; two tabs acquiring/renewing/deciding; claim expiry at the decision boundary; stale undo versus active enforcement; unrelated user updates; unavailable names/assets on restore; same rejected content resubmission; owner archive then admin undo; queued/drawing games versus rejection; historical media remaining unchanged; and old histories with missing ancestry/evidence.
 
 ## Phase 4: Rich admin user explorer — deferred
 
@@ -295,7 +318,7 @@ Historical reconstruction must be idempotent and based on durable ownership/prov
 
 ## Delivery and validation
 
-1. Map whole-revision unwind/restore semantics onto revision ancestry, resubmission behavior, and reversible public asset enforcement. Inventory all affected reads and admissions before coding enforcement.
+1. Map whole-revision unwind/restore semantics onto revision ancestry, resubmission behavior, and current-profile/future-eligibility enforcement. Inventory all affected reads and admissions before coding enforcement.
 2. Ship the moderator role, inbox/intake, one-item leases, four review actions, minimal admin escalation and undo views, immutable decision history, and agreed enforcement as the first working increment. Validate permissions from current server authority for moderation operations, including old sessions and tools. Cover rejected initial revisions, earlier-version selection, undo after intervening edits, retained evidence, and denied moderator profile writes.
 3. Follow with account restrictions and the minimal account controls screen, independently of the deferred analytics explorer.
 4. Ship durable text admission and shared usage reads after approving allowance policies; this work can be separately scheduled from moderation.
@@ -313,7 +336,7 @@ For the initial inbox, operational defaults are now specified: one 10-minute cla
 
 Before production activation, operators need a written prohibited-content guideline and an owner-facing support route. The implementation can use explicit reviewer reasons without inventing an automated policy or enforcement thresholds. Preserve audit evidence by default in this increment; do not introduce retention-based hard deletion. Any later legal retention/erasure policy is separate from reversible moderation.
 
-Technical release gates remain: prove historical ancestry coverage, competitive-revision selection/rating behavior, and reversible public asset withdrawal/redaction for the promised scope. These require repository/storage investigation and migration rehearsal, not a broader admin dashboard. Report any existing public copies that cannot be withdrawn rather than claiming complete removal.
+Technical release gates remain: prove historical ancestry coverage, competitive-revision selection/rating behavior, and current-profile/future-eligibility enforcement with historical media unchanged. These require repository/storage investigation and migration rehearsal, not a broader admin dashboard. Report any existing public copies that cannot be withdrawn rather than claiming complete removal.
 
 Deferred workstream decisions, which do not block the moderator inbox:
 
@@ -325,3 +348,9 @@ Deferred workstream decisions, which do not block the moderator inbox:
 - Define game spending attribution before exposing comparable per-account cost metrics.
 
 No vendor purchase, metrics-history backfill, bulk account restriction, or automatic AI moderation is implied by this plan. Structural moderation migration and any historical baseline capture require the explicit dry-run/review steps above.
+
+## Implementation checkpoint — 2026-09-25
+
+The first moderator-facing increment now includes draft recovery, reversible archival, protected HTTP/MCP review commands, moderator work assignment and decisions, admin escalation/recovery, and whole-revision enforcement. Implementation notes and the verification boundary are in [the integration review](2026-09-25-001-review-moderation-integration-recommendations.md). Migrations 0092–0095 are part of this increment. Account budgets, AI moderation, workers, historical-media removal, and advanced account navigation remain deferred.
+
+Operator review is the next product gate: inspect `/moderation` as a moderator and `/moderation/recovery` as an admin, especially the Accept/Reject disposition wording and the separate Flag, Pass, Release, reopen, and Undo actions. Historical media remains unchanged. Local automated verification is not deployment approval.

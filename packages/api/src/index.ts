@@ -1,3 +1,4 @@
+import { createModerationRoutes } from "./routes/moderation.js";
 import { startEpisodeWorker } from "./services/episode-presentation.js";
 import { startVisualMediaWorker } from "./services/visual-media-worker.js";
 /**
@@ -616,6 +617,7 @@ app.route("/", cognitiveArtifactRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
+app.route("/", createModerationRoutes(db));
 
 const ownerLearningRoutes = createOwnerLearningRoutes(db);
 app.route("/", ownerLearningRoutes);

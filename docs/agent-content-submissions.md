@@ -10,15 +10,31 @@ Generated portraits now finish as selectable assets. Neither web creation nor ag
 
 ## Submission contract
 
+Moderation implementation is in progress on `codex/moderation-inbox`. Migrations
+`0092_moderation_intake` and `0093_moderation_effective_content` add explicit ancestry,
+timed claims, immutable audit receipts, separate submitted/effective revision
+pointers, publication holds, and archival metadata. The internal service supports
+whole-revision previews, decisions, dependent holds, admin reopen, and compensating
+undo. Current public-profile and admission reads enforce unavailable characters.
+There is no moderator HTTP/MCP endpoint or inbox screen yet; owner draft recovery,
+soft archival, and end-to-end recovery wiring remain release blockers. This is not
+a deployable completed moderation experience. See the
+[moderator inbox plan](plans/2026-09-24-001-feat-account-controls-moderation-and-usage-plan.md).
+
+The operator-confirmed removal scope is **current profile and future game eligibility**.
+Historical game artwork, trailers, and existing public image URLs remain unchanged.
+Historical-media removal is a separate future admin action. Retained evidence is
+immutable and must be served through independently authorized, non-cacheable routes.
+
 The global header (or flat menu on smaller screens) links signed-in users directly to the agent creation assistant; **Advanced create** remains available inside that flow. **Create game** links to `/games/new` only for accounts with `create_game`. Both shortcuts are hidden during agent creation/editing, game creation, and individual game viewing (including live games and replays). The bottom of the screen remains available for future assistant UI.
 
-`submissionId` identifies an update attempt; reuse it with the exact same payload after response loss. The editor persists that ID before sending. A changed payload gets a new ID. `expectedContentRevisionId` identifies the content from which the edit started (null before the first content revision); the editor preserves that value when restoring a draft. Conflicts preserve the draft and return HTTP 409. Agent tools expose both fields. Trusted internal operations still execute under the existing profile/roster locks.
+`submissionId` identifies an update attempt; reuse it with the exact same payload after response loss. The editor persists that ID before sending. A changed payload gets a new ID. `expectedContentRevisionId` matches the owner read’s `latestContentRevisionId` (null before the first content revision), while `contentRevisionId` identifies the effective published snapshot; the editor preserves that value when restoring a draft. Conflicts preserve the draft and return HTTP 409. Agent tools expose both fields. Trusted internal operations still execute under the existing profile/roster locks.
 
 `creationRequestId` remains the create identity and retry key; a standalone `submissionId` can serve as that key too. Create retries return the original saved result even after later profile edits. Existing competitive revision preconditions remain valid for strategy-review workflows.
 
 `visualDesign` is optional text (up to 8000 characters). `portraitCrop` is optional source-image metadata: `sourceUrl`, `x`, `y`, `width`, `height`; coordinates are normalized to the original image, must be finite, positive in size, and remain within its bounds. Metadata is a persistence contract for the image editor, not an automatic cropping implementation.
 
-A successful submission transaction writes the active profile, its applicable competitive revision, a separate immutable content revision, and a pending moderation record. The receipt includes `contentRevisionId` and `moderationRecordId`. A submission with unchanged content reuses the existing content revision/review but stores its own idempotency receipt. Reusing an ID with different content is rejected.
+An unrestricted submission transaction writes the active profile, its applicable competitive revision, a separate immutable content revision, and a pending moderation record. After rejection, a correction only records its immutable snapshot and held review; it does not change the effective profile, competitive revision, ratings, or waiting seats. The receipt includes `contentRevisionId`, `moderationRecordId`, and `publication` (`published` or `held`). Exact retries remain historical receipts, not permission to republish content. A submission with unchanged content reuses the existing content revision/review but stores its own idempotency receipt. Reusing an ID with different content is rejected.
 
 ## Evidence and future moderation
 
@@ -80,3 +96,15 @@ On `/dashboard`, desktop header creation shortcuts are hidden because Mission Co
 Game browsing views use the shared header/menu creation action; their filter toolbars do not repeat a New Game button.
 
 Mission Control leads the dashboard with Create agent and permission-gated Create game shortcuts. Daily Free enrollment is inline: an existing entry shows its agent and status without a redundant queue-navigation button; an absent entry offers an owned-agent picker and Enter queue. Accounts without agents can create one and enter through the existing daily-free assistant flow. Unavailable queue or agent data shows a retry state, and accepted enrollment refreshes canonical queue status. The MCP setup card follows gameplay modules.
+
+## Moderator inbox and owner recovery
+
+`/moderation` is available to moderators, admins, and sysops through `review_agent_content`. Reviewers see the ordinary queue and claim one item at a time. A claim lasts ten minutes and may be explicitly extended to thirty minutes from acquisition. The server clock and current database roles control every action. Profiles are read-only in the review workspace.
+
+Accept keeps the current disposition; Reject reverses it. Decisions show a whole-revision effect preview, require the unchanged preview fingerprint, and preserve immutable receipts. Flag retains the item in its queue and releases the claim. Pass routes it to admin/sysop review. Release only relinquishes the claim. Admin recovery at `/moderation/recovery` lists resolved reviews to reopen and archived characters to restore. Review history offers an explicit Undo preview for an unchanged rejection; Undo does not overwrite a newer permitted correction or restore an independent archive.
+
+Owner detail includes separate `ownerContent.published` and `ownerContent.submitted` snapshots. Editors reopen the latest submitted content, and partial corrections merge into that same snapshot. Held-save receipts show “Submitted for review”; publishing is not implied. Archival retains profile identity, competitive revisions, content evidence, and historical seat references. Existing standing-entry, active-game, and rated-history guards remain. Archive restoration is admin-only, requires a reason/version, and never enrolls or approves the character.
+
+Moderation affects current profiles and future eligibility. Historical images, game media and public asset URLs remain unchanged. Retained review evidence uses authenticated, private/no-store endpoints and passive PNG responses. An escalated parent cannot expose parent-only evidence through an ordinary child review.
+
+MCP exposes `read_moderation` and `act_on_moderation` with explicit `moderation:read` / `moderation:write` consent. Write requires read. Neither scope grants a role; the current database role and operation-specific admin checks remain authoritative. Existing grants are not broadened. Apply migrations `0092`–`0095` before serving this release. Automated moderation, account budgets, historical-media removal, and expanded admin metrics are separate work.

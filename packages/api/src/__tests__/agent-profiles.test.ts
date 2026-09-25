@@ -871,7 +871,7 @@ describe("Agent Profile API", () => {
   // =========================================================================
 
   describe("DELETE /api/agent-profiles/:id", () => {
-    test("deletes a profile", async () => {
+    test("archives a profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
@@ -881,12 +881,13 @@ describe("Agent Profile API", () => {
       const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
       expect(res.status).toBe(200);
 
-      // Verify deleted
+      // Verify retained and archived
       const profiles = await db.select().from(schema.agentProfiles);
-      expect(profiles).toHaveLength(0);
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]!.archivedAt).not.toBeNull();
     });
 
-    test("deletes a profile without deleting avatar audit history", async () => {
+    test("archives a profile without deleting avatar audit history", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({
@@ -903,14 +904,15 @@ describe("Agent Profile API", () => {
 
       const profiles = await db.select().from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, id));
-      expect(profiles).toHaveLength(0);
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]!.archivedAt).not.toBeNull();
       const history = await db.select().from(schema.avatarChangeEvents)
         .where(eq(schema.avatarChangeEvents.agentProfileId, id));
       expect(history).toHaveLength(1);
       expect(history[0]!.newAvatarUrl).toContain("key=pfp%2Favatar.png");
     });
 
-    test("terminalizes an attached portrait before deleting its Agent", async () => {
+    test("terminalizes an attached portrait before archiving its Agent", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Pending Portrait", personality: "Strategic" }, tokenA),
@@ -937,7 +939,7 @@ describe("Agent Profile API", () => {
       expect(request).toMatchObject({
         id: "delete-pending-portrait",
         status: "skipped",
-        failureCode: "profile_deleted",
+        failureCode: "profile_archived",
       });
       const [event] = await db.select().from(schema.avatarChangeEvents);
       expect(event).toMatchObject({
@@ -988,7 +990,8 @@ describe("Agent Profile API", () => {
       }
       const profiles = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
       const entries = await db.select().from(schema.freeGameQueue).where(eq(schema.freeGameQueue.agentProfileId, id));
-      expect(profiles.length).toBe(entries.length);
+      expect(profiles).toHaveLength(1);
+      expect(profiles[0]!.archivedAt !== null).toBe(entries.length === 0);
     });
 
     test("returns 404 when deleting another user's profile", async () => {
@@ -1069,7 +1072,7 @@ describe("Agent Profile API", () => {
       expect(await res.json()).toMatchObject({ code: "rated_history_exists" });
     });
 
-    test("clears agentProfileId references only from historical game_players", async () => {
+    test("retains agentProfileId references in historical game_players", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
@@ -1105,10 +1108,10 @@ describe("Agent Profile API", () => {
       const deleted = await app.request(`/api/agent-profiles/${profileId}`, authDelete(tokenA));
       expect(deleted.status).toBe(200);
 
-      // Verify agentProfileId is now null
+      // Historical identity remains attached
       gamePlayers = await db.select().from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, gameId));
-      expect(gamePlayers[0]!.agentProfileId).toBeNull();
+      expect(gamePlayers[0]!.agentProfileId).toBe(profileId);
     });
 
     test("refuses to detach an agent from a live roster", async () => {

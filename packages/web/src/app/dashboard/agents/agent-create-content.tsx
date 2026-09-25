@@ -74,7 +74,7 @@ export function AgentCreateContent({
         agent = await updateAgent(agent.id, {
           ...update,
           submissionId: params.submissionId,
-          expectedContentRevisionId: agent.contentRevisionId ?? null,
+          expectedContentRevisionId: agent.latestContentRevisionId ?? agent.contentRevisionId ?? null,
           ...(agent.profileRevisionId ? { expectedRevisionId: agent.profileRevisionId } : {}),
         });
       }

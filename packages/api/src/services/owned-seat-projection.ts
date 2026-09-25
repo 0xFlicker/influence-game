@@ -6,6 +6,7 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import {
   resolveFreeTrackEffectiveRuntimeSnapshot,
   resolveGameEffectiveAgentRevisionInTransaction,
@@ -24,6 +25,7 @@ export type OwnedSeatProjectionErrorReason =
   | "capacity"
   | "duplicate_owner"
   | "profile_not_owned"
+  | "profile_unavailable"
   | "name_conflict"
   | "invalid_game_config"
   | "invalid_seat_config";
@@ -133,6 +135,9 @@ export async function projectOwnedSeatInTransaction(
       "rated_roster_invalid",
       "profile_not_owned",
     );
+  }
+  if (!hasEligibleAgentContent(profile)) {
+    throw projectionError("This character is unavailable for new games pending moderation or restoration.", "rated_roster_invalid", "profile_unavailable");
   }
 
   const gameConfig = parseGameConfig(input.game.config);

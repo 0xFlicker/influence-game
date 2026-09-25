@@ -223,7 +223,7 @@ export function AgentForm({
   const [explicitAvatarUrl, setExplicitAvatarUrl] = useState<string | undefined>(initialSnapshot.explicitAvatarUrl);
   const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | undefined>();
   const [draftAvatarCompletion, setDraftAvatarCompletion] = useState<AvatarCompletion | null>(null);
-  const [baseContentRevisionId, setBaseContentRevisionId] = useState(initial?.contentRevisionId ?? null);
+  const [baseContentRevisionId, setBaseContentRevisionId] = useState(initial?.latestContentRevisionId ?? initial?.contentRevisionId ?? null);
   const [creationRequestId, setCreationRequestId] = useState(createRequestId);
   const [profileGenerating, setProfileGenerating] = useState(false);
   const [portraitUploading, setUploading] = useState(false);
