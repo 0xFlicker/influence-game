@@ -116,7 +116,7 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const generationPath = ['/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
+  const generationPath = ['/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/edit-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
   const requestIdentity = generationPath ? `inference:${Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}:${path}:${String(options?.body ?? '')}`)))).map(b=>b.toString(16).padStart(2,'0')).join('')}` : null;
   if(requestIdentity) {
     const id = window.sessionStorage.getItem(requestIdentity) ?? crypto.randomUUID();
@@ -2353,6 +2353,7 @@ export interface CharacterImageDraft {
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
 }
 export interface GeneratePersonalityParams {
+  selectedFields?: import("@influence/engine/agent-creation-assistant").CharacterField[];
   changeRequest?: string;
   allowPersonaChange?: boolean;
   creationTraitIds?: string[];
@@ -3764,43 +3765,6 @@ export async function suggestProfileHandle(displayName: string): Promise<string>
     `/api/profile/handle-suggestion?displayName=${encodeURIComponent(displayName)}`,
   );
   return result.suggestion;
-}
-
-// ---------------------------------------------------------------------------
-// Upload API calls
-// ---------------------------------------------------------------------------
-
-export interface UploadResult {
-  publicUrl: string;
-  key: string;
-}
-
-export async function uploadProfilePicture(file: File): Promise<UploadResult> {
-  const signal = AbortSignal.timeout(120_000);
-  // Step 1: Get a presigned PUT URL from our API
-  const { uploadUrl, publicUrl, key } = await apiFetch<{
-    uploadUrl: string;
-    publicUrl: string;
-    key: string;
-  }>("/api/upload/pfp", {
-    method: "POST",
-    body: JSON.stringify({ contentType: file.type }),
-    signal,
-  });
-
-  // Step 2: PUT the file directly to object storage
-  const putRes = await fetch(resolveApiUrl(uploadUrl), {
-    method: "PUT",
-    headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
-    body: file,
-    signal,
-  });
-
-  if (!putRes.ok) {
-    throw new Error(`Upload failed: ${putRes.status}`);
-  }
-
-  return { publicUrl: resolveApiUrl(publicUrl), key };
 }
 
 // ---------------------------------------------------------------------------

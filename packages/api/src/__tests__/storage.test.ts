@@ -3,8 +3,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DrizzleDB } from "../db/index.js";
-import { createSessionToken } from "../middleware/auth.js";
 import {
   generatePresignedUpload,
   getStorageBackend,
@@ -57,7 +55,7 @@ describe("local filesystem upload storage", () => {
     delete process.env.LINODE_PRIVATE_CONTENT_BUCKET;
 
     app = new Hono();
-    app.route("/", createUploadRoutes({} as DrizzleDB));
+    app.route("/", createUploadRoutes());
   });
 
   afterEach(async () => {
@@ -104,43 +102,9 @@ describe("local filesystem upload storage", () => {
     );
   });
 
-  test("does not expose the authenticated user's private identifier in upload targets", async () => {
-    const privateUserId = "did:privy:must-stay-private";
-    const db = {
-      select: () => ({
-        from: () => ({
-          where: async () => [{
-            id: privateUserId,
-            publicId: "c5266e60-c6d8-449d-8961-eba0780e5d61",
-            handle: null,
-            walletAddress: null,
-            email: null,
-            displayName: "Private Identifier Test",
-            createdAt: "2026-08-04T00:00:00.000Z",
-          }],
-        }),
-      }),
-    } as unknown as DrizzleDB;
-    const authenticatedApp = new Hono().route("/", createUploadRoutes(db));
-    const token = await createSessionToken(privateUserId);
-
-    const response = await authenticatedApp.request("/api/upload/pfp", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ contentType: "image/png" }),
-    });
-
-    expect(response.status).toBe(200);
-    const target = await response.json() as {
-      uploadUrl: string;
-      publicUrl: string;
-      key: string;
-    };
-    expect(JSON.stringify(target)).not.toContain("must-stay-private");
-    expect(target.key).toMatch(/^pfp\/[0-9a-f-]{36}\.png$/);
+  test("does not offer direct PFP upload targets", async () => {
+    const response = await app.request("/api/upload/pfp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contentType: "image/png" }) });
+    expect(response.status).toBe(404);
   });
 
   test("stores generated public avatar images through local storage", async () => {

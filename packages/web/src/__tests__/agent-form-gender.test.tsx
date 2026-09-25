@@ -32,7 +32,8 @@ describe("AgentForm", () => {
     expect(html).toContain("min-h-11");
     expect(html).toContain("flex-[1_1_auto]");
     expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("Also generate <!-- -->the portrait and full-body reference");
+    expect(html).not.toContain("Also generate");
+    expect(html).toContain("Would you like me to update their visuals?");
   });
 
   test("shows the saved gender as selected on edit", () => {
@@ -55,7 +56,7 @@ describe("AgentForm", () => {
 
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>Female<\/button>/);
     expect(html).toContain("Tell me what you want to change.");
-    expect(html).toContain("Also generate <!-- -->a new portrait and full-body reference");
+    expect(html).not.toContain("Also generate");
   });
 
   test("makes Strategy the dominant long-form field and shares server limits", () => {

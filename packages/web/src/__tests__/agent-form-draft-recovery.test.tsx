@@ -242,6 +242,7 @@ describe("atomic character draft generation", () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat", introQuips: ["I have a plan.", "Let's make this interesting.", "I keep my promises and my options open."] };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["name", "backstory", "personality", "strategyStyle", "personaKey", "gender", "performanceInstructions", "visualDesign"] });
       if (String(url).endsWith("/portrait-crop")) {
         const { headRectangle, ...portraitCrop } = JSON.parse(String(init?.body));
         return Response.json({ avatarUrl: "/face.png", portraitCrop, headPosition: { sourceUrl: portraitCrop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 1000, sourceHeight: 1500, rect: headRectangle } });
@@ -252,8 +253,8 @@ describe("atomic character draft generation", () => {
     const submissions: AgentProfileWriteParams[] = [];
     domWindow.sessionStorage.removeItem(draftKey);
     const view = await renderForm(false, async (params) => { submissions.push(params); }, emptyText);
-    expect((view.getByLabelText("Also generate a full-body reference") as HTMLInputElement).checked).toBe(true);
-    await sendChangeRequest(view, emptyText ? "Create a charming negotiator." : "Make Arden more decisive in Mingle.");
+    expect(view.queryByLabelText(/Also generate/)).toBeNull();
+    await sendChangeRequest(view, emptyText ? "Create a charming negotiator." : "Update the character and their visual presentation.");
     await waitFor(() => expect(calls).toHaveLength(2));
     await confirmHeadInEditor(view);
     await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
@@ -267,6 +268,47 @@ describe("atomic character draft generation", () => {
     const savedProfile = { name: profile.name, backstory: profile.backstory, personality: profile.personality, strategyStyle: profile.strategyStyle, personaKey: profile.personaKey, gender: profile.gender, performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign };
     expect(submissions[0]).toMatchObject({ ...savedProfile, avatarUrl: "/face.png", fullBodyReferenceUrl: "/body.png", portraitCrop: { sourceUrl: "/body.png" } });
   });
+  test("a strategy request fills missing fields without dispatching an image update", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    const calls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["strategyStyle"] });
+      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Form a careful alliance.", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+    }) as unknown as typeof fetch;
+    const view = await renderForm(false);
+    await sendChangeRequest(view, "Make the strategy more cautious.");
+    await waitFor(() => expect(view.getByText(/This character still needs a full-body reference/)).toBeTruthy());
+    expect(calls).toHaveLength(2);
+    expect(calls.some(url => url.endsWith("/visual-reference"))).toBe(false);
+    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("A blue coat");
+    expect((view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).not.toBe("Unwanted rename");
+  });
+
+  test("affirming the visual offer routes with context and preserves populated character fields", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    let routed: Record<string, unknown> | undefined;
+    let generated: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      if (String(url).endsWith("/edit-assistant")) { routed = body; return Response.json({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] }); }
+      if (String(url).endsWith("/generate")) {
+        generated = body;
+        return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Unwanted strategy", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+      }
+      return Response.json({ error: "Provider unavailable" }, { status: 503 });
+    }) as unknown as typeof fetch;
+    const view = await renderForm(false);
+    expect(view.getByText(/Would you like me to update their visuals/)).toBeTruthy();
+    await sendChangeRequest(view, "Yes please");
+    await waitFor(() => expect(generated).toBeDefined());
+    expect(routed).toMatchObject({ message: "Yes please", context: { hasFullBody: false } });
+    expect(JSON.stringify(routed?.history)).toContain("Would you like me to update their visuals");
+    expect(generated?.selectedFields).toEqual(["performanceInstructions", "visualDesign"]);
+    await waitFor(() => expect(view.getByRole("textbox", { name: /Agent name/i }).getAttribute("value") ?? (view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).not.toBe("Unwanted rename"));
+    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("A blue coat");
+  });
+
   test("the larger portrait editor exports the selected source crop into the draft only", async () => {
     const submissions: AgentProfileWriteParams[] = [];
     let cropBody: Record<string, unknown> | undefined;
@@ -386,21 +428,11 @@ describe("atomic character draft generation", () => {
     expect(result.draftAvatarUrl).toBeUndefined();
     expect(result.unfinishedReplacement).toBe(true);
   });
-  test("a pending upload blocks submission and its failed result preserves the selected portrait", async () => {
-    let resolve!: (response: Response) => void;
-    globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
+  test("agent editing has no portrait or full-body file input", async () => {
     const view = await ready();
-    const input = view.container.querySelector('input[type="file"]')!;
-    fireEvent.change(input, { target: { files: [new File(["png"], "portrait.png", { type: "image/png" })] } });
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(true));
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    expect(JSON.parse(domWindow.sessionStorage.getItem(draftKey)!).uploadPending).toBe(true);
-    await act(async () => { resolve(Response.json({ error: "Upload unavailable" }, { status: 503 })); });
-    await waitFor(() => expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false));
-    fireEvent.click(view.getByRole("button", { name: "Save draft" }));
-    expect(JSON.parse(domWindow.sessionStorage.getItem(draftKey)!).current.explicitAvatarUrl).toBe("/avatars/arden.png");
-    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
-    expect(view.getByRole("dialog").textContent).toContain("Save without");
+    expect(view.container.querySelector('input[type="file"]')).toBeNull();
+    expect(view.queryByRole("button", { name: "Change portrait" })).toBeNull();
+    expect(view.getByRole("button", { name: "Adjust framing" })).toBeTruthy();
   });
   test("expired restored generations cannot poll or apply late assets", async () => {
     const stored = JSON.parse(domWindow.sessionStorage.getItem(draftKey)!);

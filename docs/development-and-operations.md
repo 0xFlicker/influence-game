@@ -541,3 +541,15 @@ Character generation allowances use persisted plans, account grants, and reserva
 Use `/admin/inference` to inspect cost coverage, assign Free/Friends and Family, refill text or images, change burst/concurrency overrides, and pause generation. Manual grants persist; changing plans explicitly refreshes base allowance. Moderators have no account-spend access. Games and earned learning entitlements remain separate.
 
 Uncertain calls retain reservations. Inspect provider evidence before confirming success or failure in Pending generations. Failure refunds the original grant bucket; an expired recurring period does not create new credits. Reconciliation adjusts allowance without inventing missing cost or output evidence. Already-dispatched work can finish after a pause. New provider dispatches check current restrictions.
+
+### Advanced character assistant
+
+Advanced editing routes each player message through one strict native tool call: `update_character`, `update_visuals`, or `clarify`. The router receives the current draft, whether it has a full-body reference, and recent conversation context. Missing visual presentation triggers an offer to update visuals; an affirmative answer to that offer is visual consent. The image-generation checkbox is removed.
+
+The application adds empty character fields to an update automatically. Existing populated fields outside the selected scope are preserved by both the draft application and generation API. Populated visual fields require an explicit visual request; unrelated strategy edits do not trigger image generation. Visual updates use the existing reference-generation and crop confirmation flow. Changes remain in the draft until saved.
+
+Routing and profile generation each use the existing durable text admission/accounting service; image generation uses image admission. A routing turn is bounded to one validated tool call, with SDK retries disabled. Clarification does not dispatch an edit or image request. No model prose is parsed to choose tools or fields. Provider-free acceptance checks cover malformed tool calls, context forwarding, empty-field completion, and visual-only preservation; they do not certify a live model's semantic interpretation of every phrasing.
+
+Owner content snapshots with an absent or null `headPosition` load as unconfirmed. Missing geometry alone does not require admin recovery or block editing; present but malformed geometry remains a validation error. Reading an older snapshot does not rewrite its immutable evidence.
+
+Direct character PFP and full-body uploads are disabled: the editor offers framing of existing assets, and `/api/upload/pfp` no longer issues upload targets. Generate replacement character images through the assistant. Existing stored images and internal media storage remain available.

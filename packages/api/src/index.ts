@@ -641,7 +641,7 @@ const publicPlayerRoutes = createPublicPlayerRoutes(db);
 app.route("/", publicPlayerRoutes);
 
 // Upload routes (presigned URL generation for PFPs)
-const uploadRoutes = createUploadRoutes(db);
+const uploadRoutes = createUploadRoutes();
 app.route("/", uploadRoutes);
 
 // Profile & leaderboard routes

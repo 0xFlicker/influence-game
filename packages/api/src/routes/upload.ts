@@ -1,19 +1,13 @@
 /**
- * Upload routes — presigned URL generation for browser-direct uploads.
- *
- *   POST /api/upload/pfp — get a presigned PUT URL for a profile picture
+ * Local storage transfer routes. Character PFP uploads are not offered.
  */
 
 import { Hono } from "hono";
-import type { DrizzleDB } from "../db/index.js";
-import { createOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
-import { requireAuth, type AuthEnv } from "../middleware/auth.js";
+import { type AuthEnv } from "../middleware/auth.js";
 import {
   beginLocalConstrainedUpload,
   completeLocalConstrainedUpload,
-  generatePresignedUpload,
   getStorageBackend,
-  isStorageConfigured,
   LocalUploadError,
   readLocalUpload,
   releaseLocalConstrainedUpload,
@@ -29,13 +23,6 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/webp",
 ]);
-
-// Map MIME type to file extension
-const MIME_TO_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 const LOCAL_MEDIA_CONTENT_TYPES = new Set([
   "video/mp4",
@@ -55,7 +42,7 @@ const PUBLIC_MEDIA_RESPONSE_HEADERS = {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createUploadRoutes(db: DrizzleDB) {
+export function createUploadRoutes() {
   const app = new Hono<AuthEnv>();
 
   app.put("/api/upload/local", async (c) => {
@@ -181,47 +168,6 @@ export function createUploadRoutes(db: DrizzleDB) {
       }
       throw error;
     }
-  });
-
-  // -------------------------------------------------------------------------
-  // POST /api/upload/pfp — get presigned URL for profile picture upload
-  // -------------------------------------------------------------------------
-
-  app.post("/api/upload/pfp", requireAuth(db), async (c) => {
-    if (!isStorageConfigured()) {
-      return c.json(
-        { error: "File upload not available (object storage not configured)" },
-        503,
-      );
-    }
-
-    const body = await c.req.json<{ contentType?: string }>();
-    const contentType = body.contentType;
-
-    if (!contentType || !ALLOWED_CONTENT_TYPES.has(contentType)) {
-      return c.json(
-        {
-          error: `Invalid contentType. Must be one of: ${[...ALLOWED_CONTENT_TYPES].join(", ")}`,
-        },
-        400,
-      );
-    }
-
-    const ext = MIME_TO_EXT[contentType] ?? "bin";
-    const key = createOpaqueAvatarStorageKey("uploaded", ext);
-
-    const result = await generatePresignedUpload(
-      key,
-      contentType,
-      300,
-      new URL(c.req.url).origin,
-    );
-
-    return c.json({
-      uploadUrl: result.uploadUrl,
-      publicUrl: result.publicUrl,
-      key: result.key,
-    });
   });
 
   return app;

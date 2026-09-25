@@ -96,7 +96,8 @@ export function decodeContentSnapshot(snapshot: Record<string, unknown>, profile
   }
   if (snapshot.gender !== null && !["male", "female", "non-binary"].includes(String(snapshot.gender))) throw new ContentSubmissionConflict("The saved gender is invalid.");
   result.gender = snapshot.gender as Profile["gender"];
-  try { result.headPosition = snapshot.headPosition === null ? null : parseCharacterHeadPosition(snapshot.headPosition); }
+  // Head geometry is optional: absence means unconfirmed, just like explicit null.
+  try { result.headPosition = snapshot.headPosition == null ? null : parseCharacterHeadPosition(snapshot.headPosition); }
   catch { throw new ContentSubmissionConflict("The saved head geometry needs admin recovery."); }
   const crop = snapshot.portraitCrop;
   if (crop === null) result.portraitCrop = null;

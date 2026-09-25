@@ -7,7 +7,7 @@ import { setupTestDB } from "./test-utils.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { claimModerationReview, decideModerationReview, previewModerationDecision, reopenModerationReview } from "../services/moderation-intake.js";
 import { archiveOwnedAgentProfile, restoreArchivedAgentProfile } from "../services/agent-profile-lifecycle.js";
-import { readOwnerContent } from "../services/agent-content-submissions.js";
+import { contentSnapshot, decodeContentSnapshot, readOwnerContent } from "../services/agent-content-submissions.js";
 import { planModerationSelection } from "../services/moderation-selection.js";
 import { joinQueue, getQueueStatus } from "../services/queue-enrollment.js";
 import { createSeason } from "../services/seasons.js";
@@ -47,6 +47,25 @@ describe("whole-revision moderation decisions", () => {
       previewFingerprint: preview.fingerprint, expectedDisposition: preview.beforeDisposition,
       disposition: preview.afterDisposition, reason: "Whole snapshot reviewed" };
   }
+  test("owner content loads an absent head position as unconfirmed but rejects malformed geometry", async () => {
+    const created = await create();
+    const current = await profile(created.profile.id);
+    const snapshot: Record<string, unknown> = contentSnapshot(current);
+    delete snapshot.headPosition;
+    const revisionId = randomUUID();
+    await db.insert(schema.agentContentRevisions).values({
+      id: revisionId, agentProfileId: current.id, userId: owner,
+      fingerprint: randomUUID(), snapshot,
+    });
+    await db.update(schema.agentProfiles).set({ latestContentRevisionId: revisionId }).where(eq(schema.agentProfiles.id, current.id));
+    const loaded = await readOwnerContent(db, await profile(current.id));
+    expect(loaded.submitted?.content).toMatchObject({ name: current.name, headPosition: null });
+    expect(decodeContentSnapshot({ ...snapshot, headPosition: null }, current).headPosition).toBeNull();
+    for (const invalid of [{}, [], "", { rect: { x: 0, y: 0, width: 1, height: 1 } }]) {
+      expect(() => decodeContentSnapshot({ ...snapshot, headPosition: invalid }, current)).toThrow("The saved head geometry needs admin recovery.");
+    }
+  });
+
   test("rejects R2, holds R3, restores R1, then publishes reviewed R4 without undo rolling it back", async () => {
     const r1 = await create();
     const r2 = await edit(r1.profile.id, "Second");

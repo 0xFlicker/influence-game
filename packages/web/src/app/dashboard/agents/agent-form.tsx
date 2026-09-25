@@ -1,5 +1,7 @@
 "use client";
 
+import { characterEditFields, VISUAL_FIELDS, type CharacterEditCommand, type CharacterField } from "@influence/engine/agent-creation-assistant";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
@@ -19,7 +21,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { CharacterPortraitEditor } from "./character-portrait-editor";
-import { AvatarUpload } from "@/components/avatar-upload";
+import { AgentImageControl } from "@/components/agent-image-control";
 import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 import { GrowingTextarea } from "./growing-textarea";
 import { StrategyDiff } from "./strategy-diff";
@@ -226,9 +228,7 @@ export function AgentForm({
   const [baseContentRevisionId, setBaseContentRevisionId] = useState(initial?.latestContentRevisionId ?? initial?.contentRevisionId ?? null);
   const [creationRequestId, setCreationRequestId] = useState(createRequestId);
   const [profileGenerating, setProfileGenerating] = useState(false);
-  const [portraitUploading, setUploading] = useState(false);
-  const [fullBodyUploading, setFullBodyUploading] = useState(false);
-  const uploading = portraitUploading || fullBodyUploading;
+  const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -237,7 +237,7 @@ export function AgentForm({
   const [generationQuips, setGenerationQuips] = useState<string[]>([]);
   const [changeRequest, setChangeRequest] = useState("");
   const [creationTraitIds, setCreationTraitIds] = useState<AgentCreationTraitId[]>([]);
-  const [regenerateImages, setRegenerateImages] = useState(!initial?.fullBodyReferenceUrl);
+  const [editHistory, setEditHistory] = useState<string[]>([]);
   const [allowAIChoose, setAllowAIChoose] = useState(!initial?.fullBodyReferenceUrl);
   const [portraitError, setPortraitError] = useState<string | null>(null);
   const [portraitStatusUnavailable, setPortraitStatusUnavailable] = useState(false);
@@ -498,7 +498,44 @@ export function AgentForm({
     setDraftReady(true);
   }
 
-  async function handleGenerate(options?: { message: string; sections?: CharacterSection[]; appearance?: boolean }) {
+  const visualOffer = !visualDesign?.trim() || !performanceInstructions.trim() || !fullBodyReferenceUrl
+    ? "This character is missing visual presentation details or a full-body reference. Would you like me to update their visuals?" : null;
+
+  async function handleAdvancedSend() {
+    if (generationBusy || uploading || submitting) return;
+    const message = changeRequest.trim() || "Create a character using the selected ingredients.";
+    const context = { name, personaKey: personaKey ?? "", gender, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", hasFullBody: Boolean(fullBodyReferenceUrl) };
+    const prompt = assistantNote ?? visualOffer;
+    const history = [...editHistory, ...(prompt ? [`assistant: ${prompt}`] : [])].slice(-24).map(line => line.slice(0, 2000));
+    const epoch = beginGeneration();
+    setProfileGenerating(true); setAiError(null);
+    try {
+      const command = await apiFetch<CharacterEditCommand>("/api/agent-profiles/edit-assistant", {
+        method: "POST", body: JSON.stringify({ context, message, history }), signal: AbortSignal.timeout(60_000),
+      });
+      if (epoch !== generationEpoch.current) return;
+      if (command.tool === "clarify") {
+        setAssistantNote(command.message); setChangeRequest("");
+        setEditHistory([...history, `user: ${message}`].slice(-22));
+        return;
+      }
+      const fields = characterEditFields(context, command.fields);
+      const images = command.tool === "update_visuals" || command.fields.some(field => VISUAL_FIELDS.includes(field));
+      const success = await handleGenerate({ message, sections: fields, images });
+      if (success) {
+        setEditHistory([...history, `user: ${message}`].slice(-22));
+        setAssistantNote(images ? "I updated the visual presentation. Review the character images before saving." : !fullBodyReferenceUrl
+          ? "I updated the requested fields and filled missing details. This character still needs a full-body reference. Would you like me to update their visuals?"
+          : "I updated the requested fields and filled missing details. Your existing visuals are unchanged.");
+      }
+    } catch (error) {
+      if (epoch === generationEpoch.current) setAiError(error instanceof Error ? error.message : "The assistant could not complete this turn.");
+    } finally {
+      if (epoch === generationEpoch.current) { setProfileGenerating(false); setGenerationDeadline(null); }
+    }
+  }
+
+  async function handleGenerate(options?: { message: string; sections?: CharacterSection[]; appearance?: boolean; images?: boolean }) {
     const request = options?.message ?? changeRequest;
     if (!request.trim() && (isEditing || creationTraitIds.length === 0)) {
       setAiError(isEditing
@@ -518,6 +555,7 @@ export function AgentForm({
     setGenerationQuips([]);
     try {
       const params: GeneratePersonalityParams = {
+        selectedFields: options?.sections as CharacterField[] | undefined,
         changeRequest: options ? `${options.appearance ? "Update visualDesign using this appearance request. Preserve the character's identity. " : "Develop a rich character prompt with concrete motivations, voice, flaws, relationships and game behavior. "}${options.sections?.length ? `Change only these sections: ${options.sections.join(", ")}. ` : ""}${request}` : request.trim() || undefined,
         allowPersonaChange: options ? !options.appearance && (!options.sections?.length || options.sections.includes("personaKey")) : allowAIChoose,
         ...(isEditing ? {} : { creationTraitIds }),
@@ -556,12 +594,11 @@ export function AgentForm({
       if (options?.appearance || change("visualDesign")) setVisualDesign(result.visualDesign);
       setProfileGenerating(false);
 
-      if (options?.appearance || (!options && regenerateImages)) {
+      if (options?.appearance || options?.images) {
         const success = await generateReference({ name: options?.appearance ? name : result.name, personaKey: options?.appearance ? personaKey ?? "strategic" : result.personaKey, performanceInstructions: options?.appearance ? performanceInstructions : result.performanceInstructions, visualDesign: result.visualDesign });
         if (!success) return false;
       }
       setChangeRequest("");
-      setRegenerateImages(false);
       setAssistantNote("I applied the requested profile changes to this draft. Review them above before saving.");
       return true;
     } catch (error) {
@@ -701,7 +738,6 @@ export function AgentForm({
       setGenerationDeadline(null);
       setUnfinishedReplacement(true);
       if (error instanceof ApiError && error.code === "generation_exhausted") {
-        setRegenerateImages(false);
         removeEditorStorage(referenceStorageKey);
         referenceRequest.current = null;
       }
@@ -749,7 +785,7 @@ export function AgentForm({
       /> : <div className="flex flex-col gap-6">
         <aside className="influence-panel grid gap-6 rounded-2xl p-5 sm:p-6 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <div className="flex flex-col items-center">
-            {generationBusy ? <div role="status" className="flex h-32 w-32 flex-col items-center justify-center gap-3 rounded-full bg-violet-400/10 text-xs text-violet-200"><span className="h-8 w-8 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />Creating character…</div> : <AvatarUpload editLabel={headConfirmationRequired ? "Confirm this headshot" : undefined} onUploadError={() => setUnfinishedReplacement(true)} disabled={submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={(url) => { setExplicitAvatarUrl(url); setPortraitCrop(null); }} onUploadingChange={setUploading} size="32" />}
+            {generationBusy ? <div role="status" className="flex h-32 w-32 flex-col items-center justify-center gap-3 rounded-full bg-violet-400/10 text-xs text-violet-200"><span className="h-8 w-8 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />Creating character…</div> : <AgentImageControl editLabel={headConfirmationRequired ? "Confirm this headshot" : undefined} disabled={submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} size="32" />}
             {(portraitPending) && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-phase" aria-live="polite">Portrait generating in the background</p>}
             {draftAvatarCompletion?.status === "completed" && draftAvatarUrl && !explicitAvatarUrl && <p className="mt-2 text-center text-xs text-emerald-300" aria-live="polite">Portrait ready</p>}
           </div>
@@ -823,7 +859,7 @@ export function AgentForm({
               <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
               <button type="button" disabled={generationBusy || uploading || submitting || !name.trim()} onClick={() => void generateReference()} className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50">{referenceBusy ? "Generating reference…" : referenceRequest.current ? "Retry reference request" : "Generate full-body reference"}</button>
               {referenceError && <p role="alert" className="mb-3 text-sm text-red-300">{referenceError}</p>}
-              <AvatarUpload onUploadError={() => setUnfinishedReplacement(true)} disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} onUploaded={(url) => { setFullBodyReferenceUrl(url); setHeadPosition(null); setHeadSuggestion(null); setPortraitEditorSource(url); }} onUploadingChange={setFullBodyUploading} presentation="full-body" />
+              <AgentImageControl disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} presentation="full-body" />
             </div>
           </section>
         </main>
@@ -844,13 +880,10 @@ export function AgentForm({
         onCreationTraitIdsChange={setCreationTraitIds}
         value={changeRequest}
         onChange={(value) => { setChangeRequest(value); setAiError(null); }}
-        onSend={() => void handleGenerate()}
+        onSend={() => void handleAdvancedSend()}
         canSend={Boolean(changeRequest.trim() || (!isEditing && creationTraitIds.length > 0)) && !generationBusy && !uploading && !submitting}
         busy={generationBusy || uploading}
         submitting={submitting}
-        needsFullBodyReference={isEditing && !fullBodyReferenceUrl}
-        regenerateImages={regenerateImages}
-        onRegenerateImagesChange={setRegenerateImages}
         personaKey={personaKey}
         onPersonaKeyChange={(value) => { setPersonaKey(value); setAllowAIChoose(false); }}
         allowAIChoose={allowAIChoose}
@@ -858,7 +891,7 @@ export function AgentForm({
         status={uploading ? "Uploading image…" : profileGenerating ? "Updating the profile…" : generationBusy ? "Preparing images…" : dirty ? draftPersisted ? "Draft saved in this tab" : "Unsaved changes" : "Draft is up to date"}
         activityPhase={profileGenerating ? "profile" : referenceBusy || portraitPending ? "images" : null}
         generationQuips={generationQuips}
-        assistantNote={assistantNote}
+        assistantNote={assistantNote ?? visualOffer}
         error={aiError}
         onSaveDraft={saveLocalDraft}
         onCancelGeneration={() => setConfirmGenerationCancel(true)}

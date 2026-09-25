@@ -44,3 +44,39 @@ test('owner exhaustion preserves draft, admin grants allowance and sees usage co
   const denied=await fetch(`${servers.apiUrl}/api/admin/inference/usage`,{headers:{Authorization:`Bearer ${owner.jwt}`}});expect(denied.status).toBe(403);
  }finally{await adminPage.close();}
 },120000);
+
+test('advanced visual affirmation uses context, preserves character text and opens the full editor',async()=>{
+ const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/dashboard/agents/create`,{privateKey:owner.wallet.privateKey});
+ let context:Record<string,unknown>|undefined;
+ try {
+  await page.setRequestInterception(true);
+  page.on('request',request=>{
+   if (request.method() !== 'POST') { void request.continue(); return; }
+   const path=new URL(request.url()).pathname;
+   const respond=(body:unknown)=>request.respond({status:200,contentType:'application/json',headers:{'access-control-allow-origin':servers.webUrl,'access-control-allow-credentials':'true'},body:JSON.stringify(body)});
+   if(path==='/api/agent-profiles/edit-assistant') {
+    context=JSON.parse(request.postData()!).context;
+    void respond({tool:'update_visuals',fields:['performanceInstructions','visualDesign']});
+   } else if(path==='/api/agent-profiles/generate') {
+    void respond({name:'Unwanted rename',personality:'Unwanted rewrite',backstory:'A careful observer.',strategyStyle:'Wait for evidence.',personaKey:'strategic',gender:'female',performanceInstructions:'Soft voice',visualDesign:'A blue coat',introQuips:[]});
+   } else if(path==='/api/agent-profiles/visual-reference') {
+    void respond({fullBodyReferenceUrl:'/avatars/personas/strategic.png',avatarUrl:'/avatars/personas/strategic.png',portraitCrop:{sourceUrl:'/avatars/personas/strategic.png',x:0,y:0,width:1,height:1},headSuggestion:null,cropWarning:null});
+   } else void request.continue();
+  });
+  await page.waitForSelector('textarea[aria-label="Message the character assistant"]');
+  await page.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Advanced create')?.click()");
+  await page.waitForSelector('#agent-name');
+  await page.type('#agent-name','Existing Arden');
+  await page.type('#agent-personality','Patient and calculating.');
+  await page.waitForFunction("document.body.innerText.includes('Would you like me to update their visuals?')");
+  expect(await page.evaluate("document.body.innerText.includes('Also generate')")).toBe(false);
+  await page.type('#agent-ai-change-request','Yes please');
+  await page.click('button[aria-label="Send Agent request"]');
+  await page.waitForSelector('dialog[open] #portrait-editor-title',{timeout:20000});
+  expect(context).toMatchObject({name:'Existing Arden',personality:'Patient and calculating.',hasFullBody:false});
+  expect(await page.evaluate("document.querySelector('#agent-name').value")).toBe('Existing Arden');
+  expect(await page.evaluate("document.querySelector('#agent-personality').value")).toBe('Patient and calculating.');
+  expect(await page.$eval('#portrait-editor-title',el=>el.textContent)).toBe('Adjust character images');
+  await page.screenshot({path:'/tmp/agentic-advanced-editor.png',fullPage:true});
+ } finally {await page.close();}
+},120000);

@@ -4,8 +4,8 @@ import { runAccountText, GenerationAdmissionError } from "../services/account-te
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
-import { isCreationStage } from "@influence/engine/agent-creation-assistant";
-import { selectCreationCommand } from "../services/agent-creation-assistant.js";
+import { CHARACTER_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
+import { selectCharacterEdit, selectCreationCommand } from "../services/agent-creation-assistant.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -110,6 +110,25 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
     console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
   });
+  app.post("/api/agent-profiles/edit-assistant", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/edit-assistant");
+    if (!body || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
+      || !Array.isArray(body.history) || body.history.length > 24 || body.history.some((item: unknown) => typeof item !== "string" || item.length > 2000)
+      || !body.context || typeof body.context !== "object" || Array.isArray(body.context)) return c.json({ error: "Invalid character edit turn" }, 400);
+    const context = body.context as Record<string, unknown>;
+    if (Object.keys(context).length !== CHARACTER_FIELDS.length + 1 || typeof context.hasFullBody !== "boolean"
+      || CHARACTER_FIELDS.some(field => typeof context[field] !== "string" || (context[field] as string).length > 12000)) return c.json({ error: "Invalid character context" }, 400);
+    try {
+      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
+        record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
+    } catch (error) {
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts }, error.status);
+      console.error("[edit-assistant] Turn failed", error);
+      return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged." }, 502);
+    }
+  });
+
   app.post("/api/agent-profiles/creation-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
     if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
@@ -201,7 +220,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { changeRequest, allowPersonaChange, traits, creationTraitIds, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+    const { selectedFields, changeRequest, allowPersonaChange, traits, creationTraitIds, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+      selectedFields?: CharacterField[];
       changeRequest?: string;
       allowPersonaChange?: boolean;
       traits?: string;
@@ -240,6 +260,10 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Provide a prompt, character ingredients, traits, occupation, backstory idea, archetype, or existing profile to refine" }, 400);
     }
 
+    if (selectedFields !== undefined && (!Array.isArray(selectedFields) || selectedFields.length > CHARACTER_FIELDS.length || selectedFields.some(field => !CHARACTER_FIELDS.includes(field)))) return c.json({ error: "Invalid selected fields" }, 400);
+    if (selectedFields && existingProfile && (typeof existingProfile !== "object" || Array.isArray(existingProfile) || CHARACTER_FIELDS.some(field => existingProfile[field] != null && typeof existingProfile[field] !== "string"))) return c.json({ error: "Invalid character field context" }, 400);
+    const editFields = selectedFields ? characterEditFields(existingProfile ?? {}, selectedFields) : null;
+
     const llmConfig = resolveAgentProfileGenerationLlm();
     if (!llmConfig) {
       return c.json({ error: "AI generation not available (LLM provider not configured)" }, 503);
@@ -263,6 +287,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (isRefine && existingProfile) {
       userParts.push(`Refine this existing profile:\n${JSON.stringify(existingProfile, null, 2)}`);
     }
+    if (editFields) userParts.push(`Update only these fields: ${editFields.join(", ")}. Preserve every other populated field exactly. Empty fields are included for completion.`);
     if (changeRequest) userParts.push(`User's requested changes (follow these instructions while preserving unrelated profile details):\n${changeRequest.trim()}`);
     if (selectedArchetype) {
       userParts.push(allowPersonaChange === true
@@ -319,7 +344,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
-      const generatedName = allocateGeneratedAgentName(
+      const generatedName = editFields && !editFields.includes("name") && existingProfile?.name ? { name: existingProfile.name } : allocateGeneratedAgentName(
         generated.name,
         new Set(existingNames.map((profile) => profile.name)),
       );
@@ -330,7 +355,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         strategyStyle: generated.strategyStyle ?? null,
       }, generatedName.name);
 
-      return {
+      const output = {
         name: profile.name,
         backstory: profile.backstory,
         personality: profile.personality,
@@ -341,6 +366,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         introQuips: generated.introQuips,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
       };
+      // The model cannot rewrite unrelated populated fields, even if it returns them.
+      if (editFields && existingProfile) {
+        for (const field of CHARACTER_FIELDS) {
+          if (!editFields.includes(field) && typeof existingProfile[field] === "string") Object.assign(output, { [field]: existingProfile[field] });
+        }
+      }
+      return output;
       });
       return c.json(result);
     } catch (err) {

@@ -98,9 +98,6 @@ interface AgentAIEditorProps {
   canSend: boolean;
   busy: boolean;
   submitting: boolean;
-  needsFullBodyReference?: boolean;
-  regenerateImages: boolean;
-  onRegenerateImagesChange: (checked: boolean) => void;
   personaKey: PersonaKey | null;
   onPersonaKeyChange: (key: PersonaKey) => void;
   allowAIChoose: boolean;
@@ -128,9 +125,6 @@ export function AgentAIEditor({
   canSend,
   busy,
   submitting,
-  needsFullBodyReference = false,
-  regenerateImages,
-  onRegenerateImagesChange,
   personaKey,
   onPersonaKeyChange,
   allowAIChoose,
@@ -427,10 +421,6 @@ export function AgentAIEditor({
             </div>
             {expanded && <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className="influence-button-primary min-h-12 shrink-0 rounded-xl px-5 text-sm font-semibold sm:px-7">{busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send"}</button>}
           </div>}
-          {expanded && !activityPhase && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
-            <input type="checkbox" checked={regenerateImages} onChange={(event) => onRegenerateImagesChange(event.target.checked)} disabled={busy || submitting} className="size-4 accent-phase" />
-            Also generate {needsFullBodyReference ? "a full-body reference" : isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
-          </label>}
           {expanded && !activityPhase && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
           {!activityPhase && <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
             {expanded && <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>}

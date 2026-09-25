@@ -1285,6 +1285,39 @@ describe("Agent Profile API", () => {
       }
     });
 
+    test("advanced assistant uses one strict native tool with draft context and rejects malformed calls", async () => {
+      await db.insert(schema.inferenceAccounts).values({ userId: USER_A_ID, overrides: { textBurst: 100 } }).onConflictDoNothing();
+      const context = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", performanceInstructions: "", visualDesign: "", hasFullBody: false };
+      const turn = { context, message: "Yes please", history: ["assistant: Would you like me to update their visuals?"] };
+      expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, ""))).status).toBe(401);
+      expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq({ ...turn, context: {} }, tokenA))).status).toBe(400);
+      const savedKey = process.env.OPENAI_API_KEY, originalFetch = globalThis.fetch;
+      process.env.OPENAI_API_KEY = "test-openai-key";
+      let args = "{}", finish = "tool_calls", count = 1;
+      const requests: Record<string, unknown>[] = [];
+      globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input.toString(), init);
+        requests.push(await request.json() as Record<string, unknown>);
+        return Response.json({ id: "edit-test", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: Array.from({ length: count }, (_, i) => ({ id: `call-${i}`, type: "function", function: { name: "update_visuals", arguments: args } })) }, finish_reason: finish }] });
+      }, { preconnect: originalFetch.preconnect });
+      try {
+        const result = await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA));
+        expect(result.status).toBe(200);
+        expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
+        expect(requests[0]).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });
+        expect(JSON.stringify(requests[0]?.messages)).toContain("hasFullBody");
+        for (const invalid of ["not json", "[]", '{"fields":["name"]}', '```json\n{}\n```']) {
+          args = invalid;
+          expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        }
+        args = "{}"; count = 2;
+        expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        count = 1; finish = "length";
+        expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+      } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
+    });
+
     test("creation assistant validates stage, authentication and exact provider commands before effects", async () => {
       await db.insert(schema.inferenceAccounts).values({userId: USER_A_ID, overrides:{textBurst:100}}).onConflictDoNothing();
       const turn = { stage: "review", message: "Yes", history: [], sections: [] };
@@ -1392,11 +1425,18 @@ describe("Agent Profile API", () => {
           }, tokenA),
         );
 
+        const visualOnly = await app.request("/api/agent-profiles/generate", jsonReq({
+          changeRequest: "Update their visuals", selectedFields: ["performanceInstructions", "visualDesign"],
+          existingProfile: { name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", personaKey: "strategic", gender: "female", performanceInstructions: "", visualDesign: "" },
+        }, tokenA));
+        expect(visualOnly.status).toBe(200);
+        expect(await visualOnly.json()).toMatchObject({ name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy" });
         expect(generated.status).toBe(200);
         expect(refined.status).toBe(200);
-        expect(requestBodies).toHaveLength(2);
+        expect(requestBodies).toHaveLength(3);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         expect(requestBodies.map((body) => body.model)).toEqual([
+          "gpt-6-luna",
           "gpt-6-luna",
           "gpt-6-luna",
         ]);
