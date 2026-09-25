@@ -58,11 +58,11 @@ export async function reserveInference(tx: Tx,input:{id:string;userId:string;cat
     gt(reservations.createdAt,new Date(new Date(now).getTime()-86400000).toISOString())));
   const [active] = await tx.select({count:sql<number>`count(*)::int`}).from(reservations).where(and(eq(reservations.userId,input.userId),eq(reservations.category,input.category),inArray(reservations.state,['reserved','dispatched','uncertain'])));
   if ((active?.count ?? 0)>=(input.category==='text'?policy.textConcurrency:policy.imageConcurrency)) throw new GenerationAdmissionError('generation_busy','Another generation is still running or awaiting recovery. Please try again later.',429);
-  const starts = input.category==='image' ? recent.length : recent.filter(r=>new Date(r.createdAt).getTime()>new Date(now).getTime()-60000).length;
-  if(!exempt && starts>=(input.category==='image'?policy.imageDaily:policy.textBurst)) throw new GenerationAdmissionError('generation_throttled','Please wait before generating again.',429);
   const balance = input.category==='text'?account.textBalance:account.imageBalance;
   const grant = input.category==='text'?account.textGrant:account.imageGrant;
   if(!exempt && balance+grant<1) throw new GenerationAdmissionError('generation_exhausted','You’ve reached your current generation allowance. Contact us and we can help you get more.',429);
+  const starts = input.category==='image' ? recent.length : recent.filter(r=>new Date(r.createdAt).getTime()>new Date(now).getTime()-60000).length;
+  if(!exempt && starts>=(input.category==='image'?policy.imageDaily:policy.textBurst)) throw new GenerationAdmissionError('generation_throttled','Please wait before generating again.',429);
   const bucket = exempt?'exempt':balance>0?'balance':'grant';
   if(!exempt) await tx.update(accounts).set(input.category==='text' ? bucket==='balance'?{textBalance:balance-1}:{textGrant:grant-1} : bucket==='balance'?{imageBalance:balance-1}:{imageGrant:grant-1}).where(eq(accounts.userId,input.userId));
   const [row] = await tx.insert(reservations).values({...input,state:'reserved',bucket,periodStart:account.periodStart,createdAt:now}).returning();

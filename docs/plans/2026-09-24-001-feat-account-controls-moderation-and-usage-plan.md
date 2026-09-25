@@ -8,6 +8,16 @@ reviewed: 2026-09-25
 
 # Account Controls, Moderation, and Admin Usage Navigation
 
+## Current implementation checkpoint — 2026-09-25
+
+The moderator inbox, retained-draft recovery, reversible archival, protected HTTP/MCP moderation actions, admin recovery screens, spending panel, and refillable inference controls are implemented on `codex/moderation-inbox`. The dated foundation notes below describe earlier stages, not outstanding implementation gaps. The approved [inference allowance plan](2026-09-25-002-feat-account-inference-allowances-plan.md) supersedes this document's earlier generation-policy proposals, including any proposal to show players numeric balances.
+
+The operator workflow adds current paused/pending account filters and pending-generation sorting to spending navigation, plus admin moderation links to the owner’s spending and generation controls. Account-status filters are independent of spending windows. Exhausted allowance takes precedence over burst throttling once no operation is active; a refill does not bypass burst policy.
+
+Still outside this increment: AI moderation, worker/Lambda migration, paid tiers, unified credits, historical-media removal, and production deployment. Operator review should exercise claim/flag/pass/reject/undo wording and generation refill/pause/reconciliation before release.
+
+Local verification for this operator-triage slice: typecheck/lint passed; 1,985 provider-free tests passed (five skipped); 1,701 PostgreSQL tests passed; four isolated browser journeys passed for inference controls and moderation. Mobile status navigation was inspected. Assistant/upload/snapshot work and operator-triage changes are included in this branch. No paid calls or production changes occurred.
+
 ## Goal and scope
 
 Give operators an immediate way to stop an individual account's spending or participation, put durable limits around paid generation, and turn existing moderation evidence into actionable reviews. Establish reliable account attribution now so a richer admin user explorer can follow later.

@@ -54,6 +54,7 @@ test("moderator claims, previews and rejects; owner recovers a held correction a
     await page.waitForSelector('nav a[href="/moderation"]');
     await click(page, "Take next");
     await text(page, "Your claim:");
+    expect(await page.$('a[href^="/admin/inference"]')).toBeNull();
     await page.type("textarea", "Remove this submitted revision");
     await click(page, "Reject — remove revision");
     await text(page, "Character will be unavailable for future games.");
@@ -98,6 +99,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
     await text(adminPage, "Admin recovery and resolved reviews");
     await adminPage.select('select[aria-label="Queue"]', "escalated"); await text(adminPage, "Review Character");
     await click(adminPage, "Take next"); await text(adminPage, "Your claim:");
+    await adminPage.waitForSelector('a[href^="/admin/inference?userId="]');
     await adminPage.setViewport({ width: 390, height: 844 });
     await adminPage.screenshot({ path: "/tmp/moderation-admin-mobile.png", fullPage: true });
     await click(adminPage, "Accept — keep allowed"); await text(adminPage, "Confirm whole-revision decision"); await click(adminPage, "Confirm decision"); await text(adminPage, "Decision recorded.");

@@ -553,3 +553,7 @@ Routing and profile generation each use the existing durable text admission/acco
 Owner content snapshots with an absent or null `headPosition` load as unconfirmed. Missing geometry alone does not require admin recovery or block editing; present but malformed geometry remains a validation error. Reading an older snapshot does not rewrite its immutable evidence.
 
 Direct character PFP and full-body uploads are disabled: the editor offers framing of existing assets, and `/api/upload/pfp` no longer issues upload targets. Generate replacement character images through the assistant. Existing stored images and internal media storage remain available.
+
+Admin inference navigation supports current paused/pending account filters and pending-generation sorting, independently of the spending window. Admin recovery-capable moderation reviewers can open an owner’s inference page; that API still requires a current admin/sysop role. Once no operation is active, exhausted allowance produces contact/refill guidance before burst throttling; granting allowance does not reset burst limits.
+
+Actual USD displays N/C (Not collected) when no provider-reported cost records exist; recorded zero-dollar costs still display as dollars. OpenAI billing reconciliation is not integrated.

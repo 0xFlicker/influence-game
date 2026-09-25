@@ -47,6 +47,27 @@ describe('account inference allowances',()=>{
   expect('summary' in report&&report.summary).toMatchObject({text_requests:2,estimated_microusd:2500,unpriced:1,attempts:2});
   const list=await readAccountSpending(db,admin,{window:'all'});expect('accounts' in list&&list.accounts?.[0]).toMatchObject({id:owner});
  });
+ test('operator status filters include pending reservations outside the spend window without duplicating usage',async()=>{
+  const r=await reserve();
+  await db.transaction(tx=>settleInference(tx,r.id,owner,'uncertain'));
+  await db.update(schema.inferenceReservations).set({createdAt:'2020-01-01T00:00:00Z'}).where(eq(schema.inferenceReservations.id,r.id));
+  await action({kind:'pause',paused:true});
+  for(const status of ['paused','pending']) {
+   const report=await readAccountSpending(db,admin,{status,sort:'pending',window:'24h'});
+   expect('accounts' in report && report.accounts).toHaveLength(1);
+   expect('accounts' in report && report.accounts?.[0]).toMatchObject({id:owner,plan_name:'Free',generation_paused:true,pending_generations:1,uncertain_generations:1,attempts:0});
+  }
+  await expect(readAccountSpending(db,owner,{status:'pending'})).rejects.toMatchObject({status:403});
+  await expect(readAccountSpending(db,admin,{status:'invalid'})).rejects.toMatchObject({status:400});
+ });
+ test('exhausted balances show refill guidance even when the burst limit is reached',async()=>{
+  await readInferenceAccount(db,admin,owner);
+  await db.update(schema.inferenceAccounts).set({textBalance:1,overrides:{textBurst:1}}).where(eq(schema.inferenceAccounts.userId,owner));
+  const r=await reserve();await db.transaction(tx=>settleInference(tx,r.id,owner,'succeeded'));
+  await expect(reserve()).rejects.toMatchObject({code:'generation_exhausted'});
+  await action({kind:'grant',category:'text',amount:1});
+  await expect(reserve()).rejects.toMatchObject({code:'generation_throttled'});
+ });
  test('fresh accounts ignore historical image counts and grants are spent after base balance',async()=>{
   await db.insert(schema.avatarGenerationRequests).values({id:randomUUID(),userId:owner,purpose:'agent_profile_completion',status:'completed',triggerSource:'web_user_prompt',model:'legacy'});
   expect((await readInferenceAccount(db,admin,owner)).account.imageBalance).toBe(25);

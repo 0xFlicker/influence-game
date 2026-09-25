@@ -8,7 +8,7 @@ type Route = "ordinary" | "escalated";
 type Filter = "all" | "available" | "mine" | "flagged";
 type Disposition = "allowed" | "rejected";
 type Queue = { activeClaim: { reviewId: string; route: Route } | null; items: { id: string; name: string; disposition: Disposition; flagged: boolean; ownSubmission: boolean; claimedBy: string | null }[]; nextOffset: number | null; serverTime: string; canEscalateReview: boolean; canUndo: boolean };
-type Revision = { snapshot: Record<string, unknown> };
+type Revision = { userId?: string; snapshot: Record<string, unknown> };
 type Detail = { canUndo: boolean; archived: boolean; review: { id: string; version: number; status: string; route: Route; disposition: Disposition; held: boolean }; revision: Revision; parent: Revision | null; claim: { token?: string; expiresAt: string } | null; serverTime: string; history: { id: string; kind: string; actorId: string; decisionVersion?: number; beforeDisposition?: Disposition; disposition?: Disposition; reason: string | null; createdAt: string }[] };
 type Preview = { fingerprint: string; reviewVersion: number; beforeDisposition: Disposition; afterDisposition: Disposition; unavailable: boolean; archived: boolean; heldRevisionCount: number; recovery: string | null; scope: string };
 const post = <T,>(path: string, body: object) => apiFetch<T>(`/api/moderation/${path}`, { method: "POST", body: JSON.stringify(body) });
@@ -166,6 +166,7 @@ export function ModerationInbox() {
         <div className="influence-panel rounded-xl p-4"><h2 className="text-xl font-semibold">{String(detail.revision.snapshot.name ?? "Character")}</h2><p className="mt-1 text-sm">{detail.archived ? "Archived · " : ""}{detail.review.disposition} · {detail.review.status}{detail.review.held ? " · Held from publication" : ""}</p>
           {detail.claim?.token ? <p role="status" className="mt-2 text-sm">{seconds ? `Your claim: ${Math.floor(seconds / 60)}m ${seconds % 60}s remaining` : "Claim expired. Refresh and claim again before acting."}</p> : detail.claim ? <p className="mt-2 text-sm">Claimed by another reviewer.</p> : <button className={`${button} mt-3`} disabled={busy || detail.review.status !== "pending"} onClick={() => void run(() => claim(detail.review.id))}>Claim revision</button>}
         </div>
+        {detail.canUndo && detail.revision.userId && <Link className="text-sm text-indigo-300 underline" href={`/admin/inference?userId=${encodeURIComponent(detail.revision.userId)}`}>Owner spending and generation controls</Link>}
         <div className="grid gap-4 xl:grid-cols-2"><Snapshot title="Previous revision" revision={detail.parent} reviewId={detail.review.id} /><Snapshot title="Submitted revision" revision={detail.revision} reviewId={detail.review.id} /></div>
         <label className="block text-sm">Decision or handoff reason<textarea maxLength={2000} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} className="mt-2 block min-h-24 w-full rounded-lg border border-border-active bg-surface-raised p-3" /></label>
         <div className="flex flex-wrap gap-2">

@@ -1,5 +1,6 @@
 import {afterAll,beforeAll,expect,test} from 'bun:test';
 import {eq} from 'drizzle-orm';
+import {reserveInference,settleInference} from '../services/inference-allowances.js';
 import type {Browser} from 'puppeteer';
 import {schema} from '../db/index.js';
 import {recordCurrentLegalAcceptance} from '../services/legal-acceptance.js';
@@ -41,6 +42,16 @@ test('owner exhaustion preserves draft, admin grants allowance and sees usage co
   await adminPage.waitForFunction("document.body.innerText.includes('25 granted')",{timeout:20000});
   expect((await database.db.select().from(schema.inferenceAccounts).where(eq(schema.inferenceAccounts.userId,owner.userId)))[0]!.textGrant).toBe(25);
   await adminPage.setViewport({width:390,height:844});await adminPage.screenshot({path:'/tmp/inference-admin-mobile.png',fullPage:true});
+  await database.db.transaction(async tx=>{const id=crypto.randomUUID();await reserveInference(tx,{id,userId:owner.userId,category:'text',inputHash:'browser-fixture'});await settleInference(tx,id,owner.userId,'uncertain');});
+  await adminPage.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Pause generation')?.click()");
+  await adminPage.waitForFunction("document.body.innerText.includes('Resume generation')");
+  await adminPage.goto(`${servers.webUrl}/admin/inference?status=pending&sort=pending&window=24h`,{waitUntil:'networkidle0'});
+  await adminPage.waitForFunction("document.querySelector('tbody')?.innerText.includes('1 pending (1 uncertain)')");
+  expect(await adminPage.$eval('tbody',el=>el.textContent)).toContain('Generation paused');
+  await adminPage.select('select[aria-label="Account generation status"]','paused');
+  await adminPage.waitForFunction("location.search.includes('status=paused')");
+  await adminPage.waitForFunction("document.querySelector('tbody')?.innerText.includes('Generation paused')");
+  await adminPage.screenshot({path:'/tmp/inference-status-mobile.png',fullPage:true});
   const denied=await fetch(`${servers.apiUrl}/api/admin/inference/usage`,{headers:{Authorization:`Bearer ${owner.jwt}`}});expect(denied.status).toBe(403);
  }finally{await adminPage.close();}
 },120000);
