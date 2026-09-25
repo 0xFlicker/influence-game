@@ -252,7 +252,7 @@ describe("atomic character draft generation", () => {
     const submissions: AgentProfileWriteParams[] = [];
     domWindow.sessionStorage.removeItem(draftKey);
     const view = await renderForm(false, async (params) => { submissions.push(params); }, emptyText);
-    fireEvent.click(view.getByLabelText("Also generate a new portrait and full-body reference"));
+    expect((view.getByLabelText("Also generate a full-body reference") as HTMLInputElement).checked).toBe(true);
     await sendChangeRequest(view, emptyText ? "Create a charming negotiator." : "Make Arden more decisive in Mingle.");
     await waitFor(() => expect(calls).toHaveLength(2));
     await confirmHeadInEditor(view);
@@ -426,8 +426,8 @@ async function confirmHeadInEditor(view: RenderResult) {
   Object.defineProperty(source, "naturalWidth", { value: 1000 });
   Object.defineProperty(source, "naturalHeight", { value: 1500 });
   fireEvent.load(source);
-  const adjustButton = editor.queryByRole("button", { name: "Adjust framing" });
-  if (adjustButton) fireEvent.click(adjustButton);
+  expect(editor.getByRole("heading", { name: "Adjust character images" })).toBeTruthy();
+  expect(editor.queryByRole("button", { name: "Adjust framing" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Head position" }));
   fireEvent.click(view.getByText("Precise adjustments"));
   fireEvent.input(view.getByRole("slider", { name: "Head vertical position" }), { target: { value: "0.12" } });

@@ -98,6 +98,7 @@ interface AgentAIEditorProps {
   canSend: boolean;
   busy: boolean;
   submitting: boolean;
+  needsFullBodyReference?: boolean;
   regenerateImages: boolean;
   onRegenerateImagesChange: (checked: boolean) => void;
   personaKey: PersonaKey | null;
@@ -127,6 +128,7 @@ export function AgentAIEditor({
   canSend,
   busy,
   submitting,
+  needsFullBodyReference = false,
   regenerateImages,
   onRegenerateImagesChange,
   personaKey,
@@ -427,7 +429,7 @@ export function AgentAIEditor({
           </div>}
           {expanded && !activityPhase && <label className="mt-3 flex min-h-10 cursor-pointer items-center gap-2 px-1 text-xs text-white/55">
             <input type="checkbox" checked={regenerateImages} onChange={(event) => onRegenerateImagesChange(event.target.checked)} disabled={busy || submitting} className="size-4 accent-phase" />
-            Also generate {isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
+            Also generate {needsFullBodyReference ? "a full-body reference" : isEditing ? "a new portrait and full-body reference" : "the portrait and full-body reference"}
           </label>}
           {expanded && !activityPhase && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
           {!activityPhase && <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
