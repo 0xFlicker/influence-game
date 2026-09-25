@@ -1,7 +1,7 @@
 import { Nav } from "@/components/nav";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { GameViewer } from "./game-viewer";
+import { EpisodeLanding } from "../episode-landing";
 import type { GameDetail } from "@/lib/api";
 import { gameHref } from "@/lib/game-links";
 import {
@@ -22,8 +22,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     if (game.status === "completed") {
       const media = await getServerPostgameMedia(slug);
       if (media.status === "ready") {
-        const title = `${media.preview.title} — Influence`;
-        const description = media.preview.description;
+        const title = `${game.episode?.title ?? media.preview.title} — Influence`;
+        const description = game.episode?.description ?? media.preview.description;
         const image = {
           url: media.poster.url,
           alt: media.poster.altText,
@@ -47,7 +47,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         };
       }
 
-      return completedGameFallbackMetadata(slug);
+      if (!game.episode || game.episode.title === game.slug) return completedGameFallbackMetadata(slug);
+    }
+    if (game.episode && game.episode.title !== game.slug) {
+      return { title: `${game.episode.title} — Influence`, description: game.episode.description, alternates: { canonical: gameHref(slug) } };
     }
   } catch (err) {
     console.error(`[GameViewerMetadata] postgame media SSR fetch failed for slug="${slug}":`, err);
@@ -92,20 +95,12 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
   }
 
   let initialGame: GameDetail | undefined;
-  let initialPostgameMedia: Awaited<ReturnType<typeof getServerPostgameMedia>> | undefined;
 
   try {
     initialGame = await getServerGame(slug);
-    if (initialGame.status === "completed") {
-      try {
-        initialPostgameMedia = await getServerPostgameMedia(slug);
-      } catch (err) {
-        console.error(`[GameViewerPage] postgame media SSR fetch failed for slug="${slug}":`, err);
-      }
-    }
   } catch (err) {
     console.error(`[GameViewerPage] SSR fetch failed for slug="${slug}":`, err);
-    // Client-side GameViewer will retry and show loadError if API remains unavailable
+    // Client-side EpisodeLanding will retry and show loadError if API remains unavailable
   }
 
   return (
@@ -113,17 +108,7 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
       <Nav />
 
       <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">
-            {initialGame?.slug ?? slug}
-          </h1>
-        </div>
-
-        <GameViewer
-          gameId={slug}
-          initialGame={initialGame}
-          initialPostgameMedia={initialPostgameMedia}
-        />
+        <EpisodeLanding slug={slug} initialGame={initialGame} />
       </main>
     </div>
   );

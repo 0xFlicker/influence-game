@@ -16,7 +16,7 @@ export const ACTIVE_GAME = {
   name: "Influence",
   badgeLabel: "Influence",
   rulesLabel: "Influence rules",
-  queueLabel: "Influence queue",
+  queueLabel: "Influence Queue",
 } as const;
 
 export const THE_HOUSE_PRESENTS_INFLUENCE = `${HOUSE_VENUE.name} presents ${ACTIVE_GAME.name}`;

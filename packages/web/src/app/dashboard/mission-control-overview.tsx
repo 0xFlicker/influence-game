@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { AuthenticatedPublicIdentity } from "@/lib/api";
 import { playerProfileHref } from "@/lib/player-profile-links";
 import type { DashboardMissionControl, DashboardPrimaryAction } from "./dashboard-mission-control";
@@ -17,6 +18,8 @@ interface MissionControlOverviewProps {
   errors: string[];
   onJoinPrimary: (action: DashboardPrimaryAction) => void;
   publicIdentity: AuthenticatedPublicIdentity | null;
+  canCreateGame?: boolean;
+  queueEntry?: ReactNode;
 }
 
 function userLabel(user: MissionControlUser | null): string {
@@ -59,6 +62,8 @@ export function MissionControlOverview({
   errors,
   onJoinPrimary,
   publicIdentity,
+  canCreateGame = false,
+  queueEntry,
 }: MissionControlOverviewProps) {
   const stats = control.stats;
 
@@ -70,13 +75,17 @@ export function MissionControlOverview({
           <h1 className="text-2xl sm:text-3xl font-bold text-text-primary mb-2">
             {userLabel(user)}
           </h1>
-          <p className="influence-copy text-sm max-w-2xl">
+          {control.primaryAction.kind !== "queue" && <p className="influence-copy text-sm max-w-2xl">
             {loading ? "Syncing your current game, agent, and queue state." : control.primaryAction.description}
-          </p>
+          </p>}
         </div>
 
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:min-w-48">
-          <PrimaryActionButton action={control.primaryAction} onJoinPrimary={onJoinPrimary} />
+          <Link href="/dashboard/agents/create" className="influence-button-primary inline-flex min-h-11 items-center justify-center rounded-lg px-5 py-3 text-sm font-semibold">
+            <span aria-hidden="true">＋&nbsp;</span>{stats.agentCount === 0 ? "Create your first agent" : "Create agent"}
+          </Link>
+          {canCreateGame && <Link href="/games/new" className="influence-button-secondary rounded-lg px-5 py-3 text-center text-sm font-semibold">＋ Create game</Link>}
+          {!loading && control.primaryAction.kind !== "queue" && control.primaryAction.kind !== "create-agent" && <PrimaryActionButton action={control.primaryAction} onJoinPrimary={onJoinPrimary} />}
           {control.primaryAction.kind !== "browse-games" && (
             <Link href="/games" className="influence-button-secondary rounded-lg px-5 py-2 text-center text-xs font-medium">
               Browse games
@@ -99,6 +108,8 @@ export function MissionControlOverview({
           )}
         </div>
       </div>
+
+      {queueEntry}
 
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="influence-panel-muted rounded-lg p-4">

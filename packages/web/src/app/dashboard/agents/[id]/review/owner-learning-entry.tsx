@@ -54,7 +54,7 @@ export function OwnerLearningEntryView({
         <p className="olm-kicker">Agent review</p>
         <h1>No eligible Daily Free games yet.</h1>
         <p>Once one of your agents completes ranked play, its accepted game facts can anchor a private strategy review.</p>
-        <Link href="/games/free" className="olm-button olm-button-primary">Enter Influence Queue</Link>
+        <Link href="/games/free" className="olm-button olm-button-primary">Go to Intake</Link>
       </section>
     );
   }

@@ -149,7 +149,7 @@ export function QueueSection({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-phase text-sm font-medium mb-1">
-              You&apos;re in the {ACTIVE_GAME.queueLabel}
+              You&apos;re in the queue
             </p>
             <p className="text-text-primary text-lg font-semibold">
               {queueStatus.userEntry!.agentName}
@@ -204,7 +204,7 @@ export function QueueSection({
       <div className="influence-panel-dashed rounded-xl p-6 text-center">
         <p className="influence-copy-muted text-sm mb-2">No agents yet</p>
         <p className="influence-copy-muted text-xs mb-3">
-          Create an agent to join the {ACTIVE_GAME.queueLabel}.
+          Create an agent to join the queue.
         </p>
         <Link
           href="/dashboard/agents"
@@ -219,7 +219,7 @@ export function QueueSection({
   return (
     <div className="influence-panel rounded-xl p-6">
       <p className="influence-section-title mb-3">
-        Select an agent for the {ACTIVE_GAME.queueLabel}
+        Select an agent for the queue
       </p>
       <div className="grid gap-2 mb-4">
         {agents.map((agent) => {
@@ -269,7 +269,7 @@ export function QueueSection({
         disabled={!selectedAgentId || actionLoading}
         className="influence-button-primary w-full px-6 py-3 rounded-lg text-sm font-medium"
       >
-        {actionLoading ? "Joining..." : `Join ${ACTIVE_GAME.name} Queue`}
+        {actionLoading ? "Joining..." : "Join queue"}
       </button>
       {actionError && (
         <p className="text-red-400 text-xs mt-3">{actionError}</p>
@@ -797,7 +797,7 @@ export function FreeGameContent() {
       {/* Queue Join/Leave */}
       <section>
         <h2 className="influence-section-title mb-3">
-          {ACTIVE_GAME.name} Queue
+          {ACTIVE_GAME.queueLabel}
         </h2>
         {agentsError && (
           <div className="rounded-lg p-3 mb-3 text-center border border-yellow-400/30 bg-yellow-400/10">

@@ -50,6 +50,121 @@ test.describe("local public player identity", () => {
     if (harnessProcess) await stopLocalIdentityHarness(harnessProcess);
   });
 
+  test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", viewerMode: "speedrun", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
+    const preview = { episode: game.episode, frames: [{ id: "house", kind: "house", label: "A word from the House", text: game.episode.description }], media: { schemaVersion: 1, mediaType: "house_highlights_trailer", status: "ready", renderVersion: 1, durationSeconds: 12, preview: { title: game.episode.title, description: game.episode.description }, video: { url: `${servers.webUrl}/episode-fixture.mp4`, contentType: "video/mp4", width: 1920, height: 1080 }, poster: { url: `${servers.webUrl}/house-highlights/generated/alliance-formation.jpg`, altText: "The House", contentType: "image/jpeg" }, captions: { url: `${servers.webUrl}/episode-fixture.vtt`, contentType: "text/vtt", language: "en", label: "English" }, manifest: { url: "", contentType: "application/json" } } };
+    for (const touch of [false, true]) {
+      const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch });
+      const page = await context.newPage();
+      try {
+        await page.addInitScript(() => {
+          Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, value() { this.dataset.playCalled = "true"; return (this.dataset.allowPlay === "true" || document.body.dataset.allowEpisodePlay === "true") ? Promise.resolve() : Promise.reject(new DOMException("Blocked by test policy", "NotAllowedError")); } });
+          Object.defineProperty(HTMLMediaElement.prototype, "pause", { configurable: true, value() {} });
+        });
+        await page.route("**/episode-fixture.mp4", route => route.fulfill({ path: "e2e/fixtures/episode-trailer.mp4", contentType: "video/mp4" }));
+        await page.route("**/episode-fixture.vtt", route => route.fulfill({ body: "WEBVTT\n\n", contentType: "text/vtt" }));
+        await page.route("**/api/games", route => route.fulfill({ json: [game] }));
+        await page.route("**/api/games/episode-fixture/episode", route => route.fulfill({ json: preview }));
+        await page.route("**/api/games/quiet-sage-room/episode", route => route.fulfill({ json: preview }));
+        await page.route("**/api/games/quiet-sage-room", route => route.fulfill({ json: game }));
+        await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+        const card = page.getByTestId("episode-card");
+        await expect(card.getByRole("heading", { name: "Good Company" })).toBeVisible();
+        if (touch) {
+          await expect(card.getByRole("link", { name: "Details", exact: true })).not.toBeVisible();
+          await card.getByRole("link", { name: "Open Good Company", exact: true }).tap();
+          const modal = page.getByRole("dialog", { name: "Good Company", exact: true });
+          await expect(modal).toBeVisible();
+          await expect(modal.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
+          const video = modal.locator("video");
+          await expect(video).toHaveAttribute("data-play-called", "true");
+          await expect(modal.getByRole("button", { name: "Play trailer", exact: true })).toBeVisible();
+          await video.evaluate(v => { v.dataset.allowPlay = "true"; document.body.dataset.allowEpisodePlay = "true"; });
+          await modal.getByRole("button", { name: "Play trailer", exact: true }).click();
+          await expect(modal.getByRole("button", { name: "Play trailer", exact: true })).toHaveCount(0);
+          await modal.getByRole("button", { name: "Sound on", exact: true }).click();
+          await expect(video).toHaveJSProperty("muted", false);
+          await video.evaluate(v => v.dispatchEvent(new Event("ended")));
+          await expect(video).toHaveCount(0);
+          await expect(modal.getByRole("button", { name: "Replay trailer", exact: true })).toBeVisible();
+          await modal.getByRole("button", { name: "Replay trailer", exact: true }).click();
+          await expect(modal.getByRole("button", { name: "Sound off", exact: true })).toBeVisible();
+          await expect(modal.getByRole("link", { name: /Watch Replay/ })).toBeVisible();
+          await modal.getByRole("button", { name: "Close ×" }).click();
+          await expect(modal).toHaveCount(0);
+          await expect(page).toHaveURL(`${servers.webUrl}/games`);
+        } else {
+          await expect(card.getByRole("link", { name: "Details", exact: true })).toHaveAttribute("href", "/games/quiet-sage-room/results");
+          await expect(card.getByRole("link", { name: /Watch Replay/ })).toHaveAttribute("href", "/games/quiet-sage-room/replay");
+          await card.getByRole("link", { name: "Open Good Company", exact: true }).click();
+          // The isolated Next dev server compiles this route on its first visit.
+          // CI can exceed the default 5s while the navigation request is pending.
+          await expect(page).toHaveURL(`${servers.webUrl}/games/quiet-sage-room`, { timeout: 30_000 });
+          await expect(page.getByRole("heading", { name: "Good Company", exact: true })).toBeVisible();
+          await expect(page.getByRole("link", { name: "See Results" })).toHaveAttribute("href", "/games/quiet-sage-room/results");
+          await expect(page.locator("video")).toHaveAttribute("data-play-called", "true");
+          await page.reload({ waitUntil: "networkidle" });
+          await expect(page.locator("video")).toBeVisible();
+          await expect(page.locator("video")).not.toHaveAttribute("data-play-called", "true");
+        }
+      } finally { await context.close(); }
+    }
+  });
+
+  test("collection routes stay scoped and production batches require exact selection", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const context = await authenticatedContext(browser, fixture.completeJwt);
+    const page = await context.newPage();
+    const games = Array.from({ length: 60 }, (_, i) => ({
+      id: `production-${i}`, slug: `episode-${i}`, status: "completed", playerCount: 6, currentRound: 4, maxRounds: 5, currentPhase: "END", alivePlayers: 1, eliminatedPlayers: 5,
+      modelLabel: "Standard", visibility: i === 2 ? "private" : "public", createdAt: new Date().toISOString(), hidden: false,
+      completionSettlement: { state: "not_applicable" }, season: i === 0 ? { id: "s0", name: "Season 0", slug: "season-0" } : null,
+      episode: { title: `Episode ${i}`, description: "A teaser", status: "unrequested", cast: [], frameOrder: [], locked: false, revision: 0, episodeNumber: null, coverUrl: null },
+    }));
+    const batches: Array<{ gameIds: string[]; preview: boolean; regenerate: boolean }> = [];
+    try {
+      await page.route("**/api/auth/me", async route => {
+        const response = await route.fetch();
+        await route.fulfill({ json: { ...await response.json(), isAdmin: true, roles: ["admin"], permissions: ["view_admin", "manage_postgame_media"] } });
+      });
+      await page.route("**/api/games", route => route.fulfill({ json: games }));
+      await page.route("**/api/admin/games", route => route.fulfill({ json: games }));
+      await page.route("**/api/admin/episodes/backfill", route => {
+        const body = route.request().postDataJSON(); batches.push(body);
+        return route.fulfill({ json: { gameIds: body.gameIds, calls: body.gameIds.length, skipped: 0, queued: !body.preview } });
+      });
+      await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
+      await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "Season 0", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
+      for (const [path, expected] of [["season/season-0", "Episode 0"], ["private", "Episode 2"]]) {
+        await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
+        await expect(page.getByTestId("episode-card")).toHaveCount(1);
+        await expect(page.getByTestId("episode-card").getByRole("heading", { name: expected, exact: true })).toBeVisible();
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(page.getByTestId("episode-card")).toHaveCount(1);
+      }
+      await page.goto(`${servers.webUrl}/games/public`, { waitUntil: "networkidle" });
+      await expect(page.getByTestId("episode-card")).toHaveCount(58);
+      await page.goto(`${servers.webUrl}/admin/production`, { waitUntil: "networkidle" });
+      await expect(page.getByRole("heading", { name: "Episode & video production" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Review 0 selected" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Select all 60 matching" })).toBeDisabled();
+      await page.getByRole("checkbox", { name: "Select episode-0", exact: true }).check();
+      await page.getByRole("searchbox", { name: "Search games" }).fill("episode-1");
+      await expect(page.getByRole("button", { name: "Review 0 selected" })).toBeDisabled();
+      await expect(page.getByRole("checkbox", { name: "Select episode-0", exact: true })).toHaveCount(0);
+      await page.getByRole("checkbox", { name: "Select episode-1", exact: true }).check();
+      await page.getByRole("button", { name: "Review 1 selected" }).click();
+      await expect(page.getByRole("button", { name: "Queue 1 episodes" })).toBeVisible();
+      expect(batches).toEqual([{ gameIds: ["production-1"], regenerate: false, preview: true }]);
+      await page.getByRole("button", { name: "Queue 1 episodes" }).click();
+      await expect(page.getByText("1 episodes queued. 0 skipped because their state changed.")).toBeVisible();
+      expect(batches[1]).toEqual({ gameIds: ["production-1"], regenerate: false, preview: false });
+    } finally { await context.close(); }
+  });
+
   test("uses ordinary sign-in copy without making Privy an onboarding step", async ({ page }) => {
     await page.goto(servers.webUrl, { waitUntil: "domcontentloaded" });
 
@@ -260,7 +375,6 @@ test.describe("local public player identity", () => {
           return route.fulfill({ json: { avatarUrl: sourceUrl, portraitCrop, headPosition: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: headRectangle } } });
         });
         await page.goto(`${servers.webUrl}/dashboard/agents/create`, { waitUntil: "networkidle" });
-        await page.getByRole("button", { name: /Create with an AI assistant/ }).click();
         // The global acquisition prompt must not interrupt a longer creation session.
         await page.evaluate(() => window.dispatchEvent(new Event("free-queue:changed")));
         await page.waitForTimeout(3500);

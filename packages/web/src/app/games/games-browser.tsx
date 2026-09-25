@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { collectionLabel, gameCollectionHref, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
+import { EpisodeCard } from "./episode-preview";
 import {
   fillGame,
   hideGame,
@@ -15,10 +16,8 @@ import {
 import { usePermissions } from "@/hooks/use-permissions";
 import { ACTIVE_GAME } from "@/lib/product-identity";
 import {
-  gameCategoryLabel,
   gameCategoryValue,
   gameDisplayName,
-  gameHref,
   type GameCategoryValue,
 } from "@/lib/game-identity";
 
@@ -36,21 +35,6 @@ function phaseLabel(phase: string): string {
     done: "DONE",
   };
   return labels[phase] ?? phase.toUpperCase();
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function progressPct(game: GameSummary): number {
-  if (game.maxRounds === 0) return 0;
-  return Math.round((game.currentRound / game.maxRounds) * 100);
 }
 
 type StatusFilter = "all" | GameStatus;
@@ -81,20 +65,24 @@ function GameCard({
   canHide,
   onRefresh,
 }: GameCardProps) {
-  const router = useRouter();
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
   const joinedPlayers = Math.min(game.alivePlayers, game.playerCount);
   const isReadyToStart = joinedPlayers >= game.playerCount;
   const slotsInfo = isJoinable ? `${joinedPlayers}/${game.playerCount} joined` : undefined;
-  const pct = progressPct(game);
-  const categoryLabel = gameCategoryLabel(game);
 
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
+  const hideDialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!confirmHide) return;
+    const dialog = hideDialog.current!;
+    dialog.showModal();
+    return () => dialog.close();
+  }, [confirmHide]);
   const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleFill() {
@@ -152,83 +140,7 @@ function GameCard({
 
   return (
     <>
-      <div
-        onClick={() => router.push(gameHref(game))}
-        className="influence-panel rounded-xl p-5 transition-colors cursor-pointer"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <span className="text-text-primary font-semibold">{gameDisplayName(game)}</span>
-              <span className="text-xs px-2 py-0.5 rounded-sm bg-emerald-500/20 text-emerald-200 border border-emerald-500/35 font-semibold">
-                {ACTIVE_GAME.badgeLabel}
-              </span>
-              <StatusBadge status={game.status} visualPaused={game.visualPaused} />
-              {categoryLabel && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
-                  {categoryLabel}
-                </span>
-              )}
-              <span className="text-xs px-2 py-0.5 rounded-full bg-surface-raised/80 text-text-secondary font-mono border border-border-active/50">
-                {phaseLabel(game.currentPhase)}
-              </span>
-              {filling && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-300 border border-indigo-800/60 animate-pulse">
-                  Filling seats…
-                </span>
-              )}
-              {isJoinable && isReadyToStart && !filling && (canStart || canFill) && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-800/60">
-                  Ready to start
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4 text-xs influence-copy mb-3 flex-wrap">
-              <span>{game.playerCount} players</span>
-              <span>{game.modelLabel}</span>
-              {slotsInfo && (
-                <span className={isReadyToStart ? "text-green-300/80" : "text-indigo-400/70"}>
-                  {slotsInfo}
-                </span>
-              )}
-              {isLive && (
-                <>
-                  <span>Round {game.currentRound}/{game.maxRounds}</span>
-                  <span className="text-green-400/70">{game.alivePlayers} alive</span>
-                  {game.phaseTimeRemaining != null && (
-                    <span>{Math.round(game.phaseTimeRemaining / 1000)}s</span>
-                  )}
-                </>
-              )}
-              {game.status === "completed" && (
-                <span className="text-emerald-400/70">Finished</span>
-              )}
-              {game.status === "suspended" && (
-                <span className="text-amber-300/80">{game.visualPaused ? "Awaiting visual repair" : "Failed"}</span>
-              )}
-              {game.finalists && isLive && (
-                <span>Finalists: {game.finalists.join(", ")}</span>
-              )}
-              <span className="influence-copy-muted">{timeAgo(game.createdAt)}</span>
-            </div>
-
-            {isLive && (
-              <div className="h-1 bg-surface-raised rounded-full overflow-hidden max-w-xs">
-                <div
-                  className="h-full bg-phase/80 rounded-full transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            )}
-            {isLive && (
-              <p className="influence-copy-muted text-xs mt-2">Watch live now</p>
-            )}
-            {actionError && (
-              <p className="text-red-400/80 text-xs mt-2">{actionError}</p>
-            )}
-          </div>
-
+      <EpisodeCard game={game} actions={<div>
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
             {isJoinable && onJoin && (
               <button
@@ -290,11 +202,13 @@ function GameCard({
               </button>
             )}
           </div>
-        </div>
-      </div>
+        {isLive && <span className="influence-copy-muted text-xs">Round {game.currentRound}/{game.maxRounds} · {phaseLabel(game.currentPhase)} · {game.alivePlayers} alive</span>}
+        {isJoinable && <span className="influence-copy-muted text-xs">{slotsInfo}{isReadyToStart ? " · Ready to start" : ""}</span>}
+        {actionError && <p role="alert" className="text-red-300 text-sm mt-2">{actionError}</p>}
+      </div>} />
 
       {confirmHide && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+        <dialog ref={hideDialog} aria-label="Hide game" onCancel={() => setConfirmHide(false)} className="m-auto rounded-xl bg-zinc-900 text-white backdrop:bg-black/60">
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
             <p className="text-white text-sm mb-4">
               Hide game <strong>{gameDisplayName(game)}</strong> from public lists? It can be restored from Game History.
@@ -314,40 +228,19 @@ function GameCard({
               </button>
             </div>
           </div>
-        </div>
+        </dialog>
       )}
     </>
-  );
-}
-
-function StatusBadge({ status, visualPaused }: { status: GameStatus; visualPaused?: boolean }) {
-  const styles: Record<GameStatus, string> = {
-    waiting: "bg-yellow-900/40 text-yellow-400 border border-yellow-900/60",
-    in_progress: "bg-blue-900/40 text-blue-400 border border-blue-900/60",
-    completed: "bg-green-900/40 text-green-400 border border-green-900/60",
-    cancelled: "bg-red-900/40 text-red-400 border border-red-900/60",
-    suspended: "bg-amber-900/40 text-amber-300 border border-amber-900/60",
-  };
-  const labels: Record<GameStatus, string> = {
-    waiting: "Open",
-    in_progress: "Live",
-    completed: "Done",
-    cancelled: "Void",
-    suspended: "Failed",
-  };
-  return (
-    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}>
-      {status === "suspended" && visualPaused ? "Paused" : labels[status]}
-    </span>
   );
 }
 
 interface GamesBrowserProps {
   onJoin?: (game: GameSummary) => void;
   compact?: boolean;
+  collection?: GameCollection;
 }
 
-export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
+export function GamesBrowser({ onJoin, compact = false, collection }: GamesBrowserProps) {
   const { hasPermission } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
@@ -398,7 +291,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     };
   }, []);
 
-  const canCreate = hasPermission("create_game");
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game");
   const canStop = hasPermission("stop_game");
@@ -413,12 +305,13 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   };
 
   const searchQuery = filters.search.toLowerCase();
-  const filtered = games
+  const scopedGames = games.filter(game => !collection || matchesGameCollection(game, collection));
+  const filtered = scopedGames
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.category !== "all" && gameCategoryValue(g) !== filters.category) return false;
       if (searchQuery) {
-        const haystack = `${g.slug} ${g.season?.name ?? ""} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${g.modelLabel} ${g.trackType ?? ""}`.toLowerCase();
+        const haystack = `${g.episode?.title ?? ""} ${g.episode?.description ?? ""} ${(g.episode?.cast ?? []).map(p => p.name).join(" ")} ${g.slug} ${g.season?.name ?? ""} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${g.modelLabel} ${g.trackType ?? ""}`.toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;
@@ -456,97 +349,55 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
 
   if (loading) {
     return (
-      <div className="influence-empty-state rounded-xl p-12 text-center text-sm">
-        Loading games…
-      </div>
+      <div className="episode-grid" role="status" aria-label="Loading games"><div className="episode-skeleton" /><div className="episode-skeleton" /><span className="sr-only">Loading games…</span></div>
     );
   }
 
   if (error) {
     return (
       <div className="rounded-xl p-8 text-center text-red-400/70 text-sm border border-red-400/30 bg-red-400/10">
-        {error}
+        <p>{error}</p><button className="mt-3 underline" onClick={() => void refreshGames()}>Try again</button>
       </div>
     );
   }
 
   return (
     <div>
-      {!compact && (
-        <div className="flex items-center gap-3 mb-5 flex-wrap">
-          <input
-            type="text"
-            value={filters.search}
-            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-            placeholder="Search games..."
-            className="influence-field text-xs px-3 py-1.5 rounded-lg w-36"
-          />
-
-          <div className="flex rounded-lg overflow-hidden border border-border-active/60 bg-surface-raised/50">
-            {statusOptions.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFilters((f) => ({ ...f, status: opt.value }))}
-                className={`text-xs px-3 py-1.5 transition-colors border-r border-border-active/50 last:border-0 ${
-                  filters.status === opt.value
-                    ? "bg-phase/80 text-text-primary"
-                    : "influence-copy hover:text-text-primary hover:bg-surface-raised/80"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <select
-            value={filters.category}
-            onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value as CategoryFilter }))}
-            className="influence-field text-xs px-3 py-1.5 rounded-lg"
-            aria-label="Game category"
-          >
-            {categoryOptions.map((option) => (
-              <option key={option.value} value={option.value} className="bg-[#111118]">
-                {option.label}
-              </option>
-            ))}
-          </select>
-
-          <div className="ml-auto flex items-center gap-3">
-            {canCreate && (
-              <Link
-                href="/games/new"
-                className="influence-button-primary text-xs px-3 py-1.5 rounded-lg font-medium"
-              >
-                + New Game
-              </Link>
-            )}
-            <span className="influence-copy-muted text-xs">
-              {filtered.length} game{filtered.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-        </div>
-      )}
-
+      {!compact && <div className="episode-library-toolbar">
+        <input aria-label="Search games" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} placeholder="Search titles, Agents, or code words…" />
+        <select aria-label="Game status" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value as StatusFilter }))}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        <select aria-label="Game category" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value as CategoryFilter }))}>{categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        {collection && <Link href="/games">All shelves</Link>}
+      </div>}
       {filtered.length === 0 ? (
         <div className="influence-empty-state rounded-xl p-12 text-center text-sm">
           {games.length === 0 ? "No games yet." : "No games match the current filters."}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((game) => (
-            <GameCard
-              key={game.id}
-              game={game}
-              onJoin={onJoin}
-              canFill={canFill}
-              canStart={canStart}
-              canStop={canStop}
-              canHide={canHide}
-              onRefresh={refreshGames}
-            />
-          ))}
+        <div className={compact ? "episode-compact" : ""}>
+          {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", filtered] as const] : Array.from(filtered.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>
+            {items.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}
+          </EpisodeShelf>)}
         </div>
       )}
     </div>
   );
+}
+
+function shelfRank(name: string) { return name === "Your private games" ? 2 : name === "Public games" ? 1 : 0; }
+function shelfName(game: GameSummary) { return game.visibility === "private" ? "Your private games" : game.season?.name ?? "Public games"; }
+function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href: string; children: React.ReactNode }) {
+  const rail = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const element = rail.current;
+    if (!element || grid) return;
+    const update = () => setEdges({ left: element.scrollLeft > 2, right: element.scrollLeft + element.clientWidth < element.scrollWidth - 2 });
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    element.addEventListener("scroll", update, { passive: true });
+    update();
+    return () => { observer.disconnect(); element.removeEventListener("scroll", update); };
+  }, [grid, children]);
+  return <section className="episode-shelf" aria-label={name}><div className="episode-shelf-heading"><h2>{name}</h2>{!grid && <div className="flex gap-2"><Link href={href} className="rounded border border-white/20 px-3 py-2 text-sm">View all</Link><button disabled={!edges.left} aria-label={`Previous ${name} games`} onClick={() => rail.current?.scrollBy({ left: -rail.current.clientWidth, behavior: "smooth" })}>←</button><button disabled={!edges.right} aria-label={`Next ${name} games`} onClick={() => rail.current?.scrollBy({ left: rail.current.clientWidth, behavior: "smooth" })}>→</button></div>}</div><div ref={rail} className={grid ? "episode-grid" : `episode-rail ${edges.left ? "has-before" : ""} ${edges.right ? "has-after" : ""}`}>{children}</div></section>;
 }

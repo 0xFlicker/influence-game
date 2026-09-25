@@ -136,7 +136,7 @@ test.describe("format-aware game viewer", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect.poll(() => fixture.sockets.length).toBe(1);
     const speech = "We can make this plan work together. ".repeat(70);
@@ -198,7 +198,7 @@ test.describe("format-aware game viewer", () => {
         }],
       } }));
       await page.route("**/speech-room.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="#34324b"/><circle cx="300" cy="240" r="85" fill="#bfa989"/><circle cx="1260" cy="240" r="85" fill="#99bfa9"/></svg>' }));
-      await page.goto(viewerUrl(`/games/${slug}`));
+      await page.goto(viewerUrl(`/games/${slug}/replay`));
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
       await expect.poll(() => fixture.sockets.length).toBe(1);
       await page.clock.pauseAt(new Date(Date.now() + 1000));
@@ -249,7 +249,7 @@ test.describe("format-aware game viewer", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect.poll(() => fixture.sockets.length).toBe(1);
     fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: {
@@ -284,7 +284,7 @@ test.describe("format-aware game viewer", () => {
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 0 });
     await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { [actor.id]: "/solo-click.svg" } } }));
     await page.route("**/solo-click.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/></svg>' }));
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect.poll(() => fixture.sockets.length).toBe(1);
     await page.clock.pauseAt(new Date(Date.now() + 1000));
@@ -333,7 +333,7 @@ test.describe("format-aware game viewer", () => {
       await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { [actor.id]: "/solo-fixture.svg" }, fullBodyHeads: confirmedHead ? { [actor.id]: { x: 0.4, y: 0.09, width: 0.2, height: 0.14 } } : {} } }));
       await page.route("**/solo-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/><path d="M160 140H240L260 360H230V560H205V360H195V560H170V360H140Z" fill="#ded4c0"/></svg>' }));
       await page.setViewportSize({ width: 1280, height: 800 });
-      await page.goto(viewerUrl(`/games/${slug}`));
+      await page.goto(viewerUrl(`/games/${slug}/replay`));
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
       await expect.poll(() => fixture.sockets.length).toBe(1);
       fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 1, round: 0, phase: "INTRODUCTION", from: actor.id, scope: "public", text: "I intend to win your trust.", timestamp: Date.now() } }));
@@ -574,7 +574,7 @@ test.describe("format-aware game viewer", () => {
     });
     let visualRequests = 0;
     page.on("request", (request) => { if (request.url().endsWith("/visual")) visualRequests++; });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect.poll(() => fixture.sockets.length).toBe(1);
     const actor = scenario.roster[0]!;
@@ -607,7 +607,7 @@ test.describe("format-aware game viewer", () => {
       initialDecisionCount: scenario.decisions.length - 1,
       historicalCatchUp: true, frameResponseDelayMs: 300,
     });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     await expect(page.locator("[data-format-cue]").first()).toBeVisible();
     await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
@@ -631,7 +631,7 @@ test.describe("format-aware game viewer", () => {
         slug, scenarioId: "two_names_declined", status: "in_progress",
         historicalCatchUp: true, frameResponseDelayMs,
       });
-      await page.goto(viewerUrl(`/games/${slug}`));
+      await page.goto(viewerUrl(`/games/${slug}/replay`));
       await expect(page.locator('[data-format-cue="format_elimination"]')).toBeVisible();
       await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
       await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
@@ -646,7 +646,7 @@ test.describe("format-aware game viewer", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const slug = "live-endgame-cast";
     const fixture = await installDeterministicFormatGame(page, { slug, scenarioId: "two_names_declined", status: "in_progress", initialDecisionCount: 1 });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     await expect.poll(() => fixture.sockets.length).toBe(1);
     await pauseAutoplay(page, "⏸ Pause");
     await expect(page.getByRole("button", { name: "Inspect Atlas", exact: true })).toContainText("In");
@@ -724,6 +724,7 @@ test.describe("format-aware game viewer", () => {
   for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) {
     for (const mobile of [false, true]) {
       test(`Two Names ${scenarioId} keeps names, long pleas and tally legible ${mobile ? "mobile reduced motion" : "desktop"}`, async ({ page }, testInfo) => {
+        await page.clock.install();
         await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
         await page.emulateMedia({ reducedMotion: mobile ? "reduce" : "no-preference" });
         const slug = `display-${scenarioId}`;
@@ -790,10 +791,27 @@ test.describe("format-aware game viewer", () => {
         await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
         await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
+        await page.clock.pauseAt(new Date(Date.now() + 1000));
         await nextDialogueStep();
-        await assertSoloBallot(page, scenarioId === "two_names_used_tie" ? "Lyra" : "Rex", first);
-        await nextDialogueStep();
-        await assertSoloBallot(page, "Nova", scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
+        const firstBallot = page.getByRole("region", { name: `Ballot: ${scenarioId === "two_names_used_tie" ? "Lyra" : "Rex"}`, exact: true });
+        await expect(firstBallot).toBeVisible();
+        // Manual speech steps reveal, hide, then leave the portrait. Wait for
+        // each fade before another keypress instead of racing through ballots.
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(300);
+        await expect(firstBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(firstBallot.getByRole("blockquote")).toHaveText(first);
+        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(300);
+        await expect(firstBallot.getByRole("blockquote")).toHaveCount(0);
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(2100);
+        const secondBallot = page.getByRole("region", { name: "Ballot: Nova", exact: true });
+        await expect(secondBallot).toBeVisible();
+        await expect(secondBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(secondBallot.getByRole("blockquote")).toHaveText(scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
+        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
         await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();
@@ -821,7 +839,7 @@ test.describe("format-aware game viewer", () => {
         initialDecisionCount: liveDecisionCount,
       });
 
-      await page.goto(viewerUrl(`/games/${entry.slug}`), {
+      await page.goto(viewerUrl(`/games/${entry.slug}/replay`), {
         waitUntil: "domcontentloaded",
       });
       const liveShell = page.getByTestId("match-watch-shell");
@@ -894,7 +912,7 @@ test.describe("format-aware game viewer", () => {
       status: "in_progress",
       initialDecisionCount: 5,
     });
-    await page.goto(viewerUrl("/games/deterministic-safety-reconnect"), {
+    await page.goto(viewerUrl("/games/deterministic-safety-reconnect/replay"), {
       waitUntil: "domcontentloaded",
     });
 
@@ -971,7 +989,7 @@ test.describe("format-aware game viewer", () => {
         scenarioId,
         status,
       });
-      await page.goto(viewerUrl(`/games/${slug}`), { waitUntil: "domcontentloaded" });
+      await page.goto(viewerUrl(`/games/${slug}/replay`), { waitUntil: "domcontentloaded" });
       await expect(
         page.getByText(status === "suspended" ? "Game failed" : "Game unavailable", {
           exact: true,
@@ -994,7 +1012,7 @@ test.describe("format-aware game viewer", () => {
         scenarioId,
         status: "suspended",
       });
-      await page.goto(viewerUrl(`/games/${slug}`), { waitUntil: "domcontentloaded" });
+      await page.goto(viewerUrl(`/games/${slug}/replay`), { waitUntil: "domcontentloaded" });
       const snapshot = page.locator("[data-format-terminal-snapshot]");
       await expect(snapshot).toBeVisible();
       await expect(snapshot).toHaveAttribute(
@@ -1074,7 +1092,7 @@ test.describe("format-aware game viewer", () => {
     await page.clock.install();
     const slug = "safety-lobby-live";
     const fixture = await installSafetyBounceLobby(page, slug, { live: true });
-    await page.goto(viewerUrl(`/games/${slug}`));
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
     const lobby = page.getByRole("region", { name: "Safety Bounce in the lobby" });
     await expect(lobby).toBeVisible();
     await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(1);
@@ -1301,7 +1319,7 @@ test.describe("format-aware game viewer", () => {
       status: "in_progress",
       gameKernel: "classic",
     });
-    await page.goto(viewerUrl("/games/deterministic-classic-active"), {
+    await page.goto(viewerUrl("/games/deterministic-classic-active/replay"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("match-watch-shell")).toBeVisible();
@@ -1313,7 +1331,7 @@ test.describe("format-aware game viewer", () => {
       status: "suspended",
       gameKernel: null,
     });
-    await page.goto(viewerUrl("/games/deterministic-classic-suspended"), {
+    await page.goto(viewerUrl("/games/deterministic-classic-suspended/replay"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByText("Game failed", { exact: true })).toBeVisible();
@@ -1324,7 +1342,7 @@ test.describe("format-aware game viewer", () => {
       status: "cancelled",
       gameKernel: "classic",
     });
-    await page.goto(viewerUrl("/games/deterministic-classic-cancelled"), {
+    await page.goto(viewerUrl("/games/deterministic-classic-cancelled/replay"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByText("Game unavailable", { exact: true })).toBeVisible();

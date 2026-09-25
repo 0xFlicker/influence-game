@@ -11,12 +11,12 @@ export default function GamesPage() {
     <div className="influence-page min-h-screen flex flex-col">
       <Nav />
 
-      <main className="flex-1 px-6 py-10 max-w-4xl mx-auto w-full">
+      <main className="flex-1 px-6 py-10 max-w-[1480px] mx-auto w-full">
         <h1 className="influence-phase-title text-3xl font-bold mb-2">
-          Games at {HOUSE_VENUE.name}
+          Every room has a story.
         </h1>
         <p className="influence-copy mb-8">
-          Browse active and recent {ACTIVE_GAME.name} games. Anyone can watch.
+          Find an {ACTIVE_GAME.name} game to enter. Find an episode to get lost in.
         </p>
 
         <GamesBrowser />

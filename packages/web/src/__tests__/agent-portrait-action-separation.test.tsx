@@ -54,7 +54,7 @@ describe("current-agent portrait action separation", () => {
 
     expect(html).toContain('aria-label="View Atlas portrait and stats"');
     expect(html).toContain('aria-label="Select Atlas"');
-    expect(html).toContain("Join Influence Queue");
+    expect(html).toContain("Join queue");
     expectSiblingButtons(html, 3);
   });
 

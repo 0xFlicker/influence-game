@@ -131,7 +131,7 @@ describe("E2E: Standing Daily Agent", () => {
     await waitForText(page, "Create an Agent");
     await clickButton(page, "Create an Agent");
     await waitForText(page, "Advanced create");
-    await clickButton(page, "Advanced createOpen the full editor and write your Agent’s profile yourself.");
+    await clickButton(page, "Advanced create");
     await page.waitForSelector("#agent-name");
     await page.type("#agent-name", "Prompt Newcomer");
     await page.type("#agent-personality", "Curious, composed, and willing to make a clear decision.");
@@ -267,13 +267,13 @@ describe("E2E: Standing Daily Agent", () => {
     });
     await clickButton(playerPage, "Leave queue");
     await waitForQueueAgent(player.userId, null);
-    await waitForText(playerPage, "Select an agent for the Influence Queue");
+    await waitForText(playerPage, "Select an agent for the queue");
     expect(ownerDialogs).toEqual([]);
     expect(await pageText(playerPage)).not.toContain("next season");
     expect(await pageText(playerPage)).not.toContain("Are you sure");
 
     await clickAgentCard(playerPage, "Daily Beta");
-    await clickButton(playerPage, "Join Influence Queue");
+    await clickButton(playerPage, "Join queue");
     await waitForQueueAgent(player.userId, secondAgentId);
     await waitForText(playerPage, "Daily Beta");
     await waitForText(playerPage, "Leave queue");
@@ -367,7 +367,7 @@ describe("E2E: Standing Daily Agent", () => {
     await playerPage.reload({ waitUntil: "domcontentloaded" });
     await playerPage.waitForSelector('button[aria-label="Select Daily Alpha"]', { timeout: 45_000 });
     await clickAgentCard(playerPage, "Daily Alpha");
-    await clickButton(playerPage, "Join Influence Queue");
+    await clickButton(playerPage, "Join queue");
     await waitForQueueAgent(player.userId, firstAgentId);
     await waitForText(playerPage, "Daily Alpha");
 

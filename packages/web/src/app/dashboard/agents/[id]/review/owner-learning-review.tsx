@@ -213,7 +213,7 @@ export function OwnerLearningReviewView({
                       href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}`}
                       className="olm-button olm-button-secondary"
                     >View {agent?.name ?? "agent"}</Link>
-                    <Link href="/games/free" className="olm-button olm-button-primary">Enter Influence Queue</Link>
+                    <Link href="/games/free" className="olm-button olm-button-primary">Go to Intake</Link>
                   </>
                 ) : (
                   <>

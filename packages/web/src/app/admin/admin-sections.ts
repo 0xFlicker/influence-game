@@ -1,6 +1,7 @@
 export const ADMIN_TABS = [
   { id: "seasons", label: "Seasons" },
   { id: "games", label: "Games" },
+  { id: "production", label: "Production" },
   { id: "providers", label: "Providers" },
   { id: "reviews", label: "Reviews" },
   { id: "free-queue", label: "Free Queue" },

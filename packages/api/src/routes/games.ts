@@ -1,3 +1,5 @@
+import { createEpisodeRoutes, visibleEpisodeGames } from "./episodes.js";
+import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Game REST API routes.
  *
@@ -24,6 +26,7 @@ import { schema } from "../db/index.js";
 import type { GameCompletionSettlementState, GameStatus } from "../db/schema.js";
 import {
   requireAuth,
+  optionalAuth,
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
@@ -308,7 +311,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // GET /api/games — list games (with optional status filter)
   // -------------------------------------------------------------------------
 
-  app.get("/api/games", async (c) => {
+  app.get("/api/games", optionalAuth(db), async (c) => {
     const statusParam = c.req.query("status");
 
     let rows;
@@ -322,6 +325,9 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
     }
 
+    rows = await visibleEpisodeGames(db, rows, c.get("user")?.id, c.get("userPermissions"));
+    const episodes = await readEpisodePresentations(db, rows);
+    c.header("Cache-Control", "private, no-store");
     const gameIds = rows.map((game) => game.id);
     const [kernelHealthByGameId, watchSummaryReadsByGameId, seasonById, settlementStateByGameId] = await Promise.all([
       getRedactedKernelHealthByGameId(db, gameIds),
@@ -344,6 +350,7 @@ export function createGameRoutes(db: DrizzleDB) {
         return [{
           id: game.id,
           slug: game.slug,
+          episode: episodes.get(game.id),
           status: game.status,
           playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
           currentRound: watchState.currentRound,
@@ -388,7 +395,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // GET /api/games/:id — get game details
   // -------------------------------------------------------------------------
 
-  app.get("/api/games/:id", async (c) => {
+  app.get("/api/games/:id", optionalAuth(db), async (c) => {
     const idOrSlug = c.req.param("id");
 
     // Support lookup by UUID or human-readable slug
@@ -397,10 +404,11 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.games)
       .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))[0];
 
-    if (!game) {
+    if (!game || !(await visibleEpisodeGames(db, [game], c.get("user")?.id, c.get("userPermissions"))).length) {
       return c.json({ error: "Game not found" }, 404);
     }
 
+    c.header("Cache-Control", "private, no-store");
     const config = JSON.parse(game.config);
     const formatManifest = resolveFormatManifest(
       config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
@@ -417,7 +425,9 @@ export function createGameRoutes(db: DrizzleDB) {
       ? await getPublicGameCompetitionReceipts(db, game.seasonId, game.id)
       : null;
 
+    const episode = (await readEpisodePresentations(db, [game])).get(game.id);
     const detail = {
+      episode,
       id: game.id,
       slug: game.slug,
       status: game.status,
@@ -1164,6 +1174,7 @@ export function createGameRoutes(db: DrizzleDB) {
   });
 
   app.route("/", createVisualRoutes(db));
+  app.route("/", createEpisodeRoutes(db));
   return app;
 }
 

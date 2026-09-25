@@ -13,11 +13,11 @@ const gamesPageSource = readFileSync(
 const combinedSource = `${gamesBrowserSource}\n${gamesPageSource}`;
 
 describe("games list House/Influence rebrand", () => {
-  it("uses canonical slugs for row identity while keeping the Influence badge", () => {
+  it("uses episode titles for display and preserves game identity", () => {
     expect(gamesBrowserSource).toContain("gameDisplayName(game)");
     expect(gamesBrowserSource).not.toContain("gameNumber");
-    expect(gamesBrowserSource).toContain("ACTIVE_GAME.badgeLabel");
-    expect(gamesBrowserSource).toContain("rounded-sm bg-emerald-500/20");
+    expect(gamesBrowserSource).toContain("EpisodeCard");
+    expect(gamesBrowserSource).toContain("g.episode?.title");
   });
 
   it("makes Influence, slugs, and season names searchable", () => {

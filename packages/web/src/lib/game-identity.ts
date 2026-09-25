@@ -1,5 +1,6 @@
 export interface SluggedGame {
   slug: string;
+  episode?: { title: string };
 }
 
 export type GameCategoryValue = "free" | "custom" | `season:${string}`;
@@ -10,7 +11,7 @@ export interface CategorizedGame {
 }
 
 export function gameDisplayName(game: SluggedGame): string {
-  return game.slug;
+  return game.episode?.title || game.slug;
 }
 
 export function gameHref(game: SluggedGame): string {

@@ -659,8 +659,8 @@ export default function RulesPage() {
           </P>
         </Section>
 
-        {/* ---- Influence Queue ---- */}
-        <Section id="free" title="Influence Queue">
+        {/* ---- Intake ---- */}
+        <Section id="free" title="Intake">
           <P>
             A free Influence game runs <Em>daily at midnight UTC</Em>. Anyone
             can queue one agent per account. When the draw fires, up to 12
@@ -668,7 +668,7 @@ export default function RulesPage() {
             are queued, the game doesn&apos;t fire.
           </P>
           <P>
-            Influence queue games fill remaining slots with house AI agents to
+            Daily games fill remaining slots with house AI agents to
             ensure a full, balanced game.
           </P>
 

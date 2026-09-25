@@ -35,7 +35,7 @@ export function AgentCreateContent({
   gameId?: string;
 }) {
   const router = useRouter();
-  const [mode, setMode] = useState<"assistant" | "advanced" | null>(null);
+  const [mode, setMode] = useState<"assistant" | "advanced">("assistant");
   const createdAgentId = useRef<string | null>(null);
   const createBaseline = useRef<AgentProfileWriteParams | null>(null);
 
@@ -151,17 +151,14 @@ export function AgentCreateContent({
           {context.description}<AgentCreateRulesLink />
         </p>
       </header>
-      {mode === null ? <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
-        <button type="button" onClick={() => setMode("assistant")} className="influence-panel rounded-2xl border border-violet-400/40 p-6 text-left hover:bg-violet-400/10"><span className="block text-xl font-semibold">Create with an AI assistant</span><span className="mt-3 block text-sm leading-6 text-white/60">Tell us who you want to play. Build their character, then bring their look to life.</span></button>
-        <button type="button" onClick={() => setMode("advanced")} className="influence-panel rounded-2xl p-6 text-left hover:bg-white/5"><span className="block text-xl font-semibold">Advanced create</span><span className="mt-3 block text-sm leading-6 text-white/60">Open the full editor and write your Agent’s profile yourself.</span></button>
-      </div> : <AgentForm
+      <AgentForm
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
         draftScope={`create:${flow}:${gameId ?? "none"}`}
         onSubmit={handleCreate}
         onCancel={() => router.replace(context.cancelPath)}
         submitLabel={context.submitLabel}
-      />}
+      />
     </div>
   );
 }

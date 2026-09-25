@@ -75,7 +75,6 @@ function renderDashboardSurface(input: {
 
   return renderToString(
     <>
-      <McpSetupCard hasHistory={input.history.length > 0} />
       <MissionControlOverview
         control={control}
         user={{ email: "owner@example.test", walletAddress: null }}
@@ -97,6 +96,7 @@ function renderDashboardSurface(input: {
           <DashboardAgentBench agents={control.agentPreview} loading={false} error={null} />
         </div>
       </div>
+      <McpSetupCard hasHistory={input.history.length > 0} />
     </>,
   );
 }
@@ -106,6 +106,19 @@ function withoutReactTextMarkers(html: string): string {
 }
 
 describe("dashboard mission-control overview", () => {
+  it("gates game creation and removes the redundant queued action", () => {
+    const control = buildDashboardMissionControl({ agents: [agent()], games: [], history: [], queueStatus: {
+      queuedCount: 1, nextGameAt: "2026-09-25T00:00:00Z", todayGame: null,
+      userEntry: { agentProfileId: "agent-1", agentName: "Atlas", joinedAt: "2026-09-24" },
+    } });
+    for (const canCreateGame of [false, true]) {
+      const html = renderToString(<MissionControlOverview control={control} user={null} loading={false} errors={[]} onJoinPrimary={() => {}} publicIdentity={null} canCreateGame={canCreateGame} />);
+      expect(html).not.toContain("View free queue");
+      expect(html).toContain('href="/dashboard/agents/create"');
+      expect(html.includes('href="/games/new"')).toBe(canCreateGame);
+    }
+  });
+
   it("renders the private Influence account email without a Privy user", () => {
     const control = buildDashboardMissionControl({
       agents: [],
@@ -167,7 +180,7 @@ describe("dashboard mission-control overview", () => {
     );
   });
 
-  it("keeps the Games MCP setup card above Mission Control", () => {
+  it("keeps the Games MCP setup card below Mission Control", () => {
     const html = renderDashboardSurface({
       agents: [agent()],
       games: [game()],
@@ -175,7 +188,7 @@ describe("dashboard mission-control overview", () => {
     });
 
     expect(html.indexOf('data-testid="dashboard-mcp-setup-card"')).toBeGreaterThan(-1);
-    expect(html.indexOf('data-testid="dashboard-mcp-setup-card"')).toBeLessThan(
+    expect(html.indexOf('data-testid="dashboard-mcp-setup-card"')).toBeGreaterThan(
       html.indexOf('data-testid="mission-control-overview"'),
     );
   });
