@@ -37,9 +37,9 @@ export function portraitHeadRectangle(head: CharacterHeadPosition, crop: Portrai
   return { x: (r.x - crop.x) / crop.width, y: (r.y - crop.y) / crop.height, width: r.width / crop.width, height: r.height / crop.height };
 }
 export function portraitCropFromHead(sourceUrl: string, size: { width: number; height: number }, head: { x: number; y: number; width: number; height: number }): PortraitCrop {
-  const side = Math.min(size.width, size.height, Math.max(head.width * size.width * 2.2, head.height * size.height * 1.8));
+  const side = Math.min(size.width, size.height, Math.max(head.width * size.width * 1.8, head.height * size.height * 1.5));
   return squarePortraitCrop(sourceUrl, size, (head.x + head.width / 2) * size.width - side / 2,
-    (head.y + head.height * 0.8) * size.height - side / 2, side);
+    (head.y + head.height * 0.65) * size.height - side / 2, side);
 }
 export function squarePortraitCrop(sourceUrl: string, size: { width: number; height: number }, left: number, top: number, pixels: number): PortraitCrop {
   const side = Math.max(1, Math.min(pixels, size.width, size.height));
