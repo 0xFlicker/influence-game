@@ -724,6 +724,7 @@ test.describe("format-aware game viewer", () => {
   for (const scenarioId of ["two_names_declined", "two_names_used_tie"] as const) {
     for (const mobile of [false, true]) {
       test(`Two Names ${scenarioId} keeps names, long pleas and tally legible ${mobile ? "mobile reduced motion" : "desktop"}`, async ({ page }, testInfo) => {
+        await page.clock.install();
         await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 });
         await page.emulateMedia({ reducedMotion: mobile ? "reduce" : "no-preference" });
         const slug = `display-${scenarioId}`;
@@ -790,10 +791,27 @@ test.describe("format-aware game viewer", () => {
         await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
         await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
+        await page.clock.pauseAt(new Date(Date.now() + 1000));
         await nextDialogueStep();
-        await assertSoloBallot(page, scenarioId === "two_names_used_tie" ? "Lyra" : "Rex", first);
-        await nextDialogueStep();
-        await assertSoloBallot(page, "Nova", scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
+        const firstBallot = page.getByRole("region", { name: `Ballot: ${scenarioId === "two_names_used_tie" ? "Lyra" : "Rex"}`, exact: true });
+        await expect(firstBallot).toBeVisible();
+        // Manual speech steps reveal, hide, then leave the portrait. Wait for
+        // each fade before another keypress instead of racing through ballots.
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(300);
+        await expect(firstBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(firstBallot.getByRole("blockquote")).toHaveText(first);
+        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(300);
+        await expect(firstBallot.getByRole("blockquote")).toHaveCount(0);
+        await page.keyboard.press("ArrowRight");
+        await page.clock.runFor(2100);
+        const secondBallot = page.getByRole("region", { name: "Ballot: Nova", exact: true });
+        await expect(secondBallot).toBeVisible();
+        await expect(secondBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(secondBallot.getByRole("blockquote")).toHaveText(scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
+        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
         await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();
