@@ -5,6 +5,7 @@ import { resolveOpenAIBudgetGenerationLlm } from "../lib/openai-budget-generatio
 import { getPublicPostgameMedia } from "./postgame-media.js";
 import { readViewerMedia } from "./visual-media-viewer.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
+import { isImportedSyntheticPlayer } from "./public-player-identity.js";
 
 export interface EpisodeCopy { title: string; description: string }
 export interface EpisodeCast { id: string; name: string; avatarUrl: string | null; personaKey: string | null }
@@ -39,13 +40,16 @@ export async function generateEpisodeCopy(cast: Array<{ name: string; personalit
   return decodeEpisodeCopy(choice.message.content);
 }
 
-/** Batch summary read: frozen cast only, never current results or current profile edits. */
+/** Frozen cast identity and portraits; missing portraits use public profile artwork. */
 export async function readEpisodePresentations(db: DrizzleDB, games: Array<{ id: string; slug: string; seasonId: string | null }>): Promise<Map<string, EpisodePresentation>> {
   if (!games.length) return new Map();
   const ids = games.map(g => g.id);
   const [rows, players, seasons, covers, publications] = await Promise.all([
     db.select().from(table).where(inArray(table.gameId, ids)),
-    db.select({ id: schema.gamePlayers.id, gameId: schema.gamePlayers.gameId, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(inArray(schema.gamePlayers.gameId, ids)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
+    db.select({ id: schema.gamePlayers.id, gameId: schema.gamePlayers.gameId, persona: schema.gamePlayers.persona, profileAvatarUrl: schema.agentProfiles.avatarUrl, ownerWalletAddress: schema.users.walletAddress }).from(schema.gamePlayers)
+      .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
+      .leftJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+      .where(inArray(schema.gamePlayers.gameId, ids)).orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id)),
     db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games).where(inArray(schema.games.seasonId, [...new Set(games.flatMap(g => g.seasonId ? [g.seasonId] : [])), "__none__"])).orderBy(asc(schema.games.createdAt), asc(schema.games.id)),
     db.selectDistinctOn([schema.visualScenes.gameId], { id: schema.visualScenes.id, gameId: schema.visualScenes.gameId, artifact: schema.visualScenes.imageArtifactId, plan: schema.visualScenes.plan }).from(schema.visualScenes).where(and(inArray(schema.visualScenes.gameId, ids), eq(schema.visualScenes.roomId, "lobby"), eq(schema.visualScenes.status, "ready"))).orderBy(asc(schema.visualScenes.gameId), asc(schema.visualScenes.boundarySequence)),
     db.selectDistinctOn([schema.visualMediaPublications.sceneId], {
@@ -67,7 +71,8 @@ export async function readEpisodePresentations(db: DrizzleDB, games: Array<{ id:
   for (const p of players) {
     const persona = JSON.parse(p.persona) as { name?: string; avatarUrl?: string; personaKey?: string };
     const cast = castByGame.get(p.gameId) ?? [];
-    cast.push({ id: p.id, name: persona.name ?? "Agent", avatarUrl: persona.avatarUrl ?? null, personaKey: persona.personaKey ?? null }); castByGame.set(p.gameId, cast);
+    const profileAvatar = isImportedSyntheticPlayer(p.ownerWalletAddress) ? null : p.profileAvatarUrl;
+    cast.push({ id: p.id, name: persona.name ?? "Agent", avatarUrl: persona.avatarUrl ?? profileAvatar ?? null, personaKey: persona.personaKey ?? null }); castByGame.set(p.gameId, cast);
   }
   const coverByGame = new Map(selectedCovers.filter(c => c.artifact && c.plan.cast.length === (castByGame.get(c.gameId)?.length ?? 0) && c.plan.cast.every(p => castByGame.get(c.gameId)?.some(a => a.id === p.id))).map(c => [c.gameId, `/api/games/${c.gameId}/visual/artifacts/${c.artifact}`]));
   return new Map(games.map(game => { const row = byGame.get(game.id); return [game.id, {

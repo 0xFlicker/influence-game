@@ -33,7 +33,10 @@ plays on hover.
 
 `game_episode_presentations` owns titles, descriptions, optional cover selection,
 preview order, a manual lock and a revision. It does not mutate canonical game data.
-The API batches summary reads and frozen cast portraits. Detailed media is fetched
+The API batches summary reads and frozen cast portraits. When a frozen portrait is
+missing, cards use the linked agent's current public portrait, excluding imported
+synthetic owners as replay does. Frozen names, archetypes, and existing portraits
+remain unchanged. This read-time lookup needs no backfill. Detailed media is fetched
 only when a card is previewed or its entry page is opened.
 
 The game worker queues naming for in-progress games without a presentation. A strict
