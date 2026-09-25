@@ -3,11 +3,13 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "agents:write",
   "games:read",
   "producer",
+  "moderation:read",
+  "moderation:write",
 ] as const;
 
 export type McpOAuthScope = typeof MCP_OAUTH_SCOPE_VALUES[number];
-export type McpOAuthScopeGroup = "agents" | "games" | "developer";
-export type McpOAuthRequiredRole = "producer";
+export type McpOAuthScopeGroup = "agents" | "games" | "developer" | "moderation";
+export type McpOAuthRequiredRole = "producer" | "moderator";
 
 export interface McpOAuthScopeDefinition {
   scope: McpOAuthScope;
@@ -43,6 +45,12 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
     group: "games",
     defaultSelected: true,
     requiredScopes: [],
+  },
+  "moderation:read": {
+    scope: "moderation:read", label: "Read moderation inbox", description: "Inspect moderation revisions and retained evidence using your current moderator permissions. Admin recovery remains admin-only.", group: "moderation", requiredRole: "moderator", defaultSelected: false, requiredScopes: [],
+  },
+  "moderation:write": {
+    scope: "moderation:write", label: "Act on moderation reviews", description: "Claim, flag, pass, and decide whole revisions. Requires current moderator permissions; never grants profile editing.", group: "moderation", requiredRole: "moderator", defaultSelected: false, requiredScopes: ["moderation:read"],
   },
   producer: {
     scope: "producer",

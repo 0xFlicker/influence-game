@@ -1,3 +1,4 @@
+import { hasModerationAccess } from "./moderation-intake.js";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -105,7 +106,7 @@ export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer";
+  group: "agents" | "games" | "developer" | "moderation";
   requiredScopes: McpOAuthScope[];
 }
 
@@ -366,7 +367,7 @@ export async function authorizeMcpOAuth(
   }
 
   const hasProducerRole = await hasCurrentProducerRole(db, user);
-  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole);
+  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole, await hasModerationAccess(db, user.id));
   const defaultSelectedScope = normalizeMcpOAuthScopeSet(preview.defaultSelectedScopes);
 
   if (decision === "inspect") {
@@ -1372,12 +1373,14 @@ function parseDecision(value: unknown): OAuthDecision {
 function scopeGrantPreview(
   requestedScopes: ReadonlySet<McpOAuthScope>,
   hasProducerRole: boolean,
+  hasModeratorRole: boolean,
 ): ScopeGrantPreview {
   const requested = mcpOAuthScopesToArray(requestedScopes);
   const grantableScopes: McpOAuthScope[] = [];
   const blockedScopes: Array<{ scope: McpOAuthScope; reason: string }> = [];
   for (const scope of requested) {
     const definition = MCP_OAUTH_SCOPE_DEFINITIONS[scope];
+    if (definition.requiredRole === "moderator" && !hasModeratorRole) { blockedScopes.push({ scope, reason: "moderator access required" }); continue; }
     if (definition.requiredRole === "producer" && !hasProducerRole) {
       blockedScopes.push({ scope, reason: "producer role required" });
       continue;

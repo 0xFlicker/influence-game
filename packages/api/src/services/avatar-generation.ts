@@ -1,11 +1,11 @@
+import { reserveInference, dispatchInference, settleInference } from "./inference-allowances.js";
+import { GenerationAdmissionError } from "./generation-admission-error.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { userHasRole } from "../db/rbac.js";
 import type {
   AvatarChangeSource,
-  AvatarGenerationStatus,
   AvatarGenerationTriggerSource,
 } from "../db/schema.js";
 import { AGENT_GENDER_LABELS, isAgentGender, type AgentGender } from "../lib/agent-gender.js";
@@ -17,8 +17,6 @@ const KATANA_BASE_URL = "https://kat.imgnai.com";
 const KATANA_MODEL = "gen";
 const KATANA_PROVIDER = "katana";
 const ESTIMATED_GEN_COST_MICROUSD = 15_600;
-const DEFAULT_FREE_QUOTA = 25;
-const DEFAULT_DAILY_LIMIT = 5;
 const DEFAULT_MAX_POLLS = 120;
 const DEFAULT_POLL_DELAY_MS = 1_000;
 const ACTIVE_GENERATION_STALE_MS = 10 * 60 * 1000;
@@ -79,6 +77,7 @@ export interface AvatarCompletionInput {
 }
 
 export interface DraftAvatarCompletionInput {
+  requestId?: string;
   userId: string;
   profile: AvatarPromptProfile;
   publicBaseUrl?: string;
@@ -161,28 +160,18 @@ export async function requestAvatarCompletion(
     return generationRead(row);
   }
 
-  const quota = await checkAvatarGenerationQuota(db, input.userId, input.userRoles, options);
-  if (!quota.ok) {
-    const row = await insertTerminalGeneration(db, input, "skipped", quota.code, quota.message, options);
-    await recordAvatarChange(db, {
-      userId: input.userId,
-      agentProfileId: input.agentProfileId,
-      source: "generation_skipped",
-      status: "skipped",
-      generationRequestId: row.id,
-      previousAvatarUrl: null,
-      newAvatarUrl: null,
-      safeMetadata: { reason: quota.code },
-    }, options);
-    return generationRead(row);
-  }
-
   const now = isoNow(options);
   const prompt = buildAvatarPrompt(profile);
-  const [row] = await db
+  const row = await db.transaction(async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
+    const existing = await findActiveOrCompletedGeneration(tx,input.userId,input.agentProfileId);
+    if(existing) return existing;
+    const id = randomUUID();
+    await reserveInference(tx,{id:`avatar:${id}`,userId:input.userId,category:'image',inputHash:hashPrompt(prompt)});
+  const [row] = await tx
     .insert(schema.avatarGenerationRequests)
     .values({
-      id: randomUUID(),
+      id,
       userId: input.userId,
       agentProfileId: input.agentProfileId,
       purpose: AVATAR_GENERATION_PURPOSE,
@@ -201,6 +190,8 @@ export async function requestAvatarCompletion(
     })
     .onConflictDoNothing()
     .returning();
+    return row;
+  });
   const request = row
     ?? await findActiveOrCompletedGeneration(db, input.userId, input.agentProfileId);
   if (!request) {
@@ -257,23 +248,17 @@ export async function requestDraftAvatarCompletion(
 
   const row = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
-    const quota = await checkAvatarGenerationQuota(tx, input.userId, input.userRoles, options);
-    if (!quota.ok) {
-      return insertTerminalGeneration(
-        tx,
-        requestInput,
-        "skipped",
-        quota.code,
-        quota.message,
-        options,
-        draftRequestMetadata(input.profile),
-      );
-    }
-
     const now = isoNow(options);
     const prompt = buildAvatarPrompt(input.profile);
+    const id = input.requestId ?? randomUUID();
+    const [existing] = await tx.select().from(schema.avatarGenerationRequests).where(eq(schema.avatarGenerationRequests.id,id));
+    if(existing) {
+      if(existing.userId!==input.userId || existing.promptHash!==hashPrompt(prompt)) throw new GenerationAdmissionError('request_conflict','Generation request input changed.');
+      return existing;
+    }
+    await reserveInference(tx,{id:`avatar:${id}`,userId:input.userId,category:'image',inputHash:hashPrompt(prompt)});
     const [request] = await tx.insert(schema.avatarGenerationRequests).values({
-      id: randomUUID(),
+      id,
       userId: input.userId,
       agentProfileId: null,
       purpose: AVATAR_GENERATION_PURPOSE,
@@ -429,6 +414,7 @@ export async function completeAvatarGenerationRequest(
       }, options);
       return row;
     });
+    await db.transaction(tx=>settleInference(tx,`avatar:${request.id}`,request.userId,'failed'));
     return {
       ...generationRead(skipped),
       avatarUrl: profile.avatarUrl,
@@ -462,6 +448,7 @@ export async function completeAvatarGenerationRequest(
       }
       return row;
     });
+    await db.transaction(tx=>settleInference(tx,`avatar:${request.id}`,request.userId,'failed'));
     return generationRead(failed);
   }
 
@@ -481,6 +468,12 @@ export async function completeAvatarGenerationRequest(
     if (!providerRequestId) {
       stage = "provider_submit";
       const prompt = buildAvatarPrompt(profile);
+      await db.transaction(async tx => {
+        await reserveInference(tx,{id:`avatar:${request.id}`,userId:request.userId,category:'image',inputHash:request.promptHash ?? hashPrompt(prompt)});
+        const [reservation]=await tx.select().from(schema.inferenceReservations).where(eq(schema.inferenceReservations.id,`avatar:${request.id}`));
+        if(reservation?.state==='dispatched') throw new GenerationAdmissionError('generation_recovery_required','The provider submission needs reconciliation before retrying.');
+        await dispatchInference(tx,`avatar:${request.id}`,request.userId);
+      });
       const submitted = await submitKatanaGeneration(fetchImpl, katana, prompt);
       if (!submitted.requestId) {
         throw new AvatarGenerationFailure("provider_rejected", "Katana did not return a request_id.");
@@ -552,12 +545,17 @@ export async function completeAvatarGenerationRequest(
       return { request: finished, avatarUrl: stored.publicUrl };
     });
 
+    await db.transaction(tx=>settleInference(tx,`avatar:${request.id}`,request.userId,'succeeded'));
     return {
       ...generationRead(result.request),
       avatarUrl: result.avatarUrl,
     };
   } catch (error) {
-    const failure = normalizeGenerationFailure(error, stage);
+    await db.transaction(tx=>settleInference(tx,`avatar:${request.id}`,request.userId,
+      (error instanceof GenerationAdmissionError && error.code !== 'generation_recovery_required') || !['provider_submit','provider_poll'].includes(stage) || (error instanceof AvatarGenerationFailure && ['provider_failed','provider_rejected','provider_http_error'].includes(error.code)) ? 'failed' : 'uncertain'));
+    const failure = error instanceof GenerationAdmissionError
+      ? {code:error.code,message:error.message,retryable:false,stage}
+      : normalizeGenerationFailure(error, stage);
     logAvatarGenerationFailure({
       error,
       failure,
@@ -603,6 +601,7 @@ export async function completeAvatarGenerationRequest(
       }
       return row;
     });
+    if(error instanceof GenerationAdmissionError) throw error;
     return generationRead(failed);
   }
 }
@@ -709,7 +708,7 @@ function formatAgentGender(gender: NonNullable<AgentProfileRow["gender"]>): stri
 }
 
 async function findActiveOrCompletedGeneration(
-  db: DrizzleDB,
+  db: AvatarGenerationReadDB,
   userId: string,
   agentProfileId: string,
 ): Promise<AvatarGenerationRequestRow | undefined> {
@@ -724,58 +723,6 @@ async function findActiveOrCompletedGeneration(
     ))
     .orderBy(desc(schema.avatarGenerationRequests.createdAt))
     .limit(1))[0];
-}
-
-export async function checkAvatarGenerationQuota(
-  db: DatabaseExecutor,
-  userId: string,
-  userRoles: readonly string[] | undefined,
-  options: Pick<AvatarGenerationOptions, "now">,
-): Promise<{ ok: true } | { ok: false; code: string; message: string }> {
-  if (userRoles?.includes("sysop") || await userHasRole(db, userId, "sysop")) {
-    return { ok: true };
-  }
-
-  const lifetimeQuota = readPositiveIntEnv("INFLUENCE_AVATAR_GENERATION_FREE_QUOTA", DEFAULT_FREE_QUOTA);
-  const dailyLimit = readPositiveIntEnv("INFLUENCE_AVATAR_GENERATION_DAILY_LIMIT", DEFAULT_DAILY_LIMIT);
-  const countedStatuses: AvatarGenerationStatus[] = ["queued", "processing", "completed", "failed"];
-  const since = new Date((options.now?.() ?? new Date()).getTime() - 24 * 60 * 60 * 1000).toISOString();
-
-  const [counts] = await db
-    .select({
-      lifetime: sql<number>`count(*)::int`,
-      daily: sql<number>`count(*) filter (where ${schema.avatarGenerationRequests.createdAt} >= ${since})::int`,
-    })
-    .from(schema.avatarGenerationRequests)
-    .where(and(
-      eq(schema.avatarGenerationRequests.userId, userId),
-      eq(schema.avatarGenerationRequests.purpose, AVATAR_GENERATION_PURPOSE),
-      inArray(schema.avatarGenerationRequests.status, countedStatuses),
-    ));
-  const [references] = await db.select({
-    lifetime: sql<number>`count(*)::int`,
-    daily: sql<number>`count(*) filter (where ${schema.visualRenderOperations.createdAt}::timestamptz >= ${since}::timestamptz)::int`,
-  }).from(schema.visualRenderOperations).where(and(
-    eq(schema.visualRenderOperations.userId, userId),
-    sql`${schema.visualRenderOperations.operationKey} LIKE 'full-body:%'`,
-  ));
-  if ((counts?.lifetime ?? 0) + (references?.lifetime ?? 0) >= lifetimeQuota) {
-    return {
-      ok: false,
-      code: "quota_exhausted",
-      message: "Avatar generation quota exhausted.",
-    };
-  }
-
-  if ((counts?.daily ?? 0) + (references?.daily ?? 0) >= dailyLimit) {
-    return {
-      ok: false,
-      code: "rate_limited",
-      message: "Avatar generation daily limit reached.",
-    };
-  }
-
-  return { ok: true };
 }
 
 async function claimGenerationProviderWork(
@@ -954,7 +901,7 @@ async function requireOwnedAgentProfile(
       eq(schema.agentProfiles.userId, userId),
     ))
     .limit(1))[0];
-  if (!row) throw new Error("Agent profile not found.");
+  if (!row || row.archivedAt) throw new Error("Agent profile not found or archived.");
   return row;
 }
 
@@ -1204,11 +1151,6 @@ function getKatanaConfig(): { key: string; secret: string } | null {
   const key = process.env.API_KAT_IMGNAI_KEY?.trim();
   const secret = process.env.API_KAT_IMGNAI_SECRET?.trim();
   return key && secret ? { key, secret } : null;
-}
-
-function readPositiveIntEnv(key: string, fallback: number): number {
-  const parsed = Number.parseInt(process.env[key] ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function isoNow(options: Pick<AvatarGenerationOptions, "now">): string {

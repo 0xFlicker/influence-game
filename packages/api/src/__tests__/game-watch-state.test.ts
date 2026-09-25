@@ -669,6 +669,21 @@ describe("GameWatchState", () => {
     expect(house?.currentAgent).toBeNull();
   });
 
+  test("retains the saved game portrait when current profile publication is withheld", async () => {
+    const gameId = await insertGame(db, { slug: "watch-withheld-profile", status: "waiting", config: gameConfig() });
+    await insertFixturePlayers(db, gameId, ["atlas", "echo"]);
+    const [seat] = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.id, "atlas"));
+    const avatarUrl = "https://example.test/historical-portrait.png";
+    const persona = JSON.stringify({ ...JSON.parse(seat!.persona), avatarUrl });
+    await db.update(schema.gamePlayers).set({ persona }).where(eq(schema.gamePlayers.id, "atlas"));
+    await db.update(schema.agentProfiles).set({ moderationRequired: true, contentRevisionId: null })
+      .where(eq(schema.agentProfiles.id, seat!.agentProfileId!));
+    const state = await getGameWatchState(db, gameId);
+    expect(state?.players.find(p => p.id === "atlas")).toMatchObject({ avatarUrl, currentAgent: null });
+    const [unchanged] = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.id, "atlas"));
+    expect(unchanged!.persona).toBe(persona);
+  });
+
   test("does not attach current agent facts for imported synthetic owners", async () => {
     const gameId = await insertGame(db, {
       slug: "watch-imported-agent",

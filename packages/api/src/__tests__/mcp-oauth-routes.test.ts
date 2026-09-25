@@ -27,6 +27,7 @@ const NON_MCP_ADDRESS = "0xnomcp000000000000000000000000000000001";
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
 const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
+const MCP_OAUTH_SUPPORTED_SCOPE = `${MCP_OAUTH_ALL_SCOPE} moderation:read moderation:write`;
 const MCP_OAUTH_SCOPE = "producer";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
@@ -70,7 +71,7 @@ describe("MCP OAuth routes", () => {
     expect(await jsonObject(protectedResource)).toMatchObject({
       resource: RESOURCE_URI,
       authorization_servers: ["http://127.0.0.1:3000"],
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
       bearer_methods_supported: ["header"],
       resource_name: "Influence MCP",
     });
@@ -79,7 +80,7 @@ describe("MCP OAuth routes", () => {
     expect(protectedResourceForPath.status).toBe(200);
     expect(await jsonObject(protectedResourceForPath)).toMatchObject({
       resource: RESOURCE_URI,
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
     });
 
     const producerProtectedResource = await app.request(
@@ -95,7 +96,7 @@ describe("MCP OAuth routes", () => {
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
       revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
       registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
@@ -676,7 +677,7 @@ describe("MCP OAuth routes", () => {
     const registrationJson = await jsonObject(registration);
     expect(registrationJson).toMatchObject({
       redirect_uris: [CHATGPT_REDIRECT_URIS[1]],
-      scope: MCP_OAUTH_ALL_SCOPE,
+      scope: MCP_OAUTH_SUPPORTED_SCOPE,
     });
     const dynamicClientId = String(registrationJson.client_id);
     const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
@@ -705,7 +706,7 @@ describe("MCP OAuth routes", () => {
     expect(auditEvents).toContainEqual(expect.objectContaining({
       event: "mcp.oauth.register",
       clientId: dynamicClientId,
-      scope: MCP_OAUTH_ALL_SCOPE,
+      scope: MCP_OAUTH_SUPPORTED_SCOPE,
       result: "success",
     }));
   });
@@ -725,7 +726,7 @@ describe("MCP OAuth routes", () => {
 
     expect(registration.status).toBe(201);
     const registrationJson = await jsonObject(registration);
-    expect(registrationJson.scope).toBe(MCP_OAUTH_ALL_SCOPE);
+    expect(registrationJson.scope).toBe(MCP_OAUTH_SUPPORTED_SCOPE);
     const dynamicClientId = String(registrationJson.client_id);
     const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
 
@@ -871,14 +872,14 @@ describe("MCP OAuth routes", () => {
     const registrationJson = await jsonObject(registration);
     expect(registrationJson).toMatchObject({
       redirect_uris: [DYNAMIC_REDIRECT_URI],
-      scope: MCP_OAUTH_ALL_SCOPE,
+      scope: MCP_OAUTH_SUPPORTED_SCOPE,
     });
     const dynamicClientId = String(registrationJson.client_id);
     const registeredClients = await db
       .select({ scope: schema.mcpOauthClients.scope })
       .from(schema.mcpOauthClients)
       .where(eq(schema.mcpOauthClients.clientId, dynamicClientId));
-    expect(registeredClients).toEqual([{ scope: MCP_OAUTH_ALL_SCOPE }]);
+    expect(registeredClients).toEqual([{ scope: MCP_OAUTH_SUPPORTED_SCOPE }]);
     const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
 
     const preview = await app.request("/api/oauth/mcp/authorize", {

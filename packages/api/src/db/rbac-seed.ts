@@ -15,6 +15,9 @@ import { schema } from "./index.js";
 // ---------------------------------------------------------------------------
 
 const PERMISSIONS = [
+  { name: "review_agent_content", description: "Claim and review character content revisions" },
+  { name: "review_moderation_escalations", description: "Review content escalated to admins" },
+  { name: "undo_moderation", description: "Undo character moderation decisions with an audit trail" },
   { name: "manage_roles", description: "Assign and revoke roles to addresses" },
   { name: "create_game", description: "Create new games" },
   { name: "start_game", description: "Start waiting games" },
@@ -44,6 +47,9 @@ const ROLES = [
     description: "Game operations and admin panel access",
     isSystem: 1,
     permissions: [
+      "review_agent_content",
+      "review_moderation_escalations",
+      "undo_moderation",
       "create_game",
       "start_game",
       "stop_game",
@@ -57,6 +63,12 @@ const ROLES = [
       "manage_seasons",
       "retry_game_settlement",
     ],
+  },
+  {
+    name: "moderator",
+    description: "Review character submissions without general admin access",
+    isSystem: 1,
+    permissions: ["review_agent_content"],
   },
   {
     name: "gamer",

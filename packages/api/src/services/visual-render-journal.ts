@@ -1,4 +1,4 @@
-import { checkAvatarGenerationQuota } from "./avatar-generation.js";
+import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch } from "./inference-allowances.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
@@ -59,6 +59,10 @@ export function visualImageJournal(db: DrizzleDB, operation: Operation, beforeDi
       await beforeDispatch?.();
       await db.transaction(async (tx) => {
         await beforeDispatch?.(tx);
+        if (operation.userId) {
+          if(operation.operationKey.startsWith('full-body:')) await dispatchInference(tx,`visual:${operation.id}`,operation.userId);
+          else await checkInferenceDispatch(tx,operation.userId);
+        }
         if (operation.repairJobId && input.provider === "xai") {
           const [job] = await tx.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, operation.repairJobId)).for("update");
           if (!job || job.fallbackUsed) throw new VisualRenderRecoveryRequired(operation.id, "Repair fallback budget consumed");
@@ -212,18 +216,28 @@ export async function renderOwnedVisualReference(db: DrizzleDB, input: {
   const operation = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.userId}))`);
     const [existing] = await tx.select().from(operations).where(and(eq(operations.userId, input.userId), eq(operations.operationKey, `full-body:${input.requestId}`)));
-    if (!existing) {
-      const quota = await checkAvatarGenerationQuota(tx, input.userId, undefined, {});
-      if (!quota.ok) throw new Error(quota.message);
-    }
-    return reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId);
+    const operation = existing ?? await reserveVisualOperation(tx, null, `full-body:${input.requestId}`, inputHash, input.userId);
+    if(operation.inputHash !== inputHash) throw new Error('Visual operation input changed');
+    await reserveInference(tx,{id:`visual:${operation.id}`,userId:input.userId,category:'image',inputHash});
+    return operation;
   });
   const prior = await db.select().from(attempts).where(and(eq(attempts.operationId, operation.id), eq(attempts.generation, operation.generation)));
   const completed = prior.find((entry) => entry.image !== null && entry.receipt !== null);
-  if (completed?.image) return { operationId: operation.id, image: completed.image };
+  if (completed?.image) {
+    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,'succeeded'));
+    return { operationId: operation.id, image: completed.image };
+  }
   if (prior.length) throw new VisualRenderRecoveryRequired(operation.id, "Reference generation needs operator reconciliation before another paid request");
-  const result = await generateVisualImage(input.request, visualImageJournal(db, operation));
-  return { operationId: operation.id, image: result.image };
+  try {
+    const result = await generateVisualImage(input.request, visualImageJournal(db, operation));
+    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,'succeeded'));
+    return { operationId: operation.id, image: result.image };
+  } catch(error) {
+    const entries=await db.select().from(attempts).where(eq(attempts.operationId,operation.id));
+    const uncertain=entries.some(a=>!a.receipt || a.receipt.chargeUncertain);
+    await db.transaction(tx=>settleInference(tx,`visual:${operation.id}`,input.userId,uncertain?'uncertain':'failed'));
+    throw error;
+  }
 }
 
 /** Best-effort shared asset generation, with a durable two-dispatch ceiling. */

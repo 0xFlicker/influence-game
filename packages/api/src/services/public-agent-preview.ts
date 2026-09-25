@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { eligibleAgentContent } from "./agent-content-eligibility.js";
 import {
   getUserSelectableAgentArchetype,
   type AgentArchetypeKey,
@@ -83,7 +84,7 @@ export async function getPublicAgentPreviewsByProfileIds(
     ownerWalletAddress: schema.users.walletAddress,
   }).from(schema.agentProfiles)
     .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-    .where(inArray(schema.agentProfiles.id, uniqueProfileIds));
+    .where(and(inArray(schema.agentProfiles.id, uniqueProfileIds), eligibleAgentContent()));
   const publicProfiles = rows.filter(
     (profile) => !isImportedSyntheticPlayer(profile.ownerWalletAddress),
   );
@@ -118,7 +119,7 @@ export async function getPublicReplayAgentPreviewsByProfileIds(
     ownerEmail: schema.users.email,
   }).from(schema.agentProfiles)
     .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
-    .where(inArray(schema.agentProfiles.id, uniqueProfileIds));
+    .where(and(inArray(schema.agentProfiles.id, uniqueProfileIds), eligibleAgentContent()));
   const publicProfiles = rows.filter(
     (profile) => !isImportedSyntheticPlayer(profile.ownerWalletAddress),
   );
@@ -146,7 +147,7 @@ export async function getPublicPlayerCompetitionFacts(
     avatarUrl: schema.agentProfiles.avatarUrl,
     personaKey: schema.agentProfiles.personaKey,
   }).from(schema.agentProfiles)
-    .where(eq(schema.agentProfiles.userId, internalUserId))
+    .where(and(eq(schema.agentProfiles.userId, internalUserId), eligibleAgentContent()))
     .orderBy(
       asc(sql`lower(btrim(${schema.agentProfiles.name}))`),
       asc(schema.agentProfiles.name),

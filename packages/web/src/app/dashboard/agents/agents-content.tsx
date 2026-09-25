@@ -112,10 +112,11 @@ export function AgentsContent() {
             onClick={() => setDeleteConfirm(null)}
           />
           <div className="influence-modal relative w-full max-w-sm rounded-2xl p-6">
-            <h3 className="text-text-primary font-semibold mb-2">Delete Agent</h3>
+            <h3 className="text-text-primary font-semibold mb-2">Archive Agent</h3>
             <p className="influence-copy text-sm mb-1">
-              Are you sure you want to delete <strong className="text-text-primary">{deleteConfirm.name}</strong>?
+              Are you sure you want to archive <strong className="text-text-primary">{deleteConfirm.name}</strong>?
             </p>
+            <p className="influence-copy-muted text-xs mt-2">An admin can restore this character. Saved revisions and game history are retained.</p>
             {deleteConfirm.gamesPlayed > 0 && (
               <p className="influence-copy-muted text-xs mb-4">
                 This agent has played {deleteConfirm.gamesPlayed} game{deleteConfirm.gamesPlayed !== 1 ? "s" : ""}. Game history will be preserved.

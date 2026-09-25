@@ -27,6 +27,7 @@ function normalized(value: string | null | undefined): string {
 export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentProps) {
   const router = useRouter();
   const [agent, setAgent] = useState<SavedAgent | null>(null);
+  const [heldSaved, setHeldSaved] = useState(false);
   const [review, setReview] = useState<OwnerLearningReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
       : Promise.resolve(null);
     Promise.all([getAgent(agentId), reviewRequest])
       .then(([nextAgent, nextReview]) => {
-        setAgent(nextAgent);
+        setAgent({ ...nextAgent, ...nextAgent.ownerContent?.submitted?.content });
         setReview(nextReview);
       })
       .catch((error) => {
@@ -63,11 +64,15 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
 
   async function handleUpdate(params: AgentProfileWriteParams) {
     if (!agent) throw new Error("The Agent is no longer loaded.");
-    await updateAgent(agentId, {
+    const saved = await updateAgent(agentId, {
       ...params,
       ...(agent.profileRevisionId ? { expectedRevisionId: agent.profileRevisionId } : {}),
       ...(sourceReviewId ? { sourceReviewId } : {}),
     });
+    if (saved.receipt?.publication === "held") {
+      setHeldSaved(true);
+      return;
+    }
     router.replace(sourceReviewId ? reviewPath(agentId, sourceReviewId) : "/dashboard/agents");
   }
 
@@ -115,7 +120,16 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
         </p>
       </header>
 
-      {loading ? (
+      {heldSaved ? (
+        <section className="influence-panel rounded-2xl p-6" role="status">
+          <h2 className="text-xl font-semibold">Submitted for review</h2>
+          <p className="mt-2 text-sm text-white/60">Your correction is saved. It will become available after moderation accepts it. Your published profile has not changed.</p>
+          <div className="mt-4 flex gap-4">
+            <button className="influence-link min-h-11" onClick={() => { setHeldSaved(false); fetchEditor(); }}>Continue editing</button>
+            <Link className="influence-link inline-flex min-h-11 items-center" href="/dashboard/agents">Return to agents</Link>
+          </div>
+        </section>
+      ) : loading ? (
         <div className="influence-panel animate-pulse rounded-2xl p-8 text-sm text-white/40">Loading Agent editor…</div>
       ) : fetchError ? (
         <section className="rounded-2xl border border-red-400/30 bg-red-400/10 p-6">
@@ -125,6 +139,8 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
             <Link href={cancelPath} className="influence-button-secondary inline-flex min-h-11 items-center rounded-lg px-4 text-sm">Return</Link>
           </div>
         </section>
+      ) : agent?.ownerContent?.availability === "archived" ? (
+        <section className="influence-panel rounded-2xl p-6" role="status"><h2 className="text-xl font-semibold">Archived character</h2><p className="mt-2 text-sm text-white/60">An admin can restore this character. Its saved content and game history are retained.</p><Link href="/dashboard/agents" className="influence-link mt-4 inline-block">Return to agents</Link></section>
       ) : agent && reviewInvalid ? (
         <section className="influence-panel rounded-2xl p-6 sm:p-8">
           <p className="influence-section-title">Review changed</p>
@@ -138,7 +154,12 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
           </div>
         </section>
       ) : agent && strategyComparison ? (
+        <div>
+        {agent.ownerContent?.submitted && (agent.ownerContent.submitted.held || agent.ownerContent.submitted.disposition === "rejected") && (
+          <p className="mb-4 rounded-lg border border-border-active p-4 text-sm text-white/60" role="status">You are editing your latest submitted revision. Changes remain held until a moderator accepts them.</p>
+        )}
         <AgentForm
+          key={agent.latestContentRevisionId}
           initial={agent}
           strategyComparison={strategyComparison}
           showLiveChanges={Boolean(sourceReviewId)}
@@ -147,6 +168,7 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
           onCancel={() => router.replace(cancelPath)}
           submitLabel={sourceReviewId ? "Save strategy update" : "Save changes"}
         />
+        </div>
       ) : (
         <div className="influence-panel rounded-2xl p-8 text-center text-sm text-white/45">Agent not found.</div>
       )}

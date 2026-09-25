@@ -4,7 +4,6 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
-import type { DrizzleDB } from "../db/index.js";
 import {
   generatePresignedUpload,
 } from "../lib/storage.js";
@@ -59,7 +58,7 @@ describe("public House Highlights media storage", () => {
     delete process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
     delete process.env.LINODE_PRIVATE_CONTENT_BUCKET;
     app = new Hono();
-    app.route("/", createUploadRoutes({} as DrizzleDB));
+    app.route("/", createUploadRoutes());
   });
 
   afterEach(async () => {

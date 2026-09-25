@@ -77,6 +77,9 @@ export function Nav() {
         </Link>
       )}
 
+      {authenticated && hasPermission("review_agent_content") && (
+        <Link href="/moderation" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Moderation</Link>
+      )}
       {authenticated && isAdmin && (
         <Link href="/admin" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Admin

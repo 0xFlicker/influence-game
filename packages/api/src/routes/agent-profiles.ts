@@ -1,7 +1,11 @@
+import { generationContacts } from "../services/generation-admission-error.js";
+import { randomUUID } from "node:crypto";
+import { runAccountText, GenerationAdmissionError } from "../services/account-text-usage.js";
+import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
-import { isCreationStage } from "@influence/engine/agent-creation-assistant";
-import { selectCreationCommand } from "../services/agent-creation-assistant.js";
+import { CHARACTER_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
+import { selectCharacterEdit, selectCreationCommand } from "../services/agent-creation-assistant.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -18,7 +22,7 @@ import { exportCharacterPortrait, generateVisualProfileReference } from "../serv
  */
 
 import { Hono, type Context } from "hono";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import { describeAgentCreationTraits, isAgentCreationTraitId, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import type { DrizzleDB } from "../db/index.js";
@@ -45,14 +49,12 @@ import {
 import {
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
-  recordAvatarChange,
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
   resumeOwnedAttachedAvatarCompletions,
 } from "../services/avatar-generation.js";
-import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
-import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
+import { archiveOwnedAgentProfile } from "../services/agent-profile-lifecycle.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
 const GENERATED_AGENT_SURNAMES = [
@@ -104,6 +106,29 @@ ${archetypeChoices}`;
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.onError((error,c)=>{
+    if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
+    console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
+  });
+  app.post("/api/agent-profiles/edit-assistant", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/edit-assistant");
+    if (!body || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
+      || !Array.isArray(body.history) || body.history.length > 24 || body.history.some((item: unknown) => typeof item !== "string" || item.length > 2000)
+      || !body.context || typeof body.context !== "object" || Array.isArray(body.context)) return c.json({ error: "Invalid character edit turn" }, 400);
+    const context = body.context as Record<string, unknown>;
+    if (Object.keys(context).length !== CHARACTER_FIELDS.length + 1 || typeof context.hasFullBody !== "boolean"
+      || CHARACTER_FIELDS.some(field => typeof context[field] !== "string" || (context[field] as string).length > 12000)) return c.json({ error: "Invalid character context" }, 400);
+    try {
+      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
+        record => selectCharacterEdit(context as CharacterDraftContext, body.message as string, body.history as string[], c.req.raw.signal, record)));
+    } catch (error) {
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts }, error.status);
+      console.error("[edit-assistant] Turn failed", error);
+      return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged." }, 502);
+    }
+  });
+
   app.post("/api/agent-profiles/creation-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
     if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
@@ -112,8 +137,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid creation assistant turn" }, 400);
     }
     try {
-      return c.json({ command: await selectCreationCommand(body.stage, body.message, body.history as string[], body.sections as string[], c.req.raw.signal) });
+      const stage = body.stage;
+      const message = body.message;
+      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
+        async record => ({ command: await selectCreationCommand(stage, message, body.history as string[], body.sections as string[], c.req.raw.signal, record) })));
     } catch (error) {
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts }, error.status);
       console.error("[creation-assistant] Turn failed", error);
       if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
       return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create." }, 502);
@@ -131,7 +161,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
     try {
       return c.json(await generateVisualProfileReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin));
-    } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
+    } catch (error) { if(error instanceof GenerationAdmissionError) throw error; return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
   });
 
   // -------------------------------------------------------------------------
@@ -152,6 +182,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const user = c.get("user");
     const publicBaseUrl = new URL(c.req.url).origin;
     const completion = await requestAndStartDraftAvatarCompletion(db, {
+      requestId: c.req.header("Idempotency-Key"),
       userId: user.id,
       profile: {
         name: body.name.trim(),
@@ -189,7 +220,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { changeRequest, allowPersonaChange, traits, creationTraitIds, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+    const { selectedFields, changeRequest, allowPersonaChange, traits, creationTraitIds, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
+      selectedFields?: CharacterField[];
       changeRequest?: string;
       allowPersonaChange?: boolean;
       traits?: string;
@@ -228,6 +260,10 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Provide a prompt, character ingredients, traits, occupation, backstory idea, archetype, or existing profile to refine" }, 400);
     }
 
+    if (selectedFields !== undefined && (!Array.isArray(selectedFields) || selectedFields.length > CHARACTER_FIELDS.length || selectedFields.some(field => !CHARACTER_FIELDS.includes(field)))) return c.json({ error: "Invalid selected fields" }, 400);
+    if (selectedFields && existingProfile && (typeof existingProfile !== "object" || Array.isArray(existingProfile) || CHARACTER_FIELDS.some(field => existingProfile[field] != null && typeof existingProfile[field] !== "string"))) return c.json({ error: "Invalid character field context" }, 400);
+    const editFields = selectedFields ? characterEditFields(existingProfile ?? {}, selectedFields) : null;
+
     const llmConfig = resolveAgentProfileGenerationLlm();
     if (!llmConfig) {
       return c.json({ error: "AI generation not available (LLM provider not configured)" }, 503);
@@ -251,6 +287,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (isRefine && existingProfile) {
       userParts.push(`Refine this existing profile:\n${JSON.stringify(existingProfile, null, 2)}`);
     }
+    if (editFields) userParts.push(`Update only these fields: ${editFields.join(", ")}. Preserve every other populated field exactly. Empty fields are included for completion.`);
     if (changeRequest) userParts.push(`User's requested changes (follow these instructions while preserving unrelated profile details):\n${changeRequest.trim()}`);
     if (selectedArchetype) {
       userParts.push(allowPersonaChange === true
@@ -272,6 +309,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     try {
       const sourceUrl = existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
+      const result = await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
       const response = await openai.chat.completions.create({
         model: llmConfig.modelId,
         service_tier: "default",
@@ -292,11 +331,12 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
             schema: characterProfileSchemaFor(allowedPersonaKeys),
           },
         },
-      }, { signal: c.req.raw.signal });
+      }, { signal: c.req.raw.signal, maxRetries: 0 });
+      await record(response);
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
-        return c.json({ error: "AI generation returned empty response" }, 502);
+        throw new Error("AI generation returned empty response");
       }
 
       if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
@@ -304,7 +344,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
-      const generatedName = allocateGeneratedAgentName(
+      const generatedName = editFields && !editFields.includes("name") && existingProfile?.name ? { name: existingProfile.name } : allocateGeneratedAgentName(
         generated.name,
         new Set(existingNames.map((profile) => profile.name)),
       );
@@ -315,7 +355,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         strategyStyle: generated.strategyStyle ?? null,
       }, generatedName.name);
 
-      return c.json({
+      const output = {
         name: profile.name,
         backstory: profile.backstory,
         personality: profile.personality,
@@ -325,8 +365,18 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         visualDesign: generated.visualDesign,
         introQuips: generated.introQuips,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
+      };
+      // The model cannot rewrite unrelated populated fields, even if it returns them.
+      if (editFields && existingProfile) {
+        for (const field of CHARACTER_FIELDS) {
+          if (!editFields.includes(field) && typeof existingProfile[field] === "string") Object.assign(output, { [field]: existingProfile[field] });
+        }
+      }
+      return output;
       });
+      return c.json(result);
     } catch (err) {
+      if (err instanceof GenerationAdmissionError) return c.json({ error: err.message, code: err.code, contacts:generationContacts }, err.status);
       console.error("[agent-profiles] AI generation failed:", err);
       if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again." }, 504);
       return c.json({ error: "AI generation failed" }, 502);
@@ -479,7 +529,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const profiles = await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.userId, user.id));
+      .where(and(eq(schema.agentProfiles.userId, user.id), isNull(schema.agentProfiles.archivedAt)));
 
     const completions = await latestAvatarCompletionsByAgentProfileId(
       db,
@@ -537,6 +587,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const avatarCompletion = await latestAvatarCompletion(db, user.id, profile.id) ?? undefined;
     return c.json({
       ...playerSafeAgentProfile(profile),
+      ownerContent: await readOwnerContent(db, profile),
       ...(avatarCompletion && { avatarCompletion }),
     });
   });
@@ -601,114 +652,29 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   app.delete("/api/agent-profiles/:id", requireAuth(db), async (c) => {
     const user = c.get("user");
     const profileId = c.req.param("id");
-    const result = await db.transaction(async (tx) => {
-      await tx.execute(sql`
-        SELECT id
-        FROM avatar_generation_requests
-        WHERE user_id = ${user.id}
-          AND agent_profile_id = ${profileId}
-          AND status IN ('queued', 'processing')
-        ORDER BY id
-        FOR UPDATE
-      `);
-      const activeAvatarRequests = await tx.select().from(schema.avatarGenerationRequests).where(and(
-        eq(schema.avatarGenerationRequests.userId, user.id),
-        eq(schema.avatarGenerationRequests.agentProfileId, profileId),
-        inArray(schema.avatarGenerationRequests.status, ["queued", "processing"]),
-      ));
-      await acquireDailyFreeLocks(tx);
-      const locked = await lockProfileAfterLiveRosterGames(tx, {
-        profileId,
-        userId: user.id,
-      });
-      if (!locked.profile) return "not-found" as const;
-      if (locked.liveGameIds.length > 0) return "active-game" as const;
-
-      const standingEntry = await tx.select({ id: schema.freeGameQueue.id })
-        .from(schema.freeGameQueue)
-        .where(eq(schema.freeGameQueue.agentProfileId, profileId))
-        .limit(1);
-      if (standingEntry.length > 0) return "standing" as const;
-
-      const [competitionReceipt, competitionRating, competitionSnapshot] = await Promise.all([
-        tx.select({ id: schema.competitionReceipts.id })
-          .from(schema.competitionReceipts)
-          .where(eq(schema.competitionReceipts.agentProfileId, profileId))
-          .limit(1),
-        tx.select({ agentProfileId: schema.agentCompetitionRatings.agentProfileId })
-          .from(schema.agentCompetitionRatings)
-          .where(eq(schema.agentCompetitionRatings.agentProfileId, profileId))
-          .limit(1),
-        tx.select({ id: schema.competitionRatingSnapshots.id })
-          .from(schema.competitionRatingSnapshots)
-          .where(eq(schema.competitionRatingSnapshots.agentProfileId, profileId))
-          .limit(1),
-      ]);
-      if (competitionReceipt.length > 0
-        || competitionRating.length > 0
-        || competitionSnapshot.length > 0) return "rated" as const;
-
-      if (activeAvatarRequests.length > 0) {
-        const now = new Date().toISOString();
-        await tx.update(schema.avatarGenerationRequests).set({
-          status: "skipped",
-          failureCode: "profile_deleted",
-          failureMessage: "The Agent was deleted before portrait generation completed.",
-          completedAt: now,
-          updatedAt: now,
-        }).where(inArray(
-          schema.avatarGenerationRequests.id,
-          activeAvatarRequests.map((request) => request.id),
-        ));
-        for (const request of activeAvatarRequests) {
-          await recordAvatarChange(tx, {
-            userId: user.id,
-            agentProfileId: profileId,
-            source: "generation_skipped",
-            status: "skipped",
-            generationRequestId: request.id,
-            previousAvatarUrl: locked.profile.avatarUrl,
-            newAvatarUrl: locked.profile.avatarUrl,
-            safeMetadata: { reason: "profile_deleted" },
-          });
-        }
-      }
-
-      // Unrated legacy seats may outlive a deleted unused profile. Rated
-      // competition rows retain restrictive references and will fail closed.
-      await tx.update(schema.gamePlayers)
-        .set({ agentProfileId: null, agentRevisionId: null })
-        .where(eq(schema.gamePlayers.agentProfileId, profileId));
-      await tx.update(schema.agentProfiles).set({ currentRevisionId: null })
-        .where(eq(schema.agentProfiles.id, profileId));
-      await tx.delete(schema.agentRevisions)
-        .where(eq(schema.agentRevisions.agentProfileId, profileId));
-      await tx.delete(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, profileId));
-      return "deleted" as const;
-    });
+    const result = await archiveOwnedAgentProfile(db, user.id, profileId);
 
     if (result === "not-found") return c.json({ error: "Agent profile not found" }, 404);
     if (result === "active-game") {
       return c.json({
-        error: "An agent in a waiting or active game cannot be deleted.",
+        error: "An agent in a waiting or active game cannot be archived.",
         code: "active_game_exists",
       }, 409);
     }
     if (result === "standing") {
       return c.json({
-        error: "Leave Daily Free or switch agents before deleting this agent.",
+        error: "Leave Daily Free or switch agents before archiving this agent.",
         code: "daily_free_entry_exists",
       }, 409);
     }
     if (result === "rated") {
       return c.json({
-        error: "Agents with rated competition history cannot be deleted because producer season records still reference them.",
+        error: "Agents with rated competition history cannot be archived because producer season records still reference them.",
         code: "rated_history_exists",
       }, 409);
     }
 
-    return c.json({ deleted: true });
+    return c.json({ archived: true });
   });
 
   return app;

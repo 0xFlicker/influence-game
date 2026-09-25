@@ -1,3 +1,4 @@
+import { Window } from "happy-dom";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   getDraftAgentAvatarGeneration,
@@ -6,14 +7,20 @@ import {
 } from "../lib/api";
 
 const originalFetch = globalThis.fetch;
+const originalWindow = globalThis.window;
+const originalLocalStorage = globalThis.localStorage;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
   setApiBase("");
+  Object.defineProperty(globalThis,"window",{configurable:true,value:originalWindow});
+  Object.defineProperty(globalThis,"localStorage",{configurable:true,value:originalLocalStorage});
 });
 
 describe("draft agent portrait API", () => {
   test("starts from generated personality fields and polls the owned request", async () => {
+    Object.defineProperty(globalThis,"window",{configurable:true,value:new Window({url:"http://localhost"})});
+    Object.defineProperty(globalThis,"localStorage",{configurable:true,value:window.localStorage});
     setApiBase("http://127.0.0.1:3333");
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {

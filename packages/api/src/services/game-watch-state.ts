@@ -396,12 +396,13 @@ async function loadPlayerIdentities(
     const currentAgent = row.agentProfileId
       ? currentAgentByProfileId.get(row.agentProfileId) ?? null
       : null;
+    const avatarUrl = stringFromConfig(persona.avatarUrl) ?? currentAgent?.avatarUrl;
     return {
       id: row.id,
       name: personaName ?? "Unknown",
       persona: personaDescription ?? "Unknown",
       ...(personaKey && { personaKey }),
-      ...(currentAgent?.avatarUrl && { avatarUrl: currentAgent.avatarUrl }),
+      ...(avatarUrl && { avatarUrl }),
       currentAgent,
     };
   });

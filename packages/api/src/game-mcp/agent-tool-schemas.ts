@@ -46,6 +46,8 @@ export function agentCommandOutputSchema(): Record<string, unknown> {
         properties: {
           id: { type: "string" },
           contentRevisionId: nullableSchema({ type: "string" }),
+          latestContentRevisionId: nullableSchema({ type: "string" }),
+          moderationRequired: { type: "boolean" },
           displayName: { type: "string" },
           currentRevision: currentRevisionSchema,
           queueState: { type: "object", additionalProperties: true },
@@ -79,6 +81,7 @@ export function agentMutationReceiptOutputSchema(): Record<string, unknown> {
     properties: {
       contentRevisionId: { type: "string" },
       moderationRecordId: { type: "string" },
+      publication: { type: "string", enum: ["published", "held"] },
       schemaVersion: { type: "number", const: 1 },
       operation: { type: "string", enum: ["created", "updated"] },
       agent: {

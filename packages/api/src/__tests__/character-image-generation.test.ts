@@ -8,7 +8,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
-import { checkAvatarGenerationQuota } from "../services/avatar-generation.js";
+
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 let db: DrizzleDB;
 let directory: string;
@@ -100,12 +100,12 @@ describe("complete character image drafts", () => {
     expect(calls).toHaveLength(2);
   });
   test("full-body generation shares the image allowance; cropping and exact retries do not consume another slot", async () => {
-    process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA = "1";
+    await db.insert(schema.inferenceAccounts).values({userId,imageBalance:1});
     const args = input();
     await generateVisualProfileReference(db, userId, args);
-    expect(await checkAvatarGenerationQuota(db, userId, [], {})).toMatchObject({ ok: false, code: "quota_exhausted" });
+    expect((await db.select().from(schema.inferenceAccounts))[0]!.imageBalance).toBe(0);
     await generateVisualProfileReference(db, userId, args);
-    await expect(generateVisualProfileReference(db, userId, input())).rejects.toThrow("quota");
+    await expect(generateVisualProfileReference(db, userId, input())).rejects.toMatchObject({code:"generation_exhausted"});
     expect(calls).toHaveLength(2);
   });
   test("manual confirmation uses oriented source dimensions and rejects portraits that cut through the head", async () => {

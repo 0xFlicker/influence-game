@@ -1,5 +1,6 @@
 "use client";
 
+import { AccountInferencePanel } from "./account-inference-panel";
 import { ProductionPanel } from "./production-panel";
 import Link from "next/link";
 import { AdminPanel } from "./admin-panel";
@@ -35,6 +36,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       </div>
 
       {/* Tab content */}
+      {activeTab === "inference" && <AccountInferencePanel />}
       {activeTab === "games" && <AdminPanel />}
       {activeTab === "production" && <ProductionPanel />}
       {activeTab === "providers" && <AdminProviderHealth />}

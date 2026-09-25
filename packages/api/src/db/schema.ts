@@ -21,6 +21,7 @@ import {
   primaryKey,
   serial,
   text,
+  timestamp,
   unique,
   uniqueIndex,
   uuid,
@@ -423,6 +424,10 @@ export const agentProfiles = pgTable("agent_profiles", {
   headPosition: jsonb("head_position").$type<import("@influence/engine/character-portrait").CharacterHeadPosition>(),
   portraitCrop: jsonb("portrait_crop").$type<{ sourceUrl: string; x: number; y: number; width: number; height: number }>(),
   contentRevisionId: text("content_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
+  latestContentRevisionId: text("latest_content_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
+  moderationVersion: integer("moderation_version").notNull().default(0),
+  moderationRequired: boolean("moderation_required").notNull().default(false),
+  archivedAt: text("archived_at"),
   gamesPlayed: integer("games_played").notNull().default(0),
   gamesWon: integer("games_won").notNull().default(0),
   createdAt: text("created_at")
@@ -451,7 +456,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   check("agent_profiles_gender_check", sql`${table.gender} IS NULL OR ${table.gender} IN ('male', 'female', 'non-binary')`),
 ]);
 
-export type AgentRevisionTrigger = "initial_backfill" | "profile_create" | "profile_edit" | "runtime_policy_change";
+export type AgentRevisionTrigger = "initial_backfill" | "profile_create" | "profile_edit" | "runtime_policy_change" | "moderation";
 export type AgentRevisionMagnitude = "initial" | "small" | "material" | "execution";
 
 export const agentRevisions = pgTable("agent_revisions", {
@@ -474,7 +479,7 @@ export const agentRevisions = pgTable("agent_revisions", {
   index("agent_revisions_profile_fingerprint_idx").on(table.agentProfileId, table.fingerprint),
   index("agent_revisions_profile_created_idx").on(table.agentProfileId, table.createdAt),
   check("agent_revisions_ordinal_check", sql`${table.ordinal} > 0`),
-  check("agent_revisions_trigger_check", sql`${table.trigger} IN ('initial_backfill', 'profile_create', 'profile_edit', 'runtime_policy_change')`),
+  check("agent_revisions_trigger_check", sql`${table.trigger} IN ('initial_backfill', 'profile_create', 'profile_edit', 'runtime_policy_change', 'moderation')`),
   check("agent_revisions_magnitude_check", sql`${table.magnitude} IN ('initial', 'small', 'material', 'execution')`),
 ]);
 
@@ -3572,6 +3577,8 @@ export const agentContentRevisions = pgTable("agent_content_revisions", {
   agentProfileId: text("agent_profile_id").notNull(),
   userId: text("user_id").notNull().references(() => users.id),
   competitiveRevisionId: text("competitive_revision_id"),
+  parentRevisionId: text("parent_revision_id").references((): AnyPgColumn => agentContentRevisions.id, { onDelete: "restrict" }),
+  ancestryKnown: boolean("ancestry_known").notNull().default(true),
   fingerprint: text("fingerprint").notNull(),
   snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
@@ -3584,10 +3591,20 @@ export const agentModerationReviews = pgTable("agent_moderation_reviews", {
   id: text("id").primaryKey(),
   contentRevisionId: text("content_revision_id").notNull().references(() => agentContentRevisions.id),
   status: text("status").notNull().default("pending"),
+  route: text("route").$type<"ordinary" | "escalated">().notNull().default("ordinary"),
+  disposition: text("disposition").$type<"allowed" | "rejected">().notNull().default("allowed"),
+  version: integer("version").notNull().default(0),
+  cycle: integer("cycle").notNull().default(1),
+  flagged: boolean("flagged").notNull().default(false),
+  held: boolean("held").notNull().default(false),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
   uniqueIndex("agent_moderation_revision_unique").on(table.contentRevisionId),
   index("agent_moderation_pending_idx").on(table.status, table.createdAt),
+  check("agent_moderation_reviews_route_check", sql`${table.route} IN ('ordinary', 'escalated')`),
+  check("agent_moderation_reviews_disposition_check", sql`${table.disposition} IN ('allowed', 'rejected')`),
+  check("agent_moderation_reviews_version_check", sql`${table.version} >= 0`),
+  check("agent_moderation_reviews_cycle_check", sql`${table.cycle} > 0`),
 ]);
 /** Exact mutation receipt, including unchanged submissions, for response-loss recovery. */
 export const agentContentSubmissions = pgTable("agent_content_submissions", {
@@ -3597,6 +3614,43 @@ export const agentContentSubmissions = pgTable("agent_content_submissions", {
   requestHash: text("request_hash").notNull(),
   result: jsonb("result").notNull().$type<Record<string, unknown>>(),
 });
+/** One assignment per reviewer and review; expired rows are replaced under a reviewer lock. */
+export const moderationClaims = pgTable("moderation_claims", {
+  reviewerId: text("reviewer_id").primaryKey().references(() => users.id),
+  reviewId: text("review_id").notNull().references(() => agentModerationReviews.id),
+  token: text("token").notNull(),
+  acquiredAt: timestamp("acquired_at", { withTimezone: true, mode: "string" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, table => [uniqueIndex("moderation_claims_review_unique").on(table.reviewId),
+  check("moderation_claims_expiry", sql`${table.expiresAt} > ${table.acquiredAt} AND ${table.expiresAt} <= ${table.acquiredAt} + interval '30 minutes'`),
+]);
+/** Receipts are also the append-only operational audit. Never copy submitted content here. */
+export const moderationActions = pgTable("moderation_actions", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id").notNull().references(() => agentModerationReviews.id),
+  actorId: text("actor_id").notNull().references(() => users.id),
+  kind: text("kind").notNull(),
+  cycle: integer("cycle").notNull(),
+  requestHash: text("request_hash").notNull(),
+  reason: text("reason"),
+  result: jsonb("result").notNull().$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [index("moderation_actions_review_idx").on(table.reviewId, table.createdAt), index("moderation_actions_actor_idx").on(table.actorId, table.createdAt),
+  check("moderation_actions_cycle_check", sql`${table.cycle} > 0`),
+]);
+
+/** Profile lifecycle audit is independent of content reviews, including legacy profiles. */
+export const agentProfileLifecycleActions = pgTable("agent_profile_lifecycle_actions", {
+  id: text("id").primaryKey(),
+  agentProfileId: text("agent_profile_id").notNull().references(() => agentProfiles.id),
+  actorId: text("actor_id").notNull().references(() => users.id),
+  kind: text("kind").notNull().$type<"archive" | "restore">(),
+  reason: text("reason").notNull(),
+  profileVersion: integer("profile_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [index("agent_profile_lifecycle_profile_idx").on(table.agentProfileId, table.createdAt),
+  check("agent_profile_lifecycle_kind_check", sql`${table.kind} IN ('archive', 'restore')`),
+]);
 
 /** Media jobs never own or advance a game turn. */
 export const visualRepairJobs = pgTable("visual_repair_jobs", {
@@ -3637,3 +3691,44 @@ export const visualMediaRequests = pgTable("visual_media_requests", {
   receipt: jsonb("receipt").notNull().$type<{ accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }>(),
   createdAt: text("created_at").notNull(),
 }, (t) => [unique("visual_media_request_unique").on(t.gameId,t.operatorId,t.requestId)]);
+
+/** Durable character text operations. Retried reads never initiate another provider call. */
+export const accountTextOperations = pgTable("account_text_operations", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
+  requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
+  kind: text("kind").notNull(), model: text("model").notNull(),
+  state: text("state").notNull().default("reserved").$type<"reserved" | "dispatched" | "succeeded" | "failed" | "uncertain">(),
+  result: jsonb("result").$type<unknown>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
+  providerRequestId: text("provider_request_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+}, table => [unique("account_text_operations_user_key").on(table.userId, table.requestKey)]);
+
+export interface InferencePolicy {
+ text: number; image: number; renewal: "none" | "monthly";
+ textBurst: number; imageDaily: number; textConcurrency: number; imageConcurrency: number;
+}
+export const inferencePlans = pgTable("inference_plans", {
+ id: text("id").primaryKey(), name: text("name").notNull(), policy: jsonb("policy").notNull().$type<InferencePolicy>(), version: integer("version").notNull().default(1),
+});
+export const inferenceAccounts = pgTable("inference_accounts", {
+ userId: text("user_id").primaryKey().references(() => users.id), planId: text("plan_id").notNull().default("free").references(() => inferencePlans.id),
+ anchor: timestamp("anchor", {withTimezone:true,mode:"string"}).notNull().defaultNow(),
+ periodStart: timestamp("period_start", {withTimezone:true,mode:"string"}).notNull().defaultNow(),
+ textBalance: integer("text_balance").notNull().default(100), imageBalance: integer("image_balance").notNull().default(25),
+ textGrant: integer("text_grant").notNull().default(0), imageGrant: integer("image_grant").notNull().default(0),
+ overrides: jsonb("overrides").notNull().default({}).$type<Partial<InferencePolicy>>(), paused: boolean("paused").notNull().default(false),
+ imageExempt: boolean("image_exempt"), version: integer("version").notNull().default(1),
+});
+export const inferenceReservations = pgTable("inference_reservations", {
+ id:text("id").primaryKey(),userId:text("user_id").notNull().references(() => users.id), category:text("category").notNull().$type<"text"|"image">(),
+ inputHash:text("input_hash").notNull(),state:text("state").notNull().$type<"reserved"|"dispatched"|"succeeded"|"failed"|"uncertain">(),
+ bucket:text("bucket").notNull().$type<"balance"|"grant"|"exempt">(), periodStart:timestamp("period_start",{withTimezone:true,mode:"string"}).notNull(),
+ createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),finishedAt:timestamp("finished_at",{withTimezone:true,mode:"string"}),
+});
+export const inferenceActions = pgTable("inference_actions", {
+ id:text("id").primaryKey(),actorId:text("actor_id").references(() => users.id),userId:text("user_id").references(() => users.id),
+ requestHash:text("request_hash").notNull(),reason:text("reason").notNull(),command:jsonb("command").notNull().$type<Record<string,unknown>>(),
+ result:jsonb("result").notNull().$type<Record<string,unknown>>(),createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+});

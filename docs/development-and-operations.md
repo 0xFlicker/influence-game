@@ -360,8 +360,6 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_LLM_API_KEY` | No | `lm-studio` when `INFLUENCE_LLM_BASE_URL` is set | API key for the OpenAI-compatible endpoint |
 | `API_KAT_IMGNAI_KEY` | Required for Katana profile | -- | Katana / IMGNAI router API key, used only for explicit Katana model selections |
 | `API_KAT_IMGNAI_SECRET` | Required for Katana profile | -- | Katana / IMGNAI router API secret |
-| `INFLUENCE_AVATAR_GENERATION_FREE_QUOTA` | No | `25` | Per-account sponsored generated-avatar completion quota before Katana calls are skipped |
-| `INFLUENCE_AVATAR_GENERATION_DAILY_LIMIT` | No | `5` | Per-account 24-hour generated-avatar completion throttle before Katana calls are skipped |
 | `INFLUENCE_AVATAR_GENERATION_ASSET_HOSTS` | No | `imgnai.com` | Comma-separated HTTPS host allowlist for downloading completed Katana avatar assets before copying them into Influence storage |
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
@@ -535,3 +533,27 @@ For local review use Doppler dev with an explicit local database URL. Run provid
 ### Character content evidence
 
 Agent submission writes durable content revisions and pending moderation records in the same transaction as the active profile. No moderator worker or enforcement runs yet. Image generation completes into draft assets; users must select and submit those assets. See [Character drafts and moderation evidence](agent-content-submissions.md) for idempotency, concurrency, asset retention, and the pending-review inspection query.
+
+### Account inference controls
+
+Character generation allowances use persisted plans, account grants, and reservations instead of avatar quota environment variables. See [the inference plan](plans/2026-09-25-002-feat-account-inference-allowances-plan.md).
+
+Use `/admin/inference` to inspect cost coverage, assign Free/Friends and Family, refill text or images, change burst/concurrency overrides, and pause generation. Manual grants persist; changing plans explicitly refreshes base allowance. Moderators have no account-spend access. Games and earned learning entitlements remain separate.
+
+Uncertain calls retain reservations. Inspect provider evidence before confirming success or failure in Pending generations. Failure refunds the original grant bucket; an expired recurring period does not create new credits. Reconciliation adjusts allowance without inventing missing cost or output evidence. Already-dispatched work can finish after a pause. New provider dispatches check current restrictions.
+
+### Advanced character assistant
+
+Advanced editing routes each player message through one strict native tool call: `update_character`, `update_visuals`, or `clarify`. The router receives the current draft, whether it has a full-body reference, and recent conversation context. Missing visual presentation triggers an offer to update visuals; an affirmative answer to that offer is visual consent. The image-generation checkbox is removed.
+
+The application adds empty character fields to an update automatically. Existing populated fields outside the selected scope are preserved by both the draft application and generation API. Populated visual fields require an explicit visual request; unrelated strategy edits do not trigger image generation. Visual updates use the existing reference-generation and crop confirmation flow. Changes remain in the draft until saved.
+
+Routing and profile generation each use the existing durable text admission/accounting service; image generation uses image admission. A routing turn is bounded to one validated tool call, with SDK retries disabled. Clarification does not dispatch an edit or image request. No model prose is parsed to choose tools or fields. Provider-free acceptance checks cover malformed tool calls, context forwarding, empty-field completion, and visual-only preservation; they do not certify a live model's semantic interpretation of every phrasing.
+
+Owner content snapshots with an absent or null `headPosition` load as unconfirmed. Missing geometry alone does not require admin recovery or block editing; present but malformed geometry remains a validation error. Reading an older snapshot does not rewrite its immutable evidence.
+
+Direct character PFP and full-body uploads are disabled: the editor offers framing of existing assets, and `/api/upload/pfp` no longer issues upload targets. Generate replacement character images through the assistant. Existing stored images and internal media storage remain available.
+
+Admin inference navigation supports current paused/pending account filters and pending-generation sorting, independently of the spending window. Admin recovery-capable moderation reviewers can open an owner’s inference page; that API still requires a current admin/sysop role. Once no operation is active, exhausted allowance produces contact/refill guidance before burst throttling; granting allowance does not reset burst limits.
+
+Actual USD displays N/C (Not collected) when no provider-reported cost records exist; recorded zero-dollar costs still display as dollars. OpenAI billing reconciliation is not integrated.

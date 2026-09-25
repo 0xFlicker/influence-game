@@ -1,3 +1,6 @@
+import { GenerationAdmissionError, generationContacts } from "../services/generation-admission-error.js";
+import { ModerationError } from "../services/moderation-intake.js";
+import { executeModerationRead, executeModerationWrite } from "../services/moderation-commands.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { createDB, type DrizzleDB } from "../db/index.js";
@@ -448,6 +451,14 @@ export class ProductionGameMcpJsonRpcServer {
         return content(listGameMcpArchetypes({
           includeStrategyHints: optionalBoolean(args, "includeStrategyHints"),
         }));
+      }
+      if (name === "read_moderation") {
+        requireScopes(auth, ["moderation:read"]);
+        return content(await executeModerationRead(this.requireManagementDb(), auth.userId, args));
+      }
+      if (name === "act_on_moderation") {
+        requireScopes(auth, ["moderation:read", "moderation:write"]);
+        return content(await executeModerationWrite(this.requireManagementDb(), auth.userId, args));
       }
       if (name === "list_agents") {
         requireScopes(auth, ["agents:read"]);
@@ -1001,6 +1012,16 @@ function productionGameMcpTools(
   // Subject match-completeness tools are games:read only (no producer widening).
   tools.push(...matchCompletenessTools());
   tools.push(...gameRulesTools());
+  tools.push(tool({ name: "read_moderation", description: "Read moderator capabilities, queue, immutable review, retained evidence, decision preview, own receipt, or admin recovery. Fresh server roles restrict every operation. Evidence is returned as base64 PNG. Preview before deciding; historical media is unchanged.", scopes: ["moderation:read"], readOnlyHint: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["operation"], properties: {
+      operation: { type: "string", enum: ["capabilities", "queue", "review", "evidence", "preview", "receipt", "recovery"] },
+      reviewId: { type: "string" }, actionId: { type: "string" }, hash: { type: "string" }, offset: { type: "integer", minimum: 0 }, route: { type: "string", enum: ["ordinary", "escalated"] }, filter: { type: "string", enum: ["all", "available", "mine", "flagged"] }, action: { type: "string", enum: ["accept", "reject"] },
+    } } }));
+  tools.push(tool({ name: "act_on_moderation", description: "Claim, triage, decide, reopen a review, or restore an archive. Reuse actionId after response loss. Decisions require lease token, current version and preview fingerprint. Accept keeps disposition; Reject flips it. Reasons required for reject/flag/pass/reopen/restore. No profile editing. Admin-only operations are enforced by fresh roles.", scopes: ["moderation:read", "moderation:write"], readOnlyHint: false, destructiveHint: true, idempotentHint: true,
+    inputSchema: { type: "object", additionalProperties: false, required: ["operation"], properties: {
+      operation: { type: "string", enum: ["claim", "triage", "decide", "reopen", "restore"] },
+      actionId: { type: "string" }, reviewId: { type: "string" }, profileId: { type: "string" }, route: { type: "string", enum: ["ordinary", "escalated"] }, action: { type: "string", enum: ["accept", "reject", "extend", "release", "flag", "pass", "return"] }, token: { type: "string" }, version: { type: "integer", minimum: 0 }, reason: { type: "string", maxLength: 2000 }, previewFingerprint: { type: "string" }, expectedDisposition: { type: "string", enum: ["allowed", "rejected"] }, disposition: { type: "string", enum: ["allowed", "rejected"] }, undoActionId: { type: "string" },
+    } } }));
   tools.push(...userAgentReadTools());
   tools.push(...ownerLearningTools());
   tools.push(...userAgentWriteTools());
@@ -1451,7 +1472,7 @@ function userAgentWriteTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: "update_agent",
-      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Supply submissionId as a fresh UUID and expectedContentRevisionId from get_agent (null before its first content revision); reuse the ID only for exact retries. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
+      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied name, reserved House-agent name, or null/undefined returns agent_name_taken. Unrestricted changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. After a moderation rejection, corrections are held for review and do not change the effective character; inspect receipt.publication. For a custom review-driven update, show the exact custom change, obtain a fresh affirmative user message immediately before calling, and pass the owned same-Profile sourceReviewId; this creates an ordinary mutation receipt, resolves the review as manual_update, and does not accept the generated proposal. The server enforces ownership and linkage but does not claim to verify conversational consent. Supply submissionId as a fresh UUID and expectedContentRevisionId using latestContentRevisionId from get_agent (null before its first content revision); reuse the ID only for exact retries. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
         displayName: { type: "string", maxLength: AGENT_PROFILE_LIMITS.name },
@@ -2294,6 +2315,8 @@ function publicPlayerProfileContent(value: unknown): {
 }
 
 function jsonRpcErrorData(error: unknown): { data?: unknown } {
+  if (error instanceof GenerationAdmissionError) return { data: { code:error.code,statusCode:error.status,contacts:generationContacts,retryable:error.code === "generation_throttled" } };
+  if (error instanceof ModerationError) return { data: { code: error.code, statusCode: error.status, retryable: false } };
   if (error instanceof OwnerLearningRetryError) {
     return {
       data: {

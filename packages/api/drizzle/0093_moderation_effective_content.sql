@@ -1,0 +1,14 @@
+ALTER TABLE agent_profiles ADD COLUMN latest_content_revision_id text REFERENCES agent_content_revisions(id) ON DELETE RESTRICT;
+UPDATE agent_profiles SET latest_content_revision_id = content_revision_id;
+ALTER TABLE agent_profiles ADD COLUMN moderation_version integer NOT NULL DEFAULT 0;
+ALTER TABLE agent_profiles ADD COLUMN moderation_required boolean NOT NULL DEFAULT false;
+ALTER TABLE agent_profiles ADD COLUMN archived_at text;
+ALTER TABLE agent_moderation_reviews ADD COLUMN held boolean NOT NULL DEFAULT false;
+ALTER TABLE agent_revisions DROP CONSTRAINT agent_revisions_trigger_check;
+ALTER TABLE agent_revisions ADD CONSTRAINT agent_revisions_trigger_check CHECK (trigger IN ('initial_backfill', 'profile_create', 'profile_edit', 'runtime_policy_change', 'moderation'));
+DROP TRIGGER agent_content_revisions_immutable ON agent_content_revisions;
+CREATE TRIGGER agent_content_revisions_immutable BEFORE UPDATE OR DELETE ON agent_content_revisions FOR EACH ROW EXECUTE FUNCTION reject_agent_content_mutation();
+DROP TRIGGER agent_content_assets_immutable ON agent_content_assets;
+CREATE TRIGGER agent_content_assets_immutable BEFORE UPDATE OR DELETE ON agent_content_assets FOR EACH ROW EXECUTE FUNCTION reject_agent_content_mutation();
+DROP TRIGGER agent_content_submissions_immutable ON agent_content_submissions;
+CREATE TRIGGER agent_content_submissions_immutable BEFORE UPDATE OR DELETE ON agent_content_submissions FOR EACH ROW EXECUTE FUNCTION reject_agent_content_mutation();

@@ -5,8 +5,8 @@ import { squarePortraitCrop, portraitHeadRectangle, type PortraitCrop, type Char
 import { apiFetch } from "@/lib/api";
 
 /** Original image coordinates are the authority; the preview and exported pixels use the same rectangle. */
-export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, confirmHead = false, startEditing = false, fullScreen = false, name, onApply, onClose, onPendingChange, onFailure }: {
-  sourceUrl: string; initialCrop?: PortraitCrop | null; initialHead?: CharacterHeadPosition | null; confirmHead?: boolean; startEditing?: boolean; fullScreen?: boolean; name: string;
+export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, confirmHead = false, fullScreen = false, name, onApply, onClose, onPendingChange, onFailure }: {
+  sourceUrl: string; initialCrop?: PortraitCrop | null; initialHead?: CharacterHeadPosition | null; confirmHead?: boolean; fullScreen?: boolean; name: string;
   onApply: (value: { avatarUrl: string; portraitCrop: PortraitCrop; headPosition: CharacterHeadPosition | null }) => void;
   onClose: () => void; onPendingChange: (pending: boolean) => void; onFailure: () => void;
 }) {
@@ -17,7 +17,6 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
   const [crop, setCrop] = useState<PortraitCrop | null>(null);
   const [head, setHead] = useState<HeadRectangle>(initialHead?.sourceUrl === sourceUrl ? initialHead.rect : { x: 0.35, y: 0.04, width: 0.3, height: 0.16 });
   const [activeBox, setActiveBox] = useState<"portrait" | "head">("portrait");
-  const [editing, setEditing] = useState(startEditing || !confirmHead || !initialHead || !initialCrop);
   const drag = useRef<{ pointerId: number; x: number; y: number; rect: HeadRectangle; resize: boolean; box: "portrait" | "head" } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,13 +51,13 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
   const headFitsCrop = !confirmHead || Boolean(crop && portraitHeadRectangle({ sourceUrl, sourceHash: "", sourceWidth: size?.width ?? 0, sourceHeight: size?.height ?? 0, rect: head }, crop));
   const side = size && crop ? crop.width * size.width : 0;
   return <dialog ref={dialog} aria-labelledby="portrait-editor-title" onCancel={(event) => { if (busy) event.preventDefault(); else onClose(); }} className={`influence-modal overflow-auto border border-white/15 bg-[#11111b] p-4 text-white backdrop:bg-black/80 sm:p-7 ${fullScreen ? "m-0 h-[100dvh] max-h-[100dvh] w-screen max-w-none rounded-none" : "m-auto w-[min(960px,100vw)] max-h-[100dvh] rounded-2xl sm:max-h-[90vh]"}`}>
-    <div className="flex items-start justify-between gap-4"><div><h2 id="portrait-editor-title" className="text-xl font-semibold">{confirmHead && !editing ? "Confirm this headshot" : "Adjust character images"}</h2><p className="mt-2 text-sm text-white/55">{editing ? "Choose a box. Drag it to move; drag its corner to resize." : "Happy with this headshot? Confirm it, or adjust the framing below."}</p></div><button type="button" disabled={busy} onClick={onClose} className="influence-button-secondary min-h-11 rounded-lg px-3 py-2">Close</button></div>
-    {editing && <div role="group" aria-label="Box to adjust" className="mt-3 flex gap-2"><button type="button" aria-pressed={activeBox === "portrait"} disabled={busy} onClick={() => setActiveBox("portrait")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "portrait" ? "border-violet-300 bg-violet-400/20" : "border-white/15"}`}>Portrait crop</button>{confirmHead && <button type="button" aria-pressed={activeBox === "head"} disabled={busy} onClick={() => setActiveBox("head")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "head" ? "border-amber-300 bg-amber-400/20" : "border-white/15"}`}>Head position</button>}</div>}
+    <div className="flex items-start justify-between gap-4"><div><h2 id="portrait-editor-title" className="text-xl font-semibold">Adjust character images</h2><p className="mt-2 text-sm text-white/55">Choose a box. Drag it to move; drag its corner to resize.</p></div><button type="button" disabled={busy} onClick={onClose} className="influence-button-secondary min-h-11 rounded-lg px-3 py-2">Close</button></div>
+    <div role="group" aria-label="Box to adjust" className="mt-3 flex gap-2"><button type="button" aria-pressed={activeBox === "portrait"} disabled={busy} onClick={() => setActiveBox("portrait")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "portrait" ? "border-violet-300 bg-violet-400/20" : "border-white/15"}`}>Portrait crop</button>{confirmHead && <button type="button" aria-pressed={activeBox === "head"} disabled={busy} onClick={() => setActiveBox("head")} className={`min-h-11 rounded-lg border px-4 text-sm ${activeBox === "head" ? "border-amber-300 bg-amber-400/20" : "border-white/15"}`}>Head position</button>}</div>
     <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_260px]">
-      <div className={`${editing ? "sticky top-0 z-10" : "hidden"} flex items-center justify-center self-start rounded-xl bg-[#11111b] p-2 sm:sticky`}>
+      <div className="sticky top-0 z-10 flex items-center justify-center self-start rounded-xl bg-[#11111b] p-2">
         <div className="relative overflow-hidden" onPointerDown={event => {
           const mode = (event.target as HTMLElement).dataset.boxDrag;
-          if (!mode || busy || !editing || drag.current || !crop) return;
+          if (!mode || busy || drag.current || !crop) return;
           event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
           drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, rect: activeBox === "head" ? head : crop, resize: mode === "resize", box: activeBox };
         }} onPointerMove={event => {
@@ -97,13 +96,12 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
           </>}
         </div>
       </div>
-      <div className={`space-y-3 ${!editing ? "sm:col-span-2" : ""}`}>
-        <div className={`mx-auto aspect-square ${editing ? "w-20" : "w-40"} overflow-hidden rounded-full border border-white/15 bg-black/30 relative`} aria-label="Portrait crop preview">
+      <div className="space-y-3">
+        <div className="relative mx-auto aspect-square w-20 overflow-hidden rounded-full border border-white/15 bg-black/30" aria-label="Portrait crop preview">
           {/* eslint-disable-next-line @next/next/no-img-element -- display the selected rectangle without another render */}
           {crop && <img alt={`${name} portrait preview`} src={sourceUrl} className="absolute max-w-none" style={{ width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%` }} />}
         </div>
-        <button type="button" disabled={busy} onClick={() => setEditing(!editing)} className="influence-button-secondary min-h-11 w-full rounded-lg px-3 text-sm">{editing ? "Preview headshot" : "Adjust framing"}</button>
-        {editing && <details><summary className="min-h-11 cursor-pointer py-3 text-sm text-white/65">Precise adjustments</summary>
+        <details><summary className="min-h-11 cursor-pointer py-3 text-sm text-white/65">Precise adjustments</summary>
         {confirmHead && activeBox === "head" && <fieldset disabled={busy} className="space-y-3"><legend className="mb-2 text-sm font-medium text-amber-200">Head position</legend>
           <p className="text-xs text-white/55">{initialHead ? "Review the detected or previously selected position." : "No confirmed position yet. Move the suggested box around the entire head."} Drag the gold box and its corner, or use these keyboard-accessible controls.</p>
           {(["x", "y", "width", "height"] as const).map(key => <label key={key} className="block text-xs">{({ x: "Head horizontal position", y: "Head vertical position", width: "Head width", height: "Head height" })[key]}<input type="range" min={key === "x" || key === "y" ? 0 : .01} max={key === "x" ? 1 - head.width : key === "y" ? 1 - head.height : key === "width" ? 1 - head.x : 1 - head.y} step="0.001" value={head[key]} onInput={event => setHead({ ...head, [key]: Number(event.currentTarget.value) })} className="mt-1 w-full accent-amber-300" /></label>)}
@@ -113,7 +111,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
           <label className="block text-sm">Vertical position<input aria-label="Vertical position" type="range" min="0" max={Math.max(0, size.height - side)} step="1" value={crop.y * size.height} onInput={(e) => adjust(crop.x * size.width, Number(e.currentTarget.value), side)} disabled={busy} className="mt-2 w-full accent-violet-400" /></label>
           <label className="block text-sm">Frame size<input aria-label="Frame size" type="range" min={Math.min(32, size.width, size.height)} max={Math.min(size.width, size.height)} step="1" value={side} onInput={(e) => { const next = Number(e.currentTarget.value); adjust(crop.x * size.width + (side - next) / 2, crop.y * size.height + (side - next) / 2, next); }} disabled={busy} className="mt-2 w-full accent-violet-400" /></label>
         </>}
-        </details>}
+        </details>
         <div className="grid text-xs leading-5" aria-live="polite" aria-atomic="true">
           <p aria-hidden={!headFitsCrop} className={`col-start-1 row-start-1 text-white/45 ${headFitsCrop ? "" : "invisible"}`}>Include hair and a little shoulder room. Cropping costs no generation allowance.</p>
           <p aria-hidden={headFitsCrop} className={`col-start-1 row-start-1 text-amber-200 ${headFitsCrop ? "invisible" : ""}`}>The striped part of the head is outside the portrait. Move or expand the violet crop to include it.</p>

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { eligibleAgentContent } from "./agent-content-eligibility.js";
 import type { GameStatus, TrackType } from "../db/schema.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import {
@@ -91,6 +92,7 @@ export interface DailyFreeQueueStatusRead {
     estimatedDrawAt: string;
     entry: QueueAgentEntry | null;
     eligibility: "eligible" | "temporarily-ineligible" | "absent";
+    ineligibilityReason: "moderation" | "active-game" | null;
   };
   promptEligible: boolean;
   relevantGame: {
@@ -217,9 +219,10 @@ export async function getQueueStatus(
       selectionMethod: "random-draw",
       estimatedDrawAt: getNextDailyFreeDrawAt(),
       entry,
+      ineligibilityReason: entry?.agent.moderationRequired && !entry.agent.contentRevisionId ? "moderation" : entry && relevantGame && isDailyFreeBusyGameStatus(relevantGame.status) ? "active-game" : null,
       eligibility: !entry
         ? "absent"
-        : relevantGame && isDailyFreeBusyGameStatus(relevantGame.status)
+        : (entry.agent.moderationRequired && !entry.agent.contentRevisionId) || (relevantGame && isDailyFreeBusyGameStatus(relevantGame.status))
           ? "temporarily-ineligible"
           : "eligible",
     },
@@ -576,11 +579,13 @@ async function requireOwnedDailyFreeAgent(
   userId: string,
   agentId: string,
 ): Promise<void> {
+  await tx.execute(sql`SELECT id FROM agent_profiles WHERE id = ${agentId} AND user_id = ${userId} FOR UPDATE`);
   const profile = await tx.select({ id: schema.agentProfiles.id })
     .from(schema.agentProfiles)
     .where(and(
       eq(schema.agentProfiles.id, agentId),
       eq(schema.agentProfiles.userId, userId),
+      eligibleAgentContent(),
     ))
     .limit(1);
   if (profile.length === 0) {

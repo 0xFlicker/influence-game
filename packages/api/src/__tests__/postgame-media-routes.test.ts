@@ -328,7 +328,7 @@ describe("postgame media worker routes and leases", () => {
     const gameId = await insertQueuedMedia(db, "uploaded-bundle");
     const app = new Hono();
     app.route("/", createPostgameMediaWorkerRoutes(db));
-    app.route("/", createUploadRoutes(db));
+    app.route("/", createUploadRoutes());
 
     const claimResponse = await app.request("/api/internal/postgame-media/claim", {
       method: "POST",

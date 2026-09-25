@@ -70,6 +70,7 @@ describe("agent revision update loop", () => {
     expect(result.receipt).toEqual({
       contentRevisionId: result.profile.contentRevisionId!,
       moderationRecordId: expect.any(String),
+      publication: "published",
       schemaVersion: 1,
       operation: "updated",
       agent: { agentProfileId: profile.id, identityDisposition: "preserved" },

@@ -1,3 +1,4 @@
+import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -38,12 +39,12 @@ export async function replayContentSubmission(tx: Tx | DrizzleDB, userId: string
 
 /** Called under the profile lock, in the same transaction as the accepted update. */
 export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMutationRead, options: {
-  id: string; requestHash: string; assets?: ContentAssetEvidence;
+  id: string; requestHash: string; assets?: ContentAssetEvidence; candidate?: Profile;
 }): Promise<AgentProfileMutationRead> {
-  const profile = mutation.profile;
+  const profile = options.candidate ?? mutation.profile;
   const snapshot = contentSnapshot(profile);
 
-  const [prior] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
+  const [prior] = profile.latestContentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.latestContentRevisionId)) : [];
   const previousAssets = (prior?.snapshot.assets ?? {}) as Record<string, string>;
   const assets: Record<string, string> = {};
   const missingUrls = [profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl].filter((url): url is string => Boolean(url && !options.assets?.[url] && !previousAssets[url]));
@@ -63,13 +64,72 @@ export async function recordContentSubmission(tx: Tx, mutation: AgentProfileMuta
     revisionId = randomUUID();
     reviewId = randomUUID();
     await tx.insert(schema.agentContentRevisions).values({ id: revisionId, agentProfileId: profile.id, userId: profile.userId,
-      competitiveRevisionId: profile.currentRevisionId, fingerprint, snapshot: { ...snapshot, assets } });
-    await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId });
-    await tx.update(schema.agentProfiles).set({ contentRevisionId: revisionId }).where(and(eq(schema.agentProfiles.id, profile.id), eq(schema.agentProfiles.userId, profile.userId)));
+      competitiveRevisionId: profile.currentRevisionId, parentRevisionId: prior?.id ?? null,
+      ancestryKnown: prior ? prior.ancestryKnown : true, fingerprint, snapshot: { ...snapshot, assets } });
+    await tx.insert(schema.agentModerationReviews).values({ id: reviewId, contentRevisionId: revisionId, held: profile.moderationRequired });
   }
-  const result = { ...mutation, profile: { ...profile, contentRevisionId: revisionId! },
-    receipt: { ...mutation.receipt, contentRevisionId: revisionId!, moderationRecordId: reviewId! } };
+  const [saved] = await tx.update(schema.agentProfiles).set({
+    latestContentRevisionId: revisionId!,
+    contentRevisionId: profile.moderationRequired ? mutation.profile.contentRevisionId : revisionId!,
+    moderationVersion: profile.moderationVersion + 1,
+    updatedAt: new Date().toISOString(),
+  }).where(and(eq(schema.agentProfiles.id, profile.id), eq(schema.agentProfiles.userId, profile.userId))).returning();
+  const result = { ...mutation, profile: saved!,
+    receipt: { ...mutation.receipt, contentRevisionId: revisionId!, moderationRecordId: reviewId!,
+      ...(profile.moderationRequired ? { publication: "held" as const } : { publication: "published" as const }) } };
   await tx.insert(schema.agentContentSubmissions).values({ id: options.id, userId: profile.userId, agentProfileId: profile.id, requestHash: options.requestHash,
     result: result as unknown as Record<string, unknown> });
   return result;
+}
+
+/** Decode our immutable snapshot without accepting arbitrary profile columns. */
+export function decodeContentSnapshot(snapshot: Record<string, unknown>, profile: Profile): ReturnType<typeof contentSnapshot> {
+  const result = contentSnapshot(profile);
+  for (const key of ["name", "personality"] as const) {
+    if (typeof snapshot[key] !== "string" || !snapshot[key].trim()) throw new ContentSubmissionConflict("The saved snapshot needs admin recovery.");
+    result[key] = snapshot[key];
+  }
+  for (const key of ["personaKey", "backstory", "strategyStyle", "performanceInstructions", "visualDesign", "avatarUrl", "fullBodyReferenceUrl"] as const) {
+    const value = snapshot[key];
+    if (value !== null && typeof value !== "string") throw new ContentSubmissionConflict("The saved snapshot needs admin recovery.");
+    result[key] = value;
+  }
+  if (snapshot.gender !== null && !["male", "female", "non-binary"].includes(String(snapshot.gender))) throw new ContentSubmissionConflict("The saved gender is invalid.");
+  result.gender = snapshot.gender as Profile["gender"];
+  // Head geometry is optional: absence means unconfirmed, just like explicit null.
+  try { result.headPosition = snapshot.headPosition == null ? null : parseCharacterHeadPosition(snapshot.headPosition); }
+  catch { throw new ContentSubmissionConflict("The saved head geometry needs admin recovery."); }
+  const crop = snapshot.portraitCrop;
+  if (crop === null) result.portraitCrop = null;
+  else {
+    if (!crop || typeof crop !== "object" || Array.isArray(crop)) throw new ContentSubmissionConflict("The saved crop is invalid.");
+    const c = crop as Record<string, unknown>;
+    if (typeof c.sourceUrl !== "string" || ![c.x, c.y, c.width, c.height].every(n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1)
+      || Number(c.width) <= 0 || Number(c.height) <= 0 || Number(c.x) + Number(c.width) > 1 || Number(c.y) + Number(c.height) > 1) {
+      throw new ContentSubmissionConflict("The saved crop is invalid.");
+    }
+    result.portraitCrop = crop as NonNullable<Profile["portraitCrop"]>;
+  }
+  return result;
+}
+
+/** Owner-only projection: never includes evidence hashes, routing, or reviewer notes. */
+export async function readOwnerContent(db: Pick<DrizzleDB, "select">, profile: Profile) {
+  const [latest] = profile.latestContentRevisionId
+    ? await db.select().from(schema.agentContentRevisions).where(and(eq(schema.agentContentRevisions.id, profile.latestContentRevisionId), eq(schema.agentContentRevisions.agentProfileId, profile.id))) : [];
+  const [review] = latest ? await db.select().from(schema.agentModerationReviews).where(eq(schema.agentModerationReviews.contentRevisionId, latest.id)) : [];
+  return {
+    published: profile.contentRevisionId ? contentSnapshot(profile) : null,
+    submitted: latest ? { revisionId: latest.id, content: decodeContentSnapshot(latest.snapshot, profile),
+      disposition: review?.disposition ?? null, held: review?.held ?? false, status: review?.status ?? null } : null,
+    availability: profile.archivedAt ? "archived" as const : profile.moderationRequired && !profile.contentRevisionId ? "withheld" as const : "available" as const,
+    moderationVersion: profile.moderationVersion,
+  };
+}
+
+export async function latestSubmittedProfile(db: Pick<DrizzleDB, "select">, profile: Profile): Promise<Profile> {
+  if (!profile.moderationRequired || !profile.latestContentRevisionId) return profile;
+  const content = await readOwnerContent(db, profile);
+  if (!content.submitted) throw new ContentSubmissionConflict("The submitted draft is unavailable. Reload before submitting.");
+  return { ...profile, ...content.submitted.content };
 }

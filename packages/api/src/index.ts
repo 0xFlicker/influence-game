@@ -1,3 +1,5 @@
+import { createAccountInferenceRoutes } from "./routes/account-inference.js";
+import { createModerationRoutes } from "./routes/moderation.js";
 import { startEpisodeWorker } from "./services/episode-presentation.js";
 import { startVisualMediaWorker } from "./services/visual-media-worker.js";
 /**
@@ -616,6 +618,8 @@ app.route("/", cognitiveArtifactRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
+app.route("/", createModerationRoutes(db));
+app.route("/", createAccountInferenceRoutes(db));
 
 const ownerLearningRoutes = createOwnerLearningRoutes(db);
 app.route("/", ownerLearningRoutes);
@@ -637,7 +641,7 @@ const publicPlayerRoutes = createPublicPlayerRoutes(db);
 app.route("/", publicPlayerRoutes);
 
 // Upload routes (presigned URL generation for PFPs)
-const uploadRoutes = createUploadRoutes(db);
+const uploadRoutes = createUploadRoutes();
 app.route("/", uploadRoutes);
 
 // Profile & leaderboard routes

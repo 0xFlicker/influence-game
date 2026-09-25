@@ -116,6 +116,13 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
+  const generationPath = ['/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/edit-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
+  const requestIdentity = generationPath ? `inference:${Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}:${path}:${String(options?.body ?? '')}`)))).map(b=>b.toString(16).padStart(2,'0')).join('')}` : null;
+  if(requestIdentity) {
+    const id = window.sessionStorage.getItem(requestIdentity) ?? crypto.randomUUID();
+    window.sessionStorage.setItem(requestIdentity,id);
+    headers['Idempotency-Key']=id;
+  }
   const url = resolveApiUrl(path);
   console.log(`API ${options?.method ?? "GET"} ${url}`);
   const res = await fetch(url, {
@@ -127,9 +134,17 @@ export async function apiFetch<T>(
     if (res.status === 401 && typeof window !== "undefined" && token) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
+    if (options?.method === 'POST' && typeof window !== 'undefined') {
+      let code:unknown;
+      try { code=(JSON.parse(text) as {code?:unknown}).code; } catch { code=undefined; }
+      if(requestIdentity && ['generation_exhausted','generation_paused','generation_throttled','generation_busy','generation_failed','invalid_request_id','generation_unavailable'].includes(String(code))) window.sessionStorage.removeItem(requestIdentity);
+      if(code==='generation_exhausted'||code==='generation_paused') window.dispatchEvent(new CustomEvent('generation:contact',{detail:code}));
+    }
     throw apiErrorFromResponse(res.status, text);
   }
-  return res.json() as Promise<T>;
+  const result = await res.json() as T;
+  if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
+  return result;
 }
 
 /**
@@ -1829,13 +1844,13 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer";
+  group: "agents" | "games" | "developer" | "moderation";
   requiredScopes: McpOAuthScope[];
 }
 
@@ -1987,8 +2002,18 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+
 export interface SavedAgent {
+  ownerContent?: {
+    published: AgentContentSnapshot | null;
+    submitted: { revisionId: string; content: AgentContentSnapshot; disposition: "allowed" | "rejected" | null; held: boolean; status: string | null } | null;
+    availability: "archived" | "withheld" | "available";
+    moderationVersion: number;
+  };
   contentRevisionId?: string | null;
+  latestContentRevisionId?: string | null;
+  moderationRequired?: boolean;
   visualDesign?: string | null;
   headPosition?: import("@influence/engine/character-portrait").CharacterHeadPosition | null;
   portraitCrop?: { sourceUrl: string; x: number; y: number; width: number; height: number } | null;
@@ -2014,6 +2039,7 @@ export interface SavedAgent {
 export interface AgentMutationReceipt {
   contentRevisionId?: string;
   moderationRecordId?: string;
+  publication?: "published" | "held";
   schemaVersion: 1;
   operation: "created" | "updated";
   agent: {
@@ -2327,6 +2353,7 @@ export interface CharacterImageDraft {
   avatarUrl: string | null; portraitCrop: import("@influence/engine/character-portrait").PortraitCrop | null; cropWarning: string | null;
 }
 export interface GeneratePersonalityParams {
+  selectedFields?: import("@influence/engine/agent-creation-assistant").CharacterField[];
   changeRequest?: string;
   allowPersonaChange?: boolean;
   creationTraitIds?: string[];
@@ -3314,6 +3341,7 @@ export interface FreeQueueStatus {
     joinedAt: string;
   } | null;
   eligibility?: "eligible" | "temporarily-ineligible" | "absent" | null;
+  ineligibilityReason?: "moderation" | "active-game" | null;
   promptEligible?: boolean;
   relevantGame?: {
     id: string;
@@ -3337,6 +3365,7 @@ interface FreeQueueStatusResponse {
   userEntry?: FreeQueueStatus["userEntry"];
   todayGame?: FreeQueueStatus["todayGame"];
   eligibility?: FreeQueueStatus["eligibility"];
+  ineligibilityReason?: FreeQueueStatus["ineligibilityReason"];
   promptEligible?: boolean;
   relevantGame?: FreeQueueStatus["relevantGame"];
 }
@@ -3606,6 +3635,7 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
     nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
     userEntry: status.userEntry ?? null,
     eligibility: status.eligibility ?? null,
+    ineligibilityReason: status.ineligibilityReason ?? null,
     promptEligible: status.promptEligible ?? false,
     relevantGame: status.relevantGame ?? null,
     todayGame: status.todayGame ?? null,
@@ -3735,43 +3765,6 @@ export async function suggestProfileHandle(displayName: string): Promise<string>
     `/api/profile/handle-suggestion?displayName=${encodeURIComponent(displayName)}`,
   );
   return result.suggestion;
-}
-
-// ---------------------------------------------------------------------------
-// Upload API calls
-// ---------------------------------------------------------------------------
-
-export interface UploadResult {
-  publicUrl: string;
-  key: string;
-}
-
-export async function uploadProfilePicture(file: File): Promise<UploadResult> {
-  const signal = AbortSignal.timeout(120_000);
-  // Step 1: Get a presigned PUT URL from our API
-  const { uploadUrl, publicUrl, key } = await apiFetch<{
-    uploadUrl: string;
-    publicUrl: string;
-    key: string;
-  }>("/api/upload/pfp", {
-    method: "POST",
-    body: JSON.stringify({ contentType: file.type }),
-    signal,
-  });
-
-  // Step 2: PUT the file directly to object storage
-  const putRes = await fetch(resolveApiUrl(uploadUrl), {
-    method: "PUT",
-    headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
-    body: file,
-    signal,
-  });
-
-  if (!putRes.ok) {
-    throw new Error(`Upload failed: ${putRes.status}`);
-  }
-
-  return { publicUrl: resolveApiUrl(publicUrl), key };
 }
 
 // ---------------------------------------------------------------------------

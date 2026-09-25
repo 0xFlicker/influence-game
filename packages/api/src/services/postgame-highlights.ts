@@ -646,10 +646,11 @@ async function loadPlayerIdentityIndex(
     const currentAgent = row.agentProfileId
       ? currentAgentByProfileId.get(row.agentProfileId) ?? null
       : null;
+    const avatarUrl = stringFromPlayerPersona(persona.avatarUrl) ?? currentAgent?.avatarUrl;
     return [row.playerId, {
       ...(personaDescription && { persona: personaDescription }),
       ...(personaKey && { personaKey }),
-      ...(currentAgent?.avatarUrl && { avatarUrl: currentAgent.avatarUrl }),
+      ...(avatarUrl && { avatarUrl }),
       currentAgent,
     }] as const;
   }));
