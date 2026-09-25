@@ -1,4 +1,5 @@
 export const ADMIN_TABS = [
+  { id: "inference", label: "Inference" },
   { id: "seasons", label: "Seasons" },
   { id: "games", label: "Games" },
   { id: "production", label: "Production" },

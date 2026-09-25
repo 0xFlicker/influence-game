@@ -116,6 +116,13 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
+  const generationPath = ['/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
+  const requestIdentity = generationPath ? `inference:${Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}:${path}:${String(options?.body ?? '')}`)))).map(b=>b.toString(16).padStart(2,'0')).join('')}` : null;
+  if(requestIdentity) {
+    const id = window.sessionStorage.getItem(requestIdentity) ?? crypto.randomUUID();
+    window.sessionStorage.setItem(requestIdentity,id);
+    headers['Idempotency-Key']=id;
+  }
   const url = resolveApiUrl(path);
   console.log(`API ${options?.method ?? "GET"} ${url}`);
   const res = await fetch(url, {
@@ -127,9 +134,17 @@ export async function apiFetch<T>(
     if (res.status === 401 && typeof window !== "undefined" && token) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
+    if (options?.method === 'POST' && typeof window !== 'undefined') {
+      let code:unknown;
+      try { code=(JSON.parse(text) as {code?:unknown}).code; } catch { code=undefined; }
+      if(requestIdentity && ['generation_exhausted','generation_paused','generation_throttled','generation_busy','generation_failed','invalid_request_id','generation_unavailable'].includes(String(code))) window.sessionStorage.removeItem(requestIdentity);
+      if(code==='generation_exhausted'||code==='generation_paused') window.dispatchEvent(new CustomEvent('generation:contact',{detail:code}));
+    }
     throw apiErrorFromResponse(res.status, text);
   }
-  return res.json() as Promise<T>;
+  const result = await res.json() as T;
+  if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
+  return result;
 }
 
 /**

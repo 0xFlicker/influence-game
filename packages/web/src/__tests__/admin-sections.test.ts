@@ -4,6 +4,7 @@ import { ADMIN_TABS, adminTabHref, isAdminTab } from "../app/admin/admin-section
 describe("admin section routes", () => {
   test("gives every admin tab a direct route", () => {
     expect(ADMIN_TABS.map((tab) => adminTabHref(tab.id))).toEqual([
+      "/admin/inference",
       "/admin/seasons",
       "/admin/games",
       "/admin/production",

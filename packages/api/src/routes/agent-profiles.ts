@@ -1,3 +1,6 @@
+import { generationContacts } from "../services/generation-admission-error.js";
+import { randomUUID } from "node:crypto";
+import { runAccountText, GenerationAdmissionError } from "../services/account-text-usage.js";
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
@@ -103,6 +106,10 @@ ${archetypeChoices}`;
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.onError((error,c)=>{
+    if(error instanceof GenerationAdmissionError) return c.json({error:error.message,code:error.code,contacts:generationContacts},error.status);
+    console.error('[agent-profiles]',error); return c.json({error:'Agent request failed'},500);
+  });
   app.post("/api/agent-profiles/creation-assistant", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
     if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
@@ -111,8 +118,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid creation assistant turn" }, 400);
     }
     try {
-      return c.json({ command: await selectCreationCommand(body.stage, body.message, body.history as string[], body.sections as string[], c.req.raw.signal) });
+      const stage = body.stage;
+      const message = body.message;
+      return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
+        async record => ({ command: await selectCreationCommand(stage, message, body.history as string[], body.sections as string[], c.req.raw.signal, record) })));
     } catch (error) {
+      if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts }, error.status);
       console.error("[creation-assistant] Turn failed", error);
       if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
       return c.json({ error: "The assistant could not complete this turn. Try again or use Advanced create." }, 502);
@@ -130,7 +142,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Invalid JSON body" }, 400);
     try {
       return c.json(await generateVisualProfileReference(db, c.get("user").id, body as Record<string, unknown>, new URL(c.req.url).origin));
-    } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
+    } catch (error) { if(error instanceof GenerationAdmissionError) throw error; return c.json({ error: error instanceof Error ? error.message : "Reference generation failed" }, 409); }
   });
 
   // -------------------------------------------------------------------------
@@ -151,6 +163,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const user = c.get("user");
     const publicBaseUrl = new URL(c.req.url).origin;
     const completion = await requestAndStartDraftAvatarCompletion(db, {
+      requestId: c.req.header("Idempotency-Key"),
       userId: user.id,
       profile: {
         name: body.name.trim(),
@@ -271,6 +284,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     try {
       const sourceUrl = existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
+      const result = await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
+        kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
       const response = await openai.chat.completions.create({
         model: llmConfig.modelId,
         service_tier: "default",
@@ -291,11 +306,12 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
             schema: characterProfileSchemaFor(allowedPersonaKeys),
           },
         },
-      }, { signal: c.req.raw.signal });
+      }, { signal: c.req.raw.signal, maxRetries: 0 });
+      await record(response);
 
       const content = response.choices[0]?.message?.content;
       if (!content) {
-        return c.json({ error: "AI generation returned empty response" }, 502);
+        throw new Error("AI generation returned empty response");
       }
 
       if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
@@ -314,7 +330,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         strategyStyle: generated.strategyStyle ?? null,
       }, generatedName.name);
 
-      return c.json({
+      return {
         name: profile.name,
         backstory: profile.backstory,
         personality: profile.personality,
@@ -324,8 +340,11 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         visualDesign: generated.visualDesign,
         introQuips: generated.introQuips,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
+      };
       });
+      return c.json(result);
     } catch (err) {
+      if (err instanceof GenerationAdmissionError) return c.json({ error: err.message, code: err.code, contacts:generationContacts }, err.status);
       console.error("[agent-profiles] AI generation failed:", err);
       if (err instanceof APIConnectionTimeoutError) return c.json({ error: "Character generation took too long. Your draft is unchanged—please try again." }, 504);
       return c.json({ error: "AI generation failed" }, 502);

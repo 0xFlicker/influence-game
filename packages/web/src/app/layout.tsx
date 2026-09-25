@@ -1,3 +1,4 @@
+import { GenerationContactModal } from "@/components/generation-contact-modal";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
@@ -78,7 +79,8 @@ export default function RootLayout({
       <body>
         <Providers initialRuntimeConfig={getPublicRuntimeConfig()}>
           {children}
-          <SiteFooter />
+          <GenerationContactModal />
+            <SiteFooter />
         </Providers>
       </body>
     </html>

@@ -3691,3 +3691,44 @@ export const visualMediaRequests = pgTable("visual_media_requests", {
   receipt: jsonb("receipt").notNull().$type<{ accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }>(),
   createdAt: text("created_at").notNull(),
 }, (t) => [unique("visual_media_request_unique").on(t.gameId,t.operatorId,t.requestId)]);
+
+/** Durable character text operations. Retried reads never initiate another provider call. */
+export const accountTextOperations = pgTable("account_text_operations", {
+  id: text("id").primaryKey(), userId: text("user_id").notNull().references(() => users.id),
+  requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
+  kind: text("kind").notNull(), model: text("model").notNull(),
+  state: text("state").notNull().default("reserved").$type<"reserved" | "dispatched" | "succeeded" | "failed" | "uncertain">(),
+  result: jsonb("result").$type<unknown>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
+  providerRequestId: text("provider_request_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+}, table => [unique("account_text_operations_user_key").on(table.userId, table.requestKey)]);
+
+export interface InferencePolicy {
+ text: number; image: number; renewal: "none" | "monthly";
+ textBurst: number; imageDaily: number; textConcurrency: number; imageConcurrency: number;
+}
+export const inferencePlans = pgTable("inference_plans", {
+ id: text("id").primaryKey(), name: text("name").notNull(), policy: jsonb("policy").notNull().$type<InferencePolicy>(), version: integer("version").notNull().default(1),
+});
+export const inferenceAccounts = pgTable("inference_accounts", {
+ userId: text("user_id").primaryKey().references(() => users.id), planId: text("plan_id").notNull().default("free").references(() => inferencePlans.id),
+ anchor: timestamp("anchor", {withTimezone:true,mode:"string"}).notNull().defaultNow(),
+ periodStart: timestamp("period_start", {withTimezone:true,mode:"string"}).notNull().defaultNow(),
+ textBalance: integer("text_balance").notNull().default(100), imageBalance: integer("image_balance").notNull().default(25),
+ textGrant: integer("text_grant").notNull().default(0), imageGrant: integer("image_grant").notNull().default(0),
+ overrides: jsonb("overrides").notNull().default({}).$type<Partial<InferencePolicy>>(), paused: boolean("paused").notNull().default(false),
+ imageExempt: boolean("image_exempt"), version: integer("version").notNull().default(1),
+});
+export const inferenceReservations = pgTable("inference_reservations", {
+ id:text("id").primaryKey(),userId:text("user_id").notNull().references(() => users.id), category:text("category").notNull().$type<"text"|"image">(),
+ inputHash:text("input_hash").notNull(),state:text("state").notNull().$type<"reserved"|"dispatched"|"succeeded"|"failed"|"uncertain">(),
+ bucket:text("bucket").notNull().$type<"balance"|"grant"|"exempt">(), periodStart:timestamp("period_start",{withTimezone:true,mode:"string"}).notNull(),
+ createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),finishedAt:timestamp("finished_at",{withTimezone:true,mode:"string"}),
+});
+export const inferenceActions = pgTable("inference_actions", {
+ id:text("id").primaryKey(),actorId:text("actor_id").references(() => users.id),userId:text("user_id").references(() => users.id),
+ requestHash:text("request_hash").notNull(),reason:text("reason").notNull(),command:jsonb("command").notNull().$type<Record<string,unknown>>(),
+ result:jsonb("result").notNull().$type<Record<string,unknown>>(),createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
+});

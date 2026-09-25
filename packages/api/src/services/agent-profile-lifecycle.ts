@@ -1,3 +1,4 @@
+import { settleInference } from "./inference-allowances.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -69,6 +70,8 @@ export async function archiveOwnedAgentProfile(db: DrizzleDB, userId: string, pr
           activeAvatarRequests.map((request) => request.id),
         ));
         for (const request of activeAvatarRequests) {
+          const [reservation] = await tx.select().from(schema.inferenceReservations).where(eq(schema.inferenceReservations.id,`avatar:${request.id}`));
+          if(reservation) await settleInference(tx,reservation.id,userId,reservation.state==='reserved'?'failed':'uncertain');
           await recordAvatarChange(tx, {
             userId: userId,
             agentProfileId: profileId,

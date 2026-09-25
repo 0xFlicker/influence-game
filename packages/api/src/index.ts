@@ -1,3 +1,4 @@
+import { createAccountInferenceRoutes } from "./routes/account-inference.js";
 import { createModerationRoutes } from "./routes/moderation.js";
 import { startEpisodeWorker } from "./services/episode-presentation.js";
 import { startVisualMediaWorker } from "./services/visual-media-worker.js";
@@ -618,6 +619,7 @@ app.route("/", cognitiveArtifactRoutes);
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
 app.route("/", createModerationRoutes(db));
+app.route("/", createAccountInferenceRoutes(db));
 
 const ownerLearningRoutes = createOwnerLearningRoutes(db);
 app.route("/", ownerLearningRoutes);

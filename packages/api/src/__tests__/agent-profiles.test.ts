@@ -1286,6 +1286,7 @@ describe("Agent Profile API", () => {
     });
 
     test("creation assistant validates stage, authentication and exact provider commands before effects", async () => {
+      await db.insert(schema.inferenceAccounts).values({userId: USER_A_ID, overrides:{textBurst:100}}).onConflictDoNothing();
       const turn = { stage: "review", message: "Yes", history: [], sections: [] };
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, ""))).status).toBe(401);
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, stage: "constructor" }, tokenA))).status).toBe(400);
@@ -1317,7 +1318,7 @@ describe("Agent Profile API", () => {
         const timedOut = await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA));
         expect(timedOut.status).toBe(504);
         expect(await timedOut.json()).toMatchObject({ error: expect.stringContaining("Your text is still here") });
-        const profileTimeout = await app.request("/api/agent-profiles/generate", jsonReq({ traits: "A patient fox" }, tokenA));
+        const profileTimeout = await app.request("/api/agent-profiles/generate", jsonReq({ traits: "A patient fox" }, tokenB));
         expect(profileTimeout.status).toBe(504);
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });

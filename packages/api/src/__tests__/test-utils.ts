@@ -87,6 +87,10 @@ export async function setupTestDB(): Promise<DrizzleDB> {
   }
   const db = createDB(TEST_DATABASE_URL);
   await truncateAll(db);
+  await db.insert(schema.inferencePlans).values([
+    {id:'free',name:'Free',policy:{text:100,image:25,renewal:'none',textBurst:5,imageDaily:5,textConcurrency:1,imageConcurrency:1}},
+    {id:'faf',name:'Friends and Family',policy:{text:100,image:25,renewal:'monthly',textBurst:5,imageDaily:5,textConcurrency:1,imageConcurrency:1}},
+  ]);
   return db;
 }
 

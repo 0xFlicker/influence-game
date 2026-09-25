@@ -1,3 +1,4 @@
+import { GenerationAdmissionError, generationContacts } from "../services/generation-admission-error.js";
 import { ModerationError } from "../services/moderation-intake.js";
 import { executeModerationRead, executeModerationWrite } from "../services/moderation-commands.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -2314,6 +2315,7 @@ function publicPlayerProfileContent(value: unknown): {
 }
 
 function jsonRpcErrorData(error: unknown): { data?: unknown } {
+  if (error instanceof GenerationAdmissionError) return { data: { code:error.code,statusCode:error.status,contacts:generationContacts,retryable:error.code === "generation_throttled" } };
   if (error instanceof ModerationError) return { data: { code: error.code, statusCode: error.status, retryable: false } };
   if (error instanceof OwnerLearningRetryError) {
     return {

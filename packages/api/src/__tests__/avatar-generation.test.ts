@@ -277,15 +277,17 @@ describe("avatar generation service", () => {
       personaKey: "diplomat",
     };
 
-    const [first, second] = await Promise.all([
+    const results = await Promise.allSettled([
       requestDraftAvatarCompletion(db, { userId: USER_ID, profile }),
       requestDraftAvatarCompletion(db, { userId: USER_ID, profile: { ...profile, name: "Mira Two" } }),
     ]);
 
-    expect([first.status, second.status].sort()).toEqual(["accepted", "skipped"]);
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+    const denied=results.find(r=>r.status==='rejected');
+    expect(denied?.status==='rejected' && denied.reason).toMatchObject({code:'generation_busy'});
     const requests = await db.select().from(schema.avatarGenerationRequests);
     expect(requests.filter((request) => request.status === "queued")).toHaveLength(1);
-    expect(requests.filter((request) => request.failureCode === "quota_exhausted")).toHaveLength(1);
+    expect(requests).toHaveLength(1);
   });
 
   test("does not overwrite a user-provided avatar if generation finishes later", async () => {
@@ -432,9 +434,8 @@ describe("avatar generation service", () => {
       }) as unknown as typeof fetch,
       processImmediately: true,
     });
-    expect(retry.status).toBe("skipped");
-    expect(retry.reason).toContain("quota");
-    expect(retryFetchCalled).toBe(false);
+    expect(retry.status).toBe("failed");
+    expect(retryFetchCalled).toBe(true);
   });
 
   test("reuses an active completion request instead of double-spending", async () => {
@@ -631,10 +632,11 @@ describe("avatar generation service", () => {
       createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
       updatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     });
+    await db.insert(schema.inferenceAccounts).values({userId:USER_ID,imageBalance:0});
     await insertAgent("quota-agent");
 
     let fetchCalled = false;
-    const completion = await requestAvatarCompletion(db, {
+    const completion = requestAvatarCompletion(db, {
       userId: USER_ID,
       agentProfileId: "quota-agent",
       triggerSource: "web_user_prompt",
@@ -646,12 +648,11 @@ describe("avatar generation service", () => {
       processImmediately: true,
     });
 
-    expect(completion.status).toBe("skipped");
-    expect(completion.reason).toContain("quota");
+    await expect(completion).rejects.toMatchObject({code:'generation_exhausted'});
     expect(fetchCalled).toBe(false);
   });
 
-  test("exempts sysop users from avatar generation quota", async () => {
+  test("session sysop claims do not grant an exemption without persisted authority", async () => {
     process.env.API_KAT_IMGNAI_KEY = "kat-key";
     process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
     process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA = "1";
@@ -668,10 +669,11 @@ describe("avatar generation service", () => {
       createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
       updatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     });
+    await db.insert(schema.inferenceAccounts).values({userId:USER_ID,imageBalance:0});
     await insertAgent("sysop-quota-agent");
 
     let fetchCalled = false;
-    const completion = await requestAvatarCompletion(db, {
+    const completion = requestAvatarCompletion(db, {
       userId: USER_ID,
       agentProfileId: "sysop-quota-agent",
       triggerSource: "web_user_prompt",
@@ -683,8 +685,7 @@ describe("avatar generation service", () => {
       }) as unknown as typeof fetch,
     });
 
-    expect(completion.status).toBe("accepted");
-    expect(completion.generationRequestId).toBeTruthy();
+    await expect(completion).rejects.toMatchObject({code:'generation_exhausted'});
     expect(fetchCalled).toBe(false);
   });
 
@@ -721,6 +722,7 @@ describe("avatar generation service", () => {
       createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
       updatedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     });
+    await db.insert(schema.inferenceAccounts).values({userId:USER_ID,imageBalance:0});
     await insertAgent("persisted-sysop-quota-agent");
 
     const completion = await requestAvatarCompletion(db, {
