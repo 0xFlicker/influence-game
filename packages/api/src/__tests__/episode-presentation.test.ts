@@ -32,6 +32,32 @@ describe("episode presentation", () => {
     const [row] = await db.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, id));
     expect(row?.title).toBe("My title"); expect(row?.status).toBe("ready");
   });
+  test("fills missing cast portraits from linked profiles without replacing frozen identity or artwork", async () => {
+    const id = await insertGame(db);
+    const userId = crypto.randomUUID();
+    const profileId = crypto.randomUUID();
+    await db.insert(schema.users).values({ id: userId, walletAddress: "0xportraitowner" });
+    await db.insert(schema.agentProfiles).values({ id: profileId, userId, name: "Renamed agent", personality: "Changed", avatarUrl: "/current.png" });
+    await db.insert(schema.gamePlayers).values([
+      { id: "missing", gameId: id, agentProfileId: profileId, persona: JSON.stringify({ name: "Original name", personaKey: "honest" }), agentConfig: "{}" },
+      { id: "frozen", gameId: id, agentProfileId: profileId, persona: JSON.stringify({ name: "Frozen", avatarUrl: "/original.png" }), agentConfig: "{}" },
+      { id: "unlinked", gameId: id, persona: JSON.stringify({ name: "No profile" }), agentConfig: "{}" },
+    ]);
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, id));
+    const readCast = async () => (await readEpisodePresentations(db, [game!])).get(id)!.cast;
+    expect(await readCast()).toEqual(expect.arrayContaining([
+      { id: "missing", name: "Original name", personaKey: "honest", avatarUrl: "/current.png" },
+      { id: "frozen", name: "Frozen", personaKey: null, avatarUrl: "/original.png" },
+      { id: "unlinked", name: "No profile", personaKey: null, avatarUrl: null },
+    ]));
+    await db.update(schema.users).set({ walletAddress: "imported-portraitowner" }).where(eq(schema.users.id, userId));
+    const importedCast = await readCast();
+    expect(importedCast.find(p => p.id === "missing")?.avatarUrl).toBeNull();
+    expect(importedCast.find(p => p.id === "frozen")?.avatarUrl).toBe("/original.png");
+    await db.update(schema.users).set({ walletAddress: "0xportraitowner" }).where(eq(schema.users.id, userId));
+    await db.update(schema.agentProfiles).set({ avatarUrl: null }).where(eq(schema.agentProfiles.id, profileId));
+    expect((await readCast()).find(p => p.id === "missing")?.avatarUrl).toBeNull();
+  });
   test("provider failure retains published copy and records failure", async () => {
     const id = await fixture();
     await db.update(schema.gameEpisodePresentations).set({ title: "Existing", description: "Keep me" }).where(eq(schema.gameEpisodePresentations.gameId, id));

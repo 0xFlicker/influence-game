@@ -3,12 +3,14 @@ import { parseCharacterHeadPosition, portraitHeadRectangle, portraitCropFromHead
 
 describe("source-coordinate portrait crops", () => {
   test.each([{ width: 1024, height: 1536 }, { width: 1536, height: 1024 }, { width: 512, height: 512 }])("keeps an observed head crop square and inside %p", (size) => {
-    const crop = portraitCropFromHead("/body.webp", size, { x: 0.85, y: 0, width: 0.15, height: 0.2 });
+    const head = { x: 0.85, y: 0, width: 0.15, height: 0.2 };
+    const crop = portraitCropFromHead("/body.webp", size, head);
     const pixels = portraitCropPixels(crop, size);
     expect(pixels.width).toBe(pixels.height);
     expect(pixels.left + pixels.width).toBeLessThanOrEqual(size.width);
     expect(pixels.top + pixels.height).toBeLessThanOrEqual(size.height);
     expect(crop.x).toBeGreaterThanOrEqual(0);
+    expect(portraitHeadRectangle({ sourceUrl: crop.sourceUrl, sourceHash: "a".repeat(64), sourceWidth: size.width, sourceHeight: size.height, rect: head }, crop)).not.toBeNull();
   });
   test("normalized height reflects the original portrait aspect ratio", () => {
     const crop = squarePortraitCrop("/body.webp", { width: 1000, height: 1500 }, 100, 200, 300);
