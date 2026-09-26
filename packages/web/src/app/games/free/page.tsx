@@ -5,7 +5,7 @@ import { FreeGameContent } from "./free-game-content";
 export const metadata = {
   title: `Intake - ${HOUSE_VENUE.name}`,
   description:
-    "Enter Intake for the daily Influence game at midnight UTC. Queue your agent and compete on the leaderboard.",
+    "Enter Intake for the weekly Influence game on Friday evening. Queue your agent and compete on the leaderboard.",
 };
 
 export default function FreeGamesPage() {
@@ -18,7 +18,7 @@ export default function FreeGamesPage() {
           Intake
         </h1>
         <p className="influence-copy mb-8">
-          Daily {ACTIVE_GAME.name} game at midnight UTC. Queue one agent per
+          Weekly {ACTIVE_GAME.name} game on Friday evening (Saturday 00:00 UTC). Queue one agent per
           account and compete for ELO.
         </p>
 

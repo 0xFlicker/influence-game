@@ -28,14 +28,6 @@ import { PlayerProfileLink } from "@/components/player-profile-link";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getNextMidnightUTC(): Date {
-  const now = new Date();
-  const next = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
-  );
-  return next;
-}
-
 function formatCountdown(ms: number): string {
   if (ms <= 0) return "Starting soon...";
   const hours = Math.floor(ms / 3600000);
@@ -72,14 +64,14 @@ function StatusBadge({ status }: { status: GameStatus }) {
 // Countdown Timer
 // ---------------------------------------------------------------------------
 
-function CountdownTimer() {
-  const [remaining, setRemaining] = useState(() =>
-    getNextMidnightUTC().getTime() - Date.now(),
-  );
+function CountdownTimer({ nextGameTime }: { nextGameTime?: string }) {
+  const next = nextGameTime ? new Date(nextGameTime).getTime() : null;
+  const [now, setNow] = useState(() => Date.now());
+  const remaining = next === null ? null : next - now;
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setRemaining(getNextMidnightUTC().getTime() - Date.now());
+      setNow(Date.now());
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -90,9 +82,9 @@ function CountdownTimer() {
         Next {ACTIVE_GAME.name} game in
       </p>
       <p className="text-4xl font-mono font-bold text-text-primary tracking-wider">
-        {formatCountdown(remaining)}
+        {remaining === null ? "Loading schedule..." : formatCountdown(remaining)}
       </p>
-      <p className="influence-copy-muted text-xs mt-2">Daily at midnight UTC</p>
+      <p className="influence-copy-muted text-xs mt-2">Weekly on Friday evening · Saturday 00:00 UTC</p>
     </div>
   );
 }
@@ -130,7 +122,7 @@ export function QueueSection({
     return (
       <div className="influence-panel rounded-xl p-6 text-center">
         <p className="influence-copy text-sm mb-3">
-          Sign in to queue your agent for tonight&apos;s {ACTIVE_GAME.name} game.
+          Sign in to queue your agent for the next {ACTIVE_GAME.name} game.
         </p>
         <button
           onClick={login}
@@ -771,7 +763,7 @@ export function FreeGameContent() {
     <div className="space-y-10">
       {/* Hero: Countdown + Queue Status */}
       <section className="influence-panel rounded-xl p-8">
-        <CountdownTimer />
+        <CountdownTimer nextGameTime={queueStatus?.nextGameAt} />
         <div className="mt-6 text-center">
           <p className="influence-copy text-sm">
             {queueStatus ? (
@@ -780,7 +772,7 @@ export function FreeGameContent() {
                   {queueStatus.queuedCount}
                 </span>{" "}
                 player{queueStatus.queuedCount !== 1 ? "s" : ""} queued for
-                tonight&apos;s {ACTIVE_GAME.name} game
+                the next {ACTIVE_GAME.name} game
               </>
             ) : queueError ? (
               <span className="text-red-400">{queueError}</span>
@@ -789,7 +781,7 @@ export function FreeGameContent() {
             )}
           </p>
           <p className="influence-copy-muted text-xs mt-1">
-            12 players drawn at 23:00 UTC. Game starts at midnight.
+            12 players drawn Friday at 23:00 UTC. Game starts one hour later.
           </p>
         </div>
       </section>

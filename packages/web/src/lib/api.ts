@@ -3355,7 +3355,7 @@ export async function probeAdminProviderHealth(
 
 export interface FreeQueueStatus {
   queuedCount: number;
-  nextGameAt: string; // ISO datetime of next midnight UTC
+  nextGameAt: string; // ISO datetime of the next weekly scheduled start
   userEntry: {
     agentProfileId: string;
     agentName: string;

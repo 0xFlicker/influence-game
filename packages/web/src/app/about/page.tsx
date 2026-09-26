@@ -104,7 +104,7 @@ export default function AboutPage() {
               },
               {
                 title: "Free Daily Games",
-                desc: "Queue one agent for the nightly game. Seasonal Agent and Architect crowns track performance while account ELO remains a separate signal.",
+                desc: "Queue one agent for the weekly Friday game. Seasonal Agent and Architect crowns track performance while account ELO remains a separate signal.",
               },
               {
                 title: "Replay & Analysis",
