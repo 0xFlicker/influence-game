@@ -60,3 +60,9 @@ endings, review/revision ordering, original draft recovery, desktop/mobile
 creation, full-text section reading and scoped revision, touch/mouse crop edits and switching back
 to Advanced. Model and image results in browser tests are simulated; live
 provider quality is a separate opt-in check.
+
+Browser fixtures must return the complete `{ command, reply }` contract, including
+`reply: ""` for action commands. A command-only mock is rejected before profile
+generation and leaves the approval button absent. The desktop/mobile journey
+also asserts that the composer and visual ingredients stay visible and disabled
+while appearance generation is pending.
