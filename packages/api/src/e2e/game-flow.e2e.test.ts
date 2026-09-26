@@ -276,9 +276,9 @@ describe("E2E: Full Game Flow", () => {
           timeout: 30000,
         });
 
-        // Wait for players to render in the PlayerRoster
+        // Waiting games show the joined cast in the pre-show.
         await page.waitForFunction(
-          "document.body.innerText.toLowerCase().includes('players') && document.body.innerText.toLowerCase().includes('6 alive')",
+          "document.querySelector('[aria-label=\"Game pre-show\"]')?.innerText.includes('Cast complete') && document.querySelectorAll('.pre-show-cast-card').length === 6",
           { timeout: 20000 },
         );
 
@@ -289,8 +289,8 @@ describe("E2E: Full Game Flow", () => {
           expect(pageText).toContain(name);
         }
 
-        // Player count should show 6 alive
-        expect(pageText.toLowerCase()).toContain("6 alive");
+        expect(pageText).toContain("of 6 agents in the cast");
+        expect(pageText).toContain("Cast complete");
       } catch (err) {
         await screenshotOnFailure(page, "scenario2-failure");
         throw err;

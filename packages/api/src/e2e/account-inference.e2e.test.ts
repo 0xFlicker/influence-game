@@ -26,8 +26,9 @@ afterAll(async()=>{await cleanupE2eResources([
 test('owner exhaustion preserves draft, admin grants allowance and sees usage controls',async()=>{
  const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/agents/create`,{privateKey:owner.wallet.privateKey});
  try {
-  await page.waitForSelector('textarea[aria-label="Message the character assistant"]',{timeout:30000});
+  await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])',{timeout:30000});
   await page.type('textarea[aria-label="Message the character assistant"]','A patient detective with a dry sense of humor');
+  await page.waitForSelector('button[aria-label="Send"]:not([disabled])');
   await page.click('button[aria-label="Send"]');
   await page.waitForSelector('dialog[open]',{timeout:20000});
   expect(await page.$eval('dialog[open]',el=>el.textContent)).toContain('Need more generations?');
@@ -75,6 +76,7 @@ test('advanced visual affirmation uses context, preserves character text and ope
    } else void request.continue();
   });
   await page.waitForSelector('textarea[aria-label="Message the character assistant"]');
+  await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Advanced create' && !b.disabled)");
   await page.evaluate("Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='Advanced create')?.click()");
   await page.waitForSelector('#agent-name');
   await page.type('#agent-name','Existing Arden');
