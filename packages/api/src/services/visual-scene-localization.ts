@@ -75,10 +75,12 @@ export async function localizeVisualScene(input: {
     if (text.length !== 1 || typeof text[0]?.text !== "string") throw new Error("Missing exact scene localization");
     result = input.compositionOnly ? decodeVisualComposition(text[0].text, players.map((player) => player.id)) : input.candidateAnchors ? decodeVisualIdentities(text[0].text, players.map((player) => player.id), input.candidateAnchors) : decodeVisualLocalization(text[0].text, players.map((player) => player.id));
   } catch (error) {
-    receipt.failure = visualFailureEvidence(error, !response.ok ? "http" : error instanceof VisualIdentityFailure ? "identity" : "response", responseBody);
+    const failure = error instanceof VisualIdentityFailure && error.playerIds.length
+      ? new VisualIdentityFailure(`${error.message}: ${error.playerIds.map(id => players.find(player => player.id === id)!.name).join(", ")}`, error.playerIds) : error;
+    receipt.failure = visualFailureEvidence(failure, !response.ok ? "http" : failure instanceof VisualIdentityFailure ? "identity" : "response", responseBody);
     receipt.elapsedMs = Date.now() - startedAt;
     await input.journal?.finish(receipt);
-    throw error;
+    throw failure;
   }
   receipt.elapsedMs = Date.now() - startedAt;
   await input.journal?.finish(receipt, undefined, result);

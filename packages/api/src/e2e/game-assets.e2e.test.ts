@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Browser, Page } from "puppeteer";
 import sharp from "sharp";
@@ -30,7 +32,7 @@ test("banner stays on results, discovers late images, and is visible logged out 
     await db.insert(schema.games).values({ id: gameId, slug, status: "completed", minPlayers: 4, maxPlayers: 4, config: JSON.stringify(config) });
     await db.insert(schema.gameResults).values({ id: randomUUID(), gameId, winnerId: null, roundsPlayed: 1, finishedAt: new Date().toISOString(), tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }) });
     const jwt = await createSessionToken(userId);
-    servers = await startTestServers({ databaseUrl: testDb.databaseUrl, logDirectory: "/private/tmp/game-assets-browser-logs" });
+    servers = await startTestServers({ databaseUrl: testDb.databaseUrl, logDirectory: join(tmpdir(), "game-assets-browser-logs") });
     browser = await launchBrowser();
     const page = await browser.newPage();
     const bannerRequests: string[] = [];
@@ -45,7 +47,7 @@ test("banner stays on results, discovers late images, and is visible logged out 
     expect(await page.$eval('img[alt="Late spoiler banner"]', (image) => (image as unknown as { naturalWidth: number }).naturalWidth)).toBe(20);
     await page.waitForFunction("document.body.textContent.includes('Results') && !document.body.textContent.includes('Internal Server Error')");
     expect(await page.evaluate("document.body.textContent.includes('Internal Server Error')")).toBe(false);
-    await page.screenshot({ path: "/private/tmp/game-assets-results-banner.png", fullPage: true });
+    await page.screenshot({ path: join(tmpdir(), "game-assets-results-banner.png"), fullPage: true });
     for (const suffix of ["", "/replay", "/highlights"]) {
       const before = bannerRequests.length; await visit(`/games/${slug}${suffix}`);
       expect(await page.$('[data-testid="game-results-banner"]')).toBeNull(); expect(bannerRequests.length).toBe(before);

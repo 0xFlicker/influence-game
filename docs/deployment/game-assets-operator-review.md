@@ -1,6 +1,6 @@
 # Game assets operator review
 
-The implementation adds producer/sysop image CRUD through scoped OAuth, private S3 storage, a Bun CLI and skill, and results-only banners. Branch `codex/game-assets` starts from fetched `origin/main` (`a80dc90a`); unrelated active checkout changes are excluded. Migration `0100_game_assets` adds asset/operation tables and expands OAuth scope constraints. Startup RBAC seeding grants `manage_game_assets` to existing producer/sysop roles without assigning new real accounts.
+The implementation adds producer/sysop image CRUD through scoped OAuth, private S3 storage, a Bun CLI and skill, and results-only banners. The work started from fetched `origin/main` (`a80dc90a`) in `codex/game-assets` and is integrated into PR #153 (`codex/completed-replay-image-backfill`) with completed replay image production. Migration `0100_game_assets` adds asset/operation tables and expands OAuth scope constraints. Startup RBAC seeding grants `manage_game_assets` to existing producer/sysop roles without assigning new real accounts.
 
 ## Local validation at review
 
@@ -8,21 +8,23 @@ The final local checks cover `public`/`spoiler` presentation metadata and manage
 
 | Check | Result |
 |---|---|
-| Provider-free baseline | 2,022 passed, 5 skipped, 0 failed |
-| Full PostgreSQL baseline | 1,743 passed, 0 failed; 19,989 assertions |
+| Provider-free baseline after PR #153 integration | 2,028 passed, 5 skipped, 0 failed |
+| Full PostgreSQL baseline after PR #153 integration | 1,758 passed, 0 failed; 20,092 assertions |
 | Typecheck and lint | All workspaces passed |
 | Focused API regressions | 13 passed, 97 assertions |
 | Focused CLI/banner tests | 13 passed, 58 assertions |
 | Real local MinIO and opaque OAuth CLI CRUD | 1 passed, 16 assertions; disposable objects removed |
 | API/Next/Chrome results journey | 1 passed, 13 assertions; screenshot visually inspected |
+| Full API browser lane after PR #153 integration | 26 passed across 9 files; 201 assertions |
+| Public identity browser lane after PR #153 integration | 13 passed, including desktop/mobile character creation |
 | Migration release policy | `0100_game_assets.sql` accepted |
 | Repository skill validation | Valid; upload/update/list help verified |
 
-The MinIO CLI upload defaults to `spoiler`, and anonymous API reads return its exact normalized bytes while direct bucket access stays restricted. Browser evidence covers late anonymous discovery, public results after sign-out, existing private-game access, and no banner requests on landing/replay/highlights/library. API tests prove changing presentation classification preserves reads, role removal blocks edits only, revisions fence concurrent writers, and cleanup cannot publish or lose a late candidate.
+The MinIO CLI upload defaults to `spoiler`, and anonymous API reads return its exact normalized bytes while direct bucket access stays restricted. Browser evidence covers late anonymous discovery, public results after sign-out, existing private-game access, and no banner requests on landing/replay/highlights/library. API tests prove changing presentation classification preserves reads, role removal blocks edits only, revisions fence concurrent writers, and cleanup cannot publish or lose a late candidate. The combined browser lane also covers Producer/Sysop replay production, lost-request recovery, and publication. Its temporary output paths are portable, and standing-agent teardown has an explicit bound long enough for the server cleanup contract.
 
 Temporary task-owned API/web/browser/callback processes are stopped; existing Docker Postgres/MinIO and unrelated work are preserved. Harness-generated web configuration changes were removed. This is local evidence: deployed OAuth, Linode, and ingress remain T9.
 
-Read-only Grok attempts on the earlier scoped implementation returned no finding report. Independent review remains pending; no clean external review is claimed. No commit, push, deployment, or real account assignment has occurred.
+Read-only Grok attempts on the earlier scoped implementation returned no finding report. Independent review remains pending; no clean external review is claimed. Committing and updating PR #153 are user-authorized. No deployment or real account assignment has occurred.
 
 ## Review before deployment
 

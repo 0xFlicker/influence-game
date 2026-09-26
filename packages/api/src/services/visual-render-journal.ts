@@ -14,6 +14,7 @@ const operations = schema.visualRenderOperations;
 const attempts = schema.visualRenderAttempts;
 type Operation = typeof operations.$inferSelect;
 type Attempt = typeof attempts.$inferSelect;
+type VisualAttemptStatus = "pending" | "finished" | "needs_reconciliation" | "reconciled";
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 export class VisualRenderRecoveryRequired extends Error {
@@ -146,6 +147,11 @@ export async function reconcileVisualAttempt(db: DrizzleDB, input: {
     const [current] = await tx.select().from(attempts).where(eq(attempts.id, entry.id));
     if (!current || current.reconciliation) throw new Error("Visual attempt already reconciled");
     const [operation] = await tx.select().from(operations).where(eq(operations.id, entry.operationId));
+    if (!current.receipt && current.generation === operation?.generation && operation.repairJobId) {
+      const [running] = await tx.select({ id: schema.visualRepairJobs.id }).from(schema.visualRepairJobs)
+        .where(and(eq(schema.visualRepairJobs.id, operation.repairJobId), sql`${schema.visualRepairJobs.status} IN ('rendering','verifying') AND ${schema.visualRepairJobs.leaseUntil}::timestamptz > now()`));
+      if (running) throw new Error("Provider request is still in progress. Wait for its receipt before reconciliation.");
+    }
     if (operation?.gameId) await recordVisualOperationEvent(tx, operation.gameId, `${entry.id}:reconciled`, { operationId: operation.id, kind: "reconciliation", outcome: "success", message: `${input.operatorId}: ${input.note}; confirmed cost ${input.costMicrousd} micro-USD` });
     await tx.update(attempts).set({ costMicrousd: input.costMicrousd, reconciliation: {
       operatorId: input.operatorId, note: input.note, at: new Date().toISOString(),
@@ -155,12 +161,22 @@ export async function reconcileVisualAttempt(db: DrizzleDB, input: {
 
 export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) {
   const { image: _image, ...receiptColumns } = getTableColumns(attempts);
-  const rows = await db.select({ attempt: receiptColumns, operation: operations }).from(attempts).innerJoin(operations, eq(attempts.operationId, operations.id)).where(eq(operations.gameId, gameId));
+  const rows = await db.select({ attempt: receiptColumns, operation: operations,
+    running: sql<boolean>`COALESCE(${schema.visualRepairJobs.status} IN ('rendering','verifying') AND ${schema.visualRepairJobs.leaseUntil}::timestamptz > now(), false)`,
+  }).from(attempts).innerJoin(operations, eq(attempts.operationId, operations.id))
+    .leftJoin(schema.visualRepairJobs, eq(schema.visualRepairJobs.id, operations.repairJobId)).where(eq(operations.gameId, gameId));
+  const summaries = rows.map(({ attempt, operation, running }) => {
+    const status: VisualAttemptStatus = attempt.reconciliation ? "reconciled"
+      : attempt.receipt ? attempt.receipt.chargeUncertain ? "needs_reconciliation" : "finished"
+      : running && attempt.generation === operation.generation ? "pending" : "needs_reconciliation";
+    return { ...attempt, status, operationKey: operation.operationKey, sceneId: operation.sceneId, request: operation.request, inputHash: operation.inputHash };
+  });
   return {
-    knownCostMicrousd: rows.reduce((sum, { attempt }) => sum + (attempt.costMicrousd ?? 0), 0),
-    unpricedAttempts: rows.filter(({ attempt }) => attempt.costMicrousd === null).length,
-    uncertainAttempts: rows.filter(({ attempt }) => unresolved(attempt)).length,
-    attempts: rows.map(({ attempt, operation }) => ({ ...attempt, operationKey: operation.operationKey, sceneId: operation.sceneId, request: operation.request, inputHash: operation.inputHash })),
+    knownCostMicrousd: summaries.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0),
+    unpricedAttempts: summaries.filter(attempt => attempt.costMicrousd === null).length,
+    pendingAttempts: summaries.filter(attempt => attempt.status === "pending").length,
+    uncertainAttempts: summaries.filter(attempt => attempt.status === "needs_reconciliation").length,
+    attempts: summaries,
   };
 }
 

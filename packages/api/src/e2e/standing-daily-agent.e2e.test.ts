@@ -118,7 +118,7 @@ afterAll(async () => {
     ["servers", async () => { if (servers) await stopTestServers(servers); }],
     ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
   ]);
-});
+}, 60_000);
 
 describe("E2E: Standing Daily Agent", () => {
   test("creates and automatically enters an agent from the global zero-agent prompt", async () => {

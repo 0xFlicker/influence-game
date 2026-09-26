@@ -580,6 +580,9 @@ export interface AdminGameSummary extends GameSummary {
   providerFailures?: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
 }
 
+export type ProductionGameSummary = Pick<AdminGameSummary,
+  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel">;
+
 export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
 
 export interface AdminProviderFailureSummary {
@@ -791,6 +794,10 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games", { cache: "no-store" });
+}
+
+export async function listProductionGames(): Promise<ProductionGameSummary[]> {
+  return apiFetch("/api/admin/production/games", { cache: "no-store" });
 }
 
 export async function getAdminProviderFailures(

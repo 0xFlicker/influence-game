@@ -8,7 +8,7 @@ origin: docs/brainstorms/2026-09-25-game-assets-brainstorm.md
 
 # Game asset implementation tasks
 
-Implementation authorized through operator review on 2026-09-26. Branch `codex/game-assets` starts at freshly fetched `origin/main` (`a80dc90a`) in `/Users/user/.codex/worktrees/game-assets/influence-game`; the original dirty checkout is preserved. The implementation uses migration `0100_game_assets.sql`. No parallel agents, deployed writes, real account assignments, commits, or pushes were used. Checked items describe implemented behavior and completed local evidence; T9 remains a separate deployed proof boundary.
+Implementation authorized through operator review on 2026-09-26. Branch `codex/game-assets` starts at freshly fetched `origin/main` (`a80dc90a`) in `/Users/user/.codex/worktrees/game-assets/influence-game`; the original checkout is preserved. The implementation uses migration `0100_game_assets.sql`. The user subsequently authorized committing and integrating this work into PR #153 (`codex/completed-replay-image-backfill`). No parallel agents, deployed writes, or real account assignments were used. Checked items describe implemented behavior and completed local evidence; T9 remains a separate deployed proof boundary.
 
 ## T0 — Refresh the handoff boundary
 
@@ -137,7 +137,7 @@ Implementation authorized through operator review on 2026-09-26. Branch `codex/g
 The feature is implemented locally. Review [the operating guide](../game-assets.md) and [the operator handoff](../deployment/game-assets-operator-review.md), then resolve T9 against a runnable ephemeral/staging release. Asset classification is presentation only: public-game images are anonymous-readable, existing private/hidden game access remains intact, and roles control writes. No production proof is claimed. Changes to this default must update policy, route/browser tests, CLI/skill examples, and documentation together.
 
 
-## Local execution evidence — 2026-09-26
+## Initial local execution evidence — 2026-09-26
 
 - `bun run test`: 2,022 passed, 5 skipped, 0 failed across 191 files.
 - `bun run test:postgres`: 1,743 passed, 0 failed across 147 files; 19,989 assertions. Shared test fixtures used the process-lifetime advisory lock.
@@ -151,3 +151,7 @@ The feature is implemented locally. Review [the operating guide](../game-assets.
 - Task-owned temporary API/web/browser/callback processes stopped; existing Docker Postgres/MinIO and unrelated work remain. Harness-generated web configuration changes were removed. Deployed OAuth, Linode, ingress, and T9 remain unproven until non-production acceptance.
 
 Read-only Grok attempts on the earlier scoped implementation returned no finding report; independent review remains pending. All task-owned review/helper processes were stopped. No clean external review is claimed.
+
+## PR #153 integration evidence — 2026-09-26
+
+The combined replay-production and editorial-assets changes pass 2,028 provider-free tests (5 skipped), 1,758 PostgreSQL tests, 26 API browser tests, and 13 public-identity browser tests. The replay browser journey verifies publication through the remaining-scene count, persisted publication, published version, and viewer API. The public-identity journey covers both desktop and mobile creation with inactive editor controls hidden natively. Browser output paths use the platform temporary directory; standing-agent teardown has an explicit cleanup bound. The current validation summary is maintained in [the operator handoff](../deployment/game-assets-operator-review.md). T9 remains unperformed.

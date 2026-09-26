@@ -8,7 +8,7 @@ export function AdminPageShell({ activeTab }: { activeTab: AdminTab }) {
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main className="mx-auto w-full max-w-[90rem] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-        <AdminGate>
+        <AdminGate allowedRoles={activeTab === "production" ? ["producer", "sysop"] : []}>
           <AdminTabs activeTab={activeTab} />
         </AdminGate>
       </main>

@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { Phase } from "@influence/engine";
+import { Phase, selectActiveJury, type JuryMember } from "@influence/engine";
 import { visualRoomForPhase } from "@influence/engine/visual-mode";
 import { schema, type DrizzleDB } from "../db/index.js";
 
@@ -13,7 +13,7 @@ export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: 
       context: schema.transcripts.safeContext, audience: schema.transcripts.audiencePlayerIds, turn: schema.gameTurns.turnSequence, baseEvents: schema.gameTurns.baseEventSequence }).from(schema.transcripts)
       .innerJoin(schema.gameTurns, eq(schema.transcripts.gameTurnId, schema.gameTurns.id))
       .where(and(eq(schema.transcripts.gameId, gameId), eq(schema.gameTurns.status, "committed"))),
-    db.select({ sequence: schema.gameEvents.sequence, envelope: schema.gameEvents.envelope }).from(schema.gameEvents).where(and(eq(schema.gameEvents.gameId, gameId), inArray(schema.gameEvents.eventType, ["endgame.stage_set", "game.phase_entered", "player.eliminated"]))).orderBy(asc(schema.gameEvents.sequence)),
+    db.select({ sequence: schema.gameEvents.sequence, envelope: schema.gameEvents.envelope }).from(schema.gameEvents).where(and(eq(schema.gameEvents.gameId, gameId), inArray(schema.gameEvents.eventType, ["game.roster_initialized", "endgame.stage_set", "game.phase_entered", "player.eliminated"]))).orderBy(asc(schema.gameEvents.sequence)),
   ]);
   const bindings: Record<string, string> = {};
   for (const row of dialogue) {
@@ -28,21 +28,31 @@ export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: 
     const room = visualRoomForPhase(phase, row.context?.roomId, endgame);
     if (!room) continue;
     let participants: Set<string> | null = null;
-    if (endgame === "reckoning" || endgame === "tribunal") {
-      for (const { envelope } of prefix) {
-        if (envelope.type === "game.phase_entered") {
-          const payload = envelope.payload as { remainingPlayers: Array<{ id: string }> };
-          participants = new Set(payload.remainingPlayers.map(player => player.id));
-        } else if (envelope.type === "player.eliminated") {
-          participants?.delete((envelope.payload as { playerId: string }).playerId);
-        }
+    let totalPlayers = 0;
+    const jury: JuryMember[] = [];
+    for (const { envelope } of prefix) {
+      if (envelope.type === "game.roster_initialized") {
+        const payload = envelope.payload as { players: Array<{ id: string; status: string }> };
+        totalPlayers = payload.players.length;
+        participants = new Set(payload.players.filter(player => player.status === "alive").map(player => player.id));
+      } else if (envelope.type === "game.phase_entered") {
+        const payload = envelope.payload as { remainingPlayers: Array<{ id: string }> };
+        participants = new Set(payload.remainingPlayers.map(player => player.id));
+      } else if (envelope.type === "player.eliminated") {
+        const payload = envelope.payload as { playerId: string; juryMember?: JuryMember };
+        participants?.delete(payload.playerId);
+        if (payload.juryMember && !jury.some(member => member.playerId === payload.playerId)) jury.push(payload.juryMember);
       }
-      if (!participants) continue;
     }
+    if (room.startsWith("mingle-")) participants = new Set([row.speaker, ...(row.audience ?? [])]);
+    else if (room === "finals" && participants && totalPlayers) {
+      for (const member of selectActiveJury(jury, totalPlayers)) participants.add(member.playerId);
+    }
+    if ((endgame === "reckoning" || endgame === "tribunal") && !participants) continue;
     const scene = scenes.filter(s => s.roomId === room && s.boundarySequence < row.turn && s.afterDialogueSequence < row.sequence!
       && (!participants || s.plan.cast.length === participants.size && s.plan.cast.every(member => participants.has(member.id)))).at(-1);
     if (!scene || !scene.plan.cast.some(m => m.id === row.speaker)) continue;
-    // Private-room audiences must match exactly; public phase casts come from the saved scene plan.
+    // Saved canonical rosters prevent an earlier room image from retaining voted-off players.
     if (room.startsWith("mingle-")) {
       const members = new Set([row.speaker, ...(row.audience ?? [])]);
       if (members.size !== scene.plan.cast.length || scene.plan.cast.some(m => !members.has(m.id))) continue;
