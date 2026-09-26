@@ -103,8 +103,9 @@ origin, and offers Retry image plus Open source image. Retry remounts the image
 without a generation or localization request. A source change remounts the editor
 so dimensions, head geometry, and errors cannot survive from another image.
 
-Portrait localization now selects GPT-6 Sol through the existing Responses API
-and exact strict schema; game-scene verification remains on GPT-5.6 Sol. Existing
+Portrait localization and game-scene composition, geometry, and identity
+verification now select GPT-6 Sol through the existing Responses API and exact
+strict schemas. Existing
 operation keys and input fingerprints remain stable so accepted attempts replay
 and uncertain attempts cannot automatically incur another paid request during
 the model change. Provider receipts retain the model actually used.
@@ -128,3 +129,11 @@ uncertain-transport redispatch blocking. Focused creator/recovery tests passed
 shared database lock; the sequential rerun passed. The bounded Grok review
 returned no findings report and was stopped; it is not review proof. These are
 local checks; this patch has not been deployed.
+
+The scene renderer regressions assert GPT-6 Sol and strict schemas on every
+composition, geometry, and identity call, including small and large casts.
+The shared model constant removes the obsolete per-portrait model override.
+The shared scene-model update passed `bun run check`, the provider-free baseline
+(2,030 passed, five intentional skips), and the PostgreSQL API baseline
+(1,762 passed). No deployment or live multi-character quality evaluation was
+performed for this follow-up.

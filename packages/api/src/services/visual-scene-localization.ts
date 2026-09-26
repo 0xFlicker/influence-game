@@ -7,6 +7,7 @@ import { decodeVisualLocalization, visualLocalizationSchema, decodeVisualIdentit
 import type { VisualPlayerAnchor } from "@influence/engine/visual-mode";
 
 export const VISUAL_LOCALIZATION_VERSION = "composition-sol-v4";
+export const VISUAL_LOCALIZATION_MODEL = "gpt-6-sol";
 
 export interface VisualReferenceImage {
   image: Uint8Array;
@@ -22,7 +23,6 @@ export async function localizeVisualScene(input: {
   journal?: VisualImageJournal;
   candidateAnchors?: readonly VisualPlayerAnchor[];
   compositionOnly?: boolean;
-  model?: "gpt-5.6-sol" | "gpt-6-sol";
 }) {
   const players = input.references.flatMap((reference) => reference.players);
   if ((!players.length && !input.compositionOnly) || new Set(players.map((player) => player.id)).size !== players.length) throw new Error("Unique scene identities are required");
@@ -40,7 +40,7 @@ export async function localizeVisualScene(input: {
   }
   content.push({ type: "input_text", text: input.compositionOnly ? "FINAL SCENE: verify identities and actual composition only." : input.candidateAnchors ? "FINAL NUMBERED SCENE: Which numbered person is each reference character? Read the reference player IDs carefully. Labels identify positions only, never reference order." : `FINAL SCENE: ${dimensions.width} pixels wide by ${dimensions.height} pixels tall. Locate heads in this image only. The cyan coordinate grid is a measurement aid, not part of the scene. Its horizontal labels are x and vertical labels are y, both normalized 0 to 1. Read the grid to determine actual top-left head coordinates; do not assume a square image or include empty space above the hair. Exclude long hair below the chin from the head rectangle.` });
   content.push({ type: "input_image", image_url: `data:image/png;base64,${inspection.toString("base64")}`, detail: "high" });
-  const model = input.model ?? "gpt-5.6-sol";
+  const model = VISUAL_LOCALIZATION_MODEL;
   const body = JSON.stringify({ model, store: false, reasoning: { effort: "medium" }, max_output_tokens: 5000,
     input: [{ role: "user", content }], text: { format: { type: "json_schema", name: "scene_localization", strict: true, schema: (input.compositionOnly ? visualCompositionSchema : input.candidateAnchors ? visualIdentitySchema : visualLocalizationSchema)(players.map((player) => player.id)) } } });
   const reservation = { provider: "openai" as const, model, requestHash: createHash("sha256").update(body).digest("hex") };
