@@ -566,6 +566,9 @@ export function createGameRoutes(db: DrizzleDB) {
       });
     } catch (error) {
       if (error instanceof OwnedSeatProjectionError) {
+        if (error.reason === "owner_seat_limit") {
+          return c.json({ error: error.message, code: error.reason }, 403);
+        }
         return c.json({ error: error.message }, error.code === "rated_roster_invalid" ? 409 : 400);
       }
       throw error;
