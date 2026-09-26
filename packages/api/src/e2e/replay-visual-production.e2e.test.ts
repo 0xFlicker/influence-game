@@ -62,7 +62,9 @@ beforeAll(async () => {
   // No game or media worker is started; the test completes one job with deterministic pixels below.
   api = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
   const webPort = 20000 + Math.floor(Math.random() * 30000); webUrl = `http://localhost:${webPort}`;
-  web = Bun.spawn([process.execPath, "run", "dev", "--hostname", "127.0.0.1"], {
+  const node = Bun.which("node");
+  if (!node) throw new Error("Node.js is required to start the replay production browser test server");
+  web = Bun.spawn([node, "./node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1"], {
     cwd: `${import.meta.dir}/../../../web`,
     env: { ...process.env, NODE_ENV: "development", PORT: String(webPort), API_URL: "", NEXT_PUBLIC_API_URL: "", API_BACKEND_URL: `http://127.0.0.1:${api.port}`,
       NEXT_PUBLIC_E2E_AUTH: "true", NEXT_PUBLIC_E2E_LAYERED_AUTH: "true", MANAGED_AUTH_MODE: "full",
