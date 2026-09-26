@@ -1543,7 +1543,9 @@ describe("provider call journal", () => {
     });
     expect(Date.now() - startedAt).toBeLessThan(100);
     try {
-      await Bun.sleep(20);
+      expect((await runtime.runOnce()).evidence).toEqual({
+        attempted: 1, stored: 0, failed: 1,
+      });
       const outbox = (await db.select().from(schema.providerAttemptEvidenceOutbox))[0];
       expect(outbox?.claimToken).toBeNull();
     } finally {
