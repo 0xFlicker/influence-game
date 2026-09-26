@@ -107,6 +107,9 @@ interface AgentAIEditorProps {
   generationQuips: string[];
   assistantNote: string | null;
   error: string | null;
+  saveError: string | null;
+  missingDetails: string | null;
+  onCompleteMissingDetails: () => void;
   onSaveDraft: () => void;
   onCancelGeneration: () => void;
   generationBusy: boolean;
@@ -134,6 +137,9 @@ export function AgentAIEditor({
   generationQuips,
   assistantNote,
   error,
+  saveError,
+  missingDetails,
+  onCompleteMissingDetails,
   onSaveDraft,
   onCancelGeneration,
   generationBusy,
@@ -380,6 +386,10 @@ export function AgentAIEditor({
             })}
           </div>}
           {expanded && !activityPhase && assistantNote && <p role="status" className="mb-3 rounded-xl bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/70">{assistantNote}</p>}
+          {!activityPhase && missingDetails && <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-phase/20 bg-phase/[0.06] px-4 py-3">
+            <p className="min-w-0 flex-1 text-sm leading-5 text-white/75">{missingDetails}</p>
+            <button type="button" onClick={onCompleteMissingDetails} disabled={busy || submitting} className="influence-button-secondary min-h-11 rounded-lg px-3 text-sm">Fill missing details</button>
+          </div>}
           {!activityPhase && <div className={expanded ? "flex items-end gap-3" : ""}>
             <label htmlFor="agent-ai-change-request" className="sr-only">{isEditing ? "What would you like to change about this Agent?" : "What should this Agent be like?"}</label>
             <div className={`min-w-0 ${expanded ? "flex-1 rounded-xl" : "w-full rounded-full shadow-lg shadow-black/25"} overflow-hidden border border-white/15 bg-black/30 transition-colors focus-within:border-phase/60 ${expanded ? "focus-within:ring-1 focus-within:ring-phase/25" : ""}`}>
@@ -421,7 +431,8 @@ export function AgentAIEditor({
             </div>
             {expanded && <button type="button" onClick={send} disabled={!canSend} aria-label="Send Agent request" className="influence-button-primary min-h-12 shrink-0 rounded-xl px-5 text-sm font-semibold sm:px-7">{busy ? activityPhase === "images" ? "Making art…" : "Creating…" : "Send"}</button>}
           </div>}
-          {expanded && !activityPhase && error && <p role="alert" className="mt-2 px-1 text-xs leading-5 text-red-300">{error}</p>}
+          {!activityPhase && error && <p role="alert" className="mt-2 px-1 text-sm leading-5 text-red-300">{error}</p>}
+          {!activityPhase && saveError && <p role="alert" className="mt-2 rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-sm leading-5 text-red-300">{saveError}</p>}
           {!activityPhase && <div className={`mt-3 flex flex-wrap items-center justify-end gap-2 ${expanded ? "border-t border-white/8 pt-3" : "px-1"}`}>
             {expanded && <span className="mr-auto hidden text-xs text-white/35 sm:inline">AI changes stay in this draft until you save.</span>}
             {expanded && <button type="button" onClick={onSaveDraft} className="influence-button-secondary min-h-10 rounded-lg px-3 text-xs sm:text-sm">Save draft</button>}

@@ -1297,16 +1297,22 @@ describe("Agent Profile API", () => {
       const requests: Record<string, unknown>[] = [];
       globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(input.toString(), init);
-        requests.push(await request.json() as Record<string, unknown>);
+        const body = await request.json() as Record<string, unknown>;
+        requests.push(body);
+        // Match the provider rejection that broke the staging Workshop.
+        if (body.tools && body.reasoning_effort !== "none") return Response.json({ error: { message: "Function tools with reasoning_effort are not supported for gpt-6-luna in /v1/chat/completions", type: "invalid_request_error" } }, { status: 400 });
         return Response.json({ id: "edit-test", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: Array.from({ length: count }, (_, i) => ({ id: `call-${i}`, type: "function", function: { name: "update_visuals", arguments: args } })) }, finish_reason: finish }] });
       }, { preconnect: originalFetch.preconnect });
       try {
         const result = await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA));
         expect(result.status).toBe(200);
         expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
-        expect(requests[0]).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });
+        expect(requests[0]).toMatchObject({ model: "gpt-6-luna", service_tier: "default", reasoning_effort: "none", tool_choice: "required", parallel_tool_calls: false });
         expect(JSON.stringify(requests[0]?.messages)).toContain("hasFullBody");
         expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List votes off the player with the fewest positive votes");
+        const missingIdentity = await app.request("/api/agent-profiles/edit-assistant", jsonReq({ ...turn, context: { ...context, gender: "", personaKey: "" } }, tokenA));
+        expect(missingIdentity.status).toBe(200);
+        expect(await missingIdentity.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
         for (const invalid of ["not json", "[]", '{"fields":["name"]}', '```json\n{}\n```']) {
           args = invalid;
           expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
@@ -1315,6 +1321,10 @@ describe("Agent Profile API", () => {
         expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
         count = 1; finish = "length";
         expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
+        globalThis.fetch = Object.assign(async () => { throw new DOMException("timed out", "AbortError"); }, { preconnect: originalFetch.preconnect });
+        const timedOut = await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA));
+        expect(timedOut.status).toBe(504);
+        expect(await timedOut.json()).toMatchObject({ error: expect.stringContaining("Your text is still here") });
         expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });
@@ -1440,12 +1450,19 @@ describe("Agent Profile API", () => {
         }, tokenA));
         expect(visualOnly.status).toBe(200);
         expect(await visualOnly.json()).toMatchObject({ name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy" });
+        const completedIdentity = await app.request("/api/agent-profiles/generate", jsonReq({
+          changeRequest: "Fill missing details from this character", selectedFields: ["personaKey", "gender"], allowPersonaChange: true,
+          existingProfile: { name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", performanceInstructions: "Original voice", visualDesign: "Original look" },
+        }, tokenA));
+        expect(completedIdentity.status).toBe(200);
+        expect(await completedIdentity.json()).toMatchObject({ name: "Original", personality: "Original personality", backstory: "Original history", strategyStyle: "Original strategy", performanceInstructions: "Original voice", visualDesign: "Original look", gender: "female", personaKey: "strategic" });
         expect(generated.status).toBe(200);
         expect(refined.status).toBe(200);
-        expect(requestBodies).toHaveLength(3);
+        expect(requestBodies).toHaveLength(4);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
         for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         expect(requestBodies.map((body) => body.model)).toEqual([
+          "gpt-6-luna",
           "gpt-6-luna",
           "gpt-6-luna",
           "gpt-6-luna",

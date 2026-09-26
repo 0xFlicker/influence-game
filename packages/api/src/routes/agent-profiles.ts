@@ -90,6 +90,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts: generationContacts }, error.status);
       console.error("[edit-assistant] Turn failed", error);
+      if (error instanceof APIConnectionTimeoutError) return c.json({ error: "The character assistant took too long to respond. Your text is still here—please try again." }, 504);
       return c.json({ error: "The character assistant could not complete this turn. Your draft is unchanged." }, 502);
     }
   });

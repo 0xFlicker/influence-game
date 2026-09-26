@@ -260,7 +260,7 @@ export function AgentForm({
   const [changeRequest, setChangeRequest] = useState("");
   const [creationTraitIds, setCreationTraitIds] = useState<AgentCreationTraitId[]>([]);
   const [editHistory, setEditHistory] = useState<string[]>([]);
-  const [allowAIChoose, setAllowAIChoose] = useState(!initial?.fullBodyReferenceUrl);
+  const [allowAIChoose, setAllowAIChoose] = useState(!initial?.personaKey);
   const [portraitError, setPortraitError] = useState<string | null>(null);
   const [portraitStatusUnavailable, setPortraitStatusUnavailable] = useState(false);
   const [pendingRestore, setPendingRestore] = useState<StoredEditorDraft | null>(null);
@@ -529,6 +529,16 @@ export function AgentForm({
 
   const visualOffer = !visualDesign?.trim() || !performanceInstructions.trim() || !fullBodyReferenceUrl
     ? "This character is missing visual presentation details or a full-body reference. Would you like me to update their visuals?" : null;
+  const missingDetails = [!name.trim() && "name", !personality.trim() && "personality", !gender && "gender", !personaKey && "archetype"].filter(Boolean).join(", ");
+
+  async function completeMissingDetails() {
+    if (generationBusy || uploading || submitting) return;
+    const fields = characterEditFields({ name, personaKey, gender, personality, backstory, strategyStyle, performanceInstructions, visualDesign }, []);
+    await handleGenerate({
+      message: "Complete the missing details from this existing character. Infer missing gender and archetype from the character. Preserve all populated fields and existing images.",
+      sections: fields,
+    });
+  }
 
   async function handleAdvancedSend() {
     if (generationBusy || uploading || submitting) return;
@@ -608,6 +618,7 @@ export function AgentForm({
     const epoch = beginGeneration();
     setProfileGenerating(true);
     setAiError(null);
+    setSaveError(null);
     setAssistantNote(null);
     setGenerationQuips([]);
     try {
@@ -624,7 +635,7 @@ export function AgentForm({
           backstory: backstory.trim() || undefined,
           personality: personality.trim() || undefined,
           strategyStyle: strategyStyle.trim() || undefined,
-          personaKey: personaKey ?? "strategic",
+          personaKey: personaKey ?? undefined,
           gender: gender || undefined,
           performanceInstructions,
           visualDesign: visualDesign ?? "",
@@ -649,6 +660,7 @@ export function AgentForm({
       if (change("gender")) setGender(result.gender);
       if (change("performanceInstructions")) setPerformanceInstructions(result.performanceInstructions);
       if (options?.appearance || change("visualDesign")) setVisualDesign(result.visualDesign);
+      setValidationErrors(current => Object.fromEntries(Object.entries(current).filter(([field]) => !change(field as CharacterSection))));
       setProfileGenerating(false);
 
       if (options?.appearance || options?.images) {
@@ -670,7 +682,11 @@ export function AgentForm({
   }
 
   function focusField(id: string) {
-    requestAnimationFrame(() => document.getElementById(id)?.focus());
+    window.requestAnimationFrame(() => {
+      const field = document.getElementById(id);
+      field?.focus({ preventScroll: true });
+      field?.scrollIntoView({ block: "center" });
+    });
   }
 
   const headConfirmationRequired = Boolean(fullBodyReferenceUrl && (!headPosition || headPosition.sourceUrl !== fullBodyReferenceUrl) && (fullBodyReferenceUrl !== initialSnapshot.fullBodyReferenceUrl || initialSnapshot.headPosition || headSuggestion));
@@ -861,12 +877,12 @@ export function AgentForm({
 
             <fieldset aria-required="true" aria-describedby={validationErrors.gender ? "agent-gender-error" : "agent-gender-help"}>
               <legend className="influence-section-title mb-2">Gender <span className="text-red-300" aria-hidden="true">*</span></legend>
-              <div role="radiogroup" className="flex gap-2">
+              <div role="radiogroup" aria-label="Gender" aria-required="true" aria-invalid={Boolean(validationErrors.gender)} className="flex gap-2">
                 {AGENT_GENDER_OPTIONS.map(({ value, label }) => (
                   <button id={`agent-gender-${value}`} key={value} type="button" role="radio" aria-checked={gender === value} data-selected={gender === value} onClick={() => { setGender(value); setValidationErrors((current) => ({ ...current, gender: "" })); }} className="influence-selection-card min-h-11 min-w-0 flex-[1_1_auto] whitespace-nowrap rounded-lg px-2 text-sm influence-copy data-[selected=true]:text-text-primary">{label}</button>
                 ))}
               </div>
-              <p id="agent-gender-help" className="influence-copy-muted mt-1 text-xs">Guides portrait generation.</p>
+              <p id="agent-gender-help" className="influence-copy-muted mt-1 text-xs">Guides portrait generation.{!gender && " Choose one or let AI fill it from this character."}</p>
               {validationErrors.gender && <p id="agent-gender-error" className="mt-1 text-xs text-red-300">{validationErrors.gender}</p>}
             </fieldset>
 
@@ -919,7 +935,7 @@ export function AgentForm({
             <div className="mt-5">
               <h3 className="mb-3 text-sm font-semibold text-text-primary">Full-body reference</h3>
               <button type="button" disabled={generationBusy || uploading || submitting || !name.trim()} onClick={() => void generateReference()} className="mb-3 rounded-lg border border-white/20 px-4 py-2 text-sm disabled:opacity-50">{referenceBusy ? "Generating reference…" : referenceRequest.current ? "Retry reference request" : "Generate full-body reference"}</button>
-              {referenceError && <p role="alert" className="mb-3 text-sm text-red-300">{referenceError}</p>}
+              {referenceError && <p className="mb-3 text-sm text-red-300">{referenceError}</p>}
               <AgentImageControl disabled={generationBusy || submitting} onEdit={() => setPortraitEditorSource(fullBodyReferenceUrl)} currentUrl={fullBodyReferenceUrl} persona={previewPersona} name={name} presentation="full-body" />
             </div>
           </section>
@@ -930,7 +946,7 @@ export function AgentForm({
       {portraitEditorSource && <CharacterPortraitEditor fullScreen={guided} sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}
       {!guided && (generationBusy || uploading) && <p role="status" className="mt-4 text-sm text-white/60">Preparation is in progress. Save draft keeps changes in this tab; it does not update your Agent.</p>}
       {generationNotice && <p role="status" className="mt-4 text-sm text-amber-200">{generationNotice}</p>}
-      {saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}
+      {guided && saveError && <p role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{saveError}</p>}
       {draftStorageError && <p role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80">{draftStorageError}</p>}
 
       {guided && (aiError || referenceError) && <p role="alert" className="shrink-0 bg-red-400/10 px-4 py-2 text-sm text-red-300">{aiError || referenceError}{referenceRequest.current && " Send again to retry the unfinished image request."}</p>}
@@ -953,7 +969,10 @@ export function AgentForm({
         activityPhase={profileGenerating ? "profile" : referenceBusy || portraitPending ? "images" : null}
         generationQuips={generationQuips}
         assistantNote={assistantNote ?? visualOffer}
-        error={aiError}
+        error={aiError || referenceError}
+        saveError={saveError || Object.values(validationErrors).filter(Boolean).join(" ") || null}
+        missingDetails={isEditing && missingDetails ? `Missing: ${missingDetails}. AI can fill these from the existing character.` : null}
+        onCompleteMissingDetails={() => void completeMissingDetails()}
         onSaveDraft={saveLocalDraft}
         onCancelGeneration={() => setConfirmGenerationCancel(true)}
         generationBusy={generationBusy}

@@ -120,14 +120,38 @@ limits, and useful character tradeoffs. It describes no live game state or
 guaranteed format, and prompt writers should keep it aligned with the canonical
 format catalog and public rules when those rules change.
 
-The command router and character writer use low reasoning effort and explicitly
-request Standard (`service_tier: "default"`), bypassing the background Flex
+The guided command router and character writer use low reasoning effort. The
+Advanced Workshop uses strict function tools with `reasoning_effort: "none"`:
+GPT-6 Luna rejects function tools with reasoning in Chat Completions. All three
+explicitly request Standard (`service_tier: "default"`), bypassing the background Flex
 transport. Each provider call has a 45-second timeout and no SDK retries; the
 command request has a 60-second browser deadline. Timeouts return a readable retry message and
 leave the draft intact. Game and background generation policy is unchanged.
 [Flex processing](https://developers.openai.com/api/docs/guides/flex-processing)
 trades lower cost for slower responses and occasional resource unavailability;
 interactive character creation uses Standard instead.
+
+## Advanced edit and incomplete profiles
+
+The Workshop sends incomplete drafts to inference; missing gender or archetype
+does not block an assistant turn. Any authorized edit includes empty character
+fields in the structured profile writer's selection. Gender and archetype come
+from validated enum fields in its response, never from application parsing of
+character prose. A missing archetype is sent as missing rather than silently
+replaced with Strategist.
+
+Existing characters missing name, personality, gender or archetype show a
+“Fill missing details” action in the Workshop. It completes empty fields from
+the existing character with one profile generation, preserving populated
+fields and existing images. This action does not save the character.
+
+Save validation and server errors appear beside the Workshop save button,
+including when the composer is collapsed. Field errors also remain beside
+their inputs, and validation focuses and centers the first invalid field so it
+stays above the fixed Workshop. Successful AI completion clears errors for the completed fields;
+manual selection clears the corresponding field error. Reference and assistant
+failures remain visible in the Workshop, and assistant timeouts preserve typed
+text with a readable retry message.
 
 Profile data retains the existing local draft recovery and submission contract.
 Conversation history and approval are scoped to the open assistant; restoring
