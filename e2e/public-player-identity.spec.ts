@@ -332,7 +332,7 @@ test.describe("local public player identity", () => {
       const agent = page.getByRole("dialog", { name: "Create your first Agent" });
       await expect(agent).toBeVisible({ timeout: 2_500 });
       await agent.getByRole("button", { name: "Create an Agent" }).click();
-      await expect(page).toHaveURL(`${servers.webUrl}/dashboard/agents/create`, { timeout: 30_000 });
+      await expect(page).toHaveURL(`${servers.webUrl}/agents/create`, { timeout: 30_000 });
       await page.getByRole("button", { name: "Advanced create", exact: false }).click();
       await expect(page.locator("#agent-name")).toBeVisible();
     } finally {
@@ -374,7 +374,7 @@ test.describe("local public player identity", () => {
           exported = portraitCrop;
           return route.fulfill({ json: { avatarUrl: sourceUrl, portraitCrop, headPosition: { sourceUrl, sourceHash: "a".repeat(64), sourceWidth: 600, sourceHeight: 900, rect: headRectangle } } });
         });
-        await page.goto(`${servers.webUrl}/dashboard/agents/create`, { waitUntil: "networkidle" });
+        await page.goto(`${servers.webUrl}/agents/create`, { waitUntil: "networkidle" });
         // The global acquisition prompt must not interrupt a longer creation session.
         await page.evaluate(() => window.dispatchEvent(new Event("free-queue:changed")));
         await page.waitForTimeout(3500);

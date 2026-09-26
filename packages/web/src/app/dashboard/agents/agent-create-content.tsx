@@ -4,6 +4,7 @@ import { parseCharacterHeadPosition } from "@influence/engine/character-portrait
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
 import {
   createAgent,
   ApiError,
@@ -35,6 +36,7 @@ export function AgentCreateContent({
   gameId?: string;
 }) {
   const router = useRouter();
+  const { authenticated } = useAuth();
   const [mode, setMode] = useState<"assistant" | "advanced">("assistant");
   const createdAgentId = useRef<string | null>(null);
   const createBaseline = useRef<AgentProfileWriteParams | null>(null);
@@ -152,11 +154,12 @@ export function AgentCreateContent({
         </p>
       </header>
       <AgentForm
+        publicPreview
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
         draftScope={`create:${flow}:${gameId ?? "none"}`}
         onSubmit={handleCreate}
-        onCancel={() => router.replace(context.cancelPath)}
+        onCancel={() => router.replace(authenticated ? context.cancelPath : "/games")}
         submitLabel={context.submitLabel}
       />
     </div>

@@ -1,12 +1,13 @@
 import { generationContacts } from "../services/generation-admission-error.js";
 import { randomUUID } from "node:crypto";
+import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
 import { runAccountText, GenerationAdmissionError } from "../services/account-text-usage.js";
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
 import { CHARACTER_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
 import { selectCharacterEdit, selectCreationTurn } from "../services/agent-creation-assistant.js";
-import { AGENT_CREATION_GAME_PRIMER } from "../services/agent-creation-game-primer.js";
+import { buildAgentProfileGenerationSystemPrompt } from "../services/character-profile-prompt.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -38,7 +39,6 @@ import {
 } from "../lib/openai-budget-generation-llm.js";
 import {
   isUserSelectableAgentArchetype,
-  USER_SELECTABLE_AGENT_ARCHETYPES,
   USER_SELECTABLE_AGENT_ARCHETYPE_KEYS,
 } from "../services/agent-archetypes.js";
 import {
@@ -58,49 +58,11 @@ import {
 import { archiveOwnedAgentProfile } from "../services/agent-profile-lifecycle.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
-const GENERATED_AGENT_SURNAMES = [
-  "Hartwell", "Langford", "Marlowe", "Sorrell", "Voss", "Ashford", "Bellamy", "Caldwell",
-  "Dunmore", "Ellery", "Fairchild", "Grantham", "Hollis", "Iverson", "Kestrel", "Lockwood",
-  "Mercer", "North", "Orsini", "Prescott", "Quill", "Rutherford", "Sinclair", "Tallis",
-] as const;
 /** Interactive character creation uses Standard processing with a bounded timeout. */
 export function resolveAgentProfileGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
 ) {
   return resolveAgentCreationLlm(env);
-}
-
-function buildAgentProfileGenerationSystemPrompt(
-  isRefine: boolean,
-  allowedPersonaKeys: readonly string[],
-): string {
-  const archetypeChoices = USER_SELECTABLE_AGENT_ARCHETYPES
-    .filter((archetype) => allowedPersonaKeys.includes(archetype.key))
-    .map((archetype) => `- ${archetype.key} (${archetype.label}): ${archetype.description}`)
-    .join("\n");
-  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote players off through ballots. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
-
-${AGENT_CREATION_GAME_PRIMER}
-
-Generate a complete agent personality profile. The character should feel like a vivid person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations. Distinctive non-human and anthropomorphic characters are welcome; never flatten a chosen creature or object form into a human wearing a costume. Honor all selected character ingredients throughout the profile and visualDesign.
-
-${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
-
-Respond with JSON only:
-{
-  "name": "A distinctive full first and last name for the character (creative, memorable, ${MAX_AGENT_DISPLAY_NAME_LENGTH} characters or fewer)",
-  "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
-  "personality": "A detailed character prompt in 4-6 sentences: motivations, contradictions, flaws, voice, social habits and how they react under pressure. Include concrete behaviors that make them distinctive to play and watch. Refer to them by their first name or pronouns, never their full name.",
-  "strategyStyle": "A 1-2 sentence strategic approach grounded in their personality and real Influence decisions: social trust, empowerment, adaptable format-specific coordination, and jury relationships as appropriate. Give this person a recognizable tradeoff rather than a perfect generic plan. Refer to them by their first name or pronouns, never their full name.",
-  "personaKey": "Return exactly one of the valid archetype keys listed below.",
-  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
-  "performanceInstructions": "Specific posture, gestures, movement, mannerisms and vocal delivery for performing this character; at most 2000 characters.",
-  "visualDesign": "A coherent full-body visual design that honors the selected species or object form: silhouette, face or defining features, clothing when appropriate, colors and distinctive details. Keep it reproducible and preserve the identity and form of supplied reference artwork; at most 8000 characters.",
-  "introQuips": ["Three short, entertaining first-person lines this character might say. Stay in character; these are dialogue, never explanations or private reasoning. Each line is at most 160 characters."]
-}
-
-Valid archetypes:
-${archetypeChoices}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -695,73 +657,6 @@ export function resolveGeneratedAgentGender(generated: {
   if (isAgentGender(generated.gender)) return generated.gender;
 
   throw new Error("Structured gender is required");
-}
-
-export function allocateGeneratedAgentName(
-  generatedName: string,
-  occupiedNames: Set<string>,
-): { name: string; changed: boolean } {
-  const requestedName = generatedName.trim().replace(/\s+/g, " ").slice(0, MAX_AGENT_DISPLAY_NAME_LENGTH).trimEnd() || "Agent";
-  const normalizedOccupiedNames = new Set(
-    [...occupiedNames].map(normalizeAgentProfileName),
-  );
-  if (hasLastName(requestedName) && !normalizedOccupiedNames.has(normalizeAgentProfileName(requestedName))) {
-    return { name: requestedName, changed: false };
-  }
-
-  const firstNames = requestedName.split(" ").slice(0, -1).join(" ")
-    || requestedName.split(" ")[0]
-    || "Agent";
-  for (const surname of GENERATED_AGENT_SURNAMES) {
-    const candidate = generatedNameCandidate(firstNames, surname);
-    if (!normalizedOccupiedNames.has(normalizeAgentProfileName(candidate))) {
-      return { name: candidate, changed: true };
-    }
-  }
-
-  for (let ordinal = 2; ordinal < 10_000; ordinal += 1) {
-    const candidate = generatedNameCandidate(firstNames, `${GENERATED_AGENT_SURNAMES[0]} ${ordinal}`);
-    if (!normalizedOccupiedNames.has(normalizeAgentProfileName(candidate))) {
-      return { name: candidate, changed: true };
-    }
-  }
-
-  throw new Error("Could not allocate a unique generated agent name");
-}
-
-export function updateGeneratedProfileNameReferences<T extends {
-  name: string;
-  backstory: string | null;
-  personality: string;
-  strategyStyle: string | null;
-}>(profile: T, name: string): T {
-  if (profile.name === name) return profile;
-  const nameReference = new RegExp(escapeRegExp(profile.name), "gi");
-  const replaceName = (value: string | null) => value?.replace(nameReference, name) ?? null;
-  return {
-    ...profile,
-    name,
-    backstory: replaceName(profile.backstory),
-    personality: replaceName(profile.personality) ?? profile.personality,
-    strategyStyle: replaceName(profile.strategyStyle),
-  };
-}
-
-function hasLastName(name: string): boolean {
-  return name.trim().split(/\s+/).length >= 2;
-}
-
-function generatedNameCandidate(firstNames: string, surname: string): string {
-  const maxFirstNameLength = MAX_AGENT_DISPLAY_NAME_LENGTH - surname.length - 1;
-  return `${firstNames.slice(0, maxFirstNameLength).trimEnd() || "Agent"} ${surname}`;
-}
-
-function normalizeAgentProfileName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {

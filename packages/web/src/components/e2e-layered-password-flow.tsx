@@ -382,9 +382,10 @@ export function E2ELayeredPasswordFlow({
     return (
       <Panel heading="Invite Code Required">
         <p>Enter an invite code to create your account.</p>
-        <label>
+        <label className="block text-sm text-white/75">
           Invite code
           <input
+            className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
             value={inviteCode}
             onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
           />
@@ -473,9 +474,10 @@ export function E2ELayeredPasswordFlow({
   if (step === "verify_email") {
     return (
       <Panel heading="Verify your email">
-        <label>
+        <label className="block text-sm text-white/75">
           Verification code
           <input
+            className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
             value={code}
             onChange={(event) => setCode(event.target.value)}
             inputMode="numeric"
@@ -502,22 +504,25 @@ export function E2ELayeredPasswordFlow({
   return (
     <Panel heading={heading}>
       <form
+        className="space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           void run(submitCredentials);
         }}
       >
-        <label>
+        <label className="block text-sm text-white/75">
           Email
           <input
+            className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
           />
         </label>
-        <label>
+        <label className="block text-sm text-white/75">
           Password
           <input
+            className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -530,7 +535,7 @@ export function E2ELayeredPasswordFlow({
             onChange={setAcceptedLegalTerms}
           />
         )}
-        <button type="submit" disabled={busy || !email.trim() || !password || (intent === "create_account" && !acceptedLegalTerms)}>
+        <button type="submit" className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm" disabled={busy || !email.trim() || !password || (intent === "create_account" && !acceptedLegalTerms)}>
           {intent === "create_account"
             ? "Create account"
             : intent === "link_password"
@@ -542,12 +547,13 @@ export function E2ELayeredPasswordFlow({
         <button
           type="button"
           disabled={busy || (intent === "create_account" && !acceptedLegalTerms)}
+          className="influence-button-secondary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
           onClick={() => onContinueWithPrivy(acceptedLegalTerms)}
         >
           Continue with Privy
         </button>
       )}
-      <button type="button" onClick={onCancel}>Cancel</button>
+      <button type="button" className="influence-link min-h-11 text-sm" onClick={onCancel}>Cancel</button>
       <Message error={error} />
     </Panel>
   );

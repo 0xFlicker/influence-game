@@ -1,9 +1,8 @@
+import { allocateGeneratedAgentName, updateGeneratedProfileNameReferences } from "../services/generated-agent-names.js";
 import { describe, expect, test } from "bun:test";
 import {
-  allocateGeneratedAgentName,
   resolveAgentProfileGenerationLlm,
   resolveGeneratedAgentGender,
-  updateGeneratedProfileNameReferences,
 } from "../routes/agent-profiles.js";
 
 describe("agent profile generation LLM selection", () => {

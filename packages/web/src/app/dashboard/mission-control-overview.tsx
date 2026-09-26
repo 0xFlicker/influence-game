@@ -81,7 +81,7 @@ export function MissionControlOverview({
         </div>
 
         <div className="flex shrink-0 flex-col items-stretch gap-2 sm:min-w-48">
-          <Link href="/dashboard/agents/create" className="influence-button-primary inline-flex min-h-11 items-center justify-center rounded-lg px-5 py-3 text-sm font-semibold">
+          <Link href="/agents/create" className="influence-button-primary inline-flex min-h-11 items-center justify-center rounded-lg px-5 py-3 text-sm font-semibold">
             <span aria-hidden="true">＋&nbsp;</span>{stats.agentCount === 0 ? "Create your first agent" : "Create agent"}
           </Link>
           {canCreateGame && <Link href="/games/new" className="influence-button-secondary rounded-lg px-5 py-3 text-center text-sm font-semibold">＋ Create game</Link>}

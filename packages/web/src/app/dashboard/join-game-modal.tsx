@@ -73,7 +73,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
   }
 
   function createAgent() {
-    router.push(`/dashboard/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`);
+    router.push(`/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`);
   }
 
   return (

@@ -7,7 +7,8 @@ import { apiFetch } from "@/lib/api";
 type Summary = { id?: string; label?: string; plan_name?: string; generation_paused?: boolean; pending_generations?: number; uncertain_generations?: number; operation_id?: string; kind?: string; model?: string; text_requests: number; images: number; attempts: number; failures: number; actual_cost_records: number; actual_microusd: number; estimated_microusd: number; unpriced: number; last_activity: string | null };
 type Account = Summary & { id: string; label: string };
 type Operation = Summary & { operation_id: string; kind: string; model: string };
-type Usage = { accounts?: Account[]; summary?: Summary; operations?: Operation[]; attempts?: Record<string, unknown>[]; nextOffset: number | null; coverage: string; asOf: string };
+type AnonymousUsage = { text_requests: number; visitors: number; failures: number; pending: number; unpriced: number; estimated_microusd: number; last_activity: string | null };
+type Usage = { accounts?: Account[]; anonymous?: AnonymousUsage; anonymousOperations?: Record<string, unknown>[]; summary?: Summary; operations?: Operation[]; attempts?: Record<string, unknown>[]; nextOffset: number | null; coverage: string; asOf: string };
 const dollars = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 4 }).format(value / 1_000_000);
 export function AccountInferencePanel() {
   const query = useSearchParams(); const router = useRouter();
@@ -37,6 +38,12 @@ export function AccountInferencePanel() {
     {error && <p role="alert" className="text-red-300">{error}</p>}
     {!data && !error && <p>Loading usage…</p>}
     {data && <>
+      {data.anonymous && <section aria-label="Anonymous inference pool" className="rounded-xl border border-amber-200/20 bg-amber-100/5 p-5">
+        <h2 className="font-semibold text-amber-100">Anonymous</h2>
+        <p className="mt-1 text-sm text-white/60">One free text message per browser · one global preview per minute · account required for images</p>
+        <p className="mt-3 text-sm">{data.anonymous.text_requests} requests · {data.anonymous.visitors} visitors · {data.anonymous.failures} failed · {data.anonymous.pending} pending · {dollars(data.anonymous.estimated_microusd)} estimated · {data.anonymous.unpriced} unpriced</p>
+        <details className="mt-3 text-sm"><summary className="cursor-pointer text-amber-100/80">Recent preview operations</summary><pre className="mt-3 overflow-auto text-xs">{JSON.stringify(data.anonymousOperations, null, 2)}</pre></details>
+      </section>}
       {data.summary && <p className="text-sm text-white/65">Account total for this window: {data.summary.unpriced > 0 && data.summary.actual_microusd + data.summary.estimated_microusd === 0 ? 'Unknown cost' : dollars(data.summary.actual_microusd + data.summary.estimated_microusd)} · {data.summary.unpriced} unpriced attempts · {data.summary.attempts} provider attempts</p>}
       {data.accounts && <p className="text-sm text-white/50">Generation status is current; spending follows the selected time window.</p>}
       <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{['Account / operation','Total priced USD','Actual USD','Estimated USD','Unpriced attempts','Text','Images','Attempts','Failures','Last activity'].map(label => <th className="p-3" key={label}>{label}</th>)}</tr></thead><tbody>

@@ -3732,3 +3732,16 @@ export const inferenceActions = pgTable("inference_actions", {
  requestHash:text("request_hash").notNull(),reason:text("reason").notNull(),command:jsonb("command").notNull().$type<Record<string,unknown>>(),
  result:jsonb("result").notNull().$type<Record<string,unknown>>(),createdAt:timestamp("created_at",{withTimezone:true,mode:"string"}).notNull().defaultNow(),
 });
+
+/** The Anonymous pool is separate from human accounts and never admits images. */
+export const anonymousTextOperations = pgTable("anonymous_text_operations", {
+  id: text("id").primaryKey(), visitorHash: text("visitor_hash").notNull(),
+  requestKey: text("request_key").notNull(), inputHash: text("input_hash").notNull(),
+  model: text("model").notNull(),
+  state: text("state").notNull().$type<"dispatched" | "succeeded" | "failed" | "uncertain">(),
+  result: jsonb("result").$type<unknown>(), promptTokens: integer("prompt_tokens"), completionTokens: integer("completion_tokens"),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }), pricingSource: text("pricing_source"),
+  providerRequestId: text("provider_request_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
+}, table => [unique("anonymous_text_operations_visitor_key").on(table.visitorHash, table.requestKey)]);

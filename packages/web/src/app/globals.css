@@ -1303,3 +1303,17 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .creation-section-pill { animation: none; }
 }
+
+.house-auth-backdrop {
+  background: rgba(9, 6, 14, .74);
+  backdrop-filter: blur(12px);
+}
+.house-auth-panel {
+  border: 1px solid rgba(226, 190, 112, .35);
+  background: linear-gradient(180deg, rgba(22, 15, 34, .89), rgba(16, 12, 24, .98)), url('/agent-creation-hall.webp') center top / cover;
+  box-shadow: 0 24px 100px rgba(6, 3, 11, .6), 0 0 70px rgba(196, 145, 66, .09);
+}
+.house-auth-panel .influence-field {
+  background-color: rgba(12, 8, 20, .65);
+  border-color: rgba(226, 190, 112, .25);
+}

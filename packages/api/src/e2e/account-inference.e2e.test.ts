@@ -17,14 +17,14 @@ beforeAll(async()=>{
  for(const id of [admin.userId,owner.userId])await recordCurrentLegalAcceptance(database.db,id,'existing_account','0123456789abcdef0123456789abcdef01234567');
  await database.db.insert(schema.inferenceAccounts).values({userId:owner.userId,textBalance:0});
  servers=await startTestServers({databaseUrl:database.databaseUrl,adminAddress:admin.wallet.address,jwtSecret:process.env.JWT_SECRET,logDirectory:'/tmp/inference-browser-logs'});
- await Promise.all(['/dashboard/agents/create','/admin/inference'].map(path=>fetch(`${servers.webUrl}${path}`,{signal:AbortSignal.timeout(60000)}).then(response=>{if(!response.ok)throw new Error(`Browser page failed: ${path}`);})));
+ await Promise.all(['/agents/create','/admin/inference'].map(path=>fetch(`${servers.webUrl}${path}`,{signal:AbortSignal.timeout(60000)}).then(response=>{if(!response.ok)throw new Error(`Browser page failed: ${path}`);})));
  browser=await launchBrowser();
 },120000);
 afterAll(async()=>{await cleanupE2eResources([
  ['browser',async()=>{if(browser)await closeBrowser(browser);}],['servers',async()=>{if(servers)await stopTestServers(servers);}],['database',async()=>{if(database)await destroyIsolatedTestDb(database.databaseUrl);}]
 ]);},60000);
 test('owner exhaustion preserves draft, admin grants allowance and sees usage controls',async()=>{
- const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/dashboard/agents/create`,{privateKey:owner.wallet.privateKey});
+ const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/agents/create`,{privateKey:owner.wallet.privateKey});
  try {
   await page.waitForSelector('textarea[aria-label="Message the character assistant"]',{timeout:30000});
   await page.type('textarea[aria-label="Message the character assistant"]','A patient detective with a dry sense of humor');
@@ -57,7 +57,7 @@ test('owner exhaustion preserves draft, admin grants allowance and sees usage co
 },120000);
 
 test('advanced visual affirmation uses context, preserves character text and opens the full editor',async()=>{
- const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/dashboard/agents/create`,{privateKey:owner.wallet.privateKey});
+ const page=await createAuthenticatedPage(browser,owner.jwt,`${servers.webUrl}/agents/create`,{privateKey:owner.wallet.privateKey});
  let context:Record<string,unknown>|undefined;
  try {
   await page.setRequestInterception(true);

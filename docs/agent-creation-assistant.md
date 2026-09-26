@@ -1,5 +1,45 @@
 # Guided Agent creation
 
+## Public preview and signup
+
+`/agents/create` is the canonical public creator for ordinary, join-game, and
+Daily Free entry points. The former dashboard creation route is removed. Arriving
+signed out shows the same stone hall, House mark, ingredients, and composer;
+it does not open authentication.
+
+An anonymous browser gets one successful House text message. A single strict
+structured provider attempt returns `{reply, profile}`: questions can receive a
+grounded answer with `profile: null`, and character ideas can produce all eight
+character cards. There is no image generation or Agent saving in this endpoint.
+Approval remains a local action. Asking for another message, an image, Advanced
+create, or a server save opens account creation. The authentication modal uses
+the House hall, gold mark, and muted purple surfaces. Free accounts keep the
+existing text and image allowances (100 text operations and 25 image operations).
+
+`GET /api/agent-profiles/anonymous` establishes a signed, HTTP-only browser cookie
+and reads whether its message is used. `POST` accepts only a message, curated
+ingredient IDs, and an idempotency key. PostgreSQL serializes admission to the
+Anonymous pool: at most one provider dispatch globally per rolling minute. Busy
+responses include `Retry-After` and offer account creation or trying later,
+without consuming that browser's message. Browser identity is not proof of a
+person; clearing cookies creates a new visitor, still subject to the global cap.
+
+`anonymous_text_operations` stores hashed visitor identity, operation state,
+provider request identity, token counts, estimated cost, and accepted results.
+Exact successful replays return the stored result without another provider call.
+Confirmed failures preserve cost evidence and allow a new attempt after the
+global cooldown. Unknown transport outcomes retain the visitor's used slot.
+The admin inference page reports this pool separately as **Anonymous**, including
+recent operations without raw prompts or character content. Game spend and
+authenticated account balances remain separate.
+
+Anonymous drafts use the existing tab-local editor storage. The active form keeps
+its draft storage owner through signup, preserving cards, typed text, and stage
+without a remount. An authenticated reload can recover an anonymous draft when
+there is no account-specific draft. Saving or discarding retires the active draft.
+
+## Guided interaction
+
 All creation entry points (ordinary, join-game and Daily Free) offer an AI
 assistant or Advanced create. Advanced uses the existing full editor and save
 contract. Switching from the assistant preserves the current draft. The global

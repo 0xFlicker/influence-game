@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
 import { ClerkPasswordFlow, type ManagedAuthMode, type PasswordFlowIntent } from "@/components/clerk-password-flow";
 import { E2ELayeredPasswordFlow } from "@/components/e2e-layered-password-flow";
@@ -42,6 +44,7 @@ export function AuthenticationWrapper({
   initialEmail?: string;
   onInlineComplete?: () => void;
 }) {
+  const isCreator = usePathname() === "/agents/create";
   const {
     beginAuthenticationAttempt,
     cancelAuthenticationAttempt,
@@ -391,9 +394,9 @@ export function AuthenticationWrapper({
     );
   }
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 py-8"
+      className="house-auth-backdrop fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
       role="presentation"
       onMouseDown={(event) => {
         if (event.currentTarget === event.target) close(true);
@@ -405,8 +408,19 @@ export function AuthenticationWrapper({
         aria-modal="true"
         aria-label="Influence authentication"
         tabIndex={-1}
-        className="influence-panel relative max-h-full w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-2xl outline-none"
+        className="house-auth-panel relative max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 shadow-2xl outline-none sm:p-8"
       >
+        <div className="mb-6 flex items-center gap-4 border-b border-amber-100/15 pb-6">
+          <div className="flex size-20 shrink-0 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/80">
+            {/* eslint-disable-next-line @next/next/no-img-element -- House brand asset */}
+            <img src="/logo.png" alt="The House" className="size-14 object-contain mix-blend-screen" />
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-[.18em] text-amber-100/70">Enter The House</p>
+            <p className="mt-2 text-xl font-semibold leading-tight text-amber-50">{isCreator ? "Bring your character to life." : "A place for your next move."}</p>
+          </div>
+        </div>
+        {isCreator && <p className="mb-6 text-sm leading-6 text-white/70">Create a free account for more House messages, character images, and a place to save your Agent. Your draft stays right here.</p>}
         <div className="mb-6 flex flex-col-reverse items-stretch gap-4 sm:flex-row sm:items-center">
           {primaryTabs}
           <button
@@ -421,7 +435,8 @@ export function AuthenticationWrapper({
         {privyAttemptError ? <p role="alert" className="mb-4 text-sm text-red-300">{privyAttemptError}</p> : null}
         <div>{flow}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

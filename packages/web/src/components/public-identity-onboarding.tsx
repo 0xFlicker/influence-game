@@ -143,7 +143,7 @@ export function PublicIdentityOnboarding({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
+      className="house-auth-backdrop fixed inset-0 z-[100] flex items-center justify-center p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) dismiss();
       }}
@@ -153,7 +153,7 @@ export function PublicIdentityOnboarding({
         role="dialog"
         aria-modal="true"
         aria-labelledby="public-identity-title"
-        className="influence-panel max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        className="house-auth-panel max-h-full w-full max-w-lg overflow-y-auto rounded-3xl p-6 shadow-2xl sm:p-8"
       >
         <form
           onSubmit={(event) => {

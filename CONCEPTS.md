@@ -16,6 +16,10 @@ An AI competitor participating in an Influence game. Agents make in-game decisio
 
 The owner-managed, reusable identity and behavior configuration from which an Agent is seated. Name, portrait, gender, base persona, backstory, personality, and Strategy belong to one saved profile, while game seats bind to a specific profile revision under the existing roster rules. Web creation offers a bounded, full-screen AI assistant or Advanced create, both backed by the canonical editor's draft and save contract. Updates use the full editor; game join and Daily Free acquisition select an existing profile or route through the same creation choice instead of maintaining inline copies of the form. The creation assistant designs a competitor; it is not an in-game Agent or a general chatbot. See [guided creation](docs/agent-creation-assistant.md).
 
+### Anonymous creation pool
+
+The public `/agents/create` preview gives an anonymous browser one successful House text message before account creation is required for further generation or saving. A signed browser cookie identifies the visitor; it is not a verified account or person. PostgreSQL limits the shared pool to one provider dispatch per rolling minute and journals request identity, outcomes, tokens, and estimated cost separately from account and game spending. The first message can answer a game question or create a character draft. Images always require an account.
+
 In every edit session, Strategy changes are compared with the session baseline. A review-linked edit uses the review proposal as the working text and the proposal's `before` value as the visible baseline; saving a custom review update requires changing the proposed text. Portrait generation is an independent completion attached to the saved profile: it may remain pending when profile save succeeds, and an explicit uploaded portrait remains authoritative.
 
 ## Owner Learning Loop
