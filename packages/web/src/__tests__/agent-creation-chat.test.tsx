@@ -10,6 +10,7 @@ const globalKeys = ["window", "document", "navigator", "HTMLElement", "Element",
 const saved = new Map(globalKeys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: Window;
 let command: string;
+let clarification: string;
 let fetchCalls: number;
 let generated: string[];
 let appearances: string[];
@@ -17,8 +18,8 @@ const profile: CharacterChatProfile = { name: "Mira Vale", personaKey: "diplomat
 beforeEach(() => {
   dom = new Window({ url: "http://localhost" });
   for (const key of globalKeys) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
-  command = "accept_character"; generated = []; appearances = []; fetchCalls = 0;
-  globalThis.fetch = Object.assign(async () => { fetchCalls++; return Response.json({ command }); }, { preconnect: originalFetch.preconnect });
+  command = "accept_character"; clarification = "Which direction would you like to try?"; generated = []; appearances = []; fetchCalls = 0;
+  globalThis.fetch = Object.assign(async () => { fetchCalls++; return Response.json({ command, reply: command === "clarify" ? clarification : "" }); }, { preconnect: originalFetch.preconnect });
 });
 afterEach(() => {
   cleanup(); dom.close(); globalThis.fetch = originalFetch;
@@ -27,10 +28,51 @@ afterEach(() => {
 function mount(withIngredients = false, hasImage = false, headRequired = false) {
   function Harness() {
     const [ids, setIds] = useState<AgentCreationTraitId[]>([]);
-    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={withIngredients ? { ...profile, personality: "" } : profile} onGenerate={async message => { generated.push(message); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} onAdvanced={() => {}} onCancel={() => {}} onSaveDraft={() => {}} submitDisabled={false} submitLabel="Create Agent" />;
+    const [draft, setDraft] = useState(withIngredients ? { ...profile, personality: "" } : profile);
+    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={draft} onGenerate={async message => { generated.push(message); setDraft(current => ({ ...current, personality: profile.personality })); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} onAdvanced={() => {}} onCancel={() => {}} onSaveDraft={() => {}} submitDisabled={false} submitLabel="Create Agent" />;
   }
   return render(<Harness />);
 }
+test("the empty creator gives a visual starting point and a labeled composer", () => {
+  const view = mount(true);
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  expect(view.getByText(/players build trust, vie for empowerment/)).toBeTruthy();
+  expect(view.container.querySelector('img[src="/logo.png"]')).toBeTruthy();
+  expect(view.getByText("Your response").getAttribute("for")).toBe("agent-creation-message");
+  expect(view.getByLabelText("Message the character assistant").classList.contains("agent-creation-composer")).toBe(true);
+  expect(view.getByRole("region", { name: "Character fixtures" }).textContent).not.toContain("Character ingredients");
+  expect(view.container.querySelector("footer")?.textContent).toContain("Character ingredients");
+  const conversation = view.getByRole("log", { name: "Character creation conversation" });
+  const ingredients = view.getByText("Character ingredients");
+  const composer = view.getByLabelText("Message the character assistant");
+  expect(Boolean(conversation.compareDocumentPosition(ingredients) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  expect(Boolean(ingredients.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+});
+test("the House mark and composer stay in place through a clarification", async () => {
+  const response = Promise.withResolvers<Response>();
+  let sentDraft: Record<string, string> | undefined;
+  globalThis.fetch = Object.assign(async (_input: string | URL | Request, init?: RequestInit) => {
+    sentDraft = (JSON.parse(String(init?.body)) as { draft: Record<string, string> }).draft;
+    return response.promise;
+  }, { preconnect: originalFetch.preconnect });
+  const view = mount(true);
+  fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "What is empowerment?" } });
+  await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  expect(view.queryByText("Your name, archetype, and character prompt will take shape here.")).toBeNull();
+  expect(view.getByText("Character ingredients")).toBeTruthy();
+  expect(view.getByLabelText("Message the character assistant").hasAttribute("hidden")).toBe(false);
+  await waitFor(() => expect(sentDraft?.strategyStyle).toBe("Build trust."));
+  await act(async () => response.resolve(Response.json({ command: "clarify", reply: "Empowerment can choose the format and break a tie, but gives no immunity. Would your character seek it?" })));
+  await waitFor(() => expect(view.getByText(/Empowerment can choose the format/)).toBeTruthy());
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  const log = view.getByRole("log", { name: "Character creation conversation" });
+  expect(log.textContent).toContain("In Influence, players build trust");
+  expect(log.textContent?.indexOf("In Influence, players build trust")).toBeLessThan(log.textContent?.indexOf("What is empowerment?") ?? 0);
+  expect(log.textContent?.indexOf("What is empowerment?")).toBeLessThan(log.textContent?.indexOf("Empowerment can choose") ?? 0);
+  expect(generated).toHaveLength(0);
+  expect(appearances).toHaveLength(0);
+});
 test("approval advances immediately without a model call or image generation", async () => {
   const view = mount();
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
@@ -60,7 +102,7 @@ test("an illegal command cannot generate images or advance review", async () => 
   const view = mount();
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Please change this character" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
-  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Invalid creation assistant command"));
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Invalid creation assistant turn"));
   expect(generated).toHaveLength(0); expect(appearances).toHaveLength(0);
 });
 for (const end of ["end_abuse", "end_fatigue"]) test(`${end} ends chat but leaves manual editing available`, async () => {
@@ -87,17 +129,23 @@ test("starter pills can be removed and sent without typing a prompt", async () =
   expect(view.queryByText("Character ingredients")).toBeNull();
   expect(view.queryByRole("button", { name: "Add Inventor ingredient" })).toBeNull();
   expect(view.getByRole("button", { name: "Yes, that feels right" })).toBeTruthy();
+  expect(view.queryByText("Your character starts here.")).toBeNull();
+  expect(view.getByRole("button", { name: "Read Character prompt" })).toBeTruthy();
 });
 test("a browser timeout gives a useful error and preserves the text and ingredient tags", async () => {
   globalThis.fetch = Object.assign(async () => { throw new DOMException("signal timed out", "TimeoutError"); }, { preconnect: originalFetch.preconnect });
   const view = mount(true);
   fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
+  fireEvent.click(view.getByRole("button", { name: "Add Streamer ingredient" }));
+  fireEvent.click(view.getByRole("button", { name: "Remove Streamer ingredient" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A suspicious dragon" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Your text and ingredients are still here"));
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A suspicious dragon");
   expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Add Streamer ingredient" })).toBeNull();
   expect(generated).toHaveLength(0);
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
 });
 
 test("appearance offers visual tags and sends them while showing a user bubble and typing indicator", async () => {
@@ -108,6 +156,9 @@ test("appearance offers visual tags and sends them while showing a user bubble a
   command = "accept_character";
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
   expect(view.queryByRole("button", { name: "Add Gamer ingredient" })).toBeNull();
+  for (const form of ["Human", "Halfling", "Gnome"]) {
+    expect(view.getByRole("button", { name: `Add ${form} ingredient` })).toBeTruthy();
+  }
   fireEvent.click(view.getByRole("button", { name: "Add Dragon ingredient" }));
   const response = Promise.withResolvers<Response>();
   globalThis.fetch = Object.assign(() => response.promise, { preconnect: originalFetch.preconnect });
@@ -116,7 +167,7 @@ test("appearance offers visual tags and sends them while showing a user bubble a
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("");
   expect(view.getByText("Gold coat · Dragon")).toBeTruthy();
   expect(view.getByRole("status", { name: "Assistant typing" })).toBeTruthy();
-  await act(async () => response.resolve(Response.json({ command: "generate_appearance" })));
+  await act(async () => response.resolve(Response.json({ command: "generate_appearance", reply: "" })));
   await waitFor(() => expect(appearances).toHaveLength(1));
   expect(appearances[0]).toContain("Dragon");
   expect(appearances[0]).toContain("Gold coat");

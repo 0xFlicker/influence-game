@@ -18,6 +18,9 @@ same draft recovery and save contract. Profile generation precedes explicit
 character approval; image generation follows an appearance description. A
 stage-specific strict command schema, decoded on both server and client, controls
 which actions can run. Assistant prose never becomes transition authority.
+The router now returns a bounded presentation reply only for clarification;
+action commands require an empty reply. A shared general rules and strategy
+primer informs those answers, Advanced edits, and generated strategy text.
 
 Compact fixtures remain above chat. Explicit section selections constrain which
 generated fields are applied. Cards open a full-screen reader before selecting
@@ -25,12 +28,18 @@ a section for revision. Edit adds an animated section pill and focuses the
 composer; Close and Escape leave the selection unchanged. Direct text editing
 remains available in Advanced create. Appearance requests apply
 only visual design and generated images, preserving approved character text.
+The House mark and opening scene persist through clarifications and failed
+turns. A character summary takes the top position once generated character
+content exists. On tall screens the cards grow up to the viewport midpoint.
+The chat log moves earlier bubbles out of view beneath the summary without a
+visible scrollbar. The full-screen stone hall, gold accents, and translucent bubbles
+keep the creation flow legible without a hard divider.
 
 Starter pills share Advanced create's curated ingredients. Selected tags are
 removable, support submission without typed text, and survive failed requests.
-The inset send arrow shows activity; the last two conversation bubbles sit above
-the composer without a separate mobile activity icon. Pending turns collapse
-the disabled composer, pills, and secondary actions to a compact activity bar.
+The inset send arrow shows activity. Ingredient rows sit below the conversation
+and directly above the composer on both wide and narrow screens. Pending turns
+leave the disabled composer, pills, and secondary actions in place.
 
 Interactive text calls previously inherited Flex processing while the command
 request had a 60-second browser deadline. They now explicitly request Standard,

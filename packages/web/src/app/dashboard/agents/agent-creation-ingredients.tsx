@@ -9,7 +9,7 @@ const GROUPS = {
 } as const;
 const INITIAL: Record<"character" | "appearance", AgentCreationTraitId[]> = {
   character: ["gamer", "streamer", "inventor", "alliance-builder", "under-the-radar", "deal-maker", "aristocrat", "small-town", "working-class", "gender-male", "gender-female", "gender-non-binary"],
-  appearance: ["furry", "dragon", "robot", "neon-noir", "storybook", "scrappy-diy"],
+  appearance: ["human", "halfling", "gnome", "furry", "dragon", "robot", "neon-noir", "storybook", "scrappy-diy"],
 };
 
 /** Keep swipe/trackpad scrolling and fade only edges with hidden pills. */
