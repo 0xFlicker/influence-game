@@ -74,6 +74,11 @@ projection reveals the same mappings in roster order and the UI draws aggregate
 before ledger. Add malformed-prefix tests that retain the last trusted snapshot
 without transcript repair.
 
+Keep reconnect coverage focused on pause intent: wait for the refreshed replay
+frames, check that the paused presentation stays in place, then verify Play
+resumes playback. Ballot-text assertions belong in the paused roll-call journeys,
+where manual navigation and the presentation clock are controlled together.
+
 ## Related
 
 - `docs/format-kernel-web-contract-drift.md`

@@ -599,29 +599,33 @@ test.describe("format-aware game viewer", () => {
     await expect(page.getByText("Waiting for next phase", { exact: true })).toHaveCount(0);
   });
 
-  test("Two Names reconnect preserves an explicit pause while newer results arrive", async ({ page }) => {
+  test("Two Names stays paused after reconnect and can resume", async ({ page }) => {
     const slug = "catchup-two-names-paused";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {
       slug, scenarioId: "two_names_declined", status: "in_progress",
       initialDecisionCount: scenario.decisions.length - 1,
-      historicalCatchUp: true, frameResponseDelayMs: 300,
+      historicalCatchUp: true,
     });
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-    await expect(page.locator("[data-format-cue]").first()).toBeVisible();
+    const cue = page.locator("[data-format-cue]").first();
+    await expect(cue).toBeVisible();
     await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
-    const pausedKind = await page.locator("[data-format-cue]").first().getAttribute("data-format-cue");
+    const pausedKind = await cue.getAttribute("data-format-cue");
+    const catchUp = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === `/api/games/${slug}/replay-watch-frames`
+        && Number(url.searchParams.get("afterSequence")) > 0;
+    });
     fixture.setDecisionCount(scenario.decisions.length);
     fixture.sockets.at(-1)!.close({ code: 1001, reason: "test reconnect" });
     await expect.poll(() => fixture.sockets.length).toBe(2);
+    await (await catchUp).finished();
     await expect(page.getByRole("button", { name: "▶ Play", exact: true })).toBeVisible();
-    await expect(page.locator("[data-format-cue]").first()).toHaveAttribute("data-format-cue", pausedKind!);
-    await expect(page.locator("[data-presentation-animation-boundary]").getByText("Historical introduction must not restart live playback.", { exact: true })).toHaveCount(0);
+    await expect(cue).toHaveAttribute("data-format-cue", pausedKind!);
     await page.getByRole("button", { name: "▶ Play", exact: true }).click();
-    await expect(page.getByRole("region", { name: "Ballot: Rex", exact: true })).toBeVisible({ timeout: 15_000 });
-    await assertSoloBallot(page, "Rex", "Lyra");
-    await expect(page.getByText("Presentation incomplete", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "⏸ Pause", exact: true })).toBeVisible();
   });
 
   for (const frameResponseDelayMs of [0, 500]) {

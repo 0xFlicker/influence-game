@@ -356,7 +356,7 @@ test.describe("local public player identity", () => {
         await page.route("**/creation-fixture.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900" fill="#333950"/><circle cx="300" cy="165" r="85" fill="#8faee0"/><rect x="175" y="270" width="250" height="480" rx="60" fill="#d0a646"/></svg>' }));
         await page.route("**/api/agent-profiles/creation-assistant", route => {
           const { stage, message } = route.request().postDataJSON();
-          return route.fulfill({ json: { command: stage === "character" ? "revise_character" : stage === "review" ? message.startsWith("Yes") ? "accept_character" : "revise_character" : "generate_appearance" } });
+          return route.fulfill({ json: { command: stage === "character" ? "revise_character" : stage === "review" ? message.startsWith("Yes") ? "accept_character" : "revise_character" : "generate_appearance", reply: "" } });
         });
         await page.route("**/api/agent-profiles/generate", route => {
           if (generated === 0) {
@@ -419,8 +419,10 @@ test.describe("local public player identity", () => {
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(page.getByRole("button", { name: "Assistant working", exact: true })).toBeDisabled();
         await expect(composer).toHaveValue("");
-        await expect(composer).toBeHidden();
-        await expect(page.getByText("Visual ingredients", { exact: true })).toBeHidden();
+        await expect(composer).toBeVisible();
+        await expect(composer).toBeDisabled();
+        await expect(page.getByText("Visual ingredients", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Remove Dragon ingredient", exact: true })).toBeDisabled();
         await expect(page.getByRole("status", { name: "Assistant typing" })).toBeVisible();
         const formation = page.getByRole("status", { name: "Creating character image" });
         await expect(formation).toBeVisible();
