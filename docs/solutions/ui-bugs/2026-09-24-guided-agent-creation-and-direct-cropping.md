@@ -18,6 +18,9 @@ same draft recovery and save contract. Profile generation precedes explicit
 character approval; image generation follows an appearance description. A
 stage-specific strict command schema, decoded on both server and client, controls
 which actions can run. Assistant prose never becomes transition authority.
+The router now returns a bounded presentation reply only for clarification;
+action commands require an empty reply. A shared general rules and strategy
+primer informs those answers, Advanced edits, and generated strategy text.
 
 Compact fixtures remain above chat. Explicit section selections constrain which
 generated fields are applied. Cards open a full-screen reader before selecting
@@ -25,6 +28,9 @@ a section for revision. Edit adds an animated section pill and focuses the
 composer; Close and Escape leave the selection unchanged. Direct text editing
 remains available in Advanced create. Appearance requests apply
 only visual design and generated images, preserving approved character text.
+The centered House mark appears before the first message; after the conversation
+starts, the compact unfinished-character summary replaces it even if the turn
+clarifies or fails.
 
 Starter pills share Advanced create's curated ingredients. Selected tags are
 removable, support submission without typed text, and survive failed requests.

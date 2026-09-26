@@ -1306,6 +1306,7 @@ describe("Agent Profile API", () => {
         expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
         expect(requests[0]).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });
         expect(JSON.stringify(requests[0]?.messages)).toContain("hasFullBody");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List eliminates the fewest positive votes");
         for (const invalid of ["not json", "[]", '{"fields":["name"]}', '```json\n{}\n```']) {
           args = invalid;
           expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
@@ -1318,15 +1319,17 @@ describe("Agent Profile API", () => {
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });
 
-    test("creation assistant validates stage, authentication and exact provider commands before effects", async () => {
+    test("creation assistant validates stage, draft and exact provider turns before effects", async () => {
       await db.insert(schema.inferenceAccounts).values({userId: USER_A_ID, overrides:{textBurst:100}}).onConflictDoNothing();
-      const turn = { stage: "review", message: "Yes", history: [], sections: [] };
+      const draft = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", performanceInstructions: "", visualDesign: "" };
+      const turn = { stage: "review", message: "Yes", history: [], sections: [], draft };
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, ""))).status).toBe(401);
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, stage: "constructor" }, tokenA))).status).toBe(400);
+      expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, draft: {} }, tokenA))).status).toBe(400);
       const savedKey = process.env.OPENAI_API_KEY;
       const originalFetch = globalThis.fetch;
       process.env.OPENAI_API_KEY = "test-openai-key";
-      let content = '{"command":"accept_character"}';
+      let content = '{"command":"accept_character","reply":""}';
       let finishReason = "stop";
       const requests: Record<string, unknown>[] = [];
       globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
@@ -1337,14 +1340,20 @@ describe("Agent Profile API", () => {
       try {
         const accepted = await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA));
         expect(accepted.status).toBe(200);
-        expect(await accepted.json()).toEqual({ command: "accept_character" });
+        expect(await accepted.json()).toEqual({ command: "accept_character", reply: "" });
         expect(requests[0]).toMatchObject({ service_tier: "default", reasoning_effort: "low", max_completion_tokens: 1200 });
-        expect(requests[0]?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, schema: { additionalProperties: false, properties: { command: { enum: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"] } } } } });
-        for (const bad of ["Hello", "{}", '{"command":"generate_appearance"}', '{"command":"accept_character","text":"extra"}', '```json\n{"command":"accept_character"}\n```', 'Result: {"command":"accept_character"}']) {
+        expect(requests[0]?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, schema: { additionalProperties: false, properties: { command: { enum: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"] }, reply: { type: "string" } }, required: ["command", "reply"] } } });
+        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List eliminates the fewest positive votes");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("Alliances");
+        content = '{"command":"clarify","reply":"Empowerment can choose the format, but it grants no immunity. Would Arden seek that power?"}';
+        const clarified = await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, message: "What is empowerment?" }, tokenA));
+        expect(clarified.status).toBe(200);
+        expect(await clarified.json()).toEqual({ command: "clarify", reply: "Empowerment can choose the format, but it grants no immunity. Would Arden seek that power?" });
+        for (const bad of ["Hello", "{}", '{"command":"generate_appearance","reply":""}', '{"command":"accept_character"}', '{"command":"accept_character","reply":"I approve"}', '{"command":"clarify","reply":""}', '{"command":"accept_character","reply":"","text":"extra"}', '```json\n{"command":"accept_character","reply":""}\n```', 'Result: {"command":"accept_character","reply":""}']) {
           content = bad;
           expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA))).status).toBe(502);
         }
-        content = '{"command":"accept_character"}'; finishReason = "length";
+        content = '{"command":"accept_character","reply":""}'; finishReason = "length";
         expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, tokenA))).status).toBe(502);
         expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
         globalThis.fetch = Object.assign(async () => { throw new DOMException("timed out", "AbortError"); }, { preconnect: originalFetch.preconnect });
@@ -1435,6 +1444,7 @@ describe("Agent Profile API", () => {
         expect(refined.status).toBe(200);
         expect(requestBodies).toHaveLength(3);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
+        for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List eliminates the fewest positive votes");
         expect(requestBodies.map((body) => body.model)).toEqual([
           "gpt-6-luna",
           "gpt-6-luna",

@@ -1,4 +1,4 @@
-/** The assistant selects commands; the application owns every transition and reply. */
+/** The assistant selects commands; the application owns every transition and effect. */
 export const CREATION_COMMANDS = {
   character: ["revise_character", "clarify", "end_abuse", "end_fatigue"],
   review: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"],
@@ -7,23 +7,27 @@ export const CREATION_COMMANDS = {
 } as const;
 export type CreationStage = keyof typeof CREATION_COMMANDS;
 export type CreationCommand = (typeof CREATION_COMMANDS)[CreationStage][number];
+export type CreationTurn = { command: CreationCommand; reply: string };
 export function isCreationStage(value: unknown): value is CreationStage {
   return typeof value === "string" && Object.hasOwn(CREATION_COMMANDS, value);
 }
-export function creationCommandSchema(stage: CreationStage) {
+export function creationTurnSchema(stage: CreationStage) {
   return { type: "object", additionalProperties: false, properties: {
     command: { type: "string", enum: [...CREATION_COMMANDS[stage]] },
-  }, required: ["command"] };
+    reply: { type: "string" },
+  }, required: ["command", "reply"] };
 }
-export function decodeCreationCommand(content: string, stage: CreationStage): CreationCommand {
+export function decodeCreationTurn(content: string, stage: CreationStage): CreationTurn {
   const value: unknown = JSON.parse(content);
   if (!value || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).length !== 1 || !("command" in value)
+    || Object.keys(value).length !== 2 || !("command" in value) || !("reply" in value)
     || typeof value.command !== "string"
-    || !(CREATION_COMMANDS[stage] as readonly string[]).includes(value.command)) {
-    throw new Error("Invalid creation assistant command");
+    || !(CREATION_COMMANDS[stage] as readonly string[]).includes(value.command)
+    || typeof value.reply !== "string"
+    || (value.command === "clarify" ? !value.reply.trim() || value.reply.length > 650 : value.reply !== "")) {
+    throw new Error("Invalid creation assistant turn");
   }
-  return value.command as CreationCommand;
+  return { command: value.command as CreationCommand, reply: value.reply.trim() };
 }
 
 export const CHARACTER_FIELDS = ["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "performanceInstructions", "visualDesign"] as const;
