@@ -122,11 +122,31 @@ The admin export includes `rebuildPreview`, `rebuildError` and `contextFailures`
 
 ## Independent scene repair and reviewed publication
 
+### Backfill a completed replay from Production
+
+Open `/admin/production` as **Producer** or **Sysop** and use **Replay images** on a completed game's existing row. Its controls expand inside that row, including for games played with Visual Mode off. Producer-only accounts see the same list layout with completed games. Ordinary admin permissions do not grant access to this panel's API. Every read, render, evidence and reconciliation request checks current database role assignments; revoking a role invalidates an existing session's access.
+
+1. Click **Replay images** on the game you want. Opening its controls does not generate images or create plans.
+2. Review the missing scene's room, round and recorded participants. Click **Render missing image** on one scene. Another render for that game is blocked while a job is queued, rendering or verifying; the existing worker renders one job globally at a time.
+3. Open **Versions and review**, inspect the clean candidate and numbered annotations, then **Publish for viewers**. Failed candidates stay private. Use **Continue failed repair** or **Recheck image** when appropriate.
+4. If a response is lost, **Check render request** / **Check request** resends the same request ID. It does not authorize another paid job. Progress and provider receipts remain available after reload.
+5. Review uncertain attempts under **Provider receipts** and record externally confirmed billing evidence before another paid request. Missing or unpriced receipts never count as free inference.
+
+Missing plans are reconstructed from trusted canonical event prefixes at committed dialogue turns, stored room IDs and exact private audiences. Lobby casts follow the surviving roster; Finals include the active jury. Transcript prose never supplies participants, room assignments or outcomes. Missing canonical evidence leaves portraits and reports unsupported beats. Introductions, ballots, diaries and farewells keep portrait presentation.
+
+Backfill copies existing game-start character references or saved portraits; it does not generate a batch of full-body references or room backgrounds. A missing background uses the renderer's room direction. Plans, jobs, verified versions, publications and provider receipts use existing tables: **no database migration is required**. The original game configuration, accepted events, turns, transcripts and agent context remain unchanged. Published images are exposed by the normal visual viewer endpoint even when the game was played with Visual Mode off, and are adopted at the next playback beat.
+
+Production endpoints live under `/api/admin/production`: `GET /games` (completed game row summaries for Producer-only accounts), `GET /games/:id/visual`, `POST /games/:id/visual/missing` (`key`, `previewHash`, `requestId`), and `POST /games/:id/visual/media` (the existing media control contract). The server recomputes the preview before accepting a missing scene and never accepts a caller-authored cast or plan. Private artifact and attempt reconciliation endpoints use the same role gate. Tests: `visual-replay-production.test.ts`, `replay-visual-production.test.tsx`, and `replay-visual-production.e2e.test.ts`.
+
+### Existing scene controls
+
 Every existing scene has independent media controls in running, suspended and completed games. Game state and visual failure policy do not gate them. **Regenerate scene** queues one durable job using the saved cast, reference artifacts, background, placements and cues. The job also freezes room/style directions. It runs sections, optional harmonization, composition verification, head localization and identity matching. Rejected composition never causes automatic regeneration. Empty rooms verify zero occupants.
 
 **Versions and review** compares the published clean image with a selected candidate. Numbered annotations, verified identities, anchors, errors and publication history are available here. **Recheck image** uses the selected original, verified version or failed candidate image and only invokes verification. **Continue failed repair** follows the selected failed job's immutable source chain, reusing successful exact-input steps. Successful sections survive a failed harmonizing step, further continuations and worker restarts. Original failed gameplay attempts can be continued through the same journal reuse path.
 
 Each scene shows its own accepted/rejected receipt, job ID, candidate number, step, elapsed time and known/unpriced cost. Active status is polled; refresh failures retain the last content and review selection. A lost request response exposes **Check request**, which repeats the same idempotency key rather than dispatching a new operation. Rejected requests retain reason codes and do not consume candidate numbers. Request inputs and accepted candidate versions are immutable; job inputs are immutable while lease/progress fields remain mutable.
+
+A repair's provider attempt without a receipt is **pending** while its current job has a live rendering/verifying lease. It does not show a reconciliation warning or form, and the API refuses to reconcile it while in progress. An expired/interrupted dispatch or a receipt with uncertain charges remains **needs reconciliation**. HTTP errors and failed identity verification are shown separately from accounting uncertainty; a successful HTTP response can still produce an unusable image. Future scene renders require visible front or three-quarter faces for every character. Identity failures name the participants from strict verification output, retain the candidate for review, and never trigger automatic regeneration.
 
 **Publish for viewers** explicitly selects a verified version. **Restore for viewers** uses the same audited publication action for an earlier selection or the original image. Publication requires verified composition and identities. Uncertain geometry yields no anchors, and the viewer shows a named speech panel; it never guesses a head position. An uncertain paid attempt must be reconciled before a candidate becomes ready. No candidate becomes agent context or changes game policy, status, timers, decisions, transcript or results.
 

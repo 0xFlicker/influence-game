@@ -74,7 +74,7 @@ test("builds large casts from small groups, harmonizes, and localizes only the f
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
   rejectIdentity = true;
   const planned = await scene(3);
-  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow("missing, duplicated");
+  await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow("unexpected occupant count");
   expect((await readCurrentVisualScene(db, "game", "lobby"))?.status).toBe("failed");
   await expect(renderPlannedVisualScene(db, planned)).rejects.toThrow("recovery");
   expect([imageCalls, visionCalls]).toEqual([1, 1]);

@@ -743,3 +743,7 @@ Development → Tests Pass → Version Bump → Tag → Push → Deploy Staging 
 - **MINOR** releases (0.7.0): new features, mechanic changes, interface changes
 - **PATCH** releases (0.6.1): bug fixes, personality tuning, config tweaks
 - Board tests against staging on the tailnet. If issues are found, agents fix → new patch → redeploy.
+
+### Editorial game assets
+
+Use the existing local MinIO bootstrap and `LINODE_PRIVATE_CONTENT_*` settings for game image uploads. `bun run game-assets login --api http://127.0.0.1:3000 --web http://127.0.0.1:3001` requests scoped browser OAuth for a current producer/sysop. Asset `visibility` is `public`/`spoiler` presentation metadata; roles govern writes, and public-game reads work anonymously. Assets never use the filesystem upload fallback. The [game-assets guide](docs/game-assets.md) documents the CLI, metadata, receipts, explicit MinIO smoke, and results-only placement; the [operator review](docs/deployment/game-assets-operator-review.md) covers ephemeral/staging acceptance.

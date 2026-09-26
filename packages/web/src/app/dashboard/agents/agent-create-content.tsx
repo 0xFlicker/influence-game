@@ -157,6 +157,7 @@ export function AgentCreateContent({
         publicPreview
         guided={mode === "assistant"}
         onAdvanced={() => setMode("advanced")}
+        onAssistant={() => setMode("assistant")}
         draftScope={`create:${flow}:${gameId ?? "none"}`}
         onSubmit={handleCreate}
         onCancel={() => router.replace(authenticated ? context.cancelPath : "/games")}

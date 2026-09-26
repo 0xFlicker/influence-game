@@ -27,7 +27,7 @@ const NON_MCP_ADDRESS = "0xnomcp000000000000000000000000000000001";
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
 const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
-const MCP_OAUTH_SUPPORTED_SCOPE = `${MCP_OAUTH_ALL_SCOPE} moderation:read moderation:write`;
+const MCP_OAUTH_SUPPORTED_SCOPE = `${MCP_OAUTH_ALL_SCOPE} moderation:read moderation:write assets:manage`;
 const MCP_OAUTH_SCOPE = "producer";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
@@ -71,7 +71,7 @@ describe("MCP OAuth routes", () => {
     expect(await jsonObject(protectedResource)).toMatchObject({
       resource: RESOURCE_URI,
       authorization_servers: ["http://127.0.0.1:3000"],
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
       bearer_methods_supported: ["header"],
       resource_name: "Influence MCP",
     });
@@ -80,7 +80,7 @@ describe("MCP OAuth routes", () => {
     expect(protectedResourceForPath.status).toBe(200);
     expect(await jsonObject(protectedResourceForPath)).toMatchObject({
       resource: RESOURCE_URI,
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
     });
 
     const producerProtectedResource = await app.request(
@@ -96,7 +96,7 @@ describe("MCP OAuth routes", () => {
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
       revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
       registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
-      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],

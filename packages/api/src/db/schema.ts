@@ -3745,3 +3745,58 @@ export const anonymousTextOperations = pgTable("anonymous_text_operations", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true, mode: "string" }),
 }, table => [unique("anonymous_text_operations_visitor_key").on(table.visitorHash, table.requestKey)]);
+
+// Editorial images are independent of gameplay visuals and canonical events.
+export const gameAssets = pgTable("game_assets", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id),
+  label: text("label").notNull(),
+  /** Presentation classification only; it never adds an asset access restriction. */
+  visibility: text("visibility").notNull().$type<"public" | "spoiler">(),
+  altText: text("alt_text").notNull(),
+  sourceWorkflow: text("source_workflow"),
+  sourceRunId: text("source_run_id"),
+  objectKey: text("object_key").notNull().unique(),
+  sha256: text("sha256").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  byteLength: integer("byte_length").notNull(),
+  revision: integer("revision").notNull().default(1),
+  createdById: text("created_by_id").notNull().references(() => users.id),
+  updatedById: text("updated_by_id").notNull().references(() => users.id),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+  deletedAt: text("deleted_at"),
+}, (t) => [
+  index("game_assets_list_idx").on(t.gameId, t.id),
+  uniqueIndex("game_assets_live_banner_unique").on(t.gameId).where(sql`${t.label} = 'banner' AND ${t.deletedAt} IS NULL`),
+  check("game_assets_bounds_check", sql`${t.revision} > 0 AND ${t.width} BETWEEN 1 AND 4096 AND ${t.height} BETWEEN 1 AND 4096 AND ${t.byteLength} BETWEEN 1 AND 10485760`),
+  check("game_assets_visibility_check", sql`${t.visibility} IN ('public', 'spoiler')`),
+  check("game_assets_label_check", sql`${t.label} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND length(${t.label}) <= 64`),
+  check("game_assets_alt_check", sql`length(${t.altText}) BETWEEN 1 AND 500`),
+]);
+
+export const gameAssetOperations = pgTable("game_asset_operations", {
+  id: text("id").primaryKey(),
+  actorId: text("actor_id").notNull().references(() => users.id),
+  requestId: text("request_id").notNull(),
+  gameId: text("game_id").notNull().references(() => games.id),
+  assetId: text("asset_id").notNull(),
+  kind: text("kind").notNull().$type<"upload" | "update" | "replace" | "delete">(),
+  fingerprint: text("fingerprint").notNull(),
+  state: text("state").notNull().$type<"pending" | "applied" | "failed" | "cancelled">(),
+  claimId: text("claim_id").notNull(),
+  claimUntil: text("claim_until").notNull(),
+  candidateKey: text("candidate_key"),
+  retiredKey: text("retired_key"),
+  cleanupPending: boolean("cleanup_pending").notNull().default(false),
+  result: jsonb("result").$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("game_asset_operations_request_unique").on(t.actorId, t.requestId),
+  index("game_asset_operations_game_idx").on(t.gameId),
+  check("game_asset_operations_state_check", sql`${t.state} IN ('pending', 'applied', 'failed', 'cancelled')`),
+  check("game_asset_operations_kind_check", sql`${t.kind} IN ('upload', 'update', 'replace', 'delete')`),
+  check("game_asset_operations_request_check", sql`length(${t.requestId}) BETWEEN 1 AND 200`),
+]);

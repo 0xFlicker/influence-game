@@ -15,6 +15,7 @@ export interface AuthorizeUrlOptions {
   resourceUri: string;
   state: string;
   codeChallenge: string;
+  scope?: string;
 }
 
 export interface CallbackResult {
@@ -30,6 +31,7 @@ export interface TokenExchangeOptions {
   redirectUri: string;
   resourceUri: string;
   codeVerifier: string;
+  scope?: string;
 }
 
 export interface McpOAuthTokenResponse {
@@ -73,7 +75,7 @@ export function buildAuthorizeUrl(options: AuthorizeUrlOptions): URL {
   authorizeUrl.searchParams.set("client_id", options.clientId);
   authorizeUrl.searchParams.set("redirect_uri", options.redirectUri);
   authorizeUrl.searchParams.set("resource", options.resourceUri);
-  authorizeUrl.searchParams.set("scope", MCP_OAUTH_SCOPE);
+  authorizeUrl.searchParams.set("scope", options.scope ?? MCP_OAUTH_SCOPE);
   authorizeUrl.searchParams.set("state", options.state);
   authorizeUrl.searchParams.set("code_challenge", options.codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
@@ -114,6 +116,7 @@ export async function exchangeAuthorizationCode(
   const tokenUrl = new URL("/api/oauth/mcp/token", options.apiBaseUrl);
   const response = await fetch(tokenUrl, {
     method: "POST",
+    redirect: "error",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
     },
@@ -136,8 +139,9 @@ export async function exchangeAuthorizationCode(
   if (
     typeof parsed.access_token !== "string" ||
     parsed.token_type !== "Bearer" ||
-    typeof parsed.expires_in !== "number" ||
-    !parsed.scope?.split(/\s+/).includes(MCP_OAUTH_SCOPE) ||
+    typeof parsed.expires_in !== "number" || !Number.isFinite(parsed.expires_in) || parsed.expires_in <= 0 ||
+    parsed.purpose !== "mcp_access" ||
+    !parsed.scope?.split(/\s+/).includes(options.scope ?? MCP_OAUTH_SCOPE) ||
     parsed.audience !== MCP_OAUTH_AUDIENCE ||
     !isSameLocalResource(parsed.resource, options.resourceUri)
   ) {

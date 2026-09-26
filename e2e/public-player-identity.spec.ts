@@ -587,7 +587,7 @@ test.describe("local public player identity", () => {
         await expect(page.getByRole("button", { name: "Remove change Character prompt" })).toBeVisible();
         await composer.fill("No, make her suspicious");
         await page.getByRole("button", { name: "Send", exact: true }).click();
-        await expect(page.getByText("A suspicious diplomat who verifies every promise.")).toBeVisible();
+        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
         await page.getByRole("button", { name: "Yes, that feels right" }).click();
         await expect(page.getByText(/What do they look like/)).toBeVisible();
         await expect(page.getByRole("button", { name: "Add Dragon ingredient", exact: true })).toBeVisible();
@@ -681,7 +681,7 @@ test.describe("local public player identity", () => {
         await expect(page.getByText("Visual ingredients", { exact: true })).toHaveCount(0);
         expect(imageRequests).toBe(1);
         // Appearance generation must not replace the approved character prompt.
-        await expect(page.getByText("A suspicious diplomat who verifies every promise.")).toBeVisible();
+        await expect(page.getByRole("button", { name: "Read Character prompt", exact: true })).toContainText("A suspicious diplomat who verifies every promise.");
         await page.getByRole("button", { name: "Advanced create", exact: true }).click();
         await expect(page.locator("#agent-personality")).toHaveValue("A suspicious diplomat who verifies every promise.");
         await expect(page.locator("#agent-name")).toHaveValue("Mira Vale");

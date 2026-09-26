@@ -580,6 +580,9 @@ export interface AdminGameSummary extends GameSummary {
   providerFailures?: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
 }
 
+export type ProductionGameSummary = Pick<AdminGameSummary,
+  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel">;
+
 export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
 
 export interface AdminProviderFailureSummary {
@@ -791,6 +794,10 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games", { cache: "no-store" });
+}
+
+export async function listProductionGames(): Promise<ProductionGameSummary[]> {
+  return apiFetch("/api/admin/production/games", { cache: "no-store" });
 }
 
 export async function getAdminProviderFailures(
@@ -1846,13 +1853,13 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer" | "moderation";
+  group: "agents" | "games" | "developer" | "moderation" | "assets";
   requiredScopes: McpOAuthScope[];
 }
 

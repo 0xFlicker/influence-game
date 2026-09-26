@@ -22,7 +22,7 @@ export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: st
   const metrics = ["openai", "xai"].map((provider) => {
     const attempts = accounting.attempts.filter((attempt) => attempt.provider === provider);
     const elapsed = attempts.flatMap((attempt) => attempt.receipt ? [attempt.receipt.elapsedMs] : []).sort((a, b) => a - b);
-    return { provider, attempts: attempts.length, failed: attempts.filter((attempt) => attempt.receipt?.failure).length, uncertain: attempts.filter((attempt) => !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain)).length, knownCostMicrousd: attempts.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0), p50Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .5) - 1)] ?? null, p95Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .95) - 1)] ?? null };
+    return { provider, attempts: attempts.length, failed: attempts.filter((attempt) => attempt.receipt?.failure).length, uncertain: attempts.filter((attempt) => attempt.status === "needs_reconciliation").length, knownCostMicrousd: attempts.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0), p50Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .5) - 1)] ?? null, p95Ms: elapsed[Math.max(0, Math.ceil(elapsed.length * .95) - 1)] ?? null };
   });
   let rebuildPreview: Awaited<ReturnType<typeof previewFinalsRebuild>> | null = null;
   let rebuildError: string | null = null;

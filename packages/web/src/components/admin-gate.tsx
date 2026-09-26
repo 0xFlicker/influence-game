@@ -5,9 +5,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 
 /** Gates content behind the `view_admin` permission (or admin role). */
-export function AdminGate({ children }: { children: React.ReactNode }) {
+export function AdminGate({ children, allowedRoles = [] }: { children: React.ReactNode; allowedRoles?: string[] }) {
   const { ready, authenticated, openSignIn } = useAuth();
-  const { loading, isAdmin } = usePermissions();
+  const { loading, isAdmin, roles } = usePermissions();
   const { suppressWebsiteAuthChrome, isMiniApp } = useMiniApp();
 
   if (!ready || loading) {
@@ -38,7 +38,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isAdmin) {
+  if (!isAdmin && !allowedRoles.some(role => roles.includes(role))) {
     return (
       <div className="influence-panel mx-auto flex min-h-64 max-w-lg flex-col items-center justify-center gap-2 rounded-xl px-6 py-10 text-center">
         <p className="influence-copy-strong font-medium">Access denied.</p>

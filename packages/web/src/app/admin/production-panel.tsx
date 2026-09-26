@@ -1,34 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { backfillEpisodes, listAdminGames, type AdminGameSummary } from "@/lib/api";
+import { backfillEpisodes, listAdminGames, listProductionGames, type ProductionGameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { EpisodeEditor } from "./episode-editor";
 import { AdminPostgameMediaPanel } from "./admin-postgame-media";
+import { ReplayVisualProductionPanel } from "./replay-visual-production-panel";
 import { AdminGameFilterBar, DEFAULT_ADMIN_GAME_FILTERS, filterAdminGames, type AdminGameFilters } from "./admin-game-filters";
 import "../games/episodes.css";
 
 type BatchReview = Awaited<ReturnType<typeof backfillEpisodes>>;
 
 export function ProductionPanel() {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles, isAdmin } = usePermissions();
+  const canRenderImages = roles.some(role => role === "producer" || role === "sysop");
   const canManage = hasPermission("manage_postgame_media") || hasPermission("manage_roles");
-  const [games, setGames] = useState<AdminGameSummary[]>([]);
+  const [games, setGames] = useState<ProductionGameSummary[]>([]);
   const [filters, setFilters] = useState<AdminGameFilters>(DEFAULT_ADMIN_GAME_FILTERS);
   const [selected, setSelected] = useState<string[]>([]);
   const [regenerate, setRegenerate] = useState(false);
   const [review, setReview] = useState<BatchReview | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
+  const [mediaGame, setMediaGame] = useState<ProductionGameSummary | null>(null);
+  const [replayGameId, setReplayGameId] = useState<string | null>(null);
+  const [replayLocked, setReplayLocked] = useState(false);
   const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const refresh = useCallback(async () => {
-    try { setGames(await listAdminGames()); setError(null); setReview(null); }
+    if (!isAdmin && !canRenderImages) { setLoading(false); return; }
+    try { setGames(await (isAdmin ? listAdminGames() : listProductionGames())); setError(null); setReview(null); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
-  }, []);
+  }, [isAdmin, canRenderImages]);
   useEffect(() => { void refresh(); }, [refresh]);
   const visible = filterAdminGames(games, filters);
   // The submitted set is always intersected with the current filters.
@@ -50,11 +55,12 @@ export function ProductionPanel() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setPending(false); }
   }
+  if (!isAdmin && !canRenderImages) return null;
   return <section aria-label="Episode and video production">
-    <div className="mb-6 flex justify-between gap-4"><div><h1 className="text-2xl font-semibold">Episode & video production</h1><p className="mt-2 text-sm text-white/50">Titles, covers, preview order, trailers and posters. Select individual games before reviewing a batch.</p></div><button disabled={pending} onClick={() => void refresh()}>Refresh</button></div>
+    <div className="mb-6 flex justify-between gap-4"><div><h1 className="text-2xl font-semibold">Episode & video production</h1><p className="mt-2 text-sm text-white/50">Titles, covers, replay images, trailers and posters. Open a game’s production controls below.</p></div><button disabled={pending || replayLocked} onClick={() => void refresh()}>Refresh</button></div>
     {error && <p role="alert" className="my-4 text-red-300">{error}</p>}{message && <p role="status" className="my-4">{message}</p>}
-    <fieldset disabled={pending}>
-      <AdminGameFilterBar filters={filters} hiddenCount={games.filter(g => g.hidden).length} onChange={next => { setFilters(next); changeSelection([]); }} />
+    <fieldset disabled={pending || replayLocked}>
+      <AdminGameFilterBar filters={filters} hiddenCount={games.filter(g => g.hidden).length} onChange={next => { setFilters(next); changeSelection([]); setReplayGameId(null); }} />
       {canManage && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-white/15 p-4">
         <span role="status">{visible.length} matching · {selectedVisible.length} selected</span>
         <button className="rounded border border-white/20 px-3 py-2 text-sm disabled:opacity-35" disabled={!visible.length || visible.length > 50} onClick={() => changeSelection(visible.map(g => g.id))}>Select all {visible.length} matching</button>
@@ -70,13 +76,20 @@ export function ProductionPanel() {
         <button className="influence-button-primary rounded px-3 py-2" disabled={!review.calls} onClick={() => void queueBatch()}>Queue {review.calls} episodes</button>
         <button className="ml-4" onClick={() => setReview(null)}>Cancel</button>
       </div>}
-      {loading ? <p role="status">Loading production…</p> : <div className="space-y-2">{visible.map(game => <article key={game.id} className="flex flex-wrap items-center gap-4 rounded-lg border border-white/10 p-4">
-        {canManage && <input type="checkbox" aria-label={`Select ${game.slug}`} checked={selected.includes(game.id)} disabled={!selected.includes(game.id) && selected.length >= 50} onChange={e => changeSelection(e.target.checked ? [...selected, game.id] : selected.filter(id => id !== game.id))} />}
-        <div className="min-w-0 flex-1"><h2 className="font-medium">{game.episode?.title ?? game.slug}</h2><p className="text-xs text-white/50">{game.slug} · {game.season?.name ?? "Custom"} · {game.status} · Naming: {game.episode?.status ?? "unrequested"}{game.episode?.locked ? " · Protected" : ""}</p></div>
-        {canManage && <button className="influence-button-secondary rounded px-3 py-2 text-sm" onClick={() => setEditing(game.id)}>Edit episode</button>}
-        {game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" onClick={() => setMediaGame(game)}>Trailer & poster</button>}
-      </article>)}{!visible.length && <p>No games match these filters.</p>}</div>}
     </fieldset>
+      {loading ? <p role="status">Loading production…</p> : <div className="space-y-2">{visible.map(game => <article key={game.id} aria-label={`Production for ${game.slug}`} className="flex flex-wrap items-center gap-4 rounded-lg border border-white/10 p-4">
+        {canManage && <input type="checkbox" aria-label={`Select ${game.slug}`} checked={selected.includes(game.id)} disabled={pending || (!selected.includes(game.id) && selected.length >= 50)} onChange={e => changeSelection(e.target.checked ? [...selected, game.id] : selected.filter(id => id !== game.id))} />}
+        <div className="min-w-0 flex-1"><h2 className="font-medium">{game.episode?.title ?? game.slug}</h2><p className="text-xs text-white/50">{game.slug} · {game.season?.name ?? "Custom"} · {game.status} · Naming: {game.episode?.status ?? "unrequested"}{game.episode?.locked ? " · Protected" : ""}</p></div>
+        {canManage && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setEditing(game.id)}>Edit episode</button>}
+        {isAdmin && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setMediaGame(game)}>Trailer & poster</button>}
+        {canRenderImages && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked}
+          aria-expanded={replayGameId === game.id} aria-controls={`replay-images-${game.id}`} onClick={() => setReplayGameId(current => current === game.id ? null : game.id)}>
+          {replayGameId === game.id ? "Close replay images" : "Replay images"}
+        </button>}
+        {canRenderImages && replayGameId === game.id && <div id={`replay-images-${game.id}`} className="min-w-0 w-full">
+          <ReplayVisualProductionPanel gameId={game.id} onLocked={setReplayLocked} />
+        </div>}
+      </article>)}{!visible.length && <p>No games match these filters.</p>}</div>}
     {editing && <EpisodeEditor gameId={editing} onClose={() => setEditing(null)} onSaved={refresh} />}
     {mediaGame && <AdminPostgameMediaPanel game={mediaGame} canManage={canManage} onClose={() => setMediaGame(null)} />}
   </section>;

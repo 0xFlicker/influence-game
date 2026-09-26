@@ -224,7 +224,7 @@ describe("gamer role seed", () => {
 });
 
 describe("producer role seed", () => {
-  test("resolves as a role marker without app permissions", async () => {
+  test("grants editorial asset management without general app operation permissions", async () => {
     const db = await setupDB();
     await createUser(
       db,
@@ -243,7 +243,7 @@ describe("producer role seed", () => {
     );
 
     expect(resolved.roles).toEqual(["producer"]);
-    expect(resolved.permissions).toEqual([]);
+    expect(resolved.permissions).toEqual(["manage_game_assets"]);
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
     expect(resolved.permissions).not.toContain("retry_game_settlement");

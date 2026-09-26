@@ -15,6 +15,7 @@ import { schema } from "./index.js";
 // ---------------------------------------------------------------------------
 
 const PERMISSIONS = [
+  { name: "manage_game_assets", description: "Manage editorial game images" },
   { name: "review_agent_content", description: "Claim and review character content revisions" },
   { name: "review_moderation_escalations", description: "Review content escalated to admins" },
   { name: "undo_moderation", description: "Undo character moderation decisions with an audit trail" },
@@ -82,9 +83,9 @@ const ROLES = [
   },
   {
     name: "producer",
-    description: "Can authorize producer MCP access through OAuth",
+    description: "Can authorize producer MCP access and manage game images",
     isSystem: 1,
-    permissions: [],
+    permissions: ["manage_game_assets"],
   },
   {
     name: "player",
@@ -129,6 +130,9 @@ export async function seedRBAC(db: DrizzleDB): Promise<void> {
         .where(sql`${schema.roles.name} = ${role.name}`))[0];
 
       if (existing) {
+        if (role.name === "producer") {
+          await tx.update(schema.roles).set({ description: role.description }).where(sql`${schema.roles.id} = ${existing.id}`);
+        }
         roleIds.set(role.name, existing.id);
       } else {
         const id = randomUUID();

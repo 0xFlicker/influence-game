@@ -106,7 +106,7 @@ export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer" | "moderation";
+  group: "agents" | "games" | "developer" | "moderation" | "assets";
   requiredScopes: McpOAuthScope[];
 }
 
@@ -367,7 +367,7 @@ export async function authorizeMcpOAuth(
   }
 
   const hasProducerRole = await hasCurrentProducerRole(db, user);
-  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole, await hasModerationAccess(db, user.id));
+  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole, await hasModerationAccess(db, user.id), await hasGameAssetPermission(db, user));
   const defaultSelectedScope = normalizeMcpOAuthScopeSet(preview.defaultSelectedScopes);
 
   if (decision === "inspect") {
@@ -629,6 +629,10 @@ export async function exchangeMcpOAuthCode(
     return invalidGrant("Producer role is no longer active for this user", codeAudit);
   }
 
+  if (codeScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
+    return invalidGrant("Game asset permission is no longer active", codeAudit);
+  }
+
   const shouldIssueRefreshToken = await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
   const rawToken = generateOpaqueSecret();
   const rawRefreshToken = shouldIssueRefreshToken ? generateOpaqueSecret() : undefined;
@@ -778,6 +782,10 @@ async function refreshMcpOAuthAccessToken(
   }
   if (mcpOAuthScopeSetHasProducer(tokenScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {
     return invalidGrant("Producer role is no longer active for this user", audit);
+  }
+
+  if (tokenScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
+    return invalidGrant("Game asset permission is no longer active", audit);
   }
 
   const rawAccessToken = generateOpaqueSecret();
@@ -985,6 +993,10 @@ export async function introspectMcpAccessToken(
     return { active: false };
   }
   if (mcpOAuthScopeSetHasProducer(tokenScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {
+    return { active: false };
+  }
+
+  if (tokenScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
     return { active: false };
   }
 
@@ -1374,12 +1386,17 @@ function scopeGrantPreview(
   requestedScopes: ReadonlySet<McpOAuthScope>,
   hasProducerRole: boolean,
   hasModeratorRole: boolean,
+  hasAssetPermission: boolean,
 ): ScopeGrantPreview {
   const requested = mcpOAuthScopesToArray(requestedScopes);
   const grantableScopes: McpOAuthScope[] = [];
   const blockedScopes: Array<{ scope: McpOAuthScope; reason: string }> = [];
   for (const scope of requested) {
     const definition = MCP_OAUTH_SCOPE_DEFINITIONS[scope];
+    if (definition.requiredPermission && !hasAssetPermission) {
+      blockedScopes.push({ scope, reason: "game asset management permission required" });
+      continue;
+    }
     if (definition.requiredRole === "moderator" && !hasModeratorRole) { blockedScopes.push({ scope, reason: "moderator access required" }); continue; }
     if (definition.requiredRole === "producer" && !hasProducerRole) {
       blockedScopes.push({ scope, reason: "producer role required" });
@@ -1815,4 +1832,10 @@ function normalizeResourceUri(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Asset grants follow current permission, independently of producer trace scope. */
+export async function hasGameAssetPermission(db: Pick<DrizzleDB, "select">, user: Pick<AuthUser, "walletAddress">): Promise<boolean> {
+  if (!user.walletAddress) return false;
+  return (await getPermissionsForAddress(db, user.walletAddress)).permissions.includes("manage_game_assets");
 }
