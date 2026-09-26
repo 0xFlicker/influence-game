@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
@@ -17,14 +18,18 @@ export function GamePreShow({ game, onGameUpdated }: {
   game: GameDetail;
   onGameUpdated: (game: GameDetail) => void;
 }) {
-  const { authenticated, openSignIn } = useAuth();
+  const router = useRouter();
+  const { ready, authenticated, account } = useAuth();
   const [joining, setJoining] = useState(false);
-  const [joined, setJoined] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
   const openSeats = Math.max(0, game.playerCount - game.players.length);
-  const createHref = openSeats > 0
+  const ownPlayers = account ? game.players.filter(player => player.currentAgent?.owner?.publicId === account.publicId) : [];
+  const inCast = ownPlayers.length > 0;
+  const canAddAnother = !game.seasonId && account?.roles.some(role => ["admin", "sysop", "producer"].includes(role));
+  const canJoin = openSeats > 0 && (!inCast || canAddAnother);
+  const createHref = canJoin
     ? `/agents/create?flow=join_game&gameId=${encodeURIComponent(game.id)}`
     : "/agents/create";
 
@@ -77,7 +82,8 @@ export function GamePreShow({ game, onGameUpdated }: {
   const closePortrait = useCallback(() => setSelectedPlayer(null), []);
 
   function join() {
-    if (!authenticated) { openSignIn(); return; }
+    if (!ready || !canJoin) return;
+    if (!authenticated) { router.push(createHref); return; }
     setJoining(true);
   }
 
@@ -98,10 +104,10 @@ export function GamePreShow({ game, onGameUpdated }: {
             ? "A room full of strangers. One future winner. Send in your agent and see who they become."
             : "The cast is assembled. The alliances, the betrayals, the first move — all still to come."}</p>
           <div className="pre-show-hero-actions">
-            {openSeats > 0 && <button type="button" className="pre-show-join" onClick={join}>Join with an agent <span aria-hidden="true">↗</span></button>}
+            {canJoin && <button type="button" className="pre-show-join" disabled={!ready} onClick={join}>{inCast ? "Add another agent" : "Join with an agent"} <span aria-hidden="true">↗</span></button>}
             <Link href="/rules">How Influence works <span aria-hidden="true">↗</span></Link>
           </div>
-          {joined && <p className="pre-show-notice" role="status">Your agent is in. Stay for the opening move.</p>}
+          {inCast && <p className="pre-show-notice" role="status">Your agent is in. Stay for the opening move.</p>}
         </div>
         <div className="pre-show-poster" aria-hidden="true">
           <Image src="/logo.png" alt="" width={120} height={120} />
@@ -123,7 +129,7 @@ export function GamePreShow({ game, onGameUpdated }: {
         {game.players.length === 0 ? (
           <div className="pre-show-empty">
             <span className="pre-show-empty-number" aria-hidden="true">01</span>
-            <div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><Link href={createHref}>Create the first agent <span aria-hidden="true">↗</span></Link></div>
+            <div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><button type="button" disabled={!ready} onClick={join}>Bring your agent <span aria-hidden="true">↗</span></button></div>
           </div>
         ) : (
           <div className="pre-show-cast-grid">
@@ -135,14 +141,14 @@ export function GamePreShow({ game, onGameUpdated }: {
                 <span className="pre-show-cast-copy"><span>{player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)}</span><strong>{player.name}</strong><span className="pre-show-cast-record">{castRecord(player)} <span aria-hidden="true">↗</span></span></span>
               </button>;
             })}
-            {openSeats > 0 && <Link className="pre-show-invitation" href={createHref}><span aria-hidden="true">＋</span><strong>Your agent,<br /><em>in the spotlight.</em></strong><span>Create agent & join ↗</span></Link>}
+            {canJoin && <button type="button" className="pre-show-invitation" disabled={!ready} onClick={join}><span aria-hidden="true">＋</span><strong>Your agent,<br /><em>in the spotlight.</em></strong><span>{inCast ? "Add another agent" : "Choose your agent"} ↗</span></button>}
           </div>
         )}
       </section>
 
       <footer className="pre-show-footer"><p>{game.visibility === "private" ? "Private game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
       {refreshError && <p role="alert" className="pre-show-notice">Cast refresh failed. {refreshError} <button type="button" onClick={() => refreshRef.current?.()}>Try again</button></p>}
-      {joining && <JoinGameModal game={summary} onClose={() => setJoining(false)} onSuccess={() => { setJoining(false); setJoined(true); refreshRef.current?.(); }} />}
+      {joining && <JoinGameModal game={summary} onClose={() => setJoining(false)} onSuccess={() => { setJoining(false); refreshRef.current?.(); }} />}
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}
     </section>
   );

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
-import type { GameDetail, GamePlayer } from "../packages/web/src/lib/api";
+import type { GameDetail, GamePlayer, SavedAgent } from "../packages/web/src/lib/api";
 import {
   startLocalHarness,
   stopLocalHarness,
@@ -74,7 +74,8 @@ test.describe("local public player identity", () => {
         await page.route("**/api/games/preshow-fixture/episode", route => route.fulfill({ status: 404, json: { error: "No episode yet" } }));
         await page.route("**/api/games/preshow-fixture/join", async route => {
           joinedProfile = route.request().postDataJSON().agentProfileId;
-          game = { ...game, players: [...game.players, player("Vesper E2E", "observer")] };
+          const entrant = player("Vesper E2E", "observer");
+          game = { ...game, players: [...game.players, { ...entrant, currentAgent: { ...entrant.currentAgent!, owner: { publicId: fixture.publicId, handle: fixture.handle, displayName: "E2E Flick" } } }] };
           await route.fulfill({ json: { status: "joined" } });
         });
         await page.route("**/api/games/preshow-fixture/visual", route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] } }));
@@ -114,9 +115,10 @@ test.describe("local public player identity", () => {
         await preShow.getByRole("button", { name: "Try again" }).click();
         await expect(preShow.getByRole("alert")).toHaveCount(0);
 
-        await preShow.getByRole("button", { name: "Join with an agent" }).click();
-        const joinDialog = page.getByRole("dialog", { name: "Join preshow-fixture" });
-        await expect(joinDialog.getByText("4-player · Standard")).toBeVisible();
+        await preShow.getByRole("button", { name: /Your agent, in the spotlight/ }).click();
+        const joinDialog = page.getByRole("dialog", { name: "Who will you send in?" });
+        await expect(joinDialog).toContainText("4-player · Standard");
+        await expect(joinDialog.getByRole("button", { name: "Join game", exact: true })).toBeDisabled();
         await joinDialog.getByRole("radio", { name: /Vesper E2E/ }).click();
         await joinDialog.getByRole("button", { name: "Join game", exact: true }).click();
         await expect(preShow.getByText("Your agent is in. Stay for the opening move.")).toBeVisible();
@@ -129,6 +131,102 @@ test.describe("local public player identity", () => {
         game = { ...game, status: "in_progress", currentRound: 1, currentPhase: "LOBBY" };
         await expect(page.getByTestId("match-watch-shell")).toBeVisible({ timeout: 12_000 });
         await expect(preShow).toHaveCount(0);
+      } finally { await context.close(); }
+    }
+  });
+
+  test("agent selector supports reuse, retries, empty-agent creation and owned-seat roles", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
+      await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+      const page = await context.newPage();
+      const owner = { publicId: fixture.publicId, handle: fixture.handle, displayName: "E2E Flick" };
+      let roles: string[] = [];
+      let agents = [savedAgent("mira", "Mira Vale", "social"), savedAgent("vesper", "Vesper Han", "observer"), ...Array.from({ length: 6 }, (_, i) => savedAgent(`cast-${i}`, `Competitor ${i + 1}`, "strategic"))];
+      let game: GameDetail = { id: "selector-fixture", slug: "selector-fixture", status: "waiting", gameKernel: "classic", playerCount: 10, players: [{ id: "house", name: "Atlas", persona: "Fixture", personaKey: "diplomat", status: "alive", shielded: false }], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: new Date().toISOString() };
+      let listFails = true;
+      let joinFails = true;
+      const attempts: string[] = [];
+      const selector = page.getByRole("dialog", { name: "Who will you send in?" });
+      const spotlight = page.getByRole("button", { name: /Your agent, in the spotlight/ });
+      try {
+        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles } }); });
+        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
+        await page.route("**/api/agent-profiles", route => listFails ? route.fulfill({ status: 503, json: { error: "Please retry" } }) : route.fulfill({ json: agents }));
+        await page.route("**/api/games/selector-fixture", route => route.fulfill({ json: game }));
+        await page.route("**/api/games/selector-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
+        await page.route("**/api/games/selector-fixture/join", async route => {
+          attempts.push(route.request().postDataJSON().agentProfileId);
+          if (joinFails) { await route.fulfill({ status: 409, json: { error: "The cast changed. Try again." } }); return; }
+          game = { ...game, players: [...game.players, { id: "owned-seat", name: "Vesper Han", persona: "Fixture", personaKey: "observer", status: "alive", shielded: false, currentAgent: { name: "Vesper Han", avatarUrl: null, role: { key: "observer", label: "Observer" }, competition: { gamesPlayed: 3, wins: 1, winRate: 1 / 3 }, owner } }] };
+          await route.fulfill({ json: { status: "joined" } });
+        });
+        await page.goto(`${servers.webUrl}/games/selector-fixture`, { waitUntil: "networkidle" });
+        await spotlight.click();
+        await expect(selector.getByRole("alert")).toContainText("Please retry");
+        listFails = false;
+        await selector.getByRole("button", { name: "Try again" }).click();
+        await expect(selector.getByRole("radio")).toHaveCount(8);
+        await expect(selector.getByRole("radio", { checked: true })).toHaveCount(0);
+        await expect(selector.getByRole("button", { name: "Join game", exact: true })).toBeDisabled();
+        await expect(selector.locator("button button")).toHaveCount(0);
+        const closeSelector = selector.getByRole("button", { name: "Close agent selector" });
+        await closeSelector.focus();
+        await page.getByRole("link", { name: "← All games" }).focus();
+        await expect(closeSelector).toBeFocused();
+        // Native dialogs allow a Tab stop in browser chrome; underlying page
+        // controls must remain inert throughout keyboard traversal.
+        for (let i = 0; i < 8; i++) { await page.keyboard.press("Tab"); expect(await page.evaluate(() => document.activeElement === document.body || !!document.activeElement?.closest("dialog.agent-selector"))).toBe(true); }
+        await selector.getByRole("searchbox", { name: "Search your agents" }).fill("observer");
+        await expect(selector.getByRole("radio")).toHaveCount(1);
+        await selector.getByRole("radio", { name: "Vesper Han", exact: true }).check();
+        await selector.getByRole("searchbox").fill("nobody");
+        await expect(selector.getByText("No agents match “nobody”.")).toBeVisible();
+        await selector.getByRole("searchbox").press("Enter");
+        expect(attempts).toHaveLength(0);
+        await selector.getByRole("button", { name: "Clear search" }).click();
+        await expect(selector.getByRole("radio", { name: "Vesper Han", exact: true })).toBeChecked();
+        expect(await selector.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        await page.screenshot({ path: `/tmp/agent-selector-${width}.png`, fullPage: true });
+        await selector.getByRole("button", { name: "Join game", exact: true }).click();
+        await expect(selector.getByRole("alert")).toContainText("The cast changed");
+        await expect(selector.getByRole("radio", { name: "Vesper Han", exact: true })).toBeChecked();
+        joinFails = false;
+        await selector.getByRole("button", { name: "Join game", exact: true }).click();
+        await expect(selector).toHaveCount(0);
+        await expect(page.getByText("Your agent is in. Stay for the opening move.")).toBeVisible();
+        await expect(spotlight).toHaveCount(0);
+        expect(attempts).toEqual(["vesper", "vesper"]);
+        await expect(page.getByRole("region", { name: "Game pre-show" }).getByRole("link", { name: "Create agent", exact: true })).toHaveAttribute("href", "/agents/create");
+
+        for (const role of ["player", "moderator", "admin", "sysop", "producer"]) {
+          roles = [role];
+          await page.reload({ waitUntil: "networkidle" });
+          if (["admin", "sysop", "producer"].includes(role)) await expect(spotlight).toBeVisible();
+          else await expect(spotlight).toHaveCount(0);
+        }
+        game = { ...game, seasonId: "rated-season" };
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(spotlight).toHaveCount(0);
+
+        game = { ...game, seasonId: undefined, players: game.players.slice(0, 1) };
+        await page.reload({ waitUntil: "networkidle" });
+        await spotlight.click();
+        await selector.getByRole("button", { name: "Close agent selector" }).click();
+        await expect(spotlight).toBeFocused();
+        await spotlight.click();
+        await page.keyboard.press("Escape");
+        await expect(selector).toHaveCount(0);
+        await expect(spotlight).toBeFocused();
+        await spotlight.click();
+        await selector.getByRole("button", { name: "Create new agent" }).click();
+        await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=selector-fixture$/);
+        agents = [];
+        await page.goto(`${servers.webUrl}/games/selector-fixture`, { waitUntil: "networkidle" });
+        await spotlight.click();
+        await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=selector-fixture$/);
       } finally { await context.close(); }
     }
   });
