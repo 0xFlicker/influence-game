@@ -5,10 +5,11 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "producer",
   "moderation:read",
   "moderation:write",
+  "assets:manage",
 ] as const;
 
 export type McpOAuthScope = typeof MCP_OAUTH_SCOPE_VALUES[number];
-export type McpOAuthScopeGroup = "agents" | "games" | "developer" | "moderation";
+export type McpOAuthScopeGroup = "agents" | "games" | "developer" | "moderation" | "assets";
 export type McpOAuthRequiredRole = "producer" | "moderator";
 
 export interface McpOAuthScopeDefinition {
@@ -19,6 +20,7 @@ export interface McpOAuthScopeDefinition {
   defaultSelected: boolean;
   requiredScopes: readonly McpOAuthScope[];
   requiredRole?: McpOAuthRequiredRole;
+  requiredPermission?: "manage_game_assets";
 }
 
 export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDefinition> = {
@@ -51,6 +53,11 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
   },
   "moderation:write": {
     scope: "moderation:write", label: "Act on moderation reviews", description: "Claim, flag, pass, and decide whole revisions. Requires current moderator permissions; never grants profile editing.", group: "moderation", requiredRole: "moderator", defaultSelected: false, requiredScopes: ["moderation:read"],
+  },
+  "assets:manage": {
+    scope: "assets:manage", label: "Manage game images",
+    description: "Upload, update, replace, and delete game images using your current producer or sysop permission.",
+    group: "assets", defaultSelected: false, requiredScopes: [], requiredPermission: "manage_game_assets",
   },
   producer: {
     scope: "producer",

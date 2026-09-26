@@ -47,7 +47,7 @@ export async function userHasAnyRole(
  * Returns deduplicated arrays of role names and permission names.
  */
 export async function getPermissionsForAddress(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   walletAddress: string,
 ): Promise<ResolvedPermissions> {
   const addr = walletAddress.toLowerCase();

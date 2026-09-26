@@ -1846,13 +1846,13 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
   label: string;
   description: string;
-  group: "agents" | "games" | "developer" | "moderation";
+  group: "agents" | "games" | "developer" | "moderation" | "assets";
   requiredScopes: McpOAuthScope[];
 }
 

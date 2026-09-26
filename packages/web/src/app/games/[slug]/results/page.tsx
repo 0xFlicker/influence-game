@@ -1,3 +1,4 @@
+import { GameBanner } from "@/components/game-banner";
 import { Nav } from "@/components/nav";
 import type { GameDetail } from "@/lib/api";
 import { getServerGame } from "@/lib/server-api";
@@ -35,6 +36,8 @@ export default async function GameResultsPage({ params }: Props) {
             {initialGame?.slug ?? slug}
           </h1>
         </div>
+
+        <GameBanner gameId={slug} />
 
         <GameViewer
           gameId={slug}

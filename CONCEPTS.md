@@ -755,3 +755,7 @@ A **content revision** is the complete immutable snapshot submitted from a chara
 ### Scene media repair and viewer publication
 
 A **media repair job** independently renders or verifies a frozen existing scene plan. Its immutable **candidate version** is separate from the original scene accepted for agent context. An explicit **viewer publication** selects a verified candidate and appends publication history. Playback polls published media automatically and pins the selection for each beat; updates take effect at the next beat without interrupting speech. None of these records changes canonical game execution or the image context agents originally received. **Game recovery** remains a separate paused-game operation requiring Resume.
+
+## Editorial game asset
+
+An externally produced image associated with a game by label and `public`/`spoiler` presentation classification. Classification never adds a read restriction: public-game images are anonymous-readable, with existing private/hidden game access preserved. `banner` renders only inside `/games/[slug]/results` and discovers late uploads to old games. S3 bucket restrictions protect shared infrastructure, while the API delivers image bytes. Producer/sysop permission `manage_game_assets` and explicit OAuth scope `assets:manage` govern management operations only. Revision-fenced mutations have durable receipts and recoverable object cleanup. These images are separate from gameplay visual artifacts, covers, and canonical events. See [game assets](docs/game-assets.md).

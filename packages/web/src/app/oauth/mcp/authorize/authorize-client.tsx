@@ -271,6 +271,7 @@ function ConsentDetails({
     agents: preview.grantableScopes.filter((scope) => scope.group === "agents"),
     games: preview.grantableScopes.filter((scope) => scope.group === "games"),
     moderation: preview.grantableScopes.filter((scope) => scope.group === "moderation"),
+    assets: preview.grantableScopes.filter((scope) => scope.group === "assets"),
     developer: preview.grantableScopes.filter((scope) => scope.group === "developer"),
   }), [preview.grantableScopes]);
 
@@ -333,6 +334,10 @@ function ConsentDetails({
             disabled={submitting !== null}
             onToggle={toggleScope}
           />
+        )}
+        {grantableGroups.assets.length > 0 && (
+          <ScopeGroup title="Game images" scopes={grantableGroups.assets}
+            selectedSet={selectedSet} onToggle={toggleScope} disabled={submitting !== null} />
         )}
         {grantableGroups.developer.length > 0 && (
           <ScopeGroup

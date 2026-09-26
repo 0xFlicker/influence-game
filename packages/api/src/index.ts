@@ -1,3 +1,4 @@
+import { createGameAssetRoutes } from "./routes/game-assets.js";
 import { createAccountInferenceRoutes } from "./routes/account-inference.js";
 import { createModerationRoutes } from "./routes/moderation.js";
 import { startEpisodeWorker } from "./services/episode-presentation.js";
@@ -647,6 +648,8 @@ const uploadRoutes = createUploadRoutes();
 app.route("/", uploadRoutes);
 
 // Profile & leaderboard routes
+app.route("/", createGameAssetRoutes(db));
+
 const profileRoutes = createProfileRoutes(db);
 app.route("/", profileRoutes);
 

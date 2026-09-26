@@ -803,7 +803,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false,
     });
     await expect(resolveEligibility({
@@ -821,7 +821,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write"],
+      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
       hasProducerRole: false, hasModerationRole: false,
     });
     await expect(resolveEligibility({

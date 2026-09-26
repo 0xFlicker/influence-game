@@ -390,3 +390,9 @@ For local and deployed verification:
 - OpenAI Apps SDK authentication: https://developers.openai.com/apps-sdk/build/auth
 - Claude Code MCP reference: https://docs.anthropic.com/en/docs/claude-code/mcp
 - Corrective discovery plan: `docs/plans/2026-07-17-001-fix-chatgpt-mcp-tool-discovery-plan.md`
+
+## Editorial game asset scope
+
+`assets:manage` is an opt-in capability of this issuer's existing `/mcp` protected service for the `/api/game-assets`, `/api/games/:idOrSlug/assets`, and `/api/game-asset-operations` endpoint families on the same API origin. Resource, issuer, audience `game-mcp`, purpose `mcp_access`, PKCE, revocation, legal acceptance, and expiry checks remain intact. This extension does not make opaque MCP tokens into general application sessions.
+
+Consent, code exchange, refresh, introspection, and writes check current DB permission `manage_game_assets`, seeded for producer and sysop. Public-game image reads require no token or management role. `public`/`spoiler` are presentation labels, never access filters. Existing scope `producer` alone cannot manage assets; `assets:manage` alone does not grant producer trace access. Sysop asset consent does not require an additional producer role or broaden the existing producer trace consent policy. The [asset CLI](game-assets.md) reuses this login flow with explicit asset scope and origin-bound token files; no separate issuer or long-lived token minting path is added.

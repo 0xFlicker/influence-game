@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { McpOAuthTokenResponse } from "./oauth";
@@ -11,6 +11,8 @@ export interface StoredMcpOAuthToken {
   purpose: string;
   issuedAt: string;
   expiresAt: string;
+  apiOrigin?: string;
+  resource?: string;
 }
 
 export function getDefaultMcpTokenFilePath(): string {
@@ -25,8 +27,10 @@ export function saveMcpOAuthToken(
   token: McpOAuthTokenResponse,
   filePath = getMcpTokenFilePath(),
   now = new Date(),
+  binding?: { apiOrigin: string; resource: string },
 ): StoredMcpOAuthToken {
   const payload: StoredMcpOAuthToken = {
+    ...binding,
     accessToken: token.access_token,
     tokenType: token.token_type,
     scope: token.scope,
@@ -37,6 +41,9 @@ export function saveMcpOAuthToken(
   };
 
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+  if ((statSync(dirname(filePath)).mode & 0o777) !== 0o700) {
+    throw new Error(`Token directory must have permissions 0700: ${dirname(filePath)}. Choose a private directory.`);
+  }
   writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
   chmodSync(filePath, 0o600);
   return payload;
@@ -59,7 +66,7 @@ export function loadStoredMcpAccessToken(
     throw new Error(`Saved MCP token file is invalid: ${filePath}`);
   }
 
-  if (new Date(parsed.expiresAt).getTime() <= now.getTime()) {
+  if (!Number.isFinite(Date.parse(parsed.expiresAt)) || new Date(parsed.expiresAt).getTime() <= now.getTime()) {
     throw new Error(`Saved MCP token is expired. Rerun mcp:game:login: ${filePath}`);
   }
 
