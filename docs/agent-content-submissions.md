@@ -28,6 +28,8 @@ immutable and must be served through independently authorized, non-cacheable rou
 
 The global header (or flat menu on smaller screens) links signed-in users directly to the agent creation assistant; **Advanced create** remains available inside that flow. **Create game** links to `/games/new` only for accounts with `create_game`. Both shortcuts are hidden during agent creation/editing, game creation, and individual game viewing (including live games and replays). The bottom of the screen remains available for future assistant UI.
 
+The creation conversation scrolls independently with a soft fade at its edges. During image generation, the formation illustration scales within its own preview area so its status caption stays visible above the conversation.
+
 `submissionId` identifies an update attempt; reuse it with the exact same payload after response loss. The editor persists that ID before sending. A changed payload gets a new ID. `expectedContentRevisionId` matches the owner read’s `latestContentRevisionId` (null before the first content revision), while `contentRevisionId` identifies the effective published snapshot; the editor preserves that value when restoring a draft. Conflicts preserve the draft and return HTTP 409. Agent tools expose both fields. Trusted internal operations still execute under the existing profile/roster locks.
 
 `creationRequestId` remains the create identity and retry key; a standalone `submissionId` can serve as that key too. Create retries return the original saved result even after later profile edits. Existing competitive revision preconditions remain valid for strategy-review workflows.

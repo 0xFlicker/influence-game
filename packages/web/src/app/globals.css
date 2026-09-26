@@ -636,13 +636,22 @@ a {
   border-color: rgb(224 191 129 / 0.45);
 }
 
+.agent-creation-visual-forming {
+  flex: 0 0 auto;
+  height: clamp(14rem, 30dvh, 23rem);
+  max-height: none;
+  overflow: hidden;
+}
+
 .agent-creation-chat-log {
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
   max-height: min(45dvh, 32rem);
   min-height: 6rem;
-  overflow-y: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  mask-image: linear-gradient(180deg, transparent, black 1rem, black calc(100% - 0.75rem), transparent);
 }
 
 .agent-creation-visual-filled + .agent-creation-chat-log {
@@ -651,7 +660,9 @@ a {
 }
 
 .agent-creation-message-stack {
+  flex-shrink: 0;
   margin-top: auto;
+  padding-bottom: 1rem;
 }
 
 .agent-creation-bubble {
