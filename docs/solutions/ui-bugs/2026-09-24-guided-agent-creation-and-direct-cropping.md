@@ -28,15 +28,17 @@ a section for revision. Edit adds an animated section pill and focuses the
 composer; Close and Escape leave the selection unchanged. Direct text editing
 remains available in Advanced create. Appearance requests apply
 only visual design and generated images, preserving approved character text.
-The centered House mark appears before the first message; after the conversation
-starts, the compact unfinished-character summary replaces it even if the turn
-clarifies or fails.
+The House mark and opening scene persist through clarifications and failed
+turns. A character summary takes the top position once generated character
+content exists. The chat log keeps earlier bubbles and scrolls upward beneath
+the summary. The full-screen stone hall, gold accents, and translucent bubbles
+keep the creation flow legible without a hard divider.
 
 Starter pills share Advanced create's curated ingredients. Selected tags are
 removable, support submission without typed text, and survive failed requests.
-The inset send arrow shows activity; the last two conversation bubbles sit above
-the composer without a separate mobile activity icon. Pending turns collapse
-the disabled composer, pills, and secondary actions to a compact activity bar.
+The inset send arrow shows activity. Ingredient rows sit below the conversation
+and directly above the composer on both wide and narrow screens. Pending turns
+leave the disabled composer, pills, and secondary actions in place.
 
 Interactive text calls previously inherited Flex processing while the command
 request had a 60-second browser deadline. They now explicitly request Standard,
