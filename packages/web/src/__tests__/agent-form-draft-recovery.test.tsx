@@ -90,13 +90,13 @@ describe("AgentForm draft recovery", () => {
   });
 });
 
-async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false): Promise<RenderResult> {
+async function renderForm(requireChange: boolean, onSubmit: (params: AgentProfileWriteParams) => Promise<void> = async () => {}, emptyText = false, initialOverrides: Partial<SavedAgent> = {}): Promise<RenderResult> {
   let mounted!: RenderResult;
   await act(async () => {
     mounted = render(
       <InfluenceAuthContext.Provider value={auth}>
         <AgentForm
-          initial={emptyText ? { ...agent(), name: "", backstory: "", personality: "", strategyStyle: "" } : agent()}
+          initial={{ ...(emptyText ? { ...agent(), name: "", backstory: "", personality: "", strategyStyle: "" } : agent()), ...initialOverrides }}
           strategyComparison={{
             baseline: "Stay flexible until the ballot.",
             initialWorking: emptyText ? "" : proposal,
@@ -171,6 +171,47 @@ describe("atomic character draft generation", () => {
     });
     fireEvent.click(view.getByRole("button", { name: "Send Agent request" }));
   }
+  test("missing gender is visible beside save and AI completes missing identity without replacing populated fields or images", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    const submissions: AgentProfileWriteParams[] = [];
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      return Response.json({ name: "Unwanted rename", personality: "Unwanted personality", backstory: "Unwanted backstory", strategyStyle: "Unwanted strategy", personaKey: "loyalist", gender: "female", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+    }) as unknown as typeof fetch;
+    const view = await renderForm(false, async params => { submissions.push(params); }, false, { gender: null, personaKey: null, fullBodyReferenceUrl: "/existing-reference.png" });
+    const workshop = view.getByRole("region", { name: "Agent Workshop" });
+    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(workshop.querySelector('[role="alert"]')?.textContent).toContain("Select a gender"));
+    expect(submissions).toHaveLength(0);
+    expect(calls).toHaveLength(0);
+    // Even when focus leaves the composer and collapses it, the save feedback remains.
+    fireEvent.blur(workshop, { relatedTarget: view.getByRole("radio", { name: "Male" }) });
+    expect(workshop.querySelector('[role="alert"]')?.textContent).toContain("Select a gender");
+    fireEvent.click(view.getByRole("button", { name: "Fill missing details" }));
+    await waitFor(() => expect(view.getByRole("radio", { name: "Female" }).getAttribute("aria-checked")).toBe("true"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toContain("/generate");
+    expect(calls[0]!.body).toMatchObject({ selectedFields: ["personaKey", "gender", "performanceInstructions", "visualDesign"], allowPersonaChange: true });
+    expect(calls[0]!.body.existingProfile).not.toHaveProperty("personaKey");
+    expect(calls[0]!.body.existingProfile).not.toHaveProperty("gender");
+    expect(workshop.querySelector('[role="alert"]')).toBeNull();
+    expect((view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).toBe("Arden");
+    expect((view.getByRole("textbox", { name: "Personality" }) as HTMLTextAreaElement).value).toBe("Calm and precise.");
+    expect(view.queryByRole("button", { name: "Fill missing details" })).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(submissions).toHaveLength(1));
+    expect(submissions[0]).toMatchObject({ gender: "female", personaKey: "loyalist", name: "Arden", personality: "Calm and precise.", backstory: "A careful negotiator.", strategyStyle: proposal, avatarUrl: "/avatars/arden.png", fullBodyReferenceUrl: "/existing-reference.png" });
+  });
+
+  test("failed saves stay visible in a collapsed Workshop and allow retry", async () => {
+    const view = await ready(async () => { throw new Error("Save unavailable. Try again."); });
+    const workshop = view.getByRole("region", { name: "Agent Workshop" });
+    fireEvent.blur(workshop, { relatedTarget: view.getByRole("textbox", { name: /Agent name/i }) });
+    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(workshop.querySelector('[role="alert"]')?.textContent).toBe("Save unavailable. Try again."));
+    expect(view.getByRole("button", { name: "Save strategy update" }).hasAttribute("disabled")).toBe(false);
+  });
   test("in-flight generation permits draft saving but blocks profile submission; cancellation is confirmed and late results are fenced", async () => {
     let resolve!: (response: Response) => void;
     globalThis.fetch = (() => new Promise<Response>((done) => { resolve = done; })) as unknown as typeof fetch;
