@@ -27,6 +27,7 @@ import {
 
 function baseGame(): GameDetail {
   return {
+    playerCount: 2,
     id: "game-1",
     slug: "public-game",
     status: "in_progress",

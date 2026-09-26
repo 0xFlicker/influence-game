@@ -1209,6 +1209,7 @@ describe("Game REST API", () => {
   describe("GET /api/games/:id", () => {
     test("returns game details with players", async () => {
       const { id } = await createTestGame(app, adminToken, {
+        playerCount: 6,
         modelSelection: {
           catalogId: "katana:grok-4-3",
           reasoningPolicy: "low",
@@ -1226,6 +1227,7 @@ describe("Game REST API", () => {
         gameKernel: string;
         gameKernelSource: string;
         gameKernelDiagnostics: unknown[];
+        playerCount: number;
         players: Array<{ name: string; persona: string }>;
         modelLabel: string;
       };
@@ -1235,6 +1237,7 @@ describe("Game REST API", () => {
       expect(body.gameKernelSource).toBe("stored");
       expect(body.gameKernelDiagnostics).toEqual([]);
       expect(body.players).toHaveLength(2);
+      expect(body.playerCount).toBe(6);
       expect(body.players[0]!.name).toBe("Atlas Player");
       expect(body.modelLabel).toBe("xAI Grok 4.3 · Low");
       expect(body).not.toHaveProperty("modelSelection");

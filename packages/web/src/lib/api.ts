@@ -2723,6 +2723,8 @@ export interface GameDetail {
   currentRound: number;
   maxRounds: number;
   currentPhase: PhaseKey;
+  /** Configured capacity, independent of the number of joined players. */
+  playerCount: number;
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
@@ -2843,8 +2845,8 @@ export async function unhideGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/unhide`, { method: "PATCH" });
 }
 
-export async function getGame(id: string): Promise<GameDetail> {
-  return apiFetch(`/api/games/${id}`);
+export async function getGame(id: string, signal?: AbortSignal): Promise<GameDetail> {
+  return apiFetch(`/api/games/${id}`, { signal });
 }
 
 export async function getGameTranscript(

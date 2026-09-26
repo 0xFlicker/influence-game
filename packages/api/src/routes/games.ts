@@ -437,6 +437,7 @@ export function createGameRoutes(db: DrizzleDB) {
       currentRound: watchState.currentRound,
       maxRounds: config.maxRounds ?? 10,
       currentPhase: watchState.currentPhase,
+      playerCount: game.maxPlayers,
       players: watchState.players.map((player) => ({
         id: player.id,
         name: player.name,

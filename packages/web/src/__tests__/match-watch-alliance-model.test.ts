@@ -8,6 +8,7 @@ import { buildMatchWatchModel } from "../app/games/[slug]/components/match-watch
 
 function game(): GameDetail {
   return {
+    playerCount: 2,
     id: "game-1",
     slug: "public-game",
     status: "in_progress",

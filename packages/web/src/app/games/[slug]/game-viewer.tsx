@@ -7,7 +7,6 @@ import {
   getGameReplayWatchFrames,
   getGameTranscript,
   type GameDetail,
-  type GameSummary,
   type GameStatus,
   type GameWatchReplayFrame,
   type TranscriptEntry,
@@ -17,7 +16,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
-import { JoinGameModal } from "@/app/dashboard/join-game-modal";
+import { GamePreShow } from "./components/game-pre-show";
 
 import type {
   SpectacleMessagePhase,
@@ -77,10 +76,8 @@ export function GameViewer({
   initialPostgameMedia,
   startSequence,
 }: GameViewerProps) {
-  const { authenticated, openSignIn } = useAuth();
+  const { authenticated } = useAuth();
   const router = useRouter();
-  const [joinModalOpen, setJoinModalOpen] = useState(false);
-  const [joinedSuccess, setJoinedSuccess] = useState(false);
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(
     initialMessages ?? [],
@@ -995,6 +992,10 @@ export function GameViewer({
     );
   }
 
+  if (game.status === "waiting") {
+    return <GamePreShow game={game} onGameUpdated={setGame} />;
+  }
+
   const matchWatchDecision = getMatchWatchRouteDecision(
     game,
     messages,
@@ -1119,77 +1120,11 @@ export function GameViewer({
     "DIARY_ROOM",
   ]);
 
-  // Construct a GameSummary-compatible object for the JoinGameModal
-  const gameSummaryForJoin: GameSummary = {
-    id: game.id,
-    slug: game.slug,
-    seasonId: game.seasonId,
-    season: game.season,
-    status: game.status,
-    playerCount: game.players.length,
-    currentRound: game.currentRound,
-    maxRounds: game.maxRounds,
-    currentPhase: game.currentPhase,
-    phaseTimeRemaining: null,
-    alivePlayers: game.players.filter((p) => p.status === "alive").length,
-    eliminatedPlayers: game.players.filter((p) => p.status === "eliminated")
-      .length,
-    modelLabel: game.modelLabel,
-    visibility: game.visibility,
-    viewerMode: game.viewerMode,
-    createdAt: game.createdAt,
-    startedAt: game.startedAt,
-    completedAt: game.completedAt,
-  };
-
-  function handleJoinClick() {
-    if (!authenticated) {
-      openSignIn();
-      return;
-    }
-    setJoinModalOpen(true);
-  }
-
-  function handleJoinSuccess() {
-    setJoinModalOpen(false);
-    setJoinedSuccess(true);
-    router.push("/dashboard");
-  }
-
   return (
     <>
-      {/* Join modal */}
-      {joinModalOpen && (
-        <JoinGameModal
-          game={gameSummaryForJoin}
-          onClose={() => setJoinModalOpen(false)}
-          onSuccess={handleJoinSuccess}
-        />
-      )}
-
       {/* ── Mobile layout (<768px) — 4-tab view with bottom tab bar ── */}
       <div className="md:hidden flex flex-col h-[calc(100dvh-4rem)] pb-16 overflow-hidden">
         <PhaseHeader game={replayGame} isReplay={isReplay} />
-
-        {/* Join banner — shown when game is waiting for players */}
-        {game.status === "waiting" && !joinedSuccess && (
-          <div className="mb-3 border border-indigo-500/30 bg-indigo-950/30 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-indigo-300">
-                Open for players
-              </p>
-              <p className="text-xs text-white/30 mt-0.5">
-                Waiting room — join before the game starts
-              </p>
-            </div>
-            <button
-              onClick={handleJoinClick}
-              className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-            >
-              Join
-            </button>
-          </div>
-        )}
 
         <div className="flex items-center justify-between mb-2 px-1">
           <ConnectionBadge status={connStatus} />
@@ -1383,26 +1318,6 @@ export function GameViewer({
         <div className="flex flex-col min-h-0 overflow-hidden">
           {/* Phase header */}
           <PhaseHeader game={replayGame} isReplay={isReplay} />
-
-          {/* Join banner — shown when game is waiting for players */}
-          {game.status === "waiting" && !joinedSuccess && (
-            <div className="mb-3 border border-indigo-500/30 bg-indigo-950/30 rounded-xl px-5 py-3.5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm font-medium text-indigo-300">
-                  Open for players
-                </p>
-                <p className="text-xs text-white/30 mt-0.5">
-                  Waiting room — join before the game starts
-                </p>
-              </div>
-              <button
-                onClick={handleJoinClick}
-                className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
-              >
-                Join Game
-              </button>
-            </div>
-          )}
 
           {/* Tab toggle: Main Stage | Diary Room */}
           <div className="flex items-center gap-1 mb-3">

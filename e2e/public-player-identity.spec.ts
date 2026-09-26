@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
+import type { GameDetail, GamePlayer } from "../packages/web/src/lib/api";
 import {
   startLocalHarness,
   stopLocalHarness,
@@ -47,7 +48,89 @@ test.describe("local public player identity", () => {
   });
 
   test.afterAll(async () => {
+    test.setTimeout(60_000);
     if (harnessProcess) await stopLocalIdentityHarness(harnessProcess);
+  });
+
+  test("game pre-show opens creation, reveals the cast, refreshes seats and enters live play", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const player = (name: string, personaKey: string): GamePlayer => ({
+      id: name.toLowerCase(), name, persona: PRIVATE_SENTINEL, personaKey,
+      status: "alive", shielded: false,
+      currentAgent: { name, avatarUrl: `/avatars/personas/${personaKey}.png`, role: { key: "strategic", label: "Strategist" }, competition: { gamesPlayed: 7, wins: 3, winRate: 3 / 7 } },
+    });
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
+      const page = await context.newPage();
+      let game: GameDetail = { id: "preshow-fixture", slug: "preshow-fixture", status: "waiting", gameKernel: "classic", playerCount: 4, players: [], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: new Date().toISOString() };
+      let failRefresh = false;
+      let joinedProfile: string | null = null;
+      try {
+        await page.route("**/api/free-queue", async route => {
+          const response = await route.fetch();
+          await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } });
+        });
+        await page.route("**/api/games/preshow-fixture", route => failRefresh ? route.fulfill({ status: 503, json: { error: "Refresh temporarily unavailable" } }) : route.fulfill({ json: game }));
+        await page.route("**/api/games/preshow-fixture/episode", route => route.fulfill({ status: 404, json: { error: "No episode yet" } }));
+        await page.route("**/api/games/preshow-fixture/join", async route => {
+          joinedProfile = route.request().postDataJSON().agentProfileId;
+          game = { ...game, players: [...game.players, player("Vesper E2E", "observer")] };
+          await route.fulfill({ json: { status: "joined" } });
+        });
+        await page.route("**/api/games/preshow-fixture/visual", route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, fullBodies: {}, scenes: [] } }));
+        await page.routeWebSocket(/\/ws\/games\/preshow-fixture(?:\?.*)?$/, () => {});
+        await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
+        const preShow = page.getByRole("region", { name: "Game pre-show" });
+        const create = preShow.getByRole("link", { name: "Create agent", exact: true });
+        await expect(create).toHaveAttribute("href", "/agents/create?flow=join_game&gameId=preshow-fixture");
+        await expect(preShow.getByText("The first seat is yours.")).toBeVisible();
+        await expect(preShow.getByText("4 seats open", { exact: true })).toBeVisible();
+        await expect(page.getByText("Waiting for the next move…", { exact: true })).toHaveCount(0);
+        await page.screenshot({ path: `/tmp/game-pre-show-empty-${width}.png`, fullPage: true });
+        await create.click();
+        await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=preshow-fixture$/);
+        await expect(page.getByText("Your character starts here.")).toBeVisible();
+
+        await page.evaluate(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+        await page.goto(`${servers.webUrl}/games/preshow-fixture`, { waitUntil: "networkidle" });
+        game = { ...game, players: [player("Mira Vale", "social"), player("Atlas", "strategic"), player("Vera", "deceptive")] };
+        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeVisible({ timeout: 12_000 });
+        await expect(preShow.getByText("1 seat open", { exact: true })).toBeVisible();
+        await expect(preShow).not.toContainText(PRIVATE_SENTINEL);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: `/tmp/game-pre-show-cast-${width}.png`, fullPage: true });
+        await preShow.getByRole("button", { name: "Meet Mira Vale", exact: true }).click();
+        const portrait = page.getByRole("dialog", { name: "Meet Mira Vale", exact: true });
+        await expect(portrait).toBeVisible();
+        await expect(portrait).toContainText("3 wins / 7 games");
+        await portrait.getByRole("button", { name: "Close portrait" }).click();
+        await expect(portrait).toHaveCount(0);
+        await expect(preShow.getByRole("button", { name: "Meet Mira Vale", exact: true })).toBeFocused();
+
+        failRefresh = true;
+        await expect(preShow.getByRole("alert")).toContainText("Cast refresh failed", { timeout: 12_000 });
+        await expect(preShow.getByRole("button", { name: "Meet Atlas", exact: true })).toBeVisible();
+        failRefresh = false;
+        await preShow.getByRole("button", { name: "Try again" }).click();
+        await expect(preShow.getByRole("alert")).toHaveCount(0);
+
+        await preShow.getByRole("button", { name: "Join with an agent" }).click();
+        const joinDialog = page.getByRole("dialog", { name: "Join preshow-fixture" });
+        await expect(joinDialog.getByText("4-player · Standard")).toBeVisible();
+        await joinDialog.getByRole("radio", { name: /Vesper E2E/ }).click();
+        await joinDialog.getByRole("button", { name: "Join game", exact: true }).click();
+        await expect(preShow.getByText("Your agent is in. Stay for the opening move.")).toBeVisible();
+        expect(joinedProfile).toBeTruthy();
+        await expect(page).toHaveURL(`${servers.webUrl}/games/preshow-fixture`);
+        await expect(preShow.getByText("Cast complete", { exact: true })).toBeVisible({ timeout: 12_000 });
+        await expect(create).toHaveAttribute("href", "/agents/create");
+        await expect(preShow.getByRole("button", { name: "Join with an agent" })).toHaveCount(0);
+
+        game = { ...game, status: "in_progress", currentRound: 1, currentPhase: "LOBBY" };
+        await expect(page.getByTestId("match-watch-shell")).toBeVisible({ timeout: 12_000 });
+        await expect(preShow).toHaveCount(0);
+      } finally { await context.close(); }
+    }
   });
 
   test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
