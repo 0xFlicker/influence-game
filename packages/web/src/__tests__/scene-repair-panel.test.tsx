@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
-import { SceneRepairPanel, type MediaRecords } from "../app/admin/games/[id]/visual/scene-repair-panel";
+import { SceneRepairPanel, type MediaRecords, type MediaAttempt } from "../app/admin/games/[id]/visual/scene-repair-panel";
 import { useVisualWatch } from "../app/games/[slug]/components/use-visual-watch";
 import { setApiBase } from "../lib/api";
 const originalFetch = globalThis.fetch;
@@ -41,6 +41,19 @@ test("rejections are beside the scene and lost responses reuse the same request 
   fireEvent.click(mounted.getByText("Check request"));
   await waitFor(() => expect(mounted.getByRole("alert").textContent).toContain("Reconcile the uncertain attempt"));
   expect(ids).toHaveLength(2); expect(ids[0]).toBe(ids[1]);
+});
+
+test("pending provider calls do not show reconciliation; interrupted calls and identity failures stay visible", () => {
+  const attempt: MediaAttempt = { id: "attempt", operationKey: "media:job:section:0", status: "pending", costMicrousd: null, receipt: null, reconciliation: null };
+  const mounted = render(<SceneRepairPanel {...props({ ...empty(), jobs: [job("rendering")] })} attempts={[attempt]} />);
+  expect(mounted.queryByText(/Needs reconciliation:/)).toBeNull();
+  mounted.rerender(<SceneRepairPanel {...props({ ...empty(), jobs: [job("needs_reconciliation")] })} attempts={[{ ...attempt, status: "needs_reconciliation" }]} />);
+  expect(mounted.getByText(/Needs reconciliation: 1/)).not.toBeNull();
+  mounted.rerender(<SceneRepairPanel {...props({ ...empty(), jobs: [{ ...job("failed"), failure: "Character identity could not be verified: Vera" }] })}
+    attempts={[{ ...attempt, status: "finished", receipt: { status: 200, chargeUncertain: false, failure: { kind: "identity", message: "Character identity could not be verified: Vera" } } }]} />);
+  expect(mounted.queryByText(/Needs reconciliation:/)).toBeNull();
+  expect(mounted.getByText("Character identity could not be verified: Vera")).not.toBeNull();
+  expect(mounted.getByText(/The image was generated, but character identities/)).not.toBeNull();
 });
 
 test("compares annotations, publishes explicitly, restores versions and preserves review on refresh error", async () => {

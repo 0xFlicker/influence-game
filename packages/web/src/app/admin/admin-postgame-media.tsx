@@ -55,7 +55,7 @@ export function AdminPostgameMediaPanel({
   canManage,
   onClose,
 }: {
-  game: AdminGameSummary;
+  game: Pick<AdminGameSummary, "slug">;
   canManage: boolean;
   onClose: () => void;
 }) {

@@ -755,3 +755,7 @@ A **content revision** is the complete immutable snapshot submitted from a chara
 ### Scene media repair and viewer publication
 
 A **media repair job** independently renders or verifies a frozen existing scene plan. Its immutable **candidate version** is separate from the original scene accepted for agent context. An explicit **viewer publication** selects a verified candidate and appends publication history. Playback polls published media automatically and pins the selection for each beat; updates take effect at the next beat without interrupting speech. None of these records changes canonical game execution or the image context agents originally received. **Game recovery** remains a separate paused-game operation requiring Resume.
+
+### Replay image production
+
+Producer/Sysop tooling in Admin → Production for rendering one missing scene at a time in a completed game, including games played without Visual Mode. A missing plan uses a trusted canonical prefix at a committed dialogue turn, exact room/audience metadata, the surviving roster and active jury, and frozen game-start references. Discovery is read-only; rendering creates an independent media job and publication remains an explicit review action. Partial backfills leave unmatched beats as portraits, and never reuse an earlier public-room cast after someone is voted off. This does not change the game's visual-mode setting or accepted history and needs no new database tables.

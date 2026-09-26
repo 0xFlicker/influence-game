@@ -55,7 +55,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     const groups = visualRenderGroups(plan);
 
     const room = VISUAL_ROOMS[plan.roomId];
-    const common = `${options.renderContext?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${options.renderContext?.roomName ?? room.name}. ${options.renderContext?.roomDirection ?? room.direction}\nPreserve the supplied room's architecture, furniture and materials. These contestants are playing a social-strategy game; use believable conversational staging, some seated and some standing as directed. Match each character's face, hair, clothing and body to their reference. No extra people.`;
+    const common = `${options.renderContext?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${options.renderContext?.roomName ?? room.name}. ${options.renderContext?.roomDirection ?? room.direction}\nPreserve the supplied room's architecture, furniture and materials. These contestants are playing a social-strategy game; use believable conversational staging, some seated and some standing as directed. Match each character's face, hair, clothing and body to their reference. Keep every face clearly visible to the camera in a front or three-quarter view, including seated people. Nobody may face away, hide behind another person, or have their face obscured by hair or furniture. No extra people.`;
     const sectionImages: Buffer[] = [];
     for (const [index, group] of groups.entries()) {
       const members = group.map((placement) => {

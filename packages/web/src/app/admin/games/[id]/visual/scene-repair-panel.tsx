@@ -15,29 +15,35 @@ export interface MediaRecords {
   publications: Array<{ id: string; sceneId: string; versionId: string; revision: number; createdAt: string; operatorId: string }>;
   requests: Array<{ id: string; input: Record<string, unknown>; receipt: Receipt }>;
 }
+export interface MediaAttempt {
+  id: string; operationKey: string; status: "pending" | "finished" | "needs_reconciliation" | "reconciled";
+  costMicrousd: number | null; receipt?: { chargeUncertain: boolean; status?: number | null; failure?: { kind: string; message: string } } | null; reconciliation?: unknown;
+}
 interface Receipt { accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number }
 const button = "rounded border border-white/25 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40";
 export const isActiveMediaJob = (job: MediaJob) => ["queued", "rendering", "verifying"].includes(job.status);
 
-function VersionImage({ gameId, artifactId, label, onOpen }: { gameId: string; artifactId: string; label: string; onOpen: (url: string, label: string) => void }) {
+function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId: string; artifactId: string; label: string; onOpen: (url: string, label: string) => void; apiPrefix: string }) {
   const [result, setResult] = useState<{ url?: string; error?: string }>({});
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/artifact/${artifactId}`).then(data => {
+    apiFetch<{ imageUrl: string }>(`${apiPrefix}/${gameId}/visual/evidence/artifact/${artifactId}`).then(data => {
       if (!cancelled) setResult({ url: data.imageUrl });
     }).catch(error => { if (!cancelled) setResult({ error: error instanceof Error ? error.message : "Image unavailable" }); });
     return () => { cancelled = true; };
-  }, [gameId, artifactId]);
+  }, [gameId, artifactId, apiPrefix]);
   return <div><p className="mb-2 text-xs text-white/60">{label}</p>{result.url ? <button type="button" className="w-full cursor-zoom-in" onClick={() => onOpen(result.url!, label)} aria-label={`Enlarge ${label}`}>
     {/* eslint-disable-next-line @next/next/no-img-element -- authenticated immutable media evidence */}
     <img alt={label} src={result.url} className="aspect-video w-full rounded object-contain" />
   </button> : <p role={result.error ? "alert" : "status"}>{result.error ?? "Loading image…"}</p>}</div>;
 }
 
-export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts }: {
+export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", onRequestPending }: {
+  apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string;
+  onRequestPending?: (pending: boolean) => void;
   gameId: string; sceneId: string; originalFailed: boolean; media: MediaRecords; canOperate: boolean;
   refresh: () => Promise<void>; refreshError: string | null; onOpen: (url: string, label: string) => void;
-  attempts: Array<{ id: string; operationKey: string; costMicrousd: number | null; receipt?: { chargeUncertain: boolean } | null; reconciliation?: unknown }>;
+  attempts: MediaAttempt[];
 }) {
   const jobs = media.jobs.filter(job => job.sceneId === sceneId);
   const latest = jobs[0];
@@ -58,15 +64,16 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   useEffect(() => { if (!active) return; const timer = setInterval(() => setTime(Date.now()), 1000); return () => clearInterval(timer); }, [active?.id, active]);
   const send = async (action: Record<string, unknown>) => {
     if (inFlight.current) return;
-    inFlight.current = true; setBusy(true); setUncertain(false);
+    inFlight.current = true; setBusy(true); setUncertain(false); onRequestPending?.(true);
     const body = pending.current ?? { ...action, sceneId, expectedVersion: latest?.version ?? 0, requestId: crypto.randomUUID() };
     pending.current = body;
     try {
-      const receipt = await apiFetch<Receipt>(`/api/admin/games/${gameId}/visual/media`, { method: "POST", body: JSON.stringify(body) });
-      pending.current = null; setFeedback(receipt); await refresh();
+      const receipt = await apiFetch<Receipt>(`${apiPrefix}/${gameId}/visual/media`, { method: "POST", body: JSON.stringify(body) });
+      pending.current = null; onRequestPending?.(false); setFeedback(receipt); await refresh();
     } catch (error) {
       if (error instanceof ApiError && error.status < 500) {
         pending.current = null;
+        onRequestPending?.(false);
         setFeedback({ accepted: false, code: error.code ?? "rejected", message: error.message }); await refresh();
       } else {
         setUncertain(true); setFeedback({ accepted: false, code: "response_unknown", message: "The request response was lost. Check this same request before starting another repair." });
@@ -75,12 +82,12 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   };
   const lastReceipt = feedback ?? media.requests.find(request => request.input.sceneId === sceneId)?.receipt;
   const jobAttempts = latest ? attempts.filter(attempt => attempt.operationKey.startsWith(`media:${latest.id}:`)) : [];
-  const unresolved = attempts.filter(attempt => (attempt.operationKey.startsWith(`${sceneId}:render:`) || jobs.some(job => attempt.operationKey.startsWith(`media:${job.id}:`))) && !attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain));
+  const unresolved = attempts.filter(attempt => (attempt.operationKey.startsWith(`${sceneId}:render:`) || jobs.some(job => attempt.operationKey.startsWith(`media:${job.id}:`))) && attempt.status === "needs_reconciliation");
   return <section aria-label="Scene repair" className="space-y-3 border-t border-white/15 pt-3">
     <p className="text-xs text-white/60">Viewer version: {published ? `v${published.version}` : "Portraits"} · Publication {publications[0]?.revision ?? 0}</p>
     {canOperate && <div className="flex flex-wrap gap-2">
-      <button className={button} disabled={busy || !!active || uncertain} onClick={() => void send({ action: "regenerate" })}>Regenerate scene</button>
-      {(latest && ["failed", "needs_reconciliation"].includes(latest.status) || !latest && originalFailed) && <button className={button} disabled={busy || !!active || uncertain} onClick={() => void send({ action: "continue", ...(latest && { sourceJobId: latest.id }) })}>Continue failed repair</button>}
+      <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "regenerate" })}>{renderLabel}</button>
+      {(latest && ["failed", "needs_reconciliation"].includes(latest.status) || !latest && originalFailed) && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "continue", ...(latest && { sourceJobId: latest.id }) })}>Continue failed repair</button>}
       {uncertain && <button className={button} disabled={busy} onClick={() => void send({})}>Check request</button>}
     </div>}
     <p className="text-xs text-white/50">Repairs may incur provider charges. Candidates need review and publication; gameplay is unchanged.</p>
@@ -95,6 +102,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
       <p className="break-all text-xs text-white/50">Job {latest.id}</p>
       <p className="text-xs text-white/60">{Math.max(0, Math.floor(((latest.finishedAt ? Date.parse(latest.finishedAt) : time || Date.now()) - Date.parse(latest.startedAt ?? latest.createdAt)) / 1000))}s elapsed · ${(jobAttempts.reduce((sum, a) => sum + (a.costMicrousd ?? 0), 0) / 1_000_000).toFixed(4)} known · {jobAttempts.filter(a => a.costMicrousd === null).length} unpriced</p>
       {latest.failure && <p className="mt-2 text-amber-200">{latest.failure}</p>}
+      {latest.status === "failed" && jobAttempts.some(attempt => attempt.receipt?.failure?.kind === "identity") && <p className="mt-2 text-amber-200">The image was generated, but character identities could not be verified. Review the saved candidate below before choosing a recheck or a new render.</p>}
       {latest.status === "needs_reconciliation" && <a href="#provider-attempts" className="underline">Review provider receipts and record reconciliation below</a>}
     </div>}
     {refreshError && <p role="alert" className="text-sm text-amber-200">Progress refresh failed. Showing the last saved state. <button className="underline" onClick={() => void refresh()}>Retry refresh</button></p>}
@@ -104,21 +112,21 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Verified"}</option>)}</select></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={annotated} onChange={event => setAnnotated(event.target.checked)} />Numbered annotations</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} /> : <p>Viewers currently see portraits.</p>}
-          <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} />
+          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>Viewers currently see portraits.</p>}
+          <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} apiPrefix={apiPrefix} />
         </div>
         <p className="text-sm">{selected.localization.count} verified people · {selected.localization.anchors.length} head anchors</p>
         {!selected.localization.anchors.length && selected.localization.count > 0 && <p className="text-sm text-amber-200">Head positions are uncertain. Viewers use named portrait speech panels.</p>}
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
-          <button className={button} disabled={busy || !!active || uncertain} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>
+          <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>
           <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? "Restore for viewers" : "Publish for viewers"}</button>
         </div>}
       </>}
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>
         <p className="break-all text-xs">{job.id} · {job.step}</p>{job.failure && <p className="text-sm text-amber-200">{job.failure}</p>}
         <ul className="text-xs text-white/60">{attempts.filter(attempt => attempt.operationKey.startsWith(`media:${job.id}:`)).map(attempt => <li key={attempt.id} className="break-all">{attempt.operationKey.slice(`media:${job.id}:`.length)} · {attempt.costMicrousd === null ? "Cost unknown" : `$${(attempt.costMicrousd / 1_000_000).toFixed(4)}`} · <a href="#provider-attempts" className="underline">Receipt {attempt.id}</a></li>)}</ul>
-        {job.candidateArtifactId && !versions.some(v => v.id === job.id) && <><VersionImage gameId={gameId} artifactId={job.candidateArtifactId} label={`Unverified v${job.version}`} onOpen={onOpen} />{canOperate && <button className={button} disabled={busy || !!active || uncertain} onClick={() => void send({ action: "verify", sourceVersionId: job.id })}>Recheck image</button>}</>}
+        {job.candidateArtifactId && !versions.some(v => v.id === job.id) && <><VersionImage gameId={gameId} artifactId={job.candidateArtifactId} label={`Unverified v${job.version}`} onOpen={onOpen} apiPrefix={apiPrefix} />{canOperate && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: job.id })}>Recheck image</button>}</>}
       </details>)}
       <details><summary className="text-sm">Publication history</summary><ul className="space-y-2 text-xs">{publications.map(p => <li key={p.id}>Publication {p.revision} · {p.createdAt} · {p.operatorId} · {p.versionId}</li>)}</ul></details>
     </div>}
