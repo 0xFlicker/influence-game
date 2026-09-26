@@ -560,8 +560,8 @@ Actual USD displays N/C (Not collected) when no provider-reported cost records e
 
 ### Weekly Season 0 games
 
-Automatic free-track games draw Friday at 23:00 UTC and start Saturday at
-00:00 UTC (Friday evening in America/Denver, 18:00 MDT / 17:00 MST).
+Automatic free-track games draw Thursday at 23:00 UTC and start Friday at
+00:00 UTC (Thursday evening in America/Denver, 18:00 MDT / 17:00 MST).
 The EventBridge schedules live in `linode-iac/terraform/lambda-crons.tf`.
 The queue API supplies the next weekly start time to the public countdown.
 New draws enable Visual Mode with `best_effort`: rendering failures continue

@@ -153,6 +153,10 @@ test("appearance offers visual tags and sends them while showing a user bubble a
   command = "revise_character";
   fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
+  await waitFor(() => {
+    expect(generated).toHaveLength(1);
+    expect(view.getByRole("button", { name: "Yes, that feels right" }).hasAttribute("disabled")).toBe(false);
+  });
   command = "accept_character";
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
   expect(view.queryByRole("button", { name: "Add Gamer ingredient" })).toBeNull();
@@ -197,6 +201,10 @@ for (const typed of [false, true]) test(`approval after text refinement preserve
   fireEvent.click(view.getByRole("button", { name: "Edit Strategy" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Make them more patient" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
+  await waitFor(() => {
+    expect(generated).toHaveLength(1);
+    expect(view.getByRole("button", { name: "Yes, that feels right" }).hasAttribute("disabled")).toBe(false);
+  });
   command = "accept_character";
   if (typed) {
     fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Yes, looks right" } });
@@ -204,7 +212,7 @@ for (const typed of [false, true]) test(`approval after text refinement preserve
   } else {
     await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
   }
-  expect(view.getByRole("button", { name: "Create Agent" }).hasAttribute("disabled")).toBe(false);
+  await waitFor(() => expect(view.getByRole("button", { name: "Create Agent" }).hasAttribute("disabled")).toBe(false));
   expect(view.queryByText(/What do they look like/)).toBeNull();
   expect(appearances).toHaveLength(0);
   expect(fetchCalls).toBe(typed ? 2 : 1);
