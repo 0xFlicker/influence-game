@@ -78,7 +78,7 @@ function buildAgentProfileGenerationSystemPrompt(
     .filter((archetype) => allowedPersonaKeys.includes(archetype.key))
     .map((archetype) => `- ${archetype.key} (${archetype.label}): ${archetype.description}`)
     .join("\n");
-  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
+  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote players off through ballots. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
 
 ${AGENT_CREATION_GAME_PRIMER}
 

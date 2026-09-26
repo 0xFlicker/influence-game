@@ -1306,7 +1306,7 @@ describe("Agent Profile API", () => {
         expect(await result.json()).toEqual({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] });
         expect(requests[0]).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });
         expect(JSON.stringify(requests[0]?.messages)).toContain("hasFullBody");
-        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List eliminates the fewest positive votes");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         for (const invalid of ["not json", "[]", '{"fields":["name"]}', '```json\n{}\n```']) {
           args = invalid;
           expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, tokenA))).status).toBe(502);
@@ -1343,7 +1343,7 @@ describe("Agent Profile API", () => {
         expect(await accepted.json()).toEqual({ command: "accept_character", reply: "" });
         expect(requests[0]).toMatchObject({ service_tier: "default", reasoning_effort: "low", max_completion_tokens: 1200 });
         expect(requests[0]?.response_format).toMatchObject({ type: "json_schema", json_schema: { strict: true, schema: { additionalProperties: false, properties: { command: { enum: ["accept_character", "revise_character", "clarify", "end_abuse", "end_fatigue"] }, reply: { type: "string" } }, required: ["command", "reply"] } } });
-        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List eliminates the fewest positive votes");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         expect(JSON.stringify(requests[0]?.messages)).toContain("Alliances");
         content = '{"command":"clarify","reply":"Empowerment can choose the format, but it grants no immunity. Would Arden seek that power?"}';
         const clarified = await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, message: "What is empowerment?" }, tokenA));
@@ -1444,7 +1444,7 @@ describe("Agent Profile API", () => {
         expect(refined.status).toBe(200);
         expect(requestBodies).toHaveLength(3);
         for (const body of requestBodies) expect(body).toMatchObject({ service_tier: "default", reasoning_effort: "low" });
-        for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List eliminates the fewest positive votes");
+        for (const body of requestBodies) expect(JSON.stringify(body.messages)).toContain("The Short List votes off the player with the fewest positive votes");
         expect(requestBodies.map((body) => body.model)).toEqual([
           "gpt-6-luna",
           "gpt-6-luna",

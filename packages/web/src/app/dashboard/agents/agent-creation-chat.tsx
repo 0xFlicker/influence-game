@@ -13,7 +13,7 @@ const labels = { name: "Name", personaKey: "Archetype", gender: "Gender", person
 export type CharacterSection = keyof typeof labels;
 export type CharacterChatProfile = Record<CharacterSection, string>;
 const replies = {
-  character: "In Influence, players build trust, vie for empowerment, and adapt when the elimination format changes. Would your character win people over, seek control, or surprise everyone? Tell me what sounds fun to play.",
+  character: "In Influence, players build trust, vie for empowerment, and adapt when the round's ballot rules change. Would your character win people over, seek control, or surprise everyone? Tell me what sounds fun to play.",
   review: "Does that feel right to you? You can say yes, tell me what to change, or edit a section above.",
   appearance: "What do they look like? Describe their face, body, clothing, colors, or any distinctive details.",
   portrait: "Your character is ready to look over. Confirm this headshot when it feels right, or tell me what to change about their appearance.",
