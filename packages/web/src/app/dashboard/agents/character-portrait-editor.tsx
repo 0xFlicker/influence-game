@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { squarePortraitCrop, portraitHeadRectangle, type PortraitCrop, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, resolveApiUrl } from "@/lib/api";
 
 /** Original image coordinates are the authority; the preview and exported pixels use the same rectangle. */
 export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, confirmHead = false, fullScreen = false, name, onApply, onClose, onPendingChange, onFailure }: {
@@ -19,6 +19,9 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
   const [activeBox, setActiveBox] = useState<"portrait" | "head">("portrait");
   const drag = useRef<{ pointerId: number; x: number; y: number; rect: HeadRectangle; resize: boolean; box: "portrait" | "head" } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [imageAttempt, setImageAttempt] = useState(0);
+  const [sourceError, setSourceError] = useState(false);
+  const imageUrl = resolveApiUrl(sourceUrl);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const element = dialog.current;
@@ -30,7 +33,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
     if (size) setCrop(squarePortraitCrop(sourceUrl, size, x, y, side));
   }
   async function apply() {
-    if (!crop || busy) return;
+    if (!crop || !size || sourceError || busy) return;
     const current = epoch.current;
     setBusy(true); setError(null); onPendingChange(true);
     try {
@@ -74,8 +77,9 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
             : { ...start.rect, x: Math.max(0, Math.min(1 - start.rect.width, start.rect.x + dx)), y: Math.max(0, Math.min(1 - start.rect.height, start.rect.y + dy)) });
         }} onPointerUp={event => { if (drag.current?.pointerId === event.pointerId) drag.current = null; }} onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- original image coordinates are required for crop editing */}
-          <img draggable={false} src={sourceUrl} alt={`${name} full image`} className="max-h-[42dvh] w-auto max-w-full select-none object-contain sm:max-h-[55vh]" onError={() => setError("The source image could not be loaded. Close and try again.")} onLoad={(event) => {
+          <img key={imageAttempt} draggable={false} src={imageUrl} alt={`${name} full image`} className="max-h-[42dvh] w-auto max-w-full select-none object-contain sm:max-h-[55vh]" onError={() => { setSourceError(true); setSize(null); setCrop(null); drag.current = null; }} onLoad={(event) => {
             const next = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
+            setSourceError(false);
             setSize(next);
             setCrop(initialCrop?.sourceUrl === sourceUrl ? initialCrop : squarePortraitCrop(sourceUrl, next, next.width * 0.3, next.height * 0.03, Math.min(next.width, next.height) * 0.4));
           }} />
@@ -87,7 +91,7 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
             </defs>
             <rect x={head.x * 1000} y={head.y * 1000} width={head.width * 1000} height={head.height * 1000} fill={`url(#${overflowMaskId}-stripes)`} mask={`url(#${overflowMaskId})`} />
           </svg>}
-          {confirmHead && <>
+          {confirmHead && size && crop && <>
             <div data-box-drag="move" aria-label="Head box; drag to move" className={`${activeBox === "head" ? "z-20 touch-none cursor-move" : "pointer-events-none"} absolute border-2 border-amber-300`} style={{ left: `${head.x * 100}%`, top: `${head.y * 100}%`, width: `${head.width * 100}%`, height: `${head.height * 100}%` }}>
               <span className="pointer-events-none absolute -top-5 left-0 bg-black/80 px-1 text-xs text-amber-200">Head</span>
               {activeBox === "head" && <span data-box-drag="resize" aria-label="Resize head box" className="absolute -bottom-8 -right-8 flex h-11 w-11 touch-none cursor-se-resize items-center justify-center"><span className="pointer-events-none h-4 w-4 rounded-sm border border-black bg-amber-300" /></span>}
@@ -99,9 +103,9 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
       <div className="space-y-3">
         <div className="relative mx-auto aspect-square w-20 overflow-hidden rounded-full border border-white/15 bg-black/30" aria-label="Portrait crop preview">
           {/* eslint-disable-next-line @next/next/no-img-element -- display the selected rectangle without another render */}
-          {crop && <img alt={`${name} portrait preview`} src={sourceUrl} className="absolute max-w-none" style={{ width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%` }} />}
+          {crop && <img alt={`${name} portrait preview`} src={imageUrl} className="absolute max-w-none" style={{ width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%` }} />}
         </div>
-        <details><summary className="min-h-11 cursor-pointer py-3 text-sm text-white/65">Precise adjustments</summary>
+        <details hidden={!size}><summary className="min-h-11 cursor-pointer py-3 text-sm text-white/65">Precise adjustments</summary>
         {confirmHead && activeBox === "head" && <fieldset disabled={busy} className="space-y-3"><legend className="mb-2 text-sm font-medium text-amber-200">Head position</legend>
           <p className="text-xs text-white/55">{initialHead ? "Review the detected or previously selected position." : "No confirmed position yet. Move the suggested box around the entire head."} Drag the gold box and its corner, or use these keyboard-accessible controls.</p>
           {(["x", "y", "width", "height"] as const).map(key => <label key={key} className="block text-xs">{({ x: "Head horizontal position", y: "Head vertical position", width: "Head width", height: "Head height" })[key]}<input type="range" min={key === "x" || key === "y" ? 0 : .01} max={key === "x" ? 1 - head.width : key === "y" ? 1 - head.height : key === "width" ? 1 - head.x : 1 - head.y} step="0.001" value={head[key]} onInput={event => setHead({ ...head, [key]: Number(event.currentTarget.value) })} className="mt-1 w-full accent-amber-300" /></label>)}
@@ -112,12 +116,18 @@ export function CharacterPortraitEditor({ sourceUrl, initialCrop, initialHead, c
           <label className="block text-sm">Frame size<input aria-label="Frame size" type="range" min={Math.min(32, size.width, size.height)} max={Math.min(size.width, size.height)} step="1" value={side} onInput={(e) => { const next = Number(e.currentTarget.value); adjust(crop.x * size.width + (side - next) / 2, crop.y * size.height + (side - next) / 2, next); }} disabled={busy} className="mt-2 w-full accent-violet-400" /></label>
         </>}
         </details>
-        <div className="grid text-xs leading-5" aria-live="polite" aria-atomic="true">
+        <div hidden={!size} className="grid text-xs leading-5" aria-live="polite" aria-atomic="true">
           <p aria-hidden={!headFitsCrop} className={`col-start-1 row-start-1 text-white/45 ${headFitsCrop ? "" : "invisible"}`}>Include hair and a little shoulder room. Cropping costs no generation allowance.</p>
           <p aria-hidden={headFitsCrop} className={`col-start-1 row-start-1 text-amber-200 ${headFitsCrop ? "invisible" : ""}`}>The striped part of the head is outside the portrait. Move or expand the violet crop to include it.</p>
         </div>
+        {sourceError && <div className="space-y-2">
+          <p role="alert" className="text-sm text-red-300">The source image could not be loaded. Your character draft is unchanged. Retry loading the image without generating another character.</p>
+          <button type="button" className="influence-button-secondary min-h-11 w-full rounded-lg px-3" onClick={() => { setSourceError(false); setImageAttempt(attempt => attempt + 1); }}>Retry image</button>
+          <a href={imageUrl} target="_blank" rel="noreferrer" className="block text-sm underline">Open source image</a>
+        </div>}
+        {!size && !sourceError && <p role="status" className="text-sm text-white/65">Loading source image…</p>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        <button type="button" disabled={!crop || busy || !size || !headFitsCrop} onClick={() => void apply()} className="influence-button-primary w-full rounded-lg px-4 py-3 disabled:opacity-50">{busy ? "Confirming…" : confirmHead ? "Confirm this headshot" : "Use portrait in draft"}</button>
+        <button type="button" disabled={!crop || busy || !size || sourceError || !headFitsCrop} onClick={() => void apply()} className="influence-button-primary w-full rounded-lg px-4 py-3 disabled:opacity-50">{busy ? "Confirming…" : confirmHead ? "Confirm this headshot" : "Use portrait in draft"}</button>
       </div>
     </div>
   </dialog>;

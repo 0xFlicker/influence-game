@@ -15,3 +15,8 @@ test("unknown and inconsistent receipts stay unpriced and rejected requests cost
 test("vision usage accounts for cache reads and writes", () => {
   expect(visualReceiptCostMicrousd({ ...receipt, model: "gpt-5.6-luna", usage: { input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 100, cache_write_tokens: 100 } } })).toBe(307);
 });
+test("GPT-6 Sol portrait localization uses half the GPT-5.6 Sol standard rates", () => {
+  const usage = { input_tokens: 1000, output_tokens: 100, input_tokens_details: { cached_tokens: 100, cache_write_tokens: 100 } };
+  expect(visualReceiptCostMicrousd({ ...receipt, model: "gpt-6-sol", usage })).toBe(2870);
+  expect(visualReceiptCostMicrousd({ ...receipt, model: "gpt-5.6-sol", usage })).toBe(5740);
+});
