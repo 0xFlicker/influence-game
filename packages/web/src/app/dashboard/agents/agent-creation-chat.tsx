@@ -145,10 +145,10 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
           {/* eslint-disable-next-line @next/next/no-img-element -- the selected draft portrait */}
           <img src={avatarUrl} alt={`${profile.name} headshot`} className="h-24 w-24 rounded-2xl object-cover" />
         </button> : null}
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="agent-creation-fixture-grid grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
           {(Object.keys(labels) as CharacterSection[]).map(section => <button key={section} type="button" disabled={locked} onClick={() => setReading(section)} aria-label={`Read ${labels[section]}`} className={`agent-creation-fixture min-w-0 rounded-lg border p-2 text-left ${sections.includes(section) ? "border-amber-200/70 bg-amber-200/15" : "border-amber-200/20"}`}>
             <span className="flex items-center justify-between gap-2"><span className="text-[10px] uppercase tracking-wide text-white/45">{labels[section]}</span><span aria-hidden="true" className="text-sm text-violet-200">↗</span></span>
-            <span className="mt-2 line-clamp-2 text-sm leading-5">{section === "personaKey" ? PERSONAS.find(persona => persona.key === profile[section])?.name : profile[section]}</span>
+            <span className="agent-creation-fixture-copy mt-2 line-clamp-2 text-sm leading-5">{section === "personaKey" ? PERSONAS.find(persona => persona.key === profile[section])?.name : profile[section]}</span>
           </button>)}
         </div>
       </div>}

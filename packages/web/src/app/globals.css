@@ -605,6 +605,32 @@ a {
   transition: background-color 180ms ease, border-color 180ms ease;
 }
 
+@media (min-width: 640px) and (min-height: 850px) {
+  .agent-creation-visual-filled {
+    height: min(42dvh, calc(50dvh - 4.5rem));
+    max-height: calc(50dvh - 4.5rem);
+  }
+
+  .agent-creation-summary {
+    height: 100%;
+  }
+
+  .agent-creation-fixture-grid {
+    align-self: stretch;
+    grid-template-rows: minmax(0, 0.8fr) repeat(2, minmax(0, 1.2fr));
+  }
+
+  .agent-creation-fixture {
+    padding: clamp(0.625rem, 1.25dvh, 1.125rem);
+  }
+
+  .agent-creation-fixture-copy {
+    -webkit-line-clamp: 4;
+    font-size: clamp(0.875rem, 1.2dvh, 1.125rem);
+    line-height: 1.4;
+  }
+}
+
 .agent-creation-fixture:hover:not(:disabled) {
   background: rgb(45 34 56 / 0.9);
   border-color: rgb(224 191 129 / 0.45);
@@ -616,7 +642,7 @@ a {
   flex-direction: column;
   max-height: min(45dvh, 32rem);
   min-height: 6rem;
-  overflow-y: auto;
+  overflow-y: hidden;
 }
 
 .agent-creation-visual-filled + .agent-creation-chat-log {

@@ -156,6 +156,9 @@ test("appearance offers visual tags and sends them while showing a user bubble a
   command = "accept_character";
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
   expect(view.queryByRole("button", { name: "Add Gamer ingredient" })).toBeNull();
+  for (const form of ["Human", "Halfling", "Gnome"]) {
+    expect(view.getByRole("button", { name: `Add ${form} ingredient` })).toBeTruthy();
+  }
   fireEvent.click(view.getByRole("button", { name: "Add Dragon ingredient" }));
   const response = Promise.withResolvers<Response>();
   globalThis.fetch = Object.assign(() => response.promise, { preconnect: originalFetch.preconnect });

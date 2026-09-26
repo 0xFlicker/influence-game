@@ -30,8 +30,9 @@ remains available in Advanced create. Appearance requests apply
 only visual design and generated images, preserving approved character text.
 The House mark and opening scene persist through clarifications and failed
 turns. A character summary takes the top position once generated character
-content exists. The chat log keeps earlier bubbles and scrolls upward beneath
-the summary. The full-screen stone hall, gold accents, and translucent bubbles
+content exists. On tall screens the cards grow up to the viewport midpoint.
+The chat log moves earlier bubbles out of view beneath the summary without a
+visible scrollbar. The full-screen stone hall, gold accents, and translucent bubbles
 keep the creation flow legible without a hard divider.
 
 Starter pills share Advanced create's curated ingredients. Selected tags are

@@ -4,6 +4,9 @@ export const AGENT_CREATION_TRAIT_GROUPS = [
     id: "form",
     label: "Character form",
     traits: [
+      { id: "human", label: "Human", instruction: "Make the character visibly human, with specific, memorable physical details rather than a generic default appearance." },
+      { id: "halfling", label: "Halfling", instruction: "Make the character a clearly adult halfling with a compact stature and distinctive humanlike features." },
+      { id: "gnome", label: "Gnome", instruction: "Make the character a clearly adult gnome with a small stature and distinctive features, without making them childlike." },
       { id: "anthropomorphic", label: "Anthropomorphic", instruction: "Give the character an expressive, person-like body while honoring any chosen animal or creature form." },
       { id: "furry", label: "Furry", instruction: "Design a distinctive furred anthropomorphic character with expressive animal features, not a human in a costume." },
       { id: "cat", label: "Cat", instruction: "Make the character unmistakably feline, with expressive person-like qualities; do not default to a human appearance." },

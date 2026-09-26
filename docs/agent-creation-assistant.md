@@ -9,9 +9,11 @@ reminder cannot interrupt either creation mode.
 The assistant fills the viewport over a dark stone hall with gold and purple
 accents. The House mark and starting cue remain in the upper scene through
 clarifications and failed requests. Once character text or a portrait exists,
-the upper scene becomes a compact, scrollable character summary. The summary
-stays at the top while the conversation scrolls beneath it. Messages build from
-the bottom, preserving earlier bubbles on screen until they scroll out of view.
+the upper scene becomes a character summary. On tall screens its cards grow
+within the upper half of the viewport; the summary never extends below the
+midpoint. The summary stays at the top while the conversation moves beneath it.
+Messages build from the bottom, with older bubbles clipped above the visible
+area and no message scrollbar.
 On short screens the page itself can scroll. The inset circular send arrow
 becomes the activity indicator while working; mobile generation messages use
 the full width without a separate icon. The House message, ingredient picker,
@@ -32,6 +34,7 @@ Failed requests restore the typed message for retry.
 Starter ingredient pills and “Surprise me” use the same curated traits as
 Advanced create. Background (including interests), Strategy, and Gender rows start the
 conversation; the appearance question offers form and visual-style pills.
+Human, halfling, and gnome are among the initial form options.
 Both character and portrait review hide the ingredient picker so the player can
 focus on approval or describe a specific change.
 Pill rows hide native scrollbars and subtly fade only edges with more content;
