@@ -40,7 +40,7 @@ export function DashboardQueueEntry({ status, agents, loading, error, onJoin, on
         {status.eligibility === "temporarily-ineligible" && (status.ineligibilityReason === "moderation" ? " Participation is paused pending moderation of this character." : status.ineligibilityReason === "active-game" ? " Participation resumes when your current game finishes." : " Participation is temporarily paused.")}
       </p>
       : agents.length === 0 ? <p className="influence-copy text-sm">
-        <Link href="/dashboard/agents/create?flow=daily_free" className="influence-link">Create an agent to enter</Link> the daily game.
+        <Link href="/agents/create?flow=daily_free" className="influence-link">Create an agent to enter</Link> the daily game.
       </p>
       : <form className="flex flex-col gap-3 md:flex-row md:items-end" onSubmit={event => { event.preventDefault(); void join(); }}>
         <label className="min-w-0 flex-1 text-sm influence-copy">

@@ -124,6 +124,28 @@ function authPost(token: string): RequestInit {
   };
 }
 
+// Tests that deliberately assemble several seats for one owner must grant an
+// actual current role, independently of the signed session's role claims.
+async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<string> {
+  const roleId = randomUUID();
+  await db.insert(schema.roles).values({ id: roleId, name: roleName });
+  await db.insert(schema.addressRoles).values({
+    walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    roleId,
+    grantedBy: ADMIN_USER_ID,
+  });
+  return roleId;
+}
+
+async function createAdditionalTestAgent(db: DrizzleDB, name: string): Promise<string> {
+  const created = await createOwnedAgentProfile(db, { userId: REGULAR_USER_ID }, {
+    name,
+    personality: "A distinct saved competitor.",
+    personaKey: "strategic",
+  });
+  return created.profile.id;
+}
+
 async function createTestGame(
   app: Hono,
   adminToken: string,
@@ -219,6 +241,7 @@ async function joinTestPlayer(
     `/api/games/${gameId}/join`,
     json({ agentProfileId: profile.id }, token),
   );
+  expect([200, 201]).toContain(res.status);
   const body = await res.json() as { playerId: string };
   return { ...body, agentProfileId: profile.id, agentName: savedName };
 }
@@ -368,6 +391,7 @@ describe("Game REST API", () => {
     });
 
     test("POST /api/games/:id/start requires admin", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `Player${i}`, userToken);
@@ -998,6 +1022,7 @@ describe("Game REST API", () => {
     });
 
     test("game summaries keep configured seat count while reporting joined players separately", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       await joinTestPlayer(db, app, id, "Atlas", userToken);
       await joinTestPlayer(db, app, id, "Vera", userToken);
@@ -1208,7 +1233,9 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id", () => {
     test("returns game details with players", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken, {
+        playerCount: 6,
         modelSelection: {
           catalogId: "katana:grok-4-3",
           reasoningPolicy: "low",
@@ -1226,6 +1253,7 @@ describe("Game REST API", () => {
         gameKernel: string;
         gameKernelSource: string;
         gameKernelDiagnostics: unknown[];
+        playerCount: number;
         players: Array<{ name: string; persona: string }>;
         modelLabel: string;
       };
@@ -1235,6 +1263,7 @@ describe("Game REST API", () => {
       expect(body.gameKernelSource).toBe("stored");
       expect(body.gameKernelDiagnostics).toEqual([]);
       expect(body.players).toHaveLength(2);
+      expect(body.playerCount).toBe(6);
       expect(body.players[0]!.name).toBe("Atlas Player");
       expect(body.modelLabel).toBe("xAI Grok 4.3 · Low");
       expect(body).not.toHaveProperty("modelSelection");
@@ -1711,6 +1740,102 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("POST /api/games/:id/join", () => {
+    for (const role of [null, "player", "gamer", "moderator"]) {
+      test(`limits ${role ?? "unassigned"} accounts to one agent per game`, async () => {
+        if (role) await grantTestOwnerRole(db, role);
+        const { id } = await createTestGame(app, adminToken);
+        const first = await joinTestPlayer(db, app, id, "First Competitor", userToken);
+        const secondAgentId = await createAdditionalTestAgent(db, "Second Competitor");
+        const revisionsBefore = await db.select().from(schema.agentRevisions);
+
+        const rejected = await app.request(`/api/games/${id}/join`, json({
+          agentProfileId: secondAgentId,
+          roles: ["producer"],
+          permissions: ["fill_game"],
+        }, userToken));
+        expect(rejected.status).toBe(403);
+        expect(await rejected.json()).toMatchObject({
+          code: "owner_seat_limit",
+          error: expect.stringContaining("Only admins, sysops, and producers"),
+        });
+        expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id)))
+          .toMatchObject([{ id: first.playerId, agentProfileId: first.agentProfileId }]);
+        expect(await db.select().from(schema.agentRevisions)).toEqual(revisionsBefore);
+
+        const replay = await app.request(`/api/games/${id}/join`, json({
+          agentProfileId: first.agentProfileId,
+        }, userToken));
+        expect(replay.status).toBe(200);
+        expect(await replay.json()).toEqual({ playerId: first.playerId });
+      });
+    }
+
+    for (const role of ["admin", "sysop", "producer"]) {
+      test(`allows a current ${role} to add multiple owned agents`, async () => {
+        await grantTestOwnerRole(db, role);
+        const { id } = await createTestGame(app, adminToken);
+        const first = await joinTestPlayer(db, app, id, "First Privileged Competitor", userToken);
+        const second = await joinTestPlayer(db, app, id, "Second Privileged Competitor", userToken);
+        expect(first.playerId).not.toBe(second.playerId);
+        expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id)))
+          .toHaveLength(2);
+
+        // Privileged custom-game casting cannot bypass the rated owner rule.
+        const rated = await createTestGame(app, adminToken);
+        const season = await createSeason(db, { slug: `rated-${role}`, name: "Rated Season" });
+        await db.update(schema.games).set({ seasonId: season.id }).where(eq(schema.games.id, rated.id));
+        await app.request(`/api/games/${rated.id}/join`, json({ agentProfileId: first.agentProfileId }, userToken));
+        const ratedRejection = await app.request(`/api/games/${rated.id}/join`, json({
+          agentProfileId: second.agentProfileId,
+        }, userToken));
+        expect(ratedRejection.status).toBe(409);
+        expect(await ratedRejection.json()).toEqual({
+          error: "Rated games allow only one owned agent per player account.",
+        });
+        expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, rated.id)))
+          .toHaveLength(1);
+      });
+    }
+
+    test("revoked producer roles cannot add seats using a stale privileged session", async () => {
+      const roleId = await grantTestOwnerRole(db, "producer");
+      const staleToken = await createSessionToken(REGULAR_USER_ID, { roles: ["producer"] });
+      const { id } = await createTestGame(app, adminToken);
+      const first = await joinTestPlayer(db, app, id, "Original Producer Competitor", staleToken);
+      await db.delete(schema.addressRoles).where(eq(schema.addressRoles.roleId, roleId));
+      const secondAgentId = await createAdditionalTestAgent(db, "Revoked Producer Competitor");
+
+      const rejected = await app.request(`/api/games/${id}/join`, json({ agentProfileId: secondAgentId }, staleToken));
+      expect(rejected.status).toBe(403);
+      expect(await rejected.json()).toMatchObject({ code: "owner_seat_limit" });
+      const replay = await app.request(`/api/games/${id}/join`, json({ agentProfileId: first.agentProfileId }, staleToken));
+      expect(replay.status).toBe(200);
+      expect(await replay.json()).toEqual({ playerId: first.playerId });
+      expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id))).toHaveLength(1);
+    });
+
+    test("serializes different-agent joins so an ordinary account receives only one seat", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const agents = [
+        await createAdditionalTestAgent(db, "Concurrent First Competitor"),
+        await createAdditionalTestAgent(db, "Concurrent Second Competitor"),
+      ];
+      const responses = await Promise.all(agents.map(agentProfileId =>
+        app.request(`/api/games/${id}/join`, json({ agentProfileId }, userToken))));
+      expect(responses.map(response => response.status).sort()).toEqual([201, 403]);
+      expect(await responses.find(response => response.status === 403)!.json())
+        .toMatchObject({ code: "owner_seat_limit" });
+      expect(await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, id))).toHaveLength(1);
+    });
+
+    test("allows an ordinary account to add one agent in each separate game", async () => {
+      const firstGame = await createTestGame(app, adminToken);
+      const secondGame = await createTestGame(app, adminToken);
+      await joinTestPlayer(db, app, firstGame.id, "First Game Competitor", userToken);
+      await joinTestPlayer(db, app, secondGame.id, "Second Game Competitor", userToken);
+      expect(await db.select().from(schema.gamePlayers)).toHaveLength(2);
+    });
+
     test("adds a player to a waiting game", async () => {
       const { id } = await createTestGame(app, adminToken);
       const joined = await joinTestPlayer(
@@ -1741,6 +1866,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects join when game is not waiting", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
@@ -1756,6 +1882,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects join when game is full", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
 
       for (let i = 0; i < 6; i++) {
@@ -1917,6 +2044,7 @@ describe("Game REST API", () => {
 
   describe("POST /api/games/:id/start", () => {
     test("starts a game with six players", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
@@ -1939,6 +2067,7 @@ describe("Game REST API", () => {
     });
 
     test("denies a manual start at the deployment barrier without replaying it", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `DrainingPlayer${i}`, userToken);
@@ -1984,6 +2113,7 @@ describe("Game REST API", () => {
     });
 
     test("returns typed roster-freeze failures to start clients", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `RatedPlayer${i}`, userToken);
@@ -2009,6 +2139,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects provider startup before claiming the run", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 6; i++) {
@@ -2054,6 +2185,7 @@ describe("Game REST API", () => {
     });
 
     test("queues a start command without acquiring a durable owner", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `StartupPlayer${i}`, userToken);
@@ -2072,6 +2204,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects start with five players", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 5; i++) {
         await joinTestPlayer(db, app, id, `Player${i}`, userToken);
@@ -2085,6 +2218,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects start for non-waiting game", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 6; i++) {
         await joinTestPlayer(db, app, id, `Player${i}`, userToken);
@@ -2370,6 +2504,7 @@ describe("Game REST API", () => {
     });
 
     test("whisper entries include parsed toPlayerIds", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       const { playerId: p1 } = await joinTestPlayer(db, app, id, "Atlas", userToken);
       const { playerId: p2 } = await joinTestPlayer(db, app, id, "Vera", userToken);
@@ -2393,6 +2528,7 @@ describe("Game REST API", () => {
     });
 
     test("system whisper entries include parsed roomMetadata", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
       const { playerId: p1 } = await joinTestPlayer(db, app, id, "Atlas", userToken);
       const { playerId: p2 } = await joinTestPlayer(db, app, id, "Vera", userToken);
@@ -2700,6 +2836,7 @@ describe("Game REST API", () => {
 
   describe("full game lifecycle", () => {
     test("create → join × 6 → start → stop", async () => {
+      await grantTestOwnerRole(db, "producer");
       // Create
       const { id, slug } = await createTestGame(app, adminToken);
       expect(slug).toBeTruthy();
@@ -2987,6 +3124,7 @@ describe("Game REST API", () => {
     });
 
     test("POST /api/games/:id/start does not modify names when no collisions", async () => {
+      await grantTestOwnerRole(db, "producer");
       const { id } = await createTestGame(app, adminToken);
 
       const requestedNames = ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"];

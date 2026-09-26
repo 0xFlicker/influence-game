@@ -13,6 +13,27 @@ tags: [agent-creation, structured-output, mobile, portrait, pointer-events]
 
 # Guided character creation and direct crop controls
 
+## Public creation and authentication handoff
+
+The canonical creator is `/agents/create`. A page-level AuthGate prevented new
+visitors from seeing the hall or trying the assistant, so admission now happens
+at generation and save actions. The anonymous first turn uses one strict
+`{reply, profile}` generation rather than spending its preview on a separate
+command-router call. A signed browser cookie and PostgreSQL advisory lock enforce
+one successful preview per browser and one shared dispatch per minute. Busy
+admission consumes no visitor allowance; accepted retries replay their stored
+result. Anonymous spending has its own admin pool.
+
+Keep the active draft storage owner stable while authentication changes. This
+avoids replacing a new visitor's cards with an account recovery prompt during
+signup. Account reloads can recover that anonymous draft when no account draft
+exists. Authentication renders through a body portal so the creator's inert
+background siblings cannot disable the signup modal. Browser verification must
+include the existing public-profile setup step after signup, then verify that a
+subsequent message debits the Free account instead of the Anonymous pool.
+
+## Guided editor
+
 Creation now offers Advanced create and a full-screen assistant backed by the
 same draft recovery and save contract. Profile generation precedes explicit
 character approval; image generation follows an appearance description. A

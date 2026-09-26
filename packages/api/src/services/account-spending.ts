@@ -73,5 +73,16 @@ export async function readAccountSpending(db: DrizzleDB, actor: string, query: R
  WHERE (${query.search ?? ''} = '' OR concat_ws(' ',u.id,u.display_name,u.handle,u.email,u.wallet_address) ILIKE ${'%' + (query.search ?? '') + '%'})
  AND (${status} = 'all' OR (${status} = 'paused' AND a.paused) OR (${status} = 'pending' AND r.pending_generations > 0))
  ORDER BY ${sorts[sort]} DESC NULLS LAST, u.id LIMIT 26 OFFSET ${offset}`);
-  return { accounts: rows.slice(0,25), nextOffset: rows.length > 25 ? offset + 25 : null, coverage, asOf: new Date().toISOString() };
+  const anonymous = await db.execute(sql`
+    SELECT count(*)::int AS text_requests, count(DISTINCT visitor_hash)::int AS visitors,
+      count(*) FILTER (WHERE state = 'failed')::int AS failures,
+      count(*) FILTER (WHERE state IN ('dispatched','uncertain'))::int AS pending,
+      count(*) FILTER (WHERE estimated_cost_microusd IS NULL)::int AS unpriced,
+      coalesce(sum(estimated_cost_microusd),0)::float8 AS estimated_microusd,
+      max(created_at) AS last_activity
+    FROM anonymous_text_operations WHERE ${filter}`);
+  const anonymousOperations = await db.execute(sql`
+    SELECT id, model, state, prompt_tokens, completion_tokens, estimated_cost_microusd, created_at
+    FROM anonymous_text_operations WHERE ${filter} ORDER BY created_at DESC, id LIMIT 25`);
+  return { accounts: rows.slice(0,25), anonymous: anonymous[0], anonymousOperations, nextOffset: rows.length > 25 ? offset + 25 : null, coverage, asOf: new Date().toISOString() };
 }

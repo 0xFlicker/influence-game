@@ -6,6 +6,7 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { userHasAnyRole } from "../db/rbac.js";
 import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import {
   resolveFreeTrackEffectiveRuntimeSnapshot,
@@ -24,6 +25,7 @@ export type OwnedSeatProjectionErrorReason =
   | "season_not_active"
   | "capacity"
   | "duplicate_owner"
+  | "owner_seat_limit"
   | "profile_not_owned"
   | "profile_unavailable"
   | "name_conflict"
@@ -235,6 +237,16 @@ export async function admitOwnedSeatInTransaction(
       "Rated games allow only one owned agent per player account.",
       "rated_roster_invalid",
       "duplicate_owner",
+    );
+  }
+  // The game lock serializes different-agent requests for the same owner.
+  // Resolve roles from the database so stale sessions cannot retain this right.
+  if (players.some((player) => player.userId === input.userId)
+    && !await userHasAnyRole(tx, input.userId, ["admin", "sysop", "producer"])) {
+    throw projectionError(
+      "You already have an agent in this game. Only admins, sysops, and producers can add more than one agent.",
+      "invalid_state",
+      "owner_seat_limit",
     );
   }
 

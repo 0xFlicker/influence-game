@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { decodeCreationTurn, type CreationStage } from "@influence/engine/agent-creation-assistant";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { ALL_AGENT_CREATION_TRAITS, type AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 import { CharacterFormation } from "./character-formation";
@@ -19,7 +19,10 @@ const replies = {
   portrait: "Your character is ready to look over. Confirm this headshot when it feels right, or tell me what to change about their appearance.",
 };
 
-export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl, busy, blocked, headRequired, hasImage, onHeadshot, onAdvanced, onCancel, onSaveDraft, submitDisabled, submitLabel, creationTraitIds = [], onCreationTraitIdsChange }: {
+export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl, busy, blocked, headRequired, hasImage, onHeadshot, onAdvanced, onCancel, onSaveDraft, submitDisabled, submitLabel, creationTraitIds = [], onCreationTraitIdsChange, anonymous = false, anonymousUsed = false, onAnonymousMessage, onRequireAccount }: {
+  anonymous?: boolean; anonymousUsed?: boolean;
+  onAnonymousMessage?: (message: string) => Promise<{ reply: string; hasCharacter: boolean }>;
+  onRequireAccount?: () => void;
   creationTraitIds?: AgentCreationTraitId[]; onCreationTraitIdsChange?: (ids: AgentCreationTraitId[]) => void;
   profile: CharacterChatProfile;
   onGenerate: (message: string, sections: CharacterSection[]) => Promise<boolean>;
@@ -39,6 +42,7 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
   const [submitted, setSubmitted] = useState<string | null>(null);
   const [ended, setEnded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [poolBusy, setPoolBusy] = useState(false);
   const inFlight = useRef(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const chatLog = useRef<HTMLDivElement>(null);
@@ -83,14 +87,26 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
 
   async function send(text = input) {
     if (inFlight.current || locked || ended || (!text.trim() && !hasIngredients)) return;
+    if (anonymous && stage !== "character") { onRequireAccount?.(); return; }
     const ingredientLabels = creationTraitIds.map(id => ALL_AGENT_CREATION_TRAITS.find(trait => trait.id === id)?.label).join(", ");
     const request = hasIngredients ? `${text.trim() || (ingredientMode === "appearance" ? "Describe their appearance using these visual ingredients." : "Create a character from these ingredients.")}\nSelected character ingredients: ${ingredientLabels}` : text;
     const originalInput = input;
     let succeeded = false;
     setSubmitted([text.trim(), hasIngredients ? ingredientLabels : ""].filter(Boolean).join(" · "));
     setInput("");
-    inFlight.current = true; setPending(true); setError(null);
+    inFlight.current = true; setPending(true); setError(null); setPoolBusy(false);
     try {
+      if (anonymous && onAnonymousMessage) {
+        const turn = await onAnonymousMessage(request);
+        if (turn.hasCharacter) setStage("review");
+        setMessages(current => [...(current.length ? current : [openingMessage]),
+          { role: "user", text: [text.trim(), hasIngredients ? ingredientLabels : ""].filter(Boolean).join(" · ") },
+          { role: "assistant", text: turn.reply }]);
+        onCreationTraitIdsChange?.([]);
+        succeeded = true;
+        setSections([]);
+        return;
+      }
       const result = await apiFetch<unknown>("/api/agent-profiles/creation-assistant", {
         method: "POST", body: JSON.stringify({ stage, message: request, history: visibleMessages.slice(-24).map(message => `${message.role}: ${message.text}`.slice(0, 2000)), sections, draft: profile }),
         signal: AbortSignal.timeout(60_000),
@@ -117,6 +133,7 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
       succeeded = true;
       setInput(""); setSections([]);
     } catch (cause) {
+      setPoolBusy(cause instanceof ApiError && cause.code === "anonymous_pool_busy");
       setError(cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError")
         ? "The character assistant took too long to respond. Your text and ingredients are still here—please try again."
         : cause instanceof Error ? cause.message : "The assistant could not complete this turn. Try again.");
@@ -129,7 +146,7 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
   return <>
     <header className="agent-creation-header relative z-10 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-8">
       <div><p className="text-xs uppercase tracking-[.2em] text-violet-300">Create your Agent</p><h1 className="text-lg font-semibold">{profile.name || "Who will you be?"}</h1></div>
-      <div className="flex gap-2"><button type="button" disabled={locked} onClick={onAdvanced} className="min-h-11 rounded-lg px-3 text-sm text-white/65 disabled:opacity-40">Advanced create</button><button type="button" disabled={pending} onClick={onCancel} className="min-h-11 rounded-lg px-3 text-sm text-white/65">Close</button></div>
+      <div className="flex gap-2">{(!anonymous || anonymousUsed) && <button type="button" disabled={locked} onClick={onAdvanced} className="min-h-11 rounded-lg px-3 text-sm text-white/65 disabled:opacity-40">Advanced create</button>}<button type="button" disabled={pending} onClick={onCancel} className="min-h-11 rounded-lg px-3 text-sm text-white/65">Close</button></div>
     </header>
     <main className="agent-creation-stage relative mx-auto flex min-h-[20rem] w-full max-w-6xl flex-1 flex-col px-4 sm:px-8">
       <section aria-label="Character fixtures" className={`agent-creation-visual relative z-10 mx-auto w-full ${hasCharacter ? "agent-creation-visual-filled" : "agent-creation-visual-empty"}`}>
@@ -165,9 +182,15 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
       <div className="mx-auto w-full max-w-3xl space-y-3">
         {stage === "review" && !ended && !working && <button type="button" disabled={locked} onClick={approveCharacter} className="influence-button-primary min-h-11 rounded-lg px-4 text-sm">Yes, that feels right</button>}
         {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+        {anonymous && poolBusy && <div className="flex items-center gap-4 text-sm">
+          <button type="button" onClick={onRequireAccount} className="influence-button-primary min-h-11 rounded-lg px-4">Create a free account</button>
+          <button type="button" onClick={() => { setError(null); setPoolBusy(false); composer.current?.focus(); }} className="min-h-11 text-amber-100/80">Try again later</button>
+        </div>}
         {!working && !!sections.length && <div className="flex flex-wrap gap-2">{sections.map(section => <button key={`${section}-${selectionVersion}`} type="button" disabled={locked} onClick={() => setSections(current => current.filter(value => value !== section))} aria-label={`Remove change ${labels[section]}`} className="creation-section-pill rounded-full border border-violet-300/30 bg-violet-400/10 px-3 py-1 text-xs">Change {labels[section]} <span aria-hidden="true">×</span></button>)}</div>}
         {!ended && showIngredients && onCreationTraitIdsChange && <div className="agent-creation-ingredients rounded-xl p-3 sm:p-4"><AgentCreationIngredients key={ingredientMode} mode={ingredientMode} selected={creationTraitIds} onChange={onCreationTraitIdsChange} disabled={locked} /></div>}
         {!ended && <label htmlFor="agent-creation-message" className="block text-xs font-medium uppercase tracking-[.14em] text-amber-100/80">Your response</label>}
+        {anonymous && <p className="text-xs leading-5 text-white/60">{anonymousUsed ? "Your free message is complete. Create a free account for more messages and character images." : "Your first House message is free. Start with a character idea or a question about the game."}</p>}
+        {anonymous && anonymousUsed && !poolBusy && <button type="button" onClick={onRequireAccount} className="min-h-11 text-sm text-amber-100">Continue with a free account <span aria-hidden="true">↗</span></button>}
         {!ended && <div className="relative">
           <textarea id="agent-creation-message" ref={composer} aria-label="Message the character assistant" placeholder={stage === "appearance" || stage === "portrait" ? "Describe their look…" : "Tell me about your character…"} value={input} maxLength={1400} disabled={locked} onInput={event => setInput(event.currentTarget.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} rows={2} className="influence-field agent-creation-composer max-h-32 min-h-20 w-full resize-none rounded-2xl py-3 pl-4 pr-14 text-base" />
           <button type="button" aria-label={working ? "Assistant working" : "Send"} aria-busy={working} disabled={locked || (!input.trim() && !hasIngredients)} onClick={() => void send()} className={`group absolute bottom-2 right-2 flex size-11 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 ${working ? "" : "disabled:opacity-35"}`}>

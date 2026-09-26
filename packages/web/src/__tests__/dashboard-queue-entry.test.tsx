@@ -57,5 +57,5 @@ test("failed enrollment preserves selection and surfaces the error", async () =>
 
 test("zero agents routes into creation with enrollment continuation", () => {
   const view = render(<DashboardQueueEntry {...props} agents={[]} />);
-  expect(view.getByRole("link").getAttribute("href")).toBe("/dashboard/agents/create?flow=daily_free");
+  expect(view.getByRole("link").getAttribute("href")).toBe("/agents/create?flow=daily_free");
 });

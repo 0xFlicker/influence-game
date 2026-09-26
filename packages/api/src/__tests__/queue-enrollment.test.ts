@@ -235,6 +235,75 @@ describe("queue enrollment service", () => {
     ));
   });
 
+  test("MCP and REST share the same per-owner limit for open games", async () => {
+    await insertAgent(db, { id: "agent-owner-first", userId: USER_A_ID, name: "First Owner Agent" });
+    await insertAgent(db, { id: "agent-owner-second", userId: USER_A_ID, name: "Second Owner Agent" });
+    await insertGame(db, { id: "open-owner-limit", slug: "owner-limit", status: "waiting" });
+    const app = new Hono().route("/", createGameRoutes(db));
+    const token = await createSessionToken(USER_A_ID, { roles: ["player"] });
+
+    const restJoin = await app.request("/api/games/open-owner-limit/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agentProfileId: "agent-owner-first" }),
+    });
+    expect(restJoin.status).toBe(201);
+    await expect(joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-owner-second",
+      gameIdOrSlug: "owner-limit",
+    })).rejects.toMatchObject({
+      code: "owner_seat_limit",
+      statusCode: 403,
+      message: expect.stringContaining("Only admins, sysops, and producers"),
+    });
+
+    const replay = await joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-owner-first",
+      gameIdOrSlug: "owner-limit",
+    });
+    expect(replay.queue.status).toBe("joined-open-game");
+
+    await insertGame(db, { id: "open-mcp-first", slug: "mcp-first", status: "waiting" });
+    await joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-owner-second",
+      gameIdOrSlug: "mcp-first",
+    });
+    const rejectedRest = await app.request("/api/games/open-mcp-first/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ agentProfileId: "agent-owner-first" }),
+    });
+    expect(rejectedRest.status).toBe(403);
+    expect(await rejectedRest.json()).toMatchObject({ code: "owner_seat_limit" });
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(2);
+  });
+
+  test("MCP permits multiple owned seats for a currently assigned producer", async () => {
+    await db.update(schema.users).set({ walletAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" })
+      .where(eq(schema.users.id, USER_A_ID));
+    await db.insert(schema.roles).values({ id: "casting-producer", name: "producer" });
+    await db.insert(schema.addressRoles).values({
+      walletAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      roleId: "casting-producer",
+      grantedBy: USER_B_ID,
+    });
+    await insertAgent(db, { id: "producer-first", userId: USER_A_ID, name: "Producer First" });
+    await insertAgent(db, { id: "producer-second", userId: USER_A_ID, name: "Producer Second" });
+    await insertGame(db, { id: "producer-cast", slug: "producer-cast", status: "waiting" });
+    for (const agentId of ["producer-first", "producer-second"]) {
+      const read = await joinQueue(db, { userId: USER_A_ID }, {
+        queueType: "open-game",
+        agentId,
+        gameIdOrSlug: "producer-cast",
+      });
+      expect(read.queue.status).toBe("joined-open-game");
+    }
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(2);
+  });
+
   test("REST and MCP open-game joins persist the same owned-seat tuple", async () => {
     await insertAgent(db, { id: "agent-parity", userId: USER_A_ID, name: "Parity Diplomat" });
     await insertGame(db, { id: "mcp-parity", slug: "mcp-parity", status: "waiting", maxPlayers: 4 });

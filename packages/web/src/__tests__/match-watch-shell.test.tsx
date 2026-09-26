@@ -32,6 +32,7 @@ const matchWatchShellSource = readFileSync(
 
 function game(): GameDetail {
   return {
+    playerCount: 2,
     id: "game-1",
     slug: "vast-violet-code",
     status: "completed",

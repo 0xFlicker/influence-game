@@ -34,17 +34,17 @@ export function Nav() {
   const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
   const gameRoute = pathname?.split("/")[2];
-  const focusedFlow = !pathname || pathname === "/dashboard/agents/create"
+  const focusedFlow = !pathname || pathname === "/agents/create"
     || /^\/dashboard\/agents\/[^/]+\/edit(?:\/|$)/.test(pathname)
     || pathname === "/games/new"
     || pathname === "/admin/games/new"
     || (pathname.startsWith("/games/") && !["free", "public", "private", "season"].includes(gameRoute));
-  const showCreateActions = authenticated && !permissionsLoading && !focusedFlow;
+  const showCreateActions = ready && !permissionsLoading && !focusedFlow;
 
   const navLinks = (
     <>
       {showCreateActions && (
-        <Link href="/dashboard/agents/create" className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
+        <Link href="/agents/create" className={`influence-button-primary rounded-md px-4 py-2 whitespace-nowrap ${pathname === "/dashboard" ? "xl:hidden" : ""}`} onClick={() => setMobileOpen(false)}>
           <span aria-hidden="true">＋ </span>Create agent
         </Link>
       )}

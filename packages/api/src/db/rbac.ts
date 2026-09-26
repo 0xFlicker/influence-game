@@ -5,7 +5,7 @@
  * address_roles, role_permissions, and permissions tables.
  */
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "./index.js";
 import { schema } from "./index.js";
 
@@ -19,6 +19,15 @@ export async function userHasRole(
   userId: string,
   roleName: string,
 ): Promise<boolean> {
+  return userHasAnyRole(db, userId, [roleName]);
+}
+
+/** Resolve current role assignments, including changes since session issuance. */
+export async function userHasAnyRole(
+  db: Pick<DrizzleDB, "select">,
+  userId: string,
+  roleNames: string[],
+): Promise<boolean> {
   const [row] = await db
     .select({ id: schema.users.id })
     .from(schema.users)
@@ -26,7 +35,7 @@ export async function userHasRole(
     .innerJoin(schema.roles, eq(schema.addressRoles.roleId, schema.roles.id))
     .where(and(
       eq(schema.users.id, userId),
-      eq(schema.roles.name, roleName),
+      inArray(schema.roles.name, roleNames),
     ))
     .limit(1);
 

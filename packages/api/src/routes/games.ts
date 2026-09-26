@@ -437,6 +437,7 @@ export function createGameRoutes(db: DrizzleDB) {
       currentRound: watchState.currentRound,
       maxRounds: config.maxRounds ?? 10,
       currentPhase: watchState.currentPhase,
+      playerCount: game.maxPlayers,
       players: watchState.players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -565,6 +566,9 @@ export function createGameRoutes(db: DrizzleDB) {
       });
     } catch (error) {
       if (error instanceof OwnedSeatProjectionError) {
+        if (error.reason === "owner_seat_limit") {
+          return c.json({ error: error.message, code: error.reason }, 403);
+        }
         return c.json({ error: error.message }, error.code === "rated_roster_invalid" ? 409 : 400);
       }
       throw error;

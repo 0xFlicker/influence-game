@@ -114,7 +114,7 @@ describe("dashboard mission-control overview", () => {
     for (const canCreateGame of [false, true]) {
       const html = renderToString(<MissionControlOverview control={control} user={null} loading={false} errors={[]} onJoinPrimary={() => {}} publicIdentity={null} canCreateGame={canCreateGame} />);
       expect(html).not.toContain("View free queue");
-      expect(html).toContain('href="/dashboard/agents/create"');
+      expect(html).toContain('href="/agents/create"');
       expect(html.includes('href="/games/new"')).toBe(canCreateGame);
     }
   });
@@ -294,7 +294,7 @@ describe("dashboard mission-control overview", () => {
     });
 
     expect(html).toContain("Create your first agent");
-    expect(html).toContain('href="/dashboard/agents/create"');
+    expect(html).toContain('href="/agents/create"');
     expect(html).toContain("No saved agents yet");
   });
 

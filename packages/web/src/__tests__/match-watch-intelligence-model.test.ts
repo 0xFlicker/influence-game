@@ -11,6 +11,7 @@ import { buildMatchWatchIntelligenceModel } from "../app/games/[slug]/components
 
 function game(): GameDetail {
   return {
+    playerCount: 2,
     id: "game-1",
     slug: "public-game",
     status: "in_progress",

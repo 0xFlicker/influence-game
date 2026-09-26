@@ -1,3 +1,4 @@
+import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
  * Influence API client.
  * All API calls go through apiFetch so the base URL and auth headers are consistent.
@@ -116,7 +117,7 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const generationPath = ['/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/edit-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
+  const generationPath = ['/api/agent-profiles/anonymous','/api/agent-profiles/generate','/api/agent-profiles/creation-assistant','/api/agent-profiles/edit-assistant','/api/agent-profiles/avatar/generate-draft'].includes(path);
   const requestIdentity = generationPath ? `inference:${Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}:${path}:${String(options?.body ?? '')}`)))).map(b=>b.toString(16).padStart(2,'0')).join('')}` : null;
   if(requestIdentity) {
     const id = window.sessionStorage.getItem(requestIdentity) ?? crypto.randomUUID();
@@ -127,6 +128,7 @@ export async function apiFetch<T>(
   console.log(`API ${options?.method ?? "GET"} ${url}`);
   const res = await fetch(url, {
     ...options,
+    ...(path === "/api/agent-profiles/anonymous" ? { credentials: "include" as const } : {}),
     headers,
   });
   if (!res.ok) {
@@ -137,7 +139,7 @@ export async function apiFetch<T>(
     if (options?.method === 'POST' && typeof window !== 'undefined') {
       let code:unknown;
       try { code=(JSON.parse(text) as {code?:unknown}).code; } catch { code=undefined; }
-      if(requestIdentity && ['generation_exhausted','generation_paused','generation_throttled','generation_busy','generation_failed','invalid_request_id','generation_unavailable'].includes(String(code))) window.sessionStorage.removeItem(requestIdentity);
+      if(requestIdentity && ['generation_exhausted','generation_paused','generation_throttled','generation_busy','generation_failed','invalid_request_id','generation_unavailable','anonymous_pool_busy'].includes(String(code))) window.sessionStorage.removeItem(requestIdentity);
       if(code==='generation_exhausted'||code==='generation_paused') window.dispatchEvent(new CustomEvent('generation:contact',{detail:code}));
     }
     throw apiErrorFromResponse(res.status, text);
@@ -2594,6 +2596,16 @@ export async function getAgentAvatarGenerations(
   return apiFetch(`/api/agent-profiles/avatar-generations?${params}`);
 }
 
+export interface AnonymousCreationTurn {
+  reply: string;
+  profile: GeneratePersonalityResult | null;
+}
+export async function generateAnonymousCharacter(message: string, creationTraitIds: AgentCreationTraitId[]): Promise<AnonymousCreationTurn> {
+  return apiFetch("/api/agent-profiles/anonymous", {
+    method: "POST", body: JSON.stringify({ message, creationTraitIds }), signal: AbortSignal.timeout(60_000),
+  });
+}
+
 export async function generatePersonality(
   params: GeneratePersonalityParams,
 ): Promise<GeneratePersonalityResult> {
@@ -2711,6 +2723,8 @@ export interface GameDetail {
   currentRound: number;
   maxRounds: number;
   currentPhase: PhaseKey;
+  /** Configured capacity, independent of the number of joined players. */
+  playerCount: number;
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
@@ -2831,8 +2845,8 @@ export async function unhideGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/unhide`, { method: "PATCH" });
 }
 
-export async function getGame(id: string): Promise<GameDetail> {
-  return apiFetch(`/api/games/${id}`);
+export async function getGame(id: string, signal?: AbortSignal): Promise<GameDetail> {
+  return apiFetch(`/api/games/${id}`, { signal });
 }
 
 export async function getGameTranscript(

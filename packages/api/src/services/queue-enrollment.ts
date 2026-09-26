@@ -42,6 +42,7 @@ export type QueueEnrollmentErrorCode =
   | "agent_already_in_active_game"
   | "no_active_season"
   | "queue_full"
+  | "owner_seat_limit"
   | "game_not_joinable";
 
 export class QueueEnrollmentError extends Error {
@@ -682,6 +683,12 @@ function mapOpenGameProjectionError(
   }
   if (error.reason === "capacity") {
     return new QueueEnrollmentError("queue_full", "Open game is full.", 409, error.details);
+  }
+  if (error.reason === "owner_seat_limit") {
+    return new QueueEnrollmentError("owner_seat_limit", error.message, 403);
+  }
+  if (error.reason === "duplicate_owner") {
+    return new QueueEnrollmentError("invalid_queue_input", error.message, 409);
   }
   if (error.reason === "name_conflict") {
     return new QueueEnrollmentError(

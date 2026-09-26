@@ -254,7 +254,7 @@ export function StandingDailyAgentPrompt({
     }
   }
 
-  if (!open || agents === null || pathname === "/dashboard/agents/create") return null;
+  if (!open || agents === null || pathname === "/agents/create") return null;
   const promptBranch = dailyAgentPromptBranch(agents.length);
 
   return (
@@ -290,8 +290,8 @@ export function StandingDailyAgentPrompt({
                   onClick={() => {
                     setOpen(false);
                     router.push(creationOnly
-                      ? "/dashboard/agents/create"
-                      : "/dashboard/agents/create?flow=daily_free");
+                      ? "/agents/create"
+                      : "/agents/create?flow=daily_free");
                   }}
                   className="influence-button-primary w-full rounded-lg px-4 py-3 text-sm font-semibold"
                 >

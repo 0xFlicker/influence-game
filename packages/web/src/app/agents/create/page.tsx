@@ -1,9 +1,9 @@
 import { Nav } from "@/components/nav";
-import { AuthGate } from "@/components/auth-gate";
-import { AgentCreateContent, type AgentCreateFlow } from "../agent-create-content";
+import { AgentCreateContent, type AgentCreateFlow } from "@/app/dashboard/agents/agent-create-content";
 
 export const metadata = {
-  title: "Create Agent — Influence",
+  title: "Create your Agent — The House",
+  description: "Meet The House and shape an Influence character. Your first message is free; create an account to keep building and bring them to life.",
 };
 
 function createFlow(value: string | undefined): AgentCreateFlow {
@@ -22,9 +22,7 @@ export default async function AgentCreatePage({
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main className="w-full flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-        <AuthGate>
           <AgentCreateContent flow={flow} gameId={flow === "join_game" ? query.gameId : undefined} />
-        </AuthGate>
       </main>
     </div>
   );

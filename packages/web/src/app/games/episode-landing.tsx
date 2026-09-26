@@ -28,7 +28,7 @@ export function EpisodeLanding({ slug, initialGame }: { slug: string; initialGam
   const summary = { ...game, playerCount: game.players.length, episode: preview?.episode ?? game.episode };
   const title = gameDisplayName(summary);
   const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(summary);
-  if (game.status === "waiting") return <><h1 className="text-3xl mb-6">{title}</h1><GameViewer gameId={slug} initialGame={game} /></>;
+  if (game.status === "waiting") return <GameViewer gameId={slug} initialGame={game} />;
   return <section className="episode-landing">
     <div className="episode-eyebrow">{game.season?.name ?? "Influence"}{summary.episode?.episodeNumber ? ` · Episode ${summary.episode.episodeNumber}` : ""} · {game.status === "in_progress" ? "Live" : game.status}</div>
     <h1>{title}</h1><p className="episode-description">{summary.episode?.description ?? "Watch the House trailer, replay the game unspoiled, or inspect the full results."}</p>

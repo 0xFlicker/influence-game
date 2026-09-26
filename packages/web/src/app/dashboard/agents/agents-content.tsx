@@ -67,7 +67,7 @@ export function AgentsContent() {
           </p>
         </div>
         <Link
-          href="/dashboard/agents/create"
+          href="/agents/create"
           className="influence-button-primary text-sm px-4 py-2 rounded-lg font-medium"
         >
           + New Agent

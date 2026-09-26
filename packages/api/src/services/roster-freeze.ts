@@ -325,6 +325,8 @@ function rosterFreezeReason(reason: OwnedSeatProjectionErrorReason): RosterFreez
       return "season_not_startable";
     case "profile_not_owned":
       return "malformed_owned_seat";
+    case "owner_seat_limit":
+      return "duplicate_owner";
     default:
       return reason;
   }

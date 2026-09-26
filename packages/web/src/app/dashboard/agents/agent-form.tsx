@@ -10,12 +10,14 @@ import {
   AGENT_GENDER_OPTIONS,
   ApiError,
   generatePersonality,
+  generateAnonymousCharacter,
   getDraftAgentAvatarGeneration,
   type AgentGender,
   type CharacterImageDraft,
   type AvatarCompletion,
   type AgentProfileWriteParams,
   type GeneratePersonalityParams,
+  type GeneratePersonalityResult,
   type PersonaKey,
   type SavedAgent,
 } from "@/lib/api";
@@ -40,6 +42,7 @@ export interface StrategyComparison {
 }
 
 interface AgentFormProps {
+  publicPreview?: boolean;
   guided?: boolean;
   onAdvanced?: () => void;
   initial?: SavedAgent;
@@ -141,6 +144,7 @@ function parseStoredDraft(value: string | null): StoredEditorDraft | null {
 }
 
 export function AgentForm({
+  publicPreview = false,
   guided = false,
   onAdvanced,
   initial,
@@ -151,7 +155,25 @@ export function AgentForm({
   onCancel,
   submitLabel = "Save Agent",
 }: AgentFormProps) {
-  const { account } = useAuth();
+  const { account, ready: authReady, authenticated, openCreateAccount } = useAuth();
+  const anonymous = publicPreview && !authenticated;
+  const [anonymousUsed, setAnonymousUsed] = useState(false);
+  const [draftOwner, setDraftOwner] = useState<string | null>(account?.id ?? null);
+  const recoveredAnonymousDraft = useRef(false);
+  useEffect(() => {
+    if (authReady && !draftOwner) setDraftOwner(account?.id ?? (publicPreview ? "anonymous" : null));
+  }, [account?.id, authReady, draftOwner, publicPreview]);
+  useEffect(() => {
+    if (!anonymous || !authReady) return;
+    let active = true;
+    apiFetch<{ used: boolean }>("/api/agent-profiles/anonymous").then(result => {
+      if (active) setAnonymousUsed(result.used);
+    }).catch((error: unknown) => {
+      console.error("[creator] Could not read preview allowance", error);
+      // Admission is always checked by the POST, even if this status read fails.
+    });
+    return () => { active = false; };
+  }, [anonymous, authReady]);
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (!guided || !formRef.current) return;
@@ -310,8 +332,9 @@ export function AgentForm({
     explicitAvatarUrl,
   }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
-  const draftStorageKey = account?.id
-    ? `influence:agent-editor:${DRAFT_VERSION}:${account.id}:${draftScope}`
+  const anonymousDraftKey = `influence:agent-editor:${DRAFT_VERSION}:anonymous:${draftScope}`;
+  const draftStorageKey = draftOwner
+    ? `influence:agent-editor:${DRAFT_VERSION}:${draftOwner}:${draftScope}`
     : null;
 
   const interruptGeneration = useCallback((message: string) => {
@@ -339,14 +362,16 @@ export function AgentForm({
       setDraftReady(true);
       return;
     }
-    const stored = parseStoredDraft(storedRead.value);
+    const anonymousRead = publicPreview && draftOwner !== "anonymous" && !storedRead.value ? readEditorStorage(anonymousDraftKey) : null;
+    const stored = parseStoredDraft(storedRead.value ?? (anonymousRead?.ok ? anonymousRead.value : null));
+    recoveredAnonymousDraft.current = Boolean(stored && anonymousRead?.ok && anonymousRead.value);
     if (!stored) {
       setDraftReady(true);
       return;
     }
     setPendingRestore(stored);
     setRestoreConflict(!sameSnapshot(stored.base, initialSnapshot));
-  }, [draftStorageKey, initialSnapshot]);
+  }, [draftStorageKey, initialSnapshot, anonymousDraftKey, draftOwner, publicPreview]);
 
   useEffect(() => {
     if (!draftStorageKey || !draftReady || pendingRestore) return;
@@ -478,6 +503,10 @@ export function AgentForm({
         if (!removeEditorStorage(`${draftStorageKey}${suffix}`)) return false;
       }
     }
+    if (recoveredAnonymousDraft.current) {
+      if (!removeEditorStorage(anonymousDraftKey)) return false;
+      recoveredAnonymousDraft.current = false;
+    }
     generationEpoch.current += 1;
     referenceRequest.current = null;
     setDraftReady(false);
@@ -535,7 +564,35 @@ export function AgentForm({
     }
   }
 
+  function requestAccount() {
+    saveLocalDraft();
+    openCreateAccount();
+  }
+
+  function applyGeneratedCharacter(result: GeneratePersonalityResult) {
+    setName(result.name); setBackstory(result.backstory ?? ""); setPersonality(result.personality);
+    setStrategyStyle(result.strategyStyle ?? ""); setPersonaKey(result.personaKey); setGender(result.gender);
+    setPerformanceInstructions(result.performanceInstructions); setVisualDesign(result.visualDesign);
+    setGenerationQuips(result.introQuips); setAllowAIChoose(false);
+  }
+
+  async function handleAnonymousMessage(message: string) {
+    try {
+      const turn = await generateAnonymousCharacter(message, creationTraitIds);
+      setAnonymousUsed(true);
+      if (turn.profile) applyGeneratedCharacter(turn.profile);
+      return { reply: turn.reply, hasCharacter: Boolean(turn.profile) };
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "anonymous_signup_required") {
+        setAnonymousUsed(true);
+        requestAccount();
+      }
+      throw error;
+    }
+  }
+
   async function handleGenerate(options?: { message: string; sections?: CharacterSection[]; appearance?: boolean; images?: boolean }) {
+    if (anonymous) { requestAccount(); return false; }
     const request = options?.message ?? changeRequest;
     if (!request.trim() && (isEditing || creationTraitIds.length === 0)) {
       setAiError(isEditing
@@ -626,6 +683,7 @@ export function AgentForm({
   }
 
   async function submitDraft() {
+    if (anonymous) { requestAccount(); return; }
     if (generationBusy || uploading || submitting || headConfirmationRequired) return;
     setConfirmIncompleteSave(false);
     const errors: Record<string, string> = {};
@@ -701,6 +759,7 @@ export function AgentForm({
     || requiredStrategyChangeMissing;
 
   async function generateReference(refined?: { name: string; personaKey: string; performanceInstructions: string; visualDesign: string }) {
+    if (anonymous) { requestAccount(); return false; }
     const epoch = beginGeneration();
     setReferenceBusy(true);
     setReferenceError(null);
@@ -773,14 +832,16 @@ export function AgentForm({
       )}
 
       {guided ? <AgentCreationChat
+        anonymous={anonymous} anonymousUsed={anonymousUsed}
+        onAnonymousMessage={handleAnonymousMessage} onRequireAccount={requestAccount}
         creationTraitIds={creationTraitIds} onCreationTraitIdsChange={setCreationTraitIds}
         profile={{ name, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
         onGenerate={async (message, sections) => Boolean(await handleGenerate({ message, sections }))}
         onAppearance={async message => Boolean(referenceRequest.current ? await generateReference() : await handleGenerate({ message, appearance: true }))}
-        avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting}
+        avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting || (publicPreview && !authReady)}
         headRequired={headConfirmationRequired} hasImage={Boolean(fullBodyReferenceUrl)}
         onHeadshot={() => setPortraitEditorSource(fullBodyReferenceUrl ?? portraitCrop?.sourceUrl ?? avatarUrl ?? null)}
-        onAdvanced={() => onAdvanced?.()} onCancel={requestCancel} onSaveDraft={saveLocalDraft}
+        onAdvanced={() => anonymous ? requestAccount() : onAdvanced?.()} onCancel={requestCancel} onSaveDraft={saveLocalDraft}
         submitDisabled={submitDisabled} submitLabel={submitLabel}
       /> : <div className="flex flex-col gap-6">
         <aside className="influence-panel grid gap-6 rounded-2xl p-5 sm:p-6 sm:grid-cols-[12rem_minmax(0,1fr)]">
