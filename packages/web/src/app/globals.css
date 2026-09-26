@@ -558,10 +558,97 @@ a {
   background: rgb(var(--surface-raised) / 0.8);
 }
 
+.agent-creation-form {
+  background-color: #0c0912;
+  background-image:
+    linear-gradient(180deg, rgb(9 7 14 / 0.3) 0%, rgb(11 8 17 / 0.26) 36%, rgb(9 7 14 / 0.68) 71%, rgb(9 7 14 / 0.93) 100%),
+    url("/agent-creation-hall.webp");
+  background-position: center;
+  background-size: cover;
+}
+
+.agent-creation-header {
+  background: linear-gradient(180deg, rgb(8 6 13 / 0.82), rgb(8 6 13 / 0));
+}
+
+.agent-creation-stage {
+  overflow: hidden;
+}
+
+.agent-creation-visual-empty {
+  flex: 1 1 14rem;
+  min-height: 9rem;
+}
+
+.agent-creation-visual-filled {
+  flex: 0 1 auto;
+  max-height: min(38dvh, 23rem);
+  overflow-y: auto;
+}
+
+.agent-creation-empty-mark {
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 0 8px rgb(196 158 93 / 0.05), 0 0 90px rgb(211 164 80 / 0.16);
+}
+
+.agent-creation-summary {
+  background: linear-gradient(180deg, rgb(10 8 16 / 0.82), rgb(14 10 21 / 0.62));
+  border: 1px solid rgb(211 179 118 / 0.22);
+  border-radius: 1rem;
+  box-shadow: 0 16px 48px rgb(5 3 10 / 0.38);
+  backdrop-filter: blur(16px);
+}
+
+.agent-creation-fixture {
+  background: rgb(29 23 39 / 0.8);
+  box-shadow: inset 0 1px rgb(255 235 195 / 0.05);
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.agent-creation-fixture:hover:not(:disabled) {
+  background: rgb(45 34 56 / 0.9);
+  border-color: rgb(224 191 129 / 0.45);
+}
+
+.agent-creation-chat-log {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  max-height: min(45dvh, 32rem);
+  min-height: 6rem;
+  overflow-y: auto;
+}
+
+.agent-creation-visual-filled + .agent-creation-chat-log {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.agent-creation-message-stack {
+  margin-top: auto;
+}
+
+.agent-creation-bubble {
+  box-shadow: 0 10px 30px rgb(5 3 10 / 0.22);
+  backdrop-filter: blur(20px);
+}
+
+.agent-creation-dock {
+  background: linear-gradient(180deg, rgb(9 7 14 / 0.12), rgb(9 7 14 / 0.76) 32%, rgb(9 7 14 / 0.9));
+  backdrop-filter: blur(14px);
+}
+
+.agent-creation-ingredients {
+  background: rgb(19 14 28 / 0.78);
+  border: 1px solid rgb(211 179 118 / 0.22);
+  box-shadow: 0 12px 32px rgb(5 3 10 / 0.24), inset 0 1px rgb(255 235 195 / 0.05);
+  backdrop-filter: blur(18px);
+}
+
 .agent-creation-composer {
-  background: #20202d;
-  border-color: rgb(196 181 253 / 0.42);
-  box-shadow: 0 0 0 1px rgb(196 181 253 / 0.06);
+  background: rgb(28 21 37 / 0.85);
+  border-color: rgb(211 179 118 / 0.52);
+  box-shadow: 0 0 0 1px rgb(211 179 118 / 0.08);
 }
 
 .agent-creation-composer::placeholder {
@@ -569,18 +656,21 @@ a {
 }
 
 .agent-creation-composer:hover {
-  border-color: rgb(196 181 253 / 0.65);
+  border-color: rgb(225 194 137 / 0.72);
 }
 
 .agent-creation-composer:focus {
-  background: #252535;
-  border-color: rgb(196 181 253 / 0.9);
-  box-shadow: 0 0 0 3px rgb(167 139 250 / 0.16);
+  background: rgb(34 25 44 / 0.95);
+  border-color: rgb(236 204 148 / 0.92);
+  box-shadow: 0 0 0 3px rgb(211 179 118 / 0.2);
 }
 
 @media (max-height: 760px) {
+  .agent-creation-stage {
+    min-height: 24rem;
+  }
+
   .agent-creation-empty {
-    min-height: 8.5rem;
     padding-block: 0.25rem;
   }
 
@@ -606,7 +696,7 @@ a {
   }
 
   .agent-creation-ingredients {
-    padding-block: 0.5rem;
+    padding-block: 0.75rem;
   }
 }
 

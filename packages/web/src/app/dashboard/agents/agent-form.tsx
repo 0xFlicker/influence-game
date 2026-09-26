@@ -756,7 +756,7 @@ export function AgentForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className={guided ? "fixed inset-0 z-40 flex h-dvh flex-col overflow-hidden bg-[#11111b] text-white" : "pb-[22rem]"}>
+    <form ref={formRef} onSubmit={handleSubmit} className={guided ? "agent-creation-form fixed inset-0 z-40 flex h-dvh flex-col overflow-y-auto text-white" : "pb-[22rem]"}>
       {pendingRestore && (
         <section className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4" aria-label="Saved local draft">
           <p className="text-sm font-semibold text-text-primary">

@@ -28,7 +28,8 @@ afterEach(() => {
 function mount(withIngredients = false, hasImage = false, headRequired = false) {
   function Harness() {
     const [ids, setIds] = useState<AgentCreationTraitId[]>([]);
-    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={withIngredients ? { ...profile, personality: "" } : profile} onGenerate={async message => { generated.push(message); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} onAdvanced={() => {}} onCancel={() => {}} onSaveDraft={() => {}} submitDisabled={false} submitLabel="Create Agent" />;
+    const [draft, setDraft] = useState(withIngredients ? { ...profile, personality: "" } : profile);
+    return <AgentCreationChat creationTraitIds={ids} onCreationTraitIdsChange={withIngredients ? setIds : undefined} profile={draft} onGenerate={async message => { generated.push(message); setDraft(current => ({ ...current, personality: profile.personality })); return true; }} onAppearance={async message => { appearances.push(message); return true; }} busy={false} blocked={false} headRequired={headRequired} hasImage={hasImage} onHeadshot={() => {}} onAdvanced={() => {}} onCancel={() => {}} onSaveDraft={() => {}} submitDisabled={false} submitLabel="Create Agent" />;
   }
   return render(<Harness />);
 }
@@ -37,12 +38,17 @@ test("the empty creator gives a visual starting point and a labeled composer", (
   expect(view.getByText("Your character starts here.")).toBeTruthy();
   expect(view.getByText(/players build trust, vie for empowerment/)).toBeTruthy();
   expect(view.container.querySelector('img[src="/logo.png"]')).toBeTruthy();
-  expect(view.getByText("Your message").getAttribute("for")).toBe("agent-creation-message");
+  expect(view.getByText("Your response").getAttribute("for")).toBe("agent-creation-message");
   expect(view.getByLabelText("Message the character assistant").classList.contains("agent-creation-composer")).toBe(true);
-  expect(view.getByRole("region", { name: "Character fixtures" }).textContent).toContain("Character ingredients");
-  expect(view.container.querySelector("footer")?.textContent).not.toContain("Character ingredients");
+  expect(view.getByRole("region", { name: "Character fixtures" }).textContent).not.toContain("Character ingredients");
+  expect(view.container.querySelector("footer")?.textContent).toContain("Character ingredients");
+  const conversation = view.getByRole("log", { name: "Character creation conversation" });
+  const ingredients = view.getByText("Character ingredients");
+  const composer = view.getByLabelText("Message the character assistant");
+  expect(Boolean(conversation.compareDocumentPosition(ingredients) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  expect(Boolean(ingredients.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 });
-test("the House mark leaves on the first message and does not return after clarification", async () => {
+test("the House mark and composer stay in place through a clarification", async () => {
   const response = Promise.withResolvers<Response>();
   let sentDraft: Record<string, string> | undefined;
   globalThis.fetch = Object.assign(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -52,12 +58,18 @@ test("the House mark leaves on the first message and does not return after clari
   const view = mount(true);
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "What is empowerment?" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
-  expect(view.queryByText("Your character starts here.")).toBeNull();
-  expect(view.getByText("Your name, archetype, and character prompt will take shape here.")).toBeTruthy();
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  expect(view.queryByText("Your name, archetype, and character prompt will take shape here.")).toBeNull();
+  expect(view.getByText("Character ingredients")).toBeTruthy();
+  expect(view.getByLabelText("Message the character assistant").hasAttribute("hidden")).toBe(false);
   await waitFor(() => expect(sentDraft?.strategyStyle).toBe("Build trust."));
   await act(async () => response.resolve(Response.json({ command: "clarify", reply: "Empowerment can choose the format and break a tie, but gives no immunity. Would your character seek it?" })));
   await waitFor(() => expect(view.getByText(/Empowerment can choose the format/)).toBeTruthy());
-  expect(view.queryByText("Your character starts here.")).toBeNull();
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  const log = view.getByRole("log", { name: "Character creation conversation" });
+  expect(log.textContent).toContain("In Influence, players build trust");
+  expect(log.textContent?.indexOf("In Influence, players build trust")).toBeLessThan(log.textContent?.indexOf("What is empowerment?") ?? 0);
+  expect(log.textContent?.indexOf("What is empowerment?")).toBeLessThan(log.textContent?.indexOf("Empowerment can choose") ?? 0);
   expect(generated).toHaveLength(0);
   expect(appearances).toHaveLength(0);
 });
@@ -117,6 +129,8 @@ test("starter pills can be removed and sent without typing a prompt", async () =
   expect(view.queryByText("Character ingredients")).toBeNull();
   expect(view.queryByRole("button", { name: "Add Inventor ingredient" })).toBeNull();
   expect(view.getByRole("button", { name: "Yes, that feels right" })).toBeTruthy();
+  expect(view.queryByText("Your character starts here.")).toBeNull();
+  expect(view.getByRole("button", { name: "Read Character prompt" })).toBeTruthy();
 });
 test("a browser timeout gives a useful error and preserves the text and ingredient tags", async () => {
   globalThis.fetch = Object.assign(async () => { throw new DOMException("signal timed out", "TimeoutError"); }, { preconnect: originalFetch.preconnect });
@@ -131,7 +145,7 @@ test("a browser timeout gives a useful error and preserves the text and ingredie
   expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
   expect(view.queryByRole("button", { name: "Add Streamer ingredient" })).toBeNull();
   expect(generated).toHaveLength(0);
-  expect(view.queryByText("Your character starts here.")).toBeNull();
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
 });
 
 test("appearance offers visual tags and sends them while showing a user bubble and typing indicator", async () => {

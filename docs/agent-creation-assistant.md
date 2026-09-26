@@ -6,18 +6,18 @@ contract. Switching from the assistant preserves the current draft. The global
 Daily Free acquisition prompt is suppressed on the creation route so its delayed
 reminder cannot interrupt either creation mode.
 
-The assistant fills the viewport. A compact, scrollable character summary stays
-above a compact stack of the latest two conversation speech bubbles, anchored just
-above the composer. Older replies leave the display but remain in the bounded
-model context. The inset circular send arrow becomes the activity indicator while
-working; mobile generation messages use the full width without a separate icon.
-Before the first message, the summary area centers the House mark and a
-short starting cue. Once the conversation starts, the mark gives way to the
-compact unfinished-character summary and does not return after a clarification
-or a failed request.
-Ingredient rows sit in that scrollable area. The conversation
-and labeled composer share one centered content column in the shorter footer;
-the composer uses a distinct surface and border so the entry point stays visible.
+The assistant fills the viewport over a dark stone hall with gold and purple
+accents. The House mark and starting cue remain in the upper scene through
+clarifications and failed requests. Once character text or a portrait exists,
+the upper scene becomes a compact, scrollable character summary. The summary
+stays at the top while the conversation scrolls beneath it. Messages build from
+the bottom, preserving earlier bubbles on screen until they scroll out of view.
+On short screens the page itself can scroll. The inset circular send arrow
+becomes the activity indicator while working; mobile generation messages use
+the full width without a separate icon. The House message, ingredient picker,
+and labeled composer share one centered column. Ingredient rows stay directly
+above the composer when available; the composer has a distinct surface and
+border so the entry point stays visible.
 Clicking anywhere on a fixture opens its full text in a full-screen reader.
 Close returns without changes. Edit closes the reader, focuses the composer,
 and adds a removable “Change” section pill with a brief highlight animation
@@ -25,9 +25,9 @@ and adds a removable “Change” section pill with a brief highlight animation
 which generated fields the client applies.
 
 Submitted messages appear on the right and clear the composer immediately, with
-an assistant typing bubble while awaiting a response. While working, the pills,
-textarea, and secondary actions collapse to a compact activity bar. Failed requests restore
-the typed message for retry.
+an assistant typing bubble while awaiting a response. The ingredient picker,
+composer, and secondary actions remain in place but are disabled while working.
+Failed requests restore the typed message for retry.
 
 Starter ingredient pills and “Surprise me” use the same curated traits as
 Advanced create. Background (including interests), Strategy, and Gender rows start the
