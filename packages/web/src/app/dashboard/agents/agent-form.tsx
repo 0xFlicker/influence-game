@@ -45,6 +45,7 @@ interface AgentFormProps {
   publicPreview?: boolean;
   guided?: boolean;
   onAdvanced?: () => void;
+  onAssistant?: () => void;
   initial?: SavedAgent;
   strategyComparison?: StrategyComparison;
   showLiveChanges?: boolean;
@@ -147,6 +148,7 @@ export function AgentForm({
   publicPreview = false,
   guided = false,
   onAdvanced,
+  onAssistant,
   initial,
   strategyComparison,
   showLiveChanges = false,
@@ -847,19 +849,27 @@ export function AgentForm({
         </section>
       )}
 
-      {guided ? <AgentCreationChat
-        anonymous={anonymous} anonymousUsed={anonymousUsed}
-        onAnonymousMessage={handleAnonymousMessage} onRequireAccount={requestAccount}
-        creationTraitIds={creationTraitIds} onCreationTraitIdsChange={setCreationTraitIds}
-        profile={{ name, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
-        onGenerate={async (message, sections) => Boolean(await handleGenerate({ message, sections }))}
-        onAppearance={async message => Boolean(referenceRequest.current ? await generateReference() : await handleGenerate({ message, appearance: true }))}
-        avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting || (publicPreview && !authReady)}
-        headRequired={headConfirmationRequired} hasImage={Boolean(fullBodyReferenceUrl)}
-        onHeadshot={() => setPortraitEditorSource(fullBodyReferenceUrl ?? portraitCrop?.sourceUrl ?? avatarUrl ?? null)}
-        onAdvanced={() => anonymous ? requestAccount() : onAdvanced?.()} onCancel={requestCancel} onSaveDraft={saveLocalDraft}
-        submitDisabled={submitDisabled} submitLabel={submitLabel}
-      /> : <div className="flex flex-col gap-6">
+      <div className={guided ? "contents" : "hidden"}>
+        <AgentCreationChat
+          anonymous={anonymous} anonymousUsed={anonymousUsed}
+          onAnonymousMessage={handleAnonymousMessage} onRequireAccount={requestAccount}
+          creationTraitIds={creationTraitIds} onCreationTraitIdsChange={setCreationTraitIds}
+          profile={{ name, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
+          onGenerate={async (message, sections) => Boolean(await handleGenerate({ message, sections }))}
+          onAppearance={async message => Boolean(referenceRequest.current ? await generateReference() : await handleGenerate({ message, appearance: true }))}
+          avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting || (publicPreview && !authReady)}
+          headRequired={headConfirmationRequired} hasImage={Boolean(fullBodyReferenceUrl)}
+          onHeadshot={() => setPortraitEditorSource(fullBodyReferenceUrl ?? portraitCrop?.sourceUrl ?? avatarUrl ?? null)}
+          onAdvanced={() => anonymous ? requestAccount() : onAdvanced?.()} onCancel={requestCancel} onSaveDraft={saveLocalDraft}
+          submitDisabled={submitDisabled} submitLabel={submitLabel}
+        />
+      </div>
+      <div className={guided ? "hidden" : "flex flex-col gap-6"}>
+        {onAssistant && <div className="flex justify-end">
+          <button type="button" onClick={onAssistant} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">
+            Switch to assistant create
+          </button>
+        </div>}
         <aside className="influence-panel grid gap-6 rounded-2xl p-5 sm:p-6 sm:grid-cols-[12rem_minmax(0,1fr)]">
           <div className="flex flex-col items-center">
             {generationBusy ? <div role="status" className="flex h-32 w-32 flex-col items-center justify-center gap-3 rounded-full bg-violet-400/10 text-xs text-violet-200"><span className="h-8 w-8 animate-spin rounded-full border-2 border-violet-300/20 border-t-violet-300" />Creating character…</div> : <AgentImageControl editLabel={headConfirmationRequired ? "Confirm this headshot" : undefined} disabled={submitting} onEdit={() => setPortraitEditorSource(portraitCrop?.sourceUrl ?? fullBodyReferenceUrl ?? avatarUrl ?? null)} currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} size="32" />}
@@ -940,7 +950,7 @@ export function AgentForm({
             </div>
           </section>
         </main>
-      </div>}
+      </div>
 
       {!guided && headConfirmationRequired && <p role="status" className="text-sm text-amber-200">Confirm the head and portrait before saving this new full-body image. <button type="button" className="underline" onClick={() => setPortraitEditorSource(fullBodyReferenceUrl)}>Review character images</button>. Save draft keeps your work in this tab.</p>}
       {portraitEditorSource && <CharacterPortraitEditor fullScreen={guided} sourceUrl={portraitEditorSource} initialCrop={portraitCrop} initialHead={headPosition ?? headSuggestion} confirmHead={portraitEditorSource === fullBodyReferenceUrl} name={name} onClose={() => setPortraitEditorSource(null)} onPendingChange={setUploading} onFailure={() => setUnfinishedReplacement(true)} onApply={(result) => { setExplicitAvatarUrl(result.avatarUrl); setPortraitCrop(result.portraitCrop); if (portraitEditorSource === fullBodyReferenceUrl) { setHeadPosition(result.headPosition); setHeadSuggestion(null); } setUnfinishedReplacement(false); setReferenceError(null); }} />}

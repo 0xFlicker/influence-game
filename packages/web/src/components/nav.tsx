@@ -114,7 +114,9 @@ export function Nav() {
   );
 
   return (
-    <nav className="border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm">
+    <nav
+      className={`${pathname === "/agents/create" ? "relative z-50" : ""} border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm`}
+    >
       <div className="flex items-center justify-between">
         <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">
           {HOUSE_VENUE.name}
