@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# free-game-draw.sh — Weekly Friday draw for the free game queue.
+# free-game-draw.sh — Weekly Thursday draw for the free game queue.
 #
 # Calls POST /api/free-queue/draw to pick players and create a game.
-# Intended to run at 23:00 UTC on Friday via cron.
+# Intended to run at 23:00 UTC on Thursday via cron.
 #
 # Cron entry:
-#   0 23 * * 5 /path/to/scripts/free-game-draw.sh >> /var/log/free-game-draw.log 2>&1
+#   0 23 * * 4 /path/to/scripts/free-game-draw.sh >> /var/log/free-game-draw.log 2>&1
 #
 # Required env vars (via doppler or direct export):
 #   FREE_GAME_API_URL    — API base URL (e.g. http://100.100.251.4:3000)

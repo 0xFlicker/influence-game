@@ -35,24 +35,24 @@ afterAll(async () => {
 });
 
 describe("free queue season admission", () => {
-  test("next draw time follows Friday at 23:00 UTC", () => {
-    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T22:59:59Z")))
-      .toBe("2026-09-25T23:00:00.000Z");
-    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T23:00:00Z")))
-      .toBe("2026-10-02T23:00:00.000Z");
+  test("next draw time follows Thursday at 23:00 UTC", () => {
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-24T22:59:59Z")))
+      .toBe("2026-09-24T23:00:00.000Z");
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-24T23:00:00Z")))
+      .toBe("2026-10-01T23:00:00.000Z");
     expect(getNextDailyFreeDrawAt(new Date("2026-09-27T12:00:00Z")))
-      .toBe("2026-10-02T23:00:00.000Z");
+      .toBe("2026-10-01T23:00:00.000Z");
   });
 
-  test("next game time follows the weekly Friday evening draw", () => {
-    expect(getNextFreeGameTime(new Date("2026-09-25T23:30:00Z")))
-      .toBe("2026-09-26T00:00:00.000Z");
-    expect(getNextFreeGameTime(new Date("2026-09-26T00:00:00Z")))
-      .toBe("2026-10-03T00:00:00.000Z");
+  test("next game time follows the weekly Thursday draw", () => {
+    expect(getNextFreeGameTime(new Date("2026-09-24T23:30:00Z")))
+      .toBe("2026-09-25T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-09-25T00:00:00Z")))
+      .toBe("2026-10-02T00:00:00.000Z");
     expect(getNextFreeGameTime(new Date("2026-09-27T12:00:00Z")))
-      .toBe("2026-10-03T00:00:00.000Z");
+      .toBe("2026-10-02T00:00:00.000Z");
     expect(getNextFreeGameTime(new Date("2026-12-31T23:00:00Z")))
-      .toBe("2027-01-02T00:00:00.000Z");
+      .toBe("2027-01-01T00:00:00.000Z");
   });
   test("ordinary player queue mutations still require current legal acceptance", async () => {
     const db = await setupTestDB();
