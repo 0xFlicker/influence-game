@@ -30,7 +30,7 @@ function CloseIcon() {
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
-  const { isAdmin, loading: permissionsLoading, hasPermission } = usePermissions();
+  const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
   const pathname = usePathname();
   const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
   const gameRoute = pathname?.split("/")[2];
@@ -85,6 +85,7 @@ export function Nav() {
           Admin
         </Link>
       )}
+      {authenticated && !isAdmin && roles.includes("producer") && <Link href="/admin/production" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Production</Link>}
 
       {isMiniApp && authenticated && contextUser?.username && (
         <span className="influence-copy-muted" title="Farcaster identity">

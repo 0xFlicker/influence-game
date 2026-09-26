@@ -14,8 +14,10 @@ import { FreeQueuePanel } from "./free-queue-panel";
 import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
 import { AdminProviderHealth } from "./admin-provider-health-view";
 import { ADMIN_TABS, adminTabHref, type AdminTab } from "./admin-sections";
+import { usePermissions } from "@/hooks/use-permissions";
 
 export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
+  const { isAdmin } = usePermissions();
   return (
     <div>
       {/* Tab bar */}
@@ -23,7 +25,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
         className="mb-8 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:grid-cols-4 xl:grid-cols-10"
         aria-label="Admin sections"
       >
-        {ADMIN_TABS.map((tab) => {
+        {ADMIN_TABS.filter(tab => isAdmin || tab.id === "production").map((tab) => {
           const link = (
             <TabLink key={tab.id} tab={tab.id} active={activeTab === tab.id}>
               {tab.label}

@@ -11,7 +11,8 @@ import { acceptVisualScene, prepareVisualScene, storeVisualArtifact, type Stored
 import { controlVisualMedia, readVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
-import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, } from "../services/visual-render-journal.js";
+import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, readVisualRenderAccounting, reconcileVisualAttempt } from "../services/visual-render-journal.js";
+import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { renderVisualCandidate } from "../services/visual-scene-renderer.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -34,7 +35,7 @@ beforeEach(async () => {
       const ids: string[] = (properties.identities ?? properties.matches ?? properties.anchors).items.properties.playerId.enum ?? [];
       const count = fail === "count" ? ids.length + 1 : ids.length;
       const anchors = ids.map((playerId, i) => ({ playerId, label: i + 1, confidence: "clear", head: { x: i / ids.length, y: .2, width: .05, height: .1 } }));
-      const result = kind === "composition" ? { count, identities: ids.map(playerId => ({ playerId: fail === "duplicate" ? ids[0] : playerId, confidence: "clear" })) }
+      const result = kind === "composition" ? { count, identities: ids.map(playerId => ({ playerId: fail === "duplicate" ? ids[0] : playerId, confidence: fail === "identity" && playerId === "p3" ? "uncertain" : "clear" })) }
         : kind === "identities" ? { count, matches: anchors.map(({ head: _head, ...rest }) => rest) } : { count, anchors };
       return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: fail === "heads" && kind === "heads" ? "malformed" : JSON.stringify(result) }] }] });
     }
@@ -160,6 +161,43 @@ test("restart reuses saved steps and blocks a dispatched attempt with no receipt
   expect((await db.select().from(schema.visualRenderAttempts))[0]?.image).not.toBeNull();
 });
 
+test("an in-flight provider call is pending; an expired lease needs reconciliation until its receipt arrives", async () => {
+  await send(); const job = (await claimVisualMediaJob(db, "owner"))!;
+  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
+  const journal = visualImageJournal(db, op);
+  await journal.begin({ provider: "openai", model: "gpt-image-2", requestHash: "test" });
+  const pending = await readVisualRenderAccounting(db, "media"), attempt = pending.attempts[0]!;
+  expect(pending).toMatchObject({ pendingAttempts: 1, uncertainAttempts: 0, unpricedAttempts: 1 });
+  expect(attempt.status).toBe("pending");
+  expect((await readVisualProductionExport(db, "media")).metrics[0]?.uncertain).toBe(0);
+  await expect(reconcileVisualAttempt(db, { attemptId: attempt.id, operatorId: "admin", note: "No receipt yet", costMicrousd: 0 })).rejects.toThrow("still in progress");
+  expect((await readVisualRenderAccounting(db, "media")).attempts[0]?.reconciliation).toBeNull();
+  await db.update(schema.visualRepairJobs).set({ leaseUntil: "2000-01-01T00:00:00Z" }).where(eq(schema.visualRepairJobs.id, job.id));
+  expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 1, attempts: [{ status: "needs_reconciliation" }] });
+  await journal.finish({ provider: "openai", model: "gpt-image-2", requestHash: "test", requestId: "late", status: 200, elapsedMs: 10, usage: null, chargeUncertain: false }, png);
+  expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 0, attempts: [{ status: "finished" }] });
+});
+
+test.each([429, 503])("finished HTTP %s receipts remain distinct from active requests", async status => {
+  await send(); const job = (await claimVisualMediaJob(db, "owner"))!;
+  const op = await reserveVisualRender(db, "media", `media:${job.id}:section`, { prompt: "scene", width: 512, height: 864, references: [] }, scene.id, job.id);
+  const journal = visualImageJournal(db, op);
+  await journal.begin({ provider: "openai", model: "gpt-image-2", requestHash: "test" });
+  await journal.finish({ provider: "openai", model: "gpt-image-2", requestHash: "test", requestId: "failure", status, elapsedMs: 10, usage: null, chargeUncertain: status >= 500 });
+  const data = await readVisualRenderAccounting(db, "media");
+  expect(data.pendingAttempts).toBe(0); expect(data.uncertainAttempts).toBe(status >= 500 ? 1 : 0);
+  expect(data.attempts[0]?.status).toBe(status >= 500 ? "needs_reconciliation" : "finished");
+});
+
+test("ambiguous identities retain candidate pixels and name the participant without automatic rerendering", async () => {
+  fail = "identity"; await send(); await run();
+  const latest = (await readVisualMedia(db, "media")).jobs[0]!;
+  expect(latest).toMatchObject({ status: "failed", failure: "Character identity could not be verified: Player 3", candidateArtifactId: expect.any(String) });
+  expect(calls).toEqual(["image", "image", "image", "composition"]);
+  expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
+  expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 0 });
+});
+
 test("continue reuses successful sections and retries only failed harmonization", async () => {
   fail = "harmonize"; await send(); const first = await run();
   expect(visualRenderGroups(scene.plan)).toHaveLength(2); expect(calls).toEqual(["image", "image", "image"]);
@@ -194,6 +232,16 @@ test("empty-room generation verifies zero occupants", async () => {
   scene = await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: imageId, cast: [] }) });
   await send(); await run(); expect(calls).toEqual(["image", "composition"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("ready");
+});
+
+test("a backfilled plan renders with saved portrait references and no prepared background", async () => {
+  scene = await prepareVisualScene(db, { gameId: "media", boundarySequence: 6, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: null,
+    cast: scene.plan.cast.slice(0, 2).map(member => ({ ...member, portraitFallback: true })) }) });
+  await send(); await run();
+  expect(calls).toEqual(["image", "composition", "heads", "identities"]);
+  const media = await readVisualMedia(db, "media");
+  expect(media.jobs[0]?.status).toBe("ready"); expect(media.versions[0]?.plan.backgroundArtifactId).toBeNull();
+  expect(media.publications).toHaveLength(0);
 });
 
 test("immutable inputs, versions and publication evidence reject updates; failed acceptance rolls back", async () => {

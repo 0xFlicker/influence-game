@@ -8,7 +8,7 @@ import type { VisualTransaction } from "./visual-execution-boundary.js";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
-export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number } & (
+export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
   { action: "regenerate" } | { action: "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
   { action: "publish"; versionId: string; expectedPublication: number }
 );
@@ -17,7 +17,7 @@ const reject = (code: string, message: string): never => { throw new Rejected(co
 const active = (status: string) => ["queued", "rendering", "verifying"].includes(status);
 
 /** A receipt survives retries and all authorized rejections, without touching game execution. */
-export async function controlVisualMedia(db: DrizzleDB, gameId: string, operatorId: string, input: MediaControl): Promise<typeof schema.visualMediaRequests.$inferSelect.receipt> {
+export async function controlVisualMedia(db: DrizzleDB, gameId: string, operatorId: string, input: MediaControl, options: { oneAtATime?: boolean } = {}): Promise<typeof schema.visualMediaRequests.$inferSelect.receipt> {
   return db.transaction(async tx => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('visual-media'), hashtext(${gameId}))`);
     const hash = sha256StableJson(input);
@@ -46,6 +46,10 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         await tx.insert(publications).values({ id, gameId, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
         receipt = { accepted: true, code: "published", message: "Published for new viewer sessions", publicationId: id };
       } else {
+        if (options.oneAtATime) {
+          const [pending] = await tx.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.gameId, gameId), sql`${jobs.status} IN ('queued','rendering','verifying')`)).limit(1);
+          if (pending) return reject("game_pending", "An image is already queued or rendering for this game. Wait for it to finish before rendering another.");
+        }
         if (history.some(j => active(j.status))) return reject("already_pending", "A repair is already active for this scene");
         const uncertain = await tx.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)
           .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))

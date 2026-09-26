@@ -1,6 +1,6 @@
 "use client";
 
-import type { AdminGameSummary, GameStatus } from "@/lib/api";
+import type { ProductionGameSummary, GameStatus } from "@/lib/api";
 
 export type StatusFilter = GameStatus | "all";
 export type PlayerFilter = "all" | "4" | "6" | "8" | "10" | "12";
@@ -23,10 +23,10 @@ export const DEFAULT_ADMIN_GAME_FILTERS: AdminGameFilters = {
   search: "",
 };
 
-export function filterAdminGames(
-  games: AdminGameSummary[],
+export function filterAdminGames<T extends ProductionGameSummary>(
+  games: T[],
   filters: AdminGameFilters,
-): AdminGameSummary[] {
+): T[] {
   const query = filters.search.trim().toLowerCase();
   return games.filter((game) => {
     if (filters.status !== "all" && game.status !== filters.status) return false;

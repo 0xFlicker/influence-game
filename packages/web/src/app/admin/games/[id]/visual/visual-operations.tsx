@@ -19,7 +19,7 @@ interface VisualExport {
   scenes: Array<{ id: string; roomId: string; boundarySequence: number; status: string; failure: string | null; imageArtifactId: string | null; candidateArtifactId: string | null; renderRevision: number; anchors: unknown[] | null }>;
   metrics: Array<{ provider: string; attempts: number; failed: number; uncertain: number; knownCostMicrousd: number; p50Ms: number | null; p95Ms: number | null }>;
   events: Array<{ id: string; event: { occurredAt: string; kind: string; outcome: string; message: string; operationId: string | null; sceneId: string | null; boundarySequence: number | null }; evidence: Failure | null }>;
-  accounting: { knownCostMicrousd: number; unpricedAttempts: number; uncertainAttempts: number; attempts: Array<{ id: string; operationId: string; operationKey: string; generation: number; provider: string; model: string; imageHash: string | null; request: unknown; localization: unknown; costMicrousd: number | null; receipt: { status: number | null; requestId: string | null; elapsedMs: number; usage: unknown; chargeUncertain: boolean; failure?: Failure } | null; reconciliation: unknown }> };
+  accounting: { knownCostMicrousd: number; unpricedAttempts: number; uncertainAttempts: number; attempts: Array<{ id: string; operationId: string; operationKey: string; status: "pending" | "finished" | "needs_reconciliation" | "reconciled"; generation: number; provider: string; model: string; imageHash: string | null; request: unknown; localization: unknown; costMicrousd: number | null; receipt: { status: number | null; requestId: string | null; elapsedMs: number; usage: unknown; chargeUncertain: boolean; failure?: Failure } | null; reconciliation: unknown }> };
 }
 const button = "rounded border border-white/25 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40";
 const money = (value: number | null) => value === null ? "Unpriced" : `$${(value / 1_000_000).toFixed(4)}`;
@@ -153,11 +153,12 @@ export function VisualOperations({ gameId }: { gameId: string }) {
       <h2 id="provider-attempts" className="text-lg font-semibold">Provider attempts</h2>
       {data.accounting.attempts.map((attempt) => <article key={attempt.id} className="rounded-xl border border-white/15 p-4">
         <p>{attempt.provider} · {attempt.model} · {money(attempt.costMicrousd)} · {seconds(attempt.receipt?.elapsedMs ?? null)} · HTTP {attempt.receipt?.status ?? "unknown"}</p>
+        {attempt.status === "pending" && <p className="mt-2 text-sm text-white/60">Request in progress; waiting for the provider receipt.</p>}
         <p className="mt-1 break-all text-xs text-white/50">{attempt.operationKey} · generation {attempt.generation}</p>
         {attempt.receipt?.failure && <p className="mt-2 text-amber-200">{attempt.receipt.failure.kind}: {attempt.receipt.failure.message}</p>}
         <details className="mt-3"><summary className="cursor-pointer text-sm">Request, receipt and verification evidence</summary><Evidence value={attempt} /></details>
         {attempt.imageHash && <EvidenceImage gameId={gameId} id={attempt.id} kind="attempt" onOpen={(url) => setOpenImage({ url, label: `${attempt.provider} · ${attempt.model} · attempt image` })} />}
-        {!attempt.reconciliation && (!attempt.receipt || attempt.receipt.chargeUncertain) && canOperate && <form className="mt-3 flex flex-wrap gap-3" onSubmit={async (event) => {
+        {attempt.status === "needs_reconciliation" && canOperate && <form className="mt-3 flex flex-wrap gap-3" onSubmit={async (event) => {
           event.preventDefault(); const form = new FormData(event.currentTarget); setError(null); setBusy(true);
           try { await apiFetch(`/api/admin/games/${gameId}/visual/attempts/${attempt.id}/reconcile`, { method: "POST", body: JSON.stringify({ note: String(form.get("note")), costMicrousd: Math.round(Number(form.get("cost")) * 1_000_000) }) }); await refresh(); }
           catch (failure) { setError(failure instanceof Error ? failure.message : "Reconciliation failed"); }

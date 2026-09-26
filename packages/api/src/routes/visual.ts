@@ -43,7 +43,6 @@ export function createVisualRoutes(db: DrizzleDB) {
         if (validHeadRectangle(member.headRectangle)) fullBodyHeads[member.id] = member.headRectangle;
       }
     }
-    if (!enabled) return c.json({ enabled, scenes: [], portraits: {}, fullBodies, fullBodyHeads, status: null });
     let snapshot: Record<string, number> | undefined;
     const rawSnapshot = c.req.query("snapshot");
     if (rawSnapshot) {
@@ -53,10 +52,11 @@ export function createVisualRoutes(db: DrizzleDB) {
         snapshot = parsed as Record<string, number>;
       } catch { return c.json({ error: "Invalid publication snapshot" }, 400); }
     }
-    return c.json({ enabled, status: rows.some(row => row.status === "preparing") ? "preparing" : null,
+    const viewerMedia = await readViewerMedia(db, game.id, snapshot);
+    return c.json({ enabled: enabled || viewerMedia.scenes.length > 0, status: game.status !== "completed" && rows.some(row => row.status === "preparing") ? "preparing" : null,
       fullBodies, fullBodyHeads,
       portraits: Object.fromEntries(Object.entries(assets[0]?.portraits ?? {}).map(([id, artifact]) => [id, url(artifact)])),
-      ...await readViewerMedia(db, game.id, snapshot),
+      ...viewerMedia,
     });
   });
   app.get("/api/games/:id/visual/artifacts/:artifact", async (c) => {

@@ -27,6 +27,7 @@ import {
 import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
 import { createMcpRoutes } from "./routes/mcp.js";
 import { createAnonymousAgentCreationRoutes } from "./routes/anonymous-agent-creation.js";
+import { createVisualReplayProductionRoutes } from "./routes/visual-replay-production.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
@@ -620,6 +621,7 @@ app.route("/", cognitiveArtifactRoutes);
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
 app.route("/", createAnonymousAgentCreationRoutes(db));
+app.route("/", createVisualReplayProductionRoutes(db));
 app.route("/", createModerationRoutes(db));
 app.route("/", createAccountInferenceRoutes(db));
 
