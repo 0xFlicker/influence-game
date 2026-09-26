@@ -84,7 +84,7 @@ function CountdownTimer({ nextGameTime }: { nextGameTime?: string }) {
       <p className="text-4xl font-mono font-bold text-text-primary tracking-wider">
         {remaining === null ? "Loading schedule..." : formatCountdown(remaining)}
       </p>
-      <p className="influence-copy-muted text-xs mt-2">Weekly on Friday evening · Saturday 00:00 UTC</p>
+      <p className="influence-copy-muted text-xs mt-2">Weekly on Friday at 00:00 UTC · Thursday evening in Denver</p>
     </div>
   );
 }
@@ -781,7 +781,7 @@ export function FreeGameContent() {
             )}
           </p>
           <p className="influence-copy-muted text-xs mt-1">
-            12 players drawn Friday at 23:00 UTC. Game starts one hour later.
+            12 players drawn Thursday at 23:00 UTC. Game starts one hour later.
           </p>
         </div>
       </section>

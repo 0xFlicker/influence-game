@@ -7,10 +7,10 @@ function nextWeeklyTime(now: Date, weekday: number, hour: number): string {
 }
 
 export function getNextDailyFreeDrawAt(now = new Date()): string {
-  return nextWeeklyTime(now, 5, 23);
+  return nextWeeklyTime(now, 4, 23);
 }
 
-// Saturday 00:00 UTC is Friday evening in America/Denver.
+// Friday 00:00 UTC is Thursday evening in America/Denver.
 export function getNextFreeGameTime(now = new Date()): string {
-  return nextWeeklyTime(now, 6, 0);
+  return nextWeeklyTime(now, 5, 0);
 }
