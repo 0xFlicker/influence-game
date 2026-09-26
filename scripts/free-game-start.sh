@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # free-game-start.sh — Start today's free game.
 #
-# Calls POST /api/free-queue/start to begin the daily free game.
-# Intended to run at 00:00 UTC daily via cron (1 hour after draw).
+# Calls POST /api/free-queue/start to begin the weekly free game.
+# Intended to run at 00:00 UTC on Saturday (Friday evening in America/Denver) via cron (1 hour after draw).
 #
 # Cron entry:
-#   0 0 * * * /path/to/scripts/free-game-start.sh >> /var/log/free-game-start.log 2>&1
+#   0 0 * * 6 /path/to/scripts/free-game-start.sh >> /var/log/free-game-start.log 2>&1
 #
 # Required env vars (via doppler or direct export):
 #   FREE_GAME_API_URL    — API base URL (e.g. http://100.100.251.4:3000)

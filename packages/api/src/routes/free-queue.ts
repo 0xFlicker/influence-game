@@ -63,6 +63,7 @@ import {
   DAILY_FREE_BUSY_GAME_STATUSES,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
+import { getNextFreeGameTime } from "../services/free-game-schedule.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import {
   DAILY_FREE_MODEL,
@@ -73,18 +74,6 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function getNextFreeGameTime(): string {
-  const now = new Date();
-  const next = new Date(now);
-  next.setUTCHours(0, 0, 0, 0);
-  // If past midnight UTC, next game is tomorrow
-  if (now >= next) {
-    next.setUTCDate(next.getUTCDate() + 1);
-  }
-  return next.toISOString();
-}
-
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -287,10 +276,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       minPlayers,
       maxPlayers,
       modelSelection: DAILY_FREE_MODEL_SELECTION,
-      // Exact Katana qualification measured 0.8 credits for three bounded
-      // Grok calls and 0.4 for three GLM calls. The 12/24 caps keep the two
-      // fallback entries within an approximately equal per-game credit guard.
       providerManifest: DAILY_FREE_PROVIDER_MANIFEST,
+      visualMode: true,
+      visualFailurePolicy: "best_effort",
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",

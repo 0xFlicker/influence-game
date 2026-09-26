@@ -1,3 +1,4 @@
+import { getNextFreeGameTime, getNextDailyFreeDrawAt } from "../services/free-game-schedule.js";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -34,6 +35,25 @@ afterAll(async () => {
 });
 
 describe("free queue season admission", () => {
+  test("next draw time follows Friday at 23:00 UTC", () => {
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T22:59:59Z")))
+      .toBe("2026-09-25T23:00:00.000Z");
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-25T23:00:00Z")))
+      .toBe("2026-10-02T23:00:00.000Z");
+    expect(getNextDailyFreeDrawAt(new Date("2026-09-27T12:00:00Z")))
+      .toBe("2026-10-02T23:00:00.000Z");
+  });
+
+  test("next game time follows the weekly Friday evening draw", () => {
+    expect(getNextFreeGameTime(new Date("2026-09-25T23:30:00Z")))
+      .toBe("2026-09-26T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-09-26T00:00:00Z")))
+      .toBe("2026-10-03T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-09-27T12:00:00Z")))
+      .toBe("2026-10-03T00:00:00.000Z");
+    expect(getNextFreeGameTime(new Date("2026-12-31T23:00:00Z")))
+      .toBe("2027-01-02T00:00:00.000Z");
+  });
   test("ordinary player queue mutations still require current legal acceptance", async () => {
     const db = await setupTestDB();
     const ownerId = await insertUser(db, "pending-player");
@@ -247,19 +267,9 @@ describe("free queue season admission", () => {
       catalogId: "openai:gpt-6-luna",
       reasoningPolicy: "action-policy",
     });
-    expect(gameConfig.providerManifest).toEqual([
-      gameConfig.modelSelection,
-      {
-        catalogId: "katana:glm-5-2",
-        reasoningPolicy: "action-policy",
-        maxCallsPerGame: 24,
-      },
-      {
-        catalogId: "katana:grok-4-5",
-        reasoningPolicy: "action-policy",
-        maxCallsPerGame: 12,
-      },
-    ]);
+    expect(gameConfig.providerManifest).toEqual([gameConfig.modelSelection]);
+    expect(gameConfig.visualMode).toBe(true);
+    expect(gameConfig.visualFailurePolicy).toBe("best_effort");
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
       .toEqual(Array(10).fill("gpt-6-luna"));

@@ -557,3 +557,14 @@ Direct character PFP and full-body uploads are disabled: the editor offers frami
 Admin inference navigation supports current paused/pending account filters and pending-generation sorting, independently of the spending window. Admin recovery-capable moderation reviewers can open an owner’s inference page; that API still requires a current admin/sysop role. Once no operation is active, exhausted allowance produces contact/refill guidance before burst throttling; granting allowance does not reset burst limits.
 
 Actual USD displays N/C (Not collected) when no provider-reported cost records exist; recorded zero-dollar costs still display as dollars. OpenAI billing reconciliation is not integrated.
+
+### Weekly Season 0 games
+
+Automatic free-track games draw Friday at 23:00 UTC and start Saturday at
+00:00 UTC (Friday evening in America/Denver, 18:00 MDT / 17:00 MST).
+The EventBridge schedules live in `linode-iac/terraform/lambda-crons.tf`.
+The queue API supplies the next weekly start time to the public countdown.
+New draws enable Visual Mode with `best_effort`: rendering failures continue
+with portraits. The scheduled manifest uses GPT-6 Luna; the former GLM 5.2
+and Grok 4.5 fallback entries do not support image input in our catalog and
+would prevent Visual Mode startup. Existing games keep their frozen config.

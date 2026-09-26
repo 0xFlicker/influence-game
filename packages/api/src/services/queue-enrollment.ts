@@ -1,3 +1,4 @@
+import { getNextDailyFreeDrawAt } from "./free-game-schedule.js";
 import { randomUUID } from "crypto";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -739,16 +740,6 @@ function openGameSummary(game: GameRow, playerCount: number): OpenGameSummary {
     estimatedStart: null,
     createdAt: game.createdAt,
   };
-}
-
-export function getNextDailyFreeDrawAt(): string {
-  const now = new Date();
-  const next = new Date(now);
-  next.setUTCHours(0, 0, 0, 0);
-  if (now >= next) {
-    next.setUTCDate(next.getUTCDate() + 1);
-  }
-  return next.toISOString();
 }
 
 function parseQueueType(value: unknown, fallback?: QueueType): QueueType {
