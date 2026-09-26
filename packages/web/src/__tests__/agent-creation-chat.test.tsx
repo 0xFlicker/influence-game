@@ -31,6 +31,27 @@ function mount(withIngredients = false, hasImage = false, headRequired = false) 
   }
   return render(<Harness />);
 }
+test("the empty creator gives a visual starting point and a labeled composer", () => {
+  const view = mount(true);
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  expect(view.container.querySelector('img[src="/logo.png"]')).toBeTruthy();
+  expect(view.getByText("Your message").getAttribute("for")).toBe("agent-creation-message");
+  expect(view.getByLabelText("Message the character assistant").classList.contains("agent-creation-composer")).toBe(true);
+  expect(view.getByRole("region", { name: "Character fixtures" }).textContent).toContain("Character ingredients");
+  expect(view.container.querySelector("footer")?.textContent).not.toContain("Character ingredients");
+});
+test("the empty state stays visible while the first character turn is working", async () => {
+  const response = Promise.withResolvers<Response>();
+  globalThis.fetch = Object.assign(() => response.promise, { preconnect: originalFetch.preconnect });
+  const view = mount(true);
+  fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A patient deal maker" } });
+  await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
+  expect(view.getByText("Your character starts here.")).toBeTruthy();
+  expect(view.queryByText("Your name, archetype, and character prompt will take shape here.")).toBeNull();
+  await act(async () => response.resolve(Response.json({ command: "revise_character" })));
+  await waitFor(() => expect(generated).toHaveLength(1));
+  expect(view.queryByText("Your character starts here.")).toBeNull();
+});
 test("approval advances immediately without a model call or image generation", async () => {
   const view = mount();
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Yes, that feels right" })));
@@ -92,11 +113,14 @@ test("a browser timeout gives a useful error and preserves the text and ingredie
   globalThis.fetch = Object.assign(async () => { throw new DOMException("signal timed out", "TimeoutError"); }, { preconnect: originalFetch.preconnect });
   const view = mount(true);
   fireEvent.click(view.getByRole("button", { name: "Add Gamer ingredient" }));
+  fireEvent.click(view.getByRole("button", { name: "Add Streamer ingredient" }));
+  fireEvent.click(view.getByRole("button", { name: "Remove Streamer ingredient" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "A suspicious dragon" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Your text and ingredients are still here"));
   expect((view.getByLabelText("Message the character assistant") as HTMLTextAreaElement).value).toBe("A suspicious dragon");
   expect(view.getByRole("button", { name: "Remove Gamer ingredient" })).toBeTruthy();
+  expect(view.queryByRole("button", { name: "Add Streamer ingredient" })).toBeNull();
   expect(generated).toHaveLength(0);
 });
 

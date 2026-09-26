@@ -558,6 +558,58 @@ a {
   background: rgb(var(--surface-raised) / 0.8);
 }
 
+.agent-creation-composer {
+  background: #20202d;
+  border-color: rgb(196 181 253 / 0.42);
+  box-shadow: 0 0 0 1px rgb(196 181 253 / 0.06);
+}
+
+.agent-creation-composer::placeholder {
+  color: rgb(232 232 240 / 0.58);
+}
+
+.agent-creation-composer:hover {
+  border-color: rgb(196 181 253 / 0.65);
+}
+
+.agent-creation-composer:focus {
+  background: #252535;
+  border-color: rgb(196 181 253 / 0.9);
+  box-shadow: 0 0 0 3px rgb(167 139 250 / 0.16);
+}
+
+@media (max-height: 760px) {
+  .agent-creation-empty {
+    min-height: 8.5rem;
+    padding-block: 0.25rem;
+  }
+
+  .agent-creation-empty .agent-creation-empty-mark {
+    width: 4rem;
+    height: 4rem;
+  }
+
+  .agent-creation-empty-mark img {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .agent-creation-empty h2 {
+    margin-top: 0.25rem;
+    font-size: 1.125rem;
+  }
+
+  .agent-creation-empty p {
+    margin-top: 0;
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .agent-creation-ingredients {
+    padding-block: 0.5rem;
+  }
+}
+
 .influence-selection-card {
   background: rgb(var(--surface-raised) / 0.48);
   border: 1px solid rgb(var(--border-active) / 0.42);

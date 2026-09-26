@@ -11,6 +11,11 @@ above a compact stack of the latest two conversation speech bubbles, anchored ju
 above the composer. Older replies leave the display but remain in the bounded
 model context. The inset circular send arrow becomes the activity indicator while
 working; mobile generation messages use the full width without a separate icon.
+Before a character is generated, the summary area centers the House mark and a
+short starting cue, including while the first character turn is pending.
+Ingredient rows sit in that scrollable area. The conversation
+and labeled composer share one centered content column in the shorter footer;
+the composer uses a distinct surface and border so the entry point stays visible.
 Clicking anywhere on a fixture opens its full text in a full-screen reader.
 Close returns without changes. Edit closes the reader, focuses the composer,
 and adds a removable “Change” section pill with a brief highlight animation
