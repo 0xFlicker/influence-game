@@ -134,7 +134,7 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
     <main className="agent-creation-stage relative mx-auto flex min-h-[20rem] w-full max-w-6xl flex-1 flex-col px-4 sm:px-8">
       <section aria-label="Character fixtures" className={`agent-creation-visual relative z-10 mx-auto w-full ${hasCharacter ? "agent-creation-visual-filled" : "agent-creation-visual-empty"}`}>
       {working && (stage === "appearance" || stage === "portrait") ? <CharacterFormation name={profile.name} /> : !hasCharacter ? <div className="agent-creation-empty mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center py-4 text-center">
-        <div className="agent-creation-empty-mark flex size-28 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/60 shadow-[0_0_90px_rgba(211,164,80,0.16)] sm:size-40">
+        <div className="agent-creation-empty-mark flex size-36 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/60 shadow-[0_0_90px_rgba(211,164,80,0.16)] sm:size-48">
           {/* eslint-disable-next-line @next/next/no-img-element -- the existing House brand asset */}
           <img src="/logo.png" alt="" className="size-24 object-contain mix-blend-screen sm:size-32" />
         </div>
