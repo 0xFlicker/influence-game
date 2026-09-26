@@ -72,7 +72,7 @@ villainous characters are not grounds for ending a conversation.
 The guided router receives the current draft; guided and Advanced editors and
 profile generation share a compact general rules and strategy primer in
 `packages/api/src/services/agent-creation-game-primer.ts`. It summarizes the
-standard round, the distinct elimination rules, endgame and jury, alliance
+standard round, the distinct ballot rules, endgame and jury, alliance
 limits, and useful character tradeoffs. It describes no live game state or
 guaranteed format, and prompt writers should keep it aligned with the canonical
 format catalog and public rules when those rules change.
