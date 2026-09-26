@@ -5,7 +5,8 @@ import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
 import { CHARACTER_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
-import { selectCharacterEdit, selectCreationCommand } from "../services/agent-creation-assistant.js";
+import { selectCharacterEdit, selectCreationTurn } from "../services/agent-creation-assistant.js";
+import { AGENT_CREATION_GAME_PRIMER } from "../services/agent-creation-game-primer.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
 import { readVisualProfileImage } from "../services/visual-game-assets.js";
 import { exportCharacterPortrait, generateVisualProfileReference } from "../services/visual-profile-generation.js";
@@ -79,6 +80,8 @@ function buildAgentProfileGenerationSystemPrompt(
     .join("\n");
   return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
 
+${AGENT_CREATION_GAME_PRIMER}
+
 Generate a complete agent personality profile. The character should feel like a vivid person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations. Distinctive non-human and anthropomorphic characters are welcome; never flatten a chosen creature or object form into a human wearing a costume. Honor all selected character ingredients throughout the profile and visualDesign.
 
 ${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
@@ -88,7 +91,7 @@ Respond with JSON only:
   "name": "A distinctive full first and last name for the character (creative, memorable, ${MAX_AGENT_DISPLAY_NAME_LENGTH} characters or fewer)",
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
   "personality": "A detailed character prompt in 4-6 sentences: motivations, contradictions, flaws, voice, social habits and how they react under pressure. Include concrete behaviors that make them distinctive to play and watch. Refer to them by their first name or pronouns, never their full name.",
-  "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
+  "strategyStyle": "A 1-2 sentence strategic approach grounded in their personality and real Influence decisions: social trust, empowerment, adaptable format-specific coordination, and jury relationships as appropriate. Give this person a recognizable tradeoff rather than a perfect generic plan. Refer to them by their first name or pronouns, never their full name.",
   "personaKey": "Return exactly one of the valid archetype keys listed below.",
   "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
   "performanceInstructions": "Specific posture, gestures, movement, mannerisms and vocal delivery for performing this character; at most 2000 characters.",
@@ -133,7 +136,9 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
     if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
       || !Array.isArray(body.history) || body.history.length > 24 || body.history.some((value: unknown) => typeof value !== "string" || value.length > 2000)
-      || !Array.isArray(body.sections) || body.sections.length > 8 || body.sections.some((value: unknown) => typeof value !== "string" || !["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "performanceInstructions", "visualDesign"].includes(value))) {
+      || !Array.isArray(body.sections) || body.sections.length > 8 || body.sections.some((value: unknown) => typeof value !== "string" || !(CHARACTER_FIELDS as readonly string[]).includes(value))
+      || !body.draft || typeof body.draft !== "object" || Array.isArray(body.draft) || Object.keys(body.draft).length !== CHARACTER_FIELDS.length
+      || CHARACTER_FIELDS.some(field => typeof body.draft[field] !== "string" || body.draft[field].length > 12000)) {
       return c.json({ error: "Invalid creation assistant turn" }, 400);
     }
     try {
@@ -141,7 +146,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       const message = body.message;
       return c.json(await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
         kind: "creation_assistant", model: resolveAgentCreationLlm()?.modelId ?? "unavailable", payload: body },
-        async record => ({ command: await selectCreationCommand(stage, message, body.history as string[], body.sections as string[], c.req.raw.signal, record) })));
+        record => selectCreationTurn(stage, message, body.history as string[], body.sections as string[], body.draft as Omit<CharacterDraftContext, "hasFullBody">, c.req.raw.signal, record)));
     } catch (error) {
       if (error instanceof GenerationAdmissionError) return c.json({ error: error.message, code: error.code, contacts:generationContacts }, error.status);
       console.error("[creation-assistant] Turn failed", error);

@@ -11,8 +11,10 @@ above a compact stack of the latest two conversation speech bubbles, anchored ju
 above the composer. Older replies leave the display but remain in the bounded
 model context. The inset circular send arrow becomes the activity indicator while
 working; mobile generation messages use the full width without a separate icon.
-Before a character is generated, the summary area centers the House mark and a
-short starting cue, including while the first character turn is pending.
+Before the first message, the summary area centers the House mark and a
+short starting cue. Once the conversation starts, the mark gives way to the
+compact unfinished-character summary and does not return after a clarification
+or a failed request.
 Ingredient rows sit in that scrollable area. The conversation
 and labeled composer share one centered content column in the shorter footer;
 the composer uses a distinct surface and border so the entry point stays visible.
@@ -54,14 +56,26 @@ formation scene: a pulsing silhouette, rising light, and sparse particles. It is
 indeterminate, makes no percentage or timing claims, and becomes static for
 reduced-motion preferences. The previous/default portrait stays hidden. A failed image request can be retried with its existing request ID.
 
-`POST /api/agent-profiles/creation-assistant` is authenticated and returns only
-`{command}`. Each stage has an exact provider-native JSON schema and semantic
-decoder shared with the client. No general chatbot prose or user-text regexes
-control transitions. Invalid, extra-field, fenced, incomplete or out-of-stage
-output fails the turn without applying effects. The application renders replies
-and owns generation and save actions. Abuse and repetitive loops can end chat;
+`POST /api/agent-profiles/creation-assistant` is authenticated and returns
+`{command, reply}`. Each stage has an exact provider-native JSON schema and
+semantic decoder shared with the client. `reply` is short model-authored
+presentation text only for `clarify`; every action command requires an empty
+reply. It can answer a game question, explain a choice in the current draft,
+or offer distinct character directions before asking what the player wants.
+No reply prose or user-text regexes control transitions. Invalid, extra-field,
+fenced, incomplete or out-of-stage output fails the turn without applying
+effects. The application owns action replies, generation and save actions.
+Abuse and repetitive loops can end chat;
 the draft remains available in Advanced create. Ordinary criticism and fictional
 villainous characters are not grounds for ending a conversation.
+
+The guided router receives the current draft; guided and Advanced editors and
+profile generation share a compact general rules and strategy primer in
+`packages/api/src/services/agent-creation-game-primer.ts`. It summarizes the
+standard round, the distinct elimination rules, endgame and jury, alliance
+limits, and useful character tradeoffs. It describes no live game state or
+guaranteed format, and prompt writers should keep it aligned with the canonical
+format catalog and public rules when those rules change.
 
 The command router and character writer use low reasoning effort and explicitly
 request Standard (`service_tier: "default"`), bypassing the background Flex
