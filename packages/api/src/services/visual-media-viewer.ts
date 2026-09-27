@@ -65,9 +65,13 @@ export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: 
     scenes: scenes.flatMap(scene => {
       const selected = publications.find(p => p.sceneId === scene.id && p.revision === selection[scene.id]);
       const version = selected && versions.find(v => v.id === selected.versionId);
+      const shots = version ? version.shots : scene.shots;
+      if (shots?.mode === "portraits") return [];
+      const publicShot = (shot: import("@influence/engine/visual-mode").StoredVisualShot) => ({ participantIds: shot.participantIds, visibleParticipantIds: shot.visibleParticipantIds, anchors: shot.anchors, pointers: shot.pointers, imageUrl: url(shot.imageArtifactId), annotatedImageUrl: "" });
       const image = version?.imageArtifactId ?? (scene.status === "ready" ? scene.imageArtifactId : null);
       if (!image) return [];
       return [{ id: scene.id, roomId: scene.roomId, version: scene.boundarySequence, mediaVersionId: version?.id ?? null, publicationRevision: selected?.revision ?? 0,
+        ...(shots && { shots: { mode: shots.mode, overview: shots.overview ? publicShot(shots.overview) : null, groups: shots.groups.map(publicShot) } }),
         afterDialogueSequence: scene.afterDialogueSequence, imageUrl: url(image), participantIds: (version?.plan ?? scene.plan).cast.map(m => m.id), anchors: version?.localization.anchors ?? scene.anchors ?? [] }];
     }),
   };

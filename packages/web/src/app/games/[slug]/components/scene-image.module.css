@@ -1,0 +1,22 @@
+.feather {
+  mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
+}
+
+.focal {
+  mask-image:
+    linear-gradient(to right, transparent, black var(--feather-left, 18%), black var(--feather-right, 82%), transparent),
+    radial-gradient(ellipse 68% 90% at var(--focus-x, 50%) 48%, black 40%, rgb(0 0 0 / .92) 62%, rgb(0 0 0 / .25) 90%, transparent);
+  mask-composite: intersect;
+}
+
+.vignette {
+  position: absolute;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / .36), transparent 18%, transparent 82%, rgb(0 0 0 / .36)),
+    radial-gradient(ellipse at 50% 48%, transparent 58%, rgb(0 0 0 / .24));
+}
+
+.focal.vignette {
+  background: radial-gradient(ellipse 70% 92% at var(--focus-x, 50%) 48%, transparent 52%, rgb(0 0 0 / .65));
+}

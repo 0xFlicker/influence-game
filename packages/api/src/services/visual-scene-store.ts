@@ -1,8 +1,8 @@
-import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
+import type { VisualBoundaryGuard, VisualTransaction } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
-import { assertVisualAnchors, type VisualPlayerAnchor, type VisualRoomId } from "@influence/engine/visual-mode";
+import { assertVisualAnchors, assertVisualShot, type StoredVisualShot, type VisualShotPresentation, type VisualPlayerAnchor, type VisualRoomId } from "@influence/engine/visual-mode";
 import { sameVisualArrangement, type VisualScenePlan } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson, stableJson } from "./stable-hash.js";
@@ -13,7 +13,7 @@ const artifacts = schema.visualArtifacts;
 export type StoredVisualScene = typeof scenes.$inferSelect;
 
 /** Store immutable normalized PNGs. URLs never enter the renderer's fetch path. */
-export async function storeVisualArtifact(db: DrizzleDB, gameId: string, image: Uint8Array): Promise<string> {
+export async function storeVisualArtifact(db: DrizzleDB | VisualTransaction, gameId: string, image: Uint8Array): Promise<string> {
   const normalized = await sharp(image, { limitInputPixels: 4096 * 4096 }).rotate().png().toBuffer({ resolveWithObject: true });
   const contentHash = createHash("sha256").update(normalized.data).digest("hex");
   const id = randomUUID();
@@ -23,7 +23,7 @@ export async function storeVisualArtifact(db: DrizzleDB, gameId: string, image: 
   return stored.id;
 }
 
-export async function readVisualArtifact(db: DrizzleDB, gameId: string, artifactId: string): Promise<Buffer> {
+export async function readVisualArtifact(db: DrizzleDB | VisualTransaction, gameId: string, artifactId: string): Promise<Buffer> {
   const [artifact] = await db.select({ image: artifacts.image }).from(artifacts).where(and(eq(artifacts.id, artifactId), eq(artifacts.gameId, gameId)));
   if (!artifact) throw new Error("Visual artifact is unavailable for this game");
   return artifact.image;
@@ -55,7 +55,7 @@ export async function prepareVisualScene(db: DrizzleDB, input: {
     const [scene] = await tx.insert(scenes).values({
       id: randomUUID(), gameId: input.gameId, roomId: input.plan.roomId, boundarySequence: input.boundarySequence, afterDialogueSequence: input.afterDialogueSequence ?? 0, plan: input.plan, planHash,
       ...(empty ? { status: "ready" as const, imageArtifactId: input.plan.backgroundArtifactId, annotatedArtifactId: input.plan.backgroundArtifactId, anchors: [] }
-        : reusable ? { status: "ready" as const, imageArtifactId: reusable.imageArtifactId, annotatedArtifactId: reusable.annotatedArtifactId, anchors: reusable.anchors } : {}),
+        : reusable ? { status: "ready" as const, imageArtifactId: reusable.imageArtifactId, annotatedArtifactId: reusable.annotatedArtifactId, anchors: reusable.anchors, shots: reusable.shots } : {}),
     }).returning();
     return scene!;
   });
@@ -63,12 +63,15 @@ export async function prepareVisualScene(db: DrizzleDB, input: {
 
 /** Localization must describe the final image; intended staging positions are never anchors. */
 export async function acceptVisualScene(db: DrizzleDB, input: {
+  shots?: VisualShotPresentation<StoredVisualShot>;
   sceneId: string; planHash: string; renderRevision?: number; verifiedParticipantIds?: readonly string[]; imageArtifactId: string; anchors: readonly VisualPlayerAnchor[]; assertBoundary?: VisualBoundaryGuard;
 }): Promise<StoredVisualScene> {
   const [planned] = await db.select().from(scenes).where(eq(scenes.id, input.sceneId));
   if (!planned || planned.planHash !== input.planHash) throw new Error("Visual result does not match its scene plan");
   const ids = planned.plan.cast.map((member) => member.id);
-  if (input.anchors.length || ids.length === 0) assertVisualAnchors(input.anchors, ids);
+  if (input.shots) {
+    for (const shot of [...input.shots.groups, ...(input.shots.overview ? [input.shots.overview] : [])]) assertVisualShot(shot, ids);
+  } else if (input.anchors.length || ids.length === 0) assertVisualAnchors(input.anchors, ids);
   else if (!input.verifiedParticipantIds || stableJson([...input.verifiedParticipantIds].sort()) !== stableJson([...ids].sort())) throw new Error("Unanchored scenes require verified participant identities");
   const clean = await readVisualArtifact(db, planned.gameId, input.imageArtifactId);
   // CPU image work stays outside the short acceptance transaction as well.
@@ -79,11 +82,11 @@ export async function acceptVisualScene(db: DrizzleDB, input: {
     const [latest] = await tx.select().from(scenes).where(and(eq(scenes.gameId, planned.gameId), eq(scenes.roomId, planned.roomId))).orderBy(desc(scenes.boundarySequence)).limit(1);
     if (!latest || latest.id !== planned.id || (input.renderRevision !== undefined && latest.renderRevision !== input.renderRevision)) throw new Error("Stale visual scene result");
     if (latest.status === "ready") {
-      if (latest.imageArtifactId === input.imageArtifactId && stableJson(latest.anchors) === stableJson(input.anchors)) return latest;
+      if (latest.imageArtifactId === input.imageArtifactId && stableJson(latest.anchors) === stableJson(input.anchors) && stableJson(latest.shots) === stableJson(input.shots ?? null)) return latest;
       throw new Error("Conflicting accepted visual scene");
     }
     if (latest.status !== "preparing") throw new Error("Visual scene needs an explicit retry");
-    const [accepted] = await tx.update(scenes).set({ status: "ready", imageArtifactId: input.imageArtifactId, annotatedArtifactId, anchors: [...input.anchors], failure: null }).where(eq(scenes.id, latest.id)).returning();
+    const [accepted] = await tx.update(scenes).set({ status: "ready", imageArtifactId: input.imageArtifactId, annotatedArtifactId, anchors: [...input.anchors], shots: input.shots ?? null, failure: null }).where(eq(scenes.id, latest.id)).returning();
     return accepted!;
   });
 }
@@ -91,6 +94,18 @@ export async function acceptVisualScene(db: DrizzleDB, input: {
 export async function readCurrentVisualScene(db: DrizzleDB, gameId: string, roomId: VisualRoomId): Promise<StoredVisualScene | null> {
   const [scene] = await db.select().from(scenes).where(and(eq(scenes.gameId, gameId), eq(scenes.roomId, roomId))).orderBy(desc(scenes.boundarySequence)).limit(1);
   return scene ?? null;
+}
+
+/** A published correction can repair future presentation without rewriting the original scene. */
+export async function applyPublishedVisualScene(db: DrizzleDB, scene: StoredVisualScene | null): Promise<StoredVisualScene | null> {
+  if (!scene) return null;
+  const [publication] = await db.select({ version: schema.visualMediaVersions }).from(schema.visualMediaPublications)
+    .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
+    .where(eq(schema.visualMediaPublications.sceneId, scene.id)).orderBy(desc(schema.visualMediaPublications.revision)).limit(1);
+  const version = publication?.version;
+  if (!version || stableJson(version.plan) !== stableJson(scene.plan)) return scene;
+  return { ...scene, status: "ready", imageArtifactId: version.imageArtifactId, annotatedArtifactId: version.annotatedArtifactId,
+    anchors: version.localization.anchors, shots: version.shots };
 }
 
 export async function failVisualScene(db: DrizzleDB, sceneId: string, failure: string, assertBoundary?: VisualBoundaryGuard): Promise<void> {

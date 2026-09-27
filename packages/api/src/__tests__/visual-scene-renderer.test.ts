@@ -37,7 +37,7 @@ beforeEach(async () => {
       const identity = Boolean(body.text.format.schema.properties.matches);
       const composition = Boolean(body.text.format.schema.properties.identities);
       const ids: string[] = (body.text.format.schema.properties.identities ?? body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;
-      const result = { count: rejectIdentity ? ids.length + 1 : ids.length, anchors: ids.map((id, index) => ({ playerId: id, label: index + 1, confidence: "clear", head: { x: index / ids.length, y: 0.3, width: 0.05, height: 0.1 } })) };
+      const result = { ...(body.text.format.schema.properties.missingParticipantIds ? { missingParticipantIds: [] } : {}), count: rejectIdentity ? ids.length + 1 : ids.length, anchors: ids.map((id, index) => ({ playerId: id, label: index + 1, confidence: "clear", head: { x: index / ids.length, y: 0.3, width: 0.05, height: 0.1 } })) };
       return Response.json({ status: "completed", usage: { input_tokens: 10, output_tokens: 10 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(composition ? { count: result.count, identities: result.anchors.map(({ playerId, confidence }) => ({ playerId, confidence })) } : identity ? { count: result.count, matches: result.anchors.map(({ head: _head, ...match }) => match) } : result) }] }] });
     }
     if (!String(url).includes("/v1/images/")) throw new Error("Unexpected test network request");
@@ -65,12 +65,13 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test("builds large casts from small groups, harmonizes, and localizes only the final image", async () => {
+test("retains verified group pixels and never generates a harmonized composition", async () => {
   const planned = await scene(12);
   const ready = await renderPlannedVisualScene(db, planned);
-  expect(ready.anchors).toHaveLength(12);
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
-  expect(visionCalls).toBe(3);
+  expect(ready.shots?.groups.flatMap(s => s.anchors)).toHaveLength(12);
+  expect(ready.shots?.mode).toBe("groups");
+  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length);
+  expect(visionCalls).toBe(visualRenderGroups(planned.plan).length * 3);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -93,7 +94,7 @@ test("loss of the boundary retains paid output but prevents subsequent dispatch 
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
   const resumed = await renderPlannedVisualScene(db, planned);
   expect(resumed.status).toBe("ready");
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
+  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length);
 });
 
 test("checks the boundary again before xAI availability fallback", async () => {
@@ -149,9 +150,9 @@ test("prepares five committed Mingle rooms and regenerates only rooms affected b
   const initialView = await readContext({ context, method: "takeMingleTurn", turnId: "turn-1", committedHeads: execution.heads, committedCursor: execution.cursor });
   expect(initialView.room?.scene.participantIds).toEqual(["p0", "p1", "p2"]);
   expect(initial[4]?.imageArtifactId).toBe(artifactId);
-  expect([imageCalls, visionCalls]).toEqual([4, 12]);
+  expect([imageCalls, visionCalls]).toEqual([4, 4]);
   await prepare();
-  expect([imageCalls, visionCalls]).toEqual([4, 12]);
+  expect([imageCalls, visionCalls]).toEqual([4, 4]);
   if (execution.cursor.kind !== "mingle") throw new Error("Expected Mingle cursor");
   const window = execution.cursor.progress.window!;
   window.allRooms = structuredClone(window.initialAllocation.rooms);
@@ -160,14 +161,14 @@ test("prepares five committed Mingle rooms and regenerates only rooms affected b
   execution.heads.turnSequence = 1;
   await db.update(schema.gameExecutionStates).set({ executionCursor: execution.cursor, committedTurnSequence: 1 }).where(eq(schema.gameExecutionStates.gameId, "game"));
   const moved = await prepare();
-  expect([imageCalls, visionCalls]).toEqual([6, 18]);
+  expect([imageCalls, visionCalls]).toEqual([6, 6]);
   expect(moved[1]?.imageArtifactId).toBe(initial[1]?.imageArtifactId);
   expect(moved[4]?.anchors?.map((anchor) => anchor.playerId)).toEqual(["p0"]);
   const movedView = await readContext({ context: { ...context, currentRoomId: 5, mingleBeat: 2 }, method: "takeMingleTurn", turnId: "turn-2", committedHeads: execution.heads, committedCursor: execution.cursor });
   expect(movedView.room?.scene.participantIds).toEqual(["p0"]);
   delete window.roomByPlayerId.p1;
   await expect(prepare()).rejects.toThrow("canonical participants");
-  expect([imageCalls, visionCalls]).toEqual([6, 18]);
+  expect([imageCalls, visionCalls]).toEqual([6, 6]);
 });
 
 test("an aborted scene cannot reserve a paid request", async () => {
@@ -277,4 +278,44 @@ test("fallback consumes one shared repair allowance across a multi-section scene
   } finally {
     if (savedXai === undefined) delete process.env.XAI_API_KEY; else process.env.XAI_API_KEY = savedXai;
   }
+});
+
+test("best effort keeps a one-missing-person shot and never fabricates their anchor", async () => {
+  const mock = globalThis.fetch;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/responses")) {
+      const body = JSON.parse(String(init?.body));
+      expect(body.text.format.schema.required).toContain("missingParticipantIds");
+      return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ count: 1, missingParticipantIds: ["p1"], anchors: [{ playerId: "p0", label: 1, confidence: "clear", head: { x: .2, y: .2, width: .1, height: .1 } }] }) }] }] });
+    }
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, await scene(2), undefined, undefined, true);
+  expect(ready.status).toBe("ready");
+  expect(ready.shots?.overview).toMatchObject({ participantIds: ["p0", "p1"], visibleParticipantIds: ["p0"] });
+  expect(ready.anchors?.map(a => a.playerId)).toEqual(["p0"]);
+  expect(imageCalls).toBe(1);
+});
+
+test("best effort discards a duplicate-filled group while keeping the other group as playable pixels", async () => {
+  const mock = globalThis.fetch;
+  let groupNumber = 0;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (!String(url).endsWith("/responses")) return mock(url, init);
+    const body = JSON.parse(String(init?.body));
+    const ids: string[] = body.text.format.schema.properties.anchors.items.properties.playerId.enum;
+    const result = { count: ids.length + (groupNumber++ === 0 ? 1 : 0), missingParticipantIds: [], anchors: ids.map((playerId, i) => ({ playerId, label: i + 1, confidence: "clear", head: { x: i / ids.length, y: .2, width: .05, height: .1 } })) };
+    return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(result) }] }] });
+  }, { preconnect: originalFetch.preconnect });
+  const planned = await scene(6);
+  const ready = await renderPlannedVisualScene(db, planned, undefined, undefined, true);
+  expect(ready.status).toBe("ready");
+  expect(ready.shots?.mode).toBe("groups");
+  expect(ready.shots?.groups).toHaveLength(visualRenderGroups(planned.plan).length - 1);
+  expect(ready.imageArtifactId).toBe(ready.shots!.groups[0]!.imageArtifactId);
+  expect(ready.candidateArtifactId).not.toBe(ready.imageArtifactId);
+  expect(ready.plan.cast).toHaveLength(6);
+  const callsBefore = imageCalls;
+  expect((await renderPlannedVisualScene(db, ready, undefined, undefined, true)).id).toBe(ready.id);
+  expect(imageCalls).toBe(callsBefore);
 });

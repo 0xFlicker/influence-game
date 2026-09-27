@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import { apiFetch, resolveApiUrl } from "@/lib/api";
+import type { VisualShot } from "@influence/engine/visual-mode";
 import type { VisualWatchData } from "./visual-watch-model";
+
+const resolveShot = (shot: VisualShot): VisualShot => ({ ...shot, imageUrl: resolveApiUrl(shot.imageUrl) });
 
 /** Fetch current publications quietly; an active beat always keeps its initial media. */
 export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, beatKey: string | undefined) {
@@ -17,7 +20,7 @@ export function useVisualWatch(gameId: string, enabled: boolean, live: boolean, 
         const data = await apiFetch<VisualWatchData>(`/api/games/${gameId}/visual`);
         if (!cancelled) {
           setSnapshot({ gameId, data: { ...data,
-            scenes: data.scenes.map(scene => ({ ...scene, imageUrl: resolveApiUrl(scene.imageUrl) })),
+            scenes: data.scenes.map(scene => ({ ...scene, imageUrl: resolveApiUrl(scene.imageUrl), ...(scene.shots && { shots: { ...scene.shots, overview: scene.shots.overview ? resolveShot(scene.shots.overview) : null, groups: scene.shots.groups.map(resolveShot) } }) })),
             fullBodies: Object.fromEntries(Object.entries(data.fullBodies ?? {}).map(([id, url]) => [id, resolveApiUrl(url)])),
             portraits: Object.fromEntries(Object.entries(data.portraits).map(([id, url]) => [id, resolveApiUrl(url)])),
           } });

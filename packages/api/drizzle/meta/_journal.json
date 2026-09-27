@@ -708,6 +708,20 @@
       "when": 1790010635821,
       "tag": "0100_game_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790010635822,
+      "tag": "0101_visual_shots",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790010635823,
+      "tag": "0102_visual_review_mode",
+      "breakpoints": true
     }
   ]
 }

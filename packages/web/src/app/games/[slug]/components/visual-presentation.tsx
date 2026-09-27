@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import { SoloPresentation } from "./solo-presentation";
 import type { PresentationDirector } from "./format-presentation-director";
@@ -12,29 +11,25 @@ import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing
 import { SafetyBounceScene } from "./safety-bounce-scene";
 import type { SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 import { WinnerScene, type WinnerSceneBeat } from "./winner-scene";
-
-/** Each room keeps its own camera; switching rooms changes only opacity. */
-function RoomLayer({ reducedMotion, ...props }: Parameters<typeof VisualSceneView>[0]) {
-  const present = useIsPresent();
-  return <motion.div aria-hidden={!present} className="absolute inset-0 flex min-h-0 flex-col"
-    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-    transition={{ duration: reducedMotion ? 0 : 0.25 }}>
-    <VisualSceneView {...props} reducedMotion={reducedMotion} />
-  </motion.div>;
-}
+import { PortraitRoom } from "./portrait-room";
+import type { GamePlayer } from "@/lib/api";
+import { soloPresentationDurationMs, SOLO_EXIT_MS } from "./solo-presentation-timing";
+import { visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
+  | { kind: "portrait-room"; roomNumber: number | null; participants: GamePlayer[]; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
   | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 
 /** Observe the director instead of creating an independent wall-clock speech timer. */
-export function VisualPresentation({ director, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {
+export function VisualPresentation({ director, retainTail = true, ...props }: Omit<Parameters<typeof VisualPresentationFrame>[0], "elapsedMs"> & {
   director: PresentationDirector;
+  retainTail?: boolean;
 }) {
   const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
@@ -55,16 +50,21 @@ export function VisualPresentation({ director, ...props }: Omit<Parameters<typeo
     schedule();
     return () => { unsubscribe(); if (frame !== null) cancelAnimationFrame(frame); };
   }, [director]);
-  return <VisualPresentationFrame {...props} {...clock} elapsedMs={director.getElapsedBaseMs()} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!director.getSnapshot().isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
+  const state = director.getSnapshot();
+  const elapsedMs = director.getElapsedBaseMs();
+  const holdAtTail = retainTail && state.cursor === state.cueKeys.length - 1 && !director.isAnimating()
+    && elapsedMs >= (director.getActiveCue()?.baseDurationMs ?? Infinity);
+  return <VisualPresentationFrame {...props} {...clock} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs: clockElapsedMs, readingElapsedMs = clockElapsedMs, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
   retainedScene?: AcceptedVisualScene | null;
   elapsedMs: number;
   readingElapsedMs?: number;
+  holdAtTail?: boolean;
   paused?: boolean;
   currentStateEntry?: boolean;
   reducedMotion?: boolean;
@@ -74,12 +74,19 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
   status?: "preparing" | "recovery" | null;
 }) {
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
+  // Older runs without a final tableau still leave a readable last frame.
+  const tailTime = beat.kind === "portrait" ? soloPresentationDurationMs(beat.speech.text) - SOLO_EXIT_MS - 1
+    : beat.kind === "house" ? (beat.text === null ? 2000 : visualSpeechDurationMs(beat.text)) - VISUAL_SPEECH_FADE_MS - 1 : elapsedMs;
+  const clockElapsedMs = holdAtTail ? Math.min(elapsedMs, tailTime) : elapsedMs;
+  const readingElapsedMs = holdAtTail ? Math.min(readingTime, tailTime) : readingTime;
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
   if (beat.kind === "winner") {
     content = <WinnerScene beat={beat} fullscreen={fullscreen} />;
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} />;
+  } else if (beat.kind === "portrait-room") {
+    content = <PortraitRoom beat={beat} controlsInset={fullscreen ? 140 : 0} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
     content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
@@ -99,10 +106,8 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs:
         <button type="button" aria-pressed={pinnedRoom === null} onClick={() => setPinnedRoom(null)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">Follow speaker</button>
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
-      <div className="relative min-h-0 flex-1">
-        <AnimatePresence initial={false}>
-          {scene && <RoomLayer key={`${scene.roomId}:${scene.id}:${scene.version}:${scene.imageUrl}`} controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
-        </AnimatePresence>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {scene && <VisualSceneView controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
   }

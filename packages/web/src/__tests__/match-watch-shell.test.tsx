@@ -202,7 +202,7 @@ describe("MatchWatchShell", () => {
     for (const live of [false, true]) {
       const html = renderToString(<MatchWatchShell
         game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
-        messages={[entry({ text: "Can I count on you?", phase: "LOBBY" })]}
+        messages={[entry({ text: "Can I count on you?", phase: "LOBBY", scope: "public" })]}
         live={live} connStatus={live ? "live" : "replay"}
       />);
       expect(html).toContain('aria-label="Conversation: Atlas"');

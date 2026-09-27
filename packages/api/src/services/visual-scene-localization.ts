@@ -3,7 +3,7 @@ import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import type { VisualImageJournal, VisualImageReceipt } from "./visual-image-provider.js";
-import { decodeVisualLocalization, visualLocalizationSchema, decodeVisualIdentities, visualIdentitySchema, decodeVisualComposition, visualCompositionSchema } from "@influence/engine/visual-localization";
+import { decodePartialVisualLocalization, partialVisualLocalizationSchema, decodeVisualLocalization, visualLocalizationSchema, decodeVisualIdentities, visualIdentitySchema, decodeVisualComposition, visualCompositionSchema } from "@influence/engine/visual-localization";
 import type { VisualPlayerAnchor } from "@influence/engine/visual-mode";
 
 export const VISUAL_LOCALIZATION_VERSION = "composition-sol-v4";
@@ -23,13 +23,16 @@ export async function localizeVisualScene(input: {
   journal?: VisualImageJournal;
   candidateAnchors?: readonly VisualPlayerAnchor[];
   compositionOnly?: boolean;
+  allowMissing?: boolean;
 }) {
   const players = input.references.flatMap((reference) => reference.players);
   if ((!players.length && !input.compositionOnly) || new Set(players.map((player) => player.id)).size !== players.length) throw new Error("Unique scene identities are required");
   const dimensions = await sharp(input.scene).metadata();
   if (!dimensions.width || !dimensions.height) throw new Error("Scene dimensions are missing");
   const inspection = input.compositionOnly ? Buffer.from(input.scene) : input.candidateAnchors ? await annotateVisualScene(input.scene, input.candidateAnchors) : await localizationGrid(input.scene, dimensions.width, dimensions.height);
-  const content: Array<Record<string, unknown>> = [{ type: "input_text", text: input.compositionOnly
+  const content: Array<Record<string, unknown>> = [{ type: "input_text", text: input.allowMissing
+    ? "Locate the visible contestants in the FINAL image against their character references. Return the actual total person count and tight normalized head rectangles (top-left x/y plus width/height) with unique numeric labels and clear identity confidence. If exactly one listed person is absent, list their player ID in missingParticipantIds and omit their anchor. Otherwise missingParticipantIds must be empty. Do not invent positions for absent people, confuse a duplicate with a missing person, or ignore extra people. Count every actual person, including extras and duplicates. Return uncertain when identity is ambiguous."
+    : input.compositionOnly
     ? "Verify the FINAL scene contains exactly ONE of every supplied character identity, with no missing, duplicated or extra people. Count actual people in the final scene, not reference images. Compare distinct face, skin, hair and appearance independently. Do not assume reference ordering or requested participants prove presence. Return uncertain for any ambiguous or duplicated identity. Do not estimate coordinates or assign numbered positions."
     : input.candidateAnchors
     ? "Match each named character reference to the correct NUMBERED person in the FINAL scene. Compare face, skin, hair length and hair color. Clothing can vary in a generated scene: do not let a copied jacket override facial identity. Reference order is NOT seating order. Identify every person independently and use uncertain instead of guessing. Return the actual person count and one unique label for each player ID. Do not return coordinates."
@@ -42,7 +45,7 @@ export async function localizeVisualScene(input: {
   content.push({ type: "input_image", image_url: `data:image/png;base64,${inspection.toString("base64")}`, detail: "high" });
   const model = VISUAL_LOCALIZATION_MODEL;
   const body = JSON.stringify({ model, store: false, reasoning: { effort: "medium" }, max_output_tokens: 5000,
-    input: [{ role: "user", content }], text: { format: { type: "json_schema", name: "scene_localization", strict: true, schema: (input.compositionOnly ? visualCompositionSchema : input.candidateAnchors ? visualIdentitySchema : visualLocalizationSchema)(players.map((player) => player.id)) } } });
+    input: [{ role: "user", content }], text: { format: { type: "json_schema", name: "scene_localization", strict: true, schema: (input.allowMissing ? partialVisualLocalizationSchema : input.compositionOnly ? visualCompositionSchema : input.candidateAnchors ? visualIdentitySchema : visualLocalizationSchema)(players.map((player) => player.id)) } } });
   const reservation = { provider: "openai" as const, model, requestHash: createHash("sha256").update(body).digest("hex") };
   await input.journal?.begin(reservation);
   const startedAt = Date.now();
@@ -75,7 +78,7 @@ export async function localizeVisualScene(input: {
       .flatMap((item) => Array.isArray(item.content) ? item.content.filter(isRecord) : [])
       .filter((part) => part.type === "output_text");
     if (text.length !== 1 || typeof text[0]?.text !== "string") throw new Error("Missing exact scene localization");
-    result = input.compositionOnly ? decodeVisualComposition(text[0].text, players.map((player) => player.id)) : input.candidateAnchors ? decodeVisualIdentities(text[0].text, players.map((player) => player.id), input.candidateAnchors) : decodeVisualLocalization(text[0].text, players.map((player) => player.id));
+    result = input.allowMissing ? decodePartialVisualLocalization(text[0].text, players.map((player) => player.id)) : input.compositionOnly ? decodeVisualComposition(text[0].text, players.map((player) => player.id)) : input.candidateAnchors ? decodeVisualIdentities(text[0].text, players.map((player) => player.id), input.candidateAnchors) : decodeVisualLocalization(text[0].text, players.map((player) => player.id));
   } catch (error) {
     const failure = error instanceof VisualIdentityFailure && error.playerIds.length
       ? new VisualIdentityFailure(`${error.message}: ${error.playerIds.map(id => players.find(player => player.id === id)!.name).join(", ")}`, error.playerIds) : error;

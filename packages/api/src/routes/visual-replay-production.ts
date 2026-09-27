@@ -1,3 +1,4 @@
+import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
@@ -50,6 +51,20 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, control, { oneAtATime: true });
     return c.json({ ...receipt, ...(!receipt.accepted && { error: receipt.message }) }, receipt.accepted ? 200 : 409);
   });
+  app.get(`${root}/games/:id/visual/scenes/:scene/review`, async c => {
+    const [scene] = await db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, c.req.param("id")), eq(schema.visualScenes.id, c.req.param("scene"))));
+    if (!scene) return c.json({ error: "Scene not found" }, 404);
+    c.header("Cache-Control", "private, no-store");
+    return c.json({ expectedRevision: scene.renderRevision, planHash: scene.planHash, players: scene.plan.cast.map(m => ({ id: m.id, name: m.name })), sources: await readVisualReviewSources(db, scene) });
+  });
+  app.get(`${root}/games/:id/visual/evidence/attempt/:attempt`, async c => {
+    const [attempt] = await db.select({ image: schema.visualRenderAttempts.image }).from(schema.visualRenderAttempts)
+      .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderOperations.id, schema.visualRenderAttempts.operationId))
+      .where(and(eq(schema.visualRenderOperations.gameId, c.req.param("id")), eq(schema.visualRenderAttempts.id, c.req.param("attempt"))));
+    if (!attempt?.image) return c.json({ error: "Image not found" }, 404);
+    c.header("Cache-Control", "private, no-store");
+    return c.json({ imageUrl: `data:image/png;base64,${attempt.image.toString("base64")}` });
+  });
   app.get(`${root}/games/:id/visual/evidence/artifact/:artifact`, async c => {
     const [artifact] = await db.select({ image: schema.visualArtifacts.image }).from(schema.visualArtifacts)
       .where(and(eq(schema.visualArtifacts.gameId, c.req.param("id")), eq(schema.visualArtifacts.id, c.req.param("artifact"))));
@@ -80,7 +95,8 @@ function decodeReplayMediaControl(value: unknown): MediaControl | null {
   const string = (key: string) => typeof b[key] === "string" && Boolean(b[key].trim()) && b[key].length <= 200;
   if (!string("requestId") || !string("sceneId") || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0) return null;
   const fields = ["requestId", "sceneId", "expectedVersion", "action"];
-  if (b.action === "verify") { if (!string("sourceVersionId")) return null; fields.push("sourceVersionId"); }
+  if (b.action === "review") { try { b.review = decodeVisualShotReview(b.review); } catch { return null; } fields.push("review"); }
+  else if (b.action === "verify") { if (!string("sourceVersionId")) return null; fields.push("sourceVersionId"); }
   else if (b.action === "continue") { if (b.sourceJobId !== undefined && !string("sourceJobId")) return null; fields.push("sourceJobId"); }
   else if (b.action === "publish") {
     if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;

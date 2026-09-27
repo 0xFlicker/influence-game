@@ -8,7 +8,7 @@ import { failVisualScene, type StoredVisualScene } from "./visual-scene-store.js
 export const VISUAL_ATTEMPT_TIMEOUT_MS = 180_000;
 
 /** Each arrangement gets its initial attempt and at most one safe repair, durably. */
-export async function renderVisualSceneBestEffort(db: DrizzleDB, initial: StoredVisualScene, guard: VisualBoundaryGuard, timeoutMs = VISUAL_ATTEMPT_TIMEOUT_MS): Promise<StoredVisualScene | null> {
+export async function renderVisualSceneBestEffort(db: DrizzleDB, initial: StoredVisualScene, guard: VisualBoundaryGuard, timeoutMs = VISUAL_ATTEMPT_TIMEOUT_MS, allowMissing = true): Promise<StoredVisualScene | null> {
   let scene = initial;
   if (scene.status === "ready") return scene;
   for (;;) {
@@ -34,7 +34,7 @@ export async function renderVisualSceneBestEffort(db: DrizzleDB, initial: Stored
       const timeout = new Promise<never>((_, reject) => {
         timer = setTimeout(() => { controller.abort(); reject(new Error("Visual attempt timed out")); }, timeoutMs);
       });
-      const result = await Promise.race([renderPlannedVisualScene(db, scene, controller.signal, guard), timeout]);
+      const result = await Promise.race([renderPlannedVisualScene(db, scene, controller.signal, guard, allowMissing), timeout]);
       await recordVisualOperationEvent(db, scene.gameId, `${scene.id}:${scene.renderRevision}:presentation`, { sceneId: scene.id, boundarySequence: scene.boundarySequence, kind: "presentation", outcome: result.anchors?.length ? "scene" : "unanchored", message: "Verified scene accepted" });
       return result;
     } catch (error) {

@@ -1,16 +1,18 @@
+import { VisualIdentityFailure } from "@influence/engine/visual-localization";
+import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
-import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
+import { annotateVisualScene, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import sharp from "sharp";
-import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
+import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type StoredVisualShot, type VisualShotPresentation } from "@influence/engine/visual-mode";
 import { visualRenderGroups } from "@influence/engine/visual-scene-plan";
 import type { DrizzleDB } from "../db/index.js";
 import { localizeDurableVisualScene, renderDurableVisualImage } from "./visual-render-journal.js";
 import { acceptVisualScene, failVisualScene, readVisualArtifact, storeVisualArtifact, type StoredVisualScene } from "./visual-scene-store.js";
 
 /** All external work occurs between short durable reservations and acceptance. */
-export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisualScene, signal?: AbortSignal, assertBoundary?: VisualBoundaryGuard): Promise<StoredVisualScene> {
+export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisualScene, signal?: AbortSignal, assertBoundary?: VisualBoundaryGuard, bestEffort = false): Promise<StoredVisualScene> {
   const beforeDispatch: VisualBoundaryGuard = async (tx) => {
     signal?.throwIfAborted();
     await assertBoundary?.(tx);
@@ -19,14 +21,15 @@ export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisua
   if (scene.status === "ready") return scene;
   if (scene.status !== "preparing") throw new Error("Visual scene needs operator recovery");
   try {
-    const { imageArtifactId, localization } = await renderVisualCandidate(db, scene, signal, beforeDispatch, {
+    const { imageArtifactId, localization, shots } = await renderVisualCandidate(db, scene, signal, beforeDispatch, {
+      allowMissing: bestEffort,
       onImage: async (candidateArtifactId) => { await db.transaction(async (tx) => {
         await beforeDispatch(tx);
         await tx.update(schema.visualScenes).set({ candidateArtifactId }).where(and(eq(schema.visualScenes.id, scene.id), eq(schema.visualScenes.renderRevision, scene.renderRevision), eq(schema.visualScenes.status, "preparing")));
       }); },
     });
     await beforeDispatch();
-    return await acceptVisualScene(db, { sceneId: scene.id, planHash: scene.planHash, renderRevision: scene.renderRevision, imageArtifactId, anchors: localization.anchors, verifiedParticipantIds: localization.verifiedParticipantIds, assertBoundary: beforeDispatch });
+    return await acceptVisualScene(db, { sceneId: scene.id, planHash: scene.planHash, renderRevision: scene.renderRevision, imageArtifactId, shots, anchors: localization.anchors, verifiedParticipantIds: localization.verifiedParticipantIds, assertBoundary: beforeDispatch });
   } catch (error) {
     // A former owner may retain its paid receipt, but cannot change scene state.
     await assertBoundary?.();
@@ -38,6 +41,7 @@ export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisua
 /** Shared paid stages, with acceptance owned separately by gameplay or the repair worker. */
 export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualScene, signal?: AbortSignal, beforeDispatch?: VisualBoundaryGuard, options: {
   renderContext?: { style: string; roomName: string; roomDirection: string };
+  allowMissing?: boolean;
   operationPrefix?: string; reusePrefix?: string; jobId?: string;
   onStep?: (step: string) => Promise<void>; onImage?: (id: string) => Promise<void>;
 } = {}) {
@@ -48,7 +52,20 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     const reuse = (suffix: string) => options.reusePrefix ? `${options.reusePrefix}:${suffix}` : undefined;
     const background = plan.backgroundArtifactId ? await readVisualArtifact(db, gameId, plan.backgroundArtifactId) : null;
     const references = await Promise.all(plan.cast.map(async (member) => ({ member, image: await readVisualArtifact(db, gameId, member.referenceArtifactId) })));
+    const localize = (image: Buffer, members: typeof references, suffix: string) => localizeDurableVisualScene(db, {
+      gameId, sceneId: scene.id, repairJobId: options.jobId, onStep: options.onStep,
+      operationKey: `${renderKey}:${suffix}:${VISUAL_LOCALIZATION_VERSION}${options.allowMissing ? ":partial-v1" : ""}`,
+      reuseOperationKey: reuse(`${suffix}:${VISUAL_LOCALIZATION_VERSION}${options.allowMissing ? ":partial-v1" : ""}`), scene: image,
+      references: members.map(({ member, image }) => ({ image, players: [{ id: member.id, name: member.name }] })),
+      allowMissing: options.allowMissing && members.length > 0, apiKey, signal, beforeDispatch,
+    });
+    const shot = async (image: Buffer, ids: string[], localization: Awaited<ReturnType<typeof localize>>): Promise<StoredVisualShot> => ({
+      imageArtifactId: await storeVisualArtifact(db, gameId, image),
+      annotatedArtifactId: await storeVisualArtifact(db, gameId, await annotateVisualScene(image, localization.anchors)),
+      participantIds: ids, visibleParticipantIds: localization.verifiedParticipantIds ?? localization.anchors.map(a => a.playerId), anchors: localization.anchors, pointers: [],
+    });
     let finalImage: Buffer;
+    let shots: VisualShotPresentation<StoredVisualShot> | undefined;
     if (scene.repairMode === "verify" && scene.candidateArtifactId) {
       finalImage = await readVisualArtifact(db, gameId, scene.candidateArtifactId);
     } else {
@@ -57,6 +74,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     const room = VISUAL_ROOMS[plan.roomId];
     const common = `${options.renderContext?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${options.renderContext?.roomName ?? room.name}. ${options.renderContext?.roomDirection ?? room.direction}\nPreserve the supplied room's architecture, furniture and materials. These contestants are playing a social-strategy game; use believable conversational staging, some seated and some standing as directed. Match each character's face, hair, clothing and body to their reference. Keep every face clearly visible to the camera in a front or three-quarter view, including seated people. Nobody may face away, hide behind another person, or have their face obscured by hair or furniture. No extra people.`;
     const sectionImages: Buffer[] = [];
+    const sectionMembers: Array<typeof references> = [];
     for (const [index, group] of groups.entries()) {
       const members = group.map((placement) => {
         const reference = references.find((entry) => entry.member.id === placement.playerId);
@@ -69,6 +87,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
       await options.onStep?.(`section:${index + 1}`);
       const rendered = await renderDurableVisualImage(db, { gameId, sceneId: scene.id, repairJobId: options.jobId, operationKey: `${renderKey}:section:v2:${index}`, reuseOperationKey: reuse(`section:v2:${index}`), allowFallback: options.jobId ? true : scene.renderRevision === 0, request: { prompt, width, height, references: [...(background ? [background] : []), ...members.map((member) => member.image)] }, signal, beforeDispatch });
       sectionImages.push(rendered.image);
+      sectionMembers.push(members);
     }
     if (!groups.length) {
       await options.onStep?.("empty-room");
@@ -84,33 +103,38 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         left: Math.floor(index * 1536 / sectionImages.length), top: 0,
       })));
       const assembly = await sharp({ create: { width: 1536, height: 864, channels: 3, background: "#e5ded0" } }).composite(panels).png().toBuffer();
-      const castSheet = await createCastReferenceSheet(references.map((reference) => reference.image));
-      await options.onStep?.("harmonize");
-      const rendered = await renderDurableVisualImage(db, { gameId, sceneId: scene.id, repairJobId: options.jobId, operationKey: `${renderKey}:harmonize`, reuseOperationKey: reuse("harmonize"), allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
-        request: { width: 1536, height: 864, references: [assembly, ...(background ? [background] : []), castSheet], prompt: `${common}\nHarmonize the FIRST image's assembled conversation sections into ONE coherent widescreen view. Keep every participant from every section exactly once; remove panel seams and reconcile perspective and lighting. ${background ? "The SECOND image is the empty room architecture. The THIRD" : "The SECOND image"} is a numbered identity reference sheet: ${JSON.stringify(references.map(({ member }, index) => ({ number: index + 1, id: member.id, name: member.name })))}. Preserve conversational groups and their furniture-relative staging: ${JSON.stringify(plan.placements)}. Keep all ${plan.cast.length} participants and their visible heads in frame. The final image must have no numbers, labels, montage borders or text.` },
-      });
-      finalImage = rendered.image;
+      // Keep exact panel pixels. A generative stitch can change identities.
+      finalImage = assembly;
     }
+    await options.onImage?.(await storeVisualArtifact(db, gameId, finalImage));
+    const playable: StoredVisualShot[] = [];
+    for (const [index, image] of sectionImages.entries()) {
+      const members = sectionMembers[index] ?? [];
+      try {
+        const localized = await localize(image, members, `section-localization:${index}`);
+        playable.push(await shot(image, members.map(m => m.member.id), localized));
+      } catch (error) {
+        signal?.throwIfAborted();
+        await beforeDispatch?.();
+        if (!options.allowMissing || !(error instanceof VisualIdentityFailure)) throw error;
+        await recordVisualOperationEvent(db, gameId, `${renderKey}:rejected-section:${index}`, {
+          sceneId: scene.id, kind: "failure", outcome: "failed", message: `Group shot ${index + 1} rejected; retaining the other usable shots`,
+        }, visualFailureEvidence(error, "identity"));
+      }
     }
-    const imageArtifactId = await storeVisualArtifact(db, gameId, finalImage);
-    await options.onImage?.(imageArtifactId);
+    if (!playable.length) throw new VisualIdentityFailure("No usable group shot survived verification");
+    shots = { mode: playable.length === 1 && groups.length <= 1 ? "scene" : "groups", overview: null, groups: playable };
+    if (shots.mode === "scene") shots.overview = playable[0]!;
+    }
+    const imageArtifactId = shots ? (shots.overview ?? shots.groups[0])!.imageArtifactId : await storeVisualArtifact(db, gameId, finalImage);
+    if (!shots) await options.onImage?.(imageArtifactId);
     await options.onStep?.("verifying");
-    const localization = await localizeDurableVisualScene(db, { gameId, sceneId: scene.id, repairJobId: options.jobId, onStep: options.onStep, operationKey: `${renderKey}:localization:${VISUAL_LOCALIZATION_VERSION}`, reuseOperationKey: reuse(`localization:${VISUAL_LOCALIZATION_VERSION}`), scene: finalImage,
-      references: references.map(({ member, image }) => ({ image, players: [{ id: member.id, name: member.name }] })), apiKey, signal, beforeDispatch });
-    return { imageArtifactId, localization };
-}
-
-/** Numbers exist only on this model-facing reference, never on the viewer scene. */
-async function createCastReferenceSheet(images: readonly Uint8Array[]): Promise<Buffer> {
-  const columns = Math.min(4, images.length);
-  const width = columns * 256;
-  const height = Math.ceil(images.length / columns) * 512;
-  const panels = await Promise.all(images.map(async (image, index) => ({
-    input: await sharp(image).resize(256, 480, { fit: "contain", background: "#eeeeee" }).png().toBuffer(),
-    left: index % columns * 256, top: Math.floor(index / columns) * 512 + 32,
-  })));
-  const labels = images.map((_, index) => `<text x="${index % columns * 256 + 128}" y="${Math.floor(index / columns) * 512 + 24}" text-anchor="middle" font-family="sans-serif" font-size="22">${index + 1}</text>`).join("");
-  return sharp({ create: { width, height, channels: 3, background: "#eeeeee" } }).composite([
-    ...panels, { input: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${labels}</svg>`), left: 0, top: 0 },
-  ]).png().toBuffer();
+    if (shots) {
+      const visible = [...new Set(shots.groups.flatMap(s => s.visibleParticipantIds))];
+      return { imageArtifactId, shots, localization: { count: visible.length, anchors: shots.mode === "scene" ? shots.overview!.anchors : [], verifiedParticipantIds: visible } };
+    }
+    const localization = await localize(finalImage, references, "localization");
+    const single = await shot(finalImage, plan.cast.map(m => m.id), localization);
+    shots = { mode: "scene", overview: single, groups: [] };
+    return { imageArtifactId, localization, shots };
 }

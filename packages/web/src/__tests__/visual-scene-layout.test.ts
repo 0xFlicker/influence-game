@@ -18,6 +18,15 @@ describe("responsive scene framing", () => {
     expect(frame.left).toBe(0);
     expect(frame.top).toBeGreaterThan(0);
   });
+  test("focal panels center the accepted speaker on both wide and cropped stages", () => {
+    for (const [width, height] of [[1920, 1080], [390, 844]]) {
+      for (const x of [.02, .3, .88]) {
+        const speaker = { x, y: .2, width: .08, height: .12 };
+        const frame = frameVisualScene(width!, height!, 800, 1200, speaker, "focal");
+        expect(frame.left + (speaker.x + speaker.width / 2) * frame.width).toBeCloseTo(width! / 2);
+      }
+    }
+  });
   test("edge crops stay within source image", () => {
     for (const x of [0, .94]) {
       const frame = frameVisualScene(390, 700, 1600, 900, { ...head, x });
@@ -43,6 +52,13 @@ describe("responsive scene framing", () => {
       expect(b.left + b.width).toBeLessThanOrEqual(988);
       expect(b.top + b.height).toBeLessThanOrEqual(688);
     }
+  });
+  test("a short line still has room for its header and page footer near a high head", () => {
+    const frame = { width: 720, height: 1080, left: 600, top: 0 };
+    const bubble = placeSceneBubble(1920, 940, frame, { x: .44, y: .12, width: .12, height: .12 }, 94);
+    expect(bubble.below).toBe(true);
+    expect(bubble.height).toBeGreaterThanOrEqual(128);
+    expect(bubble.top).toBeGreaterThan(1080 * .24);
   });
 });
 describe("speech pages", () => {

@@ -22,10 +22,22 @@ test.each([{ width: 390, height: 844 }, { width: 844, height: 390 }])("rotation 
   if (width < image.width) expect(image.left).toBeLessThan(0);
 });
 
-test("static portrait fallback puts speech below the actual portrait instead of guessing a head", () => {
-  const { image, bubble } = layoutSoloPresentation(844, 390, 512, 512, false, 140, 220);
-  expect(bubble.top).toBe(image.top + image.height + 16);
+test("landscape portrait fallback centers a substantial portrait next to readable speech", () => {
+  const { image, bubble, beside } = layoutSoloPresentation(844, 390, 512, 512, false, 140, 220);
+  expect(beside).toBe(true);
+  expect(image.height).toBeGreaterThan(150);
+  expect(bubble.left).toBeGreaterThan(image.left + image.width);
+  expect(bubble.top + bubble.height).toBeLessThanOrEqual(250);
   expect(bubble.height).toBeGreaterThan(110);
+});
+
+test("mobile portraits and their paged speech are centered above fullscreen controls", () => {
+  const { image, bubble, beside } = layoutSoloPresentation(390, 844, 512, 512, false, 140, 1400);
+  expect(beside).toBe(false);
+  expect(image.height).toBeGreaterThan(250);
+  expect(image.top).toBeGreaterThan(12);
+  expect(bubble.top).toBeGreaterThan(image.top + image.height);
+  expect(bubble.top + bubble.height).toBeLessThanOrEqual(704);
 });
 
 test("confirmed edge head controls framing and speech on a narrow screen", () => {

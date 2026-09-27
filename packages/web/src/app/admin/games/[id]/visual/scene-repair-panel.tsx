@@ -1,5 +1,7 @@
 "use client";
+import type { StoredVisualShot, VisualShotPresentation } from "@influence/engine/visual-mode";
 import { useEffect, useRef, useState } from "react";
+import { ImageReviewEditor } from "./image-review-editor";
 import { ApiError, apiFetch } from "@/lib/api";
 
 export interface MediaJob {
@@ -8,6 +10,7 @@ export interface MediaJob {
 }
 interface MediaVersion {
   id: string; sceneId: string; version: number; imageArtifactId: string; annotatedArtifactId: string;
+  shots?: VisualShotPresentation<StoredVisualShot> | null;
   verificationVersion: string; localization: { count: number; verifiedParticipantIds?: string[]; anchors: unknown[] };
 }
 export interface MediaRecords {
@@ -53,6 +56,8 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const published = versions.find(version => version.id === publications[0]?.versionId) ?? versions.find(version => version.version === 0);
   const [selection, setSelection] = useState<string | null>(null);
   const selected = versions.find(version => version.id === selection) ?? versions[0];
+  const [editingVersion, setEditingVersion] = useState<number | null>(null);
+  const selectedAnchors = selected?.shots ? new Set([...selected.shots.groups, ...(selected.shots.overview ? [selected.shots.overview] : [])].flatMap(shot => shot.anchors.map(anchor => anchor.playerId))).size : selected?.localization.anchors.length ?? 0;
   const [review, setReview] = useState(false);
   const [annotated, setAnnotated] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -65,11 +70,11 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const send = async (action: Record<string, unknown>) => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setUncertain(false); onRequestPending?.(true);
-    const body = pending.current ?? { ...action, sceneId, expectedVersion: latest?.version ?? 0, requestId: crypto.randomUUID() };
+    const body = pending.current ?? { ...action, sceneId, expectedVersion: action.expectedVersion ?? latest?.version ?? 0, requestId: crypto.randomUUID() };
     pending.current = body;
     try {
       const receipt = await apiFetch<Receipt>(`${apiPrefix}/${gameId}/visual/media`, { method: "POST", body: JSON.stringify(body) });
-      pending.current = null; onRequestPending?.(false); setFeedback(receipt); await refresh();
+      pending.current = null; onRequestPending?.(false); setFeedback(receipt); if (receipt.accepted && receipt.code === "reviewed") { setEditingVersion(null); setSelection(receipt.versionId ?? null); setReview(true); } await refresh();
     } catch (error) {
       if (error instanceof ApiError && error.status < 500) {
         pending.current = null;
@@ -86,10 +91,12 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   return <section aria-label="Scene repair" className="space-y-3 border-t border-white/15 pt-3">
     <p className="text-xs text-white/60">Viewer version: {published ? `v${published.version}` : "Portraits"} · Publication {publications[0]?.revision ?? 0}</p>
     {canOperate && <div className="flex flex-wrap gap-2">
+      <button className={button} disabled={busy || !!active || uncertain} onClick={() => setEditingVersion(latest?.version ?? 0)}>Correct images</button>
       <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "regenerate" })}>{renderLabel}</button>
       {(latest && ["failed", "needs_reconciliation"].includes(latest.status) || !latest && originalFailed) && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "continue", ...(latest && { sourceJobId: latest.id }) })}>Continue failed repair</button>}
       {uncertain && <button className={button} disabled={busy} onClick={() => void send({})}>Check request</button>}
     </div>}
+    {canOperate && editingVersion !== null && <ImageReviewEditor key={editingVersion} gameId={gameId} sceneId={sceneId} apiPrefix={apiPrefix} disabled={busy || !!active || uncertain} onClose={() => setEditingVersion(null)} onSave={review => void send({ action: "review", review, expectedVersion: editingVersion })} />}
     <p className="text-xs text-white/50">Repairs may incur provider charges. Candidates need review and publication; gameplay is unchanged.</p>
     {unresolved.length > 0 && <div role="status" className="rounded bg-amber-400/10 p-3 text-sm text-amber-200">
       <p>Needs reconciliation: {unresolved.length} provider request(s) have an uncertain outcome.</p>
@@ -109,17 +116,18 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
     {(versions.length > 0 || jobs.length > 0) && <button className={button} onClick={() => setReview(!review)}>{review ? "Close versions" : "Versions and review"}</button>}
     {review && <div className="space-y-3">
       {selected && <>
-        <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Verified"}</option>)}</select></label>
+        <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Reviewed"}</option>)}</select></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={annotated} onChange={event => setAnnotated(event.target.checked)} />Numbered annotations</label>
         <div className="grid gap-3 sm:grid-cols-2">
           {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>Viewers currently see portraits.</p>}
           <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} apiPrefix={apiPrefix} />
         </div>
-        <p className="text-sm">{selected.localization.count} verified people · {selected.localization.anchors.length} head anchors</p>
-        {!selected.localization.anchors.length && selected.localization.count > 0 && <p className="text-sm text-amber-200">Head positions are uncertain. Viewers use named portrait speech panels.</p>}
+        <p className="text-sm">{selected.localization.count} verified people · {selectedAnchors} head anchors</p>
+        {!selectedAnchors && selected.localization.count > 0 && <p className="text-sm text-amber-200">Head positions are uncertain. Viewers use named portrait speech panels.</p>}
+        {selected.shots && selected.shots.mode !== "scene" && <p className="text-sm text-white/60">{selected.shots.mode === "portraits" ? "This version uses portraits." : `${selected.shots.groups.length} group shots. Open Correct images to inspect each picture.`}</p>}
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
-          <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>
+          {(!selected.shots || selected.shots.mode === "scene") && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>}
           <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? "Restore for viewers" : "Publish for viewers"}</button>
         </div>}
       </>}
