@@ -184,6 +184,7 @@ test.describe("format-aware game viewer", () => {
   });
 
   test("room edge fill uses neighboring panels without changing speech or framing", async ({ page }, testInfo) => {
+    await page.clock.install();
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
     await page.setViewportSize({ width: 1920, height: 1080 });
     const slug = "stage-edge-fill";
@@ -219,17 +220,23 @@ test.describe("format-aware game viewer", () => {
       await room.screenshot({ path: testInfo.outputPath(`room-edges-${size.width}.png`) });
     }
     await page.setViewportSize({ width: 1920, height: 1080 });
-    await page.getByRole("button", { name: /Play/ }).filter({ visible: true }).click();
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     const next = createFormatKernelViewerScenario("two_names_declined").roster[1]!;
     fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "LOBBY", from: next.id, scope: "public", text: "Now the neighboring panel comes into view.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
+    await page.keyboard.press("ArrowRight");
+    await page.clock.runFor(200);
+    await page.keyboard.press("ArrowRight");
+    await page.clock.runFor(500);
     const sceneLayers = room.locator('img[alt="Current conversation scene"]');
     await expect(sceneLayers).toHaveCount(2);
+    await page.clock.runFor(150);
     const outgoing = room.locator('[data-scene-exiting="true"]');
     await expect.poll(() => outgoing.evaluate(layer => {
       const style = getComputedStyle(layer);
       return Number(style.opacity) > 0 && Number(style.opacity) < 1 && style.filter !== "blur(0px)";
     })).toBe(true);
     await room.screenshot({ path: testInfo.outputPath("room-panel-transition.png") });
+    await page.clock.runFor(800);
     await expect(sceneLayers).toHaveCount(1);
     await expect(sceneLayers).toHaveAttribute("src", /stage-left.svg$/);
     await expect(left).toHaveAttribute("src", /stage-left.svg$/);
@@ -623,6 +630,9 @@ test.describe("format-aware game viewer", () => {
     await pauseAutoplay(page, "⏸ Pause");
     for (const voter of voters) {
       await assertSoloBallot(page, voter.name, "Rex");
+      // A mounted bubble can still be fading in; finish revealing before hiding it.
+      await page.clock.runFor(300);
+      await expect(page.getByRole("region", { name: `Ballot: ${voter}` }).locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
       await page.keyboard.press("ArrowRight");
       await page.clock.runFor(300);
       await page.keyboard.press("ArrowRight");
