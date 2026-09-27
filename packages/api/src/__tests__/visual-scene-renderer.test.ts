@@ -32,6 +32,8 @@ beforeEach(async () => {
     if (String(url).endsWith("/responses")) {
       visionCalls += 1;
       const body = JSON.parse(String(init?.body));
+      expect(body.model).toBe("gpt-6-sol");
+      expect(body.text.format.strict).toBe(true);
       const identity = Boolean(body.text.format.schema.properties.matches);
       const composition = Boolean(body.text.format.schema.properties.identities);
       const ids: string[] = (body.text.format.schema.properties.identities ?? body.text.format.schema.properties.matches ?? body.text.format.schema.properties.anchors).items.properties.playerId.enum;

@@ -71,7 +71,7 @@ Before each agent call, the context reader checks the current canonical audience
 - `visual-turn-context.ts` supplies image or text context without generating media.
 - Accepted transcript metadata records the chosen scene and structured ballot facts. Producer exports include frozen profiles, cues, plans, observed anchors and accounting.
 
-OpenAI generates images; xAI is the availability fallback within the same bounded allowance. GPT-5.6 Sol verifies composition and localization. Pricing records known costs and explicitly retains unpriced/uncertain receipts. There is no spending cap. The admin visual-production page exposes diagnostics, saved images, exports and accounting reconciliation with policy, repair and resume controls. Provider error bodies and rejected verification responses are retained with typed failure evidence (response evidence bounded to 64 KiB, with truncation indicated). Credentials and request authorization headers are never stored.
+OpenAI generates images; xAI is the availability fallback within the same bounded allowance. GPT-6 Sol verifies composition, head geometry, and character identity. Existing accepted verification is reused, and uncertain attempts require recovery before another paid dispatch. Pricing records known costs and explicitly retains unpriced/uncertain receipts. There is no spending cap. The admin visual-production page exposes diagnostics, saved images, exports and accounting reconciliation with policy, repair and resume controls. Provider error bodies and rejected verification responses are retained with typed failure evidence (response evidence bounded to 64 KiB, with truncation indicated). Credentials and request authorization headers are never stored.
 
 ## Operator workflow
 
