@@ -11,7 +11,7 @@ import { SOLO_STUDIO_BACKDROP, StageBackdrop } from "./stage-backdrop";
 import backdropStyles from "./stage-backdrop.module.css";
 
 /** Frozen character art, never a generated talking-head clip or an inferred crop. */
-export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo" }: {
+export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs, paused = false, reducedMotion = false, controlsInset = 0, speechPresentation = "solo", imageOpacity, onImageReady }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   elapsedMs: number;
   readingElapsedMs?: number;
@@ -19,6 +19,9 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   reducedMotion?: boolean;
   controlsInset?: number;
   speechPresentation?: "solo" | "scene";
+  /** The ballot collection takes over these exact pixels at the end of its reveal. */
+  imageOpacity?: number;
+  onImageReady?: (source: string | null) => void;
 }) {
   const { player, speech } = beat;
   const motion = speechPresentation === "scene"
@@ -48,10 +51,16 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen game image, with a static portrait only when full-body art is unavailable */}
-    <img key={source} src={source} alt={player.name}
-      onLoad={event => setLoaded({ source, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })}
-      onError={() => setFailedImages(previous => new Set(previous).add(source))}
-      className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: motion.imageOpacity }} />
+    <img data-solo-portrait key={source} src={source} alt={player.name}
+      onLoad={event => {
+        setLoaded({ source, width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });
+        onImageReady?.(source);
+      }}
+      onError={() => {
+        setFailedImages(previous => new Set(previous).add(source));
+        onImageReady?.(null);
+      }}
+      className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? motion.imageOpacity }} />
     {motion.speechOpacity > 0 && <div data-speech-bubble style={{ ...geometry.bubble, opacity: motion.speechOpacity }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 px-5 py-4 text-lg leading-relaxed shadow-xl">
       <p className="mb-2 flex shrink-0 flex-wrap items-baseline gap-x-2 text-sm font-semibold leading-5"><span>{player.name}</span><span className="text-xs font-normal text-white/50">{beat.caption ?? beat.purpose}</span></p>
       <blockquote className="flex min-h-0 flex-1 flex-col">

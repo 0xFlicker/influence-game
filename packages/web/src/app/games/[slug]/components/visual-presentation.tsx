@@ -15,6 +15,9 @@ import { PortraitRoom } from "./portrait-room";
 import type { GamePlayer } from "@/lib/api";
 import { soloPresentationDurationMs, SOLO_EXIT_MS } from "./solo-presentation-timing";
 import { visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
+import { VotePresentation } from "./vote-presentation";
+import type { VoteLedgerState } from "./vote-ledger-model";
+import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
@@ -57,7 +60,7 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [] }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
@@ -72,6 +75,8 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   navigationRevision?: number;
   speechPresentation?: "solo" | "scene";
   status?: "preparing" | "recovery" | null;
+  voteLedger?: VoteLedgerState | null;
+  roster?: readonly FormatPresentationRosterPlayer[];
 }) {
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
@@ -88,7 +93,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   } else if (beat.kind === "portrait-room") {
     content = <PortraitRoom beat={beat} controlsInset={fullscreen ? 140 : 0} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
-    content = <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
+    content = voteLedger ? <VotePresentation beat={beat} ledger={voteLedger} roster={roster} controlsInset={fullscreen ? 140 : 0}
+      paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />
+      : <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
     const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;

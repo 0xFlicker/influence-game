@@ -299,7 +299,19 @@ Fullscreen browser coverage separates native entry/exit from responsive rotation
 
 ### Empower ties and deciding votes
 
-An accepted `vote.empower_tally_resolved` with `tie_pending` reveals the original named votes, then one compact tie beat with the original totals and tied nominees. It never names the placeholder as Empowered. The accepted `vote.empowered_set` reveals only the non-nominees' revotes, followed by the final revote totals and winner. A remaining tie labels the accepted wheel decision; a manual resolution labels its original totals explicitly. Original ballots are not replayed before the final result. Tally beats show compact totals rather than repeating the named receipt list beneath the solo vote sequence.
+All roll calls precede the complete format aggregate and resolution. During each
+solo vote reveal, a compact lower ledger groups only the revealed receipts by
+recipient, with headshots, voter names and running totals. Save-or-Exit shows
+saves, exits and their current net without forecasting final eligibility. The
+current receipt enters when its speech becomes fully visible. After speech fades,
+the saved full-body image shrinks and crossfades into its headshot at the voter
+entry in that recipient's row. Portrait-only games use the same collection.
+Collection follows the director's clock, including pause, speed and manual
+speech exits; reduced motion settles the headshot directly. Seeking reconstructs
+the revealed prefix without retaining future rows. Prev/Next treats each roll
+call as one scene; dialogue steps and scrubbing retain every individual ballot.
+
+An accepted `vote.empower_tally_resolved` with `tie_pending` reveals the original named votes, then one compact tie beat with the original totals and tied nominees. It never names the placeholder as Empowered. The accepted `vote.empowered_set` reveals only the non-nominees' revotes, followed by the final revote totals and winner. A remaining tie labels the accepted wheel decision; a manual resolution labels its original totals explicitly. Original ballots are not replayed before the final result. Tally beats show compact totals and the completed voter-to-recipient ledger. Revotes use their own running ledger without combining original receipts into the revote totals.
 
 A format elimination tiebreak has two beats before elimination: a compact explanation naming the tied nominees and empowered decision-maker, then the decision-maker's saved full-body shot with a speech bubble saying the eliminated player's name. The caption reads “Deciding vote · Vote to eliminate”. Missing full-body art retains the static portrait treatment. The chosen target comes from the validated canonical resolution, never from thinking or transcript prose. Solo timing, click-to-reveal, pause, speed and seeking use the existing director.
 

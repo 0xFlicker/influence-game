@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "./use-player-fullscreen";
 import { VisualPresentation } from "./visual-presentation";
+import { voteLedgerForCue, voteSceneIdentity } from "./vote-ledger-model";
 import { useVisualWatch } from "./use-visual-watch";
 import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, isSoloTranscript } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
@@ -216,7 +217,7 @@ function formatCueScene(cue: Exclude<PresentationCue, ClassicPresentationCue>): 
   };
 }
 
-function findCueForAdjacentScene(
+export function findCueForAdjacentScene(
   cues: readonly PresentationCue[],
   cursor: number,
   direction: -1 | 1,
@@ -244,9 +245,9 @@ function findCueForAdjacentScene(
 }
 
 function cueSceneIdentity(cue: PresentationCue): string {
-  return cue.source === "classic"
+  return voteSceneIdentity(cue) ?? (cue.source === "classic"
     ? `classic:${cue.sceneIndex}`
-    : cue.key;
+    : cue.key);
 }
 
 const MINGLE_ROOM_PHASES: ReadonlySet<PhaseKey> = new Set([
@@ -923,7 +924,8 @@ function DramaticReplayTheater({
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
-          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion} /> : <>
+          {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
+            voteLedger={voteLedgerForCue(presentationCues, directorSnapshot.cursor)} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={fullscreen}><FormatPresentation

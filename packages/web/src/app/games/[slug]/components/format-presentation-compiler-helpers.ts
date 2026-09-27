@@ -161,30 +161,11 @@ export function applyResolution(input: {
     );
   }
 
-  let before = cloneSnapshot(snapshot);
   snapshot = {
     ...snapshot,
     phase,
     canonicalSequence: decision.sequence,
-    resolution: payload,
   };
-  const aggregateCue: Extract<FormatPresentationCue, { kind: "format_aggregate" }> = {
-    source: "format",
-    key: cueKey(gameId, decision.sequence, "aggregate"),
-    canonicalSequence: decision.sequence,
-    round: decision.round,
-    phase,
-    kind: "format_aggregate",
-    baseDurationMs: FIXED_CUE_DURATION_MS.format_aggregate,
-    before,
-    after: cloneSnapshot(snapshot),
-    resolution: payload,
-    ballotPresentationStatus: automaticSoleVulnerable
-      ? "not_applicable"
-      : "revealed",
-  };
-  if (payload.aggregate.capability !== "two_names") cues.push(aggregateCue);
-
   const orderedBallots = automaticSoleVulnerable
     ? []
     : ballotEligiblePlayerIds.flatMap((voterId) => {
@@ -193,7 +174,7 @@ export function applyResolution(input: {
     });
   for (const [index, ballot] of orderedBallots.entries()) {
     const pacing = rollCallPacing(index, orderedBallots.length);
-    before = cloneSnapshot(snapshot);
+    const before = cloneSnapshot(snapshot);
     snapshot = {
       ...snapshot,
       revealedBallots: [...snapshot.revealedBallots, { ...ballot }],
@@ -215,9 +196,21 @@ export function applyResolution(input: {
     });
   }
 
-  if (payload.aggregate.capability === "two_names") {
-    cues.push({ ...aggregateCue, before: cloneSnapshot(snapshot), after: cloneSnapshot(snapshot) });
-  }
+  let before = cloneSnapshot(snapshot);
+  snapshot = { ...snapshot, resolution: payload };
+  cues.push({
+    source: "format",
+    key: cueKey(gameId, decision.sequence, "aggregate"),
+    canonicalSequence: decision.sequence,
+    round: decision.round,
+    phase,
+    kind: "format_aggregate",
+    baseDurationMs: FIXED_CUE_DURATION_MS.format_aggregate,
+    before,
+    after: cloneSnapshot(snapshot),
+    resolution: payload,
+    ballotPresentationStatus: automaticSoleVulnerable ? "not_applicable" : "revealed",
+  });
 
   if (payload.tiebreakerId) {
     before = cloneSnapshot(snapshot);
