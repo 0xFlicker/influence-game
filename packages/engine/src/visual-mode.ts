@@ -82,6 +82,46 @@ export interface AcceptedVisualScene {
   annotatedImageUrl: string;
   participantIds: readonly string[];
   anchors: readonly VisualPlayerAnchor[];
+  shots?: VisualShotPresentation<VisualShot>;
+  /** In agent context, only these identities are asserted visible in the supplied image. */
+  visibleParticipantIds?: readonly string[];
+}
+
+export interface VisualShotContent {
+  participantIds: string[];
+  visibleParticipantIds: string[];
+  anchors: VisualPlayerAnchor[];
+  /** Presentation-only targets; never identity evidence for an agent. */
+  pointers: Array<{ playerId: string; x: number; y: number }>;
+}
+export interface StoredVisualShot extends VisualShotContent {
+  imageArtifactId: string;
+  annotatedArtifactId: string;
+}
+export interface VisualShot extends VisualShotContent {
+  imageUrl: string;
+  annotatedImageUrl: string;
+}
+export interface VisualShotPresentation<T extends VisualShotContent> {
+  mode: "scene" | "establishing" | "groups" | "portraits";
+  overview: T | null;
+  groups: T[];
+}
+
+/** A camera view never changes room membership. Missing people retain portrait speech. */
+export function selectVisualShot<T extends VisualShotContent>(shots: VisualShotPresentation<T>, playerId?: string | null): T | null {
+  if (shots.mode === "portraits") return null;
+  if (shots.mode === "scene") return shots.overview;
+  return shots.groups.find(shot => playerId && shot.visibleParticipantIds.includes(playerId))
+    ?? shots.groups.find(shot => playerId && shot.participantIds.includes(playerId)) ?? shots.groups[0] ?? null;
+}
+
+export function assertVisualShot(shot: VisualShotContent, roomIds: readonly string[]): void {
+  if (new Set(shot.participantIds).size !== shot.participantIds.length || shot.participantIds.some(id => !roomIds.includes(id))) throw new Error("Shot participants must belong to this room");
+  if (new Set(shot.visibleParticipantIds).size !== shot.visibleParticipantIds.length || shot.visibleParticipantIds.some(id => !shot.participantIds.includes(id))) throw new Error("Visible identities must belong to this shot");
+  assertVisualAnchors(shot.anchors, shot.anchors.map(anchor => anchor.playerId));
+  if (shot.anchors.some(anchor => !shot.visibleParticipantIds.includes(anchor.playerId))) throw new Error("Head anchor requires a visible identity");
+  if (new Set(shot.pointers.map(p => p.playerId)).size !== shot.pointers.length || shot.pointers.some(p => !roomIds.includes(p.playerId) || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.y < 0 || p.x > 1 || p.y > 1)) throw new Error("Invalid speech pointer");
 }
 
 export interface ScenePerformanceCue {
@@ -147,4 +187,12 @@ export interface VisualOperationEvent {
   kind: "attempt_started" | "attempt_finished" | "retry" | "presentation" | "failure" | "reconciliation" | "paused" | "resumed" | "policy";
   outcome: "pending" | "success" | "failed" | "uncertain" | "portraits" | "unanchored" | "scene" | "paused";
   message: string;
+}
+
+/** Required visuals cover each canonical participant with an actual localized head. */
+export function hasCompleteVisualHeads(scene: { anchors: readonly VisualPlayerAnchor[] | null; shots?: VisualShotPresentation<StoredVisualShot> | null }, ids: readonly string[]): boolean {
+  if (!scene.shots) return scene.anchors?.length === ids.length;
+  const shots = scene.shots.mode === "scene" ? scene.shots.overview ? [scene.shots.overview] : [] : scene.shots.mode === "portraits" ? [] : scene.shots.groups;
+  const visible = new Set(shots.flatMap(s => s.anchors.map(a => a.playerId)));
+  return ids.every(id => visible.has(id));
 }

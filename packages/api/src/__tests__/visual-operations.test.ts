@@ -157,9 +157,10 @@ test("rebuilds an unused incorrect Finals plan at the same boundary, preserving 
     calls++;
     if (String(url).includes("/images/")) return Response.json({ data: [{ b64_json: png.toString("base64") }] });
     const properties = JSON.parse(String(init?.body)).text.format.schema.properties;
-    const output = properties.identities ? { count: 5, identities: ids.map((playerId) => ({ playerId, confidence: "clear" })) }
-      : properties.matches ? { count: 5, matches: ids.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear" })) }
-      : { count: 5, anchors: ids.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear", head: { x: index * 0.18, y: 0.2, width: 0.1, height: 0.1 } })) };
+    const groupIds: string[] = (properties.identities ?? properties.matches ?? properties.anchors).items.properties.playerId.enum;
+    const output = properties.identities ? { count: groupIds.length, identities: groupIds.map((playerId) => ({ playerId, confidence: "clear" })) }
+      : properties.matches ? { count: groupIds.length, matches: groupIds.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear" })) }
+      : { count: groupIds.length, anchors: groupIds.map((playerId, index) => ({ playerId, label: index + 1, confidence: "clear", head: { x: index * 0.18, y: 0.2, width: 0.1, height: 0.1 } })) };
     return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
   }, { preconnect: originalFetch.preconnect });
   const resumed = runtime();
@@ -224,7 +225,7 @@ test("rejected composition retains exact evidence and can be reverified without 
     const properties = body.text.format.schema.properties;
     const output = properties.identities ? { count: valid ? 1 : 2, identities: [{ playerId: "p1", confidence: "clear" }] }
       : properties.matches ? { count: 1, matches: [{ playerId: "p1", label: 1, confidence: "clear" }] }
-      : { count: 1, anchors: [{ playerId: "p1", label: 1, confidence: "clear", head: { x: .2, y: .2, width: .1, height: .1 } }] };
+      : { ...(properties.missingParticipantIds ? { missingParticipantIds: [] } : {}), count: valid ? 1 : 2, anchors: [{ playerId: "p1", label: 1, confidence: "clear", head: { x: .2, y: .2, width: .1, height: .1 } }] };
     return Response.json({ status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] });
   }, { preconnect: originalFetch.preconnect });
   await runtime().prepareVisualBoundary!(snapshot);
@@ -305,4 +306,26 @@ test("head positions follow the frozen image, and are dropped when a different p
   expect(result.fullBodies["head-player"]).toContain(body);
   expect(result.fullBodyHeads).toEqual({});
   expect(JSON.stringify(result)).not.toContain("confirmation");
+});
+
+test("a fully marked published correction repairs a failed required scene at the next boundary without another render", async () => {
+  const { controlVisualMedia } = await import("../services/visual-media-repair.js");
+  const [assets] = await db.select().from(schema.visualGameAssets);
+  const imageArtifactId = assets!.backgrounds.lobby!;
+  const scene = await prepareVisualScene(db, { gameId: "visual-ops", boundarySequence: 0,
+    plan: planVisualScene({ roomId: "lobby", backgroundArtifactId: imageArtifactId, cast: assets!.cast }) });
+  await db.update(schema.visualScenes).set({ status: "failed", renderRevision: 1, candidateArtifactId: imageArtifactId, failure: "Rejected identity" }).where(eq(schema.visualScenes.id, scene.id));
+  const review = await controlVisualMedia(db, "visual-ops", "operator", { action: "review", sceneId: scene.id, requestId: "mark", expectedVersion: 0,
+    review: { expectedRevision: 1, planHash: scene.planHash, mode: "scene", shots: [{ sourceId: `artifact:${imageArtifactId}`, role: "overview", participantIds: ["p1"], visibleParticipantIds: ["p1"],
+      anchors: [{ playerId: "p1", label: 1, confidence: "clear", head: { x: .2, y: .2, width: .1, height: .1 } }], pointers: [] }] } });
+  expect(review.accepted).toBe(true);
+  await controlVisualMedia(db, "visual-ops", "operator", { action: "publish", sceneId: scene.id, requestId: "publish-mark", expectedVersion: 1, versionId: review.versionId!, expectedPublication: 0 });
+  await setVisualFailurePolicy(db, "visual-ops", "require_visuals", "operator");
+  const visual = runtime();
+  await visual.prepareVisualBoundary!(snapshot);
+  expect(calls).toBe(0);
+  const result = await visual.prepareVisualTurn!({ context: { gameId: "visual-ops", selfId: "p1", selfName: "Arden", round: 1, phase: Phase.LOBBY, alivePlayers: [{ id: "p1", name: "Arden" }], publicMessages: [], mingleMessages: [] },
+    method: "getLobbyMessage", turnId: "corrected-turn", committedHeads: snapshot.execution.heads, committedCursor: snapshot.execution.cursor });
+  expect(result.room?.scene.visibleParticipantIds).toEqual(["p1"]);
+  expect((await db.select().from(schema.visualScenes))[0]?.status).toBe("failed");
 });

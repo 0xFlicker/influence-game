@@ -135,6 +135,57 @@ test.describe("local public player identity", () => {
     }
   });
 
+  test("pre-show operator controls respect permissions and execute game actions", async ({ browser }) => {
+    test.setTimeout(120_000);
+    for (const width of [1440, 390]) {
+      const context = await browser.newContext({ viewport: { width, height: 900 } });
+      await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
+      const page = await context.newPage();
+      let permissions: string[] = [];
+      let full = false;
+      let fail = true;
+      const actions: string[] = [];
+      const player: GamePlayer = { id: "cast", name: "Mira", persona: "Social", personaKey: "social", status: "alive", shielded: false };
+      try {
+        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions } }); });
+        await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
+        await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: "2026-09-26" } }));
+        await page.route("**/api/games/control-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
+        for (const action of ["start", "stop", "hide"]) await page.route(`**/api/games/control-fixture/${action}`, route => { actions.push(action); return route.fulfill(fail ? { status: 409, json: { error: "Please try again" } } : { json: { status: "ok" } }); });
+        await page.goto(`${servers.webUrl}/games/control-fixture`, { waitUntil: "networkidle" });
+        await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
+        permissions = ["start_game", "stop_game", "hide_game"];
+        await page.reload({ waitUntil: "networkidle" });
+        const start = page.getByRole("button", { name: "Start", exact: true });
+        await expect(start).toBeDisabled();
+        full = true;
+        await page.reload({ waitUntil: "networkidle" });
+        await expect(start).toBeEnabled();
+        await expect(page.getByText("1/1 joined · Ready to start")).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        await page.screenshot({ path: `/tmp/pre-show-controls-${width}.png`, fullPage: true });
+        await start.click();
+        await expect(page.getByRole("region", { name: "Game pre-show" }).getByRole("alert")).toContainText("Please try again");
+        fail = false;
+        await start.click();
+        await expect(start).toBeEnabled();
+        await page.getByRole("button", { name: "Stop", exact: true }).click();
+        await expect(start).toBeEnabled();
+        await page.getByRole("button", { name: "Hide", exact: true }).click();
+        expect(actions).toEqual(["start", "start", "stop"]);
+        await page.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("button", { name: "Hide", exact: true }).click();
+        // The first /games navigation can include a cold development-server compile.
+        await Promise.all([
+          page.waitForURL(`${servers.webUrl}/games`),
+          page.getByRole("button", { name: "Confirm hide", exact: true }).click(),
+        ]);
+        await expect(page).toHaveURL(`${servers.webUrl}/games`);
+        expect(actions).toEqual(["start", "start", "stop", "hide"]);
+      } finally { await context.close(); }
+    }
+  });
+
   test("agent selector supports reuse, retries, empty-agent creation and owned-seat roles", async ({ browser }) => {
     test.setTimeout(180_000);
     const savedAgent = (id: string, name: string, personaKey: SavedAgent["personaKey"]): SavedAgent => ({ id, name, personaKey, avatarUrl: null, backstory: null, personality: "Fixture", strategyStyle: null, gamesPlayed: 3, gamesWon: 1, createdAt: "2026-09-01", updatedAt: "2026-09-01" });

@@ -267,7 +267,10 @@ describe("free queue season admission", () => {
       catalogId: "openai:gpt-6-luna",
       reasoningPolicy: "action-policy",
     });
-    expect(gameConfig.providerManifest).toEqual([gameConfig.modelSelection]);
+    expect(gameConfig.providerManifest).toEqual([
+      gameConfig.modelSelection,
+      { catalogId: "katana:grok-4-6", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
     expect(gameConfig.visualMode).toBe(true);
     expect(gameConfig.visualFailurePolicy).toBe("best_effort");
     expect(gameConfig).not.toHaveProperty("modelTier");

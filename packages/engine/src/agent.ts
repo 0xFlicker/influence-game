@@ -2439,7 +2439,9 @@ export class InfluenceAgent implements IAgent {
           ? ctx.alivePlayers.filter((player) => ctx.roomMates?.includes(player.name)).map((player) => player.id)
           : [...ctx.alivePlayers.map((player) => player.id), ...(roomId === "finals" ? (ctx.jury ?? []).map((member) => member.playerId) : [])];
         if (scene.participantIds.some((id) => !visibleIds.includes(id))) throw new Error("Visual scene includes an occupant outside the agent's visible audience");
-        assertVisualAnchors(scene.anchors, scene.participantIds);
+        const pictured = scene.visibleParticipantIds ?? scene.participantIds;
+        if (pictured.some(id => !scene.participantIds.includes(id))) throw new Error("Pictured identities must belong to the canonical room");
+        assertVisualAnchors(scene.anchors, pictured);
         visual = { ...visual, room: { scene, cues: latestSceneCues(scene, visual.room.cues) } };
       }
     }
@@ -6544,7 +6546,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     if (options?.visual) {
       result.push({
         role: "user",
-        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
+        content: `${PERFORMANCE_CUE_GUIDANCE}\nCharacter performance instructions (character-authored direction): ${options.visual.performanceInstructions}${options.visual.observableRoom ? `\nCanonical room participants: ${JSON.stringify(options.visual.observableRoom.participantIds)}. Latest observable cues: ${JSON.stringify(options.visual.observableRoom.cues)}` : ""}${options.visual.room ? `\nCurrent scene: ${options.visual.room.scene.id}. This image shows one camera view of your room. Visible people: ${JSON.stringify(options.visual.room.scene.visibleParticipantIds ?? options.visual.room.scene.participantIds)}. People in this room outside this view or missing from the picture: ${JSON.stringify(options.visual.room.scene.participantIds.filter(id => !(options.visual!.room!.scene.visibleParticipantIds ?? options.visual!.room!.scene.participantIds).includes(id)))}. Absence from the picture does not mean absence from the room. Number labels: ${JSON.stringify(options.visual.room.scene.anchors.map(({ playerId, label }) => ({ playerId, label })))}. Your player ID: ${this.id}. Latest observable room cues: ${JSON.stringify(options.visual.room.cues)}` : ""}`,
         ...(options.visual.room && { images: [{ url: options.visual.room.scene.annotatedImageUrl, detail: "high" as const }] }),
       });
     }

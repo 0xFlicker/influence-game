@@ -1,4 +1,5 @@
-import type { FormatPresentationRosterPlayer } from "./types";
+import type { FormatEmpowerVoteReceipt, FormatPresentationRosterPlayer } from "./types";
+import { VoteLedger } from "./vote-presentation";
 
 export function FormatEmpowerVoteStage({
   empoweredId,
@@ -6,12 +7,14 @@ export function FormatEmpowerVoteStage({
   roster,
   tiedPlayerIds = [],
   resolutionMethod,
+  receipts,
 }: {
   empoweredId: string | null;
   counts: Readonly<Record<string, number>>;
   roster: readonly FormatPresentationRosterPlayer[];
   tiedPlayerIds?: readonly string[];
   resolutionMethod?: "revote" | "wheel" | "manual";
+  receipts: readonly FormatEmpowerVoteReceipt[];
 }) {
   const names = new Map(roster.map((player) => [player.id, player.name]));
   const isRevote = resolutionMethod === "revote" || resolutionMethod === "wheel";
@@ -69,6 +72,13 @@ export function FormatEmpowerVoteStage({
           );
         })}
       </dl>
+      <div className="mt-6 rounded-xl border border-white/10 bg-black/30 p-3">
+        <VoteLedger title={isRevote ? "Empower revote" : "Empower vote"} roster={roster}
+          votes={receipts.flatMap(receipt => {
+            const targetId = isRevote ? receipt.revoteTargetId : receipt.targetId;
+            return targetId ? [{ voterId: receipt.voterId, targetId, choice: "empower" as const }] : [];
+          })} total={isRevote ? receipts.filter(receipt => receipt.revoteTargetId).length : receipts.length} />
+      </div>
     </section>
   );
 }

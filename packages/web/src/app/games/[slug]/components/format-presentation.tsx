@@ -25,6 +25,7 @@ export function FormatPresentation({
         tiedPlayerIds={cue.kind === "empowered_tie" ? cue.tiedPlayerIds : []}
         resolutionMethod={cue.kind === "empowered_tally" ? cue.resolutionMethod : undefined}
         counts={cue.counts}
+        receipts={cue.receipts}
         roster={roster}
       />
     );
@@ -99,7 +100,7 @@ export function FormatPresentation({
     return <TwoNamesStage cue={cue as Parameters<typeof TwoNamesStage>[0]["cue"]} roster={roster} currentStateEntry={currentStateEntry} />;
   }
 
-  if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.resolution?.aggregate.capability === "two_names") {
+  if ((cue.kind === "format_aggregate" || cue.kind === "format_roll_call") && cue.after.activeFormatId === "two_names") {
     return (
       <PresentationShell cue={cue} roster={roster} currentStateEntry={currentStateEntry}>
         <TwoNamesVoteStage cue={cue} roster={roster} />

@@ -5,6 +5,26 @@ export interface VisualLocalization {
   count: number;
   anchors: VisualPlayerAnchor[];
   verifiedParticipantIds?: string[];
+  missingParticipantIds?: string[];
+}
+
+/** Best effort still requires an exact account of every identity and every person. */
+export function partialVisualLocalizationSchema(playerIds: readonly string[]) {
+  const schema = visualLocalizationSchema(playerIds);
+  return { ...schema, required: [...schema.required, "missingParticipantIds"], properties: {
+    ...schema.properties,
+    anchors: { ...schema.properties.anchors, minItems: Math.max(0, playerIds.length - 1) },
+    missingParticipantIds: { type: "array", maxItems: 1, items: { type: "string", enum: [...playerIds] } },
+  } };
+}
+export function decodePartialVisualLocalization(text: string, playerIds: readonly string[]): VisualLocalization {
+  const value: unknown = JSON.parse(text);
+  if (!new Ajv().compile<VisualLocalization>(partialVisualLocalizationSchema(playerIds))(value)) throw new Error("Invalid partial scene localization document");
+  const visible = value.anchors.map(anchor => anchor.playerId);
+  const accounted = [...visible, ...value.missingParticipantIds!];
+  if (!visible.length || value.count !== visible.length || accounted.length !== playerIds.length || new Set(accounted).size !== playerIds.length || playerIds.some(id => !accounted.includes(id))) throw new VisualIdentityFailure("Partial scene contains extra, duplicated or unaccounted people");
+  assertVisualAnchors(value.anchors, visible);
+  return { ...value, verifiedParticipantIds: visible };
 }
 
 export function visualLocalizationSchema(playerIds: readonly string[]) {

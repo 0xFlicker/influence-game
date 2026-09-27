@@ -1,3 +1,5 @@
+import { applyPublishedVisualScene } from "./visual-scene-store.js";
+import { hasCompleteVisualHeads } from "@influence/engine/visual-mode";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 import { computeMingleRoomCount, mingleWindowRooms, GameState, type CanonicalGameEvent, type DurableGameTurnSnapshotV1 } from "@influence/engine";
 import { and, eq, inArray } from "drizzle-orm";
@@ -59,7 +61,7 @@ export async function prepareCommittedMingleScenes(db: DrizzleDB, input: {
     input.signal?.throwIfAborted();
     await assertBoundary();
     const roomId = mingleVisualRoom(room.roomId);
-    const previous = await readCurrentVisualScene(db, execution.gameId, roomId);
+    const previous = await applyPublishedVisualScene(db, await readCurrentVisualScene(db, execution.gameId, roomId));
     const plan = planVisualScene({ roomId, backgroundArtifactId: backgrounds[roomId] ?? null,
       cast: room.playerIds.map((id) => cast.get(id)!), previous: previous?.plan,
       allianceGroups: state.getHuddleEligibleAlliances().map((alliance) => alliance.memberIds),
@@ -67,13 +69,13 @@ export async function prepareCommittedMingleScenes(db: DrizzleDB, input: {
         .map((event) => ({ playerId: event.payload.playerId, cue: event.payload.cue })),
     });
     if (previous?.status === "ready" && sameVisualArrangement(previous.plan, plan)) {
-      if (input.requireVisuals && previous.anchors?.length !== plan.cast.length) throw new Error("Required Mingle annotations are unavailable");
+      if (input.requireVisuals && !hasCompleteVisualHeads(previous, plan.cast.map(m => m.id))) throw new Error("Required Mingle annotations are unavailable");
       result.push(previous); continue;
     }
     if (!plan.cast.length && !plan.backgroundArtifactId) continue;
     const scene = await prepareVisualScene(db, { gameId: execution.gameId, boundarySequence: execution.heads.turnSequence, afterDialogueSequence: execution.heads.dialogueSequence, plan, assertBoundary });
-    const accepted = await renderVisualSceneBestEffort(db, scene, assertBoundary);
-    if (input.requireVisuals && (!accepted || accepted.anchors?.length !== plan.cast.length)) throw new Error(`Required imagery for ${roomId} is unavailable`);
+    const accepted = await renderVisualSceneBestEffort(db, scene, assertBoundary, undefined, !input.requireVisuals);
+    if (input.requireVisuals && (!accepted || !hasCompleteVisualHeads(accepted, plan.cast.map(m => m.id)))) throw new Error(`Required imagery for ${roomId} is unavailable`);
     if (!accepted) await recordVisualOperationEvent(db, execution.gameId, `${scene.id}:boundary:${execution.heads.turnSequence}:portraits`, { sceneId: scene.id, boundarySequence: execution.heads.turnSequence, kind: "presentation", outcome: "portraits", message: `Best effort: ${roomId} uses portraits and text context` });
     if (accepted) result.push(accepted);
   }

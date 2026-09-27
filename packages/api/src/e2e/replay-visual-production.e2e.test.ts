@@ -157,11 +157,31 @@ test("Producer uses the same rows, preserves lost-request controls, reviews and 
     await page.setViewport({ width: 390, height: 844 });
     await page.screenshot({ path: temporaryPath("replay-production-mobile-review.png"), fullPage: true });
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Correct images')?.click()");
+    await page.waitForSelector('[aria-label="Correct image review"] img');
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Use as group shot')?.click()");
+    await page.select('select[aria-label="Character to mark"]', "arden");
+    const surface = (await page.$('[aria-label="Place character marker on image"]'))!;
+    await surface.scrollIntoView();
+    const bounds = (await surface.boundingBox())!;
+    await page.mouse.click(bounds.x + bounds.width * .25, bounds.y + bounds.height * .4);
+    await page.waitForFunction("document.body.innerText.includes('1 marked heads in this picture.')");
+    await page.screenshot({ path: temporaryPath("visual-image-correction-mobile.png"), fullPage: true });
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Save reviewed version')?.click()");
+    await page.waitForFunction("document.body.innerText.includes('Review saved. Publish this version when ready.')");
+    expect(await database.db.select().from(schema.visualMediaPublications)).toHaveLength(0);
+    const corrected = (await database.db.select().from(schema.visualMediaVersions)).find(v => v.verificationVersion === "producer-review-v1")!;
+    expect(corrected.shots?.groups[0]?.visibleParticipantIds).toEqual(["arden"]);
+    expect(corrected.shots?.groups[0]?.anchors[0]?.head.x).toBeCloseTo(.22, 1);
+    // Saving reports its receipt before the refreshed versions finish loading.
+    // A native click on the still-disabled publication button does nothing.
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Publish for viewers' && !button.disabled)");
     await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Publish for viewers')?.click()");
     await page.waitForFunction("document.body.innerText.includes('1 scenes need images or publication')");
     expect(await database.db.select().from(schema.visualMediaPublications)).toHaveLength(1);
     await page.click('[aria-label="Replay image production"] input[type="checkbox"]');
-    await page.waitForFunction("document.body.innerText.includes('Viewer version: v1 · Publication 1')");
+    await page.waitForFunction("document.body.innerText.includes('Viewer version: v2 · Publication 1')");
     const viewer = await (await api.fetch(new Request(`http://127.0.0.1:${api.port}/api/games/${gameId}/visual`))).json() as { enabled: boolean; scenes: unknown[] };
     expect(viewer.enabled).toBe(true); expect(viewer.scenes).toHaveLength(1);
     await page.goto(`${webUrl}/admin/users`, { waitUntil: "networkidle0" });

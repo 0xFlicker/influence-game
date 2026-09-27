@@ -3,18 +3,18 @@ import { and, eq, lte } from "drizzle-orm";
 import { optionalPerformanceCue } from "@influence/engine/performance-cue";
 import { schema } from "../db/index.js";
 import { mingleWindowRooms, type GameRunnerOptions, type PhaseContext } from "@influence/engine";
-import { assertVisualAnchors, visualRoomForPhase } from "@influence/engine/visual-mode";
+import { assertVisualAnchors, assertVisualShot, hasCompleteVisualHeads, selectVisualShot, visualRoomForPhase } from "@influence/engine/visual-mode";
 import type { VisualCastMember } from "@influence/engine/visual-scene-plan";
 import type { DrizzleDB } from "../db/index.js";
 import { visualExecutionBoundaryGuard } from "./visual-execution-boundary.js";
 import { stableJson } from "./stable-hash.js";
-import { readCurrentVisualScene, readVisualArtifact } from "./visual-scene-store.js";
+import { applyPublishedVisualScene, readCurrentVisualScene, readVisualArtifact } from "./visual-scene-store.js";
 
 const CONVERSATIONAL_METHODS = new Set(["getLobbyMessage", "sendRoomMessage", "takeMingleTurn", "getAccusation", "getDefense", "getOpeningStatement", "getJuryQuestion", "getJuryAnswer", "getClosingArgument", "getPlea"]);
 
 /** Explicit text-only context is always supported. This reader never generates or charges. */
 export function createVisualTurnContextReader(db: DrizzleDB, input: {
-  gameId: string; ownerEpoch: string; frozenCast: readonly VisualCastMember[];
+  gameId: string; ownerEpoch: string; requireVisuals?: boolean; frozenCast: readonly VisualCastMember[];
 }): NonNullable<GameRunnerOptions["prepareVisualTurn"]> {
   const frozenCast = new Map(input.frozenCast.map((member) => [member.id, structuredClone(member)]));
   if (frozenCast.size !== input.frozenCast.length) throw new Error("Duplicate frozen visual profile");
@@ -37,7 +37,7 @@ export function createVisualTurnContextReader(db: DrizzleDB, input: {
       participantIds = room.playerIds;
     } else participantIds = [...new Set([...context.alivePlayers.map((player) => player.id), ...(roomId === "finals" ? (context.jury ?? []).map((member) => member.playerId) : [])])];
     if (!participantIds.includes(context.selfId)) return result;
-    const scene = await readCurrentVisualScene(db, input.gameId, roomId);
+    const scene = await applyPublishedVisualScene(db, await readCurrentVisualScene(db, input.gameId, roomId));
     const unavailable = async (reason: NonNullable<VisualFailureEvidence["context"]>["reason"], error?: unknown) => {
       const sceneParticipants = scene?.plan.cast.map(({ id, name }) => ({ id, name })) ?? [];
       const expectedParticipants = participantIds.map((id) => ({ id, name: frozenCast.get(id)?.name ?? context.alivePlayers.find((player) => player.id === id)?.name ?? context.jury?.find((member) => member.playerId === id)?.playerName ?? id }));
@@ -52,7 +52,7 @@ export function createVisualTurnContextReader(db: DrizzleDB, input: {
       return result;
     };
     const matches = scene && scene.boundarySequence <= committedHeads.turnSequence && stableJson([...participantIds].sort()) === stableJson(scene.plan.cast.map((member) => member.id).sort());
-    const arrangementKey = matches ? scene.id : `${context.round}:${context.phase}:${roomId}:${[...participantIds].sort().join(",")}`;
+    const arrangementKey = matches && scene ? scene.id : `${context.round}:${context.phase}:${roomId}:${[...participantIds].sort().join(",")}`;
     const rows = await db.select({ envelope: schema.gameEvents.envelope }).from(schema.gameEvents)
       .where(and(eq(schema.gameEvents.gameId, input.gameId), eq(schema.gameEvents.eventType, "visual.cue_recorded"), lte(schema.gameEvents.sequence, committedHeads.eventSequence))).orderBy(schema.gameEvents.sequence);
     const latest = new Map<string, import("@influence/engine/visual-mode").PerformanceCue>();
@@ -73,6 +73,18 @@ export function createVisualTurnContextReader(db: DrizzleDB, input: {
       await assertCurrent();
       for (const member of scene.plan.cast) if (stableJson(member) !== stableJson(frozenCast.get(member.id))) return unavailable("reference");
       result.presentationScene = { id: scene.id, roomId };
+      if (scene.shots) {
+        if (input.requireVisuals && !hasCompleteVisualHeads(scene, participantIds)) return unavailable("anchors");
+        const shot = selectVisualShot(scene.shots, context.selfId);
+        if (!shot) return result;
+        assertVisualShot(shot, participantIds);
+        assertVisualAnchors(shot.anchors, shot.visibleParticipantIds);
+        const annotated = await readVisualArtifact(db, input.gameId, shot.annotatedArtifactId);
+        await assertCurrent();
+        result.room = { scene: { id: scene.id, roomId, version: scene.boundarySequence, imageUrl: "", annotatedImageUrl: `data:image/png;base64,${annotated.toString("base64")}`,
+          participantIds, visibleParticipantIds: shot.visibleParticipantIds, anchors: shot.anchors }, cues: result.observableRoom.cues.map(entry => ({ ...entry, sceneId: scene.id, turnId: "observable" })) };
+        return result;
+      }
       // Verified composition can be displayed without anchors, but agents get text only.
       try { assertVisualAnchors(scene.anchors, participantIds); }
       catch (error) { return unavailable("anchors", error); }

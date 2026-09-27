@@ -9,11 +9,27 @@ export const FULL_BODY_HEAD_REGION_BOTTOM = 0.22;
 export function layoutSoloPresentation(width: number, height: number, imageWidth: number, imageHeight: number,
   fullBody: boolean, controlsInset: number, speechHeight: number, head?: HeadRectangle) {
   const margin = 12;
+  if (!fullBody) {
+    const available = Math.max(0, height - controlsInset);
+    // A short embedded player needs the speech beside its portrait: stacking
+    // would leave less than one readable line after the header and ledger.
+    const beside = width >= 760 || (width >= 480 && available < 320);
+    const bubbleWidth = Math.max(0, Math.min(480, beside ? width * .43 : width - margin * 2));
+    const bubbleHeight = Math.max(0, Math.min(speechHeight, 320, beside ? available - 24 : available * .44));
+    const diameter = Math.max(0, Math.min(440, width * (beside ? .32 : .68), beside ? available * .8 : available - bubbleHeight - 56));
+    const groupWidth = diameter + 40 + bubbleWidth;
+    const image = { width: diameter, height: diameter, left: beside ? (width - groupWidth) / 2 : (width - diameter) / 2,
+      top: beside ? (available - diameter) / 2 : Math.max(margin, (available - diameter - bubbleHeight - 24) / 2) };
+    const bubble = { left: beside ? image.left + diameter + 40 : (width - bubbleWidth) / 2,
+      top: beside ? Math.max(margin, (available - bubbleHeight) / 2) : image.top + diameter + 24,
+      width: bubbleWidth, height: bubbleHeight };
+    return { image, bubble, above: false, beside, tailLeft: bubbleWidth / 2 };
+  }
   const ratio = imageWidth > 0 && imageHeight > 0 ? imageWidth / imageHeight : 2 / 3;
-  // Fill the player vertically. Wide frames get black side bars; narrow frames
+  // Fill the player vertically. Wide frames expose the blurred backdrop; narrow frames
   // trim only the sides, keeping the full height of the standing character.
-  const h = fullBody ? height : Math.min(256, height * 0.22, width - margin * 2);
-  const w = fullBody ? h * ratio : Math.min(256, width - margin * 2, h);
+  const h = height;
+  const w = h * ratio;
   const image: SceneFrame = { width: Math.max(0, w), height: Math.max(0, h), left: (width - w) / 2, top: fullBody ? 0 : margin };
   const bubbleWidth = Math.max(0, Math.min(480, width - margin * 2));
   const measured = fullBody && validHeadRectangle(head) ? head : null;
@@ -27,6 +43,6 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
   const bubbleHeight = Math.min(speechHeight, 320, above ? upperRoom : lowerRoom);
   const top = above ? margin + upperRoom - bubbleHeight : below;
   const left = Math.max(margin, Math.min(width - margin - bubbleWidth, headX - bubbleWidth / 2));
-  return { image, above, tailLeft: Math.max(16, Math.min(bubbleWidth - 16, headX - left)), bubble: { left, top, width: bubbleWidth,
+  return { image, above, beside: false, tailLeft: Math.max(16, Math.min(bubbleWidth - 16, headX - left)), bubble: { left, top, width: bubbleWidth,
     height: bubbleHeight } };
 }

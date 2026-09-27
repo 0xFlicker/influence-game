@@ -18,7 +18,9 @@ related_components: [public-watch, production-game-mcp, presentation-director, t
 
 ## Context
 
-Format ballots needed television pacing: aggregate first, then named roll call.
+Format ballots need staged pacing: named roll call with a running ledger, then
+the complete aggregate. Do not publish final totals or resolution inside the
+roll-call snapshots.
 The accepted ballots were already intentionally readable by operator web, API,
 and MCP transports, while participating agents had a narrower sealed-knowledge
 contract. Treating the reveal as a new privacy boundary would have required a
@@ -70,8 +72,8 @@ animation callbacks never commit game truth.
 Use one fixture across lanes. Before resolution, assert public/operator/MCP
 sanitized mappings are readable, producer raw mode retains provenance, and each
 participating agent sees only its own receipt. After resolution, assert the
-projection reveals the same mappings in roster order and the UI draws aggregate
-before ledger. Add malformed-prefix tests that retain the last trusted snapshot
+projection reveals the same mappings in roster order and the UI draws each receipt
+before the complete aggregate. Add malformed-prefix tests that retain the last trusted snapshot
 without transcript repair.
 
 Keep reconnect coverage focused on pause intent: wait for the refreshed replay
