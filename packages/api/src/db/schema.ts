@@ -337,6 +337,7 @@ export const seasons = pgTable("seasons", {
 ]);
 
 export const games = pgTable("games", {
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   id: text("id").primaryKey(), // UUID
   slug: text("slug").notNull().unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
@@ -366,6 +367,7 @@ export const games = pgTable("games", {
     .default(sql`now()::text`),
 }, (table) => [
   index("games_created_by_id_idx").on(table.createdById),
+  check("games_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   index("games_season_id_status_idx").on(table.seasonId, table.status),
   index("games_status_ended_at_idx").on(table.status, table.endedAt),
   index("games_status_ended_created_idx").on(table.status, table.endedAt, table.createdAt),
@@ -412,7 +414,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
-  strategyStyle: text("strategy_style"), // Strategy hints
+  strategyStyle: text("strategy_style"), // Influence strategy only
+  werewolfStrategyStyle: text("werewolf_strategy_style"),
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
   gender: text("gender").$type<AgentGender>(),
   currentRevisionId: text("current_revision_id")
@@ -3800,3 +3803,5 @@ export const gameAssetOperations = pgTable("game_asset_operations", {
   check("game_asset_operations_kind_check", sql`${t.kind} IN ('upload', 'update', 'replace', 'delete')`),
   check("game_asset_operations_request_check", sql`length(${t.requestId}) BETWEEN 1 AND 200`),
 ]);
+
+export { werewolfEvents, werewolfTurns } from "./werewolf-schema.js";

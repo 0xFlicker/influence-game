@@ -67,6 +67,7 @@ const CREATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "werewolfStrategyStyle",
   "gender",
   "avatarUrl",
   "fullBodyReferenceUrl",
@@ -85,6 +86,7 @@ const UPDATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "werewolfStrategyStyle",
   "gender",
   "avatarUrl",
   "fullBodyReferenceUrl",
@@ -173,6 +175,7 @@ export interface CreateAgentProfileMutationInput {
   personality: unknown;
   backstory?: unknown;
   strategyStyle?: unknown;
+  werewolfStrategyStyle?: unknown;
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
@@ -191,6 +194,7 @@ export interface UpdateAgentProfileMutationInput {
   personality?: unknown;
   backstory?: unknown;
   strategyStyle?: unknown;
+  werewolfStrategyStyle?: unknown;
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
@@ -267,6 +271,7 @@ export interface AgentSummary {
   publicBiography: string | null;
   personalityPrompt: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle: string | null;
   gender: AgentGender | null;
   avatarUrl: string | null;
   fullBodyReferenceUrl: string | null;
@@ -470,6 +475,8 @@ function prepareAgentProfileCreate(
   const strategyStyle = input.strategyStyle === undefined
     ? null
     : optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  const werewolfStrategyStyle = input.werewolfStrategyStyle === undefined ? null
+    : optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   const personaKey = input.personaKey === undefined || input.personaKey === null
     ? null
     : optionalArchetype(input.personaKey);
@@ -503,6 +510,7 @@ function prepareAgentProfileCreate(
         backstory,
         personality,
         strategyStyle,
+        werewolfStrategyStyle,
         personaKey,
         gender,
         avatarUrl: avatarUrl.value ?? null,
@@ -521,6 +529,7 @@ function prepareAgentProfileCreate(
     backstory,
     personality,
     strategyStyle,
+    werewolfStrategyStyle,
     personaKey,
     gender,
     avatarUrl: avatarUrl.value ?? null,
@@ -941,6 +950,9 @@ function prepareAgentProfileUpdates(
   if (input.backstory !== undefined) {
     updates.backstory = optionalStringField(input.backstory, "backstory", MAX_PUBLIC_BIOGRAPHY_LENGTH);
   }
+  if (input.werewolfStrategyStyle !== undefined) {
+    updates.werewolfStrategyStyle = optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  }
   if (input.strategyStyle !== undefined) {
     updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   }
@@ -977,6 +989,7 @@ function mutableAgentProfileChanged(left: AgentProfileRow, right: AgentProfileRo
     || left.backstory !== right.backstory
     || left.personality !== right.personality
     || left.strategyStyle !== right.strategyStyle
+    || left.werewolfStrategyStyle !== right.werewolfStrategyStyle
     || left.personaKey !== right.personaKey
     || left.gender !== right.gender
     || left.avatarUrl !== right.avatarUrl
@@ -1118,6 +1131,7 @@ export async function createOwnedAgent(
     backstory: publicBiography,
     personality: personalityPrompt,
     strategyStyle,
+    werewolfStrategyStyle: input.werewolfStrategyStyle,
     personaKey: archetype,
     gender: input.gender,
     avatarUrl: avatarUrl.value,
@@ -1162,6 +1176,9 @@ export async function updateOwnedAgent(
   }
   if (input.publicBiography !== undefined) {
     updates.backstory = optionalStringField(input.publicBiography, "publicBiography", MAX_PUBLIC_BIOGRAPHY_LENGTH);
+  }
+  if (input.werewolfStrategyStyle !== undefined) {
+    updates.werewolfStrategyStyle = optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   }
   if (input.strategyStyle !== undefined) {
     updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
@@ -1403,6 +1420,7 @@ function serializeAgent(
     publicBiography: profile.backstory,
     personalityPrompt: profile.personality,
     strategyStyle: profile.strategyStyle,
+    werewolfStrategyStyle: profile.werewolfStrategyStyle,
     gender: profile.gender,
     avatarUrl: profile.avatarUrl,
     fullBodyReferenceUrl: profile.fullBodyReferenceUrl,

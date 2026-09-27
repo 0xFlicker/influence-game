@@ -548,7 +548,7 @@ export class ProductionGameMcpReadModel {
         endedAt: schema.games.endedAt,
       })
       .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
+      .where(and(eq(schema.games.gameKind, "influence"), or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))
       .limit(1))[0];
 
     if (!row) return null;
@@ -598,12 +598,13 @@ export class ProductionGameMcpReadModel {
       ? await this.db
           .select(selection)
           .from(schema.games)
-          .where(inArray(schema.games.id, accessibleGameIds))
+          .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.id, accessibleGameIds)))
           .orderBy(desc(schema.games.createdAt))
           .limit(clamp(limit, 1, MAX_GAME_LIMIT))
       : await this.db
           .select(selection)
           .from(schema.games)
+          .where(eq(schema.games.gameKind, "influence"))
           .orderBy(desc(schema.games.createdAt))
           .limit(clamp(limit, 1, MAX_GAME_LIMIT));
     const settlementStates = await getGameCompletionSettlementStateMap(

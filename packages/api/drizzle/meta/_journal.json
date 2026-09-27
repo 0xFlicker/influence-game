@@ -708,6 +708,13 @@
       "when": 1790010635821,
       "tag": "0100_game_assets",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790010635824,
+      "tag": "0103_werewolf",
+      "breakpoints": true
     }
   ]
 }

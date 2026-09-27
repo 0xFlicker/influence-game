@@ -1,3 +1,4 @@
+import { assertWerewolfProviderTurn } from "./werewolf-games.js";
 import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
@@ -229,6 +230,7 @@ async function assertDurableTurnSubcall(
   coordinate: ProviderLogicalCallCoordinate,
   access: "dispatch" | "replay",
 ): Promise<void> {
+  await assertWerewolfProviderTurn(tx, options.gameId, coordinate);
   const binding = coordinate.durableTurn;
   if (!binding) return;
   const turn = (await tx.select({

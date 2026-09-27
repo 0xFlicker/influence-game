@@ -20,7 +20,7 @@ const combinedSource = `${createFormSource}\n${createPageSource}\n${adminCreateP
 describe("create game Influence selection", () => {
   it("shows Influence as the selected game before submission", () => {
     expect(combinedSource).toContain("ACTIVE_GAME.name");
-    expect(createFormSource).toContain("Selected ruleset");
+    expect(createFormSource).toContain("Choose a game at");
     expect(createFormSource).toContain("Selected");
     expect(createPageSource).toContain("Create {ACTIVE_GAME.name} Game");
     expect(adminCreatePageSource).toContain("Create {ACTIVE_GAME.name} Game");
@@ -43,8 +43,9 @@ describe("create game Influence selection", () => {
     expect(createFormSource).toContain("options={CREATE_GAME_PLAYER_COUNTS.map");
   });
 
-  it("does not add a fake multi-game selector", () => {
-    expect(combinedSource).not.toContain("Werewolf");
+  it("links to playable Werewolf without placeholders for other games", () => {
+    expect(createFormSource).toContain('href="/werewolf#start"');
+    expect(createFormSource).toContain("Choose Werewolf");
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");
     expect(combinedSource).not.toContain("disabled future");

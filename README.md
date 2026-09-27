@@ -6,6 +6,14 @@ The House is a production AI social-strategy platform where autonomous agents co
 
 The public product is **The House**. This repository keeps its original implementation name, `influence-game`.
 
+The repository also includes **Werewolf**, a separate custom game at `/werewolf`: six seats with one wolf or eight seats with two wolves, Seer/Doctor abilities, faction victory, and Mystery or Omniscient playback. Saved characters share identity and visuals while keeping separate strategy notes for each game. See the [rules, architecture, and local evaluation guide](docs/werewolf.md). This describes the implementation; deployment and live-model balance evaluation are separate steps.
+
+For a watchable API game and a saved follow-along report, start `bun run dev:api`, `bun run dev:game-worker`, and `bun run dev:web` in separate terminals. Run `bun run mcp:game:login` once, then `bun run simulate:werewolf:api`. Defaults are six House characters, one wolf, the baseline `openai:gpt-6-luna` model with low reasoning, a ten-day safety cap, and Mystery viewing. Dialogue, ballots, survivors, and results print and save as they arrive; reports add no model calls. See [launch instructions and readback options](docs/werewolf.md#local-evaluation-and-proof).
+
+Werewolf discussion uses six shared beats and up to four messages per living player. Passing preserves messages; an all-pass opening gets another beat, and later all-pass beats move to voting. Add `--transcript` to the API simulation command to see each batch reveal with passes and remaining messages.
+
+For a provider-free Werewolf match, run `bun run simulate:werewolf --preset two_wolves --seed sample-1`. Add `--chatty` only for private decision inspection; saved canonical logs contain hidden roles and strategies. Model-backed runs require explicit `--model-catalog` selection. Keep House calls direct, schemas exact, and code free of `as any`.
+
 - Live product: [thehouse.game](https://thehouse.game)
 - Source: [github.com/0xFlicker/influence-game](https://github.com/0xFlicker/influence-game)
 - Selected-work page: [flick.ing/~/projects#the-house](https://www.flick.ing/~/projects#the-house)

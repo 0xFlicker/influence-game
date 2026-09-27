@@ -1,3 +1,4 @@
+import { createWerewolfRoutes } from "./routes/werewolf.js";
 import { createGameAssetRoutes } from "./routes/game-assets.js";
 import { createAccountInferenceRoutes } from "./routes/account-inference.js";
 import { createModerationRoutes } from "./routes/moderation.js";
@@ -593,6 +594,7 @@ const mcpRoutes = createMcpRoutes(db);
 app.route("/", mcpRoutes);
 
 // Game routes
+app.route("/", createWerewolfRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
@@ -699,12 +701,15 @@ const server = await listenBeforeRuntimeInitialization({
 
         // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
         const gameRow = (await db
-          .select({ id: schema.games.id, status: schema.games.status })
+          .select({ id: schema.games.id, status: schema.games.status, gameKind: schema.games.gameKind })
           .from(schema.games)
           .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
 
         if (!gameRow) {
           return new Response("Game not found", { status: 404 });
+        }
+        if (gameRow.gameKind === "werewolf") {
+          return new Response("Werewolf uses its audience-scoped HTTP viewer", { status: 409 });
         }
 
         const gameId = gameRow.id;

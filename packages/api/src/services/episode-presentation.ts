@@ -140,7 +140,7 @@ export function startEpisodeWorker(db: DrizzleDB, canClaim: () => boolean) {
     if (stopped || pending || !canClaim() || !process.env.OPENAI_API_KEY) return;
     pending = (async () => {
       // Naming starts with the live cast; completed history is explicitly backfilled by admins.
-      const unnamed = await db.select({ id: schema.games.id }).from(schema.games).leftJoin(table, eq(table.gameId, schema.games.id)).where(and(eq(schema.games.status, "in_progress"), isNull(schema.games.hiddenAt), isNull(table.gameId))).limit(20);
+      const unnamed = await db.select({ id: schema.games.id }).from(schema.games).leftJoin(table, eq(table.gameId, schema.games.id)).where(and(eq(schema.games.gameKind, "influence"), eq(schema.games.status, "in_progress"), isNull(schema.games.hiddenAt), isNull(table.gameId))).limit(20);
       for (const g of unnamed) await queueEpisodeCopy(db, g.id);
       await runEpisodeJob(db, generateEpisodeCopy, AbortSignal.any([controller.signal, AbortSignal.timeout(50_000)]));
     })().catch(error => console.error("[episode-presentation]", error)).finally(() => { pending = null; });

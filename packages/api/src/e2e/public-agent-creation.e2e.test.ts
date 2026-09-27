@@ -20,7 +20,7 @@ let webUrl: string;
 const temporaryPath = (name: string) => join(tmpdir(), name);
 const profile = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.",
   backstory: "An exiled ambassador.", strategyStyle: "Build trust at the risk of waiting too long.",
-  performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
+  performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
 const response = { id: "deterministic-preview", object: "chat.completion" as const, created: 0, model: "gpt-5.6-luna", choices: [],
   usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } };
 

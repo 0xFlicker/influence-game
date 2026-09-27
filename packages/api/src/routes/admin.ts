@@ -1110,7 +1110,7 @@ export function createAdminRoutes(
   });
 
   app.get("/api/admin/games", requireAdminRead, async (c) => {
-    const rows = await db.select().from(schema.games);
+    const rows = await db.select().from(schema.games).where(eq(schema.games.gameKind, "influence"));
     const gameIds = rows.map((game) => game.id);
     let canReadProviderFailures = false;
     let providerFailureAccessUnavailable = false;

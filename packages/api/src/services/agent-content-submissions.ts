@@ -25,7 +25,7 @@ export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | 
 export function contentSnapshot(profile: Profile) {
   return {
     name: profile.name, personaKey: profile.personaKey, gender: profile.gender,
-    personality: profile.personality, backstory: profile.backstory, strategyStyle: profile.strategyStyle,
+    personality: profile.personality, backstory: profile.backstory, strategyStyle: profile.strategyStyle, werewolfStrategyStyle: profile.werewolfStrategyStyle,
     performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign,
     avatarUrl: profile.avatarUrl, fullBodyReferenceUrl: profile.fullBodyReferenceUrl, portraitCrop: profile.portraitCrop, headPosition: profile.headPosition,
   };
@@ -94,6 +94,8 @@ export function decodeContentSnapshot(snapshot: Record<string, unknown>, profile
     if (value !== null && typeof value !== "string") throw new ContentSubmissionConflict("The saved snapshot needs admin recovery.");
     result[key] = value;
   }
+  if (snapshot.werewolfStrategyStyle !== undefined && snapshot.werewolfStrategyStyle !== null && typeof snapshot.werewolfStrategyStyle !== "string") throw new ContentSubmissionConflict("The Werewolf strategy is invalid.");
+  result.werewolfStrategyStyle = typeof snapshot.werewolfStrategyStyle === "string" ? snapshot.werewolfStrategyStyle : null;
   if (snapshot.gender !== null && !["male", "female", "non-binary"].includes(String(snapshot.gender))) throw new ContentSubmissionConflict("The saved gender is invalid.");
   result.gender = snapshot.gender as Profile["gender"];
   // Head geometry is optional: absence means unconfirmed, just like explicit null.

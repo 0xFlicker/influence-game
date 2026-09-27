@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "simulate:werewolf": "cd packages/engine && bun run simulate:werewolf",
+    "simulate:werewolf:api": "cd packages/engine && bun run simulate:werewolf:api",
     "test": "bun run test:classification && bun run test:provider-free",
     "test:classification": "bun run scripts/check-test-classification.ts",
     "test:provider-free": "bun test ./packages/engine ./packages/web ./packages/prompt-lab-protocol ./scripts --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",

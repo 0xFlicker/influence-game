@@ -9,11 +9,11 @@ import { CharacterFormation } from "./character-formation";
 import { CharacterSectionReader } from "./character-section-reader";
 import { AgentCreationIngredients } from "./agent-creation-ingredients";
 
-const labels = { name: "Name", personaKey: "Archetype", gender: "Gender", personality: "Character prompt", strategyStyle: "Strategy", backstory: "Backstory", performanceInstructions: "Performance", visualDesign: "Appearance" };
+const labels = { name: "Name", personaKey: "Archetype", gender: "Gender", personality: "Character prompt", strategyStyle: "Influence strategy", werewolfStrategyStyle: "Werewolf strategy", backstory: "Backstory", performanceInstructions: "Performance", visualDesign: "Appearance" };
 export type CharacterSection = keyof typeof labels;
 export type CharacterChatProfile = Record<CharacterSection, string>;
 const replies = {
-  character: "In Influence, players build trust, vie for empowerment, and adapt when the round's ballot rules change. Would your character win people over, seek control, or surprise everyone? Tell me what sounds fun to play.",
+  character: "Your character can play Influence and Werewolf, with separate strategy notes for each game. Would your character win people over, seek control, or surprise everyone? Tell me what sounds fun to play.",
   review: "Does that feel right to you? You can say yes, tell me what to change, or edit a section above.",
   appearance: "What do they look like? Describe their face, body, clothing, colors, or any distinctive details.",
   portrait: "Your character is ready to look over. Confirm this headshot when it feels right, or tell me what to change about their appearance.",

@@ -31,6 +31,7 @@ export type ProviderAttemptFailureKind =
   | "undecodable_structured_output";
 
 export type ProviderSemanticCoordinateV1 =
+  | { version: 1; kind: "werewolf_action"; eventSequence: number; }
   | {
       version: 1;
       kind: "phase_call";
@@ -90,6 +91,8 @@ export function canonicalProviderSemanticCoordinate(
 ): string {
   assertProviderSemanticCoordinate(coordinate);
   switch (coordinate.kind) {
+    case "werewolf_action":
+      return JSON.stringify({ version: 1, kind: coordinate.kind, eventSequence: coordinate.eventSequence });
     case "phase_call":
       return JSON.stringify({
         version: 1,
@@ -189,6 +192,10 @@ export function assertProviderSemanticCoordinate(
     throw new Error("Provider semantic coordinate version must be 1");
   }
   switch (coordinate.kind) {
+    case "werewolf_action":
+      exactFields(["version", "kind", "eventSequence"]);
+      positiveInteger(coordinate.eventSequence, "eventSequence");
+      return;
     case "phase_call":
       exactFields(["version", "kind", "phase", "round", "canonicalEventSequence", "callSlot"]);
       if (!Object.values(Phase).includes(coordinate.phase)) {

@@ -11,14 +11,16 @@
 
 ## Product Direction
 
-- Influence is the final product name.
+- The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
+- Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
+- Agent Profiles share character identity and visuals. `strategyStyle` is Influence-only; `werewolfStrategyStyle` is Werewolf-only. Never substitute one game's notes for the other.
 - The immediate audience is the user and friends, so the bar is an enjoyable-to-watch game with legible strategy rather than a fully public-scale product.
 - Agent quality matters: agents need help exhibiting real strategy, remembering commitments, and making watchable social decisions.
 - The active `feat/inf-228-mingle-hardening` branch is an unfinished Mingle/open-room experiment intended for eventual merge to `main`. The UI mostly works, but it needs more testing and tuning before merge.
 
 ## Known Risks
 
-- Current API games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Do not extend this claim to corrupt durable rows, historical runs without logical-turn authority, or multi-worker execution without the owner-epoch fence.
+- Current API Influence games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Werewolf adopts its own validated event cursor and frozen action/observation plans under the same owner-epoch and provider journal fences. Do not extend these claims to corrupt durable rows or historical runs without that authority.
 - Staging is real QA infrastructure. `influence-staging` updates from `main`; `influence-production` requires manual approval.
 
 ## Event authority

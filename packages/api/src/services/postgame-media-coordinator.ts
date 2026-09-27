@@ -218,6 +218,7 @@ export async function reconcileCompletedPostgameMedia(
       eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE),
     ))
     .where(and(
+      eq(schema.games.gameKind, "influence"),
       eq(schema.games.status, "completed"),
       or(
         isNull(schema.gamePostgameMedia.gameId),

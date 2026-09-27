@@ -1287,7 +1287,7 @@ describe("Agent Profile API", () => {
 
     test("advanced assistant uses one strict native tool with draft context and rejects malformed calls", async () => {
       await db.insert(schema.inferenceAccounts).values({ userId: USER_A_ID, overrides: { textBurst: 100 } }).onConflictDoNothing();
-      const context = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", performanceInstructions: "", visualDesign: "", hasFullBody: false };
+      const context = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", werewolfStrategyStyle: "", performanceInstructions: "", visualDesign: "", hasFullBody: false };
       const turn = { context, message: "Yes please", history: ["assistant: Would you like me to update their visuals?"] };
       expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq(turn, ""))).status).toBe(401);
       expect((await app.request("/api/agent-profiles/edit-assistant", jsonReq({ ...turn, context: {} }, tokenA))).status).toBe(400);
@@ -1331,7 +1331,7 @@ describe("Agent Profile API", () => {
 
     test("creation assistant validates stage, draft and exact provider turns before effects", async () => {
       await db.insert(schema.inferenceAccounts).values({userId: USER_A_ID, overrides:{textBurst:100}}).onConflictDoNothing();
-      const draft = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", performanceInstructions: "", visualDesign: "" };
+      const draft = { name: "Arden", personaKey: "diplomat", gender: "non-binary", personality: "Calm", backstory: "History", strategyStyle: "Alliances", werewolfStrategyStyle: "", performanceInstructions: "", visualDesign: "" };
       const turn = { stage: "review", message: "Yes", history: [], sections: [], draft };
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq(turn, ""))).status).toBe(401);
       expect((await app.request("/api/agent-profiles/creation-assistant", jsonReq({ ...turn, stage: "constructor" }, tokenA))).status).toBe(400);
@@ -1375,6 +1375,47 @@ describe("Agent Profile API", () => {
       } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
     });
 
+    test("Werewolf strategy edits route exactly, skip missing images, and preserve every other field", async () => {
+      await db.insert(schema.inferenceAccounts).values({ userId: USER_A_ID, overrides: { textBurst: 100 } }).onConflictDoNothing();
+      const originalFetch = globalThis.fetch, savedKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = "test-openai-key";
+      const context = { name: "Arden Vale", personality: "Observant", backstory: "A librarian", strategyStyle: "Influence notes", werewolfStrategyStyle: "", personaKey: "observer", gender: "non-binary", performanceInstructions: "", visualDesign: "", hasFullBody: true };
+      const generated = { ...context, name: "Unwanted rename", personality: "Unwanted personality", strategyStyle: "Unwanted Influence edit", werewolfStrategyStyle: "As village, compare claims. As wolf, keep a consistent story.", introQuips: ["One", "Two", "Three"] };
+      const { hasFullBody: _hasFullBody, ...profile } = generated;
+      let content = JSON.stringify(profile);
+      const requests: Record<string, unknown>[] = [];
+      globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input.toString(), init);
+        expect(request.url).toContain("/chat/completions");
+        const body = await request.json() as Record<string, unknown>;
+        requests.push(body);
+        return Response.json({ id: "werewolf-editor", object: "chat.completion", choices: [{ index: 0,
+          message: body.tools ? { role: "assistant", content: null, tool_calls: [{ id: "edit-werewolf", type: "function", function: { name: "update_character", arguments: '{"fields":["werewolfStrategyStyle"]}' } }] } : { role: "assistant", content },
+          finish_reason: body.tools ? "tool_calls" : "stop" }] });
+      }, { preconnect: originalFetch.preconnect });
+      try {
+        const routed = await app.request("/api/agent-profiles/edit-assistant", jsonReq({ context, message: "Update my Werewolf strategy", history: [] }, tokenA));
+        expect(routed.status).toBe(200);
+        expect(await routed.json()).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
+        expect(JSON.stringify(requests[0]?.tools)).toContain("werewolfStrategyStyle");
+        expect(JSON.stringify(requests[0]?.messages)).toContain("Seer");
+        const { hasFullBody: _ignored, ...existingProfile } = context;
+        const body = { changeRequest: "Update my Werewolf strategy", selectedFields: ["werewolfStrategyStyle"], existingProfile: { ...existingProfile, avatarUrl: "/missing-old-portrait.png", fullBodyReferenceUrl: "/missing-old-body.png" } };
+        const result = await app.request("/api/agent-profiles/generate", jsonReq(body, tokenA));
+        expect(result.status).toBe(200);
+        expect(await result.json()).toEqual({ ...existingProfile, werewolfStrategyStyle: profile.werewolfStrategyStyle, introQuips: profile.introQuips });
+        expect(requests).toHaveLength(2);
+        const messages = requests[1]?.messages as { role: string; content: unknown }[];
+        expect(typeof messages[1]?.content).toBe("string");
+        expect(String(messages[0]?.content)).toContain("Werewolf starting approach");
+        for (const bad of ["not json", "{}", `\`\`\`json\n${JSON.stringify(profile)}\n\`\`\``, JSON.stringify({ ...profile, werewolfStrategyStyle: undefined }), JSON.stringify({ ...profile, werewolfStrategyStyle: "" }), JSON.stringify({ ...profile, extra: true })]) {
+          content = bad;
+          expect((await app.request("/api/agent-profiles/generate", jsonReq(body, tokenA))).status).toBe(502);
+        }
+        expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+      } finally { globalThis.fetch = originalFetch; restoreEnv("OPENAI_API_KEY", savedKey); }
+    });
+
     test("sends GPT-6 Luna for new and refined profiles", async () => {
       const envKeys = [
         "OPENAI_API_KEY",
@@ -1412,7 +1453,7 @@ describe("Agent Profile API", () => {
                   strategyStyle: "Nova builds a coalition and waits for leverage.",
                   performanceInstructions: "Measured delivery and open posture.",
                   visualDesign: "Short dark hair and a green coat.",
-                  introQuips: ["I brought a plan and excellent snacks.", "Let's make this interesting.", "I know a shortcut to the good chairs."],
+                  werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["I brought a plan and excellent snacks.", "Let's make this interesting.", "I know a shortcut to the good chairs."],
                   personaKey: "strategic",
                   gender: "female",
                 }),

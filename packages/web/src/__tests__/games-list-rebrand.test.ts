@@ -37,8 +37,9 @@ describe("games list House/Influence rebrand", () => {
     expect(gamesBrowserSource).not.toContain("Any tier");
   });
 
-  it("does not expose future social deduction games as list options", () => {
-    expect(combinedSource).not.toContain("Werewolf");
+  it("links to the separate Werewolf lobby while retaining Influence list filters", () => {
+    expect(gamesPageSource).toContain('href="/werewolf"');
+    expect(gamesBrowserSource).not.toContain("Werewolf");
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");
   });

@@ -6,6 +6,10 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./werewolf": "./src/werewolf/index.ts",
+    "./werewolf/strategy": "./src/werewolf/strategy.ts",
+    "./werewolf/types": "./src/werewolf/types.ts",
+    "./werewolf/observation": "./src/werewolf/observation.ts",
     ".": "./src/index.ts",
     "./visual-mode": "./src/visual-mode.ts",
     "./visual-localization": "./src/visual-localization.ts",
@@ -29,6 +33,8 @@
     "./character-portrait": "./src/character-portrait.ts"
   },
   "scripts": {
+    "simulate:werewolf": "bun run src/werewolf/simulate.ts",
+    "simulate:werewolf:api": "bun run src/werewolf/api-simulate.ts",
     "simulate": "doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts",
     "simulate:local": "bun run src/simulate.ts",
     "simulate:api": "bun run src/api-simulate.ts",

@@ -5,6 +5,20 @@ resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
 leases. Render workers remain a separate image/service.
 
+The worker dispatches both Influence and Werewolf by `games.gameKind`. Apply
+`0103_werewolf.sql` before deploying the Werewolf implementation. Werewolf claims
+the same renewable owner leases but recovers its private canonical event log and
+frozen action plans instead of an Influence XState snapshot. Admission closure,
+drain counts, and graceful shutdown include both games. Invalid Werewolf history
+suspends that game without blocking adoption of unrelated games. See
+[Werewolf](../werewolf.md) for local operation and validation boundaries.
+
+Werewolf rules version 2 reserves all pending discussion calls against one frozen
+beat, journals their private commitments, and reveals the batch in one event.
+Both gateway and worker must use the matching code. This rule change needs no
+new migration; earlier version-1 experimental logs are rejected and preserved,
+not converted to the new schedule. Start a new game for six-beat discussion.
+
 ## Ephemeral PR previews
 
 Ephemeral previews need the same gateway/worker separation. Their IaC deployment

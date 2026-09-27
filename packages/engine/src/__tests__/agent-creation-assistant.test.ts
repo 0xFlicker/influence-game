@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { CREATION_COMMANDS, decodeCreationTurn, isCreationStage, type CreationStage } from "../agent-creation-assistant";
+import { CREATION_COMMANDS, characterEditFields, decodeCharacterEditTool, decodeCreationTurn, isCreationStage, type CreationStage } from "../agent-creation-assistant";
 
 describe("bounded character assistant", () => {
+  test("game strategy edits cannot fill other games or shared fields", () => {
+    expect(characterEditFields({}, ["werewolfStrategyStyle"])).toEqual(["werewolfStrategyStyle"]);
+    expect(characterEditFields({}, ["strategyStyle"])).toEqual(["strategyStyle"]);
+    expect(characterEditFields({}, ["personality"])).not.toContain("werewolfStrategyStyle");
+    expect(characterEditFields({}, ["personality"])).not.toContain("strategyStyle");
+    expect(decodeCharacterEditTool("update_character", '{"fields":["werewolfStrategyStyle"]}')).toEqual({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
+    for (const args of ['{}', 'not json', '{"fields":[]}', '{"fields":["werewolfStrategyStyle","werewolfStrategyStyle"]}', '{"fields":["werewolfStrategyStyle"],"text":"extra"}', '```json\n{"fields":["werewolfStrategyStyle"]}\n```']) {
+      expect(() => decodeCharacterEditTool("update_character", args)).toThrow();
+    }
+  });
   for (const stage of Object.keys(CREATION_COMMANDS) as CreationStage[]) {
     test(`${stage} accepts only its current commands`, () => {
       for (const command of CREATION_COMMANDS[stage]) {

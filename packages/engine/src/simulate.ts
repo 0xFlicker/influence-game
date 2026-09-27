@@ -3,6 +3,22 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
+ *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
+ * For a watchable API game plus a no-extra-inference text report, use
+ *   bun run simulate:werewolf:api
+ * API defaults: six House characters, one wolf, low reasoning, ten-day safety cap.
+ * Dialogue, ballots, survivors and results print and append to a unique report
+ * under engine/docs/simulations. Use --max-days 2 only for a short smoke run.
+ * Its --game ID_OR_SLUG option watches an existing game without starting another.
+ * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
+ * JSON and --chatty records contain private roles, strategies, and thinking.
+ * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
+ * Werewolf discussion has six shared beats, four messages per living player, and
+ * passes that preserve messages. A quiet opening grants a second beat; later
+ * all-pass beats close discussion. API --transcript renders whole beat reveals
+ * and budgets; private commitments never become public before the shared reveal.
+ * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).
  * API Visual Mode uses the exact remaining cast for Final 4 lobby pleas. Verify

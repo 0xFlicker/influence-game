@@ -6,7 +6,7 @@
  * the same Postgres-backed durable run path as the web UI.
  */
 
-import { loadStoredMcpAccessToken } from "./game-mcp/oauth-token-store";
+import { apiFetch, authHeaders, resolveSessionToken } from "./api-simulation-client";
 import {
   DEFAULT_MODEL_CATALOG_ID,
   normalizeProviderManifest,
@@ -38,15 +38,6 @@ interface ApiSimArgs {
   pollIntervalMs: number;
   serviceTier: OpenAIRequestServiceTier;
   formatManifest: LaunchFormatId[];
-}
-
-interface AuthExchangeResponse {
-  token: string;
-  user: {
-    id: string;
-    roles: string[];
-    permissions: string[];
-  };
 }
 
 interface GameCreateResponse {
@@ -247,29 +238,6 @@ async function main(): Promise<void> {
   }
 }
 
-async function resolveSessionToken(apiBaseUrl: string): Promise<string> {
-  const configured = process.env.INFLUENCE_API_SESSION_TOKEN?.trim();
-  if (configured) return configured;
-
-  const mcpToken = process.env.INFLUENCE_MCP_TOKEN?.trim() || loadStoredMcpAccessToken();
-  const exchanged = await apiFetch<AuthExchangeResponse>(
-    apiBaseUrl,
-    "/api/auth/local-cli-session",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${mcpToken}` },
-      body: JSON.stringify({}),
-    },
-  );
-  const missing = ["create_game", "fill_game", "start_game"].filter(
-    (permission) => !exchanged.user.permissions.includes(permission),
-  );
-  if (missing.length > 0) {
-    throw new Error(`Authenticated CLI user is missing permissions: ${missing.join(", ")}`);
-  }
-  return exchanged.token;
-}
-
 async function createGame(
   args: ApiSimArgs,
   sessionToken: string,
@@ -359,30 +327,6 @@ async function waitForGameAdvance(args: ApiSimArgs, gameId: string): Promise<voi
     await sleep(args.pollIntervalMs);
   }
   throw new Error(`Timed out waiting for game ${gameId} to advance`);
-}
-
-async function apiFetch<T = unknown>(
-  apiBaseUrl: string,
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
-  const url = new URL(path, apiBaseUrl);
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers as Record<string, string> | undefined),
-    },
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText);
-    throw new Error(`${init?.method ?? "GET"} ${url.pathname} failed (${response.status}): ${text}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-function authHeaders(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}` };
 }
 
 export function catalogIdFromProviderAndModel(

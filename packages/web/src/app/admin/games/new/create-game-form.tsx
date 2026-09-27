@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
@@ -855,19 +856,20 @@ export function CreateGameForm() {
     <form onSubmit={handleSubmit} className="space-y-5">
       {/* Game */}
       <SectionCard title="Game">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-white text-lg font-semibold">
-              {ACTIVE_GAME.name}
-            </p>
-            <p className="text-sm text-white/50 mt-1">
-              Selected ruleset for {HOUSE_VENUE.name}. Other games are not
-              selectable in this pass.
-            </p>
+        <p className="mb-4 text-sm text-white/50">Choose a game at {HOUSE_VENUE.name}.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-white text-lg font-semibold">{ACTIVE_GAME.name}</p>
+              <span className="rounded-sm border border-emerald-500/35 bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Selected</span>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-white/55">Build alliances, survive changing round rules, and win the jury&apos;s vote.</p>
           </div>
-          <span className="w-fit rounded-sm border border-emerald-500/35 bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
-            Selected
-          </span>
+          <Link href="/werewolf#start" className="rounded-xl border border-white/15 p-4 transition-colors hover:border-amber-200/50 hover:bg-amber-200/5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200">
+            <p className="text-white text-lg font-semibold">Werewolf</p>
+            <p className="mt-3 text-sm leading-6 text-white/55">Secret roles, a hidden pack, and a village trying to find them. Play with one or two wolves.</p>
+            <p className="mt-3 text-sm font-medium text-amber-200">Choose Werewolf →</p>
+          </Link>
         </div>
       </SectionCard>
 

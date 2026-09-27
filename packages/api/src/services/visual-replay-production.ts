@@ -157,7 +157,7 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
 
 /** Producer-only accounts use the same Production rows without broader admin access. */
 export async function listReplayVisualGames(db: DrizzleDB) {
-  const games = await db.select().from(schema.games).where(eq(schema.games.status, "completed")).orderBy(desc(schema.games.createdAt), asc(schema.games.id));
+  const games = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), eq(schema.games.status, "completed"))).orderBy(desc(schema.games.createdAt), asc(schema.games.id));
   if (!games.length) return [];
   const ids = games.map(game => game.id);
   const [episodes, seasons, settlements, players, results] = await Promise.all([

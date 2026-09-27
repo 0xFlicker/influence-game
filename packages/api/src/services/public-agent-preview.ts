@@ -163,7 +163,8 @@ export async function getPublicPlayerCompetitionFacts(
     eq(schema.competitionReceipts.ownerId, internalUserId),
     inArray(schema.competitionReceipts.agentProfileId, profileIds),
     eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
-    eq(schema.games.status, "completed"),
+    eq(schema.games.gameKind, "influence"),
+      eq(schema.games.status, "completed"),
     eq(schema.games.trackType, "free"),
     isNull(schema.games.hiddenAt),
   );
@@ -211,7 +212,8 @@ async function getPublicAgentCompetitionAggregates(
   const filters = [
     inArray(schema.competitionReceipts.agentProfileId, [...agentProfileIds]),
     eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
-    eq(schema.games.status, "completed"),
+    eq(schema.games.gameKind, "influence"),
+      eq(schema.games.status, "completed"),
     eq(schema.games.trackType, "free"),
     isNull(schema.games.hiddenAt),
   ];

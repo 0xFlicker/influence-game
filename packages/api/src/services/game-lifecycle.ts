@@ -1,3 +1,4 @@
+import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
 /**
@@ -199,14 +200,15 @@ const activeGames = new Map<string, ActiveGame>();
 const startingGames = new Set<string>();
 
 export function isGameRunning(gameId: string): boolean {
-  return startingGames.has(gameId) || activeGames.has(gameId);
+  return startingGames.has(gameId) || activeGames.has(gameId) || isWerewolfRunning(gameId);
 }
 
 export function getActiveGameCount(): number {
-  return activeGames.size + startingGames.size;
+  return activeGames.size + startingGames.size + activeWerewolfCount();
 }
 
 export function abortGame(gameId: string): boolean {
+  if (abortWerewolf(gameId)) return true;
   const active = activeGames.get(gameId);
   if (!active) return false;
   active.runner.abort();
@@ -215,6 +217,7 @@ export function abortGame(gameId: string): boolean {
 
 /** Abort and await all active games — used by tests to prevent cross-file pollution. */
 export async function abortAllGames(): Promise<void> {
+  await abortAllWerewolf();
   for (const game of activeGames.values()) {
     game.runner.abort();
   }
@@ -676,6 +679,11 @@ async function startGameWithOwner(
 
   if (game.status !== "in_progress") {
     return { error: "Game must be in_progress to run" };
+  }
+
+  if (game.gameKind === "werewolf") {
+    await startWerewolfRuntime(db, gameId, ownerEpoch);
+    return {};
   }
 
   // Load players

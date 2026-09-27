@@ -42,6 +42,7 @@ export function updateGeneratedProfileNameReferences<T extends {
   backstory: string | null;
   personality: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle?: string | null;
 }>(profile: T, name: string): T {
   if (profile.name === name) return profile;
   const nameReference = new RegExp(escapeRegExp(profile.name), "gi");
@@ -52,6 +53,7 @@ export function updateGeneratedProfileNameReferences<T extends {
     backstory: replaceName(profile.backstory),
     personality: replaceName(profile.personality) ?? profile.personality,
     strategyStyle: replaceName(profile.strategyStyle),
+    ...(profile.werewolfStrategyStyle !== undefined ? { werewolfStrategyStyle: replaceName(profile.werewolfStrategyStyle) } : {}),
   };
 }
 

@@ -1,6 +1,7 @@
 import { Nav } from "@/components/nav";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
 import { GamesBrowser } from "./games-browser";
+import Link from "next/link";
 
 export const metadata = {
   title: `Games - ${HOUSE_VENUE.name}`,
@@ -19,6 +20,10 @@ export default function GamesPage() {
           Find an {ACTIVE_GAME.name} game to enter. Find an episode to get lost in.
         </p>
 
+        <nav aria-label="Game" className="mb-6 flex items-center gap-5 text-sm">
+          <span aria-current="page" className="font-semibold text-white">Influence</span>
+          <Link href="/werewolf" className="text-white/60 hover:text-white">Werewolf →</Link>
+        </nav>
         <GamesBrowser />
       </main>
     </div>

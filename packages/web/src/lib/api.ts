@@ -2011,7 +2011,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
-export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
   ownerContent?: {
@@ -2031,6 +2031,7 @@ export interface SavedAgent {
   backstory: string | null;
   personality: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle?: string | null;
   personaKey: PersonaKey | null;
   gender?: AgentGender | null;
   avatarUrl: string | null;
@@ -2090,6 +2091,7 @@ export interface AgentProfileWriteParams {
   personality: string;
   backstory?: string;
   strategyStyle?: string;
+  werewolfStrategyStyle?: string;
   personaKey?: PersonaKey;
   gender: AgentGender;
   avatarUrl?: string;
@@ -2377,6 +2379,7 @@ export interface GeneratePersonalityParams {
     backstory?: string;
     personality?: string;
     strategyStyle?: string;
+    werewolfStrategyStyle?: string;
     performanceInstructions?: string;
     visualDesign?: string;
     avatarUrl?: string | null;
@@ -2394,6 +2397,7 @@ export interface GeneratePersonalityResult {
   backstory: string | null;
   personality: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle: string | null;
   personaKey: PersonaKey;
   gender: AgentGender;
 }

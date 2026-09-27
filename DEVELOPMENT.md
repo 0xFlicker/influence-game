@@ -2,6 +2,16 @@
 
 This document covers development practices for the Influence game prototype and how the Founding Engineer and Lead Game Designer collaborate concurrently.
 
+## Werewolf development
+
+Rules version 2 uses six simultaneous discussion beats and four messages per living player, with passes preserving messages. An all-pass first beat gets another opening beat; subsequent all-pass beats end discussion. Add `--transcript` to the API CLI examples below to inspect complete beat reveals and message budgets. Restart tests must cover private partial commitments, unchanged observations, and journal reuse without another model dispatch. Version-1 experimental logs are rejected; start a new game for these rules. No additional database migration is required.
+
+Start `bun run dev:api`, `bun run dev:game-worker`, and `bun run dev:web` in separate terminals; authorize with `bun run mcp:game:login`, then run `bun run simulate:werewolf:api`. The default match uses six House characters, one wolf, `openai:gpt-6-luna` with low reasoning, a ten-day safety cap, and Mystery viewing. The report prints dialogue, ballots, survivors, and results as they arrive and automatically saves under `packages/engine/docs/simulations/`. Use `--out NEW_FILE.txt` for another destination or `--max-days 2` for a shortened smoke test that may draw. `--game ID_OR_SLUG` reads an existing game without starting another; `--transcript` adds pass/budget detail and `--audience omniscient` includes role spoilers. Reporting makes no model calls. See [launch and readback details](docs/werewolf.md#local-evaluation-and-proof).
+
+Werewolf has its own engine, API, and `/werewolf` viewer under the same House services. Apply the database migrations and run both the gateway and `INFLUENCE_API_ROLE=game-worker` service to execute custom games. Its event cursor is separate from Influence's XState cursor. See [Werewolf](docs/werewolf.md) for exact rules, strategy ownership, API contracts, and recovery boundaries.
+
+Run `bun run simulate:werewolf --preset two_wolves --seed sample-1` for a provider-free local match. `--chatty` includes private structured decisions; an explicit `--model-catalog` opts into model calls. Use a dedicated `TEST_DATABASE_URL` if another checkout has applied newer migrations. The required checks remain `bun run test`, `bun run test:postgres`, and `bun run check`; the deterministic browser journey is `packages/api/src/e2e/werewolf.e2e.test.ts`. Keep direct House calls and exact typed contracts, with no `as any`.
+
 ## Before Starting Work
 
 Every code or documentation change starts from current upstream state. Do this before editing files, branching, or continuing feature work:

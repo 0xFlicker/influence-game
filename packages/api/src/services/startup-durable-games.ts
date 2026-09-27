@@ -1,3 +1,4 @@
+import { claimWerewolfGame } from "./werewolf-games.js";
 import { asc, eq } from "drizzle-orm";
 import type { GameExecutionStateV1 } from "@influence/engine";
 import type { SupportedRecoveryResumeInput } from "./game-recovery-support.js";
@@ -60,6 +61,7 @@ export async function adoptInProgressDurableGamesOnStartup(
 ): Promise<DurableGameStartupResult> {
   const rows = await db.select({
     gameId: schema.games.id,
+    gameKind: schema.games.gameKind,
     executionGameId: schema.gameExecutionStates.gameId,
     executionStatus: schema.gameExecutionStates.status,
   }).from(schema.games)
@@ -113,6 +115,12 @@ export async function adoptInProgressDurableGamesOnStartup(
     }
     if (options.canAttemptStart && !options.canAttemptStart(row.gameId)) {
       skipped.push({ gameId: row.gameId, reason: "start_backoff" });
+      continue;
+    }
+    if (row.gameKind === "werewolf") {
+      const claim = await claimWerewolfGame(db, row.gameId, options.processId);
+      if (claim.ok) await startClaimedGame(row.gameId, claim.claim);
+      else skipped.push({ gameId: row.gameId, reason: "adoption_conflict", detail: claim.error });
       continue;
     }
     if (!row.executionGameId) {

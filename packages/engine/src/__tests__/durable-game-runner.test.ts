@@ -26,7 +26,7 @@ import type {
   TranscriptEntry,
 } from "../game-runner.types";
 import { createUUID, GameState } from "../game-state";
-import { seededRandom } from "../durable-game-runner";
+import { seededRandom } from "../seeded-random";
 import { createOpeningStrategyState } from "../strategy-state";
 import { Phase } from "../types";
 import { MockAgent } from "./mock-agent";

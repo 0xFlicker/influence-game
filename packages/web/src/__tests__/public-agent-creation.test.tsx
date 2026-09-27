@@ -12,9 +12,9 @@ let dom: Window;
 let signupCalls: number;
 let paths: string[];
 let signIn: () => void;
-const draftKey = "influence:agent-editor:3:anonymous:create:manage:none";
+const draftKey = "influence:agent-editor:4:anonymous:create:manage:none";
 const character = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.",
-  backstory: "An exiled ambassador.", strategyStyle: "Build trust.", performanceInstructions: "Quiet gestures.", visualDesign: "Blue coat.", introQuips: ["One", "Two", "Three"] };
+  backstory: "An exiled ambassador.", strategyStyle: "Build trust.", performanceInstructions: "Quiet gestures.", visualDesign: "Blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["One", "Two", "Three"] };
 
 beforeEach(() => {
   dom = new Window({ url: "http://localhost/agents/create" });

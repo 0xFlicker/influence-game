@@ -120,6 +120,13 @@ function publicErrorInfo(
 
 export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  // Influence endpoints must never interpret another game through its defaults.
+  app.use("/api/games/*", async (c, next) => {
+    const id = decodeURIComponent(c.req.path.split("/")[3] ?? "");
+    const [game] = id ? await db.select({ gameKind: schema.games.gameKind }).from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id))) : [];
+    if (game?.gameKind === "werewolf") return c.json({ error: "Use the Werewolf game endpoint", href: `/api/werewolf/${encodeURIComponent(id)}` }, 409);
+    await next();
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/games — create a new game
@@ -130,6 +137,8 @@ export function createGameRoutes(db: DrizzleDB) {
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
+
+    if (body.gameKind !== undefined && body.gameKind !== "influence") return c.json({ error: "Create Werewolf games through /api/werewolf" }, 400);
 
     const {
       playerCount,
@@ -320,9 +329,9 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db
         .select()
         .from(schema.games)
-        .where(and(inArray(schema.games.status, statuses), isNull(schema.games.hiddenAt)));
+        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), isNull(schema.games.hiddenAt)));
     } else {
-      rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
+      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), isNull(schema.games.hiddenAt)));
     }
 
     rows = await visibleEpisodeGames(db, rows, c.get("user")?.id, c.get("userPermissions"));
