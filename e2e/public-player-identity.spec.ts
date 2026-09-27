@@ -175,7 +175,11 @@ test.describe("local public player identity", () => {
         expect(actions).toEqual(["start", "start", "stop"]);
         await page.getByRole("button", { name: "Cancel", exact: true }).click();
         await page.getByRole("button", { name: "Hide", exact: true }).click();
-        await page.getByRole("button", { name: "Confirm hide", exact: true }).click();
+        // The first /games navigation can include a cold development-server compile.
+        await Promise.all([
+          page.waitForURL(`${servers.webUrl}/games`),
+          page.getByRole("button", { name: "Confirm hide", exact: true }).click(),
+        ]);
         await expect(page).toHaveURL(`${servers.webUrl}/games`);
         expect(actions).toEqual(["start", "start", "stop", "hide"]);
       } finally { await context.close(); }
