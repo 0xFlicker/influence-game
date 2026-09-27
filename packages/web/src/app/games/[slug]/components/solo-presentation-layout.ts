@@ -11,7 +11,9 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
   const margin = 12;
   if (!fullBody) {
     const available = Math.max(0, height - controlsInset);
-    const beside = width >= 760;
+    // A short embedded player needs the speech beside its portrait: stacking
+    // would leave less than one readable line after the header and ledger.
+    const beside = width >= 760 || (width >= 480 && available < 320);
     const bubbleWidth = Math.max(0, Math.min(480, beside ? width * .43 : width - margin * 2));
     const bubbleHeight = Math.max(0, Math.min(speechHeight, 320, beside ? available - 24 : available * .44));
     const diameter = Math.max(0, Math.min(440, width * (beside ? .32 : .68), beside ? available * .8 : available - bubbleHeight - 56));

@@ -174,6 +174,9 @@ test("Producer uses the same rows, preserves lost-request controls, reviews and 
     const corrected = (await database.db.select().from(schema.visualMediaVersions)).find(v => v.verificationVersion === "producer-review-v1")!;
     expect(corrected.shots?.groups[0]?.visibleParticipantIds).toEqual(["arden"]);
     expect(corrected.shots?.groups[0]?.anchors[0]?.head.x).toBeCloseTo(.22, 1);
+    // Saving reports its receipt before the refreshed versions finish loading.
+    // A native click on the still-disabled publication button does nothing.
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Publish for viewers' && !button.disabled)");
     await page.evaluate("Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Publish for viewers')?.click()");
     await page.waitForFunction("document.body.innerText.includes('1 scenes need images or publication')");
     expect(await database.db.select().from(schema.visualMediaPublications)).toHaveLength(1);

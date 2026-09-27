@@ -303,7 +303,9 @@ All roll calls precede the complete format aggregate and resolution. During each
 solo vote reveal, a compact lower ledger groups only the revealed receipts by
 recipient, with headshots, voter names and running totals. Save-or-Exit shows
 saves, exits and their current net without forecasting final eligibility. The
-current receipt enters when its speech becomes fully visible. After speech fades,
+current receipt enters when its speech becomes fully visible. Short embedded
+portrait stages put the speech beside the headshot to retain a complete text line
+above the ledger rather than paginating names into letters. After speech fades,
 the saved full-body image shrinks and crossfades into its headshot at the voter
 entry in that recipient's row. Portrait-only games use the same collection.
 Collection follows the director's clock, including pause, speed and manual

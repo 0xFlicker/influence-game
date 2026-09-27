@@ -664,11 +664,7 @@ test.describe("format-aware game viewer", () => {
       await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
       const next = page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true });
       await next.click();
-      await expect(page.getByRole("region", { name: "Ballot: Echo" })).toBeVisible();
-      await expect(page.locator("[data-winner-scene]")).toHaveCount(0);
-      await next.click();
-      await expect(page.getByRole("region", { name: "Ballot: Sage" })).toBeVisible();
-      await next.click();
+      // Scene navigation skips the jury roll call; dialogue steps retain each vote.
       const tableau = page.getByRole("region", { name: "Final standings" });
       await expect(tableau).toBeVisible();
       await expect(tableau.locator('[data-winner-image="full-body"] img')).toBeVisible();
@@ -1654,6 +1650,7 @@ async function installSafetyBounceLobby(page: Page, slug: string, options: { unc
 async function assertSoloBallot(page: Page, voter: string, target: string): Promise<void> {
   const ballot = page.getByRole("region", { name: `Ballot: ${voter}`, exact: true });
   await advanceUntilVisible(page, ballot.getByRole("blockquote"), `revealed ballot for ${voter}`);
+  await expect(ballot.getByLabel(/^Page \d+ of \d+$/)).toHaveCount(0);
   await expect(ballot.getByRole("blockquote")).toHaveText(target);
   await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
 }

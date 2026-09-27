@@ -31,6 +31,17 @@ test("landscape portrait fallback centers a substantial portrait next to readabl
   expect(bubble.height).toBeGreaterThan(110);
 });
 
+test("a short embedded vote stage keeps a whole speech line above its ledger", () => {
+  const { image, bubble, beside } = layoutSoloPresentation(590, 280, 512, 512, false, 110, 120);
+  expect(beside).toBe(true);
+  expect(image.height).toBeGreaterThan(100);
+  expect(bubble.left).toBeGreaterThan(image.left + image.width);
+  // Padding, the single-line caption, and the page indicator reserve 84px.
+  expect(bubble.height - 84).toBeGreaterThanOrEqual(29);
+  expect(bubble.top + bubble.height).toBeLessThanOrEqual(280 - 110);
+  expect(bubble.left + bubble.width).toBeLessThanOrEqual(590 - 12);
+});
+
 test("mobile portraits and their paged speech are centered above fullscreen controls", () => {
   const { image, bubble, beside } = layoutSoloPresentation(390, 844, 512, 512, false, 140, 1400);
   expect(beside).toBe(false);
