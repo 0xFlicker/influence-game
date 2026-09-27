@@ -308,6 +308,10 @@ portrait stages put the speech beside the headshot to retain a complete text lin
 above the ledger rather than paginating names into letters. After speech fades,
 the saved full-body image shrinks and crossfades into its headshot at the voter
 entry in that recipient's row. Portrait-only games use the same collection.
+The lower ledger fits all revealed receipts within its reserved stage space
+instead of scrolling. Long names retain their full accessible labels and hover
+titles. Collection destinations are remeasured when the ledger fits or moves so the
+moving portrait lands on the displayed headshot.
 Collection follows the director's clock, including pause, speed and manual
 speech exits; reduced motion settles the headshot directly. Seeking reconstructs
 the revealed prefix without retaining future rows. Prev/Next treats each roll
