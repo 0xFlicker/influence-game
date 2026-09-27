@@ -632,7 +632,7 @@ test.describe("format-aware game viewer", () => {
       await assertSoloBallot(page, voter.name, "Rex");
       // A mounted bubble can still be fading in; finish revealing before hiding it.
       await page.clock.runFor(300);
-      await expect(page.getByRole("region", { name: `Ballot: ${voter}` }).locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+      await expect(page.getByRole("region", { name: `Ballot: ${voter.name}` }).locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
       await page.keyboard.press("ArrowRight");
       await page.clock.runFor(300);
       await page.keyboard.press("ArrowRight");
