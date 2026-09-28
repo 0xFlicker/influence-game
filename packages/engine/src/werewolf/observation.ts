@@ -1,24 +1,25 @@
-import { WEREWOLF_DISCUSSION_BEATS, WEREWOLF_DISCUSSION_MESSAGES } from "./rules";
-import type { WerewolfDayResult, WerewolfDiscussionBeat, WerewolfFaction, WerewolfOutcome, WerewolfRole, WerewolfState } from "./types";
+import { werewolfTurnReminder, WEREWOLF_PACK_ATTEMPTS, werewolfPackOrder } from "./rules";
+import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfState } from "./types";
 
 export type WerewolfAudience = "mystery" | "omniscient";
 export type WerewolfPublicEntry =
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
-  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string }
-  | { kind: "discussion"; day: number; result: WerewolfDiscussionBeat }
-  | { kind: "night"; day: number; killedId: string | null; attackTargetId?: string; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null }
+  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+  | { kind: "discussion"; day: number; contribution: WerewolfDiscussionTurn }
+  | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
+  | { kind: "night"; day: number; killedId: string | null; attackTargetId?: string | null; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null }
   | { kind: "vote"; day: number; result: WerewolfDayResult }
   | { kind: "result"; day: number; outcome: WerewolfOutcome };
 
 export interface WerewolfView {
   gameId: string;
-  rulesVersion: 2;
+  rulesVersion: 5;
   preset: "one_wolf" | "two_wolves";
   audience: WerewolfAudience;
   day: number;
   maxDays: number;
   phase: "introduction" | "night" | "day" | "vote" | "complete";
-  discussion: { beat: number; maxBeats: number; maxMessages: number; messagesRemaining: Record<string, number>; ended: boolean } | null;
+  discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; responseRound: number; maxResponseRounds: number; ended: boolean } | null;
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
   players: Array<{ id: string; name: string; avatarUrl: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole }>;
@@ -34,8 +35,9 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
     switch (entry.kind) {
       case "phase": return [{ kind: "phase", day: entry.day, phase: entry.phase }];
       case "speech": return entry.audience === "public" || omniscient
-        ? [{ kind: "speech", day: entry.day, actorId: entry.actorId, audience: entry.audience, text: entry.text }] : [];
-      case "discussion": return [{ kind: "discussion", day: entry.day, result: structuredClone(entry.result) }];
+        ? [{ kind: "speech", day: entry.day, actorId: entry.actorId, audience: entry.audience, text: entry.text, cue: entry.cue }] : [];
+      case "discussion": return [{ kind: "discussion", day: entry.day, contribution: structuredClone(entry.contribution) }];
+      case "pack_vote": return omniscient ? [{ kind: "pack_vote", day: entry.day, result: structuredClone(entry.result) }] : [];
       case "night": return [{ kind: "night", day: entry.day, killedId: entry.result.killedId,
         ...(omniscient ? {
           attackTargetId: entry.result.attackTargetId, protectedId: entry.result.protectedId,
@@ -51,8 +53,8 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
     day: state.day, maxDays: state.config.maxDays,
     phase: state.phase === "pack" ? "night" : state.phase,
     discussion: state.discussion ? {
-      beat: state.discussion.beatsCompleted + (state.discussion.ended ? 0 : 1), maxBeats: WEREWOLF_DISCUSSION_BEATS,
-      maxMessages: WEREWOLF_DISCUSSION_MESSAGES, messagesRemaining: { ...state.discussion.messagesRemaining }, ended: state.discussion.ended,
+      initiativeIds: [...state.discussion.initiativeIds], thread: Math.min(state.discussion.threadIndex + 1, state.discussion.initiativeIds.length), totalThreads: state.discussion.initiativeIds.length,
+      stage: state.discussion.stage, responseRound: state.discussion.responseRound, maxResponseRounds: state.config.responseRounds, ended: state.discussion.ended,
     } : null,
     cursor: entries.length,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),
@@ -63,10 +65,13 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
 
 export interface WerewolfObservation {
   board: WerewolfView;
+  turnReminder: WerewolfTurnReminder | null;
   self: { id: string; role: WerewolfRole; faction: WerewolfFaction; personality: string; backstory: string; strategy: string };
   packIds: string[];
-  packDiscussion: Array<{ day: number; actorId: string; text: string }>;
-  packAttacks: Array<{ day: number; targetId: string }>;
+  packDiscussion: Array<{ day: number; actorId: string; text: string | null; cue: string | null }>;
+  packAttacks: Array<{ day: number; targetId: string | null }>;
+  packNegotiation: { attempt: number; maxAttempts: number; speakerIds: string[]; stage: "propose" | "vote" } | null;
+  packVotes: Array<{ day: number; result: WerewolfPackVote }>;
   investigations: Array<{ day: number; targetId: string; isWolf: boolean }>;
   previousProtection: string | null;
 }
@@ -76,12 +81,20 @@ export function observeWerewolf(state: WerewolfState, actorId: string): Werewolf
   const player = state.players.find((p) => p.id === actorId);
   if (!player || !state.aliveIds.includes(actorId) || state.outcome) throw new Error("Only living contestants in an active match can act");
   const role = state.roles[actorId]!;
+  const order = werewolfPackOrder(state);
   return {
     board: projectWerewolfView(state, "mystery"),
+    turnReminder: werewolfTurnReminder(state, actorId),
     self: { id: actorId, role, faction: role === "werewolf" ? "wolves" : "village", personality: player.personality, backstory: player.backstory, strategy: player.strategy },
     packIds: role === "werewolf" ? state.players.filter((p) => state.roles[p.id] === "werewolf").map((p) => p.id) : [],
     packDiscussion: role === "werewolf" ? state.history.flatMap((entry) => entry.kind === "speech" && entry.audience === "pack"
-      ? [{ day: entry.day, actorId: entry.actorId, text: entry.text }] : []) : [],
+      ? [{ day: entry.day, actorId: entry.actorId, text: entry.text, cue: entry.cue }] : []) : [],
+    packNegotiation: role === "werewolf" && state.phase === "pack" && state.pack && !state.pack.ended ? {
+      attempt: state.pack.attemptsCompleted + 1, maxAttempts: WEREWOLF_PACK_ATTEMPTS, speakerIds: order,
+      stage: order.length > 1 && state.actions.length < order.length ? "propose" : "vote",
+    } : null,
+    packVotes: role === "werewolf" ? state.history.flatMap((entry) => entry.kind === "pack_vote"
+      ? [{ day: entry.day, result: structuredClone(entry.result) }] : []) : [],
     packAttacks: role === "werewolf" ? state.history.flatMap((entry) => entry.kind === "night"
       ? [{ day: entry.day, targetId: entry.result.attackTargetId }] : []) : [],
     investigations: role === "seer" ? state.investigations.filter((i) => i.seerId === actorId).map(({ day, targetId, isWolf }) => ({ day, targetId, isWolf })) : [],

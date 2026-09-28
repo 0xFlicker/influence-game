@@ -12,6 +12,7 @@
 ## Product Direction
 
 - The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
+- Werewolf daytime discussion is sequential: publish each original contribution before the next speaker acts. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call without an explicit product decision.
 - Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
 - Agent Profiles share character identity and visuals. `strategyStyle` is Influence-only; `werewolfStrategyStyle` is Werewolf-only. Never substitute one game's notes for the other.
 - The immediate audience is the user and friends, so the bar is an enjoyable-to-watch game with legible strategy rather than a fully public-scale product.

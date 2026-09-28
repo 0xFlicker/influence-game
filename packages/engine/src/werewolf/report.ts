@@ -1,31 +1,27 @@
 import type { WerewolfPublicEntry, WerewolfView } from "./observation";
 
-/** Render accepted audience facts directly. No model summary or prose parsing. */
-export function werewolfReportEntry(entry: WerewolfPublicEntry, players: WerewolfView["players"], transcript = false): string | null {
+/** Render accepted audience facts and original player contributions. No inference or prose parsing. */
+export function werewolfReportEntry(entry: WerewolfPublicEntry, { players, audience }: Pick<WerewolfView, "players" | "audience">, transcript = false): string | null {
   const name = (id: string) => players.find(player => player.id === id)?.name ?? id;
+  const speaker = (id: string) => {
+    const player = players.find(player => player.id === id);
+    // Completed Mystery views contain roles; only Omniscient labels earlier dialogue.
+    return `${player?.name ?? id}${audience === "omniscient" && player?.role ? ` [${player.role}]` : ""}`;
+  };
   switch (entry.kind) {
     case "phase": return `\n${entry.phase === "introduction" ? "INTRODUCTIONS" : entry.phase === "night" ? `NIGHT ${entry.day}` : `DAY ${entry.day} · ${entry.phase === "vote" ? "VOTING" : "DISCUSSION"}`}`;
-    case "speech": return `${entry.audience === "pack" ? "[Pack] " : ""}${name(entry.actorId)}: ${entry.text}`;
+    case "speech": return `${entry.audience === "pack" ? "[Pack] " : ""}${speaker(entry.actorId)}: ${entry.text ?? "[pass]"}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
     case "discussion": {
-      const lines = [`\nDay ${entry.day} · discussion beat ${entry.result.beat}/6 (shared reveal)`];
-      for (const contribution of entry.result.contributions) {
-        if (!transcript && contribution.text === null) continue;
-        const remaining = entry.result.messagesRemaining[contribution.actorId];
-        lines.push(`  ${name(contribution.actorId)}: ${contribution.unavailable ? "[unavailable]" : contribution.text ?? "[pass]"}${transcript ? ` (${remaining}/4 messages left)` : ""}`);
-      }
-      if (!transcript) {
-        const passed = entry.result.contributions.filter((entry) => entry.text === null && !entry.unavailable).map((entry) => name(entry.actorId));
-        const unavailable = entry.result.contributions.filter((entry) => entry.unavailable).map((entry) => name(entry.actorId));
-        if (passed.length) lines.push(`  Passed: ${passed.join(", ")}.`);
-        if (unavailable.length) lines.push(`  Unable to respond: ${unavailable.join(", ")}.`);
-      }
-      if (entry.result.endReason) lines.push(`  ${entry.result.endReason === "all_passed" ? "Nobody added a message." : entry.result.endReason === "message_limit" ? "Everyone has used their four messages." : "Six discussion beats are complete."} Voting follows.`);
-      else if (entry.result.beat === 1 && entry.result.contributions.every((entry) => entry.text === null)) lines.push("  Quiet opening; everyone gets another beat.");
-      return lines.join("\n");
+      const c = entry.contribution;
+      const heading = c.stage === "opening" ? `\nDay ${entry.day} · thread ${c.thread} · ${name(c.openerId)} opens\n` : "";
+      const position = transcript ? ` [${c.stage}${c.responseRound ? ` ${c.responseRound}` : ""} · turn ${c.turn}]` : "";
+      return `${heading}${speaker(c.actorId)}: ${c.unavailable ? "[unavailable]" : c.text ?? "[pass]"}${position}${transcript && c.cue ? ` [production note: ${c.cue}]` : ""}`;
     }
+    case "pack_vote": return `\n[Pack] Night ${entry.day} · ballot ${entry.result.attempt}/3\n  ${entry.result.ballots.map(ballot => `${name(ballot.voterId)} → ${name(ballot.targetId)}`).join("; ")}\n  ${entry.result.targetId !== null ? `Agreed: attack ${name(entry.result.targetId)}.` : entry.result.endReason === "attempt_limit" ? "Three ballots without agreement. No pack attack tonight." : "Disagreement. Swap the opening speaker and propose again."}`;
     case "night": {
       const lines = [`Night ${entry.day}: ${entry.killedId ? `${name(entry.killedId)} died.` : "Everyone survived."}`];
       if (entry.attackTargetId) lines.push(`  Pack targeted ${name(entry.attackTargetId)}.`);
+      if (entry.attackTargetId === null) lines.push("  The pack failed to agree; no attack tonight.");
       if (entry.protectedId) lines.push(`  Doctor protected ${name(entry.protectedId)}.`);
       if (entry.investigation) lines.push(`  Seer checked ${name(entry.investigation.targetId)}: ${entry.investigation.isWolf ? "wolf" : "not a wolf"}.`);
       return lines.join("\n");

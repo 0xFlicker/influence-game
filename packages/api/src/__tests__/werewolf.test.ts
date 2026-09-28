@@ -18,7 +18,7 @@ const ownerId = "werewolf-owner";
 const manifest = [{ catalogId: DEFAULT_MODEL_CATALOG_ID }];
 const scripted: WerewolfAgent = { async decide({ request }) {
   return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_THINKING" }
-    : { kind: "speech", text: request.action === "pack_talk" ? "SECRET_PACK" : "I suspect the quiet ones.", thinking: "PRIVATE_THINKING" };
+    : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "SECRET_PACK" : "I suspect the quiet ones." };
 } };
 beforeEach(async () => {
   db = await setupTestDB();
@@ -36,11 +36,11 @@ describe("Werewolf House integration", () => {
     const game = await create();
     const initial = (await game.store.read())[0]!;
     if (initial.type !== "werewolf.started") throw new Error("setup");
-    Object.assign(initial.payload.config, { rulesVersion: 1 });
+    Object.assign(initial.payload.config, { rulesVersion: 2 });
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Start a new game to use shared discussion beats." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Start a new game to use sequential public threads (rules v5)." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {
@@ -171,19 +171,27 @@ describe("Werewolf House integration", () => {
     const influence = createGameRoutes(db);
     expect((await influence.request(`/api/games/${game.id}/transcript`)).status).toBe(409);
     expect(await (await influence.request("/api/games")).json()).toEqual([]);
-  });
+  }, 30_000);
 
-  test("malformed output retries inside the provider boundary; accepted decisions survive an owner change before commit", async () => {
+  test.each(["malformed", "spoken_uuid", "discussion_reply"] as const)("%s output retries and survives an owner change before commit", async invalidKind => {
+    const action = invalidKind === "discussion_reply" ? "discuss" : "introduce";
     const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     let dispatches = 0;
     const client = new OpenAI({ apiKey: "test-only", baseURL: "http://fixture.invalid/v1", maxRetries: 0,
-      fetch: async () => {
+      fetch: async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (action === "discuss") {
+          const input = JSON.parse(body.messages.at(-1).content);
+          expect(input.turnReminder.stage).toBe("reply");
+          expect(input.turnReminder.openingStatement).toBe("I suspect the quiet ones.");
+          expect(Object.keys(input).at(-1)).toBe("turnReminder");
+        }
         dispatches++;
         return new Response(JSON.stringify({ id: `fixture-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
           choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_introduce", arguments: dispatches === 1 ? "{}" : JSON.stringify({ text: "A persisted introduction.", thinking: "Private reasoning." }) } }] } }],
+            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: dispatches === 1 ? invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify({ cue: null, text: "A persisted contribution." }) } }] } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } }), { headers: { "content-type": "application/json" } });
       } });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
@@ -191,42 +199,66 @@ describe("Werewolf House integration", () => {
       modelCapabilities: model.capabilities, reasoningPolicy: "medium", toolChoiceMode: "required", position: 0, role: "primary" };
     const agent = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], ownerEpoch, hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }) });
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
-    const state = replayWerewolf(await store.read());
+    let state = replayWerewolf(await store.read());
+    if (action === "discuss") {
+      while (state.phase !== "day") state = await advanceWerewolf(store, scripted);
+      state = await advanceWerewolf(store, scripted); // Opening is committed before this reply.
+    }
+    const before = await readWerewolfView(db, game.id, "mystery");
     const step = nextWerewolfStep(state);
     if (step.kind !== "action") throw new Error("expected introduction");
     await store.prepare!(state, step.request);
-    const accepted = await agent(claim.claim.ownerEpoch).decide({ gameId: game.id, actionSlot: 2, request: step.request, observation: observeWerewolf(state, step.request.actorId) });
+    const accepted = await agent(claim.claim.ownerEpoch).decide({ gameId: game.id, actionSlot: state.sequence + 1, request: step.request, observation: observeWerewolf(state, step.request.actorId) });
     expect(dispatches).toBe(2);
-    expect(await store.read()).toHaveLength(1);
+    expect(await store.read()).toHaveLength(state.sequence);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
     await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
     const replacement = await claimWerewolfGame(db, game.id);
     if (!replacement.ok) throw new Error(replacement.error);
     const resumed = await advanceWerewolf(createWerewolfStore(db, game.id, replacement.claim.ownerEpoch), agent(replacement.claim.ownerEpoch));
-    expect(resumed.actions[0]?.decision).toEqual(accepted);
+    const last = (await store.read()).at(-1);
+    expect(last?.type === "werewolf.action_accepted" && last.payload.decision).toEqual(accepted);
+    const after = await readWerewolfView(db, game.id, "mystery");
+    expect(after.cursor).toBe(before.cursor + 1);
+    expect(await readWerewolfView(db, game.id, "mystery", before.cursor)).toEqual(before);
+    if (action === "discuss") {
+      expect(after.entries.at(-1)).toMatchObject({ kind: "discussion", contribution: { stage: "reply", text: "A persisted contribution." } });
+      const next = nextWerewolfStep(resumed);
+      if (next.kind !== "action") throw new Error("Missing next reply");
+      expect(observeWerewolf(resumed, next.request.actorId).turnReminder?.latestStatement?.text).toBe("A persisted contribution.");
+    }
     expect(dispatches).toBe(2);
     const attempts = await db.select().from(schema.providerCallAttempts);
     expect(attempts.filter((a) => a.outcomeKind === "usable")).toHaveLength(1);
     expect(attempts.filter((a) => a.outcomeKind === "malformed_output")).toHaveLength(1);
   });
 
-  test("parallel beat plans survive a partial commit and owner change without redispatch or partial public reveal", async () => {
-    const game = await createWerewolfGame(db, ownerId, { preset: "one_wolf", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
+  test("parallel pack ballots survive a partial commit and owner change without redispatch or partial reveal", async () => {
+    const action = "attack";
+    const game = await createWerewolfGame(db, ownerId, { preset: "two_wolves", agentProfileIds: [], providerManifest: [{ catalogId: "katana:glm-5-2" }] });
     const claim = await claimWerewolfGame(db, game.id);
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     let start = replayWerewolf(await store.read());
-    for (let i = 0; i < 40 && start.phase !== "day"; i++) start = await advanceWerewolf(store, scripted);
-    expect(start.phase).toBe("day");
+    for (let i = 0; i < 80; i++) {
+      const step = nextWerewolfStep(start);
+      if (step.kind === "action" && step.request.action === action) break;
+      start = await advanceWerewolf(store, scripted);
+    }
     const plans = werewolfActionPlans(start);
-    const before = await readWerewolfView(db, game.id, "mystery");
+    expect(plans.every(plan => plan.request.action === action)).toBe(true);
+    expect(plans.length).toBeGreaterThan(1);
+    const audience = "omniscient";
+    const beforeMystery = await readWerewolfView(db, game.id, "mystery");
     const beforeOmniscient = await readWerewolfView(db, game.id, "omniscient");
+    const before = beforeOmniscient;
     let dispatches = 0;
     const client = new OpenAI({ apiKey: "test-only", baseURL: "http://fixture.invalid/v1", maxRetries: 0,
       fetch: async () => {
         dispatches++;
         return Response.json({ id: `discussion-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
           choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_discuss", arguments: JSON.stringify({ text: `Independent claim ${dispatches}`, thinking: "PRIVATE_THINKING" }) } }] } }],
+            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: JSON.stringify({ targetId: plans[0]!.request.legalTargetIds[0], thinking: "PRIVATE_THINKING" }) } }] } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } });
       } });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
@@ -240,12 +272,12 @@ describe("Werewolf House integration", () => {
     } }, agent(claim.claim.ownerEpoch))).rejects.toThrow("Interrupted between");
     expect(dispatches).toBe(plans.length);
     const partial = replayWerewolf(await store.read());
-    expect(partial.actions).toHaveLength(1);
-    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
+    expect(partial.actions).toHaveLength(start.actions.length + 1);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(beforeMystery);
     expect(await readWerewolfView(db, game.id, "omniscient")).toEqual(beforeOmniscient);
     for (const id of start.aliveIds) expect(observeWerewolf(partial, id)).toEqual(observeWerewolf(start, id));
     const savedPlans = await db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.gameId, game.id));
-    expect(savedPlans.filter((plan) => plan.request.action === "discuss").map((plan) => plan.sequence).toSorted()).toEqual(plans.map((plan) => plan.sequence).toSorted());
+    expect(savedPlans.filter((plan) => plan.request.action === action).map((plan) => plan.sequence).toSorted()).toEqual(plans.map((plan) => plan.sequence).toSorted());
 
     await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
     const replacement = await claimWerewolfGame(db, game.id);
@@ -253,17 +285,18 @@ describe("Werewolf House integration", () => {
     await expect(advanceWerewolf(store, scripted)).rejects.toThrow("stale");
     const resumedStore = createWerewolfStore(db, game.id, replacement.claim.ownerEpoch);
     const sealed = await advanceWerewolf(resumedStore, agent(replacement.claim.ownerEpoch));
-    expect(sealed.actions).toHaveLength(plans.length);
+    expect(sealed.actions).toHaveLength(start.actions.length + plans.length);
     expect(dispatches).toBe(plans.length);
-    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(beforeMystery);
     await advanceWerewolf(resumedStore, scripted);
-    const after = await readWerewolfView(db, game.id, "mystery");
+    const after = await readWerewolfView(db, game.id, audience);
     expect(after.cursor).toBe(before.cursor + 1);
     const reveal = after.entries.at(-1);
-    expect(reveal?.kind === "discussion" && reveal.result.contributions.length).toBe(plans.length);
+    expect(reveal?.kind === "pack_vote" ? reveal.result.ballots.length : 0).toBe(plans.length);
+    expect(await readWerewolfView(db, game.id, "mystery")).toEqual(beforeMystery);
     expect(JSON.stringify(after)).not.toContain("PRIVATE_THINKING");
-    expect(await readWerewolfView(db, game.id, "mystery", before.cursor)).toEqual(before);
-    expect(await readWerewolfView(db, game.id, "mystery", after.cursor)).toEqual(after);
+    expect(await readWerewolfView(db, game.id, audience, before.cursor)).toEqual(before);
+    expect(await readWerewolfView(db, game.id, audience, after.cursor)).toEqual(after);
     const attempts = await db.select().from(schema.providerCallAttempts);
     expect(attempts.filter((attempt) => attempt.outcomeKind === "usable")).toHaveLength(plans.length);
   });

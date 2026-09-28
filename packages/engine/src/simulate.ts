@@ -8,16 +8,27 @@
  * For a watchable API game plus a no-extra-inference text report, use
  *   bun run simulate:werewolf:api
  * API defaults: six House characters, one wolf, low reasoning, ten-day safety cap.
- * Dialogue, ballots, survivors and results print and append to a unique report
+ * Original Werewolf speech prints immediately; --transcript adds production notes
+ * and turn positions. No House rewrite or --summaries mode. --response-rounds
+ * accepts 1–3, default one; readback makes no model calls.
+ * Ballots, survivors and results print and append to a unique report
  * under engine/docs/simulations. Use --max-days 2 only for a short smoke run.
  * Its --game ID_OR_SLUG option watches an existing game without starting another.
+ * API --audience omniscient labels every chat speaker with their role, including
+ * introductions and pack chat. Mystery readback keeps dialogue roles hidden.
  * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
  * JSON and --chatty records contain private roles, strategies, and thinking.
  * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
- * Werewolf discussion has six shared beats, four messages per living player, and
- * passes that preserve messages. A quiet opening grants a second beat; later
- * all-pass beats close discussion. API --transcript renders whole beat reveals
- * and budgets; private commitments never become public before the shared reveal.
+ * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
+ * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
+ * Pack negotiation allows three proposal/sealed-ballot attempts with unanimous
+ * agreement, seeded nightly initiative, and swapped initiative after failure.
+ * Three disagreements mean no attack; Doctor/Seer still act once. API Omniscient
+ * reports show each resolved pack ballot; Mystery never receives those ballots.
+ * Werewolf uses seeded daily initiative and sequential public threads. Every living
+ * player opens once; others reply/pass, then the opener answers the group. An opening
+ * pass skips its thread; an all-pass response round closes that thread. Each accepted
+ * original line is public before the next call; the engine appends a turn reminder.
  * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).

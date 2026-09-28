@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
+import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { resolve } from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +8,7 @@ import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
+import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { createAdminUser } from "./test-auth.js";
 import { closeBrowser, createAuthenticatedPage, launchBrowser } from "./test-browser.js";
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
@@ -33,6 +35,46 @@ beforeAll(async () => {
   console.log(`WEREWOLF_BROWSER_URL=${servers.webUrl}`);
   browser = await launchBrowser();
 }, 120_000);
+
+async function checkFailedPackNegotiations() {
+  const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
+  const claim = await claimWerewolfGame(database.db, game.id);
+  if (!claim.ok) throw new Error(claim.error);
+  const agent: WerewolfAgent = { async decide({ request, observation }) {
+    if (request.action === "attack") {
+      const wolves = observation.packIds.toSorted();
+      return { kind: "target", targetId: request.legalTargetIds[wolves.indexOf(request.actorId)]!, thinking: "Private fixture" };
+    }
+    return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private fixture" }
+      : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "My pack proposal." : null };
+  } };
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), agent);
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/werewolf/${game.slug}`, { waitUntil: "domcontentloaded" });
+    await text(page, "Meet the village");
+    await click(page, "Latest");
+    await text(page, "Game complete");
+    expect(await page.evaluate('document.body.innerText.includes("Pack ballot")')).toBe(false);
+    await click(page, "Omniscient");
+    await text(page, "Meet the village");
+    await click(page, "Latest");
+    await text(page, "Pack ballot 3/3");
+    await text(page, "Three ballots without agreement. No pack attack tonight.");
+    await text(page, "Doctor protected");
+    await text(page, "checked");
+    expect(await page.evaluate('document.body.innerText.includes("Private fixture")')).toBe(false);
+    await page.setViewport({ width: 390, height: 844 });
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Pack ballot 3/3'))?.scrollIntoView({ block: 'start' })");
+    await page.screenshot({ path: "/tmp/werewolf-pack-ballots-mobile.png" });
+    await click(page, "Mystery");
+    await text(page, "Meet the village");
+    await click(page, "Latest");
+    await text(page, "Game complete");
+    expect(await page.evaluate('document.body.innerText.includes("Pack ballot") || document.body.innerText.includes("failed to agree")')).toBe(false);
+  } finally { await page.close(); }
+}
 afterAll(async () => {
   await cleanupE2eResources([
     ["browser", async () => { if (browser) await closeBrowser(browser); }],
@@ -52,10 +94,10 @@ async function click(page: Page, label: string) {
   await page.evaluate(`Array.from(document.querySelectorAll("button")).find(b => b.textContent?.trim() === ${JSON.stringify(label)})?.click()`);
 }
 
-test("CLI creates a real API Werewolf game and writes a text report without a model summarizer", async () => {
+test("CLI creates an API Werewolf game and prints original sequential contributions", async () => {
   const directory = await mkdtemp(`${tmpdir()}/werewolf-cli-`);
   const output = resolve(directory, "summary.txt");
-  const cli = Bun.spawn(["bun", "run", "simulate:werewolf:api", "--api-url", servers.apiUrl, "--web-url", servers.webUrl!, "--max-days", "1", "--timeout-seconds", "45", "--out", output], {
+  const cli = Bun.spawn(["bun", "run", "simulate:werewolf:api", "--api-url", servers.apiUrl, "--web-url", servers.webUrl!, "--max-days", "1", "--timeout-seconds", "45", "--transcript", "--out", output], {
     cwd: resolve(import.meta.dir, "../../../.."),
     env: { ...process.env, INFLUENCE_API_SESSION_TOKEN: admin.jwt }, stdout: "pipe", stderr: "pipe",
   });
@@ -69,8 +111,10 @@ test("CLI creates a real API Werewolf game and writes a text report without a mo
     const report = await readFile(output, "utf8");
     expect(report).toBe(stdout);
     expect(report).toContain("I will compare the claims with today's vote.");
-    expect(report).toContain("Passed:");
-    expect(report).toContain("Quiet opening; everyone gets another beat.");
+    expect(report).toContain("[pass]");
+    expect(report).toContain("thread 1");
+    expect(report).not.toContain("HOUSE ·");
+    expect(report).toContain("[answer 1");
     expect(report).toContain("Ballots:");
     expect(report).toContain("Alive (5)");
     expect(report.indexOf("Roles revealed:")).toBeGreaterThan(report.indexOf("Result:"));
@@ -158,17 +202,17 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await click(page, "Latest");
     await text(page, "Game complete");
-    await text(page, "Discussion beat 1/6");
-    await text(page, "A quiet opening. Everyone gets another beat.");
+    await text(page, "Thread 1");
+    await text(page, "Answer to the group");
     await text(page, "Passed.");
-    await text(page, "3/4 messages left");
-    await text(page, "Everyone has used their four messages.");
+    await text(page, "I will compare the claims with today's vote.");
+    expect(await page.evaluate('document.body.innerText.includes("Discussion beat")')).toBe(false);
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Discussion beat 2/6'))?.scrollIntoView({ block: 'start' })");
-    await page.screenshot({ path: "/tmp/werewolf-beats-mobile.png", fullPage: false });
+    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Thread 1'))?.scrollIntoView({ block: 'start' })");
+    await page.screenshot({ path: "/tmp/werewolf-threads-mobile.png", fullPage: false });
     await page.setViewport({ width: 1440, height: 1000 });
-    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Discussion beat 2/6'))?.scrollIntoView({ block: 'start' })");
-    await page.screenshot({ path: "/tmp/werewolf-beats-desktop.png", fullPage: false });
+    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Thread 1'))?.scrollIntoView({ block: 'start' })");
+    await page.screenshot({ path: "/tmp/werewolf-threads-desktop.png", fullPage: false });
     expect(await page.evaluate('document.body.innerText.includes("Role unknown")')).toBe(false);
     await page.goto(gameUrl, { waitUntil: "domcontentloaded" });
     await text(page, "Meet the village");
@@ -179,3 +223,5 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     throw error;
   } finally { await page.close(); }
 }, 120_000);
+
+test("failed pack negotiations stay hidden in Mystery and remain understandable in Omniscient", checkFailedPackNegotiations, 60_000);

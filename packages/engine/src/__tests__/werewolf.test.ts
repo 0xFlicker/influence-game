@@ -5,7 +5,7 @@ import { werewolfDecisionArtifact } from "../werewolf/agent";
 import { observeWerewolf, projectWerewolfView } from "../werewolf/observation";
 import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfActionPlans, werewolfConfig, werewolfEvent } from "../werewolf/rules";
 import { advanceWerewolf, runWerewolf, type WerewolfAgent, type WerewolfStore } from "../werewolf/runner";
-import type { WerewolfDecision, WerewolfPlayer, WerewolfState } from "../werewolf/types";
+import type { WerewolfPlayer, WerewolfState } from "../werewolf/types";
 
 function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays = 10) {
   const players: WerewolfPlayer[] = Array.from({ length: preset === "one_wolf" ? 6 : 8 }, (_, i) => ({
@@ -23,7 +23,7 @@ function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays = 10) {
 const quietAgent: WerewolfAgent = {
   decide: async ({ request }) => request.legalTargetIds.length
     ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE RATIONALE" }
-    : { kind: "speech", text: null, thinking: "PRIVATE RATIONALE" },
+    : { kind: "speech", cue: null, text: null },
 };
 
 async function until(ctx: ReturnType<typeof setup>, predicate: (state: WerewolfState) => boolean, agent = quietAgent) {
@@ -102,7 +102,7 @@ describe("Werewolf authority and recovery", () => {
     const seer = Object.keys(roles).find((id) => roles[id] === "seer")!;
     const doctor = Object.keys(roles).find((id) => roles[id] === "doctor")!;
     const agent: WerewolfAgent = { decide: async (input) => {
-      if (input.request.action === "attack") return { kind: "target", targetId: seer, thinking: "" };
+      if (input.request.action === "attack" && input.request.legalTargetIds.includes(seer)) return { kind: "target", targetId: seer, thinking: "" };
       if (input.request.action === "protect") return { kind: "target", targetId: doctor, thinking: "" };
       if (input.request.action === "vote") {
         const alive = input.observation.board.players.filter((p) => p.alive).map((p) => p.id);
@@ -156,7 +156,7 @@ describe("Werewolf authority and recovery", () => {
     const ctx = setup();
     const state = await until(ctx, (s) => s.phase === "pack" && s.actions.length === 1, {
       decide: async (input) => input.request.action === "pack_talk"
-        ? { kind: "speech", text: "I will pretend I checked Person 0 as the Seer.", thinking: "PRIVATE RATIONALE" }
+        ? { kind: "speech", cue: null, text: "I will pretend I checked Person 0 as the Seer." }
         : quietAgent.decide(input),
     });
     const village = state.aliveIds.find((id) => state.roles[id] === "villager")!;
@@ -194,152 +194,137 @@ describe("Werewolf authority and recovery", () => {
   });
 });
 
-describe("Werewolf simultaneous discussion", () => {
-  test("concurrent decisions share a frozen public beat and reveal only as one batch", async () => {
+describe("Werewolf pack negotiation", () => {
+  test.each([1, 2, 3, null])("unanimity on attempt %s controls the night, with three disagreements ending without an attack", async (agreementAttempt) => {
     const ctx = setup();
-    const start = await until(ctx, (s) => s.phase === "day");
-    const plans = werewolfActionPlans(start);
-    const before = projectWerewolfView(start, "mystery");
-    const ready = Promise.withResolvers<void>();
-    const pending: Array<ReturnType<typeof Promise.withResolvers<WerewolfDecision>>> = [];
-    const inputs: Array<Parameters<WerewolfAgent["decide"]>[0]> = [];
-    const running = advanceWerewolf(ctx.store, { decide: (input) => {
-      inputs.push(input);
-      const response = Promise.withResolvers<WerewolfDecision>();
-      pending.push(response);
-      if (pending.length === plans.length) ready.resolve();
-      return response.promise;
-    } });
-    await ready.promise;
-    expect(inputs.map((input) => input.actionSlot)).toEqual(plans.map((plan) => plan.sequence));
-    for (const input of inputs) {
-      expect(input.observation.board).toEqual(before);
-      if (input.observation.self.role !== "werewolf") expect(input.observation.packIds).toEqual([]);
-      if (input.observation.self.role !== "seer") expect(input.observation.investigations).toEqual([]);
-    }
-    // Fast responses cannot leak to a slower player or either spectator audience.
-    for (let i = pending.length - 1; i >= 1; i--) pending[i]!.resolve({ kind: "speech", text: `Claim ${i}`, thinking: "PRIVATE RATIONALE" });
-    await Promise.resolve();
-    expect(replayWerewolf(ctx.events)).toEqual(start);
-    pending[0]!.resolve({ kind: "speech", text: "Claim 0", thinking: "PRIVATE RATIONALE" });
-    const sealed = await running;
-    for (const audience of ["mystery", "omniscient"] as const) expect(projectWerewolfView(sealed, audience)).toEqual(projectWerewolfView(start, audience));
-    for (const input of inputs) expect(observeWerewolf(sealed, input.request.actorId)).toEqual(input.observation);
-    const revealed = await advanceWerewolf(ctx.store, quietAgent);
-    const view = projectWerewolfView(revealed, "mystery");
-    expect(view.cursor).toBe(before.cursor + 1);
-    const beat = view.entries.at(-1);
-    expect(beat?.kind).toBe("discussion");
-    if (beat?.kind !== "discussion") throw new Error("missing beat");
-    expect(beat.result.contributions.map((entry) => entry.text)).toEqual(plans.map((_, i) => `Claim ${i}`));
-    expect(Object.values(beat.result.messagesRemaining).every((remaining) => remaining === 3)).toBe(true);
-    expect(JSON.stringify(view)).not.toContain("PRIVATE RATIONALE");
-    expect(() => werewolfEvent(sealed, { type: "werewolf.discussion_revealed", payload: { ...beat.result, beat: 6 } })).toThrow("contradicts");
-  });
-
-  test("an all-pass opening gets one more beat; a second all-pass beat ends with all messages unspent", async () => {
-    const ctx = setup();
-    await until(ctx, (s) => s.phase === "day");
-    await advanceWerewolf(ctx.store, quietAgent);
-    const first = await advanceWerewolf(ctx.store, quietAgent);
-    expect(first.discussion).toMatchObject({ beatsCompleted: 1, ended: false });
-    expect(nextWerewolfStep(first).kind).toBe("action");
-    await advanceWerewolf(ctx.store, quietAgent);
-    const second = await advanceWerewolf(ctx.store, quietAgent);
-    expect(second.discussion).toMatchObject({ beatsCompleted: 2, ended: true });
-    expect(Object.values(second.discussion!.messagesRemaining).every((remaining) => remaining === 4)).toBe(true);
-    expect(nextWerewolfStep(second)).toEqual({ kind: "event", event: { type: "werewolf.phase_started", payload: { phase: "vote", day: 1 } } });
-  });
-
-  test("two passes preserve four messages; exhausted players stop being called and six beats close the day", async () => {
-    const ctx = setup();
-    const start = await until(ctx, (s) => s.phase === "day");
-    const patient = start.aliveIds[0]!;
-    const turns: Record<string, number[]> = {};
-    const agent: WerewolfAgent = { decide: async (input) => {
-      const beat = input.observation.board.discussion!.beat;
-      (turns[input.request.actorId] ??= []).push(beat);
-      return { kind: "speech", text: input.request.actorId === patient && beat <= 2 ? null : `My contribution at beat ${beat}.`, thinking: "" };
-    } };
-    const finished = await until(ctx, (s) => s.discussion?.ended === true, agent);
-    expect(turns[patient]).toEqual([1, 2, 3, 4, 5, 6]);
-    for (const id of start.aliveIds.filter((id) => id !== patient)) expect(turns[id]).toEqual([1, 2, 3, 4]);
-    expect(Object.values(finished.discussion!.messagesRemaining).every((remaining) => remaining === 0)).toBe(true);
-    const beats = finished.history.filter((entry) => entry.kind === "discussion");
-    expect(beats).toHaveLength(6);
-    expect(beats[1]!.result.messagesRemaining[patient]).toBe(4);
-    expect(beats.at(-1)!.result.endReason).toBe("beat_limit");
-    expect(werewolfActionPlans(finished)).toEqual([]);
-  });
-
-  test("sparse speakers can pass more than twice but cannot extend the six-beat limit", async () => {
-    const ctx = setup();
-    const start = await until(ctx, (s) => s.phase === "day");
-    const speakers = start.aliveIds.slice(0, 2);
-    const finished = await until(ctx, (s) => s.discussion?.ended === true, { decide: async (input) => ({
-      kind: "speech", text: input.request.actorId === speakers[input.observation.board.discussion!.beat % 2] ? "A new question." : null, thinking: "",
-    }) });
-    expect(finished.discussion!.beatsCompleted).toBe(6);
-    expect(finished.discussion!.messagesRemaining[speakers[0]!]).toBe(1);
-    expect(finished.discussion!.messagesRemaining[start.aliveIds[2]!]).toBe(4);
-  });
-
-  test("spending all messages closes after four beats, with a fresh budget the next day", async () => {
-    const ctx = setup();
-    const agent: WerewolfAgent = { decide: async (input) => {
-      if (input.request.action === "discuss") return { kind: "speech", text: "My current view.", thinking: "" };
-      if (input.request.action === "vote") {
-        const alive = input.observation.board.players.filter((p) => p.alive).map((p) => p.id);
-        return { kind: "target", targetId: alive[(alive.indexOf(input.request.actorId) + 1) % alive.length]!, thinking: "" };
+    const start = await until(ctx, state => state.phase === "pack");
+    const wolves = start.aliveIds.filter(id => start.roles[id] === "werewolf");
+    const villagers = start.aliveIds.filter(id => start.roles[id] !== "werewolf");
+    const proposals: string[][] = [];
+    const calls: string[] = [];
+    const agent: WerewolfAgent = { decide: async input => {
+      const { request, observation } = input;
+      calls.push(request.action);
+      if (request.action === "pack_talk" || request.action === "attack") {
+        const negotiation = observation.packNegotiation!;
+        const attempt = negotiation.attempt;
+        expect(observation.packVotes).toHaveLength(attempt - 1);
+        expect(negotiation.maxAttempts).toBe(3);
+        if (request.action === "pack_talk") {
+          expect(negotiation.stage).toBe("propose");
+          const order = proposals[attempt - 1] ??= [];
+          if (order.length) expect(observation.packDiscussion.at(-1)?.text).toBe(`Proposal ${attempt} from ${order[0]}`);
+          order.push(request.actorId);
+          return { kind: "speech", cue: null, text: `Proposal ${attempt} from ${request.actorId}` };
+        }
+        expect(negotiation.stage).toBe("vote");
+        return { kind: "target", targetId: villagers[attempt === agreementAttempt ? 0 : wolves.indexOf(request.actorId)]!, thinking: "" };
       }
+      if (request.action === "protect") return { kind: "target", targetId: villagers[1]!, thinking: "" };
       return quietAgent.decide(input);
     } };
-    const first = await until(ctx, (s) => s.discussion?.ended === true, agent);
-    const beat = first.history.at(-1);
-    expect(beat?.kind === "discussion" && beat.result.endReason).toBe("message_limit");
-    expect(first.discussion!.beatsCompleted).toBe(4);
-    const second = await until(ctx, (s) => s.day === 2 && s.phase === "day", agent);
-    expect(second.discussion!.beatsCompleted).toBe(0);
-    expect(Object.keys(second.discussion!.messagesRemaining)).toEqual(second.aliveIds);
-    expect(Object.values(second.discussion!.messagesRemaining).every((remaining) => remaining === 4)).toBe(true);
+    const dawn = await until(ctx, state => state.phase === "night" && state.resolved, agent);
+    const attempts = agreementAttempt ?? 3;
+    const ballots = dawn.history.filter(entry => entry.kind === "pack_vote");
+    expect(ballots).toHaveLength(attempts);
+    expect(ballots.map(entry => entry.result.attempt)).toEqual(Array.from({ length: attempts }, (_, i) => i + 1));
+    expect(ballots.at(-1)?.result).toMatchObject({ targetId: agreementAttempt ? villagers[0] : null, endReason: agreementAttempt ? "agreed" : "attempt_limit" });
+    expect(calls.filter(action => action === "pack_talk")).toHaveLength(attempts * 2);
+    expect(calls.filter(action => action === "attack")).toHaveLength(attempts * 2);
+    expect(calls.filter(action => action === "protect")).toHaveLength(1);
+    expect(calls.filter(action => action === "investigate")).toHaveLength(1);
+    for (let i = 1; i < proposals.length; i++) expect(proposals[i]).toEqual(proposals[i - 1]!.toReversed());
+    const night = dawn.history.at(-1);
+    expect(night?.kind === "night" && night.result.killedId).toBe(agreementAttempt ? villagers[0]! : null);
+    expect(dawn.investigations).toHaveLength(1);
+    expect(projectWerewolfView(dawn, "mystery").entries.some(entry => entry.kind === "pack_vote")).toBe(false);
+    expect(projectWerewolfView(dawn, "omniscient").entries.filter(entry => entry.kind === "pack_vote")).toEqual(ballots);
+    const survivor = dawn.aliveIds.find(id => dawn.roles[id] !== "werewolf")!;
+    expect(observeWerewolf(dawn, survivor).packVotes).toEqual([]);
+    expect(observeWerewolf(dawn, survivor).packNegotiation).toBeNull();
+    for (let length = 1; length <= ctx.events.length; length++) expect(() => replayWerewolf(ctx.events.slice(0, length))).not.toThrow();
   });
 
-  test("one malformed concurrent decision prevents any new commitment or reveal", async () => {
+  test("partial ballots stay sealed, recover the same observation, and cannot forge agreement", async () => {
     const ctx = setup();
-    const start = await until(ctx, (s) => s.phase === "day");
-    await expect(advanceWerewolf(ctx.store, { decide: async ({ request }) => request.actorId === start.aliveIds[0]
-      ? { kind: "target", targetId: "invalid", thinking: "" }
-      : { kind: "speech", text: "A valid message.", thinking: "" },
-    })).rejects.toThrow("speech decision");
-    expect(replayWerewolf(ctx.events)).toEqual(start);
+    const start = await until(ctx, state => nextWerewolfStep(state).kind === "action" && state.phase === "pack" && state.actions.length === 2);
+    const plans = werewolfActionPlans(start);
+    expect(plans).toHaveLength(2);
+    const before = projectWerewolfView(start, "omniscient");
+    const observations = plans.map(plan => observeWerewolf(start, plan.request.actorId));
+    let commits = 0;
+    await expect(advanceWerewolf({ ...ctx.store, append: async event => {
+      if (++commits === 2) throw new Error("Crash after first ballot");
+      await ctx.store.append(event);
+    } }, quietAgent)).rejects.toThrow("Crash after first ballot");
+    const partial = replayWerewolf(ctx.events);
+    expect(projectWerewolfView(partial, "omniscient")).toEqual(before);
+    expect(plans.map(plan => observeWerewolf(partial, plan.request.actorId))).toEqual(observations);
+    expect(werewolfActionPlans(partial)).toEqual(plans.slice(1));
+    await expect(advanceWerewolf(ctx.store, { decide: async () => ({ kind: "target", targetId: "not-a-player", thinking: "" }) })).rejects.toThrow("Illegal Werewolf target");
+    expect(replayWerewolf(ctx.events)).toEqual(partial);
+    const sealed = await advanceWerewolf(ctx.store, quietAgent);
+    expect(projectWerewolfView(sealed, "omniscient")).toEqual(before);
+    const step = nextWerewolfStep(sealed);
+    if (step.kind !== "event" || step.event.type !== "werewolf.pack_vote_resolved") throw new Error("Missing pack resolution");
+    const resolution = step.event;
+    expect(() => werewolfEvent(sealed, { ...resolution, payload: { ...resolution.payload, targetId: null } })).toThrow("contradicts");
+    const revealed = await advanceWerewolf(ctx.store, quietAgent);
+    expect(projectWerewolfView(revealed, "omniscient").cursor).toBe(before.cursor + 1);
+    expect(observeWerewolf(revealed, plans[0]!.request.actorId).packVotes).toHaveLength(1);
   });
 
-  test("provider failure remains distinguishable from deliberate passing", async () => {
-    const ctx = setup();
-    await until(ctx, (s) => s.phase === "day");
-    await advanceWerewolf(ctx.store, { decide: async () => { throw new ProviderUnavailableError("Unavailable", "malformed_output"); } });
-    const state = await advanceWerewolf(ctx.store, quietAgent);
-    const beat = state.history.at(-1);
-    expect(beat?.kind === "discussion" && beat.result.contributions.every((entry) => entry.unavailable && entry.text === null)).toBe(true);
-    expect(state.discussion!.ended).toBe(false);
+  test("provider-unavailable ballot fallbacks are stable across a partial-commit restart", async () => {
+    const uninterrupted = setup();
+    const restarted = setup();
+    const atBallot = (state: WerewolfState) => state.phase === "pack" && state.actions.length === 2;
+    await until(uninterrupted, atBallot);
+    await until(restarted, atBallot);
+    const unavailable: WerewolfAgent = { decide: async () => { throw new ProviderUnavailableError("Attempts exhausted", "malformed_output"); } };
+    const expected = await advanceWerewolf(uninterrupted.store, unavailable);
+    let commits = 0;
+    await expect(advanceWerewolf({ ...restarted.store, append: async event => {
+      if (++commits === 2) throw new Error("Interrupted fallback ballot");
+      await restarted.store.append(event);
+    } }, unavailable)).rejects.toThrow("Interrupted fallback ballot");
+    const resumed = await advanceWerewolf(restarted.store, unavailable);
+    expect(resumed).toEqual(expected);
+    expect(restarted.events).toEqual(uninterrupted.events);
+    for (const action of resumed.actions.filter(action => action.action === "attack")) {
+      expect(action.fallback).toBe("provider_unavailable");
+      expect(action.decision.kind === "target" && action.legalTargetIds.includes(action.decision.targetId)).toBe(true);
+    }
   });
 
-  test("every living faction votes and eliminating the last wolf wins for the village", async () => {
-    const ctx = setup("one_wolf");
-    const wolf = Object.entries(replayWerewolf(ctx.events).roles).find(([, role]) => role === "werewolf")![0];
-    const state = await runWerewolf(ctx.store, { decide: async (input) => input.request.action === "vote"
-      ? { kind: "target", targetId: input.request.legalTargetIds.includes(wolf) ? wolf : input.request.legalTargetIds[0]!, thinking: "" }
-      : quietAgent.decide(input),
-    });
-    const vote = state.history.find((entry) => entry.kind === "vote");
-    expect(vote?.kind === "vote" && vote.result.ballots.some((ballot) => ballot.voterId === wolf)).toBe(true);
-    expect(vote?.kind === "vote" && vote.result.ballots.length).toBe(5);
-    expect(state.outcome?.faction).toBe("village");
-    expect(state.outcome?.winnerIds).toHaveLength(5);
+  test.each(["one_wolf", "two_wolves"] as const)("a lone living wolf chooses once without proposals (%s)", async preset => {
+    const ctx = setup(preset);
+    let start = replayWerewolf(ctx.events);
+    if (preset === "two_wolves") {
+      const victim = start.aliveIds.find(id => start.roles[id] === "werewolf")!;
+      start = await until(ctx, state => state.day === 2 && state.phase === "pack", { decide: async input => input.request.action === "vote"
+        ? { kind: "target", targetId: input.request.legalTargetIds.includes(victim) ? victim : input.request.legalTargetIds[0]!, thinking: "" }
+        : quietAgent.decide(input) });
+    } else start = await until(ctx, state => state.phase === "pack");
+    expect(start.aliveIds.filter(id => start.roles[id] === "werewolf")).toHaveLength(1);
+    const plans = werewolfActionPlans(start);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.request.action).toBe("attack");
+    await advanceWerewolf(ctx.store, quietAgent);
+    const resolved = await advanceWerewolf(ctx.store, quietAgent);
+    expect(resolved.pack).toMatchObject({ attemptsCompleted: 1, ended: true });
+    expect(resolved.history.at(-1)?.kind).toBe("pack_vote");
   });
 });
 
 describe("Werewolf exact decision contracts", () => {
+  test.each(["attack", "pack_talk"] as const)("pack %s rejects malformed or incomplete structured decisions", action => {
+    const artifact = werewolfDecisionArtifact({ actorId: "p0", action, legalTargetIds: action === "attack" ? ["p1", "p2"] : [] });
+    const valid = action === "attack" ? { targetId: "p1", thinking: "" } : { cue: null, text: "Choose p1." };
+    for (const document of ["p1", "{}", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), action === "attack" ? '{"targetId":"p1"}' : '{"text":"p1"}']) {
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, document).status).toBe("invalid");
+    }
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)).status).toBe("valid");
+  });
   const request = { actorId: "p0", action: "vote" as const, legalTargetIds: ["p1", "p2"] };
   const artifact = werewolfDecisionArtifact(request);
   for (const document of ["hello", "```json\n{}\n```", 'prefix {"targetId":"p1","thinking":""}', "{}", '{"targetId":"p1"}', '{"targetId":"p1","thinking":"","extra":true}', '{"targetId":"p0","thinking":""}']) {
@@ -350,7 +335,7 @@ describe("Werewolf exact decision contracts", () => {
   test("accepts one exact legal decision and explicit silence", () => {
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, '{"targetId":"p1","thinking":"A public vote contradiction."}').status).toBe("valid");
     const speech = werewolfDecisionArtifact({ actorId: "p0", action: "discuss", legalTargetIds: [] });
-    expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":null,"thinking":"Listen first."}').status).toBe("valid");
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":null,"cue":null}').status).toBe("valid");
     expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":" ","thinking":""}').status).toBe("invalid");
   });
   test("discussion rejects malformed prose and incomplete or extra speech fields", () => {

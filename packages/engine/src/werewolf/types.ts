@@ -18,13 +18,14 @@ export interface WerewolfPlayer {
 }
 
 export interface WerewolfConfig {
-  rulesVersion: 2;
+  rulesVersion: 5;
+  responseRounds: number;
   preset: WerewolfPreset;
   maxDays: number;
 }
 
 export type WerewolfDecision =
-  | { kind: "speech"; text: string | null; thinking: string }
+  | { kind: "speech"; text: string | null; cue: string | null }
   | { kind: "target"; targetId: string; thinking: string };
 
 export interface WerewolfRequest {
@@ -39,7 +40,7 @@ export interface WerewolfAcceptedAction extends WerewolfRequest {
 }
 
 export interface WerewolfNightResult {
-  attackTargetId: string;
+  attackTargetId: string | null;
   protectedId: string | null;
   killedId: string | null;
   investigation: { seerId: string; targetId: string; isWolf: boolean } | null;
@@ -52,18 +53,57 @@ export interface WerewolfDayResult {
   eliminatedId: string | null;
 }
 
-/** One shared reveal; contributions never enter public history individually. */
-export interface WerewolfDiscussionBeat {
-  beat: number;
-  contributions: Array<{ actorId: string; text: string | null; unavailable: boolean }>;
-  messagesRemaining: Record<string, number>;
-  endReason: "all_passed" | "message_limit" | "beat_limit" | null;
+export interface WerewolfPackVote {
+  attempt: number;
+  ballots: Array<{ voterId: string; targetId: string }>;
+  targetId: string | null;
+  endReason: "agreed" | "attempt_limit" | null;
 }
 
-export interface WerewolfDiscussion {
-  beatsCompleted: number;
-  messagesRemaining: Record<string, number>;
+export interface WerewolfPackNegotiation {
+  attemptsCompleted: number;
+  targetId: string | null;
   ended: boolean;
+}
+
+/** Engine-owned sequence; production cues never control the schedule. */
+export interface WerewolfDiscussion {
+  initiativeIds: string[];
+  threadIndex: number;
+  stage: "opening" | "reply" | "answer";
+  responseRound: number;
+  respondentIndex: number;
+  turn: number;
+  openingText: string | null;
+  latestStatement: { actorId: string; text: string } | null;
+  roundHadSpeech: boolean;
+  ended: boolean;
+}
+
+export interface WerewolfDiscussionTurn {
+  thread: number;
+  openerId: string;
+  stage: "opening" | "reply" | "answer";
+  responseRound: number;
+  turn: number;
+  publicHistoryPosition: number;
+  actorId: string;
+  text: string | null;
+  cue: string | null;
+  unavailable: boolean;
+}
+
+export interface WerewolfTurnReminder {
+  thread: number;
+  totalThreads: number;
+  openerId: string;
+  openingStatement: string | null;
+  latestStatement: { actorId: string; text: string } | null;
+  stage: "opening" | "reply" | "answer";
+  responseRound: number;
+  maxResponseRounds: number;
+  hasUsedOwnOpening: boolean;
+  remainingOpportunitiesThisThread: number;
 }
 
 export interface WerewolfOutcome {
@@ -76,7 +116,7 @@ export type WerewolfEventData =
   | { type: "werewolf.started"; payload: { config: WerewolfConfig; seed: string; players: WerewolfPlayer[]; roles: Record<string, WerewolfRole> } }
   | { type: "werewolf.phase_started"; payload: { phase: Exclude<WerewolfPhase, "complete" | "introduction">; day: number } }
   | { type: "werewolf.action_accepted"; payload: WerewolfAcceptedAction }
-  | { type: "werewolf.discussion_revealed"; payload: WerewolfDiscussionBeat }
+  | { type: "werewolf.pack_vote_resolved"; payload: WerewolfPackVote }
   | { type: "werewolf.night_resolved"; payload: WerewolfNightResult }
   | { type: "werewolf.day_resolved"; payload: WerewolfDayResult }
   | { type: "werewolf.completed"; payload: WerewolfOutcome };
@@ -96,6 +136,7 @@ export interface WerewolfState {
   day: number;
   actions: WerewolfAcceptedAction[];
   discussion: WerewolfDiscussion | null;
+  pack: WerewolfPackNegotiation | null;
   resolved: boolean;
   previousProtection: string | null;
   investigations: Array<{ day: number; seerId: string; targetId: string; isWolf: boolean }>;
@@ -105,8 +146,9 @@ export interface WerewolfState {
 
 export type WerewolfHistoryEntry =
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
-  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string }
-  | { kind: "discussion"; day: number; result: WerewolfDiscussionBeat }
+  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+  | { kind: "discussion"; day: number; contribution: WerewolfDiscussionTurn }
+  | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
   | { kind: "night"; day: number; result: WerewolfNightResult }
   | { kind: "vote"; day: number; result: WerewolfDayResult }
   | { kind: "result"; day: number; outcome: WerewolfOutcome };

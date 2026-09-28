@@ -26,7 +26,7 @@ export async function readWerewolfEvents(db: DrizzleDB | Tx, gameId: string): Pr
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
+  preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number; responseRounds?: number;
 }) {
   if (!Object.hasOwn(WEREWOLF_PRESETS, input.preset)) throw new WerewolfGameError("Choose one_wolf or two_wolves", 400);
   const count = WEREWOLF_PRESETS[input.preset].players;
@@ -66,7 +66,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       const identity = getHousePersonaDetails(archetypes[i]!);
       players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
     }
-    const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
+    const rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.responseRounds ?? 1);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWerewolfApiArgs, runWerewolfApiSimulation } from "../werewolf/api-simulate";
-import { projectWerewolfView } from "../werewolf/observation";
+import { projectWerewolfView, type WerewolfPublicEntry } from "../werewolf/observation";
 import { replayWerewolf, startWerewolf, werewolfConfig } from "../werewolf/rules";
 import { runWerewolf, werewolfFallback } from "../werewolf/runner";
 import type { WerewolfEvent } from "../werewolf/types";
@@ -29,14 +29,19 @@ afterEach(async () => {
   await rm(reportDir, { recursive: true, force: true });
 });
 
-async function fixture() {
+async function fixture(disagree = false) {
   const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "", avatarUrl: null }));
   const events: WerewolfEvent[] = [startWerewolf("report-game", players, werewolfConfig("two_wolves", 1), "report-seed")];
   const initial = replayWerewolf(events);
   const final = await runWerewolf({ read: async () => events, append: async event => { events.push(event); } }, {
     async decide({ request }) {
+      if (disagree && request.action === "attack") {
+        const state = replayWerewolf(events);
+        const wolves = state.aliveIds.filter(id => state.roles[id] === "werewolf");
+        return { kind: "target", targetId: request.legalTargetIds[wolves.indexOf(request.actorId)]!, thinking: "PRIVATE_THINKING" };
+      }
       return request.legalTargetIds.length ? werewolfFallback(replayWerewolf(events), request)
-        : { kind: "speech", text: request.action === "pack_talk" ? "SECRET_PACK" : "Compare the claims.", thinking: "PRIVATE_THINKING" };
+        : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "SECRET_PACK" : "Compare the claims." };
     },
   });
   return { initial, final };
@@ -44,8 +49,8 @@ async function fixture() {
 
 describe("Werewolf API simulation", () => {
   test("defaults to a full match with a safety cap and rejects invalid configuration before dispatch", () => {
-    expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
-    for (const args of [["--preset", "unknown"], ["--max-days", "0"], ["--max-days", "21"], ["--audience", "player"], ["--agent", "same", "--agent", "same"], ["--timeout-seconds", "NaN"], ["--api-url", "https://example.com"], ["--game", ""], ["--unknown"]]) expect(() => parseWerewolfApiArgs(args, {})).toThrow();
+    expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, responseRounds: 1, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
+    for (const args of [["--preset", "unknown"], ["--max-days", "0"], ["--max-days", "21"], ["--audience", "player"], ["--agent", "same", "--agent", "same"], ["--timeout-seconds", "NaN"], ["--api-url", "https://example.com"], ["--game", ""], ["--unknown"], ["--summaries"], ["--response-rounds", "0"], ["--response-rounds", "4"]]) expect(() => parseWerewolfApiArgs(args, {})).toThrow();
     expect(parseWerewolfApiArgs(["--preset", "two_wolves", "--agent", "owned-1", "--agent", "owned-2"], {}).agentProfileIds).toEqual(["owned-1", "owned-2"]);
   });
 
@@ -64,7 +69,7 @@ describe("Werewolf API simulation", () => {
       const state = polls++ === 0 ? initial : final;
       return Response.json({ slug: "report-slug", status: state.outcome ? "completed" : "in_progress", view: projectWerewolfView(state, "mystery") });
     }, { preconnect: originalFetch.preconnect });
-    const args = runArgs(["--preset", "two_wolves", "--agent", "owned-1"]);
+    const args = runArgs(["--preset", "two_wolves", "--agent", "owned-1", "--transcript"]);
     const lines: string[] = [];
     const result = await runWerewolfApiSimulation(args, { sleep: async () => {
       // The report is readable before the game completes, not just at exit.
@@ -102,14 +107,40 @@ describe("Werewolf API simulation", () => {
       return Response.json({ slug: "report-slug", status: "completed", view: projectWerewolfView(final, "omniscient") });
     }, { preconnect: originalFetch.preconnect });
     const result = await runWerewolfApiSimulation(runArgs(["--game", "report-slug", "--audience", "omniscient", "--transcript"]), { log: () => {} });
-    expect(result.report).toContain("discussion beat 1/6 (shared reveal)");
-    expect(result.report).toContain("3/4 messages left");
-    expect(result.report).toContain("Everyone has used their four messages. Voting follows.");
+    expect(result.report).toContain("Day 1 · thread 1");
+    expect(result.report).toContain("[opening · turn 1]");
+    expect(result.report).toContain("[answer 1");
     expect(count).toBe(1);
     expect(result.report).toContain("SECRET_PACK");
     expect(result.report).toContain("Compare the claims.");
     expect(result.report).toContain("Seer checked");
     expect(result.report).not.toContain("PRIVATE_THINKING");
+    for (const player of final.players) {
+      expect(result.report).toContain(`${player.name} [${final.roles[player.id]}]: Compare the claims.`);
+      expect(result.report.split("\n").some(line => line.trimStart().startsWith(`${player.name}:`))).toBe(false);
+      if (final.roles[player.id] === "werewolf") expect(result.report).toContain(`[Pack] ${player.name} [werewolf]: SECRET_PACK`);
+    }
+  });
+
+  test("Omniscient explains failed pack ballots and still prints Doctor and Seer actions", async () => {
+    const { final } = await fixture(true);
+    globalThis.fetch = Object.assign(async () => Response.json({ slug: "report-slug", status: "completed", view: projectWerewolfView(final, "omniscient") }), { preconnect: originalFetch.preconnect });
+    const { report } = await runWerewolfApiSimulation(runArgs(["--game", "report-slug", "--audience", "omniscient"]), { log: () => {} });
+    expect(report).toContain("[Pack] Night 1 · ballot 1/3");
+    expect(report).toContain("[Pack] Night 1 · ballot 3/3");
+    expect(report).not.toContain("ballot 4/3");
+    expect(report).toContain("Disagreement. Swap the opening speaker and propose again.");
+    expect(report).toContain("Three ballots without agreement. No pack attack tonight.");
+    expect(report).toContain("Night 1: Everyone survived.");
+    expect(report).toContain("Doctor protected");
+    expect(report).toContain("Seer checked");
+    expect(report).not.toContain("PRIVATE_THINKING");
+    const mystery = projectWerewolfView(final, "mystery");
+    const publicReport = mystery.entries.map(entry => werewolfReportEntry(entry, mystery, true)).join("\n");
+    expect(publicReport).not.toContain("[Pack]");
+    expect(publicReport).not.toContain("failed to agree");
+    expect(publicReport).not.toContain("Doctor protected");
+    expect(publicReport).toContain("Night 1: Everyone survived.");
   });
 
   test("a failed creation is not retried and a stopped game is not presented as a completed result", async () => {
@@ -128,12 +159,14 @@ describe("Werewolf API simulation", () => {
   test("completed Mystery readback reveals roles only after the result", async () => {
     const { final } = await fixture();
     globalThis.fetch = Object.assign(async () => Response.json({ slug: "report-slug", status: "completed", view: projectWerewolfView(final, "mystery") }), { preconnect: originalFetch.preconnect });
-    const { report } = await runWerewolfApiSimulation(runArgs(["--game", "report-slug"]), { log: () => {} });
+    const { report } = await runWerewolfApiSimulation(runArgs(["--game", "report-slug", "--transcript"]), { log: () => {} });
     const cast = report.split("\n").find(line => line.startsWith("Cast"));
     expect(cast).toBe(`Cast (mystery): ${final.players.map(player => player.name).join(", ")}`);
     expect(report.indexOf("Roles revealed:")).toBeGreaterThan(report.indexOf("Result:"));
     expect(report).toContain("(dead)");
     expect(report).not.toContain("unknown");
+    expect(report).not.toMatch(/\[(werewolf|villager|seer|doctor)\]/);
+    for (const player of final.players) expect(report).toContain(`${player.name}: Compare the claims.`);
   });
 
   test("preserves the created game's identity and resume command when the first read fails", async () => {
@@ -179,10 +212,25 @@ describe("Werewolf API simulation", () => {
   test("Mystery never gains private night facts when formatting the same canonical game", async () => {
     const { final } = await fixture();
     const mystery = projectWerewolfView(final, "mystery");
-    const report = mystery.entries.map(entry => werewolfReportEntry(entry, mystery.players, true)).join("\n");
+    const report = mystery.entries.map(entry => werewolfReportEntry(entry, mystery, true)).join("\n");
     expect(report).not.toContain("SECRET_PACK");
     expect(report).not.toContain("Seer checked");
     expect(report).not.toContain("Doctor protected");
     expect(report).not.toContain("Pack targeted");
+  });
+
+  test("roles follow the audience; cues remain separate notes and passes remain recorded", async () => {
+    const { final } = await fixture();
+    const view = projectWerewolfView(final, "omniscient");
+    for (const [text, unavailable] of [["A claim.", false], [null, false], [null, true]] as const) {
+      const entry: WerewolfPublicEntry = { kind: "discussion", day: 1, contribution: {
+        thread: 1, openerId: "p0", stage: "reply", responseRound: 1, turn: 2, publicHistoryPosition: 10,
+        actorId: "p1", text, cue: unavailable ? null : "A brittle laugh.", unavailable,
+      } };
+      expect(werewolfReportEntry(entry, view)).toContain(`Player 1 [${final.roles.p1}]: ${unavailable ? "[unavailable]" : text ?? "[pass]"}`);
+      expect(werewolfReportEntry(entry, view)).not.toContain("brittle");
+      if (!unavailable) expect(werewolfReportEntry(entry, view, true)).toContain("[production note: A brittle laugh.]");
+      expect(werewolfReportEntry(entry, { ...view, audience: "mystery" }, true)).not.toMatch(/\[(werewolf|villager|seer|doctor)\]/);
+    }
   });
 });

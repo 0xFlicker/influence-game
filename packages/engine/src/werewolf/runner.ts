@@ -18,20 +18,20 @@ export interface WerewolfStore {
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
-  if (!request.legalTargetIds.length) return { kind: "speech", text: null, thinking: "" };
+  if (!request.legalTargetIds.length) return { kind: "speech", cue: null, text: null };
   const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "fallback", sequence: state.sequence + 1 }));
   const choices = [...request.legalTargetIds].sort();
   return { kind: "target", targetId: choices[Math.floor(random() * choices.length)]!, thinking: "" };
 }
 
-/** Concurrent speech uses one frozen beat. Private commitments recover separately;
+/** Concurrent pack ballots use one frozen observation. Private commitments recover separately;
  * the deterministic reveal publishes the complete batch as one public entry. */
 export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent, signal?: AbortSignal): Promise<WerewolfState> {
   signal?.throwIfAborted();
   const state = replayWerewolf(await store.read());
   const step = nextWerewolfStep(state);
   if (step.kind === "complete") return state;
-  if (step.kind === "action" && step.request.action === "discuss") {
+  if (step.kind === "action" && step.request.action === "attack") {
     const plans = werewolfActionPlans(state);
     for (const plan of plans) await store.prepare?.(state, plan.request, plan.sequence);
     signal?.throwIfAborted();
@@ -46,7 +46,7 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
       } catch (error) {
         signal?.throwIfAborted();
         if (!(error instanceof ProviderUnavailableError)) throw error;
-        decision = werewolfFallback(state, request);
+        decision = werewolfFallback({ ...state, sequence: sequence - 1 }, request);
         fallback = "provider_unavailable";
       }
       const action = { ...request, decision, fallback };
@@ -58,7 +58,7 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
     // Validate the whole batch before appending any new commitment.
     for (const decision of decisions) if (decision.status === "rejected") throw decision.reason;
     for (const decision of decisions) {
-      if (decision.status !== "fulfilled") throw new Error("Unsettled Werewolf discussion decision");
+      if (decision.status !== "fulfilled") throw new Error("Unsettled Werewolf batch decision");
       signal?.throwIfAborted();
       const event = werewolfEvent(committed, { type: "werewolf.action_accepted", payload: decision.value });
       await store.append(event);

@@ -27,9 +27,9 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { async decide({ request, observation }) {
-    if (request.action === "discuss" && observation.board.discussion?.beat === 1) return { kind: "speech", text: null, thinking: "Fixture opening pass" };
+    if (request.action === "discuss" && observation.turnReminder?.stage === "reply") return { kind: "speech", cue: null, text: null };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
-      : { kind: "speech", text: "I will compare the claims with today's vote.", thinking: "Fixture speech" };
+      : { kind: "speech", cue: null, text: "I will compare the claims with today's vote." };
   } };
   const agent = agentOverride ?? (process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true" ? mockAgent : new WerewolfModelAgent({
     runtimes: createLlmProviderRuntimesFromEnv(resolveProviderManifestFromGameConfig(config), process.env, { openAIServiceTier: "flex", timeout: 120_000 }) ?? [],
