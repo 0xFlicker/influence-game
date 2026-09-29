@@ -56,9 +56,7 @@ That split makes the system useful to inspect:
 
 ## Architecture
 
-Visual Mode is being implemented on its feature branch; the current contract,
-room direction and remaining integration work are tracked in [Visual Mode](docs/visual-mode.md).
-It is not yet a runnable game-creation or simulator option.
+API-created games support optional [Visual Mode](docs/visual-mode.md), including independent group shots, best-effort portrait speech overlays, and producer image correction. The standalone simulator does not generate visual media.
 
 ```mermaid
 flowchart LR

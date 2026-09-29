@@ -1,7 +1,7 @@
 import { reserveInference, dispatchInference, settleInference, checkInferenceDispatch } from "./inference-allowances.js";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
-import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
+import { VISUAL_LOCALIZATION_MODEL, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import { visualReceiptCostMicrousd } from "./visual-pricing.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -182,6 +182,7 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) 
 
 /** Image and identity references are hashed into the same durable request boundary. */
 export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1] & { gameId: string }) {
+  if (input.allowMissing) return runDurableLocalization(db, input);
   await input.onStep?.("verifying:composition");
   const composition = await runDurableLocalization(db, { ...input, operationKey: `${input.operationKey}:composition`, reuseOperationKey: input.reuseOperationKey ? `${input.reuseOperationKey}:composition` : undefined, compositionOnly: true });
   if (!input.references.length) return composition;
@@ -204,13 +205,14 @@ async function runDurableLocalization(db: DrizzleDB, input: {
   beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
   onStep?: (step: string) => Promise<void>;
   compositionOnly?: boolean;
+  allowMissing?: boolean;
   candidateAnchors?: readonly import("@influence/engine/visual-mode").VisualPlayerAnchor[];
 }) {
-  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
+  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, allowMissing: input.allowMissing === true, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
     references: input.references.map((reference) => ({ image: hash(reference.image), players: reference.players })),
   }));
   const operation = await reserveVisualOperation(db, input.gameId, input.operationKey, inputHash, input.userId, {
-    task: VISUAL_LOCALIZATION_VERSION, compositionOnly: input.compositionOnly === true,
+    task: VISUAL_LOCALIZATION_VERSION, model: VISUAL_LOCALIZATION_MODEL, compositionOnly: input.compositionOnly === true,
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
   }, input.sceneId, input.repairJobId);
@@ -279,7 +281,7 @@ export async function renderVisualAssetBestEffort(db: DrizzleDB, input: Paramete
   }
 }
 
-/** A single-character head observation; shares durable receipts without scene/game authority. */
+/** A single-character head observation; existing accepted/uncertain attempts retain their retry authority across model changes. */
 export async function localizeOwnedVisualReference(db: DrizzleDB, input: { userId: string; requestId: string; scene: Uint8Array; apiKey: string }) {
   return runDurableLocalization(db, { ...input, gameId: null, operationKey: `portrait-head:${VISUAL_LOCALIZATION_VERSION}:${input.requestId}`,
     references: [{ image: input.scene, players: [{ id: "character", name: "Character" }] }],

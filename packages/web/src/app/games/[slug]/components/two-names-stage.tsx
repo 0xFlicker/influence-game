@@ -154,20 +154,21 @@ export function TwoNamesVoteStage({ cue, roster }: {
   roster: readonly FormatPresentationRosterPlayer[];
 }) {
   const aggregate = cue.after.resolution?.aggregate;
-  if (aggregate?.capability !== "two_names") return null;
+  const finalistPlayerIds = aggregate?.capability === "two_names" ? aggregate.finalistPlayerIds : cue.after.twoNames?.finalistPlayerIds;
+  if (!finalistPlayerIds) return null;
   const isResult = cue.kind === "format_aggregate";
   // During roll call count only the published receipts, never the final aggregate.
-  const totals = isResult ? aggregate.totals : Object.fromEntries(aggregate.finalistPlayerIds.map((id) => [
+  const totals = isResult && aggregate?.capability === "two_names" ? aggregate.totals : Object.fromEntries(finalistPlayerIds.map((id) => [
     id, cue.after.revealedBallots.filter((ballot) => ballot.targetId === id).length,
   ]));
-  const tied = totals[aggregate.finalistPlayerIds[0]] === totals[aggregate.finalistPlayerIds[1]];
+  const tied = totals[finalistPlayerIds[0]] === totals[finalistPlayerIds[1]];
   return (
     <section data-format-cue={cue.kind} className="w-full max-w-2xl px-4 py-3" aria-live="polite">
       <p className="mb-5 text-center text-xs uppercase tracking-[0.25em] text-white/60">
         {isResult ? (tied ? "Tie · Empowered decides" : "Result locked") : `Roll call · ${cue.rollCallIndex + 1} of ${cue.rollCallCount}`}
       </p>
       <dl aria-label="Two Names vote totals" className="flex justify-center gap-10 text-center">
-        {aggregate.finalistPlayerIds.map(id => <div key={id}>
+        {finalistPlayerIds.map(id => <div key={id}>
           <dt className="font-medium text-white">{name(id, roster)}</dt>
           <dd className="mt-2 text-3xl font-semibold text-white" aria-label={`${name(id, roster)}: ${totals[id] ?? 0} exit vote${totals[id] === 1 ? "" : "s"}`}>
             {totals[id] ?? 0}<span className="block text-xs font-normal text-white/50">Exit votes</span>

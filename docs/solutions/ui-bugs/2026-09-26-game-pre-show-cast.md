@@ -60,3 +60,9 @@ checks load retry, search, explicit selection, join-error recovery, keyboard
 focus containment, close/focus restoration, empty-agent routing, new-agent
 routing, and additional-seat controls for ordinary, operator, and rated games.
 Providers are simulated.
+
+The pre-show also exposes Start, Stop, and Hide using the existing `start_game`,
+`stop_game`, and `hide_game` permissions. Creator ownership alone does not grant
+these permissions. Start waits for a full cast, actions lock while pending,
+failures remain visible, and Hide requires confirmation before returning to
+All games. The API remains the authority for each action.

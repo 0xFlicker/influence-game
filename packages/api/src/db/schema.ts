@@ -3550,6 +3550,7 @@ export const visualScenes = pgTable("visual_scenes", {
   repairBudgetUsed: boolean("repair_budget_used").notNull().default(false),
   repairMode: text("repair_mode").notNull().default("regenerate").$type<"regenerate" | "verify">(),
   anchors: jsonb("anchors").$type<import("@influence/engine/visual-mode").VisualPlayerAnchor[]>(),
+  shots: jsonb("shots").$type<import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot>>(),
   failure: text("failure"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
@@ -3659,7 +3660,7 @@ export const agentProfileLifecycleActions = pgTable("agent_profile_lifecycle_act
 export const visualRepairJobs = pgTable("visual_repair_jobs", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
   sceneId: text("scene_id").notNull().references(() => visualScenes.id), version: integer("version").notNull(),
-  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue">(),
+  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue" | "review">(),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
   renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
   candidateArtifactId: text("candidate_artifact_id"),
@@ -3678,6 +3679,7 @@ export const visualMediaVersions = pgTable("visual_media_versions", {
   imageArtifactId: text("image_artifact_id").notNull().references(() => visualArtifacts.id),
   annotatedArtifactId: text("annotated_artifact_id").notNull().references(() => visualArtifacts.id),
   localization: jsonb("localization").notNull().$type<import("@influence/engine/visual-localization").VisualLocalization>(),
+  shots: jsonb("shots").$type<import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot>>(),
   verificationVersion: text("verification_version").notNull(), createdAt: text("created_at").notNull(),
 }, (t) => [unique("visual_media_version_unique").on(t.sceneId, t.version)]);
 

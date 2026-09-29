@@ -15,7 +15,7 @@ A successful game and a successful image request are separate outcomes. Treating
 
 Use explicit product policies instead of ambiguous “fail open” terminology:
 
-- **Best effort** is the default. Wait within the scene attempt timeout, permit one safe repair, then continue with portraits and canonical text context. Cues remain available, and future arrangements may render.
+- **Best effort** is the default. Wait within the scene attempt timeout, permit one safe repair, then retain usable group shots with headshot overlays and explicit off-camera context, or continue with portraits and canonical text when no shot is usable. Cues remain available, and future arrangements may render.
 - **Require visuals** is opt-in. Preserve the committed cursor and pause when required references, media or agent annotations are unavailable. Admins inspect evidence, authorize repair and explicitly resume through ordinary worker adoption.
 
 Both policies write the same durable evidence. Reserve paid calls before dispatch; commit receipt, output and completion event together. Retain provider error bodies and rejected verification output with bounded evidence size and explicit truncation. Separate successful composition from uncertain anchors. An unanchored viewer scene can be acceptable in Best effort while insufficient for Require visuals.
@@ -27,3 +27,5 @@ A scene-wide repair allowance includes xAI fallback across sections. A missing t
 Policy changes and resume are separate actions. Resume clears only a visual-owned pause and preserves the durable execution cursor; it cannot resume an unrelated suspension. Owner and arrangement fences remain mandatory in both modes.
 
 See [Visual Mode operations](../../visual-mode.md) and [durable provider fallback authority](coordinate-provider-attempts-with-durable-fallback-authority.md).
+
+Generated group images are independent media. Do not generatively stitch them back into the only usable output: that can destroy identities. Keep the contact sheet as review evidence, preserve each playable shot, and save producer corrections as immutable media versions with explicit publication. A manual speech pointer is presentation metadata, never an identity anchor.

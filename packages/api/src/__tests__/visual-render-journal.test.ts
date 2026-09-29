@@ -1,13 +1,17 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   readVisualRenderAccounting, reconcileVisualAttempt, renderDurableVisualImage,
-  reserveVisualRender, retryVisualRender, visualImageJournal,
+  reserveVisualRender, retryVisualRender, visualImageJournal, localizeOwnedVisualReference,
 } from "../services/visual-render-journal.js";
 import type { VisualImageReceipt } from "../services/visual-image-provider.js";
 
+import sharp from "sharp";
+import type { VisualLocalization } from "@influence/engine/visual-localization";
+const originalFetch = globalThis.fetch;
+afterEach(() => { globalThis.fetch = originalFetch; });
 let db: DrizzleDB;
 const request = { prompt: "Empty warm house", width: 1024, height: 1024, references: [] };
 const reservation = { provider: "openai" as const, model: "gpt-image-2", requestHash: "request-1" };
@@ -88,4 +92,35 @@ describe("durable visual render journal", () => {
     expect(next.generation).toBe(2);
     expect(await readVisualRenderAccounting(db, "visual-game")).toMatchObject({ knownCostMicrousd: 123_000, unpricedAttempts: 0, uncertainAttempts: 0 });
   });
+});
+
+
+test("portrait model migration preserves accepted evidence and blocks uncertain redispatch", async () => {
+  await db.insert(schema.users).values({ id: "portrait-owner" });
+  const scene = await sharp({ create: { width: 128, height: 192, channels: 3, background: "white" } }).png().toBuffer();
+  const accepted: VisualLocalization = { count: 1, anchors: [{ playerId: "character", label: 1, confidence: "clear", head: { x: .3, y: .1, width: .2, height: .2 } }] };
+  let calls = 0;
+  let fail = false;
+  globalThis.fetch = Object.assign(async (_url: string | URL | Request, init?: RequestInit) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    expect(body.model).toBe("gpt-6-sol");
+    expect(body.text.format.strict).toBe(true);
+    if (fail) throw new Error("Interrupted provider transport");
+    return Response.json({ status: "completed", usage: { input_tokens: 1000, output_tokens: 100 }, output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(accepted) }] }] });
+  }, { preconnect: originalFetch.preconnect });
+  const input = { userId: "portrait-owner", requestId: "portrait-model-test", scene, apiKey: "test" };
+  const result = await localizeOwnedVisualReference(db, input);
+  expect(result.anchors).toEqual(accepted.anchors);
+  const [attempt] = await db.select().from(schema.visualRenderAttempts);
+  expect(attempt?.model).toBe("gpt-6-sol");
+  // Simulate previously accepted GPT-5.6 evidence at this immutable boundary.
+  await db.update(schema.visualRenderAttempts).set({ model: "gpt-5.6-sol", receipt: { ...attempt!.receipt!, model: "gpt-5.6-sol" } }).where(eq(schema.visualRenderAttempts.id, attempt!.id));
+  expect(await localizeOwnedVisualReference(db, input)).toEqual(accepted);
+  expect(calls).toBe(1);
+  fail = true;
+  const interrupted = { ...input, requestId: "portrait-interrupted-test" };
+  await expect(localizeOwnedVisualReference(db, interrupted)).rejects.toThrow("Interrupted provider transport");
+  await expect(localizeOwnedVisualReference(db, interrupted)).rejects.toThrow("needs recovery");
+  expect(calls).toBe(2);
 });

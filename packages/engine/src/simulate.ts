@@ -32,6 +32,8 @@
  * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).
+ * API image context distinguishes a selected group shot from the canonical room roster.
+ * Missing/off-camera people stay in the room; speech pointers never identify a character.
  * API Visual Mode uses the exact remaining cast for Final 4 lobby pleas. Verify
  * endgame ballots and IN/OUT status against canonical resolution/elimination
  * events; dialogue and scene membership are not accepted game-state evidence.

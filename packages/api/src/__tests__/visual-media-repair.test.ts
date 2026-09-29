@@ -41,7 +41,7 @@ beforeEach(async () => {
     }
     if (!String(url).includes("/v1/images/")) throw new Error("Unexpected provider URL");
     calls.push("image");
-    if (fail === "first-image" || fail === "harmonize" && calls.filter(c => c === "image").length === 3) return Response.json({ error: { message: "Failed harmonization" } }, { status: 400 });
+    if (fail === "first-image" || fail === "second-image" && calls.filter(c => c === "image").length === 2) return Response.json({ error: { message: "Failed harmonization" } }, { status: 400 });
     return Response.json({ data: [{ b64_json: png.toString("base64") }], usage: { output_tokens: 10 } });
   }, { preconnect: originalFetch.preconnect });
 });
@@ -193,24 +193,24 @@ test("ambiguous identities retain candidate pixels and name the participant with
   fail = "identity"; await send(); await run();
   const latest = (await readVisualMedia(db, "media")).jobs[0]!;
   expect(latest).toMatchObject({ status: "failed", failure: "Character identity could not be verified: Player 3", candidateArtifactId: expect.any(String) });
-  expect(calls).toEqual(["image", "image", "image", "composition"]);
+  expect(calls).toEqual(["image", "image", "composition"]);
   expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
   expect(await readVisualRenderAccounting(db, "media")).toMatchObject({ pendingAttempts: 0, uncertainAttempts: 0 });
 });
 
-test("continue reuses successful sections and retries only failed harmonization", async () => {
-  fail = "harmonize"; await send(); const first = await run();
-  expect(visualRenderGroups(scene.plan)).toHaveLength(2); expect(calls).toEqual(["image", "image", "image"]);
+test("continue reuses successful group images and retries only the failed group", async () => {
+  fail = "second-image"; await send(); const first = await run();
+  expect(visualRenderGroups(scene.plan)).toHaveLength(2); expect(calls).toEqual(["image", "image"]);
   expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed");
   fail = "first-image"; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); const second = await run();
   expect(calls).toEqual(["image"]);
   fail = null; calls = []; await send({ expectedVersion: 2, action: "continue", sourceJobId: second.id }); await run();
-  expect(calls).toEqual(["image", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {
   fail = failure; await send(); await run(); expect((await readVisualMedia(db, "media")).versions).toHaveLength(0);
-  expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed"); expect(calls.filter(c => c === "image")).toHaveLength(3);
+  expect((await readVisualMedia(db, "media")).jobs[0]?.status).toBe("failed"); expect(calls.filter(c => c === "image")).toHaveLength(2);
 });
 
 test("uncertain geometry produces no guessed anchors and can be published", async () => {
@@ -269,4 +269,47 @@ test("API queues once, returns durable rejection, and keeps candidates behind ad
   expect((await app.request(`/api/admin/games/media/visual/evidence/artifact/${version.annotatedArtifactId}`)).status).toBe(401);
   await send({ action: "publish", expectedVersion: 1, expectedPublication: 0, versionId: version.id });
   expect((await app.request(`/api/games/media/visual/artifacts/${version.imageArtifactId}`)).status).toBe(200);
+});
+
+test("producer correction saves immutable marked shots without generation, then publishes explicitly", async () => {
+  await acceptedOriginal();
+  const before = await db.select().from(schema.visualScenes);
+  const review = { expectedRevision: scene.renderRevision, planHash: scene.planHash, mode: "groups" as const, shots: [{ sourceId: `artifact:${imageId}`, role: "group" as const,
+    participantIds: scene.plan.cast.map(m => m.id), visibleParticipantIds: ["p0"],
+    anchors: [{ playerId: "p0", label: 1, confidence: "clear" as const, head: { x: .2, y: .2, width: .1, height: .1 } }],
+    pointers: [{ playerId: "p1", x: .8, y: .5 }],
+  }] };
+  const requestId = "manual-review";
+  const saved = await send({ action: "review", review, requestId });
+  expect(saved).toMatchObject({ accepted: true, code: "reviewed", version: 1 });
+  expect(await send({ action: "review", review, requestId })).toEqual(saved);
+  expect(calls).toEqual([]);
+  expect(await db.select().from(schema.visualScenes)).toEqual(before);
+  expect((await readVisualMedia(db, "media")).publications).toHaveLength(0);
+  expect(await send({ action: "review", review })).toMatchObject({ code: "stale_version" });
+  await send({ action: "publish", versionId: saved.versionId!, expectedVersion: 1, expectedPublication: 0 });
+  const viewer = await readViewerMedia(db, "media");
+  expect(viewer.scenes[0]?.shots).toMatchObject({ mode: "groups", overview: null, groups: [{ visibleParticipantIds: ["p0"], pointers: [{ playerId: "p1" }] }] });
+  const group = viewer.scenes[0]!.shots!.groups[0]!;
+  const app = createVisualRoutes(db);
+  expect((await app.request(group.imageUrl)).status).toBe(200);
+  const version = (await readVisualMedia(db, "media")).versions.find(v => v.id === saved.versionId)!;
+  expect((await app.request(`/api/games/media/visual/artifacts/${version.shots!.groups[0]!.annotatedArtifactId}`)).status).toBe(404);
+  const hidden = await send({ action: "review", expectedVersion: 1, review: { expectedRevision: scene.renderRevision, planHash: scene.planHash, mode: "portraits", shots: [] } });
+  await send({ action: "publish", versionId: hidden.versionId!, expectedVersion: 2, expectedPublication: 1 });
+  expect((await readViewerMedia(db, "media")).scenes).toHaveLength(0);
+  expect((await readViewerMedia(db, "media", viewer.publicationSnapshot)).scenes).toHaveLength(1);
+});
+
+test("manual review rejects foreign pixels, foreign identities and ambiguous head assignments", async () => {
+  await acceptedOriginal();
+  const base = { sourceId: `artifact:${imageId}`, role: "overview" as const, participantIds: ["p0"], visibleParticipantIds: ["p0"],
+    anchors: [{ playerId: "p0", label: 1, confidence: "clear" as const, head: { x: .2, y: .2, width: .1, height: .1 } }], pointers: [] };
+  for (const shot of [{ ...base, sourceId: "artifact:foreign" }, { ...base, participantIds: ["foreign"] },
+    { ...base, anchors: [] }, { ...base, anchors: [{ ...base.anchors[0]!, confidence: "uncertain" as const }] }]) {
+    expect(await send({ action: "review", review: { expectedRevision: scene.renderRevision, planHash: scene.planHash, mode: "scene", shots: [shot] } })).toMatchObject({ accepted: false, code: "invalid_review" });
+  }
+  expect(await send({ action: "review", review: { expectedRevision: scene.renderRevision + 1, planHash: scene.planHash, mode: "scene", shots: [base] } })).toMatchObject({ accepted: false, code: "invalid_review" });
+  expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
+  expect(calls).toEqual([]);
 });

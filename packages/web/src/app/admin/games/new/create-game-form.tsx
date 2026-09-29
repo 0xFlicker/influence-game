@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { modelCatalogEntryById } from "@influence/engine/model-catalog";
-import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
+import { DEFAULT_GAME_FALLBACK, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   FORMAT_PRESENTATION_METADATA,
   LAUNCH_FORMAT_IDS,
@@ -139,9 +139,9 @@ const GAME_MODELS: GameModelOption[] = [
     allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
   },
   {
-    catalogId: "katana:grok-4-5",
-    displayName: "xAI Grok 4.5",
-    sublabel: "Capable tertiary fallback",
+    catalogId: "katana:grok-4-6",
+    displayName: "xAI Grok 4.6",
+    sublabel: "Default fallback",
     configured: true,
     available: null,
     defaultReasoningPolicy: "action-policy",
@@ -150,7 +150,7 @@ const GAME_MODELS: GameModelOption[] = [
   {
     catalogId: "katana:glm-5-2",
     displayName: "Katana GLM 5.2",
-    sublabel: "Preferred secondary fallback",
+    sublabel: "Available for explicit testing",
     configured: true,
     available: null,
     defaultReasoningPolicy: "action-policy",
@@ -184,10 +184,7 @@ export const DEFAULT_PROVIDER_MANIFEST: GameProviderManifestEntry[] = [
   { catalogId: DEFAULT_MODEL_CATALOG_ID, reasoningPolicy: "medium" },
 ];
 
-const RECOMMENDED_PROVIDER_FALLBACKS: GameProviderManifestEntry[] = [
-  { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
-  { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
-];
+const RECOMMENDED_PROVIDER_FALLBACKS = [DEFAULT_GAME_FALLBACK];
 
 export function moveProviderRouteEntry(
   entries: ProviderRouteEntry[],

@@ -8,6 +8,8 @@ import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { getGamePlayerAvatarPreviewModel } from "@/components/game-player-avatar-preview";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
+import { startGame, stopGame, hideGame } from "@/lib/api";
 import { getGame, type GameDetail, type GamePlayer, type GameSummary } from "@/lib/api";
 import { gameDisplayName } from "@/lib/game-identity";
 import { playerProfileHref } from "@/lib/player-profile-links";
@@ -108,6 +110,7 @@ export function GamePreShow({ game, onGameUpdated }: {
             <Link href="/rules">How Influence works <span aria-hidden="true">↗</span></Link>
           </div>
           {inCast && <p className="pre-show-notice" role="status">Your agent is in. Stay for the opening move.</p>}
+          <PreGameControls game={game} onGameUpdated={onGameUpdated} />
         </div>
         <div className="pre-show-poster" aria-hidden="true">
           <Image src="/logo.png" alt="" width={120} height={120} />
@@ -152,6 +155,47 @@ export function GamePreShow({ game, onGameUpdated }: {
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}
     </section>
   );
+}
+
+function PreGameControls({ game, onGameUpdated }: { game: GameDetail; onGameUpdated: (game: GameDetail) => void }) {
+  const { hasPermission } = usePermissions();
+  const router = useRouter();
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmHide, setConfirmHide] = useState(false);
+  const canStart = hasPermission("start_game");
+  const canStop = hasPermission("stop_game");
+  const canHide = hasPermission("hide_game");
+  if (!canStart && !canStop && !canHide) return null;
+  const full = game.players.length >= game.playerCount;
+  async function act(action: "Start" | "Stop" | "Hide") {
+    if (pending) return;
+    setPending(action);
+    setError(null);
+    try {
+      await ({ Start: startGame, Stop: stopGame, Hide: hideGame })[action](game.id);
+      if (action === "Hide") router.push("/games");
+      else onGameUpdated(await getGame(game.id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `Could not ${action.toLowerCase()} game.`);
+    } finally {
+      setPending(null);
+    }
+  }
+  return <div className="mt-5" aria-label="Game controls">
+    <div className="flex flex-wrap gap-2">
+      {canStart && <button type="button" className="influence-button-primary rounded-lg px-4 py-2 disabled:opacity-50" disabled={pending !== null || !full} onClick={() => void act("Start")}>{pending === "Start" ? "Starting…" : "Start"}</button>}
+      {canStop && <button type="button" className="influence-button-danger rounded-lg px-4 py-2 disabled:opacity-50" disabled={pending !== null} onClick={() => void act("Stop")}>{pending === "Stop" ? "Stopping…" : "Stop"}</button>}
+      {canHide && <button type="button" className="influence-button-quiet rounded-lg px-4 py-2 disabled:opacity-50" disabled={pending !== null} onClick={() => setConfirmHide(true)}>{pending === "Hide" ? "Hiding…" : "Hide"}</button>}
+    </div>
+    <p className="influence-copy-muted mt-2 text-sm">{Math.min(game.players.length, game.playerCount)}/{game.playerCount} joined{full ? " · Ready to start" : ""}</p>
+    {confirmHide && <div className="mt-3 text-sm" role="group" aria-label="Confirm hide game">
+      <p>Hide this game from public lists?</p>
+      <button type="button" className="influence-button-quiet rounded-lg px-3 py-2" disabled={pending !== null} onClick={() => setConfirmHide(false)}>Cancel</button>
+      <button type="button" className="influence-button-danger rounded-lg px-3 py-2" disabled={pending !== null} onClick={() => { setConfirmHide(false); void act("Hide"); }}>Confirm hide</button>
+    </div>}
+    {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
+  </div>;
 }
 
 function castRecord(player: GamePlayer): string {

@@ -1,3 +1,5 @@
+import { applyPublishedVisualScene } from "./visual-scene-store.js";
+import { hasCompleteVisualHeads } from "@influence/engine/visual-mode";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { VISUAL_ROOMS } from "@influence/engine/visual-mode";
@@ -29,7 +31,7 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
       const prepare = async () => {
       try {
         const assets = await prepareVisualGameAssets(db, gameId, guard);
-        readContext = createVisualTurnContextReader(db, { gameId, ownerEpoch, frozenCast: assets.cast });
+        readContext = createVisualTurnContextReader(db, { gameId, ownerEpoch, requireVisuals, frozenCast: assets.cast });
         if (requireVisuals && (assets.cast.some((member) => member.portraitFallback === true) || Object.keys(assets.backgrounds).length < Object.keys(VISUAL_ROOMS).length)) throw new Error("Required character references or room backgrounds are unavailable");
         if (execution.cursor.kind === "mingle") {
           await prepareCommittedMingleScenes(db, { snapshot, frozenCast: assets.cast, backgrounds: assets.backgrounds, requireVisuals });
@@ -47,7 +49,7 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
           if (!member) throw new Error("Scene participant lacks a frozen reference");
           return member;
         });
-        const previous = await readCurrentVisualScene(db, gameId, roomId);
+        const previous = await applyPublishedVisualScene(db, await readCurrentVisualScene(db, gameId, roomId));
         const roles: Record<string, VisualPlacement["role"]> = {};
         if (roomId === "finals") for (const id of ids) roles[id] = state.getAlivePlayerIds().includes(id) ? "finalist" : "juror";
         if (roomId === "tribunal") {
@@ -59,14 +61,14 @@ export function createVisualGameRuntime(db: DrizzleDB, gameId: string, ownerEpoc
         const plan = roomId === "finals" ? planFinalsScene(state, assets.cast, assets.backgrounds.finals ?? null, previous ?? undefined) : planVisualScene({ roomId, backgroundArtifactId: assets.backgrounds[roomId] ?? null, cast, roles, previous: previous?.plan,
           allianceGroups: state.getHuddleEligibleAlliances().map((alliance) => alliance.memberIds), cues });
         if (previous?.status === "ready" && sameVisualArrangement(previous.plan, plan)) {
-          if (requireVisuals && previous.anchors?.length !== plan.cast.length) throw new Error("Required agent annotations are unavailable");
+          if (requireVisuals && !hasCompleteVisualHeads(previous, plan.cast.map(m => m.id))) throw new Error("Required agent annotations are unavailable");
           return;
         }
         await guard();
         const scene = await prepareVisualScene(db, { gameId, boundarySequence: execution.heads.turnSequence, afterDialogueSequence: execution.heads.dialogueSequence, plan, assertBoundary: guard });
-        const accepted = await renderVisualSceneBestEffort(db, scene, guard);
+        const accepted = await renderVisualSceneBestEffort(db, scene, guard, undefined, !requireVisuals);
         if (!accepted && !requireVisuals) await recordVisualOperationEvent(db, gameId, `${scene.id}:boundary:${execution.heads.turnSequence}:portraits`, { sceneId: scene.id, boundarySequence: execution.heads.turnSequence, kind: "presentation", outcome: "portraits", message: "Best effort: scene unavailable; continue dialogue using portraits and text context" });
-        if (requireVisuals && (!accepted || accepted.anchors?.length !== plan.cast.length)) throw new Error("Required scene or verified agent annotations are unavailable");
+        if (requireVisuals && (!accepted || !hasCompleteVisualHeads(accepted, plan.cast.map(m => m.id)))) throw new Error("Required scene or verified agent annotations are unavailable");
       } catch (error) {
         await recordVisualOperationEvent(db, gameId, `boundary:${execution.heads.turnSequence}:preparation-failure`, {
           boundarySequence: execution.heads.turnSequence, kind: "failure", outcome: "failed", message: "Visual boundary preparation failed",

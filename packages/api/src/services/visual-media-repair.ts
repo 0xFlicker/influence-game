@@ -1,3 +1,4 @@
+import { decodeVisualShotReview, saveReviewedShots, type VisualShotReview } from "./visual-shot-review.js";
 import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, like, sql } from "drizzle-orm";
@@ -9,7 +10,7 @@ import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
-  { action: "regenerate" } | { action: "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
+  { action: "review"; review: VisualShotReview } | { action: "regenerate" } | { action: "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
   { action: "publish"; versionId: string; expectedPublication: number }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
@@ -32,7 +33,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
     }
     let receipt: typeof schema.visualMediaRequests.$inferInsert.receipt;
     try {
-      const [scene] = await tx.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.id, input.sceneId), eq(schema.visualScenes.gameId, gameId)));
+      const [scene] = await tx.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.id, input.sceneId), eq(schema.visualScenes.gameId, gameId))).for("update");
       if (!scene) return reject("scene_missing", "Scene not found");
       await captureOriginalMediaVersion(tx, scene);
       const history = await tx.select().from(jobs).where(eq(jobs.sceneId, scene.id)).orderBy(desc(jobs.version));
@@ -45,6 +46,25 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         const id = randomUUID();
         await tx.insert(publications).values({ id, gameId, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
         receipt = { accepted: true, code: "published", message: "Published for new viewer sessions", publicationId: id };
+      } else if (input.action === "review") {
+        if (history.some(j => active(j.status))) return reject("already_pending", "Wait for the active repair before saving a review");
+        let shots;
+        try { shots = await saveReviewedShots(tx, scene, decodeVisualShotReview(input.review)); }
+        catch (error) { return reject("invalid_review", error instanceof Error ? error.message : "Image review failed"); }
+        const image = shots.overview ?? shots.groups[0];
+        const [previous] = await tx.select({ image: versions.imageArtifactId }).from(versions).where(eq(versions.sceneId, scene.id)).limit(1);
+        const imageArtifactId = image?.imageArtifactId ?? scene.imageArtifactId ?? scene.candidateArtifactId ?? previous?.image ?? scene.plan.backgroundArtifactId;
+        if (!imageArtifactId) return reject("image_missing", "Scene background is unavailable");
+        const id = randomUUID(), version = input.expectedVersion + 1, createdAt = new Date().toISOString();
+        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: "review", plan: scene.plan,
+          renderContext: { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction },
+          status: "ready", step: "producer reviewed", createdAt, finishedAt: createdAt });
+        const visible = [...new Set([...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds))];
+        await tx.insert(versions).values({ id, gameId, sceneId: scene.id, jobId: id, version, plan: scene.plan, imageArtifactId,
+          annotatedArtifactId: image?.annotatedArtifactId ?? imageArtifactId, shots,
+          localization: { count: visible.length, verifiedParticipantIds: visible, anchors: shots.mode === "scene" ? image!.anchors : [] },
+          verificationVersion: "producer-review-v1", createdAt });
+        receipt = { accepted: true, code: "reviewed", message: "Review saved. Publish this version when ready.", jobId: id, versionId: id, version };
       } else {
         if (options.oneAtATime) {
           const [pending] = await tx.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.gameId, gameId), sql`${jobs.status} IN ('queued','rendering','verifying')`)).limit(1);
@@ -59,6 +79,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         let plan = scene.plan, sourceImageId: string | null = null, reusePrefix: string | null = null;
         if (input.action === "verify") {
           const [source] = await tx.select().from(versions).where(and(eq(versions.id, input.sourceVersionId), eq(versions.sceneId, scene.id)));
+          if (source?.shots && source.shots.mode !== "scene") return reject("source_is_shot_collection", "Use Correct images to review a collection of group shots");
           const failedCandidate = history.find(j => j.id === input.sourceVersionId && j.candidateArtifactId);
           if (!source && !failedCandidate) return reject("source_missing", "Image version not found");
           sourceImageId = source?.imageArtifactId ?? failedCandidate!.candidateArtifactId; plan = source?.plan ?? failedCandidate!.plan;
@@ -90,9 +111,11 @@ async function captureOriginalMediaVersion(tx: VisualTransaction, scene: typeof 
   await tx.insert(versions).values(originalVersion(scene)).onConflictDoNothing();
 }
 function originalVersion(scene: typeof schema.visualScenes.$inferSelect) {
+  const visible = scene.shots ? [...new Set([...scene.shots.groups, ...(scene.shots.overview ? [scene.shots.overview] : [])].flatMap(shot => shot.visibleParticipantIds))] : scene.plan.cast.map(m => m.id);
   return { id: `original:${scene.id}`, gameId: scene.gameId, sceneId: scene.id, jobId: null, version: 0, plan: scene.plan,
     imageArtifactId: scene.imageArtifactId!, annotatedArtifactId: scene.annotatedArtifactId!,
-    localization: { count: scene.plan.cast.length, anchors: scene.anchors ?? [], verifiedParticipantIds: scene.plan.cast.map(m => m.id) },
+    shots: scene.shots,
+    localization: { count: visible.length, anchors: scene.anchors ?? [], verifiedParticipantIds: visible },
     verificationVersion: "gameplay-record", createdAt: scene.createdAt };
 }
 

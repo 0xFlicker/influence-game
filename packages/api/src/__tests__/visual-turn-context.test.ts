@@ -73,3 +73,38 @@ test("rejects stale ownership and changed committed heads before returning scene
 test("Mingle imagery cannot use uncommitted scratch movement", async () => {
   expect((await reader()({ ...args(), method: "takeMingleTurn", context: { ...context, phase: Phase.FORMAT_MINGLE, currentRoomId: 1, mingleBeat: 1, roomMates: ["Arden"] } })).room).toBeUndefined();
 });
+
+test("a close group image carries the full canonical room and explicit visible identities", async () => {
+  cast.push({ ...cast[0]!, id: "p2", name: "Mira" }, { ...cast[0]!, id: "p3", name: "Nova" });
+  context.alivePlayers = cast.map(({ id, name }) => ({ id, name }));
+  const plan = planVisualScene({ roomId: "lobby", backgroundArtifactId: artifact, cast });
+  const planned = await prepareVisualScene(db, { gameId, boundarySequence: 0, plan });
+  const anchor = { playerId: "p2", label: 1, confidence: "clear" as const, head: { x: .2, y: .2, width: .1, height: .1 } };
+  await acceptVisualScene(db, { sceneId: planned.id, planHash: planned.planHash, imageArtifactId: artifact, anchors: [], shots: {
+    mode: "groups", overview: null, groups: [{ imageArtifactId: artifact, annotatedArtifactId: artifact, participantIds: ["p1", "p2"], visibleParticipantIds: ["p2"], anchors: [anchor], pointers: [{ playerId: "p1", x: .5, y: .5 }] }],
+  } });
+  const result = await reader()(args());
+  expect(result.room?.scene.participantIds).toEqual(["p1", "p2", "p3"]);
+  expect(result.room?.scene.visibleParticipantIds).toEqual(["p2"]);
+  expect(result.room?.scene.anchors).toEqual([anchor]);
+  expect(result.room?.scene.annotatedImageUrl).toStartWith("data:image/png;base64,");
+  expect(result.observableRoom?.participantIds).toEqual(["p1", "p2", "p3"]);
+});
+
+
+test("published corrections affect future context, preserve original pixels and respect Require visuals", async () => {
+  const { controlVisualMedia } = await import("../services/visual-media-repair.js");
+  const scene = await readyScene();
+  const before = await reader()(args());
+  const saved = await controlVisualMedia(db, gameId, "operator", { action: "review", requestId: "review", expectedVersion: 0, sceneId: scene.id,
+    review: { expectedRevision: scene.renderRevision, planHash: scene.planHash, mode: "scene", shots: [{ sourceId: `artifact:${artifact}`, role: "overview", participantIds: ["p1"], visibleParticipantIds: [], anchors: [], pointers: [{ playerId: "p1", x: .7, y: .7 }] }] } });
+  expect(saved.accepted).toBe(true);
+  expect((await reader()(args())).room).toEqual(before.room);
+  await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", expectedVersion: 1, sceneId: scene.id, versionId: saved.versionId!, expectedPublication: 0 });
+  const corrected = await reader()(args());
+  expect(corrected.room?.scene.visibleParticipantIds).toEqual([]);
+  expect(corrected.room?.scene.anchors).toEqual([]);
+  expect((await db.select().from(schema.visualScenes))[0]?.anchors).toEqual(scene.anchors);
+  const strict = createVisualTurnContextReader(db, { gameId, ownerEpoch, requireVisuals: true, frozenCast: cast });
+  expect((await strict(args())).room).toBeUndefined();
+});

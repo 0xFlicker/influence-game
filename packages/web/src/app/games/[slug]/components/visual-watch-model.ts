@@ -7,10 +7,23 @@ import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { sceneSpeechDurationMs } from "./scene-speech-timing";
 import { isSafetyBounceSceneCue, safetyBounceLobbyScene } from "./safety-bounce-scene-model";
 
+/** Historical speaker/audience fields are seat IDs or exact frozen names, never dialogue prose. */
+export function resolveTranscriptPlayer(token: string | null | undefined, players: readonly GamePlayer[]) {
+  if (!token) return undefined;
+  const seat = players.find(player => player.id === token);
+  if (seat) return seat;
+  const matches = players.filter(player => player.name === token);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function isMingleDialogue(message: TranscriptEntry) {
+  return message.scope === "mingle" || (message.scope === "whisper" && (message.phase === "MINGLE" || message.phase === "FORMAT_MINGLE"));
+}
+
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
   return Boolean(!message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
-    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || !message.visualScene))));
+    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && !isMingleDialogue(message))))));
 }
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
@@ -89,7 +102,9 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
   }
   if (cue?.source === "house") return { rooms, beat: { kind: "house", text: null, title: cue.title } };
   if (!message) return { rooms, beat };
-  const speakerId = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
+  const speakerToken = message.anonymous ? null : message.speakerPlayerId ?? message.fromPlayerId;
+  const speaker = resolveTranscriptPlayer(speakerToken, players);
+  const speakerId = speaker?.id ?? speakerToken;
   if (message.acceptedBallot) {
     const ballot = message.acceptedBallot;
     const target = players.find((player) => player.id === ballot.targetId);
@@ -102,6 +117,19 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     const binding = message.entrySequence !== undefined ? data.bindings?.[message.entrySequence] : undefined;
     const target = data.scenes.find(scene => scene.id === (binding ?? message.visualScene?.id)
       && message.entrySequence !== undefined && scene.afterDialogueSequence < message.entrySequence);
+    if (isMingleDialogue(message) && speaker) {
+      const audience = message.toPlayerIds ?? target?.participantIds ?? [];
+      const ids = new Set([speaker.id, ...audience.flatMap(token => {
+        const player = resolveTranscriptPlayer(token, players);
+        return player ? [player.id] : [];
+      })]);
+      const participants = players.filter(player => ids.has(player.id));
+      if (!target || participants.some(player => !data.fullBodies?.[player.id])) {
+        return { rooms, beat: { kind: "portrait-room", roomNumber: message.roomId ?? null,
+          participants: participants.map(player => ({ ...player, avatarUrl: data.portraits[player.id] ?? player.avatarUrl })),
+          speech: { id: String(message.id), playerId: speaker.id, speaker: speaker.name, text: message.text } } };
+      }
+    }
     if (target) {
       // An explicit canonical binding wins over another version of this room.
       // A newer image may have a different cast, even at the same watch step.
@@ -110,12 +138,22 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
       else rooms.push({ ...target, annotatedImageUrl: "" });
       beat = { kind: "scene", sceneId: target.id, roomId: target.roomId, speech: speakerId || message.anonymous ? {
         id: String(message.id), playerId: message.anonymous ? null : speakerId,
+        portrait: speakerId ? { avatarUrl: data.portraits[speakerId] ?? players.find(p => p.id === speakerId)?.avatarUrl, persona: players.find(p => p.id === speakerId)?.persona ?? "", personaKey: players.find(p => p.id === speakerId)?.personaKey } : undefined,
         speaker: message.anonymous ? "Anonymous" : players.find((player) => player.id === speakerId)?.name ?? message.fromPlayerName ?? "Player", text: message.text,
       } : null };
     }
     if (!beat && message.anonymous) beat = { kind: "anonymous", speech: { id: String(message.id), playerId: null, speaker: "Anonymous", text: message.text } };
-    else if (!beat && speakerId) portrait(speakerId, message.text, "Conversation");
+    else if (!beat && speakerId) {
+      portrait(speakerId, message.text, "Conversation");
+    }
     if (!speakerId && !message.anonymous) beat = { kind: "house", text: message.text };
+  }
+  // Keep unresolved saved attribution readable in every speech phase without assigning it to a seat.
+  if (!beat && speakerId) {
+    const name = message.fromPlayerName ?? speakerId;
+    const purpose = message.phase === "INTRODUCTION" ? "Introduction" : message.presentationPurpose === "farewell" ? "Farewell" : message.scope === "diary" ? "Diary" : "Conversation";
+    beat = { kind: "portrait", purpose, player: { id: speakerId, name, persona: "" },
+      speech: { id: String(message.id), playerId: null, speaker: name, text: message.text } };
   }
   return { rooms, beat };
 }

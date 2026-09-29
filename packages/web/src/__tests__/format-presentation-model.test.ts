@@ -253,7 +253,7 @@ describe("format presentation compiler", () => {
     }
   });
 
-  it("deduplicates stable sequence keys and stages aggregate before roster-ordered roll call", () => {
+  it("deduplicates stable sequence keys and stages roster-ordered roll call before the aggregate", () => {
     const ordered = [...decisions].sort((left, right) => left.sequence - right.sequence);
     const result = compileFormatPresentationPrefix({
       gameId: "game-1",
@@ -269,10 +269,10 @@ describe("format presentation compiler", () => {
       "format_menu",
       "format_selected",
       "format_selected",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
       "format_aggregate",
-      "format_roll_call",
-      "format_roll_call",
-      "format_roll_call",
       "format_elimination",
     ]);
     expect(
@@ -292,6 +292,13 @@ describe("format presentation compiler", () => {
     ).toEqual(["brisk", "decisive", "final"]);
     expect(result.snapshot.canonicalSequence).toBe(20);
     expect(result.snapshot.eliminatedId).toBe("echo");
+    const reveals = result.cues.filter(cue => cue.kind === "format_roll_call");
+    expect(reveals.map(cue => cue.after.revealedBallots.length)).toEqual([1, 2, 3]);
+    for (const cue of reveals) {
+      expect(cue.before.resolution).toBeNull();
+      expect(cue.after.resolution).toBeNull();
+      expect(cue.after.eliminatedId).toBeNull();
+    }
   });
 
   it("carries before and after Classification Stage snapshots without invented targets", () => {
@@ -663,7 +670,7 @@ describe("format presentation compiler", () => {
     )).toBe(false);
   });
 
-  it("stages the deterministic Safety Bounce fixture aggregate-first through tiebreak and elimination", () => {
+  it("stages the deterministic Safety Bounce roll call before its aggregate, tiebreak and elimination", () => {
     const result = compileFormatPresentationPrefix({
       gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
       gameKernel: "format",
@@ -682,11 +689,11 @@ describe("format presentation compiler", () => {
 
     expect(result.status).toBe("ready");
     expect(resolutionKinds).toEqual([
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
       "format_aggregate",
-      "format_roll_call",
-      "format_roll_call",
-      "format_roll_call",
-      "format_roll_call",
       "format_tiebreak",
       "format_deciding_vote",
       "format_elimination",
@@ -722,11 +729,11 @@ describe("format presentation compiler", () => {
       "format_menu",
       "format_selected",
       "format_selected",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
       "format_aggregate",
-      "format_roll_call",
-      "format_roll_call",
-      "format_roll_call",
-      "format_roll_call",
       "format_elimination",
     ]);
     expect(

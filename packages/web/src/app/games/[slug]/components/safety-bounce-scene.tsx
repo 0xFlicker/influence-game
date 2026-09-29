@@ -5,6 +5,7 @@ import { SafetyBounceStage } from "./safety-bounce-stage";
 import { FormatPresentation } from "./format-presentation";
 import { bounceArrowPath, safetyBounceAnchors, type SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 import { frameVisualScene } from "./visual-scene-layout";
+import { StageBackdrop } from "./stage-backdrop";
 
 type Classification = "safe" | "vulnerable" | "unclassified";
 const colors = { safe: "#6ee7b7", vulnerable: "#fbbf24", unclassified: "#e2e8f0" };
@@ -66,6 +67,7 @@ export function SafetyBounceScene({ beat, elapsedMs, paused, reducedMotion, curr
       <p className="mt-1 text-xs text-white/65">{detail}</p>
     </header>
     <div ref={frameRef} className="relative min-h-0 flex-1 overflow-hidden">
+      <StageBackdrop source={scene.imageUrl} />
       <div className="absolute" style={imageKnown ? frame : { inset: 0 }}>
         {/* eslint-disable-next-line @next/next/no-img-element -- immutable published room image */}
         <img src={scene.imageUrl} alt="Safety Bounce lobby" className="block h-full w-full object-contain"

@@ -36,6 +36,24 @@ test("games without generated media still present portraits and House text", () 
   expect(visualWatchPresentation(plain, null, { ...message, visualScene: undefined, fromPlayerId: null, scope: "system", phase: "REVEAL" }, [player]).beat).toEqual({ kind: "house", text: message.text });
 });
 
+test("saved names resolve only to a unique frozen seat and unresolved attribution stays readable", () => {
+  const plain = { ...data, scenes: [] };
+  expect(visualWatchPresentation(plain, null, { ...message, fromPlayerId: "Ada", visualScene: undefined }, [player]).beat).toMatchObject({ kind: "portrait", player: { id: "a" }, speech: { playerId: "a" } });
+  expect(visualWatchPresentation(plain, null, { ...message, fromPlayerId: "Ada", visualScene: undefined }, [player, { ...player, id: "other" }]).beat).toMatchObject({ speech: { playerId: null, text: message.text } });
+});
+
+test("Mingle replaces only the room with a semicircle when any audience member lacks body art", () => {
+  const other = { ...player, id: "b", name: "Bea" };
+  const bystander = { ...player, id: "c", name: "Cy" };
+  const mingle = { ...message, phase: "FORMAT_MINGLE" as const, scope: "mingle" as const, roomId: 2, toPlayerIds: ["Bea"] };
+  const missing = visualWatchPresentation({ ...data, fullBodies: { a: "/body-a.png" } }, null, mingle, [player, other, bystander]).beat;
+  expect(missing).toMatchObject({ kind: "portrait-room", roomNumber: 2, participants: [{ id: "a" }, { id: "b" }], speech: { playerId: "a" } });
+  expect(visualWatchPresentation({ ...data, fullBodies: { a: "/body-a.png", b: "/body-b.png" } }, null, mingle, [player, other]).beat?.kind).toBe("scene");
+  expect(visualWatchPresentation({ ...data, scenes: [] }, null, { ...mingle, toPlayerIds: null }, [player, other]).beat).toMatchObject({ kind: "portrait-room", participants: [{ id: "a" }] });
+  expect(visualWatchPresentation({ ...data, scenes: [] }, null, { ...mingle, roomId: undefined, toPlayerIds: null }, [player, other]).beat).toMatchObject({ roomNumber: null, participants: [{ id: "a" }] });
+  expect(transcriptPresentationDurationMs({ ...mingle, visualScene: undefined }, [player, other])).toBe(sceneSpeechDurationMs(mingle.text));
+});
+
 test("published canonical binding displays formerly portrait-only speech without changing individual beats", () => {
   const published = { ...data, bindings: { 5: "old" }, scenes: data.scenes.map(s => ({ ...s, imageUrl: "/published.png", publicationRevision: 2 })) };
   const fallback = { ...message, visualScene: undefined };
