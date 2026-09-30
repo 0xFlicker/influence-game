@@ -132,8 +132,11 @@ Creating a season in the producer UI immediately makes it active. The same UI ca
 ### Daily Free draw idempotency
 
 `POST /api/free-queue/draw` and `POST /api/free-queue/start` are operational
-service-account endpoints. Their JWT must carry `schedule_free_game`; they do
-not require a human Terms/Privacy claim or a `legal_acceptances` row. Do not
+service-account endpoints. Existing scheduler accounts have an enabled
+`service_principals` row with purpose `free_queue`; their signed JWT must carry
+`schedule_free_game`. Only that permission is exposed, only on the queue routes.
+Service tokens cannot authenticate on human account/admin routes and do not
+require a human Terms/Privacy claim or a `legal_acceptances` row. Do not
 provision acceptance records for the scheduler identity. Ordinary player and
 account routes continue to enforce the current legal-acceptance policy.
 
@@ -568,3 +571,131 @@ New draws enable Visual Mode with `best_effort`: rendering failures continue
 with portraits. The scheduled manifest uses GPT-6 Luna; the former GLM 5.2
 and Grok 4.5 fallback entries do not support image input in our catalog and
 would prevent Visual Mode startup. Existing games keep their frozen config.
+
+### Account role grants and scheduler rollout
+
+Roles belong to `users.id` through `user_roles`; Clerk, Privy and Farcaster
+credentials do not own permissions. `/api/admin/user-roles` lists, assigns and
+revokes grants using `{userId, roleId}`. The admin panel selects registered
+accounts, including walletless accounts. Only current `manage_roles` authority
+can change grants. Requests resolve current grants instead of trusting JWT role
+claims, so a revoke applies to the next request, including an existing token.
+Already admitted/in-flight work is not cancelled by a revoke. Existing role
+definitions are unchanged. `gamer` creates/fills/starts games; `producer` manages
+images and authorizes producer MCP access; `moderator` reviews submissions.
+
+Migration `0103_account_roles` copies uniquely matching wallet grants with
+original timestamps and attribution. `address_roles` is an inactive archive;
+unmatched or ambiguous rows never silently grant authority to future accounts.
+Review them before rollout and explicitly reassign approved grants afterward.
+Read-only inventory (counts and wallet identifiers, no credentials):
+
+```sql
+SELECT ar.wallet_address, ar.role_id, ar.granted_at,
+       count(u.id) AS matching_accounts
+FROM address_roles ar
+LEFT JOIN users u ON lower(u.wallet_address) = lower(ar.wallet_address)
+GROUP BY ar.wallet_address, ar.role_id, ar.granted_at
+HAVING count(u.id) <> 1;
+
+-- Before migration: inventory existing scheduler identities (no tokens).
+SELECT id FROM users
+WHERE lower(wallet_address) = '0x0000000000000000000000000000000000000000';
+-- After migration: verify service registration.
+SELECT sp.user_id, sp.purpose, sp.enabled FROM service_principals sp;
+```
+
+Existing zero-address user rows become `free_queue` service principals in the
+same migration, independently of archived role grants. No user, credential or
+token is created. Existing `FREE_GAME_CRON_TOKEN` continues to use the same
+issuer/signature and `schedule_free_game` claim on draw/start; unrelated token
+permissions are discarded. A zero wallet alone is never sufficient. Disabling
+that principal denies existing cron tokens immediately. Future credential
+rotation or a dedicated service-token issuer requires separate operational
+authorization; this change neither reads nor rotates deployed secrets.
+
+Production uses its existing blue/green handoff: drain game ownership, start the
+private candidate (which migrates), switch routing, then retire previous workers.
+The additive tables allow old/new processes to overlap. Migration atomically
+fences INSERT/UPDATE/DELETE on `address_roles`; old admin role mutations
+fail explicitly after migration, including on an old-binary restart. This avoids
+losing grants changed between backfill and routing. It requires no simultaneous
+process replacement. Staging restarts into the new build; ephemeral databases
+start fresh. Current-grant revocation semantics begin when the new API serves
+traffic; old JWT authorization behavior persists until then.
+
+Apply through the existing migration runner and inspect migration logs before
+traffic switches. Successful transactions are journaled; failed migrations roll
+back and retry. Backfill inserts tolerate duplicates. An old-binary rollback is
+not a safe authorization rollback: old reads still see historical wallet grants
+and trust token claims, ignore newer account grants, and can resurrect revoked
+authority. The database fence prevents writes, not those old reads. Do not route
+human/admin traffic back to old binaries after account grant changes. Recovery
+is a forward fixed build retaining `user_roles`, or a separately approved
+operator reconciliation while administrative traffic is disabled. Do not drop
+the fence or copy the archive back as a rollback shortcut. No such data or routing
+operation is performed by this change.
+
+`ADMIN_ADDRESS` is initial bootstrap configuration, never per-request authority.
+Startup/login seeds sysop only when the configured wallet identifies one existing
+account and no sysop exists. It records `rbac_bootstrap_completed` in app settings
+and never restores grants afterward. If the account has not logged in yet,
+bootstrap waits for that account to exist. Protect the marker and verify at least
+one usable sysop before switching traffic. Recovery from intentional removal of
+all operators is an explicit database operation, not an automatic permission
+restoration. Sysop grant/revoke operations serialize and cannot remove the final
+sysop through the API. No new role can be assigned to a service principal.
+
+### Initial operator from host access
+
+On a fresh database, start the migrated app to seed role definitions, then log
+in as the intended operator using any supported game login provider. An existing
+account ID is required: this command never creates an account or chooses the
+first signup. Existing `ADMIN_ADDRESS` wallet bootstrap still works on startup
+or after that wallet's login. Both paths share the same one-time completion
+marker and serialized transaction. Running installations with a sysop use the
+normal admin panel, not bootstrap.
+
+For local source development, inject the existing runtime config without printing
+secrets (substitute the registered account ID and your local operator label):
+
+```bash
+cd packages/api
+doppler run --project social-strategy-agent --config dev -- \
+  bun run auth:bootstrap-operator --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --dry-run
+# After checking the eligible account, explicitly apply:
+doppler run --project social-strategy-agent --config dev -- \
+  bun run auth:bootstrap-operator --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --apply
+```
+
+The production API image includes `/app/dist/bootstrap-initial-operator.js`.
+On the host, use the already running API container with its injected environment
+(local Docker Postgres and hosted Linode Postgres use the same `DATABASE_URL`):
+
+```bash
+docker exec API_CONTAINER bun /app/dist/bootstrap-initial-operator.js \
+  --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --dry-run
+docker exec API_CONTAINER bun /app/dist/bootstrap-initial-operator.js \
+  --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --apply
+```
+
+Select the current gateway container from the host's existing compose/service
+inventory; production has color-specific containers and staging uses its restart
+service. Do not start a second server or export/echo the Doppler token/DB URL.
+From a source-equipped host with the app runtime environment already injected,
+the same source command works without a second Doppler invocation. A fresh
+ephemeral follows this path too, but its supported login must work before an
+account can be targeted; bootstrap does not bypass missing Clerk configuration.
+
+The CLI requires an explicit `--dry-run` or `--apply`, refuses absent accounts,
+service identities, an existing sysop, or any prior completion marker. Dry-run
+changes no grants. Apply records the grant plus completion/audit metadata in one
+transaction. Exit 0 means eligible/applied, 2 means a blocked initial bootstrap,
+and 1 means arguments/environment/database failure. Concurrent or repeated
+requests cannot create a second initial operator; after a successful apply, use
+the admin panel. Removing a later grant never reopens bootstrap. The supplied
+operator label is self-reported, not verified AWS/GitHub identity; host/database
+access is the authority boundary. The audit contains label, account ID, request
+ID, timestamp and this limitation, without credentials. This CLI is not emergency
+recovery; resetting the marker or restoring lost sysop authority requires a
+separately approved operator recovery procedure.

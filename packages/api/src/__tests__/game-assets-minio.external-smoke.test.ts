@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync } from "node:fs";
@@ -37,7 +38,7 @@ const enabled = process.env.GAME_ASSETS_MINIO_SMOKE === "1";
     await db.insert(schema.users).values({ id, walletAddress: wallet, displayName: "Disposable MinIO operator" });
     await db.insert(schema.legalAcceptances).values({ userId: id, termsVersion: CURRENT_TERMS_VERSION, privacyVersion: CURRENT_PRIVACY_VERSION, deploymentSha: "0123456789abcdef0123456789abcdef01234567", source: "existing_account" });
     const [producer] = await db.select().from(schema.roles).where(eq(schema.roles.name, "producer"));
-    await db.insert(schema.addressRoles).values({ walletAddress: wallet, roleId: producer!.id, grantedBy: "smoke" });
+    await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(wallet), roleId: producer!.id, grantedBy: "smoke" });
     const game = randomUUID(); await db.insert(schema.games).values({ id: game, slug: `minio-${game}`, status: "completed", config: "{}" });
     const app = new Hono(); app.route("/", createMcpOAuthRoutes(db)); app.route("/", createGameAssetRoutes(db, observer));
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });

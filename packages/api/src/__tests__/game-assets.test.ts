@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -32,7 +33,7 @@ async function user(role?: string) {
   const id = randomUUID(), address = `0x${randomUUID().replaceAll("-", "")}`;
   await db.insert(schema.users).values({ id, walletAddress: address, displayName: "Asset test" });
   await db.insert(schema.legalAcceptances).values({ id: randomUUID(), userId: id, termsVersion: CURRENT_TERMS_VERSION, privacyVersion: CURRENT_PRIVACY_VERSION, deploymentSha: "0123456789abcdef0123456789abcdef01234567", source: "existing_account", acceptedAt: new Date().toISOString() });
-  if (role) { const [row] = await db.select().from(schema.roles).where(eq(schema.roles.name, role)); await db.insert(schema.addressRoles).values({ walletAddress: address, roleId: row!.id, grantedBy: "test" }); }
+  if (role) { const [row] = await db.select().from(schema.roles).where(eq(schema.roles.name, role)); await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(address), roleId: row!.id, grantedBy: "test" }); }
   return { id, token: await createSessionToken(id), address };
 }
 async function png(color = "red") { return new Uint8Array(await sharp({ create: { width: 8, height: 4, channels: 3, background: color } }).png().toBuffer()); }
@@ -52,6 +53,12 @@ beforeEach(async () => {
 });
 
 describe("editorial game assets", () => {
+  test("walletless producer retains upload permission and loses it immediately on revoke", async () => {
+    await db.update(schema.users).set({ walletAddress: null }).where(eq(schema.users.id, producer));
+    expect((await upload("walletless-upload")).status).toBe(201);
+    await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, producer));
+    expect((await upload("walletless-revoked")).status).toBe(403);
+  });
   test("editorial uploads are anonymous-readable on public games and independent of scenes/events", async () => {
     const result = await upload("create"); expect(result.status).toBe(201); const body = await payload(result);
     expect(body.asset).toMatchObject({ label: "banner", visibility: "spoiler", width: 8, height: 4, revision: 1 });
@@ -74,7 +81,7 @@ describe("editorial game assets", () => {
   test("writer permission loss blocks mutations while the image remains readable to everyone", async () => {
     const { asset } = await payload(await upload("role-only-writes"));
     const [u] = await db.select().from(schema.users).where(eq(schema.users.id, producer));
-    await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, u!.walletAddress!));
+    await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet(u!.walletAddress!)));
     const path = `/api/games/${gameId}/assets/${asset.id}`;
     expect((await read(path + "/content")).status).toBe(200);
     expect((await read(path + "/content", producerToken)).status).toBe(200);
@@ -140,7 +147,7 @@ describe("editorial game assets", () => {
     expect((await cleanup()).status).toBe(200); expect(storage.objects.size).toBe(0);
   });
   test("role removal during upload blocks final publication", async () => {
-    storage.beforePut = async () => { const [u] = await db.select().from(schema.users).where(eq(schema.users.id, producer)); await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, u!.walletAddress!)); };
+    storage.beforePut = async () => { const [u] = await db.select().from(schema.users).where(eq(schema.users.id, producer)); await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet(u!.walletAddress!))); };
     expect((await upload("revoked")).status).toBe(403); expect(await db.select().from(schema.gameAssets)).toHaveLength(0);
     expect((await read("/api/game-assets/capabilities", producerToken)).status).toBe(403);
   });
@@ -196,7 +203,7 @@ describe("editorial game assets", () => {
     await db.update(schema.mcpOauthAccessTokens).set({ resourceUri: "https://other.example/mcp" }).where(eq(schema.mcpOauthAccessTokens.tokenHash, hash));
     expect((await read("/api/game-assets/capabilities", issued.data.access_token)).status).toBe(401);
     await db.update(schema.mcpOauthAccessTokens).set({ resourceUri: process.env.MCP_OAUTH_RESOURCE_URI! }).where(eq(schema.mcpOauthAccessTokens.tokenHash, hash));
-    const [u] = await db.select().from(schema.users).where(eq(schema.users.id, producer)); await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, u!.walletAddress!));
+    const [u] = await db.select().from(schema.users).where(eq(schema.users.id, producer)); await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet(u!.walletAddress!)));
     expect((await read("/api/game-assets/capabilities", issued.data.access_token)).status).toBe(401);
     const refresh = await app.request("/api/oauth/mcp/token", { method: "POST", body: new URLSearchParams({ grant_type: "refresh_token", client_id: MCP_OAUTH_CLIENT_ID, resource: process.env.MCP_OAUTH_RESOURCE_URI!, refresh_token: issued.data.refresh_token! }) });
     expect(refresh.status).toBe(400);

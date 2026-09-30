@@ -88,6 +88,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "pending-scheduler");
     await createQueuedAgent(db, "pending-scheduler-a", "Aster Service");
     await createQueuedAgent(db, "pending-scheduler-b", "Maris Service");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -120,6 +121,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "provider-health-scheduler");
     await createQueuedAgent(db, "provider-health-a", "Provider Aster");
     await createQueuedAgent(db, "provider-health-b", "Provider Maris");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -159,6 +161,7 @@ describe("free queue season admission", () => {
   test("service scheduler endpoints remain forbidden without schedule permission", async () => {
     const db = await setupTestDB();
     const userId = await insertUser(db, "pending-non-scheduler");
+    await db.insert(schema.servicePrincipals).values({ userId });
     const token = await createSessionToken(userId, {
       roles: ["scheduler"],
       permissions: [],
@@ -228,6 +231,7 @@ describe("free queue season admission", () => {
       createdById: operatorId,
     });
 
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -310,6 +314,7 @@ describe("free queue season admission", () => {
       name: "Daily Closing",
       createdById: operatorId,
     });
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -350,6 +355,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "exact-start-operator");
     await createQueuedAgent(db, "exact-start-a", "Aster Exact");
     await createQueuedAgent(db, "exact-start-b", "Maris Exact");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -394,6 +400,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "draining-operator");
     await createQueuedAgent(db, "draining-a", "Aster Draining");
     await createQueuedAgent(db, "draining-b", "Maris Draining");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -458,6 +465,7 @@ describe("free queue season admission", () => {
       roles: ["gamer"],
       permissions: [],
     });
+    await db.insert(schema.servicePrincipals).values({ userId: userId }).onConflictDoNothing();
     const operatorToken = await createSessionToken(userId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -510,6 +518,7 @@ describe("free queue season admission", () => {
       name: "Daily Final",
       createdById: operatorId,
     });
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -543,6 +552,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "preflight-operator");
     await createQueuedAgent(db, "preflight-a", "Aster Preflight");
     await createQueuedAgent(db, "preflight-b", "Maris Preflight");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -590,6 +600,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "startup-operator");
     await createQueuedAgent(db, "startup-a", "Aster Startup");
     await createQueuedAgent(db, "startup-b", "Maris Startup");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -625,6 +636,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-unrated");
     await createQueuedAgent(db, "carol", "Vera Daily");
     await createQueuedAgent(db, "dan", "Echo Daily");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -651,6 +663,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-race");
     await createQueuedAgent(db, "race-alice", "Nova Daily");
     await createQueuedAgent(db, "race-bob", "Orion Daily");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -705,6 +718,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-distinct-requests");
     await createQueuedAgent(db, "distinct-alice", "Astra Daily");
     await createQueuedAgent(db, "distinct-bob", "Sol Daily");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -759,6 +773,7 @@ describe("free queue season admission", () => {
     const operatorId = await insertUser(db, "operator-invalid-key");
     await createQueuedAgent(db, "invalid-key-alice", "Cora Daily");
     await createQueuedAgent(db, "invalid-key-bob", "Tarin Daily");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -787,6 +802,7 @@ describe("free queue season admission", () => {
     for (let index = 0; index < 13; index += 1) {
       await createQueuedAgent(db, `owner-${index}`, `Agent ${index}`);
     }
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -831,6 +847,7 @@ describe("free queue season admission", () => {
     });
     await assignOwnerToFreeGame(db, completed, "completed");
     await assignOwnerToFreeGame(db, cancelled, "cancelled");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -886,6 +903,7 @@ describe("free queue season admission", () => {
     const repairOwnerEpoch = await attachSuspendedOwner(db, repairGameId);
     await insertCompletionSettlement(db, pendingGameId, pendingOwnerEpoch, "pending");
     await insertCompletionSettlement(db, repairGameId, repairOwnerEpoch, "repair_required");
+    await db.insert(schema.servicePrincipals).values({ userId: operatorId }).onConflictDoNothing();
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],

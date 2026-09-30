@@ -1,3 +1,4 @@
+import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
  * Auth middleware and routes tests.
  *
@@ -189,7 +190,7 @@ describe("requireAuth middleware", () => {
     expect(body.user).not.toHaveProperty("email");
   });
 
-  test("attaches roles and permissions from JWT to context", async () => {
+  test("attaches current account roles and permissions to context", async () => {
     await db.insert(schema.users)
       .values({
         id: "rbac-user",
@@ -206,6 +207,7 @@ describe("requireAuth middleware", () => {
       });
     });
 
+    await grantTestAuthority(db, "rbac-user", ["create_game", "view_admin"], "admin");
     const token = await createSessionToken("rbac-user", {
       roles: ["admin"],
       permissions: ["create_game", "view_admin"],
@@ -328,6 +330,7 @@ describe("requirePermission middleware", () => {
     app.use("/*", requireAuth(db), requirePermission("create_game"));
     app.get("/test", (c) => c.json({ ok: true }));
 
+    await grantTestAuthority(db, "has-perm", ["create_game", "view_admin"], "admin");
     const token = await createSessionToken("has-perm", {
       roles: ["admin"],
       permissions: ["create_game", "view_admin"],
@@ -346,6 +349,7 @@ describe("requirePermission middleware", () => {
     app.use("/*", requireAuth(db), requirePermission("start_game", "stop_game"));
     app.get("/test", (c) => c.json({ ok: true }));
 
+    await grantTestAuthority(db, "multi-perm", ["stop_game"], "admin");
     const token = await createSessionToken("multi-perm", {
       roles: ["admin"],
       permissions: ["stop_game"],
@@ -1677,8 +1681,8 @@ async function assignRoles(db: DrizzleDB, walletAddress: string, roleNames: stri
     .select({ id: schema.roles.id, name: schema.roles.name })
     .from(schema.roles)
     .where(inArray(schema.roles.name, roleNames));
-  await db.insert(schema.addressRoles).values(roles.map((role) => ({
-    walletAddress: walletAddress.toLowerCase(),
+  await db.insert(schema.userRoles).values(roles.map((role) => ({
+    userId: testUserIdForWallet(walletAddress.toLowerCase()),
     roleId: role.id,
     grantedBy: "test",
   })));
@@ -1803,6 +1807,7 @@ describe("requireRole middleware", () => {
     app.use("/*", requireAuth(db), requireRole("sysop"));
     app.get("/test", (c) => c.json({ ok: true }));
 
+    await grantTestAuthority(db, "sysop-user", ["manage_roles"], "sysop");
     const token = await createSessionToken("sysop-user", {
       roles: ["sysop"],
       permissions: ["manage_roles"],
@@ -1856,6 +1861,7 @@ describe("requireAdmin middleware", () => {
     app.use("/*", requireAuth(db), requireAdmin());
     app.get("/admin", (c) => c.json({ ok: true }));
 
+    await grantTestAuthority(db, "admin-user", ["manage_roles", "view_admin"], "sysop");
     const token = await createSessionToken("admin-user", {
       roles: ["sysop"],
       permissions: ["manage_roles", "view_admin"],
@@ -1866,7 +1872,7 @@ describe("requireAdmin middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  test("allows admin via legacy ADMIN_ADDRESS fallback", async () => {
+  test("rejects environment wallet authority without an account grant", async () => {
     await db.insert(schema.users)
       .values({
         id: "legacy-admin",
@@ -1883,10 +1889,10 @@ describe("requireAdmin middleware", () => {
     const res = await app.request("/admin", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
-  test("admin check is case-insensitive for legacy fallback", async () => {
+  test("rejects uppercase environment wallet authority without an account grant", async () => {
     await db.insert(schema.users)
       .values({
         id: "admin-mixed",
@@ -1902,7 +1908,7 @@ describe("requireAdmin middleware", () => {
     const res = await app.request("/admin", {
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   test("blocks user without wallet address", async () => {

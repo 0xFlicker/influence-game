@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { contentImageFixture, headPositionFixture } from "./content-image-fixture.js";
 /**
  * Agent Profile REST API endpoint tests.
@@ -94,6 +95,7 @@ async function setupApp() {
       },
     ]);
 
+  await grantTestAuthority(db, USER_A_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"]);
   const tokenA = await createSessionToken(USER_A_ID, {
     roles: ["sysop"],
     permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"],

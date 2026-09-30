@@ -1,3 +1,4 @@
+import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -246,6 +247,7 @@ describe("owner learning admin ledger", () => {
       { id: adminUserId },
       { id: ordinaryUserId },
     ]);
+    await grantTestAuthority(db, adminUserId, ["view_admin"]);
     const adminToken = await createSessionToken(adminUserId, {
       roles: ["admin-reader"],
       permissions: ["view_admin"],
@@ -298,11 +300,12 @@ describe("owner learning admin ledger", () => {
         name: "admin",
         description: "Administrator",
       }).returning({ id: schema.roles.id }))[0]!;
-    await db.insert(schema.addressRoles).values({
-      walletAddress,
+    await db.insert(schema.userRoles).values({
+      userId: testUserIdForWallet(walletAddress),
       roleId: adminRole.id,
       grantedBy: "test",
     });
+    await grantTestAuthority(db, adminUserId, ["view_admin"], "admin");
     const staleAdminToken = await createSessionToken(adminUserId, {
       roles: ["admin"],
       permissions: ["view_admin"],
@@ -333,9 +336,9 @@ describe("owner learning admin ledger", () => {
       "owner_learning_diagnostic_permission_unavailable",
     );
 
-    await db.delete(schema.addressRoles).where(and(
-      eq(schema.addressRoles.walletAddress, walletAddress),
-      eq(schema.addressRoles.roleId, adminRole.id),
+    await db.delete(schema.userRoles).where(and(
+      eq(schema.userRoles.userId, testUserIdForWallet(walletAddress)),
+      eq(schema.userRoles.roleId, adminRole.id),
     ));
     const revoked = await app.request(path, {
       headers: { Authorization: `Bearer ${staleAdminToken}` },

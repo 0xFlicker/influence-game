@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -28,7 +29,7 @@ describe("whole-revision moderation decisions", () => {
     await db.insert(schema.users).values({ id, walletAddress });
     if (role) {
       const [row] = await db.select().from(schema.roles).where(eq(schema.roles.name, role));
-      await db.insert(schema.addressRoles).values({ walletAddress, roleId: row!.id, grantedBy: "test" });
+      await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(walletAddress), roleId: row!.id, grantedBy: "test" });
     }
     return id;
   }

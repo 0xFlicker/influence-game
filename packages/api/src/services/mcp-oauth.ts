@@ -3,7 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { projectCurrentLegalAcceptance } from "./legal-acceptance.js";
 import {
@@ -259,10 +259,9 @@ function getMcpOAuthPublicApiOrigin(): string {
 
 export async function hasCurrentProducerRole(
   db: DrizzleDB,
-  user: Pick<AuthUser, "walletAddress">,
+  user: Pick<AuthUser, "id">,
 ): Promise<boolean> {
-  if (!user.walletAddress) return false;
-  const resolved = await getPermissionsForAddress(db, user.walletAddress);
+  const resolved = await getPermissionsForUser(db, user.id);
   return resolved.roles.includes("producer");
 }
 
@@ -271,7 +270,7 @@ export async function hasCurrentProducerRoleForUserId(
   userId: string,
 ): Promise<boolean | null> {
   const user = (await db
-    .select({ walletAddress: schema.users.walletAddress })
+    .select({ id: schema.users.id })
     .from(schema.users)
     .where(eq(schema.users.id, userId)))[0];
   if (!user) return null;
@@ -1835,7 +1834,6 @@ function normalizeResourceUri(value: string): string | null {
 }
 
 /** Asset grants follow current permission, independently of producer trace scope. */
-export async function hasGameAssetPermission(db: Pick<DrizzleDB, "select">, user: Pick<AuthUser, "walletAddress">): Promise<boolean> {
-  if (!user.walletAddress) return false;
-  return (await getPermissionsForAddress(db, user.walletAddress)).permissions.includes("manage_game_assets");
+export async function hasGameAssetPermission(db: Pick<DrizzleDB, "select">, user: Pick<AuthUser, "id">): Promise<boolean> {
+  return (await getPermissionsForUser(db, user.id)).permissions.includes("manage_game_assets");
 }

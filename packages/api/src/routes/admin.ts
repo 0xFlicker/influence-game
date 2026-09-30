@@ -8,9 +8,9 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
  *
  * GET    /api/admin/roles           — List all roles with their permissions
  * GET    /api/admin/permissions     — List all permissions
- * GET    /api/admin/address-roles   — List all address-role assignments
- * POST   /api/admin/address-roles   — Assign role to address
- * DELETE /api/admin/address-roles   — Revoke role from address
+ * GET    /api/admin/user-roles   — List all account-role assignments
+ * POST   /api/admin/user-roles   — Assign role to account
+ * DELETE /api/admin/user-roles   — Revoke role from account
  * GET    /api/admin/users           — List all users with their resolved roles
  */
 
@@ -19,7 +19,7 @@ import { createMiddleware } from "hono/factory";
 import { eq, sql, isNull, and, or, asc, like, desc, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import {
   requireAuth,
   requirePermission,
@@ -134,10 +134,9 @@ export function createAdminRoutes(
   const ownerLearningFailureEvidenceReader = dependencies.readOwnerLearningFailureEvidence
     ?? readOwnerLearningFailureEvidence;
   const requireCurrentProviderFailureRead = createMiddleware<AuthEnv>(async (c, next) => {
-    const walletAddress = c.get("user").walletAddress;
-    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    const accountId = c.get("user").id;
     try {
-      const current = await getPermissionsForAddress(db, walletAddress);
+      const current = await getPermissionsForUser(db, accountId);
       if (!current.roles.some((role) => role === "admin" || role === "sysop")) {
         return c.json({ error: "Insufficient permissions" }, 403);
       }
@@ -157,16 +156,10 @@ export function createAdminRoutes(
   const refreshCurrentOwnerLearningEvidenceRoles = createMiddleware<AuthEnv>(async (c, next) => {
     c.header("Cache-Control", "private, no-store");
     c.header("Pragma", "no-cache");
-    const walletAddress = c.get("user").walletAddress;
-    if (!walletAddress) {
-      c.set("userRoles", []);
-      c.set("userPermissions", []);
-      await next();
-      return;
-    }
-    let current: Awaited<ReturnType<typeof getPermissionsForAddress>>;
+    const accountId = c.get("user").id;
+    let current: Awaited<ReturnType<typeof getPermissionsForUser>>;
     try {
-      current = await getPermissionsForAddress(db, walletAddress);
+      current = await getPermissionsForUser(db, accountId);
     } catch {
       return c.json({
         error: "Owner review diagnostic permission state is temporarily unavailable",
@@ -182,12 +175,9 @@ export function createAdminRoutes(
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
   const requireFreeQueueManagement = requirePermission("schedule_free_game", "manage_roles");
   const requireDeploymentAdmissionManagement = createMiddleware<AuthEnv>(async (c, next) => {
-    const walletAddress = c.get("user").walletAddress;
-    if (!walletAddress) {
-      return c.json({ error: "Insufficient permissions" }, 403);
-    }
+    const accountId = c.get("user").id;
     try {
-      const current = await getPermissionsForAddress(db, walletAddress);
+      const current = await getPermissionsForUser(db, accountId);
       if (!current.permissions.includes("manage_deployment_admission")) {
         return c.json({ error: "Insufficient permissions" }, 403);
       }
@@ -201,10 +191,9 @@ export function createAdminRoutes(
     }
   });
   const requireCurrentProviderHealthRead = createMiddleware<AuthEnv>(async (c, next) => {
-    const walletAddress = c.get("user").walletAddress;
-    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    const accountId = c.get("user").id;
     try {
-      const current = await getPermissionsForAddress(db, walletAddress);
+      const current = await getPermissionsForUser(db, accountId);
       if (!current.roles.some((role) => role === "admin" || role === "sysop")) {
         return c.json({ error: "Insufficient permissions" }, 403);
       }
@@ -220,10 +209,9 @@ export function createAdminRoutes(
     }
   });
   const requireCurrentProviderHealthManagement = createMiddleware<AuthEnv>(async (c, next) => {
-    const walletAddress = c.get("user").walletAddress;
-    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    const accountId = c.get("user").id;
     try {
-      const current = await getPermissionsForAddress(db, walletAddress);
+      const current = await getPermissionsForUser(db, accountId);
       if (!current.permissions.includes("manage_provider_health")) {
         return c.json({ error: "Insufficient permissions" }, 403);
       }
@@ -393,144 +381,55 @@ export function createAdminRoutes(
     return c.json(allPerms);
   });
 
-  // -------------------------------------------------------------------------
-  // GET /api/admin/address-roles — list all address-role assignments
-  // -------------------------------------------------------------------------
-
-  app.get("/api/admin/address-roles", requireRoleManagement, async (c) => {
-    const assignments = await db
-      .select({
-        walletAddress: schema.addressRoles.walletAddress,
-        roleId: schema.addressRoles.roleId,
-        roleName: schema.roles.name,
-        grantedBy: schema.addressRoles.grantedBy,
-        grantedAt: schema.addressRoles.grantedAt,
-      })
-      .from(schema.addressRoles)
-      .innerJoin(
-        schema.roles,
-        sql`${schema.addressRoles.roleId} = ${schema.roles.id}`,
-      );
-
+  // Account grants are the only role authority. Serialize mutations so a
+  // concurrent revoke cannot remove the final operator or use revoked authority.
+  app.get("/api/admin/user-roles", requireRoleManagement, async (c) => {
+    const assignments = await db.select({
+      userId: schema.userRoles.userId, roleId: schema.userRoles.roleId,
+      roleName: schema.roles.name, grantedBy: schema.userRoles.grantedBy,
+      grantedAt: schema.userRoles.grantedAt,
+    }).from(schema.userRoles).innerJoin(schema.roles, eq(schema.userRoles.roleId, schema.roles.id));
     return c.json(assignments);
   });
 
-  // -------------------------------------------------------------------------
-  // POST /api/admin/address-roles — assign role to address
-  // -------------------------------------------------------------------------
-
-  app.post("/api/admin/address-roles", requireRoleManagement, async (c) => {
-    const body = await parseJsonBody(c, "POST /api/admin/address-roles");
-    if (!body?.walletAddress || !body?.roleId) {
-      return c.json(
-        { error: "walletAddress and roleId are required" },
-        400,
-      );
+  app.on(["POST", "DELETE"], "/api/admin/user-roles", requireRoleManagement, async (c) => {
+    const body = await parseJsonBody(c, "Account role assignment");
+    if (!body || typeof body.userId !== "string" || !body.userId.trim()
+      || typeof body.roleId !== "string" || !body.roleId.trim()) {
+      return c.json({ error: "userId and roleId are required" }, 400);
     }
-
-    const walletAddress = (body.walletAddress as string).toLowerCase();
-    const roleId = body.roleId as string;
-
-    // Verify role exists
-    const role = (await db
-      .select()
-      .from(schema.roles)
-      .where(sql`${schema.roles.id} = ${roleId}`))[0];
-
-    if (!role) {
-      return c.json({ error: "Role not found" }, 404);
-    }
-
-    // Check if already assigned
-    const existing = (await db
-      .select()
-      .from(schema.addressRoles)
-      .where(
-        sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      ))[0];
-
-    if (existing) {
-      return c.json({ error: "Role already assigned to this address" }, 409);
-    }
-
-    const granter = c.get("user");
-    await db.insert(schema.addressRoles)
-      .values({
-        walletAddress,
-        roleId,
-        grantedBy: granter.walletAddress ?? granter.id,
-      });
-
-    return c.json({
-      walletAddress,
-      roleId,
-      roleName: role.name,
-      grantedBy: granter.walletAddress ?? granter.id,
-    }, 201);
-  });
-
-  // -------------------------------------------------------------------------
-  // DELETE /api/admin/address-roles — revoke role from address
-  // -------------------------------------------------------------------------
-
-  app.delete("/api/admin/address-roles", requireRoleManagement, async (c) => {
-    const body = await parseJsonBody(c, "DELETE /api/admin/address-roles");
-    if (!body?.walletAddress || !body?.roleId) {
-      return c.json(
-        { error: "walletAddress and roleId are required" },
-        400,
-      );
-    }
-
-    const walletAddress = (body.walletAddress as string).toLowerCase();
-    const roleId = body.roleId as string;
-
-    // Sysop lockout protection: cannot revoke sysop from yourself if you're the last sysop
-    const role = (await db
-      .select()
-      .from(schema.roles)
-      .where(sql`${schema.roles.id} = ${roleId}`))[0];
-
-    if (role?.name === "sysop") {
-      const currentUser = c.get("user");
-      const isSelf =
-        currentUser.walletAddress?.toLowerCase() === walletAddress;
-
-      if (isSelf) {
-        // Count remaining sysops
-        const sysopCount = (await db
-          .select({ count: sql<number>`count(*)` })
-          .from(schema.addressRoles)
-          .where(sql`${schema.addressRoles.roleId} = ${roleId}`))[0];
-
-        if (sysopCount && sysopCount.count <= 1) {
-          return c.json(
-            { error: "Cannot revoke sysop role — you are the last sysop" },
-            403,
-          );
-        }
+    const userId = body.userId;
+    const roleId = body.roleId;
+    const granterId = c.get("user").id;
+    return db.transaction(async tx => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('influence:role-management', 0))`);
+      const authority = await getPermissionsForUser(tx, granterId);
+      if (!authority.permissions.includes("manage_roles")) return c.json({ error: "Insufficient permissions" }, 403);
+      const [target] = await tx.select().from(schema.users).where(eq(schema.users.id, userId));
+      if (!target) return c.json({ error: "User not found" }, 404);
+      const [service] = await tx.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, userId));
+      if (service || target.walletAddress?.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+        return c.json({ error: "Service principals cannot receive human roles" }, 400);
       }
-    }
-
-    // Check if assignment exists
-    const existing = (await db
-      .select()
-      .from(schema.addressRoles)
-      .where(
-        sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      ))[0];
-
-    if (!existing) {
-      return c.json({ error: "Role assignment not found" }, 404);
-    }
-
-    // Delete the assignment
-    await db.delete(schema.addressRoles)
-      .where(
-        sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      );
-
-    return c.json({ ok: true });
+      const [role] = await tx.select().from(schema.roles).where(eq(schema.roles.id, roleId));
+      if (!role) return c.json({ error: "Role not found" }, 404);
+      const condition = and(eq(schema.userRoles.userId, userId), eq(schema.userRoles.roleId, roleId));
+      const [existing] = await tx.select().from(schema.userRoles).where(condition);
+      if (c.req.method === "POST") {
+        if (existing) return c.json({ error: "Role already assigned to this account" }, 409);
+        const [assignment] = await tx.insert(schema.userRoles).values({ userId, roleId, grantedBy: granterId }).returning();
+        return c.json({ ...assignment, roleName: role.name }, 201);
+      }
+      if (!existing) return c.json({ error: "Role assignment not found" }, 404);
+      if (role.name === "sysop") {
+        const remaining = await tx.select({ id: schema.userRoles.userId }).from(schema.userRoles)
+          .innerJoin(schema.users, eq(schema.users.id, schema.userRoles.userId))
+          .where(eq(schema.userRoles.roleId, roleId));
+        if (remaining.length <= 1) return c.json({ error: "Cannot revoke sysop role — this is the last sysop" }, 403);
+      }
+      await tx.delete(schema.userRoles).where(condition);
+      return c.json({ ok: true });
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -559,9 +458,7 @@ export function createAdminRoutes(
         displayNameContainsEmail,
         ...serializedUser
       } = user;
-      const resolved = user.walletAddress
-        ? await getPermissionsForAddress(db, user.walletAddress)
-        : { roles: [], permissions: [] };
+      const resolved = await getPermissionsForUser(db, user.id);
 
       return {
         ...serializedUser,
@@ -1115,9 +1012,9 @@ export function createAdminRoutes(
     let canReadProviderFailures = false;
     let providerFailureAccessUnavailable = false;
     try {
-      const walletAddress = c.get("user").walletAddress;
-      if (walletAddress) {
-        const current = await getPermissionsForAddress(db, walletAddress);
+      const accountId = c.get("user").id;
+      if (accountId) {
+        const current = await getPermissionsForUser(db, accountId);
         canReadProviderFailures = current.roles.some((role) => role === "admin" || role === "sysop");
       }
     } catch {

@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -285,8 +286,8 @@ describe("queue enrollment service", () => {
     await db.update(schema.users).set({ walletAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" })
       .where(eq(schema.users.id, USER_A_ID));
     await db.insert(schema.roles).values({ id: "casting-producer", name: "producer" });
-    await db.insert(schema.addressRoles).values({
-      walletAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    await db.insert(schema.userRoles).values({
+      userId: testUserIdForWallet("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
       roleId: "casting-producer",
       grantedBy: USER_B_ID,
     });

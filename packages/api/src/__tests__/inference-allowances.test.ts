@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import {runAccountText} from "../services/account-text-usage.js";
 import {beforeEach,describe,expect,test} from 'bun:test';
 import {randomUUID} from 'node:crypto';
@@ -9,7 +10,7 @@ import {allowancePeriod,reserveInference,dispatchInference,settleInference,chang
 import {readAccountSpending} from '../services/account-spending.js';
 describe('account inference allowances',()=>{
  let db:DrizzleDB,owner:string,admin:string;
- beforeEach(async()=>{db=await setupTestDB();await seedRBAC(db);owner=randomUUID();admin=randomUUID();await db.insert(schema.users).values([{id:owner},{id:admin,walletAddress:'0xinferenceadmin'}]);const [role]=await db.select().from(schema.roles).where(eq(schema.roles.name,'admin'));await db.insert(schema.addressRoles).values({walletAddress:'0xinferenceadmin',roleId:role!.id});});
+ beforeEach(async()=>{db=await setupTestDB();await seedRBAC(db);owner=randomUUID();admin=randomUUID();await db.insert(schema.users).values([{id:owner},{id:admin,walletAddress:'0xinferenceadmin'}]);const [role]=await db.select().from(schema.roles).where(eq(schema.roles.name,'admin'));await db.insert(schema.userRoles).values({userId: testUserIdForWallet('0xinferenceadmin'),roleId:role!.id});});
  const reserve=(id:string=randomUUID())=>db.transaction(tx=>reserveInference(tx,{id,userId:owner,category:'text',inputHash:'same'}));
  const action=(body:Record<string,unknown>)=>changeInferenceAccount(db,admin,{actionId:randomUUID(),userId:owner,reason:'test adjustment',...body});
  test('UTC anniversaries clamp without drifting and skip missed periods',()=>{
@@ -92,7 +93,7 @@ describe('account inference allowances',()=>{
   await expect(reserve()).rejects.toMatchObject({code:'generation_throttled'});
   await action({kind:'overrides',overrides:{textBurst:2}});await reserve();
   await expect(db.transaction(tx=>reserveInference(tx,{id:r.id,userId:owner,category:'text',inputHash:'changed'}))).rejects.toMatchObject({code:'request_conflict'});
-  await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress,'0xinferenceadmin'));
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet('0xinferenceadmin')));
   await expect(action({kind:'grant',category:'text',amount:1})).rejects.toMatchObject({status:403});
  });
 

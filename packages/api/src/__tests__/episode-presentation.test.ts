@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -87,7 +88,7 @@ describe("episode presentation", () => {
     const wallet = "0xepisodeadmin";
     await db.insert(schema.users).values({ id: userId, walletAddress: wallet, displayName: "Editor" });
     const [role] = await db.select().from(schema.roles).where(eq(schema.roles.name, "admin"));
-    await db.insert(schema.addressRoles).values({ walletAddress: wallet, roleId: role!.id, grantedBy: "test" });
+    await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(wallet), roleId: role!.id, grantedBy: "test" });
     const token = await createSessionToken(userId, { roles: ["admin"], permissions: ["view_admin", "manage_postgame_media"] });
     const app = createEpisodeRoutes(db);
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };

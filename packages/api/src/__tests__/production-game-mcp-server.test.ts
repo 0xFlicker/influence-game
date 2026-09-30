@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -782,8 +783,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       .from(schema.roles)
       .where(eq(schema.roles.name, "producer")))[0];
     if (!producerRole) throw new Error("Missing producer role fixture");
-    await db.insert(schema.addressRoles).values({
-      walletAddress: "0xeligibilityproducer000000000000000000001",
+    await db.insert(schema.userRoles).values({
+      userId: testUserIdForWallet("0xeligibilityproducer000000000000000000001"),
       roleId: producerRole.id,
     });
     const dynamicClientId = "influence-game-mcp-client-eligibility-test";

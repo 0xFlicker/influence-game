@@ -9,7 +9,7 @@
 #
 # Required env vars (via doppler or direct export):
 #   FREE_GAME_API_URL    — API base URL (e.g. http://100.100.251.4:3000)
-#   FREE_GAME_CRON_TOKEN — JWT with schedule_free_game permission
+#   FREE_GAME_CRON_TOKEN — Signed schedule_free_game JWT for an enabled free_queue service principal
 #
 # Usage:
 #   doppler run -- ./scripts/free-game-start.sh

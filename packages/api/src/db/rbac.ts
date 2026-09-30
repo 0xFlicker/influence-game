@@ -1,8 +1,8 @@
 /**
  * Influence Game — RBAC Role Resolution
  *
- * Resolves wallet address -> roles -> permissions by joining
- * address_roles, role_permissions, and permissions tables.
+ * Resolves account ID -> roles -> permissions by joining
+ * user_roles, role_permissions, and permissions tables.
  */
 
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -31,8 +31,8 @@ export async function userHasAnyRole(
   const [row] = await db
     .select({ id: schema.users.id })
     .from(schema.users)
-    .innerJoin(schema.addressRoles, sql`lower(${schema.users.walletAddress}) = ${schema.addressRoles.walletAddress}`)
-    .innerJoin(schema.roles, eq(schema.addressRoles.roleId, schema.roles.id))
+    .innerJoin(schema.userRoles, eq(schema.users.id, schema.userRoles.userId))
+    .innerJoin(schema.roles, eq(schema.userRoles.roleId, schema.roles.id))
     .where(and(
       eq(schema.users.id, userId),
       inArray(schema.roles.name, roleNames),
@@ -43,21 +43,19 @@ export async function userHasAnyRole(
 }
 
 /**
- * Resolve all roles and permissions for a given wallet address.
+ * Resolve all roles and permissions for a given account ID.
  * Returns deduplicated arrays of role names and permission names.
  */
-export async function getPermissionsForAddress(
+export async function getPermissionsForUser(
   db: Pick<DrizzleDB, "select">,
-  walletAddress: string,
+  userId: string,
 ): Promise<ResolvedPermissions> {
-  const addr = walletAddress.toLowerCase();
-
-  // Join address_roles -> roles to get role names
+  // Join user_roles -> roles to get role names
   const roleRows = await db
     .select({ name: schema.roles.name })
-    .from(schema.addressRoles)
-    .innerJoin(schema.roles, sql`${schema.addressRoles.roleId} = ${schema.roles.id}`)
-    .where(sql`${schema.addressRoles.walletAddress} = ${addr}`);
+    .from(schema.userRoles)
+    .innerJoin(schema.roles, sql`${schema.userRoles.roleId} = ${schema.roles.id}`)
+    .where(sql`${schema.userRoles.userId} = ${userId}`);
 
   const roles = roleRows.map((r) => r.name);
 
@@ -65,19 +63,19 @@ export async function getPermissionsForAddress(
     return { roles: [], permissions: [] };
   }
 
-  // Join address_roles -> role_permissions -> permissions to get permission names
+  // Join user_roles -> role_permissions -> permissions to get permission names
   const permRows = await db
     .select({ name: schema.permissions.name })
-    .from(schema.addressRoles)
+    .from(schema.userRoles)
     .innerJoin(
       schema.rolePermissions,
-      sql`${schema.addressRoles.roleId} = ${schema.rolePermissions.roleId}`,
+      sql`${schema.userRoles.roleId} = ${schema.rolePermissions.roleId}`,
     )
     .innerJoin(
       schema.permissions,
       sql`${schema.rolePermissions.permissionId} = ${schema.permissions.id}`,
     )
-    .where(sql`${schema.addressRoles.walletAddress} = ${addr}`);
+    .where(sql`${schema.userRoles.userId} = ${userId}`);
 
   // Deduplicate permission names (user may have overlapping roles)
   const permissions = [...new Set(permRows.map((p) => p.name))];
