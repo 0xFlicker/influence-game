@@ -190,6 +190,8 @@ export async function bootstrapSysop(db: DrizzleDB): Promise<void> {
     if (!address || address === "0x0000000000000000000000000000000000000000") return;
     const owners = await tx.select().from(schema.users).where(sql`lower(${schema.users.walletAddress}) = ${address}`);
     if (owners.length !== 1) return;
+    const [service] = await tx.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, owners[0]!.id));
+    if (service) return;
     await tx.insert(schema.userRoles).values({ userId: owners[0]!.id, roleId: role.id, grantedBy: "system" });
     await markCompleted();
   });

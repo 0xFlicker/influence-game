@@ -49,6 +49,12 @@ test("does not create a missing account, choose first signup, or grant a schedul
   expect((await bootstrapInitialOperator(db, { ...input, userId: "missing" })).status).toBe("blocked");
   await db.insert(schema.servicePrincipals).values({ userId: account });
   expect((await bootstrapInitialOperator(db, input)).status).toBe("blocked");
+  const previous = process.env.ADMIN_ADDRESS;
+  try {
+    process.env.ADMIN_ADDRESS = "0xservice-wallet";
+    await db.update(schema.users).set({ walletAddress: "0xservice-wallet" }).where(eq(schema.users.id, account));
+    await bootstrapSysop(db);
+  } finally { if (previous === undefined) delete process.env.ADMIN_ADDRESS; else process.env.ADMIN_ADDRESS = previous; }
   expect(await db.select().from(schema.userRoles)).toHaveLength(0);
 });
 
