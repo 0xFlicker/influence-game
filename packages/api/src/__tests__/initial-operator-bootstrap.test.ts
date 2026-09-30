@@ -56,8 +56,14 @@ test("existing migrated sysop and historical completion markers block initial bo
   const [role] = await db.select().from(schema.roles).where(eq(schema.roles.name, "sysop"));
   await db.insert(schema.userRoles).values({ userId: account, roleId: role!.id, grantedBy: "legacy-migration" });
   expect((await bootstrapInitialOperator(db, input)).status).toBe("blocked");
+  const previous = process.env.ADMIN_ADDRESS;
+  try {
+    delete process.env.ADMIN_ADDRESS;
+    await bootstrapSysop(db);
+  } finally { if (previous !== undefined) process.env.ADMIN_ADDRESS = previous; }
+  // Active startup seals an existing migrated sysop even without wallet config.
   await db.delete(schema.userRoles);
-  await db.insert(schema.appSettings).values({ key: "rbac_bootstrap_completed", value: "true" });
+  expect(await db.select().from(schema.appSettings).where(eq(schema.appSettings.key, "rbac_bootstrap_completed"))).toHaveLength(1);
   expect((await bootstrapInitialOperator(db, input)).status).toBe("blocked");
 });
 

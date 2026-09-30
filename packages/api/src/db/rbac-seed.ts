@@ -178,7 +178,6 @@ export async function seedRBAC(db: DrizzleDB): Promise<void> {
 /** Initial bootstrap only. Final-sysop protection prevents startup resurrection. */
 export async function bootstrapSysop(db: DrizzleDB): Promise<void> {
   const address = process.env.ADMIN_ADDRESS?.toLowerCase();
-  if (!address || address === "0x0000000000000000000000000000000000000000") return;
   await db.transaction(async tx => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('influence:role-management', 0))`);
     const [completed] = await tx.select().from(schema.appSettings).where(eq(schema.appSettings.key, "rbac_bootstrap_completed"));
@@ -188,6 +187,7 @@ export async function bootstrapSysop(db: DrizzleDB): Promise<void> {
     if (!role) return;
     const [existing] = await tx.select().from(schema.userRoles).where(eq(schema.userRoles.roleId, role.id));
     if (existing) { await markCompleted(); return; }
+    if (!address || address === "0x0000000000000000000000000000000000000000") return;
     const owners = await tx.select().from(schema.users).where(sql`lower(${schema.users.walletAddress}) = ${address}`);
     if (owners.length !== 1) return;
     await tx.insert(schema.userRoles).values({ userId: owners[0]!.id, roleId: role.id, grantedBy: "system" });
