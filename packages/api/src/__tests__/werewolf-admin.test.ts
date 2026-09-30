@@ -25,7 +25,7 @@ async function operator(role: string, permissions: string[] = []) {
   const id = `user-${role}`, address = `0x${role}`;
   await db.insert(schema.users).values({ id, walletAddress: address });
   await db.insert(schema.roles).values({ id: role, name: role });
-  await db.insert(schema.addressRoles).values({ walletAddress: address, roleId: role });
+  await db.insert(schema.userRoles).values({ userId: id, roleId: role });
   for (const permission of permissions) {
     await db.insert(schema.permissions).values({ id: permission, name: permission, description: permission }).onConflictDoNothing();
     await db.insert(schema.rolePermissions).values({ roleId: role, permissionId: permission });
@@ -63,7 +63,7 @@ test("admin discovery is Werewolf-only, includes hidden games, enforces current 
   await app.request(visibility, { method: "PATCH", headers, body: '{"hidden":false}' });
   expect((await publicApi.request(`/api/werewolf/${g.slug}`)).status).toBe(200);
   expect((await app.request("/api/admin/werewolf/influence", { headers })).status).toBe(404);
-  await db.delete(schema.addressRoles).where(eq(schema.addressRoles.roleId, "admin"));
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "admin"));
   expect((await app.request(`/api/admin/werewolf/${g.id}`, { headers })).status).toBe(403);
 });
 
@@ -91,7 +91,7 @@ test("pack and lobby production use canonical membership and publish privately t
   expect((await publicApi.request(`/api/admin/games/${g.id}/visual/media`, { method: "POST", headers, body: "{}" })).status).toBe(409);
   const path = `/api/admin/production/games/${g.id}/visual/scenes/${job.sceneId}/preview`;
   expect((await app.request(path)).status).toBe(401); expect((await app.request(path, { headers })).status).toBe(200);
-  await db.delete(schema.addressRoles).where(eq(schema.addressRoles.roleId, "producer"));
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "producer"));
   expect((await app.request(path, { headers })).status).toBe(403);
   expect(await readWerewolfEvents(db, g.id)).toEqual(before);
 });

@@ -256,7 +256,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   } });
   const [producer] = await database.db.select().from(schema.roles).where(eq(schema.roles.name, "producer"));
   if (!producer) throw new Error("Producer role missing");
-  await database.db.insert(schema.addressRoles).values({ walletAddress: admin.wallet.address.toLowerCase(), roleId: producer.id }).onConflictDoNothing();
+  await database.db.insert(schema.userRoles).values({ userId: admin.userId, roleId: producer.id }).onConflictDoNothing();
   const inventory = await readReplayVisualProduction(database.db, game.id);
   const lobby = inventory.scenes.find(scene => scene.roomId === "lobby")!;
   await renderMissingReplayScene(database.db, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });

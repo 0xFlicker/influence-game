@@ -1,7 +1,8 @@
+import { bootstrapSysop } from "../db/rbac-seed.js";
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { projectAuthenticatedPublicIdentity } from "./authenticated-public-identity.js";
 import type { AuthenticatedAccount } from "./account-authentication.js";
@@ -31,10 +32,9 @@ export async function issueInfluenceSession(
   db: DrizzleDB,
   user: AuthenticatedAccount,
 ) {
+  await bootstrapSysop(db);
   const [resolved, loginMethods, legal] = await Promise.all([
-    user.walletAddress
-      ? getPermissionsForAddress(db, user.walletAddress)
-      : Promise.resolve({ roles: [], permissions: [] }),
+    getPermissionsForUser(db, user.id),
     projectLoginMethods(db, user.id),
     projectCurrentLegalAcceptance(db, user.id),
   ]);

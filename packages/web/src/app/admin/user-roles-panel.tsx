@@ -3,12 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   listRoles,
-  listAddressRoles,
+  listUserRoles,
   listAdminUsers,
   assignRole,
   revokeRole,
   type AdminRole,
-  type AddressRoleAssignment,
+  type UserRoleAssignment,
   type AdminUser,
 } from "@/lib/api";
 import { TruncatedAddress } from "@/components/truncated-address";
@@ -27,41 +27,39 @@ function RoleBadge({ name }: { name: string }) {
   );
 }
 
-function isValidAddress(addr: string): boolean {
-  return /^0x[0-9a-fA-F]{40}$/.test(addr);
-}
-
 // ---------------------------------------------------------------------------
 // Assign role form
 // ---------------------------------------------------------------------------
 
 function AssignRoleForm({
   roles,
+  users,
   onAssigned,
-  initialAddress,
+  initialUserId,
 }: {
   roles: AdminRole[];
+  users: AdminUser[];
   onAssigned: () => void;
-  initialAddress?: string | null;
+  initialUserId?: string | null;
 }) {
-  const [address, setAddress] = useState("");
+  const [userId, setUserId] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialAddress) {
-      setAddress(initialAddress);
+    if (initialUserId) {
+      setUserId(initialUserId);
     }
-  }, [initialAddress]);
+  }, [initialUserId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    const normalized = address.trim().toLowerCase();
-    if (!isValidAddress(normalized)) {
-      setError("Invalid wallet address (must be 0x + 40 hex chars)");
+    const normalized = userId;
+    if (!users.some(user => user.id === normalized)) {
+      setError("Select an account");
       return;
     }
     if (!selectedRoleId) {
@@ -72,7 +70,7 @@ function AssignRoleForm({
     setSubmitting(true);
     try {
       await assignRole(normalized, selectedRoleId);
-      setAddress("");
+      setUserId("");
       setSelectedRoleId("");
       onAssigned();
     } catch (err) {
@@ -85,18 +83,19 @@ function AssignRoleForm({
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-3 flex-wrap">
       <div className="flex-1 min-w-[280px]">
-        <label className="block text-xs text-white/40 mb-1">Wallet Address</label>
-        <input
-          type="text"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="0x..."
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500"
-        />
+        <label className="block text-xs text-white/40 mb-1">Account</label>
+        <select aria-label="Account" value={userId} onChange={e => setUserId(e.target.value)}
+          className="w-full bg-zinc-950 border border-white/15 rounded-lg px-3 py-2 text-sm text-white">
+          <option value="">Select account...</option>
+          {users.filter(user => user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000").map(user => (
+            <option key={user.id} value={user.id}>{user.displayName ?? "Anonymous"} · {user.email ?? user.walletAddress ?? user.id}</option>
+          ))}
+        </select>
       </div>
       <div className="min-w-[160px]">
         <label className="block text-xs text-white/40 mb-1">Role</label>
         <select
+          aria-label="Role"
           value={selectedRoleId}
           onChange={(e) => setSelectedRoleId(e.target.value)}
           className="w-full appearance-none bg-zinc-950 border border-white/15 rounded-lg px-3 py-2 text-sm text-white shadow-inner shadow-black/20 focus:outline-none focus:border-indigo-500"
@@ -125,22 +124,22 @@ function AssignRoleForm({
 }
 
 // ---------------------------------------------------------------------------
-// Address roles table
+// Account roles table
 // ---------------------------------------------------------------------------
 
-function AddressRolesTable({
+function UserRolesTable({
   assignments,
   users,
   onRevoke,
 }: {
-  assignments: AddressRoleAssignment[];
+  assignments: UserRoleAssignment[];
   users: AdminUser[];
-  onRevoke: (walletAddress: string, roleId: string, roleName: string) => void;
+  onRevoke: (userId: string, roleId: string, roleName: string) => void;
 }) {
-  const usersByWallet = new Map<string, AdminUser>();
+  const usersById = new Map<string, AdminUser>();
   for (const u of users) {
-    if (u.walletAddress) {
-      usersByWallet.set(u.walletAddress.toLowerCase(), u);
+    if (u.id) {
+      usersById.set(u.id, u);
     }
   }
   if (assignments.length === 0) {
@@ -151,12 +150,12 @@ function AddressRolesTable({
     );
   }
 
-  // Group by wallet address
-  const grouped = new Map<string, AddressRoleAssignment[]>();
+  // Group by account
+  const grouped = new Map<string, UserRoleAssignment[]>();
   for (const a of assignments) {
-    const list = grouped.get(a.walletAddress) ?? [];
+    const list = grouped.get(a.userId) ?? [];
     list.push(a);
-    grouped.set(a.walletAddress, list);
+    grouped.set(a.userId, list);
   }
 
   return (
@@ -164,7 +163,7 @@ function AddressRolesTable({
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/10">
-            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Address</th>
+            <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Account</th>
             <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Roles</th>
             <th className="text-left py-3 px-4 text-xs text-white/30 font-medium">Granted By</th>
             <th className="text-right py-3 px-4 text-xs text-white/30 font-medium">Actions</th>
@@ -172,7 +171,7 @@ function AddressRolesTable({
         </thead>
         <tbody>
           {[...grouped.entries()].map(([addr, roles]) => {
-            const user = usersByWallet.get(addr.toLowerCase());
+            const user = usersById.get(addr);
             const label = user?.displayName && !user.displayName.startsWith("0x")
               ? user.displayName
               : user?.email ?? null;
@@ -234,7 +233,7 @@ function UsersTable({
   onQuickAssign,
 }: {
   users: AdminUser[];
-  onQuickAssign: (walletAddress: string) => void;
+  onQuickAssign: (userId: string) => void;
 }) {
   if (users.length === 0) {
     return (
@@ -283,9 +282,9 @@ function UsersTable({
                 {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </td>
               <td className="py-3 px-4 text-right">
-                {user.walletAddress && (
+                {user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000" && (
                   <button
-                    onClick={() => onQuickAssign(user.walletAddress!)}
+                    onClick={() => onQuickAssign(user.id)}
                     className="text-xs text-indigo-400/70 hover:text-indigo-400 transition-colors"
                   >
                     + Assign role
@@ -342,23 +341,23 @@ function ConfirmDialog({
 
 export function UserRolesPanel() {
   const [roles, setRoles] = useState<AdminRole[]>([]);
-  const [assignments, setAssignments] = useState<AddressRoleAssignment[]>([]);
+  const [assignments, setAssignments] = useState<UserRoleAssignment[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revokeConfirm, setRevokeConfirm] = useState<{
-    walletAddress: string;
+    userId: string;
     roleId: string;
     roleName: string;
   } | null>(null);
-  const [prefillAddress, setPrefillAddress] = useState<string | null>(null);
+  const [prefillUserId, setPrefillUserId] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setError(null);
     try {
       const [r, a, u] = await Promise.all([
         listRoles(),
-        listAddressRoles(),
+        listUserRoles(),
         listAdminUsers(),
       ]);
       setRoles(r);
@@ -378,7 +377,7 @@ export function UserRolesPanel() {
   async function handleRevoke() {
     if (!revokeConfirm) return;
     try {
-      await revokeRole(revokeConfirm.walletAddress, revokeConfirm.roleId);
+      await revokeRole(revokeConfirm.userId, revokeConfirm.roleId);
       setRevokeConfirm(null);
       fetchAll();
     } catch (err) {
@@ -386,11 +385,11 @@ export function UserRolesPanel() {
     }
   }
 
-  function handleRevokeClick(walletAddress: string, roleId: string, roleName: string) {
+  function handleRevokeClick(userId: string, roleId: string, roleName: string) {
     if (roleName === "sysop") {
-      setRevokeConfirm({ walletAddress, roleId, roleName });
+      setRevokeConfirm({ userId, roleId, roleName });
     } else {
-      revokeRole(walletAddress, roleId).then(() => fetchAll()).catch((err) => {
+      revokeRole(userId, roleId).then(() => fetchAll()).catch((err) => {
         setError(err instanceof Error ? err.message : "Failed to revoke role.");
       });
     }
@@ -418,21 +417,21 @@ export function UserRolesPanel() {
           Assign Role
         </h2>
         <div className="border border-white/10 rounded-xl p-5">
-          <AssignRoleForm roles={roles} onAssigned={fetchAll} initialAddress={prefillAddress} />
-          {prefillAddress && (
+          <AssignRoleForm users={users} roles={roles} onAssigned={fetchAll} initialUserId={prefillUserId} />
+          {prefillUserId && (
             <p className="text-xs text-white/30 mt-2">
-              Pre-filled address: <span className="font-mono">{prefillAddress}</span>
+              Selected account: <span>{users.find(user => user.id === prefillUserId)?.displayName ?? "Anonymous"}</span>
             </p>
           )}
         </div>
       </section>
 
-      {/* Address-role assignments */}
+      {/* Account-role assignments */}
       <section className="mb-8">
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Role Assignments ({assignments.length})
         </h2>
-        <AddressRolesTable
+        <UserRolesTable
           assignments={assignments}
           users={users}
           onRevoke={handleRevokeClick}
@@ -446,14 +445,14 @@ export function UserRolesPanel() {
         </h2>
         <UsersTable
           users={users}
-          onQuickAssign={(addr) => setPrefillAddress(addr)}
+          onQuickAssign={(addr) => setPrefillUserId(addr)}
         />
       </section>
 
       {/* Confirm dialog for sysop revoke */}
       {revokeConfirm && (
         <ConfirmDialog
-          message={`Are you sure you want to revoke the sysop role from ${revokeConfirm.walletAddress}? This is a privileged role.`}
+          message={`Are you sure you want to revoke the sysop role from ${users.find(user => user.id === revokeConfirm.userId)?.displayName ?? "this account"}? This is a privileged role.`}
           onConfirm={handleRevoke}
           onCancel={() => setRevokeConfirm(null)}
         />

@@ -803,3 +803,11 @@ Producer/Sysop tooling in Admin → Production for rendering one missing scene a
 ## Editorial game asset
 
 An externally produced image associated with a game by label and `public`/`spoiler` presentation classification. Classification never adds a read restriction: public-game images are anonymous-readable, with existing private/hidden game access preserved. `banner` renders only inside `/games/[slug]/results` and discovers late uploads to old games. S3 bucket restrictions protect shared infrastructure, while the API delivers image bytes. Producer/sysop permission `manage_game_assets` and explicit OAuth scope `assets:manage` govern management operations only. Revision-fenced mutations have durable receipts and recoverable object cleanup. These images are separate from gameplay visual artifacts, covers, and canonical events. See [game assets](docs/game-assets.md).
+
+### Account roles and queue service principals
+
+Human role grants belong to the internal Influence account ID, independently of
+login credentials and wallet metadata. Current database grants authorize requests.
+Queue scheduler service principals are separately registered operational
+identities with only `schedule_free_game` on draw/start; they cannot receive human
+roles or authenticate as human administrators.

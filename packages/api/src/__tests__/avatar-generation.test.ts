@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -705,8 +706,8 @@ describe("avatar generation service", () => {
       description: "Test sysop",
       isSystem: 1,
     });
-    await db.insert(schema.addressRoles).values({
-      walletAddress: walletAddress.toLowerCase(),
+    await db.insert(schema.userRoles).values({
+      userId: testUserIdForWallet(walletAddress.toLowerCase()),
       roleId: sysopRoleId,
     });
 

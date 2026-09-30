@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -57,8 +58,8 @@ describe("season routes", () => {
   test("authorizes owned analysis and exports by authenticated owner", async () => {
     const fixture = await seedRouteFixture();
     const app = new Hono().route("/", createSeasonRoutes(fixture.db));
-    const ownerToken = await token(fixture.ownerId, ["agents:read"]);
-    const otherToken = await token(fixture.otherUserId, ["agents:read"]);
+    const ownerToken = await token(fixture.db, fixture.ownerId, ["agents:read"]);
+    const otherToken = await token(fixture.db, fixture.otherUserId, ["agents:read"]);
 
     const allowed = await app.request(
       `/api/seasons/${fixture.seasonSlug}/agents/${fixture.profileId}`,
@@ -83,8 +84,8 @@ describe("season routes", () => {
   test("requires producer authorization for hidden diagnostics", async () => {
     const fixture = await seedRouteFixture();
     const app = new Hono().route("/", createSeasonRoutes(fixture.db));
-    const ownerToken = await token(fixture.ownerId, ["agents:read"]);
-    const producerToken = await token(fixture.ownerId, ["view_admin"]);
+    const ownerToken = await token(fixture.db, fixture.ownerId, ["agents:read"]);
+    const producerToken = await token(fixture.db, fixture.otherUserId, ["view_admin"]);
 
     const denied = await app.request(
       `/api/admin/seasons/${fixture.seasonSlug}/diagnostics`,
@@ -103,8 +104,9 @@ describe("season routes", () => {
     const db = await setupTestDB();
     const userId = await insertUser(db, "operator");
     const app = new Hono().route("/", createSeasonRoutes(db));
-    const observerToken = await token(userId, ["view_admin"]);
-    const managerToken = await token(userId, ["manage_seasons"]);
+    const observerToken = await token(db, userId, ["view_admin"]);
+    const managerId = await insertUser(db, "manager");
+    const managerToken = await token(db, managerId, ["manage_seasons"]);
     const body = JSON.stringify({ slug: "permission-season", name: "Permission Season" });
 
     const denied = await app.request("/api/admin/seasons", {
@@ -138,11 +140,11 @@ describe("season routes", () => {
 
   test("returns a stable conflict when a closed season already uses the slug", async () => {
     const db = await setupTestDB();
-    const userId = await insertUser(db, "operator");
     const existing = await createSeason(db, { slug: "reused-slug", name: "Original" });
     await closeSeason(db, existing.id);
     const app = new Hono().route("/", createSeasonRoutes(db));
-    const managerToken = await token(userId, ["manage_seasons"]);
+    const managerId = await insertUser(db, "manager");
+    const managerToken = await token(db, managerId, ["manage_seasons"]);
 
     const response = await app.request("/api/admin/seasons", {
       method: "POST",
@@ -241,6 +243,7 @@ async function insertUser(db: DrizzleDB, label: string): Promise<string> {
   return id;
 }
 
-function token(userId: string, permissions: string[]) {
+async function token(db: DrizzleDB, userId: string, permissions: string[]) {
+  await grantTestAuthority(db, userId, permissions);
   return createSessionToken(userId, { roles: ["test"], permissions });
 }

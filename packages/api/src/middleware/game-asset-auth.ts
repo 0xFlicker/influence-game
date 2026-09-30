@@ -1,7 +1,7 @@
 import { createMiddleware } from "hono/factory";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import { validateGameMcpBearerToken } from "../game-mcp/auth.js";
 import { hasCurrentLegalAcceptanceVersions, projectCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { verifySessionToken } from "./auth.js";
@@ -33,7 +33,7 @@ export function gameAssetAuth(db: DrizzleDB) {
       }
       const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id));
       if (!user) throw new GameAssetError("asset_unauthorized", 401, "Account is unavailable");
-      const permissions = user.walletAddress ? (await getPermissionsForAddress(db, user.walletAddress)).permissions : [];
+      const permissions = (await getPermissionsForUser(db, user.id)).permissions;
       if (authority === "oauth" && !permissions.includes("manage_game_assets")) throw new GameAssetError("asset_forbidden", 403, "Game asset permission is required");
       c.set("assetActor", { id, walletAddress: user.walletAddress, permissions, authority, scope });
     }

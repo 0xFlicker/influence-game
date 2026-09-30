@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
 import { controlVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { listReplayVisualGames, readReplayVisualProduction, renderMissingReplayScene, ReplayVisualError } from "../services/visual-replay-production.js";
@@ -15,10 +15,9 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
   const producer = createMiddleware<AuthEnv>(async (c, next) => {
     c.header("Cache-Control", "private, no-store");
-    const address = c.get("user").walletAddress;
-    if (!address) return c.json({ error: "Producer or Sysop role required" }, 403);
+    const userId = c.get("user").id;
     let roles: string[];
-    try { roles = (await getPermissionsForAddress(db, address)).roles; }
+    try { roles = (await getPermissionsForUser(db, userId)).roles; }
     catch { return c.json({ error: "Production authorization is temporarily unavailable" }, 503); }
     if (!roles.some(role => role === "producer" || role === "sysop")) return c.json({ error: "Producer or Sysop role required" }, 403);
     await next();

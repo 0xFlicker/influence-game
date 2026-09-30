@@ -1,3 +1,4 @@
+import { getPermissionsForUser } from "../db/rbac.js";
 /**
  * Authentication middleware for the Influence Game API.
  *
@@ -156,10 +157,14 @@ export async function verifySessionToken(
   try {
     const { payload } = await jwtVerify(token, getJwtSecret(), {
       issuer: "influence-api",
+      algorithms: ["HS256"],
     });
     if (payload.token_type === DEPLOYMENT_CONTROL_TOKEN_TYPE) return null;
     const userId = payload.sub as string | undefined;
-    if (!userId) return null;
+    if (typeof userId !== "string" || !userId) return null;
+    for (const claim of [payload.roles, payload.perms]) {
+      if (claim !== undefined && (!Array.isArray(claim) || !claim.every(value => typeof value === "string"))) return null;
+    }
     const legal = payload.legal;
     const legalRecord = legal && typeof legal === "object"
       ? legal as Record<string, unknown>
@@ -312,6 +317,11 @@ export function requireAuth(
       return c.json({ error: "User not found" }, 401);
     }
 
+    const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id));
+    if (service || user.walletAddress?.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+      return c.json({ error: "Service tokens are restricted to queue automation" }, 403);
+    }
+
     if (
       !options.allowPendingLegalAcceptance
       && !hasCurrentLegalAcceptanceVersions(session.legalAcceptance)
@@ -327,8 +337,9 @@ export function requireAuth(
 
     c.set("user", projectAuthUser(user));
     c.set("authContextUser", projectAuthContextUser(user));
-    c.set("userRoles", session.roles);
-    c.set("userPermissions", session.permissions);
+    const current = await getPermissionsForUser(db, user.id);
+    c.set("userRoles", current.roles);
+    c.set("userPermissions", current.permissions);
 
     await next();
   });
@@ -340,7 +351,27 @@ export function requireAuth(
  * narrowly scoped permission middleware after this middleware.
  */
 export function requireServiceAuth(db: DrizzleDB) {
-  return requireAuth(db, { allowPendingLegalAcceptance: true });
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const header = c.req.header("Authorization");
+    const session = header?.startsWith("Bearer ") ? await verifySessionToken(header.slice(7)) : null;
+    if (!session) return c.json({ error: "Authentication required" }, 401);
+    const { schema } = await import("../db/index.js");
+    const { eq } = await import("drizzle-orm");
+    const [user] = await db.select().from(schema.users).where(eq(schema.users.id, session.userId));
+    if (!user) return c.json({ error: "User not found" }, 401);
+    const [service] = await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id));
+    if (service) {
+      if (!service.enabled || !session.permissions.includes("schedule_free_game")) return c.json({ error: "Insufficient permissions" }, 403);
+      c.set("user", projectAuthUser(user));
+      c.set("authContextUser", projectAuthContextUser(user));
+      c.set("userRoles", []);
+      c.set("userPermissions", ["schedule_free_game"]);
+      await next();
+      return;
+    }
+    // Human operators continue through normal account authentication/legal checks.
+    return requireAuth(db)(c, next);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -404,17 +435,7 @@ export function requireAdmin() {
       }
     }
 
-    // Fallback to legacy ADMIN_ADDRESS check
-    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
-    if (!adminAddress) {
-      return c.json({ error: "Admin access not configured" }, 503);
-    }
-
-    if (!user.walletAddress || user.walletAddress.toLowerCase() !== adminAddress) {
-      return c.json({ error: "Admin access required" }, 403);
-    }
-
-    await next();
+    return c.json({ error: "Admin access required" }, 403);
   });
 }
 
@@ -445,10 +466,12 @@ export function optionalAuth(db: DrizzleDB) {
           .from(schema.users)
           .where(eq(schema.users.id, session.userId)))[0] : null;
 
-        if (user) {
+        const [service] = user ? await db.select().from(schema.servicePrincipals).where(eq(schema.servicePrincipals.userId, user.id)) : [];
+        if (user && !service && user.walletAddress?.toLowerCase() !== "0x0000000000000000000000000000000000000000") {
           c.set("user", projectAuthUser(user));
-          c.set("userRoles", session.roles);
-          c.set("userPermissions", session.permissions);
+          const current = await getPermissionsForUser(db, user.id);
+          c.set("userRoles", current.roles);
+          c.set("userPermissions", current.permissions);
         }
       }
     }

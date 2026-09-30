@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { replayWerewolf, projectWerewolfView, WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { readWerewolfEvents } from "../services/werewolf-games.js";
 import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
@@ -15,9 +15,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
   const root = "/api/admin/werewolf";
   const access = createMiddleware<AuthEnv>(async (c, next) => {
     c.header("Cache-Control", "private, no-store");
-    const address = c.get("user").walletAddress;
-    if (!address) return c.json({ error: "Admin or production access required" }, 403);
-    const current = await getPermissionsForAddress(db, address);
+    const current = await getPermissionsForUser(db, c.get("user").id);
     c.set("userRoles", current.roles); c.set("userPermissions", current.permissions);
     if (!current.permissions.includes("view_admin") && !current.roles.some(role => role === "producer" || role === "sysop")) return c.json({ error: "Admin or production access required" }, 403);
     await next();

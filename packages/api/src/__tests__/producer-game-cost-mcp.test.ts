@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
@@ -135,6 +136,7 @@ describe("producer MCP game cost detail", () => {
       email: "cost-contract-admin@example.test",
       displayName: "Cost Contract Admin",
     });
+    await grantTestAuthority(db, adminUserId, ["view_admin"]);
     adminToken = await createSessionToken(adminUserId, {
       roles: ["admin"],
       permissions: ["view_admin"],

@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
@@ -33,6 +34,7 @@ describe("cognitive artifact API routes", () => {
     ]);
     ownerToken = await createSessionToken(OWNER_USER_ID, { roles: ["player"], permissions: [] });
     participantToken = await createSessionToken(PARTICIPANT_USER_ID, { roles: ["player"], permissions: [] });
+    await grantTestAuthority(db, ADMIN_USER_ID, ["view_admin"]);
     adminToken = await createSessionToken(ADMIN_USER_ID, { roles: ["sysop"], permissions: ["view_admin"] });
   });
 

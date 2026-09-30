@@ -726,8 +726,15 @@
     {
       "idx": 103,
       "version": "7",
-      "when": 1790010635824,
-      "tag": "0103_werewolf",
+      "when": 1790726400000,
+      "tag": "0103_account_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790726400001,
+      "tag": "0104_werewolf",
       "breakpoints": true
     }
   ]

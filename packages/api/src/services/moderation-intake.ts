@@ -29,8 +29,8 @@ export class ModerationError extends Error {
 export async function moderationAuthority(db: Reader, userId: string) {
   const rows = await db.select({ role: schema.roles.name, permission: schema.permissions.name })
     .from(schema.users)
-    .innerJoin(schema.addressRoles, sql`lower(${schema.users.walletAddress}) = ${schema.addressRoles.walletAddress}`)
-    .innerJoin(schema.roles, eq(schema.roles.id, schema.addressRoles.roleId))
+    .innerJoin(schema.userRoles, eq(schema.users.id, schema.userRoles.userId))
+    .innerJoin(schema.roles, eq(schema.roles.id, schema.userRoles.roleId))
     .innerJoin(schema.rolePermissions, eq(schema.rolePermissions.roleId, schema.roles.id))
     .innerJoin(schema.permissions, eq(schema.permissions.id, schema.rolePermissions.permissionId))
     .where(eq(schema.users.id, userId));

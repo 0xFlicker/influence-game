@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -291,6 +292,7 @@ describe("postgame highlights service", () => {
   test("keeps full highlight diagnostics on the admin route only", async () => {
     await insertEdgeSmokeDusk(db, addNamedAllianceOverlay(createEdgeSmokeDuskEvents(EDGE_SMOKE_DUSK_GAME_ID)));
     await insertRouteUsers(db);
+    await grantTestAuthority(db, ADMIN_USER_ID, ["view_admin"]);
     const adminToken = await createSessionToken(ADMIN_USER_ID, {
       roles: ["admin"],
       permissions: ["view_admin"],

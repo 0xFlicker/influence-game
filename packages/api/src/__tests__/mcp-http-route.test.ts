@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -1032,8 +1033,8 @@ async function assignMcpRole(db: DrizzleDB, walletAddress: string): Promise<void
     .from(schema.roles)
     .where(eq(schema.roles.name, "producer")))[0];
   if (!role) throw new Error("Missing producer role");
-  await db.insert(schema.addressRoles).values({
-    walletAddress: walletAddress.toLowerCase(),
+  await db.insert(schema.userRoles).values({
+    userId: testUserIdForWallet(walletAddress.toLowerCase()),
     roleId: role.id,
     grantedBy: "test",
   });
@@ -1046,6 +1047,6 @@ async function revokeMcpRole(db: DrizzleDB, walletAddress: string): Promise<void
     .where(eq(schema.roles.name, "producer")))[0];
   if (!role) throw new Error("Missing producer role");
   await db
-    .delete(schema.addressRoles)
-    .where(eq(schema.addressRoles.walletAddress, walletAddress.toLowerCase()));
+    .delete(schema.userRoles)
+    .where(eq(schema.userRoles.userId, testUserIdForWallet(walletAddress.toLowerCase())));
 }

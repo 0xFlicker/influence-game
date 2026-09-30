@@ -1,11 +1,12 @@
+import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
 import { eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
-import { seedRBAC } from "../db/rbac-seed.js";
+import { getPermissionsForUser } from "../db/rbac.js";
+import { seedRBAC, bootstrapSysop } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
 import { appendGameEvents } from "../services/game-events.js";
@@ -71,8 +72,8 @@ async function assignRole(
     throw new Error(`Missing seeded role: ${roleName}`);
   }
 
-  await db.insert(schema.addressRoles).values({
-    walletAddress: walletAddress.toLowerCase(),
+  await db.insert(schema.userRoles).values({
+    userId: testUserIdForWallet(walletAddress.toLowerCase()),
     roleId: role.id,
     grantedBy: "test",
   });
@@ -91,6 +92,7 @@ async function createUser(
     displayName,
     email,
   });
+  await bootstrapSysop(db);
   return userId;
 }
 
@@ -208,7 +210,7 @@ describe("gamer role seed", () => {
     await createUser(db, GAMER_ADDRESS, "Gamer");
     await assignRole(db, GAMER_ADDRESS, "gamer");
 
-    const resolved = await getPermissionsForAddress(db, GAMER_ADDRESS);
+    const resolved = await getPermissionsForTestWallet(db, GAMER_ADDRESS);
 
     expect(resolved.roles).toEqual(["gamer"]);
     expect([...resolved.permissions].sort()).toEqual([
@@ -237,7 +239,7 @@ describe("producer role seed", () => {
       "producer",
     );
 
-    const resolved = await getPermissionsForAddress(
+    const resolved = await getPermissionsForTestWallet(
       db,
       "0xproducer0000000000000000000000000000001",
     );
@@ -539,7 +541,9 @@ describe("admin route RBAC", () => {
       expect(invalidPage.headers.get("cache-control")).toContain("no-store");
     }
 
-    const viewAdminOnlyToken = await createSessionToken(gamerUserId, {
+    const observerId = await createUser(db, "0xobserver-provider", "Observer");
+    await grantTestAuthority(db, observerId, ["view_admin"]);
+    const viewAdminOnlyToken = await createSessionToken(observerId, {
       roles: ["producer"],
       permissions: ["view_admin"],
     });
@@ -614,9 +618,9 @@ describe("admin route RBAC", () => {
     ).toBeTrue();
 
     await db
-      .delete(schema.addressRoles)
+      .delete(schema.userRoles)
       .where(
-        eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS.toLowerCase()),
+        eq(schema.userRoles.userId, testUserIdForWallet(ADMIN_ADDRESS.toLowerCase())),
       );
     expect(
       (
@@ -681,9 +685,9 @@ describe("admin route RBAC", () => {
   });
 
   test("grants completion settlement retry only to admin and sysop seed roles", async () => {
-    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
-    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
-    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+    const admin = await getPermissionsForTestWallet(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForTestWallet(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForTestWallet(db, GAMER_ADDRESS);
 
     expect(admin.permissions).toContain("retry_game_settlement");
     expect(sysop.permissions).toContain("retry_game_settlement");
@@ -691,9 +695,9 @@ describe("admin route RBAC", () => {
   });
 
   test("grants deployment Resume only to the admin and sysop seed roles", async () => {
-    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
-    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
-    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+    const admin = await getPermissionsForTestWallet(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForTestWallet(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForTestWallet(db, GAMER_ADDRESS);
 
     expect(admin.permissions).toContain("manage_deployment_admission");
     expect(sysop.permissions).toContain("manage_deployment_admission");
@@ -701,9 +705,9 @@ describe("admin route RBAC", () => {
   });
 
   test("grants provider health probes only to current admin and sysop authority", async () => {
-    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
-    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
-    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+    const admin = await getPermissionsForTestWallet(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForTestWallet(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForTestWallet(db, GAMER_ADDRESS);
     expect(admin.permissions).toContain("manage_provider_health");
     expect(sysop.permissions).toContain("manage_provider_health");
     expect(gamer.permissions).not.toContain("manage_provider_health");
@@ -789,9 +793,9 @@ describe("admin route RBAC", () => {
     ).toBe(404);
 
     await db
-      .delete(schema.addressRoles)
+      .delete(schema.userRoles)
       .where(
-        eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS.toLowerCase()),
+        eq(schema.userRoles.userId, testUserIdForWallet(ADMIN_ADDRESS.toLowerCase())),
       );
     expect(
       (
@@ -929,8 +933,8 @@ describe("admin route RBAC", () => {
     if (!acquired.ok) throw new Error(acquired.error);
 
     await db
-      .delete(schema.addressRoles)
-      .where(eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS));
+      .delete(schema.userRoles)
+      .where(eq(schema.userRoles.userId, testUserIdForWallet(ADMIN_ADDRESS)));
 
     const status = await app.request("/api/admin/deployment-admission", {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -1788,6 +1792,11 @@ describe("admin route RBAC", () => {
     );
     await assignRole(db, producerWalletAddress, "producer");
 
+    await grantTestAuthority(db, delegatedUserId, ["view_admin", "manage_roles"]);
+    await grantTestAuthority(db, producerUserId, ["view_admin", "manage_roles"]);
+    await grantTestAuthority(db, adminUserId, ["manage_roles"]);
+    const producerOnlyId = await createUser(db, "0xpiionlyproducer", "Producer Only");
+    await assignRole(db, "0xpiionlyproducer", "producer");
     const delegatedAdminReadToken = await createSessionToken(delegatedUserId, {
       roles: ["admin-reader"],
       permissions: ["view_admin"],
@@ -1803,7 +1812,7 @@ describe("admin route RBAC", () => {
       roles: ["producer"],
       permissions: ["view_admin"],
     });
-    const producerOnlyToken = await createSessionToken(producerUserId, {
+    const producerOnlyToken = await createSessionToken(producerOnlyId, {
       roles: ["producer"],
       permissions: [],
     });
@@ -1941,8 +1950,8 @@ describe("admin route RBAC", () => {
     expect(producerOnlyUsersResponse.status).toBe(403);
 
     await db
-      .delete(schema.addressRoles)
-      .where(eq(schema.addressRoles.walletAddress, producerWalletAddress));
+      .delete(schema.userRoles)
+      .where(sql`${schema.userRoles.userId} = ${producerUserId} AND ${schema.userRoles.roleId} IN (SELECT id FROM roles WHERE name = 'producer')`);
 
     const revokedProducerAgentsResponse = await app.request(
       "/api/admin/agents",
@@ -2071,7 +2080,9 @@ describe("admin route RBAC", () => {
     expect(JSON.stringify(body)).not.toContain("walletAddress");
     expect(JSON.stringify(body)).not.toContain("email");
 
-    const readOnlyToken = await createSessionToken(adminUserId, {
+    const readOnlyId = await createUser(db, "0xqueue-observer", "Queue Observer");
+    await grantTestAuthority(db, readOnlyId, ["view_admin"]);
+    const readOnlyToken = await createSessionToken(readOnlyId, {
       roles: ["admin-reader"],
       permissions: ["view_admin"],
     });
@@ -2553,3 +2564,9 @@ describe("admin route RBAC", () => {
     expect(body.some((role) => role.name === "gamer")).toBeTrue();
   });
 });
+
+async function getPermissionsForTestWallet(db: DrizzleDB, wallet: string) {
+  const [user] = await db.select().from(schema.users).where(sql`lower(${schema.users.walletAddress}) = lower(${wallet})`);
+  if (!user) throw new Error("Missing wallet account fixture");
+  return getPermissionsForUser(db, user.id);
+}

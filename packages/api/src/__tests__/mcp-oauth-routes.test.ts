@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -1966,8 +1967,8 @@ async function assignRole(
     throw new Error(`Missing role ${roleName}`);
   }
 
-  await db.insert(schema.addressRoles).values({
-    walletAddress: walletAddress.toLowerCase(),
+  await db.insert(schema.userRoles).values({
+    userId: testUserIdForWallet(walletAddress.toLowerCase()),
     roleId: role.id,
     grantedBy: "test",
   });
@@ -1987,13 +1988,13 @@ async function revokeRole(
   }
 
   await db
-    .delete(schema.addressRoles)
+    .delete(schema.userRoles)
     .where(andAddressRole(walletAddress, role.id));
 }
 
 function andAddressRole(walletAddress: string, roleId: string) {
   return and(
-    eq(schema.addressRoles.walletAddress, walletAddress.toLowerCase()),
-    eq(schema.addressRoles.roleId, roleId),
+    eq(schema.userRoles.userId, testUserIdForWallet(walletAddress.toLowerCase())),
+    eq(schema.userRoles.roleId, roleId),
   );
 }

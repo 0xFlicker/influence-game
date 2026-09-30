@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -151,7 +152,7 @@ async function operator(role: string) {
   const address = `0x${role}`, id = `user-${role}`;
   await db.insert(schema.users).values({ id, walletAddress: address, displayName: role });
   await db.insert(schema.roles).values({ id: role, name: role });
-  await db.insert(schema.addressRoles).values({ walletAddress: address, roleId: role });
+  await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(address), roleId: role });
   const token = await createSessionToken(id, { roles: [role], permissions: ["view_admin", "start_game"] });
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -171,7 +172,7 @@ test.each(["producer", "sysop"])("Production endpoints authorize current %s role
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: preview.key, previewHash: preview.previewHash, requestId: "authorized" }) })).status).toBe(200);
   const [artifact] = await db.select().from(schema.visualArtifacts);
   expect((await app.request(`${root}/evidence/artifact/${artifact!.id}`, { headers })).status).toBe(200);
-  await db.delete(schema.addressRoles).where(eq(schema.addressRoles.roleId, role));
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, role));
   for (const path of [root, "/api/admin/production/games", `${root}/evidence/artifact/${artifact!.id}`]) expect((await app.request(path, { headers })).status).toBe(403);
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: preview.key, previewHash: preview.previewHash, requestId: "revoked" }) })).status).toBe(403);
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(1);

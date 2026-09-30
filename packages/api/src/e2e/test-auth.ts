@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "../__tests__/rbac-fixtures.js";
 /**
  * E2E Test Auth Helpers
  *
@@ -92,16 +93,16 @@ export async function assignRole(
   }
 
   const existing = await db
-    .select({ walletAddress: schema.addressRoles.walletAddress })
-    .from(schema.addressRoles)
+    .select({ walletAddress: schema.userRoles.userId })
+    .from(schema.userRoles)
     .where(
-      sql`${schema.addressRoles.walletAddress} = ${opts.walletAddress.toLowerCase()} AND ${schema.addressRoles.roleId} = ${role.id}`,
+      sql`${schema.userRoles.userId} = ${testUserIdForWallet(opts.walletAddress)} AND ${schema.userRoles.roleId} = ${role.id}`,
     );
 
   if (existing.length === 0) {
-    await db.insert(schema.addressRoles)
+    await db.insert(schema.userRoles)
       .values({
-        walletAddress: opts.walletAddress.toLowerCase(),
+        userId: testUserIdForWallet(opts.walletAddress.toLowerCase()),
         roleId: role.id,
         grantedBy: "e2e-test",
       });
