@@ -9,8 +9,7 @@
  *   bun run simulate:werewolf:api
  * API defaults: six House characters, one wolf, low reasoning, ten-day safety cap.
  * Original Werewolf speech prints immediately; --transcript adds production notes
- * and turn positions. No House rewrite or --summaries mode. --response-rounds
- * accepts 1–3, default one; readback makes no model calls.
+ * and turn positions. No House rewrite or --summaries mode; readback makes no model calls.
  * Ballots, survivors and results print and append to a unique report
  * under engine/docs/simulations. Use --max-days 2 only for a short smoke run.
  * Its --game ID_OR_SLUG option watches an existing game without starting another.
@@ -19,16 +18,33 @@
  * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
  * JSON and --chatty records contain private roles, strategies, and thinking.
  * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
+ * Aggressor defaults preserve confrontational temperament and possible overcommitment;
+ * evaluate faction benefit as well as survival when inspecting new-game behavior.
+ * Seer/Doctor receive private role coaching alongside those notes; evaluate full
+ * games for reveal ledgers and hidden protection. Villagers weigh claimed Seer
+ * results with explicit reasons to reconsider; Wolf guidance is unchanged.
+ * Shared Seer timing guidance counts completed public nights: one check per night,
+ * no daytime checks, and no extra results from additional discussion threads.
+ * Daytime passing guidance favors null text over repetition or agreement; measure
+ * voluntary passes separately from provider-unavailable fallbacks.
  * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
  * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
  * Pack negotiation allows three proposal/sealed-ballot attempts with unanimous
  * agreement, seeded nightly initiative, and swapped initiative after failure.
  * Three disagreements mean no attack; Doctor/Seer still act once. API Omniscient
  * reports show each resolved pack ballot; Mystery never receives those ballots.
- * Werewolf uses seeded daily initiative and sequential public threads. Every living
- * player opens once; others reply/pass, then the opener answers the group. An opening
- * pass skips its thread; an all-pass response round closes that thread. Each accepted
- * original line is public before the next call; the engine appends a turn reminder.
+ * Werewolf rotates a once-seeded opening ring across nights, skipping eliminated seats.
+ * Each living player opens at most once per day, choosing 0–3 ordered recipients before
+ * a seeded random open floor. Each spoken reply offers an opener answer; passes skip it.
+ * Publish each original contribution before the next call, with a final turn reminder.
+ * Earlier threads end with sealed target-or-abstain majority checkpoints. The final
+ * thread uses mandatory-target plurality: unique most votes wins; ties spare everyone.
+ * Reports distinguish vote modes; provider failures are marked unavailable abstentions.
+ * Daytime requests add a separate final task: reply to the opener's quoted latest
+ * message or pass; opener answers quote the prior respondent and name the next possible speaker.
+ * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
+ * counts as live spectator telemetry, separate from public history and player context.
+ * Choices and private reasoning stay sealed until the full checkpoint resolves.
  * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).

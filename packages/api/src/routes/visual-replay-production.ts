@@ -1,3 +1,4 @@
+import { readWerewolfScenePreview } from "../services/werewolf-production.js";
 import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
@@ -31,6 +32,12 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
   app.use(`${root}/*`, requireAuth(db), producer);
   app.get(`${root}/games`, async c => c.json(await listReplayVisualGames(db)));
   app.get(`${root}/games/:id/visual`, async c => c.json(await readReplayVisualProduction(db, c.req.param("id"))));
+  app.get(`${root}/games/:id/visual/scenes/:scene/preview`, async c => {
+    const [game] = await db.select().from(schema.games).where(and(eq(schema.games.id, c.req.param("id")), eq(schema.games.gameKind, "werewolf")));
+    if (!game) return c.json({ error: "Werewolf game not found" }, 404);
+    const preview = await readWerewolfScenePreview(db, game.id, c.req.param("scene"));
+    return preview ? c.json(preview) : c.json({ error: "Scene not found" }, 404);
+  });
   app.post(`${root}/games/:id/visual/missing`, async c => {
     let value: unknown;
     try { value = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }

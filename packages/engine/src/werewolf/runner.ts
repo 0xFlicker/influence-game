@@ -18,20 +18,22 @@ export interface WerewolfStore {
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
+  if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
+  if (request.action === "vote") return { kind: "target", targetId: null, thinking: "" };
   if (!request.legalTargetIds.length) return { kind: "speech", cue: null, text: null };
   const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "fallback", sequence: state.sequence + 1 }));
   const choices = [...request.legalTargetIds].sort();
   return { kind: "target", targetId: choices[Math.floor(random() * choices.length)]!, thinking: "" };
 }
 
-/** Concurrent pack ballots use one frozen observation. Private commitments recover separately;
+/** Concurrent sealed ballots use one frozen observation. Private commitments recover separately;
  * the deterministic reveal publishes the complete batch as one public entry. */
 export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent, signal?: AbortSignal): Promise<WerewolfState> {
   signal?.throwIfAborted();
   const state = replayWerewolf(await store.read());
   const step = nextWerewolfStep(state);
   if (step.kind === "complete") return state;
-  if (step.kind === "action" && step.request.action === "attack") {
+  if (step.kind === "action" && (step.request.action === "attack" || step.request.action === "vote")) {
     const plans = werewolfActionPlans(state);
     for (const plan of plans) await store.prepare?.(state, plan.request, plan.sequence);
     signal?.throwIfAborted();

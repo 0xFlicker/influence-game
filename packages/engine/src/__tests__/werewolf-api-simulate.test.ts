@@ -40,17 +40,22 @@ async function fixture(disagree = false) {
         const wolves = state.aliveIds.filter(id => state.roles[id] === "werewolf");
         return { kind: "target", targetId: request.legalTargetIds[wolves.indexOf(request.actorId)]!, thinking: "PRIVATE_THINKING" };
       }
+      if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
+      if (request.action === "vote" && request.voteMode === "plurality") {
+        const alive = replayWerewolf(events).aliveIds;
+        return { kind: "target", targetId: alive[(alive.indexOf(request.actorId) + 1) % alive.length]!, thinking: "" };
+      }
       return request.legalTargetIds.length ? werewolfFallback(replayWerewolf(events), request)
         : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "SECRET_PACK" : "Compare the claims." };
     },
   });
-  return { initial, final };
+  return { initial, final, events };
 }
 
 describe("Werewolf API simulation", () => {
   test("defaults to a full match with a safety cap and rejects invalid configuration before dispatch", () => {
-    expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, responseRounds: 1, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
-    for (const args of [["--preset", "unknown"], ["--max-days", "0"], ["--max-days", "21"], ["--audience", "player"], ["--agent", "same", "--agent", "same"], ["--timeout-seconds", "NaN"], ["--api-url", "https://example.com"], ["--game", ""], ["--unknown"], ["--summaries"], ["--response-rounds", "0"], ["--response-rounds", "4"]]) expect(() => parseWerewolfApiArgs(args, {})).toThrow();
+    expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
+    for (const args of [["--preset", "unknown"], ["--max-days", "0"], ["--max-days", "21"], ["--audience", "player"], ["--agent", "same", "--agent", "same"], ["--timeout-seconds", "NaN"], ["--api-url", "https://example.com"], ["--game", ""], ["--unknown"], ["--summaries"], ["--response-rounds", "1"], ["--response-rounds", "0"], ["--response-rounds", "4"]]) expect(() => parseWerewolfApiArgs(args, {})).toThrow();
     expect(parseWerewolfApiArgs(["--preset", "two_wolves", "--agent", "owned-1", "--agent", "owned-2"], {}).agentProfileIds).toEqual(["owned-1", "owned-2"]);
   });
 
@@ -109,7 +114,7 @@ describe("Werewolf API simulation", () => {
     const result = await runWerewolfApiSimulation(runArgs(["--game", "report-slug", "--audience", "omniscient", "--transcript"]), { log: () => {} });
     expect(result.report).toContain("Day 1 · thread 1");
     expect(result.report).toContain("[opening · turn 1]");
-    expect(result.report).toContain("[answer 1");
+    expect(result.report).toContain("[answer · turn");
     expect(count).toBe(1);
     expect(result.report).toContain("SECRET_PACK");
     expect(result.report).toContain("Compare the claims.");
@@ -199,6 +204,52 @@ describe("Werewolf API simulation", () => {
     expect(report).not.toContain("Result:");
   });
 
+  test("live ballot readiness changes without public events, heartbeats stay informative, and reveal remains once", async () => {
+    const { events, final } = await fixture();
+    const boundary = events.findIndex(event => event.type === "werewolf.phase_started" && event.payload.phase === "vote");
+    const state = replayWerewolf(events.slice(0, boundary + 1));
+    const view = projectWerewolfView(state, "mystery");
+    const total = state.aliveIds.length;
+    const counts = [0, 3, 3, 3, total];
+    let polls = 0, now = 0;
+    globalThis.fetch = Object.assign(async () => {
+      const ready = counts[polls++];
+      return Response.json(ready === undefined
+        ? { slug: "report-slug", status: "completed", view: projectWerewolfView(final, "mystery"), voteProgress: null }
+        : { slug: "report-slug", status: "in_progress", view, voteProgress: {
+          kind: "day_vote", voteMode: "majority", day: 1, thread: 1, total, ready, requiredVotes: Math.floor(total / 2) + 1,
+        } });
+    }, { preconnect: originalFetch.preconnect });
+    const { report } = await runWerewolfApiSimulation(runArgs(["--game", "report-slug", "--transcript"]), {
+      now: () => now, sleep: async () => { now += 15_000; }, log: () => {},
+    });
+    const updates = report.split("\n").filter(line => line.startsWith("[Voting"));
+    expect(updates).toHaveLength(4);
+    expect(updates[0]).toContain(`0/${total} decisions ready`);
+    expect(updates[1]).toContain(`3/${total} decisions ready`);
+    expect(updates[2]).toContain("[Voting 45s]");
+    expect(updates[2]).toContain("ballots sealed");
+    expect(report).toContain("Choices reveal together; no public speech during voting");
+    expect(report.match(/\[Vote\]/g)).toHaveLength(1);
+    expect(updates[3]).toContain("All decisions ready; committing ballots and resolving");
+    expect(updates.join("\n")).not.toMatch(/Player|Abstain|PRIVATE_THINKING|SECRET_PACK/);
+    expect(report.indexOf("All decisions ready")).toBeLessThan(report.indexOf("Ballots:"));
+    expect(report.match(/  Ballots:/g)).toHaveLength(final.history.filter(entry => entry.kind === "vote").length);
+    expect(report.match(/Result:/g)).toHaveLength(1);
+    expect(report).not.toContain("no new public update yet");
+  });
+
+  test("rejects inconsistent live counts rather than displaying fabricated progress", async () => {
+    const { events } = await fixture();
+    const boundary = events.findIndex(event => event.type === "werewolf.phase_started" && event.payload.phase === "vote");
+    const state = replayWerewolf(events.slice(0, boundary + 1));
+    globalThis.fetch = Object.assign(async () => Response.json({ slug: "report-slug", status: "in_progress",
+      view: projectWerewolfView(state, "mystery"), voteProgress: { kind: "day_vote", voteMode: "majority", day: 1, thread: 1,
+        total: state.aliveIds.length, ready: state.aliveIds.length + 1, requiredVotes: Math.floor(state.aliveIds.length / 2) + 1 } }),
+    { preconnect: originalFetch.preconnect });
+    await expect(runWerewolfApiSimulation(runArgs(["--game", "report-slug"]), { log: () => {} })).rejects.toThrow("Invalid Werewolf vote progress");
+  });
+
   test("an existing report is never overwritten and prevents game creation", async () => {
     const args = runArgs();
     await writeFile(args.out, "Previous game");
@@ -224,7 +275,7 @@ describe("Werewolf API simulation", () => {
     const view = projectWerewolfView(final, "omniscient");
     for (const [text, unavailable] of [["A claim.", false], [null, false], [null, true]] as const) {
       const entry: WerewolfPublicEntry = { kind: "discussion", day: 1, contribution: {
-        thread: 1, openerId: "p0", stage: "reply", responseRound: 1, turn: 2, publicHistoryPosition: 10,
+        thread: 1, openerId: "p0", stage: "reply", recipientIds: [], replyToTurn: null, nextSpeakerId: null, turn: 2, publicHistoryPosition: 10,
         actorId: "p1", text, cue: unavailable ? null : "A brittle laugh.", unavailable,
       } };
       expect(werewolfReportEntry(entry, view)).toContain(`Player 1 [${final.roles.p1}]: ${unavailable ? "[unavailable]" : text ?? "[pass]"}`);

@@ -11,28 +11,27 @@ export const WEREWOLF_PRESETS = {
   two_wolves: { label: "Two wolves", players: 8, roles: ["werewolf", "werewolf", "seer", "doctor", "villager", "villager", "villager", "villager"] },
 } as const;
 
-export const WEREWOLF_MAX_RESPONSE_ROUNDS = 3;
+export const WEREWOLF_MAX_RECIPIENTS = 3;
 export const WEREWOLF_PACK_ATTEMPTS = 3;
 
 export class WerewolfRulesVersionError extends Error {
-  constructor() { super("This game uses an unsupported Werewolf rules version. Start a new game to use sequential public threads (rules v5)."); }
+  constructor() { super("This game uses an unsupported Werewolf rules version. Start a new game to use ordered recipient threads (rules v7)."); }
 }
 
 export const WEREWOLF_RULES = `Werewolf is a fictional social deduction game. Win with your faction, even if you die.
 Wolves know their partners and must unanimously choose one living non-wolf to attack. Each night allows at most three attempts. On each attempt, each living wolf gets one optional sequential proposal, then all living wolves submit sealed attack ballots together. A seeded opening speaker is chosen each night; the speaking order reverses after each disagreement. Proposals may pass with null text. The observation shows the attempt, speaking order, and previously revealed ballots. Current ballots remain hidden until all are committed. Agreement locks the attack; disagreement reveals every ballot only to the pack and starts another attempt. After three disagreements, the pack makes no attack that night. A lone living wolf skips proposals and selects a target with one ballot.
-The Seer privately learns whether one other living player is a wolf. The Doctor protects any living player, including themself, but cannot protect the same player on consecutive nights.
+The Seer investigates exactly one other living player per night and privately learns whether that player is a wolf when the night resolves. There are no daytime investigations. Before night one resolves there are no results; during day one there can be at most one result (from night one), during day two at most two results, and during day N at most N results. Another daytime thread, reply, speech turn, or vote does not grant another investigation. A second result cannot arrive before night two resolves; do not demand it during day one. Asking about a future investigation plan is different from asking for an already completed result. A claimant may disclose fewer results than this maximum, and a dead Seer cannot obtain or communicate later results. The Doctor protects any living player, including themself, but cannot protect the same player on consecutive nights.
 All night choices use the same starting roster and resolve together. Protection prevents the attack, including when the Doctor is attacked. The Seer's result is recorded even if the Seer dies, but dead players cannot communicate it.
-Everyone introduces themself before the first night. Each day rolls a seeded initiative order among living players. Each player gets one opening thread in that order. The opener makes one short statement or question. Every other living player, in initiative order, then speaks or passes once. The opener gets one answer to the group, not an answer to every person. The configured one-to-three response rounds repeat this reply order and opener answer; an all-pass response round ends that thread early. After everyone has had an opening, the village votes.
+Everyone introduces themself before the first night. A seeded opening order is rolled once for the whole game. It rotates round robin across days, skipping dead players; each living player gets at most one opening per day. An opener supplies a short statement or question and an ordered list of zero to three distinct other living recipients. Those recipients respond in that order, then the rest of the room responds in a seeded random order fixed for this thread. Each respondent gets one Speak or Pass. After each spoken response, the opener gets one Speak or Pass replying to that response and is told who may speak next. A respondent's Pass skips the opener's answer. Addressing someone does not change the queue. There are no repeated response rounds. After each thread, including a skipped opening, a fresh sealed ballot is held.
 Each contribution is accepted and public before the next turn starts. Respond to the conversation as it exists now; there are no future replies, simultaneous batches or recursive branches. Make one conversational move, usually one sentence and roughly 10–30 words: ask a pointed question, answer, challenge, defend yourself, or state a changed position. Do not recap the room or repeat your point. Pass with null text when you have nothing useful to add. A speech or pass may include an optional short production cue describing observable acting or feeling, never extra dialogue, secret strategy or directions to another model. Cues do not change the schedule. An opening pass forfeits that thread. Provider-unavailable silence is marked separately. False role claims and invented investigation stories are legal speech, never certified facts.
-Living players then vote for one other living player. Ballots are revealed together. A unique highest count eliminates that player; a tied highest count eliminates nobody. There is no abstention or self-vote.
+After earlier threads, all living players submit sealed ballots: choose one other living player to eliminate now, or null to hear more (an abstention). More than half of ALL living players must choose the same target; abstentions count in the denominator. A strict majority ends the day immediately, skipping remaining threads and without another vote. Otherwise the next opening begins. After the final opening, everyone MUST choose another living player: null is not a legal model choice. This final ballot uses plurality: the unique highest vote count eliminates that player, even without a majority. A tie for highest means no village elimination. Then normal night actions follow. Reveal all ballots together. Each checkpoint is fresh; votes never carry forward. Self-votes are illegal. A provider-unavailable ballot is recorded as an unavailable abstention, even at the final vote; it is not a player choice.
 Death removes all speaking, voting and night actions. Roles remain secret until game end. There are no final words, whispers, jury, empowerment, role changes, or resurrection.
 The village wins when no wolves remain. Wolves win when living wolves equal or outnumber living non-wolves. Check victory after the entire night or day resolution. The day limit is a draw if neither faction has won.`;
 
-export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, responseRounds = 1): WerewolfConfig {
+export function werewolfConfig(preset: WerewolfPreset, maxDays = 10): WerewolfConfig {
   if (!Object.hasOwn(WEREWOLF_PRESETS, preset)) throw new Error("Unknown Werewolf preset");
   if (!Number.isInteger(maxDays) || maxDays < 1 || maxDays > 20) throw new Error("Werewolf maxDays must be an integer from 1 to 20");
-  if (!Number.isInteger(responseRounds) || responseRounds < 1 || responseRounds > WEREWOLF_MAX_RESPONSE_ROUNDS) throw new Error("Werewolf responseRounds must be an integer from 1 to 3");
-  return { rulesVersion: 5, preset, maxDays, responseRounds };
+  return { rulesVersion: 7, preset, maxDays };
 }
 
 function same(left: unknown, right: unknown): boolean {
@@ -47,8 +46,8 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string): Record<string, WerewolfRole> {
-  if (config.rulesVersion !== 5) throw new WerewolfRulesVersionError();
-  const validConfig = werewolfConfig(config.preset, config.maxDays, config.responseRounds);
+  if (config.rulesVersion !== 7) throw new WerewolfRulesVersionError();
+  const validConfig = werewolfConfig(config.preset, config.maxDays);
   if (!same(config, validConfig)) throw new Error("Invalid Werewolf rules configuration");
   if (players.length !== WEREWOLF_PRESETS[config.preset].players) throw new Error("Werewolf roster does not match preset");
   if (!seed || new Set(players.map((p) => p.id)).size !== players.length) throw new Error("Werewolf requires a seed and distinct seat IDs");
@@ -101,28 +100,29 @@ function requests(state: WerewolfState): WerewolfRequest[] {
     ];
     case "day": {
       const discussion = state.discussion;
-      if (!discussion || discussion.ended) return [];
+      if (!discussion || discussion.ended || discussion.checkpointPending) return [];
       const opener = discussion.initiativeIds[discussion.threadIndex]!;
-      const actor = discussion.stage === "reply" ? discussion.initiativeIds.filter(id => id !== opener)[discussion.respondentIndex]! : opener;
-      return speech([actor], "discuss");
+      const actor = discussion.stage === "reply" ? discussion.respondentIds[discussion.respondentIndex]! : opener;
+      return discussion.stage === "opening"
+        ? [{ actorId: actor, action: "open_thread", legalTargetIds: [], legalRecipientIds: alive.filter(id => id !== actor) }]
+        : speech([actor], "discuss");
     }
-    case "vote": return alive.map((actorId) => ({ actorId, action: "vote", legalTargetIds: alive.filter((id) => id !== actorId) }));
+    case "vote": return alive.map((actorId) => ({ actorId, action: "vote", voteMode: werewolfVoteMode(state), legalTargetIds: alive.filter((id) => id !== actorId) }));
     case "complete": return [];
   }
 }
 
-/** Only pack attack ballots reserve a concurrent batch; public turns commit sequentially. */
+/** Sealed pack and day ballots reserve concurrent batches; public speech stays sequential. */
 export function werewolfActionPlans(state: WerewolfState): Array<{ sequence: number; request: WerewolfRequest }> {
   if (state.outcome) return [];
   const pending = requests(state).slice(state.phase === "day" ? 0 : state.actions.length);
-  return (pending[0]?.action === "attack" ? pending : pending.slice(0, 1))
+  return (pending[0]?.action === "attack" || pending[0]?.action === "vote" ? pending : pending.slice(0, 1))
     .map((request, index) => ({ sequence: state.sequence + index + 1, request }));
 }
 
-/** Roll once at dawn from only the living roster and the public day. */
-export function werewolfDayInitiative(state: WerewolfState): string[] {
-  const order = [...state.aliveIds].sort();
-  const random = seededRandom(hashCanonicalJson({ seed: state.seed, purpose: "day_initiative", day: state.day }));
+function shuffled(ids: readonly string[], seed: string, purpose: string, day = 0, thread = 0): string[] {
+  const order = [...ids].sort();
+  const random = seededRandom(hashCanonicalJson({ seed, purpose, day, thread }));
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [order[i], order[j]] = [order[j]!, order[i]!];
@@ -130,55 +130,81 @@ export function werewolfDayInitiative(state: WerewolfState): string[] {
   return order;
 }
 
+/** Rotate the once-shuffled ring from the durable cursor, then omit dead seats. */
+export function werewolfDayInitiative(state: WerewolfState): string[] {
+  return [...state.openingOrderIds.slice(state.openingCursor), ...state.openingOrderIds.slice(0, state.openingCursor)]
+    .filter(id => state.aliveIds.includes(id));
+}
+
+export function werewolfVoteMode(state: WerewolfState): "majority" | "plurality" {
+  if (!state.discussion?.checkpointPending) throw new Error("Missing day vote checkpoint");
+  return state.discussion.threadIndex === state.discussion.initiativeIds.length ? "plurality" : "majority";
+}
+
 function newThread(initiativeIds: string[], threadIndex: number): WerewolfDiscussion {
-  return { initiativeIds, threadIndex, stage: "opening", responseRound: 0, respondentIndex: 0, turn: 0,
-    openingText: null, latestStatement: null, roundHadSpeech: false, ended: threadIndex >= initiativeIds.length };
+  return { initiativeIds, threadIndex, stage: "opening", recipientIds: [], respondentIds: [], respondentIndex: 0, turn: 0,
+    openingText: null, latestStatement: null, checkpointPending: false, ended: threadIndex >= initiativeIds.length };
 }
 
 /** This reminder is a rules projection, never an inferred intent or reply target. */
 export function werewolfTurnReminder(state: WerewolfState, actorId: string): WerewolfTurnReminder | null {
   const d = state.discussion;
-  if (state.phase !== "day" || !d || d.ended) return null;
+  if (state.phase !== "day" || !d || d.ended || d.checkpointPending) return null;
   const index = d.initiativeIds.indexOf(actorId);
   if (index < 0) return null;
-  const respondents = d.initiativeIds.filter(id => id !== d.initiativeIds[d.threadIndex]);
-  const hasCurrentOpportunity = index === d.threadIndex || d.stage === "reply" && respondents.indexOf(actorId) >= d.respondentIndex;
-  return { thread: d.threadIndex + 1, totalThreads: d.initiativeIds.length, openerId: d.initiativeIds[d.threadIndex]!,
+  const openerId = d.initiativeIds[d.threadIndex]!;
+  const remaining = d.respondentIds.length - d.respondentIndex;
+  const respondentIndex = d.respondentIds.indexOf(actorId);
+  const canStillRespond = d.stage === "opening" || respondentIndex > d.respondentIndex
+    || respondentIndex === d.respondentIndex && d.stage === "reply";
+  return { thread: d.threadIndex + 1, totalThreads: d.initiativeIds.length, openerId,
     openingStatement: d.openingText, latestStatement: d.latestStatement ? { ...d.latestStatement } : null,
-    stage: d.stage, responseRound: d.responseRound, maxResponseRounds: state.config.responseRounds,
+    stage: d.stage, recipientIds: [...d.recipientIds], respondentIds: [...d.respondentIds],
+    nextSpeakerId: d.stage === "opening" ? null : d.respondentIds[d.respondentIndex + 1] ?? null,
     hasUsedOwnOpening: index < d.threadIndex || index === d.threadIndex && d.stage !== "opening",
-    remainingOpportunitiesThisThread: d.stage === "opening" ? state.config.responseRounds + (index === d.threadIndex ? 1 : 0)
-      : state.config.responseRounds - d.responseRound + (hasCurrentOpportunity ? 1 : 0) };
+    remainingOpportunitiesThisThread: actorId === openerId ? (d.stage === "opening" ? state.aliveIds.length : remaining)
+      : canStillRespond ? 1 : 0 };
+}
+
+function closeThread(state: WerewolfState, discussion: WerewolfDiscussion): void {
+  const openerId = discussion.initiativeIds[discussion.threadIndex]!;
+  state.openingCursor = (state.openingOrderIds.indexOf(openerId) + 1) % state.openingOrderIds.length;
+  state.discussion = { ...newThread(discussion.initiativeIds, discussion.threadIndex + 1), checkpointPending: true };
+}
+
+function advanceRespondent(state: WerewolfState, d: WerewolfDiscussion): void {
+  d.respondentIndex++;
+  if (d.respondentIndex === d.respondentIds.length) closeThread(state, d);
+  else d.stage = "reply";
 }
 
 function acceptDiscussion(state: WerewolfState, action: WerewolfAcceptedAction): void {
   const d = state.discussion;
-  if (!d || d.ended || action.decision.kind !== "speech") throw new Error("Missing discussion turn");
+  if (!d || d.ended || action.decision.kind === "target") throw new Error("Missing discussion turn");
   const { text, cue } = action.decision;
+  if (action.decision.kind === "opening" && text !== null) {
+    d.recipientIds = [...action.decision.recipientIds];
+    d.respondentIds = [...d.recipientIds, ...shuffled(state.aliveIds.filter(id => id !== action.actorId && !d.recipientIds.includes(id)),
+      state.seed, "thread_floor", state.day, d.threadIndex)];
+  }
   const contribution: WerewolfDiscussionTurn = { thread: d.threadIndex + 1, openerId: d.initiativeIds[d.threadIndex]!,
-    stage: d.stage, responseRound: d.responseRound, turn: d.turn + 1,
+    stage: d.stage, recipientIds: [...d.recipientIds], turn: d.turn + 1,
+    replyToTurn: d.stage === "answer" ? d.turn : null,
+    nextSpeakerId: d.stage === "opening" ? d.respondentIds[0] ?? null : d.respondentIds[d.respondentIndex + 1] ?? null,
     publicHistoryPosition: state.history.filter(entry => entry.kind !== "pack_vote" && (entry.kind !== "speech" || entry.audience === "public")).length + 1,
     actorId: action.actorId, text, cue, unavailable: action.fallback !== null };
   state.history.push({ kind: "discussion", day: state.day, contribution });
   d.turn++;
   if (text !== null) d.latestStatement = { actorId: action.actorId, text };
   if (d.stage === "opening") {
-    if (text === null) { state.discussion = newThread(d.initiativeIds, d.threadIndex + 1); return; }
-    d.openingText = text; d.stage = "reply"; d.responseRound = 1;
-    return;
-  }
-  if (text !== null) d.roundHadSpeech = true;
-  if (d.stage === "reply") {
-    d.respondentIndex++;
-    if (d.respondentIndex === d.initiativeIds.length - 1) d.stage = "answer";
-    return;
-  }
-  if (!d.roundHadSpeech || d.responseRound === state.config.responseRounds) state.discussion = newThread(d.initiativeIds, d.threadIndex + 1);
-  else { d.responseRound++; d.stage = "reply"; d.respondentIndex = 0; d.roundHadSpeech = false; }
+    if (text === null) closeThread(state, d);
+    else { d.openingText = text; d.stage = "reply"; }
+  } else if (d.stage === "reply" && text !== null) d.stage = "answer";
+  else advanceRespondent(state, d);
 }
 
 function targets(state: WerewolfState, action: WerewolfRequest["action"]): Array<{ actorId: string; targetId: string }> {
-  return state.actions.flatMap((a) => a.action === action && a.decision.kind === "target"
+  return state.actions.flatMap((a) => a.action === action && a.decision.kind === "target" && a.decision.targetId !== null
     ? [{ actorId: a.actorId, targetId: a.decision.targetId }] : []);
 }
 
@@ -203,19 +229,27 @@ function nightResult(state: WerewolfState): WerewolfNightResult {
 }
 
 function dayResult(state: WerewolfState): WerewolfDayResult {
-  const ballots = targets(state, "vote").map(({ actorId, targetId }) => ({ voterId: actorId, targetId }));
-  const totals: Record<string, number> = Object.fromEntries(state.aliveIds.map((id) => [id, 0]));
-  for (const ballot of ballots) totals[ballot.targetId] = (totals[ballot.targetId] ?? 0) + 1;
+  if (!state.discussion?.checkpointPending) throw new Error("Missing day vote checkpoint");
+  const ballots = state.actions.flatMap(a => a.action === "vote" && a.decision.kind === "target"
+    ? [{ voterId: a.actorId, targetId: a.decision.targetId, unavailable: a.fallback !== null }] : []);
+  if (ballots.length !== state.aliveIds.length) throw new Error("Incomplete day ballot");
+  const totals: Record<string, number> = Object.fromEntries(state.aliveIds.map(id => [id, 0]));
+  for (const ballot of ballots) if (ballot.targetId !== null) totals[ballot.targetId] = (totals[ballot.targetId] ?? 0) + 1;
+  const voteMode = werewolfVoteMode(state);
+  const requiredVotes = voteMode === "majority" ? Math.floor(state.aliveIds.length / 2) + 1 : null;
   const highest = Math.max(...Object.values(totals));
-  const leaders = state.aliveIds.filter((id) => totals[id] === highest);
-  return { ballots, totals, tiedIds: leaders.length > 1 ? leaders : [], eliminatedId: leaders.length === 1 ? leaders[0]! : null };
+  const leaders = state.aliveIds.filter(id => totals[id] === highest);
+  const eliminatedId = voteMode === "majority" ? state.aliveIds.find(id => totals[id]! >= requiredVotes!) ?? null
+    : highest > 0 && leaders.length === 1 ? leaders[0]! : null;
+  return { thread: state.discussion.threadIndex, voteMode, ballots, totals, requiredVotes, eliminatedId,
+    dayEnded: eliminatedId !== null || state.discussion.ended };
 }
 
 function outcome(state: WerewolfState): WerewolfOutcome | null {
   const wolves = state.aliveIds.filter((id) => state.roles[id] === "werewolf").length;
   const faction = wolves === 0 ? "village" : wolves * 2 >= state.aliveIds.length ? "wolves" : null;
   if (faction) return { faction, winnerIds: state.players.filter((p) => (state.roles[p.id] === "werewolf") === (faction === "wolves")).map((p) => p.id), reason: faction === "village" ? "wolves_eliminated" : "wolf_parity" };
-  return state.phase === "vote" && state.resolved && state.day >= state.config.maxDays
+  return state.phase === "vote" && state.resolved && state.discussion?.ended && state.day >= state.config.maxDays
     ? { faction: null, winnerIds: [], reason: "day_limit" } : null;
 }
 
@@ -229,26 +263,37 @@ export function nextWerewolfStep(state: WerewolfState): WerewolfStep {
   if (request) return { kind: "action", request };
   if (state.phase === "pack" && state.pack && !state.pack.ended) return { kind: "event", event: { type: "werewolf.pack_vote_resolved", payload: packVoteResult(state) } };
   if (!state.resolved && state.phase === "night") return { kind: "event", event: { type: "werewolf.night_resolved", payload: nightResult(state) } };
-  if (!state.resolved && state.phase === "vote") return { kind: "event", event: { type: "werewolf.day_resolved", payload: dayResult(state) } };
-  const phase = state.phase === "introduction" || state.phase === "vote" ? "pack"
+  if (!state.resolved && state.phase === "vote") return { kind: "event", event: { type: "werewolf.day_vote_resolved", payload: dayResult(state) } };
+  const phase = state.phase === "vote" && !state.discussion?.ended ? "day"
+    : state.phase === "introduction" || state.phase === "vote" ? "pack"
     : state.phase === "pack" ? "night" : state.phase === "night" ? "day" : "vote";
   const day = phase === "pack" ? state.day + 1 : state.day;
   return { kind: "event", event: { type: "werewolf.phase_started", payload: { phase, day } } };
 }
 
 export function validateWerewolfAction(request: WerewolfRequest, action: WerewolfAcceptedAction): void {
-  if (!same(request, { actorId: action.actorId, action: action.action, legalTargetIds: action.legalTargetIds })) throw new Error("Werewolf action does not match the current action slot");
-  if (action.fallback !== null && action.fallback !== "provider_unavailable") throw new Error("Invalid Werewolf fallback");
-  const d = action.decision;
+  const { decision: d, fallback, ...acceptedRequest } = action;
+  if (!same(request, acceptedRequest)) throw new Error("Werewolf action does not match the current action slot");
+  if (fallback !== null && fallback !== "provider_unavailable") throw new Error("Invalid Werewolf fallback");
   if (request.legalTargetIds.length) {
-    if (d.kind !== "target" || typeof d.thinking !== "string" || d.thinking.length > 2000 || !request.legalTargetIds.includes(d.targetId) || !same(Object.keys(d).sort(), ["kind", "targetId", "thinking"])) throw new Error("Illegal Werewolf target decision");
-  } else if (d.kind !== "speech" || (d.text !== null && (typeof d.text !== "string" || !d.text.trim() || d.text.length > 300))
-    || !same(Object.keys(d).sort(), ["cue", "kind", "text"])) throw new Error("Invalid Werewolf speech decision");
-  if (d.kind === "speech") {
-    if (d.cue !== null && (typeof d.cue !== "string" || !d.cue.trim() || d.cue.length > 240)) throw new Error("Invalid Werewolf performance cue");
-    if (action.fallback !== null && (d.text !== null || d.cue !== null)) throw new Error("Unavailable players cannot perform");
+    const nullAllowed = request.action === "vote" && (request.voteMode === "majority" || fallback === "provider_unavailable");
+    if (d.kind !== "target" || typeof d.thinking !== "string" || d.thinking.length > 2000
+      || !(d.targetId === null ? nullAllowed : request.legalTargetIds.includes(d.targetId))
+      || !same(Object.keys(d).sort(), ["kind", "targetId", "thinking"])) throw new Error("Illegal Werewolf target decision");
+    if (request.action === "vote" && fallback !== null && d.targetId !== null) throw new Error("Unavailable voters must abstain");
+    return;
   }
-  if (!same(Object.keys(action).sort(), ["action", "actorId", "decision", "fallback", "legalTargetIds"])) throw new Error("Unexpected Werewolf action fields");
+  const opening = request.action === "open_thread";
+  if (d.kind !== (opening ? "opening" : "speech")
+    || (d.text !== null && (typeof d.text !== "string" || !d.text.trim() || d.text.length > 300))
+    || !same(Object.keys(d).sort(), opening ? ["cue", "kind", "recipientIds", "text"] : ["cue", "kind", "text"])) throw new Error("Invalid Werewolf speech decision");
+  if (d.cue !== null && (typeof d.cue !== "string" || !d.cue.trim() || d.cue.length > 240)) throw new Error("Invalid Werewolf performance cue");
+  if (fallback !== null && (d.text !== null || d.cue !== null)) throw new Error("Unavailable players cannot perform");
+  if (request.action === "open_thread" && d.kind === "opening") {
+    if (!Array.isArray(d.recipientIds) || d.recipientIds.length > WEREWOLF_MAX_RECIPIENTS
+      || new Set(d.recipientIds).size !== d.recipientIds.length || d.recipientIds.some(id => !request.legalRecipientIds.includes(id))
+      || d.text === null && d.recipientIds.length !== 0) throw new Error("Illegal Werewolf recipients");
+  }
 }
 
 /** Validate every prefix on both the live writer and recovery reader. */
@@ -262,6 +307,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     return {
       gameId: event.gameId, sequence: 1, config: structuredClone(config), seed,
       players: structuredClone(players), roles: { ...roles }, aliveIds: players.map((p) => p.id),
+      openingOrderIds: shuffled(players.map(p => p.id), seed, "opening_order"), openingCursor: 0,
       phase: "introduction", day: 0, actions: [], discussion: null, pack: null, resolved: false, previousProtection: null,
       investigations: [], history: [{ kind: "phase", day: 0, phase: "introduction" }], outcome: null,
     };
@@ -278,7 +324,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
   switch (event.type) {
     case "werewolf.started": throw new Error("Duplicate Werewolf setup");
     case "werewolf.action_accepted": {
-      if (event.payload.action === "discuss") { acceptDiscussion(state, event.payload); break; }
+      if ((event.payload.action === "discuss" || event.payload.action === "open_thread")) { acceptDiscussion(state, event.payload); break; }
       state.actions.push(structuredClone(event.payload));
       if (event.payload.decision.kind === "speech" && (event.payload.decision.text !== null || event.payload.decision.cue !== null)) state.history.push({
         kind: "speech", day: state.day, actorId: event.payload.actorId,
@@ -294,7 +340,12 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
       state.resolved = false;
       if (state.phase === "pack") state.pack = { attemptsCompleted: 0, targetId: null, ended: false };
       else if (state.phase !== "night") state.pack = null;
-      state.discussion = state.phase === "day" ? newThread(werewolfDayInitiative(state), 0) : null;
+      if (state.phase === "day") {
+        if (previous.phase === "vote") {
+          if (!state.discussion) throw new Error("Missing continuing discussion");
+          state.discussion.checkpointPending = false;
+        } else state.discussion = newThread(werewolfDayInitiative(state), 0);
+      } else if (state.phase !== "vote") state.discussion = null;
       // The pack and role-action stages share one public night boundary.
       if (state.phase !== "night") state.history.push({ kind: "phase", day: state.day, phase: state.phase === "pack" ? "night" : state.phase });
       break;
@@ -313,8 +364,10 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
       state.history.push({ kind: "night", day: state.day, result: structuredClone(event.payload) });
       break;
     }
-    case "werewolf.day_resolved": {
+    case "werewolf.day_vote_resolved": {
       state.resolved = true;
+      if (!state.discussion) throw new Error("Missing resolved discussion");
+      state.discussion.ended = event.payload.dayEnded;
       if (event.payload.eliminatedId) state.aliveIds = state.aliveIds.filter((id) => id !== event.payload.eliminatedId);
       state.history.push({ kind: "vote", day: state.day, result: structuredClone(event.payload) });
       break;

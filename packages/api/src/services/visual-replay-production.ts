@@ -1,3 +1,4 @@
+import { freezeWerewolfReferences, readWerewolfProduction, WerewolfReferenceError } from "./werewolf-production.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { GameState, Phase, selectActiveJury } from "@influence/engine";
@@ -39,6 +40,7 @@ export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) 
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
   if (!game) throw new ReplayVisualError("Game not found", "game_missing", 404);
   if (game.status !== "completed") throw new ReplayVisualError("Replay image production requires a completed game", "game_not_completed");
+  if (game.gameKind === "werewolf") return readWerewolfProduction(db, gameId, game.slug);
   const [scenes, dialogue, events, media, accounting] = await Promise.all([
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
     db.select({ sequence: schema.transcripts.entrySequence, phase: schema.transcripts.phase, scope: schema.transcripts.scope,
@@ -99,6 +101,14 @@ export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) 
 
 /** Copies saved game-start references; this never generates a new character or background. */
 async function freezeReplayReferences(db: DrizzleDB, gameId: string, participants: Candidate["participants"]) {
+  const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  if (game?.kind === "werewolf") {
+    try { return await freezeWerewolfReferences(db, gameId, participants); }
+    catch (error) {
+      if (error instanceof WerewolfReferenceError) throw new ReplayVisualError(error.message, "references_missing");
+      throw error;
+    }
+  }
   const players = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   const profiles: FrozenVisualProfile[] = players.map(player => {
     const persona = JSON.parse(player.persona) as Record<string, unknown>;

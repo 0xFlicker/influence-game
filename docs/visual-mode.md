@@ -350,3 +350,12 @@ The saved speaker and exact private audience supply the participants. Saved seat
 Portraits sit on a semicircle projected through CSS perspective. Speaker changes rotate the circular cast order toward the camera, bringing the speaker to the front center while projecting the other seats across the visible semicircle. The named bubble points toward that headshot; short landscape frames put speech beside the cast. Seat identities stay stable within the room. Reduced motion snaps to the focused speaker. Measured pages, manual show/hide, pause, speed, seek, fullscreen and canonical format overlays stay on the shared director. Mingle keeps room speech timing even without generated assets.
 
 The one reusable character-free studio asset is `/visual/solo-studio-backdrop.webp`. Its prompt and generation provenance are in [the fallback review](visual-fallback-review.md). No replay operation calls an image provider.
+
+
+## Werewolf production workspace
+
+Completed Werewolf games use the shared media jobs, references, review, immutable versions and publication controls through `/admin/werewolf/[id]/production`. `werewolf-production.ts` derives room membership from Werewolf events; it never constructs an Influence GameState. The lobby contains the living cast; `mingle-1` is the private pack room. Scene boundaries are Werewolf event-prefix positions, and unchanged room rosters reuse images.
+
+References use the game's captured content revision bytes. Missing full-body captures fall back to captured portraits; missing custom captures remain an explicit error. The authenticated framing preview reuses the lobby renderer, preserves any number of good source panels, and shows an individual on a neutral background for uncovered characters. It does not require stitched images. Publication remains **private production only**: Werewolf images and metadata are excluded from public visual DTOs and direct artifact endpoints, including after publication. Existing Influence production retains its public publication behavior.
+
+See [Werewolf operations](werewolf.md#admin-and-production-workspace) for the current role/action matrix. No new visual model, database migration or gameplay hook is required. Deterministic fixture renderers prove job/review/publication and framing integration; they do not evaluate live image quality.

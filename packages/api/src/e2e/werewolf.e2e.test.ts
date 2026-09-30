@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import sharp from "sharp";
+import type { StoredVisualShot } from "@influence/engine/visual-mode";
+import { readReplayVisualProduction, renderMissingReplayScene } from "../services/visual-replay-production.js";
+import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
+import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { resolve } from "node:path";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -41,6 +46,13 @@ async function checkFailedPackNegotiations() {
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const agent: WerewolfAgent = { async decide({ request, observation }) {
+    if (request.action === "vote") {
+      if (request.voteMode === "majority") return { kind: "target", targetId: null, thinking: "Hear more" };
+      const ids = observation.board.players.filter(player => player.alive).map(player => player.id);
+      const choices = [ids[1]!, ids[0]!, ids[0]!, ids[0]!, ids[2]!, ids[1]!, ids[3]!, ids[4]!];
+      return { kind: "target", targetId: choices[ids.indexOf(request.actorId)]!, thinking: "Private final fixture" };
+    }
+    if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
     if (request.action === "attack") {
       const wolves = observation.packIds.toSorted();
       return { kind: "target", targetId: request.legalTargetIds[wolves.indexOf(request.actorId)]!, thinking: "Private fixture" };
@@ -55,6 +67,12 @@ async function checkFailedPackNegotiations() {
     await text(page, "Meet the village");
     await click(page, "Latest");
     await text(page, "Game complete");
+    await text(page, "After thread 1: No majority. Continue discussion.");
+    await text(page, "Abstain (hear more)");
+    await text(page, "Majority required: 5 of 8 living players.");
+    await text(page, "After thread 8:");
+    await text(page, "Final ballot: unique most votes wins; ties spare everyone.");
+    await text(page, "was eliminated. Day ends.");
     expect(await page.evaluate('document.body.innerText.includes("Pack ballot")')).toBe(false);
     await click(page, "Omniscient");
     await text(page, "Meet the village");
@@ -68,6 +86,8 @@ async function checkFailedPackNegotiations() {
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Pack ballot 3/3'))?.scrollIntoView({ block: 'start' })");
     await page.screenshot({ path: "/tmp/werewolf-pack-ballots-mobile.png" });
+    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('After thread 1:'))?.scrollIntoView({ block: 'start' })");
+    await page.screenshot({ path: "/tmp/werewolf-day-checkpoint-mobile.png" });
     await click(page, "Mystery");
     await text(page, "Meet the village");
     await click(page, "Latest");
@@ -114,7 +134,7 @@ test("CLI creates an API Werewolf game and prints original sequential contributi
     expect(report).toContain("[pass]");
     expect(report).toContain("thread 1");
     expect(report).not.toContain("HOUSE ·");
-    expect(report).toContain("[answer 1");
+    expect(report).toContain("[answer · turn");
     expect(report).toContain("Ballots:");
     expect(report).toContain("Alive (5)");
     expect(report.indexOf("Roles revealed:")).toBeGreaterThan(report.indexOf("Result:"));
@@ -203,7 +223,8 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await click(page, "Latest");
     await text(page, "Game complete");
     await text(page, "Thread 1");
-    await text(page, "Answer to the group");
+    await text(page, "Reply to respondent");
+    await text(page, "Invited:");
     await text(page, "Passed.");
     await text(page, "I will compare the claims with today's vote.");
     expect(await page.evaluate('document.body.innerText.includes("Discussion beat")')).toBe(false);
@@ -225,3 +246,80 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
 }, 120_000);
 
 test("failed pack negotiations stay hidden in Mystery and remain understandable in Omniscient", checkFailedPackNegotiations, 60_000);
+
+test("Werewolf admin workspace supports desktop and mobile cost, activity, production and visibility journeys", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
+  const claim = await claimWerewolfGame(database.db, game.id); if (!claim.ok) throw new Error(claim.error);
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { async decide({ request }) {
+    if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Waits", recipientIds: [] };
+    return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private decision" } : { kind: "speech", text: "A short contribution", cue: null };
+  } });
+  const [producer] = await database.db.select().from(schema.roles).where(eq(schema.roles.name, "producer"));
+  if (!producer) throw new Error("Producer role missing");
+  await database.db.insert(schema.addressRoles).values({ walletAddress: admin.wallet.address.toLowerCase(), roleId: producer.id }).onConflictDoNothing();
+  const inventory = await readReplayVisualProduction(database.db, game.id);
+  const lobby = inventory.scenes.find(scene => scene.roomId === "lobby")!;
+  await renderMissingReplayScene(database.db, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
+  const job = await claimVisualMediaJob(database.db, "browser-fixture");
+  if (!job) throw new Error("Fixture render job missing");
+  const groups: StoredVisualShot[] = [], groupImageUrls: string[] = [];
+  for (let i = 0; i < 3; i++) {
+    const members = job.plan.cast.slice(i * 2, i * 2 + 2);
+    const bytes = await sharp(Buffer.from(`<svg width="640" height="360"><rect width="640" height="360" fill="${["#28382b", "#394059", "#593939"][i]}"/><text x="30" y="170" fill="white" font-size="25">Fixture panel ${i + 1}</text></svg>`)).png().toBuffer();
+    groupImageUrls.push(`data:image/png;base64,${bytes.toString("base64")}`);
+    const artifactId = await storeVisualArtifact(database.db, game.id, bytes);
+    groups.push({ imageArtifactId: artifactId, annotatedArtifactId: artifactId, participantIds: members.map(p => p.id), visibleParticipantIds: members.map(p => p.id), pointers: [], anchors: members.map((p, index) => ({ playerId: p.id, label: index + 1, confidence: "clear", head: { x: .2 + .4 * index, y: .2, width: .12, height: .18 } })) });
+  }
+  await executeVisualMediaJob(database.db, job, new AbortController().signal, async () => ({ imageArtifactId: groups[0]!.imageArtifactId, localization: { count: 6, verifiedParticipantIds: groups.flatMap(g => g.visibleParticipantIds), anchors: [] }, shots: { mode: "groups", overview: null, groups } }));
+  const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/admin/werewolf?q=${game.slug}&status=completed`, { privateKey: admin.wallet.privateKey });
+  try {
+    await page.setViewport({ width: 1440, height: 1000 });
+    await text(page, game.slug);
+    await page.click(`a[href^="/admin/werewolf/${game.id}?"]`);
+    await text(page, "Game overview"); await text(page, "RULES V7");
+    expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
+    await page.screenshot({ path: "/tmp/werewolf-admin-desktop.png", fullPage: true });
+    await page.click(`nav[aria-label="Game workspace"] a[href*="/costs"]`);
+    await text(page, "Gameplay spending"); await text(page, "Production spending");
+    await page.setViewport({ width: 390, height: 844 });
+    await page.waitForSelector('label select', { visible: true });
+    await page.select('select', 'activity');
+    await text(page, "Game activity"); await text(page, "A short contribution");
+    await page.select('select', 'production');
+    await text(page, "Village lobby"); await text(page, "Private pack room"); await page.waitForSelector('[aria-label="Character coverage"]');
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.click("article > details > summary");
+    await page.waitForSelector('[aria-label="Character framing preview"] img');
+    await page.select('select[aria-label="Frame character"]', job.plan.cast[4]!.id);
+    await page.waitForFunction(`Array.from(document.querySelectorAll('[aria-label="Character framing preview"] img')).some(image => image.complete && image.src === ${JSON.stringify(groupImageUrls[2])})`);
+    await page.select('select[aria-label="Frame character"]', job.plan.cast[7]!.id);
+    await page.waitForSelector('img[alt$="portrait fallback"]');
+    await page.screenshot({ path: "/tmp/werewolf-admin-production-mobile.png", fullPage: true });
+    await click(page, "Versions and review");
+    await text(page, "3 group shots");
+    await click(page, "Correct images");
+    await text(page, "Save reviewed version");
+    for (const group of groups) {
+      await page.select('select[aria-label="Saved picture"]', `artifact:${group.imageArtifactId}`);
+      await click(page, "Use as group shot");
+    }
+    await click(page, "Save reviewed version");
+    await text(page, "Review saved. Publish this version when ready.");
+    await click(page, "Publish for private production");
+    await text(page, "Published to private Werewolf production");
+    await page.select('select', 'overview'); await text(page, "Game overview");
+    await click(page, "Hide game"); await text(page, "Restore listing");
+    expect((await database.db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.hiddenAt).not.toBeNull();
+    await click(page, "Restore listing"); await text(page, "Hide game");
+    await page.select('select', 'costs'); await text(page, "Gameplay spending");
+    await page.screenshot({ path: "/tmp/werewolf-admin-costs-mobile.png", fullPage: true });
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.click('a[href^="/admin/werewolf?"]');
+    await text(page, game.slug);
+    expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
+  } catch (error) {
+    await page.screenshot({ path: "/tmp/werewolf-admin-failure.png", fullPage: true });
+    console.error("Admin browser failure", page.url(), await page.evaluate("document.body.innerText"));
+    throw error;
+  } finally { await page.close(); }
+}, 90_000);

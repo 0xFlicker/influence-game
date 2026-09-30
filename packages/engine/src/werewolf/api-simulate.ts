@@ -3,11 +3,14 @@
  * Launch/watch API-backed Werewolf and render a text report without extra model calls.
  * Defaults to a six-player match with a ten-day safety cap and a saved live report.
  * Original contributions print as accepted. --transcript adds production notes
- * and turn coordinates. --response-rounds accepts 1–3 and defaults to one.
+ * and turn coordinates. Openings select up to three ordered recipients.
  * No House rewrite or separate should-speak calls; readback adds no inference.
  * Omniscient labels every speaker with their role; Mystery hides dialogue roles.
  * Omniscient also reports each resolved pack ballot and disagreement/no-attack outcome.
  * The API owns inference, durable events and role secrecy.
+ * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
+ * counts as live spectator telemetry, separate from public history and player context.
+ * Choices and private reasoning stay sealed until the full checkpoint resolves.
  * No `as any`, Influence House calls, or prose parsing.
  */
 import { parseArgs } from "node:util";
@@ -18,14 +21,14 @@ import { apiFetch, authHeaders, resolveSessionToken } from "../api-simulation-cl
 import { DEFAULT_MODEL_CATALOG_ID, normalizeProviderManifest, resolveProviderManifest } from "../model-catalog";
 import { requireSafeHttpBaseUrl } from "../game-mcp/oauth";
 import { WEREWOLF_PRESETS, werewolfConfig } from "./rules";
-import type { WerewolfAudience, WerewolfView } from "./observation";
+import type { WerewolfAudience, WerewolfView, WerewolfVoteProgress } from "./observation";
 import { werewolfReportEntry } from "./report";
 
 export function parseWerewolfApiArgs(argv: string[], env: Record<string, string | undefined> = process.env) {
   const { values } = parseArgs({ args: argv, options: {
     "api-url": { type: "string", default: env.INFLUENCE_API_BASE_URL ?? "http://127.0.0.1:3000" },
     "web-url": { type: "string", default: "http://localhost:3001" },
-    preset: { type: "string", default: "one_wolf" }, "max-days": { type: "string", default: "10" }, "response-rounds": { type: "string", default: "1" },
+    preset: { type: "string", default: "one_wolf" }, "max-days": { type: "string", default: "10" },
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
     "reasoning-policy": { type: "string", default: "low" },
     agent: { type: "string", multiple: true, default: [] },
@@ -37,7 +40,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (!["localhost", "127.0.0.1", "[::1]"].includes(apiUrl.hostname)) throw new Error("This local CLI requires a loopback --api-url.");
   const webUrl = requireSafeHttpBaseUrl(values["web-url"], "--web-url");
   if (values.preset !== "one_wolf" && values.preset !== "two_wolves") throw new Error("Choose --preset one_wolf or two_wolves");
-  const config = werewolfConfig(values.preset, Number(values["max-days"]), Number(values["response-rounds"]));
+  const config = werewolfConfig(values.preset, Number(values["max-days"]));
   if (values.agent.length > WEREWOLF_PRESETS[config.preset].players || values.agent.some(id => !id.trim()) || new Set(values.agent).size !== values.agent.length) throw new Error("Choose distinct --agent profile IDs within the preset's seat limit.");
   if (values.audience !== "mystery" && values.audience !== "omniscient") throw new Error("Choose --audience mystery or omniscient");
   if (values.game !== undefined && !values.game.trim()) throw new Error("--game requires an ID or slug");
@@ -45,12 +48,12 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw new Error("--timeout-seconds must be a positive number of at least one second");
   const providerManifest = normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: values["reasoning-policy"] }]);
   resolveProviderManifest(providerManifest);
-  return { apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays, responseRounds: config.responseRounds,
+  return { apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays,
     agentProfileIds: values.agent, providerManifest, game: values.game, audience: values.audience as WerewolfAudience,
     transcript: values.transcript, out: values.out, timeoutMs, help: Boolean(values.help) };
 }
 
-interface ApiView { slug: string; status: string; view: WerewolfView }
+interface ApiView { slug: string; status: string; view: WerewolfView; voteProgress: WerewolfVoteProgress | null }
 
 export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWerewolfApiArgs>, options: {
   log?: (line: string) => void;
@@ -86,7 +89,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       creationRequested = true;
       const created = await apiFetch<{ id: string; slug: string }>(args.apiUrl, "/api/werewolf", {
         method: "POST", headers: authHeaders(token),
-        body: JSON.stringify({ preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays, responseRounds: args.responseRounds }),
+        body: JSON.stringify({ preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
       });
       game = created.id;
       if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /werewolf before launching again.");
@@ -103,6 +106,9 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
     let rosterPrinted = false;
     let lastProgressAt = now();
     let lastWaitingAt = now();
+    let voteKey: string | null = null;
+    let voteStartedAt = now();
+    let lastVoteReady = -1;
     const alive = new Set<string>();
     const deadline = now() + args.timeoutMs;
     while (now() < deadline) {
@@ -113,9 +119,9 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (!watchUrl) emit(`Watch: ${new URL(`/werewolf/${encodeURIComponent(detail.slug)}`, args.webUrl).href}`);
         emit(`Cast (${args.audience}): ${view.players.map(player => `${player.name}${args.audience === "omniscient" && player.role ? ` [${player.role}]` : ""}`).join(", ")}`);
         emit("Village wins by eliminating every wolf. Wolves win when they equal or outnumber everyone else.");
-        emit("Every living player votes to remove one other player. Most votes is eliminated; ties spare everyone.");
+        emit("After each thread, everyone votes for a target or abstains to hear more. A strict majority of all living players eliminates the target and ends the day; otherwise discussion continues. The final ballot requires a target: unique most votes wins; a tie means no village elimination.");
         emit("Each night the pack has three proposal/ballot attempts to agree unanimously. Three disagreements mean no attack.");
-        emit("Discussion: seeded daily initiative; everyone gets an opening thread. Replies are sequential, followed by one opener answer per response round. An all-pass round ends its thread.");
+        emit("Discussion: persistent round-robin openers, at most one opening each per day. Up to three invited recipients reply first, then the rest in a fixed random order. The opener may answer each spoken reply; passes advance the queue.");
         for (const player of view.players) alive.add(player.id);
         rosterPrinted = true;
       }
@@ -130,12 +136,30 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         if (entry.kind === "result") emit(`Roles revealed: ${view.players.map((player) => `${player.name} — ${player.role ?? "unknown"}${alive.has(player.id) ? "" : " (dead)"}`).join("; ")}.`);
       }
       if (view.cursor > cursor) lastProgressAt = lastWaitingAt = now();
-      else if (now() - lastWaitingAt >= 30_000 && detail.status === "in_progress") {
+      const progress = detail.voteProgress;
+      if (progress && detail.status === "in_progress") {
+        if (progress.kind !== "day_vote" || view.phase !== "vote" || progress.day !== view.day
+          || progress.thread !== view.discussion?.thread || progress.total !== view.players.filter(player => player.alive).length
+          || !Number.isInteger(progress.ready) || progress.ready < 0 || progress.ready > progress.total
+          || progress.voteMode !== (view.discussion?.thread === view.discussion?.totalThreads ? "plurality" : "majority")
+          || progress.requiredVotes !== (progress.voteMode === "majority" ? Math.floor(progress.total / 2) + 1 : null)) throw new Error("Invalid Werewolf vote progress");
+        const key = `${progress.day}:${progress.thread}`;
+        if (key !== voteKey) {
+          voteKey = key; voteStartedAt = now(); lastVoteReady = -1;
+          emit(`[Vote] Day ${progress.day} · after thread ${progress.thread} — ${progress.voteMode === "plurality" ? `Final ballot from ${progress.total} living players: unique most votes wins; ties spare everyone.` : `${progress.requiredVotes} matching votes needed from ${progress.total} living players.`} Choices reveal together; no public speech during voting.`);
+        }
+        if (progress.ready !== lastVoteReady || now() - lastWaitingAt >= 30_000) {
+          emit(`[Voting ${Math.floor((now() - voteStartedAt) / 1000)}s] Day ${progress.day} · thread ${progress.thread} — ${progress.ready}/${progress.total} decisions ready. ${progress.ready === progress.total ? "All decisions ready; committing ballots and resolving." : `Waiting for ${progress.total - progress.ready}; ballots sealed.`}`);
+          lastVoteReady = progress.ready;
+          lastWaitingAt = now();
+        }
+      } else if (view.cursor === cursor && now() - lastWaitingAt >= 30_000 && detail.status === "in_progress") {
         const phase = view.phase === "day" && view.discussion ? `Day ${view.day}, thread ${view.discussion.thread}/${view.discussion.totalThreads}, ${view.discussion.stage}`
           : view.phase === "night" ? `Night ${view.day}` : view.phase === "introduction" ? "Introductions" : `Day ${view.day}, ${view.phase}`;
         emit(`[Waiting ${Math.floor((now() - lastProgressAt) / 1000)}s] ${phase} — no new public update yet.`);
         lastWaitingAt = now();
       }
+      if (!progress) voteKey = null;
       cursor = view.cursor;
       await flush();
       if (detail.status === "completed") return { gameId: view.gameId, status: detail.status, outputPath, report: report.join("\n") };
@@ -167,9 +191,9 @@ Watch an existing game without creating or spending on another game:
 Options: --api-url URL --web-url URL --model-catalog ID --reasoning-policy low|medium|high|action-policy
          --agent PROFILE_ID (repeatable) --out REPORT.txt --timeout-seconds 1800
          --preset one_wolf|two_wolves --max-days 1..20 --game ID_OR_SLUG
-         --audience mystery|omniscient --transcript --response-rounds 1..3
+         --audience mystery|omniscient --transcript
 Defaults: six House characters, one wolf, ten-day safety cap, ${DEFAULT_MODEL_CATALOG_ID}, low reasoning, Mystery.
-Original speech, passes, ballots and results print as accepted. --transcript adds production notes and turn positions. One response round per thread is the default. Waiting updates print every 30 seconds.
+Original speech, passes, ballots and results print as accepted. --transcript adds production notes and turn positions. Openers select up to three recipients and may answer each spoken reply. Waiting updates print every 30 seconds.
 Omniscient labels every speaker with their role, including introductions and pack chat.
 Reports auto-save under packages/engine/docs/simulations; --out selects a new file.
 Existing files are never overwritten. There is no House rewrite. Reading the saved conversation adds no model calls.

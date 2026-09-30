@@ -3,12 +3,25 @@
  * --model-catalog explicitly opts into configured inference; --chatty prints
  * private structured decisions. The output ledger is private, not a viewer DTO.
  * House characters use frozen Werewolf archetype strategies, not Influence notes.
- * Discussion uses seeded daily initiative and sequential public threads. Default:
- * one reply round and one opener answer; --response-rounds accepts 1–3.
+ * Seer/Doctor coaching supplements those notes. Keep the normal day cap when
+ * evaluating concealment, prior-result disclosure, and protection over time.
+ * Every player gets Seer timing from completed public nights, not hidden results.
+ * Daytime players are prompted to pass rather than repeat or merely agree;
+ * count voluntary passes separately from provider-unavailable fallbacks.
+ * Earlier threads end with sealed target-or-abstain majority checkpoints. The final
+ * thread uses mandatory-target plurality: unique most votes wins; ties spare everyone.
+ * Reports distinguish vote modes; provider failures are marked unavailable abstentions.
+ * A separate final task quotes the opener for recipients, or the prior respondent
+ * for opener answers, identifying the next possible speaker. The seeded opening ring
+ * persists across nights. Openers select 0–3 recipients; the rest follow in fixed random
+ * order. Each spoken reply offers an opener answer; passes advance directly.
  * Original contributions print immediately; --transcript adds production notes
  * and turn coordinates. No House rewrite, extra speech-planning call, or gaze.
  * Pack proposals precede sealed ballots: three attempts, unanimous target, or no
  * attack. Nightly initiative is seeded and alternates after failed ballots.
+ * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
+ * counts as live spectator telemetry, separate from public history and player context.
+ * Choices and private reasoning stay sealed until the full checkpoint resolves.
  * No `as any` and no Influence House calls: the rules own every transition.
  */
 import { parseArgs } from "node:util";
@@ -27,14 +40,14 @@ import { runWerewolf, werewolfFallback, type WerewolfAgent } from "./runner";
 
 const { values } = parseArgs({ options: {
   preset: { type: "string", default: "one_wolf" }, seed: { type: "string", default: "werewolf-evaluation-1" },
-  "max-days": { type: "string", default: "10" }, "response-rounds": { type: "string", default: "1" }, "model-catalog": { type: "string" },
+  "max-days": { type: "string", default: "10" }, "model-catalog": { type: "string" },
   out: { type: "string" }, transcript: { type: "boolean", default: false },
   audience: { type: "string", default: "mystery" }, chatty: { type: "boolean", default: false },
 } });
 if (values.preset !== "one_wolf" && values.preset !== "two_wolves") throw new Error("--preset must be one_wolf or two_wolves");
 if (values.audience !== "mystery" && values.audience !== "omniscient") throw new Error("Invalid --audience");
 const audience = values.audience;
-const config = werewolfConfig(values.preset, Number(values["max-days"]), Number(values["response-rounds"]));
+const config = werewolfConfig(values.preset, Number(values["max-days"]));
 const count = WEREWOLF_PRESETS[config.preset].players;
 const names = HOUSE_AGENT_NAMES.slice(0, count);
 const archetypes = ["honest", "strategic", "deceptive", "paranoid", "social", "observer", "diplomat", "loyalist"] as const;
@@ -44,7 +57,13 @@ const output = resolve(values.out ?? `docs/simulations/${events[0]!.gameId}.json
 await mkdir(dirname(output), { recursive: true });
 const persist = async () => { await writeFile(`${output}.tmp`, JSON.stringify(events, null, 2)); await rename(`${output}.tmp`, output); };
 await persist();
-let delegate: WerewolfAgent = { async decide({ request }) { return werewolfFallback(replayWerewolf(events), request); } };
+let delegate: WerewolfAgent = { async decide({ request }) {
+  const state = replayWerewolf(events);
+  if (request.action === "vote" && request.voteMode === "plurality") return {
+    kind: "target", targetId: state.aliveIds[(state.aliveIds.indexOf(request.actorId) + 1) % state.aliveIds.length]!, thinking: "Scripted cyclic ballot",
+  };
+  return werewolfFallback(state, request);
+} };
 if (values["model-catalog"]) {
   const manifest = resolveProviderManifest(normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: "low" }]));
   const runtimes = createLlmProviderRuntimesFromEnv(manifest, process.env);

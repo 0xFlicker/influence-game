@@ -20,6 +20,7 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
   const { isAdmin } = usePermissions();
   return (
     <div>
+      <div className="mb-4 flex justify-end"><Link href="/admin/werewolf" className="min-h-11 rounded-lg border border-amber-200/25 px-4 py-2 text-sm text-amber-100 hover:bg-white/5">Werewolf workspace ↗</Link></div>
       {/* Tab bar */}
       <div
         className="mb-8 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:grid-cols-4 xl:grid-cols-10"

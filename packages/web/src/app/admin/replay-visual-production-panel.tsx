@@ -1,13 +1,16 @@
 "use client";
+import dynamic from "next/dynamic";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "@/lib/api";
 import { SceneRepairPanel, isActiveMediaJob, type MediaRecords, type MediaAttempt } from "./games/[id]/visual/scene-repair-panel";
 
+const WerewolfScenePreview = dynamic(() => import("./werewolf/scene-preview").then(module => module.WerewolfScenePreview));
+
 type Inventory = {
   gameId: string; slug: string; warnings: string[];
   scenes: Array<{ key: string; previewHash: string; sceneId: string | null; roomName: string; round: number | null;
-    boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean }>;
+    boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean; coverage?: Array<{ id: string; name: string; verified: boolean; fallback: string }>; panelCount?: number }>;
   media: MediaRecords;
   attempts: Array<MediaAttempt & { provider: string; model: string }>;
 };
@@ -15,14 +18,14 @@ type MissingRequest = { key: string; previewHash: string; requestId: string };
 const root = "/api/admin/production/games";
 const button = "influence-button-secondary min-h-10 rounded-lg px-3 py-2 text-sm disabled:opacity-40";
 
-export function ReplayVisualProductionPanel({ gameId, onLocked }: { gameId: string; onLocked: (value: boolean) => void }) {
+export function ReplayVisualProductionPanel({ gameId, onLocked, werewolf = false }: { gameId: string; onLocked: (value: boolean) => void; werewolf?: boolean }) {
   return <section aria-label="Replay image production" className="space-y-4 rounded-xl border border-amber-200/20 bg-amber-100/[.025] p-4 sm:p-6">
     <div><h3 className="text-xl font-semibold text-amber-100">Replay images</h3><p className="mt-2 text-sm text-white/60">Render one missing scene, then review and publish its verified image for this replay.</p></div>
-    <ReplayScenes key={gameId} gameId={gameId} onLocked={onLocked} />
+    <ReplayScenes key={gameId} gameId={gameId} onLocked={onLocked} werewolf={werewolf} />
   </section>;
 }
 
-function ReplayScenes({ gameId, onLocked }: { gameId: string; onLocked: (value: boolean) => void }) {
+function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; onLocked: (value: boolean) => void; werewolf?: boolean }) {
   const [data, setData] = useState<Inventory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -30,7 +33,8 @@ function ReplayScenes({ gameId, onLocked }: { gameId: string; onLocked: (value: 
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
   const [controlPending, setControlPending] = useState(false);
-  const [showPublished, setShowPublished] = useState(false);
+  const [showPublished, setShowPublished] = useState(werewolf);
+  const [previewScene, setPreviewScene] = useState<string | null>(null);
   const [image, setImage] = useState<{ url: string; label: string } | null>(null);
   const request = useRef<MissingRequest | null>(null);
   const inFlight = useRef(false);
@@ -72,16 +76,18 @@ function ReplayScenes({ gameId, onLocked }: { gameId: string; onLocked: (value: 
     {data && !data.scenes.length && <p className="text-sm text-white/60">No room scenes can be reconstructed from this game’s committed records.</p>}
     {data && data.scenes.length > 0 && !visible.length && <p className="text-sm text-white/60">All recorded scenes have an available image.</p>}
     {visible.map(scene => <article key={scene.key} className="space-y-3 rounded-lg border border-white/15 bg-black/20 p-4">
-      <div><h3 className="font-semibold">{scene.roomName}{scene.round !== null ? ` · Round ${scene.round}` : ""}</h3><p className="mt-1 text-sm text-white/60">{scene.participants.map(member => member.name).join(" · ")}</p><p className="mt-1 text-xs text-white/40">Recorded scene {scene.boundarySequence}{scene.available ? " · Available to viewers" : ""}</p></div>
+      <div><h3 className="font-semibold">{scene.roomName}{werewolf && scene.round === 0 ? " · Introductions" : scene.round !== null ? ` · ${werewolf ? "Day" : "Round"} ${scene.round}` : ""}</h3><p className="mt-1 text-sm text-white/60">{scene.participants.map(member => member.name).join(" · ")}</p><p className="mt-1 text-xs text-white/40">Recorded scene {scene.boundarySequence}{scene.available ? (werewolf ? " · Saved production image" : " · Available to viewers") : ""}</p></div>
+      {scene.coverage && <ul className="grid gap-2 text-sm sm:grid-cols-2" aria-label="Character coverage">{scene.coverage.map(person => <li key={person.id}>{person.name}: {person.verified ? "Verified panel" : person.fallback === "missing" ? "Reference unavailable" : `${person.fallback.replaceAll("_", " ")} fallback`}</li>)}</ul>}
+      {werewolf && scene.sceneId && <details open={previewScene === scene.sceneId} onToggle={event => { const open = event.currentTarget.open; setPreviewScene(current => open ? scene.sceneId : current === scene.sceneId ? null : current); }}><summary className="cursor-pointer py-3">Preview character framing · {scene.panelCount ?? 0} panels</summary>{previewScene === scene.sceneId && <WerewolfScenePreview key={`${scene.sceneId}:${data?.media.versions.length}`} gameId={gameId} sceneId={scene.sceneId} />}</details>}
       {!scene.sceneId ? <button className={button} disabled={busy || unknown || controlPending || Boolean(activeJob)} onClick={() => void renderScene(scene)}>Render missing image</button>
-        : <SceneRepairPanel gameId={gameId} sceneId={scene.sceneId} originalFailed={scene.originalFailed} media={data!.media} attempts={data!.attempts}
-          canOperate={!busy && !unknown} apiPrefix={root} renderLabel="Render missing image" renderDisabled={controlPending || Boolean(activeJob)} refresh={refresh} refreshError={error}
+        : <SceneRepairPanel gameId={gameId} sceneId={scene.sceneId} publicationAudience={werewolf ? "private production" : "viewers"} originalFailed={scene.originalFailed} media={data!.media} attempts={data!.attempts}
+          canOperate={!busy && !unknown} apiPrefix={root} renderLabel={data!.media.versions.some(version => version.sceneId === scene.sceneId) ? "Regenerate scene" : "Render missing image"} renderDisabled={controlPending || Boolean(activeJob)} refresh={refresh} refreshError={error}
           onRequestPending={value => { setControlPending(value); onLocked(value); }}
           onOpen={(url, label) => setImage({ url, label })} />}
     </article>)}
     {data && <section id="provider-attempts" className="space-y-3 border-t border-white/15 pt-4">
       <h3 className="font-semibold">Provider receipts</h3>
-      <p className="text-sm text-white/60">${(data.attempts.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0) / 1_000_000).toFixed(4)} known · {data.attempts.filter(attempt => attempt.costMicrousd === null).length} unpriced attempts</p>
+      <p className="text-sm text-white/60">{data.attempts.some(attempt => attempt.costMicrousd !== null) ? `$${(data.attempts.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0) / 1_000_000).toFixed(4)} known` : "No priced attempts"} · {data.attempts.filter(attempt => attempt.costMicrousd === null).length} unpriced attempts</p>
       {data.attempts.map(attempt => <details key={attempt.id} className="rounded-lg border border-white/10 p-3"><summary className="cursor-pointer break-words text-sm">{attempt.provider} · {attempt.model} · {attempt.costMicrousd === null ? "Cost unknown" : `$${(attempt.costMicrousd / 1_000_000).toFixed(4)}`} · {attempt.id}</summary>
         <p className="mt-3 text-sm text-white/70">{attempt.status === "pending" ? "Request in progress; waiting for the provider receipt." : `HTTP ${attempt.receipt?.status ?? "unknown"} · ${attempt.status.replaceAll("_", " ")}`}</p>
         {attempt.receipt?.failure && <p className="mt-2 text-sm text-amber-200">{attempt.receipt.failure.kind}: {attempt.receipt.failure.message}</p>}

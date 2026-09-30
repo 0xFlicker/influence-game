@@ -21,7 +21,7 @@ function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays = 10) {
 }
 
 const quietAgent: WerewolfAgent = {
-  decide: async ({ request }) => request.legalTargetIds.length
+  decide: async ({ request }) => request.action === "open_thread" ? { kind: "opening", text: null, cue: null, recipientIds: [] } : request.legalTargetIds.length
     ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE RATIONALE" }
     : { kind: "speech", cue: null, text: null },
 };
@@ -292,7 +292,7 @@ describe("Werewolf pack negotiation", () => {
     expect(restarted.events).toEqual(uninterrupted.events);
     for (const action of resumed.actions.filter(action => action.action === "attack")) {
       expect(action.fallback).toBe("provider_unavailable");
-      expect(action.decision.kind === "target" && action.legalTargetIds.includes(action.decision.targetId)).toBe(true);
+      expect(action.decision.kind === "target" && action.decision.targetId !== null && action.legalTargetIds.includes(action.decision.targetId)).toBe(true);
     }
   });
 
@@ -325,7 +325,7 @@ describe("Werewolf exact decision contracts", () => {
     }
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)).status).toBe("valid");
   });
-  const request = { actorId: "p0", action: "vote" as const, legalTargetIds: ["p1", "p2"] };
+  const request = { actorId: "p0", action: "vote" as const, voteMode: "majority" as const, legalTargetIds: ["p1", "p2"] };
   const artifact = werewolfDecisionArtifact(request);
   for (const document of ["hello", "```json\n{}\n```", 'prefix {"targetId":"p1","thinking":""}', "{}", '{"targetId":"p1"}', '{"targetId":"p1","thinking":"","extra":true}', '{"targetId":"p0","thinking":""}']) {
     test(`rejects malformed decision ${document}`, () => {
@@ -359,8 +359,13 @@ describe("Werewolf exact decision contracts", () => {
     for (const event of ctx.events) {
       if (event.type !== "werewolf.action_accepted") continue;
       expect(event.payload.fallback).toBe("provider_unavailable");
-      if (event.payload.decision.kind === "speech") expect(event.payload.decision.text).toBeNull();
-      else expect(event.payload.legalTargetIds).toContain(event.payload.decision.targetId);
+      if (event.payload.decision.kind !== "target") expect(event.payload.decision.text).toBeNull();
+      else if (event.payload.action === "vote") expect(event.payload.decision.targetId).toBeNull();
+      else {
+        const target = event.payload.decision.targetId;
+        if (target === null) throw new Error("Night targets must be present");
+        expect(event.payload.legalTargetIds).toContain(target);
+      }
     }
     const broken = setup();
     await expect(advanceWerewolf(broken.store, { decide: async () => { throw new Error("Programming error"); } })).rejects.toThrow("Programming error");

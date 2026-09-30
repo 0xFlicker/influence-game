@@ -27,7 +27,9 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
   const mockAgent: WerewolfAgent = { async decide({ request, observation }) {
-    if (request.action === "discuss" && observation.turnReminder?.stage === "reply") return { kind: "speech", cue: null, text: null };
+    if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
+    if (request.action === "discuss" && observation.turnReminder?.stage === "reply"
+      && request.actorId !== observation.turnReminder.respondentIds[0]) return { kind: "speech", cue: null, text: null };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture choice" }
       : { kind: "speech", cue: null, text: "I will compare the claims with today's vote." };
   } };

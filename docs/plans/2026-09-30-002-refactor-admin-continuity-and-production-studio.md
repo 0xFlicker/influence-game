@@ -1,7 +1,7 @@
 ---
 title: Fix admin continuity and integrate Werewolf into House
 type: refactor
-status: planned
+status: reviewed-and-tasked
 date: 2026-09-30
 pillar: A1
 ---
@@ -15,6 +15,8 @@ Implement pillar A1 of [House admin and production experience](../ideation/2026-
 The result is one House admin shell, a Werewolf workspace that stays readable during navigation, a restrained wheel transition with a clean reduced-motion alternative, and usable cost evidence. Production tools retain their existing behavior and private audience.
 
 Work in `/Users/user/.codex/worktrees/werewolf/influence-game`, branch `codex/werewolf`. Preserve prior gameplay/admin changes and the primary checkout. This planning pass changes documentation only. The user has shut down this worktree's servers; implementation validation must use separate free ports and isolated browser-test databases, without disturbing their main-repo servers.
+
+Planning checkpoint: `a4ba9143` (documentation only). Implementation tasks: [A1 task specifications](2026-09-30-003-admin-continuity-tasks.md). Adversarial findings and dispositions: [plan review](../reviews/2026-09-30-admin-continuity-plan-review.md). The existing uncommitted Werewolf implementation is a prerequisite; the checkpoint alone is not an independently runnable implementation baseline.
 
 ## Findings
 
@@ -63,9 +65,9 @@ Retain existing URLs; no URL migration or legacy redirect layer is required. Cen
 
 Use specific descendant matches before broad game-route matches. Provide Influence/Werewolf choices within Games; keep their existing lists and API contracts separate. Do not add a combined list backend in A1.
 
-The shared layout owns chrome, not a blanket `isAdmin` gate. Section bodies retain their correct access checks. Use current permissions/roles for navigation and safe group landing links; show a top area only when at least one child is accessible. Producers must be able to discover their permitted Werewolf and production paths without being linked to denied Influence/admin screens. Preserve `manage_roles` restrictions. Audit `isAdmin`'s backend meaning against `view_admin` before centralizing predicates; do not assume they are interchangeable. APIs continue checking live grants.
+The shared layout owns chrome, not a blanket `isAdmin` gate. Section bodies retain their correct access checks. Use current permissions/roles for navigation and safe group landing links; show a top area only when at least one child is accessible. Producers must be able to discover their permitted Werewolf and production paths without being linked to denied Influence/admin screens. Preserve `manage_roles` restrictions. `isAdmin` currently means sysop role, admin role, or `view_admin` in both `/auth/me` and web normalization; Werewolf reads actually require `view_admin` or producer/sysop. Use endpoint-matched capability predicates rather than this broader convenience flag. The existing Influence visual editor separately requires `view_admin` to read and `start_game` for actions; global replay production requires producer/sysop. Group membership must not widen any of these grants. APIs continue checking live grants.
 
-Existing create-game and visual-editor routes also move under the shell; remove their duplicated Nav/main wrappers without changing form or editor behavior. Auth loading/denial occupies the content region. Revoked access immediately removes restricted content, even if a previous response remains in memory.
+Existing create-game and visual-editor routes also move under the shell; remove their duplicated Nav/main wrappers without changing form or editor behavior. Auth loading/denial occupies the content region. Once access loss is observed through the auth lifecycle or an authorized read, remove the affected restricted content even if a previous response remains in memory. There is no push-based grant-revocation guarantee: keep the visible workspace summary/access check on its existing ten-second cadence, including completed games, and revalidate on focus. A section-level denial must not erase unrelated authorized sections.
 
 ## Implementation sequence
 
@@ -83,15 +85,15 @@ Prove shell persistence and two-section navigation before broad styling. Retaini
 Introduce typed Werewolf admin query options/hooks, using the existing QueryClient and API client. Separate keys for list, compact game detail, activity, costs and production inventory. Keys include identity/access scope, game kind and game ID; list keys include filters when filtering moves server-side. Avoid persisting private query data to browser storage.
 
 - Query cache is private client memory; API responses remain `private, no-store`. Do not enable shared HTTP caching for roles, pack activity or provider evidence.
-- Cancel and remove the admin query namespace on logout/account change and confirmed access loss. Do not clear unrelated wallet/application queries. Honor 401/403 by closing restricted panels immediately; a network error alone may retain already-authorized last-good data with a stale indicator.
+- Include the current auth/session generation in admin ownership. On logout/account replacement/401, cancel reads, remove old-session admin queries and drafts, and reject late read or mutation completions from that generation. Fence auth side effects at the API-client boundary too: the current `apiFetch` emits an unscoped `auth:expired` on 401 before the query owner can reject a stale result; a request from an old token/session must not expire a newer session. Do not clear unrelated wallet/application queries. On a Production 403, remove production evidence and disable its actions, then refresh capabilities; retain separately authorized Overview/Costs/Activity. A confirmed workspace-read denial removes that game workspace. Network/5xx errors alone can retain last-good readable data with a stale indicator; they do not prove grant loss.
 - Fetch compact detail and the requested section concurrently when authorized and identifiable. If a route contains a slug that first needs resolution, canonicalize to an ID once; do not seed a second game's query with old data.
-- Warm sections render from cache while freshness is checked. Prefetch small read-only resources on focus/hover; never preload generation or every image in every scene.
+- Warm sections render from cache while freshness is checked. Empty results, no-calls costs, a non-completed game’s production explanation and a capability-denied panel are settled renderable states; they must not create an endless preparation spinner. Prefetch small read-only resources on focus/hover; never preload generation or every image in every scene.
 - Poll only relevant active views; preserve data during refetch. Keep production's existing necessary job refresh cadence. Completed history can be refreshed explicitly; active-game summary continues to update.
 - Stop/hide/restore invalidate the affected summary/list queries and recheck capabilities. Production mutations invalidate inventory and production cost evidence.
-- Move pending/uncertain production request identity and lock state above section unmounting. Include both `ReplayVisualProductionPanel` and nested `SceneRepairPanel` actions in the audit. Keep existing idempotency keys and reconciliation behavior: navigation cannot clear uncertainty or authorize a duplicate request. Inspect current recovery behavior for reload separately; do not claim route persistence solves reload recovery.
-- Store lightweight section selection/filter/scroll state in the game owner where appropriate. Define explicit handling for unsaved editor drafts; do not silently discard them or keep every heavy page mounted forever.
+- Own production request records in the authenticated admin session, keyed by game, API family, scene/action and request ID, rather than in a game layout that dies when leaving the game. Preserve exact immutable request payloads, expected versions and preview hashes. Track each operation separately; do not use a shared boolean that one completion can clear while another is pending. Distinguish submitting, response unknown, definitive rejection and accepted receipt from subsequent inventory refresh failure. A known accepted POST must never become an unknown write merely because its GET refresh failed. Consume existing server receipts and reconciliation behavior. The records survive section/game/global-admin navigation in this browser session; they are not a new job scheduler. Old-session completions cannot restore protected UI. Also cover `ReconcileAttempt`: this endpoint accepts only note/cost and uses attempt identity, not a client request ID. Retain its attempt/payload/unknown status across navigation; after a lost response read the existing reconciliation receipt before offering another submission. The server rejects a second reconciliation, so do not invent a supported idempotency field or blindly replay it. Browser reload recovery remains server-journal-owned, not a promised client-store feature.
+- Store section selection/filter/scroll by game and section. Preserve unsaved image-review edits in session memory keyed by game, scene, source identity, plan hash and expected revision; returning restores the draft and its base version. Changed source/revision requires an explicit review or discard before submission. Do not silently rebase anchors onto new imagery. Drafts contain geometry/selections, not copied image bytes or credentials; clear them on account/access loss. Do not keep every heavy editor mounted to preserve state.
 
-Backend contract change: make `/api/admin/werewolf/:id` a compact typed summary with metadata, cast, phase/day, outcome and capabilities. Move activity to `/api/admin/werewolf/:id/activity`, returning an authorized canonical projection sufficient for the existing report renderer. Audit and update all detail consumers/tests together; remove the old embedded-activity contract rather than support both. Do not reconstruct facts from formatted strings.
+Backend contract change: make `/api/admin/werewolf/:id` a compact typed summary with metadata, cast, phase/day, audience-local snapshot cursor, outcome and capabilities. Move activity to `/api/admin/werewolf/:id/activity`, returning the complete authorized `WerewolfView` projection for that response, sufficient for the existing report renderer. The compact summary uses an explicit allowlist of metadata, cast, phase/day, audience-local cursor, outcome and capabilities; neither response includes private strategy or reasoning. Render activity entries against the cast/day/outcome from that same activity snapshot, never against an independently polled summary. Use the existing audience-local cursor for snapshot identity; do not reinterpret it as an internal event sequence. The header is labeled current game status; when activity is an older snapshot, label its own day/cursor and offer refresh rather than silently implying synchronization or repeatedly waiting for two live reads to match. The report formatter currently consumes players/audience, not the header; keep those from the activity response. Record the extra replay cost on a cold activity load; reuse its summary fields to seed a missing header only within the same game/session and never replace a newer header snapshot. Audit and update all detail consumers/tests together; remove the old embedded-activity contract rather than support both. Do not reconstruct facts from formatted strings.
 
 A1 removes activity from unrelated requests; it does not require new persistence, engine rules or pagination. Measure the isolated activity endpoint on a long game. Pagination/windowing can follow if needed; preserve canonical ordering and stable snapshot identity when designing that extension. Do not attach a guessed event sequence by parsing report text.
 
@@ -101,15 +103,17 @@ A1 removes activity from unrelated requests; it does not require new persistence
 | --- | --- |
 | First/direct visit | Shell remains visible; local correctly sized loading state, then content or retryable error |
 | Warm section change | Prepare destination from cache and transition without empty content |
-| Uncached destination | Keep current section readable; indicate requested destination is loading; replace when ready |
-| Destination failure | Keep current content clearly labeled; show destination error and Retry/Cancel; direct visits show local error |
+| Uncached destination | Keep current section and URL; indicate requested destination is loading; push the destination once ready |
+| Destination failure | Normal clicks retain current URL/content with Retry/Cancel. Direct visits and failed Back/Forward show a destination-local error; never silently claim old content belongs to the new URL |
 | Background refresh | Keep data, focus and scroll; small updating/stale indicator; no entrance motion |
 | Rapid navigation | Latest requested route wins; abort/disregard obsolete reads; do not queue animations |
-| Back/forward | Follow URL intent and restore the correct section state; no extra history entry on retry |
+| Back/forward | URL is already changed: retain old content only while loading, visibly labeled with its old section; settle to the destination or local error. Retry adds no history entry |
 | Different game | Reinitialize game state; never show the previous game's roles/activity under the new header |
 | Access revoked | Remove restricted content and cancel transitions/requests; show denial/sign-in state |
 
-Track requested route separately from displayed section while loading. The visible section title/active marker must describe what is actually on screen, with a separate pending indicator on the requested destination. On successful commit update focus appropriately, restore section scroll and announce the section. Do not expose two interactive/accessibility copies of the same screen during animation. Navigation should remain available during read delays; generation action safety is a separate concern.
+Use supported links/router APIs. Intercept only unmodified same-game section clicks: prepare data/module, then push exactly one URL when ready. Cancel leaves the current URL unchanged. Modified clicks and direct links retain normal browser behavior. Browser Back/Forward changes the URL first; label any temporarily retained content explicitly and make it read-only until the destination settles. Keep route-current semantics separate from the visible content heading and pending label. Invalid sections render the normal not-found state, not a retained last-good workspace.
+
+Track monotonically increasing navigation intent so late completions cannot replace a newer target. The game controller renders section views directly; leaf route children validate the route and must remain available for not-found/error handling, not render a second workspace. Rendering the departing panel for motion must not mount another query owner, modal, polling timer or mutation handler. On successful commitment restore the target scroll position, then focus its heading with `preventScroll` and announce the section. Initial visits and background refreshes do not steal focus. Navigation stays usable during read delays; destructive/generation actions in a temporarily retained departing panel are inert.
 
 ### 4. Add the wheel motion and shared styling
 
@@ -127,7 +131,7 @@ Extract small display components from `admin-cost-view.tsx`, leaving its existin
 
 - Summary: calls, failures, retries, reported charges, estimates, unpriced calls, and production charges.
 - Model/purpose tables: meaningful labels, tabular numbers, explicit pricing basis and compact token breakdown.
-- Call receipts: expand status, model/provider, attempt, duration/time where recorded, token counts and cost evidence. Use fields actually present in the API; label any subset (such as expensive calls) honestly rather than implying a complete ledger.
+- Call evidence: label the existing subset “Most expensive recorded calls”; display actor/role, action, phase/round, provider/model, call status, total tokens, cost source and available charge/estimate. This DTO does not include stable call IDs, attempt numbers, timestamps or duration; do not fabricate them, link to a nonexistent call record, or promise a complete searchable ledger. Per-model breakdowns provide calls/costs/total tokens; retry/failure and detailed token counts are summary-level only. A full call-ledger API is outside A1.
 - Keep actual and estimated coverage separate; a partially reported actual total is not a complete game price. Unknown is not zero. Retry costs must not be added again to totals already including attempts.
 - Raw authorized JSON is secondary technical detail, not the main model/call display. No new generic metadata framework or model-based translation in A1.
 
@@ -171,7 +175,7 @@ Run `bun run test`, `bun run test:postgres`, `bun run check`, and focused browse
 
 No studio browser/timeline rebuild, job-center implementation, broad metadata framework, combined game-list backend, Influence workspace conversion, gameplay changes, public viewer replacement, new feature flags, model calls or database cleanup. Those belong to later pillars or separate authorization.
 
-No product question currently blocks this plan. Navigation grouping and the small wheel treatment are proposed defaults grounded in the current screens. The technical proof point is the first persistent two-section transition; validate that before spreading the pattern.
+No product question currently blocks this plan. Source review resolved the ownership, permissions and cost-contract gaps; the task specs define the implementation gates. No application tests or live browser performance proof were run as part of this document review. Navigation grouping and the small wheel treatment are proposed defaults grounded in the current screens. The technical proof point is the first persistent two-section transition; validate that before spreading the pattern.
 
 ## References
 

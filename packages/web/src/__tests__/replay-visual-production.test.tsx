@@ -87,7 +87,9 @@ test("saved candidates use Production evidence and publish only by explicit revi
     if (init?.method === "POST") { writes.push(JSON.parse(String(init.body))); return Response.json({ accepted: true, message: "Published for viewers" }); }
     return Response.json(data);
   });
-  const view = render(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}} />); await loaded(view);
+  const view = render(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}} />);
+  await waitFor(() => expect(view.getByText("Regenerate scene")).not.toBeNull());
+  expect(view.getAllByText("Render missing image")).toHaveLength(1);
   fireEvent.click(view.getByText("Versions and review"));
   await waitFor(() => expect(view.getByAltText("Candidate v1")).not.toBeNull());
   expect(paths).toContain("/api/admin/production/games/game/visual/evidence/artifact/image");

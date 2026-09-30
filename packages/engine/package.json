@@ -9,6 +9,7 @@
     "./werewolf": "./src/werewolf/index.ts",
     "./werewolf/strategy": "./src/werewolf/strategy.ts",
     "./werewolf/types": "./src/werewolf/types.ts",
+    "./werewolf/report": "./src/werewolf/report.ts",
     "./werewolf/observation": "./src/werewolf/observation.ts",
     ".": "./src/index.ts",
     "./visual-mode": "./src/visual-mode.ts",

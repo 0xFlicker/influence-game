@@ -41,8 +41,8 @@ function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId
   </button> : <p role={result.error ? "alert" : "status"}>{result.error ?? "Loading image…"}</p>}</div>;
 }
 
-export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", onRequestPending }: {
-  apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string;
+export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", publicationAudience = "viewers", onRequestPending }: {
+  apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string; publicationAudience?: "viewers" | "private production";
   onRequestPending?: (pending: boolean) => void;
   gameId: string; sceneId: string; originalFailed: boolean; media: MediaRecords; canOperate: boolean;
   refresh: () => Promise<void>; refreshError: string | null; onOpen: (url: string, label: string) => void;
@@ -89,7 +89,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const jobAttempts = latest ? attempts.filter(attempt => attempt.operationKey.startsWith(`media:${latest.id}:`)) : [];
   const unresolved = attempts.filter(attempt => (attempt.operationKey.startsWith(`${sceneId}:render:`) || jobs.some(job => attempt.operationKey.startsWith(`media:${job.id}:`))) && attempt.status === "needs_reconciliation");
   return <section aria-label="Scene repair" className="space-y-3 border-t border-white/15 pt-3">
-    <p className="text-xs text-white/60">Viewer version: {published ? `v${published.version}` : "Portraits"} · Publication {publications[0]?.revision ?? 0}</p>
+    <p className="text-xs text-white/60">{publicationAudience === "viewers" ? "Viewer version" : "Production version"}: {published ? `v${published.version}` : publicationAudience === "viewers" ? "Portraits" : "Unpublished"} · Publication {publications[0]?.revision ?? 0}</p>
     {canOperate && <div className="flex flex-wrap gap-2">
       <button className={button} disabled={busy || !!active || uncertain} onClick={() => setEditingVersion(latest?.version ?? 0)}>Correct images</button>
       <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "regenerate" })}>{renderLabel}</button>
@@ -119,7 +119,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Reviewed"}</option>)}</select></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={annotated} onChange={event => setAnnotated(event.target.checked)} />Numbered annotations</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>Viewers currently see portraits.</p>}
+          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>{publicationAudience === "viewers" ? "Viewers currently see portraits." : "No published production version yet."}</p>}
           <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} apiPrefix={apiPrefix} />
         </div>
         <p className="text-sm">{selected.localization.count} verified people · {selectedAnchors} head anchors</p>
@@ -128,7 +128,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
           {(!selected.shots || selected.shots.mode === "scene") && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>}
-          <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? "Restore for viewers" : "Publish for viewers"}</button>
+          <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? `Restore for ${publicationAudience}` : `Publish for ${publicationAudience}`}</button>
         </div>}
       </>}
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>

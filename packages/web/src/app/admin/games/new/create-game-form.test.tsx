@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { modelCatalogEntryById } from "@influence/engine";
 
@@ -17,8 +17,9 @@ const originalNavigator = globalThis.navigator;
 const originalLocalStorage = globalThis.localStorage;
 let activeWindow: HappyDOMWindow | null = null;
 
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  // Flush React work while this test still owns its DOM globals.
+  await act(async () => { cleanup(); });
   pushed.length = 0;
   globalThis.fetch = originalFetch;
   Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });

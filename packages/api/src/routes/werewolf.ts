@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
-import { createWerewolfGame, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
+import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
 export function createWerewolfRoutes(db: DrizzleDB) {
@@ -19,18 +19,16 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some((key) => !["preset", "agentProfileIds", "providerManifest", "maxDays", "responseRounds"].includes(key))
+      || Object.keys(input).some((key) => !["preset", "agentProfileIds", "providerManifest", "maxDays"].includes(key))
       || (input.preset !== "one_wolf" && input.preset !== "two_wolves")
       || !Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
-      || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))
-      || (input.responseRounds !== undefined && (!Number.isInteger(input.responseRounds) || Number(input.responseRounds) < 1 || Number(input.responseRounds) > 3))) {
-      return c.json({ error: "Choose a valid Werewolf preset, character list, day limit (1–20), and response rounds (1–3)." }, 400);
+      || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))) {
+      return c.json({ error: "Choose a valid Werewolf preset, character list, day limit (1–20)." }, 400);
     }
     try {
       const game = await createWerewolfGame(db, c.get("user")!.id, { preset: input.preset,
         agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest,
-        ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}),
-        ...(input.responseRounds !== undefined ? { responseRounds: Number(input.responseRounds) } : {}) });
+        ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}) });
       return c.json(game, 201);
     } catch (error) {
       if (error instanceof WerewolfGameError) throw error;
@@ -53,9 +51,13 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     const audience = c.req.query("audience") ?? "mystery";
     if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);
     const cursor = c.req.query("cursor");
-    const view = await readWerewolfView(db, game.id, audience, cursor === undefined ? undefined : Number(cursor));
-    const latestCursor = cursor === undefined ? view.cursor : (await readWerewolfView(db, game.id, audience)).cursor;
-    return c.json({ slug: game.slug, status: game.status, latestCursor, view });
+    if (cursor === undefined) {
+      const { view, voteProgress } = await readWerewolfLiveView(db, game.id, audience, game.status === "in_progress");
+      return c.json({ slug: game.slug, status: game.status, latestCursor: view.cursor, view, voteProgress });
+    }
+    const view = await readWerewolfView(db, game.id, audience, Number(cursor));
+    const latestCursor = (await readWerewolfView(db, game.id, audience)).cursor;
+    return c.json({ slug: game.slug, status: game.status, latestCursor, view, voteProgress: null });
   });
   app.post("/api/werewolf/:id/stop", requireAuth(db), requirePermission("stop_game"), async (c) => {
     const id = c.req.param("id");

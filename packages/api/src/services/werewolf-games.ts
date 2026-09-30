@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, pickArchetypes, resolveModelSelection } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
 import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS } from "@influence/engine/werewolf";
-import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore } from "@influence/engine/werewolf";
+import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { checkGameStartAdmissionInTransaction, checkRecoveryAdmissionInTransaction } from "./deployment-admission.js";
 import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
@@ -26,7 +26,7 @@ export async function readWerewolfEvents(db: DrizzleDB | Tx, gameId: string): Pr
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number; responseRounds?: number;
+  preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
 }) {
   if (!Object.hasOwn(WEREWOLF_PRESETS, input.preset)) throw new WerewolfGameError("Choose one_wolf or two_wolves", 400);
   const count = WEREWOLF_PRESETS[input.preset].players;
@@ -66,7 +66,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       const identity = getHousePersonaDetails(archetypes[i]!);
       players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
     }
-    const rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.responseRounds ?? 1);
+    const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
@@ -131,7 +131,7 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
       const next = applyWerewolfEvent(state, event);
       if (event.type === "werewolf.action_accepted") {
         const [turn] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, event.sequence)));
-        const request = { actorId: event.payload.actorId, action: event.payload.action, legalTargetIds: event.payload.legalTargetIds };
+        const { decision: _decision, fallback: _fallback, ...request } = event.payload;
         if (!turn || sha256StableJson(turn.request) !== sha256StableJson(request)
           || turn.observationHash !== sha256StableJson(observeWerewolf(state, event.payload.actorId))) throw new Error("Werewolf action was not planned");
       }
@@ -167,6 +167,30 @@ export async function releaseWerewolfOwner(db: DrizzleDB, gameId: string, ownerE
       .where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch), eq(schema.gameRunOwners.status, "active"))).returning();
     if (failed && owners.length && game?.status === "in_progress") await tx.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
   });
+}
+
+/** Counts only durable accepted decisions, without loading choices or private reasoning.
+ * Keep this beside the spectator view, never inside a contestant observation or replay. */
+export async function readWerewolfLiveView(db: DrizzleDB, gameId: string, audience: WerewolfAudience, running: boolean) {
+  const state = replayWerewolf(await readWerewolfEvents(db, gameId));
+  const view = projectWerewolfView(state, audience);
+  let voteProgress: WerewolfVoteProgress | null = null;
+  if (running && state.phase === "vote" && !state.resolved && state.discussion) {
+    const pending = new Set(werewolfActionPlans(state).map(plan => plan.sequence));
+    const accepted = await db.select({ semantic: schema.providerLogicalCalls.semanticCoordinate })
+      .from(schema.providerLogicalCalls).where(and(eq(schema.providerLogicalCalls.gameId, gameId),
+        eq(schema.providerLogicalCalls.action, "werewolf.vote"), eq(schema.providerLogicalCalls.round, state.day),
+        isNotNull(schema.providerLogicalCalls.acceptedAttemptId)));
+    const ready = new Set(accepted.flatMap(({ semantic }) => semantic && typeof semantic === "object"
+      && "kind" in semantic && semantic.kind === "werewolf_action" && "eventSequence" in semantic
+      && typeof semantic.eventSequence === "number" && pending.has(semantic.eventSequence) ? [semantic.eventSequence] : []));
+    const total = state.aliveIds.length;
+    voteProgress = { kind: "day_vote", day: state.day, thread: state.discussion.threadIndex,
+      total, ready: state.actions.filter(action => action.action === "vote").length + ready.size,
+      voteMode: state.discussion.ended ? "plurality" : "majority",
+      requiredVotes: state.discussion.ended ? null : Math.floor(total / 2) + 1 };
+  }
+  return { view, voteProgress };
 }
 
 /** Replay positions are public-entry counts, never private event sequences. */

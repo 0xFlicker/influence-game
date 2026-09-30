@@ -2,6 +2,17 @@ import { werewolfTurnReminder, WEREWOLF_PACK_ATTEMPTS, werewolfPackOrder } from 
 import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfState } from "./types";
 
 export type WerewolfAudience = "mystery" | "omniscient";
+
+/** Live spectator telemetry only. Never part of contestant observations or replay entries. */
+export interface WerewolfVoteProgress {
+  kind: "day_vote";
+  day: number;
+  thread: number;
+  total: number;
+  ready: number;
+  voteMode: "majority" | "plurality";
+  requiredVotes: number | null;
+}
 export type WerewolfPublicEntry =
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
   | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
@@ -13,13 +24,13 @@ export type WerewolfPublicEntry =
 
 export interface WerewolfView {
   gameId: string;
-  rulesVersion: 5;
+  rulesVersion: 7;
   preset: "one_wolf" | "two_wolves";
   audience: WerewolfAudience;
   day: number;
   maxDays: number;
   phase: "introduction" | "night" | "day" | "vote" | "complete";
-  discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; responseRound: number; maxResponseRounds: number; ended: boolean } | null;
+  discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; recipientIds: string[]; respondentIds: string[]; ended: boolean } | null;
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
   players: Array<{ id: string; name: string; avatarUrl: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole }>;
@@ -53,8 +64,8 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
     day: state.day, maxDays: state.config.maxDays,
     phase: state.phase === "pack" ? "night" : state.phase,
     discussion: state.discussion ? {
-      initiativeIds: [...state.discussion.initiativeIds], thread: Math.min(state.discussion.threadIndex + 1, state.discussion.initiativeIds.length), totalThreads: state.discussion.initiativeIds.length,
-      stage: state.discussion.stage, responseRound: state.discussion.responseRound, maxResponseRounds: state.config.responseRounds, ended: state.discussion.ended,
+      initiativeIds: [...state.discussion.initiativeIds], thread: state.phase === "vote" ? state.discussion.threadIndex : Math.min(state.discussion.threadIndex + 1, state.discussion.initiativeIds.length), totalThreads: state.discussion.initiativeIds.length,
+      stage: state.discussion.stage, recipientIds: [...state.discussion.recipientIds], respondentIds: [...state.discussion.respondentIds], ended: state.discussion.ended,
     } : null,
     cursor: entries.length,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),

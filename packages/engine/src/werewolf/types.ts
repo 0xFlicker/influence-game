@@ -3,7 +3,8 @@ export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
 export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "complete";
-export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "discuss" | "vote";
+export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote";
+export type WerewolfVoteMode = "majority" | "plurality";
 
 export interface WerewolfPlayer {
   agentProfileId?: string;
@@ -18,23 +19,26 @@ export interface WerewolfPlayer {
 }
 
 export interface WerewolfConfig {
-  rulesVersion: 5;
-  responseRounds: number;
+  rulesVersion: 7;
   preset: WerewolfPreset;
   maxDays: number;
 }
 
 export type WerewolfDecision =
+  | { kind: "opening"; text: string | null; cue: string | null; recipientIds: string[] }
   | { kind: "speech"; text: string | null; cue: string | null }
-  | { kind: "target"; targetId: string; thinking: string };
+  | { kind: "target"; targetId: string | null; thinking: string };
 
-export interface WerewolfRequest {
+export type WerewolfRequest = {
   actorId: string;
-  action: WerewolfAction;
   legalTargetIds: string[];
-}
+} & (
+  | { action: "open_thread"; legalRecipientIds: string[] }
+  | { action: "vote"; voteMode: WerewolfVoteMode }
+  | { action: Exclude<WerewolfAction, "open_thread" | "vote"> }
+);
 
-export interface WerewolfAcceptedAction extends WerewolfRequest {
+export type WerewolfAcceptedAction = WerewolfRequest & {
   decision: WerewolfDecision;
   fallback: "provider_unavailable" | null;
 }
@@ -47,9 +51,12 @@ export interface WerewolfNightResult {
 }
 
 export interface WerewolfDayResult {
-  ballots: Array<{ voterId: string; targetId: string }>;
+  thread: number;
+  voteMode: WerewolfVoteMode;
+  ballots: Array<{ voterId: string; targetId: string | null; unavailable: boolean }>;
   totals: Record<string, number>;
-  tiedIds: string[];
+  requiredVotes: number | null;
+  dayEnded: boolean;
   eliminatedId: string | null;
 }
 
@@ -71,12 +78,13 @@ export interface WerewolfDiscussion {
   initiativeIds: string[];
   threadIndex: number;
   stage: "opening" | "reply" | "answer";
-  responseRound: number;
+  recipientIds: string[];
+  respondentIds: string[];
   respondentIndex: number;
   turn: number;
   openingText: string | null;
   latestStatement: { actorId: string; text: string } | null;
-  roundHadSpeech: boolean;
+  checkpointPending: boolean;
   ended: boolean;
 }
 
@@ -84,7 +92,9 @@ export interface WerewolfDiscussionTurn {
   thread: number;
   openerId: string;
   stage: "opening" | "reply" | "answer";
-  responseRound: number;
+  recipientIds: string[];
+  replyToTurn: number | null;
+  nextSpeakerId: string | null;
   turn: number;
   publicHistoryPosition: number;
   actorId: string;
@@ -100,8 +110,9 @@ export interface WerewolfTurnReminder {
   openingStatement: string | null;
   latestStatement: { actorId: string; text: string } | null;
   stage: "opening" | "reply" | "answer";
-  responseRound: number;
-  maxResponseRounds: number;
+  recipientIds: string[];
+  respondentIds: string[];
+  nextSpeakerId: string | null;
   hasUsedOwnOpening: boolean;
   remainingOpportunitiesThisThread: number;
 }
@@ -118,7 +129,7 @@ export type WerewolfEventData =
   | { type: "werewolf.action_accepted"; payload: WerewolfAcceptedAction }
   | { type: "werewolf.pack_vote_resolved"; payload: WerewolfPackVote }
   | { type: "werewolf.night_resolved"; payload: WerewolfNightResult }
-  | { type: "werewolf.day_resolved"; payload: WerewolfDayResult }
+  | { type: "werewolf.day_vote_resolved"; payload: WerewolfDayResult }
   | { type: "werewolf.completed"; payload: WerewolfOutcome };
 
 /** Raw events are private authority. Serve only audience projections. */
@@ -132,6 +143,8 @@ export interface WerewolfState {
   players: WerewolfPlayer[];
   roles: Record<string, WerewolfRole>;
   aliveIds: string[];
+  openingOrderIds: string[];
+  openingCursor: number;
   phase: WerewolfPhase;
   day: number;
   actions: WerewolfAcceptedAction[];

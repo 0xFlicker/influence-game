@@ -345,7 +345,11 @@ A match-assigned role: Werewolf, Villager, Seer, or Doctor. Wolves belong to the
 
 ## Werewolf public thread
 
-A short sequential exchange opened by one living player in the day's seeded initiative order. Everyone else speaks or passes in initiative order, then the opener answers the group. One response round is the default; up to three are supported. An opening pass skips the thread; an all-pass response round ends it. Each accepted contribution is immediately public and enters the next speaker's context. After every living player has had an opening opportunity, the village votes.
+Opening order is shuffled once from the game seed and rotates across nights, skipping eliminated players. Each living player gets at most one opening per day. An opener chooses zero to three distinct other living recipients in order; the rest of the room follows in a seeded random order fixed for that thread. Each respondent speaks or passes once. After each spoken response the opener may speak or pass, answering that respondent while knowing the next possible speaker. A respondent pass skips the opener answer. An opening pass skips the thread. Every accepted contribution is public before the next call; there are no repeated response rounds or artificial pacing delays.
+
+## Werewolf day vote checkpoint
+
+After each earlier thread, including a skipped opening, every living player casts a fresh sealed target vote or null to hear more. A strict majority of all living players ends the day immediately; otherwise the next opening begins. After the final opening, everyone must choose another living player. That final ballot uses plurality: the unique highest vote count eliminates its target, even below a majority. A tie for highest means no village elimination; normal night actions follow. The final ballot replaces the checkpoint rather than adding a second vote. All ballots reveal together and never carry forward. Provider failures produce explicitly marked unavailable abstentions, including at the final vote; models cannot voluntarily abstain there. Canonical `werewolf.day_vote_resolved` owns the ledger and transition.
 
 ## Werewolf production cue
 

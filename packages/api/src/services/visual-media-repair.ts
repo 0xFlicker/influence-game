@@ -45,7 +45,8 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         if ((last?.revision ?? 0) !== input.expectedPublication) return reject("publication_conflict", "Published version changed; refresh first");
         const id = randomUUID();
         await tx.insert(publications).values({ id, gameId, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
-        receipt = { accepted: true, code: "published", message: "Published for new viewer sessions", publicationId: id };
+        const [game] = await tx.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+        receipt = { accepted: true, code: "published", message: game?.kind === "werewolf" ? "Published to private Werewolf production. Public playback is unchanged." : "Published for new viewer sessions", publicationId: id };
       } else if (input.action === "review") {
         if (history.some(j => active(j.status))) return reject("already_pending", "Wait for the active repair before saving a review");
         let shots;
