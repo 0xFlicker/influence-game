@@ -36,9 +36,11 @@ export async function checkAdminContinuity(page: Page, gameId: string) {
     hold = false; if (!held) throw new Error("Delayed cost request was not issued"); await held.continue();
     await page.waitForFunction("document.querySelector('[data-workspace-section]').dataset.workspaceSection === 'activity'");
     expect(new URL(page.url()).pathname.endsWith("/activity")).toBe(true);
-    await page.evaluate("window.scrollTo(0,document.documentElement.scrollHeight)");
+    await page.evaluate("window.scrollTo(0,120)");
     const activityScroll = await page.evaluate("window.scrollY") as number;
+    expect(activityScroll).toBeGreaterThan(0);
     await select("costs"); await pane("costs");
+    expect(Math.abs((await page.evaluate("window.scrollY") as number)-activityScroll)).toBeLessThan(4);
     expect(await page.evaluate("history.length")).toBe(Number(initialHistory) + 2);
     const beforeWarm = requests.filter(r=>r.path.endsWith("/activity")).length;
     await page.goBack(); await pane("activity");

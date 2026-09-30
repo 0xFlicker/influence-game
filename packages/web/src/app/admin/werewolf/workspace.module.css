@@ -27,10 +27,8 @@
 .side a[aria-current] { border-color: #818cf8; color: white; }
 .navigationStatus { display: flex; align-items: center; gap: 16px; min-height: 46px; font-size: .8rem; color: rgb(255 255 255 / .5); }
 .navigationStatus button { min-height: 30px; padding: 3px 10px; }
-.stage { position: relative; isolation: isolate; overflow: clip; min-height: 240px; padding: 4px; margin: -4px; }
-.content { min-width: 0; display: flex; flex-direction: column; gap: 24px; transform-origin: 50% 130vh; position: relative; background: #08090b; }
-.exitLayer { position: absolute; inset: 4px; pointer-events: none; z-index: 2; overflow: hidden; }
-.exitLayer > div { transform-origin: 50% 130vh; background: #08090b; }
+.stage { min-height: 240px; }
+.content { min-width: 0; display: flex; flex-direction: column; gap: 24px; background: #08090b; }
 .surface { border: 1px solid rgb(255 255 255 / .1); border-radius: 10px; background: rgb(255 255 255 / .025); padding: clamp(18px, 3vw, 32px); min-width: 0; }
 .surface h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 12px; letter-spacing: -.02em; }
 .surface p { line-height: 1.7; }
@@ -66,6 +64,5 @@
   .activity article { padding: 16px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .exitLayer { display: none; }
   .main * { scroll-behavior: auto !important; }
 }

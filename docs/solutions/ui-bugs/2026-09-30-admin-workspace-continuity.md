@@ -14,6 +14,8 @@ tags: [admin, werewolf, navigation, query-cache, authorization, reduced-motion, 
 
 # Preserve ownership before animating administration
 
+**Placement update:** user feedback removed the wheel from the third-level Werewolf tabs. Those sections now swap prepared content immediately. The [effect and source are saved](../../ideation/2026-09-30-top-level-wheel-transition.md) for a possible top-level swipe; the motion discussion below records the earlier experiment.
+
 The persistent admin layout owns the authenticated `AdminSession`; the persistent Werewolf game layout owns the visible section. Root QueryClient keys include account/auth generation and resource URL. Exact request endpoint/body and draft source/revision live outside leaf components. Unmounting a section closes its modal and effects without losing permitted recovery state.
 
 Prepare ordinary section navigation before pushing history. Keep the old URL/content on preparation failure. History navigation has already changed the URL, so explicitly label retained content and settle to the target or its error. An increasing intent counter prevents slow old destinations from winning. Keep one React section owner; an inert, aria-hidden DOM image is sufficient for the brief exit animation.

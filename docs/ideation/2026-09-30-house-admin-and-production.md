@@ -38,7 +38,7 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 - Top-level areas: Games, Production, Operations and People; local navigation owns their routes. Visibility follows permissions and direct routes enforce access.
 - Werewolf becomes a game choice under Games. Keep existing list APIs and game engines separate.
 - Preserve loaded data during refresh, prepare section requests, eliminate the detail-to-section request waterfall, and make cold loading and errors local.
-- A restrained wheel-like content transition inside a stationary frame. Reduced motion uses a prepared swap without rotation or fade through black.
+- Immediate prepared section swaps inside a stationary frame. The [wheel effect is saved](2026-09-30-top-level-wheel-transition.md) for a future top-level swipe interaction; it is too deep in the hierarchy on Werewolf section tabs.
 - Replace the Werewolf cost JSON wall with readable model usage and call receipts, reusing existing cost presentation components.
 
 **Done when:** keyboard, mobile and desktop navigation retain context; cold/warm/slow/error transitions remain understandable; permissions and pending production requests survive correctly; costs distinguish estimates, reported charges and missing prices. Browser recordings demonstrate the continuity, not just screenshots.

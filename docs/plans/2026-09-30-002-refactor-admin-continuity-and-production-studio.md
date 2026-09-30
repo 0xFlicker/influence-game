@@ -12,7 +12,7 @@ pillar: A1
 
 Implement pillar A1 of [House admin and production experience](../ideation/2026-09-30-house-admin-and-production.md). This document replaces the earlier broad roadmap at this same path with an implementation plan for the first pillar. A2–A4 now belong to the ideation task map.
 
-The result is one House admin shell, a Werewolf workspace that stays readable during navigation, a restrained wheel transition with a clean reduced-motion alternative, and usable cost evidence. Production tools retain their existing behavior and private audience.
+The result is one House admin shell, a Werewolf workspace that stays readable during navigation, immediate prepared section swaps, and usable cost evidence. Production tools retain their existing behavior and private audience.
 
 Work in `/Users/user/.codex/worktrees/werewolf/influence-game`, branch `codex/werewolf`. Preserve prior gameplay/admin changes and the primary checkout. The planning pass was documentation-only; the implementation and local validation record follows below. The user has shut down this worktree's servers; implementation validation must use separate free ports and isolated browser-test databases, without disturbing their main-repo servers.
 
@@ -115,7 +115,9 @@ Use supported links/router APIs. Intercept only unmodified same-game section cli
 
 Track monotonically increasing navigation intent so late completions cannot replace a newer target. The game controller renders section views directly; leaf route children validate the route and must remain available for not-found/error handling, not render a second workspace. Rendering the departing panel for motion must not mount another query owner, modal, polling timer or mutation handler. On successful commitment restore the target scroll position, then focus its heading with `preventScroll` and announce the section. Initial visits and background refreshes do not steal focus. Navigation stays usable during read delays; destructive/generation actions in a temporarily retained departing panel are inert.
 
-### 4. Add the wheel motion and shared styling
+### 4. Shared styling and original wheel experiment
+
+**Product decision, 2026-09-30:** remove motion from the third-level Werewolf section tabs. Keep immediate prepared swaps and preserve the effect in [this reference](../ideation/2026-09-30-top-level-wheel-transition.md) for possible top-level left/right swipes. The following describes the original experiment, not current section behavior.
 
 Use a bounded content stage, with a transform origin beyond the visible panel suggesting a large wheel. Prototype a shallow arc over roughly 200–260 ms, small rotation/translation and restrained opacity; tune against actual dense content. Direction follows Overview → Production → Costs → Activity. Header/nav remain still.
 
@@ -235,3 +237,13 @@ Set `INFLUENCE_E2E_RECORD_DIR=/tmp/house-a1/final-recordings` to record the cont
 After the handoff, the user's normal gateway startup exposed the old Werewolf journal timestamp: it applied account roles and then attempted the unchanged Werewolf SQL again; the transaction rolled back on `games.game_kind`. This was caused by moving the existing Werewolf migration after the new main migration, not by replaying data during the git merge.
 
 On 2026-09-30, inspected the actual Doppler-dev target and restricted the repair to `127.0.0.1:54320/influence_dev`. Verified the exact Werewolf SQL hash and schema, existing `0101`/`0102` hashes, and absent account-role schema. Saved a full custom-format backup at `/tmp/house-a1/dev-db-repair-1790801305576/before.dump` (3,024,794,880 bytes), plus the original journal. In one transaction, applied the unchanged `0103_account_roles.sql`, recorded its hash/timestamp, and moved the existing Werewolf journal row to `1790726400001`. Did not rerun Werewolf DDL or edit earlier historical journal rows. The database retained 84 games, 379 Werewolf events and 314 turns; account-role backfill copied four grants with no eligible grants missing. The normal application migrator succeeded twice after repair. A temporary gateway then started on port 53024 and returned healthy/active from `/api/health`; that task-owned process was stopped cleanly. This follow-up supersedes the earlier statement that this specific local database still needs reconciliation; other previously migrated databases need their own verified reconciliation.
+
+
+### Werewolf section motion removed — user feedback
+
+Overview / Production / Costs / Activity now swap prepared content immediately. Removed the incoming animation, cloned exit layer, motion-only CSS and unused runtime preference hook; preserved scroll/focus, pending-state and history behavior. Saved the original code and motion recipe in the top-level wheel ideation reference linked above. `bun run check` and the existing focused Werewolf admin browser journey passed after this change (disposable database, no provider calls). No effect was enabled on another route.
+
+
+### Section scroll continuity correction
+
+Removed per-section scroll restoration, whose default of zero jumped to the page top on the first visit to each tab. Section switches now leave page scroll alone and retain heading focus with `preventScroll`. Native browser history owns its scroll behavior; a shorter document can naturally clamp its scroll range. The existing browser journey now checks a nonzero shared scroll position immediately across a tab switch.

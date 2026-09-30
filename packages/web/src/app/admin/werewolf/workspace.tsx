@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { useLiveReducedMotion } from "@/hooks/use-live-reduced-motion";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { werewolfReportEntry } from "@influence/engine/werewolf/report";
 import { apiFetch, type AdminGameCostSummary, type AdminGameCostDetail } from "@/lib/api";
@@ -52,13 +51,13 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   const suffix = path.slice(`/admin/werewolf/${gameId}`.length).replace(/^\//, "");
   const valid = suffix === "" || sections.includes(suffix as Section);
   const route = (suffix || "overview") as Section;
-  const session = useAdminSession(), client = useQueryClient(), reduceMotion = useLiveReducedMotion();
+  const session = useAdminSession(), client = useQueryClient();
   const { data, error, denied, refresh } = useAdminRead<Detail>(`${root}/${gameId}`, 10_000);
   const [displayed, setDisplayed] = useState<Section>(route);
   const [pending, setPending] = useState<Section | null>(null), [navigationError, setNavigationError] = useState<string | null>(null);
   const [failedTarget, setFailedTarget] = useState<Section | null>(null);
   const [busy, setBusy] = useState(false), [confirm, setConfirm] = useState(false), [actionError, setActionError] = useState<string | null>(null);
-  const intent = useRef(0), pane = useRef<HTMLDivElement>(null), overlay = useRef<HTMLDivElement>(null);
+  const intent = useRef(0), pane = useRef<HTMLDivElement>(null);
   const previous = useRef<Section>(route), committedClick = useRef<Section | null>(null);
   const canonicalId = useRef(gameId);
   if (data) canonicalId.current = data.id;
@@ -71,21 +70,6 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
     const filter = { predicate: (query: {queryKey: readonly unknown[]}) => query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && String(query.queryKey[2]).startsWith(`${family}/`) };
     void client.cancelQueries(filter); client.removeQueries(filter);
   }, [denied, data?.capabilities.production, session, client]);
-  const scrollKey = `scroll:${gameId}:`;
-  function clearExit() { overlay.current?.replaceChildren(); }
-  function captureExit(next: Section) {
-    session.set(`${scrollKey}${displayed}`, window.scrollY);
-    clearExit();
-    if (reduceMotion || !pane.current || !overlay.current) return;
-    const copy = pane.current.cloneNode(true) as HTMLElement;
-    copy.removeAttribute("data-workspace-section");
-    copy.inert = true; copy.setAttribute("aria-hidden", "true");
-    copy.removeAttribute("id"); copy.querySelectorAll("[id]").forEach(node => node.removeAttribute("id"));
-    overlay.current.append(copy);
-    const direction = sections.indexOf(next) > sections.indexOf(displayed) ? 1 : -1;
-    const animation = copy.animate([{ clipPath: "inset(0 0 0 0)", transform: "rotate(0deg)" }, { clipPath: direction > 0 ? "inset(0 100% 0 0)" : "inset(0 0 0 100%)", transform: `translateX(${-direction * 14}px) rotate(${-direction * 1.5}deg)` }], { duration: 220, easing: "ease-out" });
-    animation.onfinish = () => copy.remove();
-  }
   async function prepare(next: Section) {
     // UUID routes can load costs/activity alongside summary; a slug must resolve first.
     const uuid = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(gameId);
@@ -113,7 +97,6 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
     try {
       await prepare(next);
       if (ticket !== intent.current || !session.active) return;
-      if (next !== displayed) captureExit(next);
       setDisplayed(next); setPending(null);
       // These leaf pages have no server data. Next integrates native history with
       // usePathname; avoid an unnecessary RSC navigation racing the prepared pane.
@@ -134,13 +117,9 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   }, [route, valid]);
   useLayoutEffect(() => {
     if (previous.current === displayed) return;
-    const direction = sections.indexOf(displayed) > sections.indexOf(previous.current) ? 1 : -1;
     previous.current = displayed;
-    window.scrollTo({ top: session.get<number>(`${scrollKey}${displayed}`) ?? 0, behavior: "instant" });
     pane.current?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
-    if (!reduceMotion) pane.current?.animate([{ transform: `translateX(${direction * 14}px) rotate(${direction * 1.5}deg)` }, { transform: "none" }], { duration: 220, easing: "ease-out" });
-  }, [displayed, reduceMotion, session, scrollKey]);
-  useEffect(() => { if (reduceMotion || denied) { clearExit(); pane.current?.getAnimations().forEach(animation => animation.cancel()); } }, [reduceMotion, denied]);
+  }, [displayed]);
   useEffect(() => () => { intent.current++; }, []);
   async function action(kind: "visibility" | "stop") {
     if (!data) return;
@@ -162,7 +141,6 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
       <div className={styles.navigationStatus} aria-live="polite">{pending ? `Opening ${title(pending)} · showing ${title(displayed)}` : title(displayed)}{pending && <button onClick={() => { intent.current++; setPending(null); if (route !== displayed) window.history.replaceState(null, "", `${href(gameId, displayed)}?${params}`); }}>Cancel</button>}</div>
       {navigationError && <Notice>{navigationError} <button onClick={() => { if (failedTarget) void navigate(failedTarget, route !== failedTarget); }}>Retry</button><button onClick={() => { setNavigationError(null); setFailedTarget(null); }}>Dismiss</button></Notice>}
       <div className={styles.stage}>
-        <div ref={overlay} className={styles.exitLayer} aria-hidden="true" inert />
         <div ref={pane} className={styles.content} data-workspace-section={displayed} inert={pending !== null}>
           {actionError && <Notice>{actionError}</Notice>}
           {displayed === "overview" && <>
