@@ -49,8 +49,13 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
     const roles = c.get("userRoles") ?? [], permissions = c.get("userPermissions") ?? [];
     return c.json({ id: game.id, slug: game.slug, status: game.status, hidden: Boolean(game.hiddenAt), createdAt: game.createdAt, endedAt: game.endedAt,
-      view: projectWerewolfView(state, "omniscient"),
+      snapshot: (() => { const view = projectWerewolfView(state, "omniscient"); return { rulesVersion: view.rulesVersion, day: view.day, phase: view.phase, cursor: view.cursor, players: view.players, outcome: view.outcome }; })(),
       capabilities: { stop: game.status === "in_progress" && permissions.includes("stop_game"), visibility: permissions.includes("hide_game"), production: roles.some(role => role === "producer" || role === "sysop") } });
+  });
+  app.get(`${root}/:id/activity`, async c => {
+    const [game] = await db.select({ id: schema.games.id }).from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), eq(schema.games.id, c.req.param("id"))));
+    if (!game) return c.json({ error: "Werewolf game not found" }, 404);
+    return c.json(projectWerewolfView(replayWerewolf(await readWerewolfEvents(db, game.id)), "omniscient"));
   });
   app.get(`${root}/:id/costs`, async c => {
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.id, c.req.param("id")), eq(schema.games.gameKind, "werewolf")));

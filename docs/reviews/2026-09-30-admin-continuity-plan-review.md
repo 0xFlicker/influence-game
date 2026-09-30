@@ -47,6 +47,13 @@ Several items were already mentioned aspirationally in the original plan. The re
 
 ## Remaining implementation proof
 
-The document now has eleven dependency-ordered tasks and three gates: capability/DTO semantics; identity/request/navigation correctness; browser continuity and accessibility. All implementation tasks remain open.
+The document now has eleven dependency-ordered tasks and three gates: capability/DTO semantics; identity/request/navigation correctness; browser continuity and accessibility. Implementation has since landed in the worktree; the record below replaces that earlier proof status.
 
 Need actual browser traces for latency/remount attribution, a supported App Router two-section prototype, fake-receipt race tests, and normal/reduced-motion recordings. Model review does not establish that the wheel animation is comfortable, the cache is safe, or navigation is fast. Required implementation checks remain `bun run test`, `bun run test:postgres`, `bun run check` and focused browser journeys.
+
+
+## Implementation disposition — 2026-09-30
+
+R1–R12 informed the implemented A1 changes; source ownership, commands and results are in the [parent plan implementation record](../plans/2026-09-30-002-refactor-admin-continuity-and-production-studio.md#implementation-and-local-validation--2026-09-30). Deterministic tests cover scoped grants, exact unknown request recovery, reconciliation receipt reads, draft conflicts, access fences, old-session 401 and cost coverage. Browser fixtures cover stable shell/section ownership, delayed/failed/rapid/history navigation, runtime reduced motion, partial/full revocation and review/publication. A browser-observed stale-version publish race was fixed by retaining the accepted operation lock until inventory acknowledges its receipt.
+
+This is an implementation evidence update, not a second external model-review endorsement. The attempted Grok implementation review stalled without results. Equivalent pre-change performance measurements and the complete pending-account/browser-role matrix remain unproven; the task checklist and parent plan state those limits. Public viewer integration, studio jobs/timeline and generic JSON metadata remain outside A1.

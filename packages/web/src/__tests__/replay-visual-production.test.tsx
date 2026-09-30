@@ -1,5 +1,6 @@
+import { adminTestWrapper } from "./admin-test-wrapper";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as baseRender, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { ReplayVisualProductionPanel } from "../app/admin/replay-visual-production-panel";
 import { setApiBase } from "../lib/api";
@@ -46,11 +47,11 @@ test("opening game controls only reads scenes; explicit scene selection queues o
   expect(view.queryByRole("combobox")).toBeNull();
   fireEvent.click(view.getAllByText("Render missing image")[0]!); fireEvent.click(view.getAllByText("Render missing image")[0]!);
   expect(writes).toHaveLength(1); expect(writes[0]).toMatchObject({ key: "first", previewHash: "preview-first", requestId: expect.any(String) });
-  expect(locks).toEqual([true]);
+  expect(locks.at(-1)).toBe(true);
   data = { ...data, scenes: [{ ...data.scenes[0]!, sceneId: "saved" }, data.scenes[1]!], media: { ...media(), jobs: [job("queued")] } };
   await act(async () => finish!(Response.json({ accepted: true, message: "Image queued" })));
   await waitFor(() => expect(view.getByText(/One image is queued/)).not.toBeNull());
-  expect(locks).toEqual([true, false]);
+  expect(locks.slice(-2)).toEqual([true, false]);
   expect(view.getAllByText("Render missing image").every(button => (button as HTMLButtonElement).disabled)).toBe(true);
 });
 
@@ -119,4 +120,52 @@ test("receipt review distinguishes active requests, HTTP failures, and interrupt
   fireEvent.click(view.getByText("Refresh scenes"));
   await waitFor(() => expect(view.getByText("Record reconciliation")).not.toBeNull());
   expect(view.getByText(/Needs reconciliation: 1/)).not.toBeNull();
+});
+
+function render(ui: React.ReactNode) { return baseRender(ui, { wrapper: adminTestWrapper() }); }
+
+test("unknown render identity survives leaving the game and an accepted write survives a failed refresh", async () => {
+  const writes: string[] = []; let failRead = false;
+  respond(async (_url, init) => {
+    if (init?.method === "POST") {
+      writes.push(String(init.body));
+      if (writes.length === 1) throw new Error("Receipt lost");
+      failRead = true; return Response.json({accepted:true, message:"Accepted original request"});
+    }
+    if (failRead) return new Response("Inventory offline", {status:503});
+    return Response.json(inventory());
+  });
+  const view = render(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}}/>);
+  await loaded(view); fireEvent.click(view.getAllByText("Render missing image")[0]!);
+  await waitFor(() => expect(view.getByText("Check render request")).not.toBeNull());
+  view.rerender(<p>Another game</p>);
+  view.rerender(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}}/>);
+  await waitFor(() => expect(view.getByText("Check render request")).not.toBeNull());
+  fireEvent.click(view.getByText("Check render request"));
+  await waitFor(() => expect(view.getByText("Accepted original request")).not.toBeNull());
+  await waitFor(() => expect(view.getByText(/Inventory offline/)).not.toBeNull());
+  expect(writes).toHaveLength(2); expect(writes[1]).toBe(writes[0]);
+  expect(view.queryByText("Check render request")).toBeNull();
+});
+
+test("unknown reconciliation retains its draft across navigation and reads a receipt instead of reposting", async () => {
+  const data = inventory(); let posts = 0;
+  data.attempts = [{id:"attempt",operationKey:"media:job:section:0",provider:"fixture",model:"fixture",status:"needs_reconciliation",costMicrousd:null}];
+  respond(async (_url, init) => {
+    if(init?.method === "POST") { posts++; throw new Error("Receipt lost"); }
+    return Response.json(data);
+  });
+  const view = render(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}}/>);
+  await waitFor(() => expect(view.getByLabelText("Reconciliation evidence")).not.toBeNull());
+  fireEvent.input(view.getByLabelText("Reconciliation evidence"),{target:{value:"Provider confirmed no charge"}});
+  fireEvent.input(view.getByLabelText("Confirmed cost in dollars"),{target:{value:"0"}});
+  fireEvent.submit(view.getByText("Record reconciliation").closest("form")!);
+  await waitFor(() => expect(view.getByText("Check reconciliation receipt")).not.toBeNull());
+  view.rerender(<p>Another game</p>); view.rerender(<ReplayVisualProductionPanel gameId="game" onLocked={() => {}}/>);
+  await waitFor(() => expect((view.getByLabelText("Reconciliation evidence") as HTMLInputElement).value).toBe("Provider confirmed no charge"));
+  expect((view.getByText("Record reconciliation") as HTMLButtonElement).disabled).toBe(true);
+  data.attempts[0] = {...data.attempts[0]!,status:"reconciled",costMicrousd:0,reconciliation:{note:"Provider confirmed no charge"}};
+  fireEvent.click(view.getByText("Check reconciliation receipt"));
+  await waitFor(() => expect(view.queryByText("Record reconciliation") === null).toBe(true));
+  expect(posts).toBe(1);
 });

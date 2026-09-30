@@ -19,14 +19,14 @@ This document owns the four-pillar task map and product boundaries. Each pillar 
 
 | ID | Pillar | Status | Deliverable |
 | --- | --- | --- | --- |
-| A1 | Fix continuity and bring Werewolf into House admin | Reviewed and tasked; next implementation | Persistent navigation and game workspace, continuous section changes, House styling, readable cost details |
+| A1 | Fix continuity and bring Werewolf into House admin | Implemented locally; acceptance evidence recorded | Persistent navigation and game workspace, continuous section changes, House styling, readable cost details |
 | A2 | Turn Production into a studio | Direction established; needs its own plan | Scene/asset browser, selected preview and inspector, job center, then timeline and playback |
 | A3 | Improve detail display across admin | Direction established; follows A1 evidence | Reusable compact metadata and domain receipts in remaining operational screens |
 | A4 | Improve game visualization for Influence and Werewolf | Direction established; needs capability inventory | Consistent game workspaces with explicit game-specific state and presentation |
 
 A1 implementation plan: [Admin continuity and Werewolf integration](../plans/2026-09-30-002-refactor-admin-continuity-and-production-studio.md).
 
-A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). All implementation tasks remain open.
+A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). A1 is implemented and locally validated; its task checklist retains comparative measurement and extended browser-matrix evidence follow-ups. A2–A4 remain unimplemented.
 
 Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30-001-feat-werewolf-admin-production-workspace.md).
 

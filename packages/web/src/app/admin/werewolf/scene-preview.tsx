@@ -1,18 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
-import { apiFetch } from "@/lib/api";
+import { useAdminSession } from "../admin-session";
 import { VisualSceneView } from "../../games/[slug]/components/visual-scene-view";
 
 type Preview = { scene: AcceptedVisualScene; players: Array<{ id: string; name: string; fallback: string; imageUrl: string | null }> };
 export function WerewolfScenePreview({ gameId, sceneId }: { gameId: string; sceneId: string }) {
+  const session = useAdminSession();
   const [data, setData] = useState<Preview | null>(null), [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState(""), [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    apiFetch<Preview>(`/api/admin/production/games/${gameId}/visual/scenes/${sceneId}/preview`, { signal: controller.signal }).then(setData).catch(e => { if (!controller.signal.aborted) setError(e.message); });
+    session.read<Preview>(`/api/admin/production/games/${gameId}/visual/scenes/${sceneId}/preview`, controller.signal).then(setData).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
-  }, [gameId, sceneId]);
+  }, [gameId, sceneId, session]);
   useEffect(() => { const start = performance.now(); const timer = setInterval(() => { const next = performance.now() - start; setElapsed(next); if (next >= 10_000) clearInterval(timer); }, 50); return () => clearInterval(timer); }, [selected]);
   if (error) return <p role="alert">{error}</p>;
   if (!data) return <p role="status">Loading scene preview…</p>;

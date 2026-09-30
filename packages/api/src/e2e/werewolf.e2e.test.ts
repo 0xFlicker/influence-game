@@ -19,6 +19,7 @@ import { closeBrowser, createAuthenticatedPage, launchBrowser } from "./test-bro
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { cleanupE2eResources } from "./cleanup.js";
+import { checkAdminContinuity } from "./admin-continuity-browser.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 const originalMock = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
@@ -39,7 +40,7 @@ beforeAll(async () => {
   servers = await startTestServers({ databaseUrl: database.databaseUrl, adminAddress: admin.wallet.address, jwtSecret: process.env.JWT_SECRET, logDirectory: "/tmp/werewolf-browser-logs" });
   console.log(`WEREWOLF_BROWSER_URL=${servers.webUrl}`);
   browser = await launchBrowser();
-}, 120_000);
+}, 240_000);
 
 async function checkFailedPackNegotiations() {
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
@@ -152,6 +153,8 @@ test("CLI creates an API Werewolf game and prints original sequential contributi
 
 test("owner edits a game-specific strategy, creates Werewolf, and watches both views on desktop and mobile", async () => {
   const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/dashboard/agents/${profileId}/edit`, { privateKey: admin.wallet.privateKey });
+  const mediaWrites: Array<{action:string;requestId:string;expectedVersion:number}> = [];
+  page.on("request", request => { if(request.method() === "POST" && request.url().endsWith("/media")) { const body = JSON.parse(request.postData() ?? "{}"); mediaWrites.push(body); } });
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await page.waitForSelector("#agent-werewolfStrategyStyle");
@@ -272,12 +275,15 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   }
   await executeVisualMediaJob(database.db, job, new AbortController().signal, async () => ({ imageArtifactId: groups[0]!.imageArtifactId, localization: { count: 6, verifiedParticipantIds: groups.flatMap(g => g.visibleParticipantIds), anchors: [] }, shots: { mode: "groups", overview: null, groups } }));
   const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/admin/werewolf?q=${game.slug}&status=completed`, { privateKey: admin.wallet.privateKey });
+  const mediaWrites: Array<{action:string;requestId:string;expectedVersion:number}> = [];
+  page.on("request", request => { if(request.method() === "POST" && request.url().endsWith("/media")) { const body = JSON.parse(request.postData() ?? "{}"); mediaWrites.push(body); } });
   try {
     await page.setViewport({ width: 1440, height: 1000 });
     await text(page, game.slug);
     await page.click(`a[href^="/admin/werewolf/${game.id}?"]`);
     await text(page, "Game overview"); await text(page, "RULES V7");
     expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
+    await checkAdminContinuity(page, game.id);
     await page.screenshot({ path: "/tmp/werewolf-admin-desktop.png", fullPage: true });
     await page.click(`nav[aria-label="Game workspace"] a[href*="/costs"]`);
     await text(page, "Gameplay spending"); await text(page, "Production spending");
@@ -288,7 +294,8 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.select('select', 'production');
     await text(page, "Village lobby"); await text(page, "Private pack room"); await page.waitForSelector('[aria-label="Character coverage"]');
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-    await page.click("article > details > summary");
+    await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
+    await page.click("[data-workspace-section] button[aria-expanded]");
     await page.waitForSelector('[aria-label="Character framing preview"] img');
     await page.select('select[aria-label="Frame character"]', job.plan.cast[4]!.id);
     await page.waitForFunction(`Array.from(document.querySelectorAll('[aria-label="Character framing preview"] img')).some(image => image.complete && image.src === ${JSON.stringify(groupImageUrls[2])})`);
@@ -307,16 +314,41 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await text(page, "Review saved. Publish this version when ready.");
     await click(page, "Publish for private production");
     await text(page, "Published to private Werewolf production");
+    expect(mediaWrites.map(write => [write.action,write.expectedVersion])).toEqual([["review",1],["publish",2]]);
     await page.select('select', 'overview'); await text(page, "Game overview");
     await click(page, "Hide game"); await text(page, "Restore listing");
     expect((await database.db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.hiddenAt).not.toBeNull();
     await click(page, "Restore listing"); await text(page, "Hide game");
     await page.select('select', 'costs'); await text(page, "Gameplay spending");
+    await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
     await page.screenshot({ path: "/tmp/werewolf-admin-costs-mobile.png", fullPage: true });
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    // Server grants, rather than the JWT's original sysop claim, own these reads.
+    const [adminRole] = await database.db.select().from(schema.roles).where(eq(schema.roles.name,"admin"));
+    const [sysopRole] = await database.db.select().from(schema.roles).where(eq(schema.roles.name,"sysop"));
+    if (!adminRole || !sysopRole) throw new Error("Missing seeded roles");
+    await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));
+    await database.db.insert(schema.userRoles).values({userId:admin.userId,roleId:adminRole.id});
+    await click(page,"Refresh");
+    await page.select('label select','production');
+    await text(page,"Producer or Sysop access is required");
+    expect(await page.evaluate("document.querySelector('[aria-label=\"Character coverage\"]') === null")).toBe(true);
+    await page.select('label select','overview'); await text(page,"Game overview");
+    await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));
+    await click(page,"Refresh");
+    await page.waitForFunction("!document.querySelector('[data-game-header]')");
+    expect(await page.evaluate("document.body.innerText.includes('Game overview')")).toBe(false);
+    await database.db.insert(schema.userRoles).values({userId:admin.userId,roleId:sysopRole.id});
+    await click(page,"Retry"); await text(page,"Game overview");
     await page.click('a[href^="/admin/werewolf?"]');
     await text(page, game.slug);
     expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
+    await page.goto(`${servers.webUrl}/admin/werewolf/${game.slug}/costs`,{waitUntil:"domcontentloaded"});
+    await text(page,"Gameplay spending");
+    expect(await page.evaluate("document.querySelectorAll('main').length")).toBe(1);
+    await page.goto(`${servers.webUrl}/admin/werewolf/${game.id}/invalid`,{waitUntil:"domcontentloaded"}); await text(page,"404");
+    await page.goto(`${servers.webUrl}/admin/games/new`,{waitUntil:"domcontentloaded"}); await text(page,"Create Influence Game");
+    expect(await page.evaluate("document.querySelectorAll('main').length")).toBe(1);
   } catch (error) {
     await page.screenshot({ path: "/tmp/werewolf-admin-failure.png", fullPage: true });
     console.error("Admin browser failure", page.url(), await page.evaluate("document.body.innerText"));

@@ -1,8 +1,9 @@
 "use client";
+import { useAdminSession, useAdminValue, type Operation } from "../../../admin-session";
+import { useQueryClient } from "@tanstack/react-query";
 import type { StoredVisualShot, VisualShotPresentation } from "@influence/engine/visual-mode";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { ImageReviewEditor } from "./image-review-editor";
-import { ApiError, apiFetch } from "@/lib/api";
 
 export interface MediaJob {
   id: string; sceneId: string; version: number; status: string; step: string; failure: string | null;
@@ -22,19 +23,20 @@ export interface MediaAttempt {
   id: string; operationKey: string; status: "pending" | "finished" | "needs_reconciliation" | "reconciled";
   costMicrousd: number | null; receipt?: { chargeUncertain: boolean; status?: number | null; failure?: { kind: string; message: string } } | null; reconciliation?: unknown;
 }
-interface Receipt { accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number }
+interface Receipt { accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }
 const button = "rounded border border-white/25 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40";
 export const isActiveMediaJob = (job: MediaJob) => ["queued", "rendering", "verifying"].includes(job.status);
 
 function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId: string; artifactId: string; label: string; onOpen: (url: string, label: string) => void; apiPrefix: string }) {
+  const session = useAdminSession();
   const [result, setResult] = useState<{ url?: string; error?: string }>({});
   useEffect(() => {
     let cancelled = false;
-    apiFetch<{ imageUrl: string }>(`${apiPrefix}/${gameId}/visual/evidence/artifact/${artifactId}`).then(data => {
+    session.read<{ imageUrl: string }>(`${apiPrefix}/${gameId}/visual/evidence/artifact/${artifactId}`).then(data => {
       if (!cancelled) setResult({ url: data.imageUrl });
     }).catch(error => { if (!cancelled) setResult({ error: error instanceof Error ? error.message : "Image unavailable" }); });
     return () => { cancelled = true; };
-  }, [gameId, artifactId, apiPrefix]);
+  }, [gameId, artifactId, apiPrefix, session]);
   return <div><p className="mb-2 text-xs text-white/60">{label}</p>{result.url ? <button type="button" className="w-full cursor-zoom-in" onClick={() => onOpen(result.url!, label)} aria-label={`Enlarge ${label}`}>
     {/* eslint-disable-next-line @next/next/no-img-element -- authenticated immutable media evidence */}
     <img alt={label} src={result.url} className="aspect-video w-full rounded object-contain" />
@@ -54,36 +56,35 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const versions = media.versions.filter(version => version.sceneId === sceneId);
   const publications = media.publications.filter(publication => publication.sceneId === sceneId);
   const published = versions.find(version => version.id === publications[0]?.versionId) ?? versions.find(version => version.version === 0);
-  const [selection, setSelection] = useState<string | null>(null);
+  const session = useAdminSession(), client = useQueryClient();
+  const resource = `${apiPrefix}/${gameId}/visual`, operationKey = `operation:${resource}/media:${sceneId}`;
+  const [operation] = useAdminValue<Operation | undefined>(operationKey, undefined);
+  const [selection, setSelection] = useAdminValue<string | null>(`ui:${resource}:${sceneId}:version`, null);
   const selected = versions.find(version => version.id === selection) ?? versions[0];
-  const [editingVersion, setEditingVersion] = useState<number | null>(null);
+  const [editingVersion, setEditingVersion] = useAdminValue<number | null>(`ui:${resource}:${sceneId}:editing`, null);
   const selectedAnchors = selected?.shots ? new Set([...selected.shots.groups, ...(selected.shots.overview ? [selected.shots.overview] : [])].flatMap(shot => shot.anchors.map(anchor => anchor.playerId))).size : selected?.localization.anchors.length ?? 0;
   const [review, setReview] = useState(false);
   const [annotated, setAnnotated] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<Receipt | null>(null);
-  const pending = useRef<Record<string, unknown> | null>(null);
-  const inFlight = useRef(false);
-  const [uncertain, setUncertain] = useState(false);
+  const accepted = operation?.phase === "accepted" ? operation.result as Receipt : undefined;
+  const awaitingReceipt = Boolean(accepted?.accepted && (
+    accepted.jobId && !jobs.some(job => job.id === accepted.jobId)
+    || accepted.versionId && !versions.some(version => version.id === accepted.versionId)
+    || accepted.publicationId && !publications.some(publication => publication.id === accepted.publicationId)
+  ));
+  const busy = operation?.phase === "submitting" || awaitingReceipt, uncertain = operation?.phase === "unknown";
+  const feedback = operation?.phase === "accepted" ? operation.result as Receipt : operation?.error ? { accepted: false, code: operation.phase, message: operation.error } : null;
+  useEffect(() => { onRequestPending?.(busy || uncertain); }, [onRequestPending, busy, uncertain]);
   const [time, setTime] = useState(0);
   useEffect(() => { if (!active) return; const timer = setInterval(() => setTime(Date.now()), 1000); return () => clearInterval(timer); }, [active?.id, active]);
   const send = async (action: Record<string, unknown>) => {
-    if (inFlight.current) return;
-    inFlight.current = true; setBusy(true); setUncertain(false); onRequestPending?.(true);
-    const body = pending.current ?? { ...action, sceneId, expectedVersion: action.expectedVersion ?? latest?.version ?? 0, requestId: crypto.randomUUID() };
-    pending.current = body;
+    const body = { ...action, sceneId, expectedVersion: action.expectedVersion ?? latest?.version ?? 0, requestId: crypto.randomUUID() };
     try {
-      const receipt = await apiFetch<Receipt>(`${apiPrefix}/${gameId}/visual/media`, { method: "POST", body: JSON.stringify(body) });
-      pending.current = null; onRequestPending?.(false); setFeedback(receipt); if (receipt.accepted && receipt.code === "reviewed") { setEditingVersion(null); setSelection(receipt.versionId ?? null); setReview(true); } await refresh();
-    } catch (error) {
-      if (error instanceof ApiError && error.status < 500) {
-        pending.current = null;
-        onRequestPending?.(false);
-        setFeedback({ accepted: false, code: error.code ?? "rejected", message: error.message }); await refresh();
-      } else {
-        setUncertain(true); setFeedback({ accepted: false, code: "response_unknown", message: "The request response was lost. Check this same request before starting another repair." });
-      }
-    } finally { setBusy(false); inFlight.current = false; }
+      const receipt = await session.execute<Receipt>(operationKey, `${resource}/media`, body);
+      if (!receipt) return;
+      if (receipt.accepted && receipt.code === "reviewed") { setEditingVersion(null); setSelection(receipt.versionId ?? null); setReview(true); session.delete(`draft:${resource}:${sceneId}`); }
+      await client.invalidateQueries({ queryKey: ["admin", session.scope, `/api/admin/werewolf/${gameId}/costs`] });
+      await refresh();
+    } catch { /* Failure is retained in the operation record; a GET failure never changes POST acceptance. */ }
   };
   const lastReceipt = feedback ?? media.requests.find(request => request.input.sceneId === sceneId)?.receipt;
   const jobAttempts = latest ? attempts.filter(attempt => attempt.operationKey.startsWith(`media:${latest.id}:`)) : [];
@@ -107,11 +108,12 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
     {latest && <div className="rounded bg-white/5 p-3 text-sm" aria-live="polite">
       <p>{latest.status === "ready" ? "Ready for review" : latest.status.replaceAll("_", " ")} · v{latest.version} · {latest.step}</p>
       <p className="break-all text-xs text-white/50">Job {latest.id}</p>
-      <p className="text-xs text-white/60">{Math.max(0, Math.floor(((latest.finishedAt ? Date.parse(latest.finishedAt) : time || Date.now()) - Date.parse(latest.startedAt ?? latest.createdAt)) / 1000))}s elapsed · ${(jobAttempts.reduce((sum, a) => sum + (a.costMicrousd ?? 0), 0) / 1_000_000).toFixed(4)} known · {jobAttempts.filter(a => a.costMicrousd === null).length} unpriced</p>
+      <p className="text-xs text-white/60">{Math.max(0, Math.floor(((latest.finishedAt ? Date.parse(latest.finishedAt) : time || Date.parse(latest.startedAt ?? latest.createdAt)) - Date.parse(latest.startedAt ?? latest.createdAt)) / 1000))}s elapsed · ${(jobAttempts.reduce((sum, a) => sum + (a.costMicrousd ?? 0), 0) / 1_000_000).toFixed(4)} known · {jobAttempts.filter(a => a.costMicrousd === null).length} unpriced</p>
       {latest.failure && <p className="mt-2 text-amber-200">{latest.failure}</p>}
       {latest.status === "failed" && jobAttempts.some(attempt => attempt.receipt?.failure?.kind === "identity") && <p className="mt-2 text-amber-200">The image was generated, but character identities could not be verified. Review the saved candidate below before choosing a recheck or a new render.</p>}
       {latest.status === "needs_reconciliation" && <a href="#provider-attempts" className="underline">Review provider receipts and record reconciliation below</a>}
     </div>}
+    {awaitingReceipt && <p role="status" className="text-sm text-white/60">Request accepted. Refreshing the saved version before another action.</p>}
     {refreshError && <p role="alert" className="text-sm text-amber-200">Progress refresh failed. Showing the last saved state. <button className="underline" onClick={() => void refresh()}>Retry refresh</button></p>}
     {(versions.length > 0 || jobs.length > 0) && <button className={button} onClick={() => setReview(!review)}>{review ? "Close versions" : "Versions and review"}</button>}
     {review && <div className="space-y-3">

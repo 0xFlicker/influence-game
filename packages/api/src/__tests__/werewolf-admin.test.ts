@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
-import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, projectWerewolfView, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -51,7 +51,16 @@ test("admin discovery is Werewolf-only, includes hidden games, enforces current 
   expect((await app.request("/api/admin/werewolf")).status).toBe(401);
   const read = await app.request(`/api/admin/werewolf/${g.id}`, { headers });
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("private, no-store");
-  const detail = await read.json() as { view: { rulesVersion: number } }; expect(detail.view.rulesVersion).toBe(7); expect(JSON.stringify(detail)).toContain("PRIVATE_PACK"); expect(JSON.stringify(detail)).not.toContain("PRIVATE_REASON");
+  const detail = await read.json() as { snapshot: { rulesVersion: number } };
+  expect(detail.snapshot.rulesVersion).toBe(7);
+  expect(JSON.stringify(detail)).not.toContain("PRIVATE_PACK");
+  expect(JSON.stringify(detail)).not.toContain('"entries"');
+  const activity = await app.request(`/api/admin/werewolf/${g.id}/activity`, { headers });
+  expect(activity.status).toBe(200);
+  const view = await activity.json();
+  expect(view).toEqual(projectWerewolfView(replayWerewolf(await readWerewolfEvents(db, g.id)), "omniscient"));
+  expect(JSON.stringify(view)).toContain("PRIVATE_PACK");
+  expect(JSON.stringify(view)).not.toContain("PRIVATE_REASON");
   const visibility = `/api/admin/werewolf/${g.id}/visibility`;
   expect((await app.request(visibility, { method: "PATCH", headers, body: '{"hidden":true,"extra":1}' })).status).toBe(400);
   expect((await app.request(visibility, { method: "PATCH", headers, body: '{"hidden":true}' })).status).toBe(200);
@@ -155,4 +164,30 @@ test("Werewolf costs reconcile actual, estimated, failed retry and unknown ledge
   expect(gameplay.actualCostMicrousd).toBe(1200); expect(gameplay.estimatedCostMicrousd).toBe(300);
   expect(gameplay.callCount).toBe(3); expect(gameplay.unpricedCallCount).toBe(1); expect(gameplay.failedCallCount).toBe(1);
   expect(gameplay.retryFailureSpend.retryCallCount).toBe(1); expect(gameplay.breakdowns.model!["fixture-model"]!.callCount).toBe(2);
+});
+
+test("summary and activity share live access while operations retain narrower grants", async () => {
+  const g = await game(), app = createWerewolfAdminRoutes(db);
+  const adminRoleOnly = await operator("admin");
+  const ordinary = await operator("member");
+  const viewer = await operator("viewer", ["view_admin"]);
+  const producer = await operator("producer");
+  const sysop = await operator("sysop");
+  for (const headers of [adminRoleOnly, ordinary]) {
+    expect((await app.request(`/api/admin/werewolf/${g.id}`, {headers})).status).toBe(403);
+    expect((await app.request(`/api/admin/werewolf/${g.id}/activity`, {headers})).status).toBe(403);
+  }
+  for (const headers of [viewer, producer, sysop]) {
+    const summary = await app.request(`/api/admin/werewolf/${g.slug}`, {headers});
+    expect(summary.status).toBe(200);
+    const detail = await summary.json() as {id:string; capabilities:{visibility:boolean;stop:boolean;production:boolean};snapshot:Record<string,unknown>};
+    expect(detail.id).toBe(g.id); expect(detail.capabilities.visibility).toBe(false); expect(detail.capabilities.stop).toBe(false);
+    expect(detail.capabilities.production).toBe(headers !== viewer);
+    expect(Object.keys(detail.snapshot).sort()).toEqual(["cursor","day","outcome","phase","players","rulesVersion"]);
+    const activity = await app.request(`/api/admin/werewolf/${g.id}/activity`, {headers});
+    expect(activity.status).toBe(200); expect(activity.headers.get("cache-control")).toBe("private, no-store");
+    expect((await app.request(`/api/admin/werewolf/${g.id}/visibility`,{method:"PATCH",headers,body:'{"hidden":true}'})).status).toBe(403);
+  }
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "viewer"));
+  expect((await app.request(`/api/admin/werewolf/${g.id}/activity`,{headers:viewer})).status).toBe(403);
 });

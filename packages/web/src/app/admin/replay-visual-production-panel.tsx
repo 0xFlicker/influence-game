@@ -1,49 +1,50 @@
 "use client";
-import dynamic from "next/dynamic";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAdminRead, useAdminSession, useAdminValue, useAdminPending, type Operation } from "./admin-session";
+import { WerewolfScenePreview } from "./werewolf/scene-preview";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, apiFetch } from "@/lib/api";
 import { SceneRepairPanel, isActiveMediaJob, type MediaRecords, type MediaAttempt } from "./games/[id]/visual/scene-repair-panel";
 
-const WerewolfScenePreview = dynamic(() => import("./werewolf/scene-preview").then(module => module.WerewolfScenePreview));
 
-type Inventory = {
+export type Inventory = {
   gameId: string; slug: string; warnings: string[];
   scenes: Array<{ key: string; previewHash: string; sceneId: string | null; roomName: string; round: number | null;
     boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean; coverage?: Array<{ id: string; name: string; verified: boolean; fallback: string }>; panelCount?: number }>;
   media: MediaRecords;
   attempts: Array<MediaAttempt & { provider: string; model: string }>;
 };
-type MissingRequest = { key: string; previewHash: string; requestId: string };
 const root = "/api/admin/production/games";
 const button = "influence-button-secondary min-h-10 rounded-lg px-3 py-2 text-sm disabled:opacity-40";
 
 export function ReplayVisualProductionPanel({ gameId, onLocked, werewolf = false }: { gameId: string; onLocked: (value: boolean) => void; werewolf?: boolean }) {
-  return <section aria-label="Replay image production" className="space-y-4 rounded-xl border border-amber-200/20 bg-amber-100/[.025] p-4 sm:p-6">
-    <div><h3 className="text-xl font-semibold text-amber-100">Replay images</h3><p className="mt-2 text-sm text-white/60">Render one missing scene, then review and publish its verified image for this replay.</p></div>
+  return <section aria-label="Replay image production" className="space-y-4 rounded-xl border border-white/10 bg-white/[.025] p-4 sm:p-6">
+    <div><h3 className="text-xl font-semibold text-white">Replay images</h3><p className="mt-2 text-sm text-white/60">Render one missing scene, then review and publish its verified image for this replay.</p></div>
     <ReplayScenes key={gameId} gameId={gameId} onLocked={onLocked} werewolf={werewolf} />
   </section>;
 }
 
 function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; onLocked: (value: boolean) => void; werewolf?: boolean }) {
-  const [data, setData] = useState<Inventory | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [mutationError, setMutationError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [unknown, setUnknown] = useState(false);
-  const [controlPending, setControlPending] = useState(false);
-  const [showPublished, setShowPublished] = useState(werewolf);
-  const [previewScene, setPreviewScene] = useState<string | null>(null);
+  const session = useAdminSession(), client = useQueryClient();
+  const resource = `${root}/${gameId}/visual`, operationKey = `operation:${resource}/missing`;
+  const { data, error, denied, refresh: refetch } = useAdminRead<Inventory>(resource);
+  const [operation] = useAdminValue<Operation | undefined>(operationKey, undefined);
+  const acceptedJob = operation?.phase === "accepted" ? (operation.result as { jobId?: string } | undefined)?.jobId : undefined;
+  const waitingForJob = Boolean(acceptedJob && !data?.media.jobs.some(job => job.id === acceptedJob));
+  const busy = operation?.phase === "submitting" || waitingForJob, unknown = operation?.phase === "unknown";
+  const controlPending = useAdminPending(`operation:${resource}/media`);
+  const mutationError = operation?.phase === "rejected" || unknown ? operation.error : null;
+  const feedback = operation?.phase === "accepted" ? (operation.result as { message?: string } | undefined)?.message : null;
+  const [showPublished, setShowPublished] = useAdminValue(`ui:${resource}:showPublished`, werewolf);
+  const [previewScene, setPreviewScene] = useAdminValue<string | null>(`ui:${resource}:preview`, null);
   const [image, setImage] = useState<{ url: string; label: string } | null>(null);
-  const request = useRef<MissingRequest | null>(null);
-  const inFlight = useRef(false);
-  const mounted = useRef(true);
-  const refresh = useCallback(async () => {
-    try { const value = await apiFetch<Inventory>(`${root}/${gameId}/visual`); if (mounted.current) { setData(value); setError(null); } }
-    catch (cause) { if (mounted.current) setError(cause instanceof Error ? cause.message : "Scene progress could not refresh"); }
-  }, [gameId]);
-  useEffect(() => { mounted.current = true; void refresh(); return () => { mounted.current = false; }; }, [refresh]);
+  const refresh = useCallback(async () => { await refetch(); }, [refetch]);
+  useEffect(() => { onLocked(busy || unknown || controlPending); }, [onLocked, busy, unknown, controlPending]);
+  useEffect(() => {
+    if (!denied) return;
+    session.clearMatching(key => (key.startsWith("operation:") || key.startsWith("draft:") || key.startsWith("ui:")) && key.includes(`${root}/${gameId}/`));
+    void client.invalidateQueries({ queryKey: ["admin", session.scope, `/api/admin/werewolf/${gameId}`] });
+  }, [denied, session, client, gameId]);
   const activeJob = data?.media.jobs.find(isActiveMediaJob);
   const activeJobId = activeJob?.id;
   useEffect(() => {
@@ -52,21 +53,18 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
     return () => clearInterval(timer);
   }, [activeJobId, refresh]);
   async function renderScene(scene?: Inventory["scenes"][number]) {
-    if (inFlight.current) return;
-    const body = request.current ?? (scene ? { key: scene.key, previewHash: scene.previewHash, requestId: crypto.randomUUID() } : null);
+    const body = operation?.phase === "unknown" ? operation.body : scene ? { key: scene.key, previewHash: scene.previewHash, requestId: crypto.randomUUID() } : null;
     if (!body) return;
-    request.current = body; inFlight.current = true; setBusy(true); setMutationError(null); setFeedback(null); onLocked(true);
     try {
-      const receipt = await apiFetch<{ message: string }>(`${root}/${gameId}/visual/missing`, { method: "POST", body: JSON.stringify(body) });
-      request.current = null; setUnknown(false); setFeedback(receipt.message); onLocked(false); await refresh();
-    } catch (cause) {
-      if (cause instanceof ApiError && cause.status < 500) { request.current = null; setUnknown(false); onLocked(false); setMutationError(cause.message); await refresh(); }
-      else { setUnknown(true); setMutationError("The response was lost. Check the same request before rendering another image."); }
-    } finally { setBusy(false); inFlight.current = false; }
+      await session.execute(operationKey, `${resource}/missing`, body);
+      await client.invalidateQueries({ queryKey: ["admin", session.scope, `/api/admin/werewolf/${gameId}/costs`] });
+      await refresh();
+    } catch { /* The session operation retains the typed rejection or unknown response for recovery. */ }
   }
+  if (denied) return <p role="alert">Production access is no longer available. {error} <button className={button} onClick={() => void refresh()}>Check access again</button></p>;
   const visible = data?.scenes.filter(scene => showPublished || !scene.available) ?? [];
   return <div className="space-y-4">
-    <div className="flex flex-wrap items-center gap-4"><button className={button} disabled={busy} onClick={() => void refresh()}>Refresh scenes</button><label className="flex items-center gap-2 text-sm text-white/70"><input type="checkbox" checked={showPublished} onChange={event => setShowPublished(event.target.checked)} />Show available images</label>
+    <div className="flex flex-wrap items-center gap-4"><button className={button} disabled={operation?.phase === "submitting"} onClick={() => void refresh()}>Refresh scenes</button><label className="flex items-center gap-2 text-sm text-white/70"><input type="checkbox" checked={showPublished} onChange={event => setShowPublished(event.target.checked)} />Show available images</label>
       {data && <span className="text-sm text-white/60">{data.scenes.filter(scene => !scene.available).length} scenes need images or publication</span>}</div>
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}{mutationError && <p role="alert" className="text-sm text-red-300">{mutationError}</p>}{feedback && <p role="status" className="text-sm text-green-200">{feedback}</p>}
     {unknown && <button className={button} disabled={busy} onClick={() => void renderScene()}>Check render request</button>}
@@ -78,11 +76,10 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
     {visible.map(scene => <article key={scene.key} className="space-y-3 rounded-lg border border-white/15 bg-black/20 p-4">
       <div><h3 className="font-semibold">{scene.roomName}{werewolf && scene.round === 0 ? " · Introductions" : scene.round !== null ? ` · ${werewolf ? "Day" : "Round"} ${scene.round}` : ""}</h3><p className="mt-1 text-sm text-white/60">{scene.participants.map(member => member.name).join(" · ")}</p><p className="mt-1 text-xs text-white/40">Recorded scene {scene.boundarySequence}{scene.available ? (werewolf ? " · Saved production image" : " · Available to viewers") : ""}</p></div>
       {scene.coverage && <ul className="grid gap-2 text-sm sm:grid-cols-2" aria-label="Character coverage">{scene.coverage.map(person => <li key={person.id}>{person.name}: {person.verified ? "Verified panel" : person.fallback === "missing" ? "Reference unavailable" : `${person.fallback.replaceAll("_", " ")} fallback`}</li>)}</ul>}
-      {werewolf && scene.sceneId && <details open={previewScene === scene.sceneId} onToggle={event => { const open = event.currentTarget.open; setPreviewScene(current => open ? scene.sceneId : current === scene.sceneId ? null : current); }}><summary className="cursor-pointer py-3">Preview character framing · {scene.panelCount ?? 0} panels</summary>{previewScene === scene.sceneId && <WerewolfScenePreview key={`${scene.sceneId}:${data?.media.versions.length}`} gameId={gameId} sceneId={scene.sceneId} />}</details>}
+      {werewolf && scene.sceneId && <div><button type="button" className="cursor-pointer py-3" aria-expanded={previewScene === scene.sceneId} onClick={() => setPreviewScene(current => current === scene.sceneId ? null : scene.sceneId)}>Preview character framing · {scene.panelCount ?? 0} panels</button>{previewScene === scene.sceneId && <WerewolfScenePreview key={`${scene.sceneId}:${data?.media.versions.length}`} gameId={gameId} sceneId={scene.sceneId} />}</div>}
       {!scene.sceneId ? <button className={button} disabled={busy || unknown || controlPending || Boolean(activeJob)} onClick={() => void renderScene(scene)}>Render missing image</button>
         : <SceneRepairPanel gameId={gameId} sceneId={scene.sceneId} publicationAudience={werewolf ? "private production" : "viewers"} originalFailed={scene.originalFailed} media={data!.media} attempts={data!.attempts}
           canOperate={!busy && !unknown} apiPrefix={root} renderLabel={data!.media.versions.some(version => version.sceneId === scene.sceneId) ? "Regenerate scene" : "Render missing image"} renderDisabled={controlPending || Boolean(activeJob)} refresh={refresh} refreshError={error}
-          onRequestPending={value => { setControlPending(value); onLocked(value); }}
           onOpen={(url, label) => setImage({ url, label })} />}
     </article>)}
     {data && <section id="provider-attempts" className="space-y-3 border-t border-white/15 pt-4">
@@ -100,19 +97,39 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
 }
 
 function ReconcileAttempt({ gameId, attemptId, refresh }: { gameId: string; attemptId: string; refresh: () => Promise<void> }) {
-  const [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
-  return <form className="mt-3 flex flex-wrap gap-3" onSubmit={async event => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
-    setBusy(true); setError(null);
+  const session = useAdminSession(), client = useQueryClient();
+  const resource = `${root}/${gameId}/visual`, key = `operation:${resource}/reconcile:${attemptId}`;
+  const [operation] = useAdminValue<Operation | undefined>(key, undefined);
+  const [note, setNote] = useAdminValue(`draft:${resource}/reconcile:${attemptId}:note`, "");
+  const [cost, setCost] = useAdminValue(`draft:${resource}/reconcile:${attemptId}:cost`, "");
+  const [readError, setReadError] = useState<string | null>(null);
+  const busy = operation?.phase === "submitting", unknown = operation?.phase === "unknown";
+  async function checkReceipt() {
     try {
-      await apiFetch(`${root}/${gameId}/visual/attempts/${attemptId}/reconcile`, { method: "POST", body: JSON.stringify({ note: String(form.get("note")), costMicrousd: Math.round(Number(form.get("cost")) * 1_000_000) }) });
+      const saved = await session.read<Inventory>(resource);
+      if (!session.active) return;
+      const attempt = saved.attempts.find(candidate => candidate.id === attemptId);
+      if (attempt?.status === "reconciled") { session.delete(key); await refresh(); }
+      else if (attempt?.status === "needs_reconciliation" && operation) {
+        session.set<Operation>(key, { ...operation, phase: "rejected", error: "No reconciliation is recorded. Review the evidence before submitting again." });
+        setReadError(null);
+      }
+      else setReadError("The receipt is not confirmed yet. Refresh and check again before submitting another reconciliation.");
+    } catch (cause) { setReadError(cause instanceof Error ? cause.message : "Could not check receipt"); }
+  }
+  return <form className="mt-3 flex flex-wrap gap-3" onSubmit={async event => {
+    event.preventDefault();
+    try {
+      await session.execute(key, `${resource}/attempts/${attemptId}/reconcile`, { note, costMicrousd: Math.round(Number(cost) * 1_000_000) }, false);
+      await client.invalidateQueries({ queryKey: ["admin", session.scope, `/api/admin/werewolf/${gameId}/costs`] });
       await refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Reconciliation failed"); }
-    finally { setBusy(false); }
+    } catch { /* Recorded operation state distinguishes uncertain writes from refresh errors. */ }
   }}>
-    <input name="note" aria-label="Reconciliation evidence" required maxLength={2000} placeholder="Provider receipt or billing evidence" className="min-w-48 flex-1 rounded bg-white/10 px-3 py-2" />
-    <input name="cost" aria-label="Confirmed cost in dollars" required type="number" min="0" step="0.000001" placeholder="USD" className="w-32 rounded bg-white/10 px-3 py-2" />
-    <button disabled={busy} className={button}>Record reconciliation</button>{error && <p role="alert" className="w-full text-sm text-red-300">{error}</p>}
+    <input aria-label="Reconciliation evidence" value={note} onInput={event => setNote(event.currentTarget.value)} required maxLength={2000} placeholder="Provider receipt or billing evidence" className="min-w-48 flex-1 rounded bg-white/10 px-3 py-2" />
+    <input aria-label="Confirmed cost in dollars" value={cost} onInput={event => setCost(event.currentTarget.value)} required type="number" min="0" step="0.000001" placeholder="USD" className="w-32 rounded bg-white/10 px-3 py-2" />
+    <button disabled={busy || unknown} className={button}>Record reconciliation</button>
+    {unknown && <button type="button" className={button} onClick={() => void checkReceipt()}>Check reconciliation receipt</button>}
+    {(operation?.error || readError) && <p role="alert" className="w-full text-red-300">{readError ?? operation?.error}</p>}
   </form>;
 }
 

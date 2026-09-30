@@ -108,6 +108,7 @@ export async function apiFetch<T>(
   }
 
   const token = getAuthToken();
+  const requestGeneration = typeof window === "undefined" ? null : window.localStorage.getItem("influence_auth_generation");
   const isFormData = options?.body instanceof FormData;
   const headers: Record<string, string> = {
     // Skip Content-Type for FormData — browser sets it with the correct boundary
@@ -133,7 +134,7 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    if (res.status === 401 && typeof window !== "undefined" && token) {
+    if (res.status === 401 && typeof window !== "undefined" && token && token === getAuthToken() && requestGeneration === window.localStorage.getItem("influence_auth_generation")) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
     if (options?.method === 'POST' && typeof window !== 'undefined') {

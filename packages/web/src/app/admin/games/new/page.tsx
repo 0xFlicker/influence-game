@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { Nav } from "@/components/nav";
-import { AdminGate } from "@/components/admin-gate";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
 import { CreateGameForm } from "./create-game-form";
 
@@ -11,9 +9,8 @@ export const metadata = {
 export default function NewGamePage() {
   return (
     <div className="min-h-screen flex flex-col">
-      <Nav />
-      <main className="flex-1 px-6 py-10 max-w-4xl mx-auto w-full">
-        <AdminGate>
+      <div className="flex-1 px-6 py-10 max-w-4xl mx-auto w-full">
+
           <div className="flex items-center gap-3 mb-8">
             <Link
               href="/admin"
@@ -27,8 +24,8 @@ export default function NewGamePage() {
             </h1>
           </div>
           <CreateGameForm />
-        </AdminGate>
-      </main>
+
+      </div>
     </div>
   );
 }

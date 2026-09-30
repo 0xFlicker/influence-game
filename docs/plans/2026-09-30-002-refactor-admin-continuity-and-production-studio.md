@@ -1,7 +1,7 @@
 ---
 title: Fix admin continuity and integrate Werewolf into House
 type: refactor
-status: reviewed-and-tasked
+status: implemented-local-validation
 date: 2026-09-30
 pillar: A1
 ---
@@ -14,7 +14,7 @@ Implement pillar A1 of [House admin and production experience](../ideation/2026-
 
 The result is one House admin shell, a Werewolf workspace that stays readable during navigation, a restrained wheel transition with a clean reduced-motion alternative, and usable cost evidence. Production tools retain their existing behavior and private audience.
 
-Work in `/Users/user/.codex/worktrees/werewolf/influence-game`, branch `codex/werewolf`. Preserve prior gameplay/admin changes and the primary checkout. This planning pass changes documentation only. The user has shut down this worktree's servers; implementation validation must use separate free ports and isolated browser-test databases, without disturbing their main-repo servers.
+Work in `/Users/user/.codex/worktrees/werewolf/influence-game`, branch `codex/werewolf`. Preserve prior gameplay/admin changes and the primary checkout. The planning pass was documentation-only; the implementation and local validation record follows below. The user has shut down this worktree's servers; implementation validation must use separate free ports and isolated browser-test databases, without disturbing their main-repo servers.
 
 Planning checkpoint: `a4ba9143` (documentation only). Implementation tasks: [A1 task specifications](2026-09-30-003-admin-continuity-tasks.md). Adversarial findings and dispositions: [plan review](../reviews/2026-09-30-admin-continuity-plan-review.md). The existing uncommitted Werewolf implementation is a prerequisite; the checkpoint alone is not an independently runnable implementation baseline.
 
@@ -175,7 +175,7 @@ Run `bun run test`, `bun run test:postgres`, `bun run check`, and focused browse
 
 No studio browser/timeline rebuild, job-center implementation, broad metadata framework, combined game-list backend, Influence workspace conversion, gameplay changes, public viewer replacement, new feature flags, model calls or database cleanup. Those belong to later pillars or separate authorization.
 
-No product question currently blocks this plan. Source review resolved the ownership, permissions and cost-contract gaps; the task specs define the implementation gates. No application tests or live browser performance proof were run as part of this document review. Navigation grouping and the small wheel treatment are proposed defaults grounded in the current screens. The technical proof point is the first persistent two-section transition; validate that before spreading the pattern.
+No product question currently blocks this plan. Source review resolved the ownership, permissions and cost-contract gaps; the task specs define the implementation gates. The original document review did not run application tests or establish browser performance; the implementation record below supersedes that proof status. Navigation grouping and the small wheel treatment are proposed defaults grounded in the current screens. The technical proof point is the first persistent two-section transition; validate that before spreading the pattern.
 
 ## References
 
@@ -185,3 +185,53 @@ No product question currently blocks this plan. Source review resolved the owner
 - [Next layouts](https://nextjs.org/docs/app/api-reference/file-conventions/layout): use stable layout/segment APIs available in installed Next 16.1; no upgrade or optional cache feature is required.
 - [Query prefetching](https://tanstack.com/query/v5/docs/framework/react/guides/prefetching): target installed v5 types and existing application QueryClient.
 - [Motion reduced motion](https://motion.dev/docs/react-use-reduced-motion): respond to preference changes, including while mounted.
+
+
+## Implementation and local validation — 2026-09-30
+
+### Source and migration boundary
+
+Implementation began from clean `codex/werewolf` at `86433de7`, after the user committed the preceding Werewolf work. Fetched `origin/main` at `2c0a62ba` and merged it as `f9d32d6f`. Main owns `0103_account_roles`; the unchanged Werewolf migration is now `0104_werewolf`, with the next journal timestamp. Werewolf admin authorization and fixtures now use account grants. Fresh isolated databases successfully applied the merged chain. Existing development databases that already applied the former worktree `0103_werewolf` need their journal reconciled; this task did not modify that database or replay its DDL. The primary checkout and its servers were not changed. No push or deployment occurred.
+
+### Delivered decisions
+
+- A persistent House shell owns role-filtered Games, Production, Operations and People navigation. Producers can discover Werewolf; admin role alone does not grant Werewolf access. Inference/Providers retain their actual admin-or-sysop API policy. Create-game and Influence visual routes no longer duplicate the shell.
+- `AdminSession` uses the existing QueryClient, account/auth generation, resource-family access fences and exact operation identities. Drafts and unknown operations survive consumer unmount; session/access loss clears private state. Old-token 401 responses cannot expire a newer login.
+- Werewolf detail has an allowlisted compact snapshot; `/activity` provides one complete authorized replay projection. No compatibility dual payload. Replay CPU remains on both endpoints. UUID entry can begin independent reads concurrently; slug lookup and completed-production eligibility remain real dependencies.
+- A persistent game layout directly owns its section. Ordinary clicks prepare reads before native history commitment; Back/Forward, failed preparation, cancellation and rapid intents have explicit behavior. The supported App Router history integration preserves genuine links without duplicate React section owners.
+- The 220 ms shallow arc uses an opaque clipped wipe, not overlapping translucent paragraph text. A temporary inert DOM exit image has no React effects or handlers. A live media-query subscription cancels motion when reduced motion is enabled; installed Motion's hook did not update during the browser runtime-toggle test.
+- Shared production controls retain request identity and review drafts. Accepted receipts lock dependent actions until refreshed inventory contains the new job/version/publication; this fixed a browser-observed review → publish race. Non-idempotent reconciliation reads its receipt before enabling explicit resubmission.
+- Werewolf costs show coverage-aware totals, token buckets, model/action breakdowns and expandable recorded-call evidence. Existing Influence cost rendering reuses extracted display primitives without changing its fetch owner. Studio, generic metadata rendering and Influence workspace redesign remain A2–A4.
+
+### Checks and reproducible evidence
+
+All provider/media behavior in browser fixtures is deterministic. No paid model or image calls were made. Browser harnesses use disposable databases and free task-owned ports, then clean up their children and databases.
+
+| Check | Result | Local evidence |
+| --- | --- | --- |
+| `bun run test` | 2,147 passed, 5 skipped, 0 failed; 206 files | `/tmp/house-a1/provider-free-final.log` |
+| `bun run test:postgres` through isolated database wrapper | 1,810 passed, 0 failed; 152 files | `/tmp/house-a1/postgres.log`; wrapper `/tmp/house-a1/postgres.ts` |
+| Added Werewolf admin contract fixtures | 8 passed, 90 assertions | `/tmp/house-a1/api-focused.log`; wrapper `/tmp/house-a1/api-focused.ts` |
+| Focused session, production, draft and cost tests | 21 passed, 153 assertions | `/tmp/house-a1/focused.log` |
+| `bun run check` | Type checks and lint passed | `/tmp/house-a1/check-final.log` |
+| Werewolf production-build browser journey | Passed, including access loss and private production review/publication | `/tmp/house-a1/final-browser.log` |
+| Shared Influence production browser journey | 2 passed, 0 failed; 28 assertions (dev server) | `/tmp/house-a1/influence-browser.log` |
+
+Run the Werewolf browser journey from `packages/api` with `INFLUENCE_E2E_WEB_MODE=production DRIZZLE_MIGRATIONS_DIR=./drizzle bun test --config=../../bunfig.browser.toml src/e2e/werewolf.e2e.test.ts --max-concurrency 1`. The existing Influence regression uses `src/e2e/replay-visual-production.e2e.test.ts` and its dev server. Root provider-free and check commands run from the worktree root. Isolated PostgreSQL wrappers set the disposable database URL before invoking the normal test command; ordinary test files continue to use `setupTestDB()`.
+
+Set `INFLUENCE_E2E_RECORD_DIR=/tmp/house-a1/final-recordings` to record the continuity journey. Final recording: `/tmp/house-a1/final-recordings/admin-continuity.webm`; request/sample log: `admin-continuity.json`; reduced-motion mobile screenshot: `reduced-motion-mobile.png` in that directory. The sampled journey observed **618 frames, zero blank stages, zero replaced headers and zero duplicate section owners**. It covers delayed Costs, rapid Activity intent, warm reuse, failed refresh/retry, history, scroll/focus, mobile and runtime reduced motion. These are sampled DOM invariants, not a perceptual comfort score. Source fixture and recorder live in `packages/api/src/e2e/werewolf.e2e.test.ts` and `admin-continuity-browser.ts`.
+
+### Evidence limits and remaining acceptance work
+
+- The original dev smoke passed before implementation, but no equivalent pre-change production video/request-size/CPU baseline was captured. No quantitative before/after speed or CPU claim is made. Request logs include transport requests and are not a standalone network benchmark.
+- The browser covers partial producer loss, full workspace access loss, ID/slug/deep links, invalid paths, create-game and shared Influence production. Pending account replacement, late successful responses, interleaved operations and source conflicts have deterministic unit/component proof; the full cross-account/pending-write matrix has not also been recorded in a browser.
+- The compact DTO is independent of transcript length, but large-history replay CPU and payload scaling were not benchmarked. No claim of instant revocation, complete call-ledger coverage, or client draft survival after reload.
+- An attempted independent Grok implementation review produced no findings before it stalled and was stopped. This is not an external review pass. Source review and the checks above are the actual evidence.
+- Task checkboxes retain these unproven acceptance items rather than treating source existence as proof. A2–A4 remain separately scoped future work.
+
+
+### Local migration reconciliation follow-up
+
+After the handoff, the user's normal gateway startup exposed the old Werewolf journal timestamp: it applied account roles and then attempted the unchanged Werewolf SQL again; the transaction rolled back on `games.game_kind`. This was caused by moving the existing Werewolf migration after the new main migration, not by replaying data during the git merge.
+
+On 2026-09-30, inspected the actual Doppler-dev target and restricted the repair to `127.0.0.1:54320/influence_dev`. Verified the exact Werewolf SQL hash and schema, existing `0101`/`0102` hashes, and absent account-role schema. Saved a full custom-format backup at `/tmp/house-a1/dev-db-repair-1790801305576/before.dump` (3,024,794,880 bytes), plus the original journal. In one transaction, applied the unchanged `0103_account_roles.sql`, recorded its hash/timestamp, and moved the existing Werewolf journal row to `1790726400001`. Did not rerun Werewolf DDL or edit earlier historical journal rows. The database retained 84 games, 379 Werewolf events and 314 turns; account-role backfill copied four grants with no eligible grants missing. The normal application migrator succeeded twice after repair. A temporary gateway then started on port 53024 and returned healthy/active from `/api/health`; that task-owned process was stopped cleanly. This follow-up supersedes the earlier statement that this specific local database still needs reconciliation; other previously migrated databases need their own verified reconciliation.
