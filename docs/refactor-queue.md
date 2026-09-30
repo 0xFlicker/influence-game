@@ -499,3 +499,14 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Dashboard redesign, MCP install pages, MatchWatchShell chrome, post-vote Mingle drama, exposed-candidate rule changes, and purely presentational House narration upgrades: product/UX/gameplay work, not refactor backlog unless a fresh implementation bug appears. The selective-fact/cost architecture required for phase-cadence House summaries is tracked separately as R21.
 
 `Crash-Honesty Extraction` does not survive as a standalone backlog item. Its completed coverage is recorded under R2; its remaining public-replay and multi-process concerns are W3 and D1.
+
+## Account RBAC rollout follow-up (2026-09-30)
+
+- `implementation_complete/operator_rollout_pending`: retire inactive `address_roles` after inventory and
+  explicit review of unmatched/ambiguous grants; verify zero-address scheduler
+  principal and existing cron flow during the coordinated application replacement.
+- `ready`: replace legacy scheduler app JWT issuance with a dedicated scoped
+  service credential issuer/rotation flow if needed. Current repository has no
+  issuer utility for the deployed cron token; deployed credential inspection and
+  rotation require separate authorization. Current code restricts existing
+  registered principals to draw/start and supports immediate principal disable.

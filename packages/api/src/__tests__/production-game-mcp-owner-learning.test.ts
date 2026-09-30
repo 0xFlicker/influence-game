@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -670,7 +671,7 @@ async function grantSysop(db: DrizzleDB, ownerUserId: string): Promise<void> {
       description: "System operator",
     }).returning())[0]!;
   }
-  await db.insert(schema.addressRoles).values({ walletAddress, roleId: role.id });
+  await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(walletAddress), roleId: role.id });
 }
 
 function ownerAuth(ownerUserId: string): GameMcpAuthContext {

@@ -9,17 +9,15 @@ interface UserEmailAccessInput {
 
 function userEmailAccessCondition(input: UserEmailAccessInput) {
   const isRequester = sql`${schema.users.id} = ${input.requesterUserId}`;
-  if (!input.requesterWalletAddress) return isRequester;
 
   return sql`(
     ${isRequester}
     OR EXISTS (
       SELECT 1
-      FROM ${schema.addressRoles}
+      FROM ${schema.userRoles}
       INNER JOIN ${schema.roles}
-        ON ${schema.addressRoles.roleId} = ${schema.roles.id}
-      WHERE LOWER(${schema.addressRoles.walletAddress})
-        = LOWER(${input.requesterWalletAddress})
+        ON ${schema.userRoles.roleId} = ${schema.roles.id}
+      WHERE ${schema.userRoles.userId} = ${input.requesterUserId}
         AND (
           ${schema.roles.name} = 'sysop'
           OR ${schema.roles.name} = 'admin'

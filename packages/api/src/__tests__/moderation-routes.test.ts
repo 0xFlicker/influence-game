@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -22,7 +23,7 @@ describe("protected moderation adapters", () => {
     moderator = randomUUID(); owner = randomUUID();
     await db.insert(schema.users).values([{ id: moderator, walletAddress: "0xmoderator" }, { id: owner, walletAddress: "0xowner" }]);
     const [role] = await db.select().from(schema.roles).where(eq(schema.roles.name, "moderator"));
-    await db.insert(schema.addressRoles).values({ walletAddress: "0xmoderator", roleId: role!.id, grantedBy: "test" });
+    await db.insert(schema.userRoles).values({ userId: testUserIdForWallet("0xmoderator"), roleId: role!.id, grantedBy: "test" });
     token = await createSessionToken(moderator); ownerToken = await createSessionToken(owner);
     const created = await createOwnedAgentProfile(db, { userId: owner }, { name: "Route Character", personality: "Original" });
     reviewId = created.receipt.moderationRecordId!;
@@ -38,7 +39,7 @@ describe("protected moderation adapters", () => {
     expect(claimed.status).toBe(200);
     expect((await request(`receipts/${actionId}`)).status).toBe(200);
     expect((await request("recovery")).status).toBe(403);
-    await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, "0xmoderator"));
+    await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet("0xmoderator")));
     expect((await request(`receipts/${actionId}`)).status).toBe(403);
     expect((await request(`reviews/${reviewId}`)).status).toBe(403);
   });

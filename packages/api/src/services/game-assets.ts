@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { getPermissionsForAddress } from "../db/rbac.js";
+import { getPermissionsForUser } from "../db/rbac.js";
 import type { GameAssetActor } from "../middleware/game-asset-auth.js";
 import { requireAssetManager } from "../middleware/game-asset-auth.js";
 import { visibleEpisodeGames } from "../routes/episodes.js";
@@ -28,7 +28,7 @@ function fingerprint(kind: Operation["kind"], gameId: string, assetId: string | 
 async function lock(db: AssetDB, key: string): Promise<void> { await db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`); }
 async function freshManager(db: AssetDB, actor: GameAssetActor): Promise<void> {
   const [user] = await db.select().from(schema.users).where(eq(schema.users.id, actor.id));
-  if (!user?.walletAddress || !(await getPermissionsForAddress(db, user.walletAddress)).permissions.includes("manage_game_assets")) {
+  if (!user || !(await getPermissionsForUser(db, user.id)).permissions.includes("manage_game_assets")) {
     throw new GameAssetError("asset_forbidden", 403, "Current game asset permission is required");
   }
 }
@@ -58,7 +58,7 @@ export class GameAssetsService {
     if (actor) {
       const [user] = await this.db.select().from(schema.users).where(eq(schema.users.id, actor.id));
       if (!user) notFound();
-      const permissions = user.walletAddress ? (await getPermissionsForAddress(this.db, user.walletAddress)).permissions : [];
+      const permissions = (await getPermissionsForUser(this.db, user.id)).permissions;
       currentActor = { ...actor, walletAddress: user.walletAddress, permissions };
     }
     const currentGame = await this.game(gameId, currentActor);

@@ -3,7 +3,7 @@
  *
  * Drizzle ORM schema for PostgreSQL.
  * Tables: users, games, game_players, transcripts, game_results, agent_profiles,
- *         permissions, roles, role_permissions, address_roles
+ *         permissions, roles, role_permissions, user_roles, service_principals
  */
 
 import {
@@ -2632,7 +2632,7 @@ export const rolePermissions = pgTable("role_permissions", {
 ]);
 
 // ---------------------------------------------------------------------------
-// RBAC — Wallet Address ↔ Role assignments
+// RBAC — Legacy wallet grants (migration archive; never authorization)
 // ---------------------------------------------------------------------------
 
 export const addressRoles = pgTable("address_roles", {
@@ -3802,3 +3802,18 @@ export const gameAssetOperations = pgTable("game_asset_operations", {
   check("game_asset_operations_kind_check", sql`${t.kind} IN ('upload', 'update', 'replace', 'delete')`),
   check("game_asset_operations_request_check", sql`length(${t.requestId}) BETWEEN 1 AND 200`),
 ]);
+
+// Role authority belongs to an Influence account, independently of credentials.
+export const userRoles = pgTable("user_roles", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  roleId: text("role_id").notNull().references(() => roles.id, { onDelete: "cascade" }),
+  grantedBy: text("granted_by"), // Account ID for new grants; legacy attribution preserved.
+  grantedAt: text("granted_at").notNull().default(sql`now()::text`),
+}, (table) => [primaryKey({ columns: [table.userId, table.roleId] })]);
+
+/** Existing scheduler identities are operational principals, not human RBAC. */
+export const servicePrincipals = pgTable("service_principals", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "restrict" }),
+  purpose: text("purpose").notNull().default("free_queue"),
+  enabled: boolean("enabled").notNull().default(true),
+}, table => [check("service_principals_purpose_check", sql`${table.purpose} = 'free_queue'`)]);

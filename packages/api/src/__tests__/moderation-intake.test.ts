@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -18,7 +19,7 @@ describe("moderation intake", () => {
     await db.insert(schema.users).values({ id, walletAddress });
     if (role) {
       const [row] = await db.select().from(schema.roles).where(eq(schema.roles.name, role));
-      await db.insert(schema.addressRoles).values({ walletAddress, roleId: row!.id, grantedBy: "test" });
+      await db.insert(schema.userRoles).values({ userId: testUserIdForWallet(walletAddress), roleId: row!.id, grantedBy: "test" });
     }
     return id;
   }
@@ -52,7 +53,7 @@ describe("moderation intake", () => {
     const id = await submission();
     const held = await claim(moderator, id);
     const [u] = await db.select().from(schema.users).where(eq(schema.users.id, moderator));
-    await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, u!.walletAddress!));
+    await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet(u!.walletAddress!)));
     await expect(readModerationReview(db, moderator, id)).rejects.toMatchObject({ code: "moderation_forbidden" });
     await expect(triageModerationReview(db, moderator, { actionId: randomUUID(), reviewId: id, action: "flag", token: held.claim!.token, version: held.version, reason: "Check this" })).rejects.toMatchObject({ code: "moderation_forbidden" });
   });

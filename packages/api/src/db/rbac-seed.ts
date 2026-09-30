@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "./index.js";
 import { schema } from "./index.js";
 
@@ -19,7 +19,7 @@ const PERMISSIONS = [
   { name: "review_agent_content", description: "Claim and review character content revisions" },
   { name: "review_moderation_escalations", description: "Review content escalated to admins" },
   { name: "undo_moderation", description: "Undo character moderation decisions with an audit trail" },
-  { name: "manage_roles", description: "Assign and revoke roles to addresses" },
+  { name: "manage_roles", description: "Assign and revoke roles to accounts" },
   { name: "create_game", description: "Create new games" },
   { name: "start_game", description: "Start waiting games" },
   { name: "join_game", description: "Join open games" },
@@ -166,34 +166,31 @@ export async function seedRBAC(db: DrizzleDB): Promise<void> {
         }
       }
     }
-
-    // 4. Auto-assign sysop role to ADMIN_ADDRESS if set
-    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
-    const sysopRoleId = roleIds.get("sysop");
-
-    if (adminAddress && sysopRoleId) {
-      const existing = (await tx
-        .select({ walletAddress: schema.addressRoles.walletAddress })
-        .from(schema.addressRoles)
-        .where(
-          sql`${schema.addressRoles.walletAddress} = ${adminAddress} AND ${schema.addressRoles.roleId} = ${sysopRoleId}`,
-        ))[0];
-
-      if (!existing) {
-        await tx.insert(schema.addressRoles)
-          .values({
-            walletAddress: adminAddress,
-            roleId: sysopRoleId,
-            grantedBy: "system",
-          });
-        console.log(
-          `[rbac-seed] Assigned sysop role to ADMIN_ADDRESS: ${adminAddress}`,
-        );
-      }
-    }
   });
+
+  await bootstrapSysop(db);
 
   console.log(
     `[rbac-seed] Seeded ${PERMISSIONS.length} permissions, ${ROLES.length} roles`,
   );
+}
+
+/** Initial bootstrap only. Final-sysop protection prevents startup resurrection. */
+export async function bootstrapSysop(db: DrizzleDB): Promise<void> {
+  const address = process.env.ADMIN_ADDRESS?.toLowerCase();
+  if (!address || address === "0x0000000000000000000000000000000000000000") return;
+  await db.transaction(async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('influence:role-management', 0))`);
+    const [completed] = await tx.select().from(schema.appSettings).where(eq(schema.appSettings.key, "rbac_bootstrap_completed"));
+    if (completed) return;
+    const markCompleted = () => tx.insert(schema.appSettings).values({ key: "rbac_bootstrap_completed", value: "true" }).onConflictDoNothing();
+    const [role] = await tx.select().from(schema.roles).where(eq(schema.roles.name, "sysop"));
+    if (!role) return;
+    const [existing] = await tx.select().from(schema.userRoles).where(eq(schema.userRoles.roleId, role.id));
+    if (existing) { await markCompleted(); return; }
+    const owners = await tx.select().from(schema.users).where(sql`lower(${schema.users.walletAddress}) = ${address}`);
+    if (owners.length !== 1) return;
+    await tx.insert(schema.userRoles).values({ userId: owners[0]!.id, roleId: role.id, grantedBy: "system" });
+    await markCompleted();
+  });
 }

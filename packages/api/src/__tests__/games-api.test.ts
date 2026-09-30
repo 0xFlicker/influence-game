@@ -1,3 +1,4 @@
+import { testUserIdForWallet, grantTestAuthority } from "./rbac-fixtures.js";
 /**
  * Game REST API endpoint tests.
  *
@@ -87,10 +88,12 @@ async function setupApp() {
       },
     ]);
 
+    await grantTestAuthority(db, ADMIN_USER_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"]);
   const adminToken = await createSessionToken(ADMIN_USER_ID, {
     roles: ["sysop"],
     permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"],
   });
+  await grantTestAuthority(db, REGULAR_USER_ID, ["join_game"]);
   const userToken = await createSessionToken(REGULAR_USER_ID, {
     roles: ["player"],
     permissions: ["join_game"],
@@ -129,8 +132,8 @@ function authPost(token: string): RequestInit {
 async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<string> {
   const roleId = randomUUID();
   await db.insert(schema.roles).values({ id: roleId, name: roleName });
-  await db.insert(schema.addressRoles).values({
-    walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  await db.insert(schema.userRoles).values({
+    userId: testUserIdForWallet("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     roleId,
     grantedBy: ADMIN_USER_ID,
   });
@@ -1802,7 +1805,7 @@ describe("Game REST API", () => {
       const staleToken = await createSessionToken(REGULAR_USER_ID, { roles: ["producer"] });
       const { id } = await createTestGame(app, adminToken);
       const first = await joinTestPlayer(db, app, id, "Original Producer Competitor", staleToken);
-      await db.delete(schema.addressRoles).where(eq(schema.addressRoles.roleId, roleId));
+      await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, roleId));
       const secondAgentId = await createAdditionalTestAgent(db, "Revoked Producer Competitor");
 
       const rejected = await app.request(`/api/games/${id}/join`, json({ agentProfileId: secondAgentId }, staleToken));

@@ -3183,11 +3183,11 @@ export interface AdminRole {
   createdAt: string;
 }
 
-export interface AddressRoleAssignment {
-  walletAddress: string;
+export interface UserRoleAssignment {
+  userId: string;
   roleId: string;
   roleName: string;
-  grantedBy: string;
+  grantedBy: string | null;
   grantedAt: string;
 }
 
@@ -3294,27 +3294,27 @@ export async function listRoles(): Promise<AdminRole[]> {
   return apiFetch("/api/admin/roles");
 }
 
-export async function listAddressRoles(): Promise<AddressRoleAssignment[]> {
-  return apiFetch("/api/admin/address-roles");
+export async function listUserRoles(): Promise<UserRoleAssignment[]> {
+  return apiFetch("/api/admin/user-roles");
 }
 
 export async function assignRole(
-  walletAddress: string,
+  userId: string,
   roleId: string,
-): Promise<AddressRoleAssignment> {
-  return apiFetch("/api/admin/address-roles", {
+): Promise<UserRoleAssignment> {
+  return apiFetch("/api/admin/user-roles", {
     method: "POST",
-    body: JSON.stringify({ walletAddress, roleId }),
+    body: JSON.stringify({ userId, roleId }),
   });
 }
 
 export async function revokeRole(
-  walletAddress: string,
+  userId: string,
   roleId: string,
 ): Promise<void> {
-  await apiFetch("/api/admin/address-roles", {
+  await apiFetch("/api/admin/user-roles", {
     method: "DELETE",
-    body: JSON.stringify({ walletAddress, roleId }),
+    body: JSON.stringify({ userId, roleId }),
   });
 }
 

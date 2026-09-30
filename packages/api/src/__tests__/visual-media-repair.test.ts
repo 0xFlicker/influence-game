@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import sharp from "sharp";
@@ -255,6 +256,7 @@ test("immutable inputs, versions and publication evidence reject updates; failed
 
 test("API queues once, returns durable rejection, and keeps candidates behind admin authorization", async () => {
   await db.insert(schema.users).values({ id: "operator", displayName: "Operator" });
+    await grantTestAuthority(db, "operator", ["view_admin", "start_game"]);
   const token = await createSessionToken("operator", { roles: ["admin"], permissions: ["view_admin", "start_game"] });
   const app = createVisualRoutes(db); const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
   const invalid = await app.request("/api/admin/games/media/visual/media", { method: "POST", headers, body: "{" });

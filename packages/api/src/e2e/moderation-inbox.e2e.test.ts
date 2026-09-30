@@ -1,3 +1,4 @@
+import { testUserIdForWallet } from "../__tests__/rbac-fixtures.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { Browser, Page } from "puppeteer";
@@ -91,7 +92,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
     await page.type("textarea", "Needs admin judgement"); await click(page, "Pass to admin"); await text(page, "Passed to admin review.");
     const response = await fetch(`${servers.apiUrl}/api/moderation/queue?route=escalated`, { headers: { Authorization: `Bearer ${moderator.jwt}` } });
     expect(response.status).toBe(404);
-    await database.db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, moderator.wallet.address.toLowerCase()));
+    await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId, testUserIdForWallet(moderator.wallet.address.toLowerCase())));
     await click(page, "Refresh"); await text(page, "Moderator access is required.");
   } finally { await page.close(); }
   const adminPage = await createAuthenticatedPage(browser, adminUser.jwt, `${servers.webUrl}/moderation`, { privateKey: adminUser.wallet.privateKey });

@@ -1,3 +1,4 @@
+import { grantTestAuthority } from "./rbac-fixtures.js";
 import { adoptDurableGameRunOwner } from "../services/game-ownership.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { afterEach, beforeEach, expect, test } from "bun:test";
@@ -258,6 +259,7 @@ test("read-only admins can inspect evidence but cannot change policy or resume",
   process.env.JWT_SECRET = "visual-ops-test-only";
   try {
     await db.insert(schema.users).values({ id: "read-only-reviewer", displayName: "Reviewer" });
+    await grantTestAuthority(db, "read-only-reviewer", ["view_admin"]);
     const token = await createSessionToken("read-only-reviewer", { roles: ["admin"], permissions: ["view_admin"] });
     const app = createVisualRoutes(db);
     const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
