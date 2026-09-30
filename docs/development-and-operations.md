@@ -645,3 +645,57 @@ one usable sysop before switching traffic. Recovery from intentional removal of
 all operators is an explicit database operation, not an automatic permission
 restoration. Sysop grant/revoke operations serialize and cannot remove the final
 sysop through the API. No new role can be assigned to a service principal.
+
+### Initial operator from host access
+
+On a fresh database, start the migrated app to seed role definitions, then log
+in as the intended operator using any supported game login provider. An existing
+account ID is required: this command never creates an account or chooses the
+first signup. Existing `ADMIN_ADDRESS` wallet bootstrap still works on startup
+or after that wallet's login. Both paths share the same one-time completion
+marker and serialized transaction. Running installations with a sysop use the
+normal admin panel, not bootstrap.
+
+For local source development, inject the existing runtime config without printing
+secrets (substitute the registered account ID and your local operator label):
+
+```bash
+cd packages/api
+doppler run --project social-strategy-agent --config dev -- \
+  bun run auth:bootstrap-operator --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --dry-run
+# After checking the eligible account, explicitly apply:
+doppler run --project social-strategy-agent --config dev -- \
+  bun run auth:bootstrap-operator --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --apply
+```
+
+The production API image includes `/app/dist/bootstrap-initial-operator.js`.
+On the host, use the already running API container with its injected environment
+(local Docker Postgres and hosted Linode Postgres use the same `DATABASE_URL`):
+
+```bash
+docker exec API_CONTAINER bun /app/dist/bootstrap-initial-operator.js \
+  --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --dry-run
+docker exec API_CONTAINER bun /app/dist/bootstrap-initial-operator.js \
+  --user-id ACCOUNT_ID --operator LOCAL_OPERATOR --apply
+```
+
+Select the current gateway container from the host's existing compose/service
+inventory; production has color-specific containers and staging uses its restart
+service. Do not start a second server or export/echo the Doppler token/DB URL.
+From a source-equipped host with the app runtime environment already injected,
+the same source command works without a second Doppler invocation. A fresh
+ephemeral follows this path too, but its supported login must work before an
+account can be targeted; bootstrap does not bypass missing Clerk configuration.
+
+The CLI requires an explicit `--dry-run` or `--apply`, refuses absent accounts,
+service identities, an existing sysop, or any prior completion marker. Dry-run
+changes no grants. Apply records the grant plus completion/audit metadata in one
+transaction. Exit 0 means eligible/applied, 2 means a blocked initial bootstrap,
+and 1 means arguments/environment/database failure. Concurrent or repeated
+requests cannot create a second initial operator; after a successful apply, use
+the admin panel. Removing a later grant never reopens bootstrap. The supplied
+operator label is self-reported, not verified AWS/GitHub identity; host/database
+access is the authority boundary. The audit contains label, account ID, request
+ID, timestamp and this limitation, without credentials. This CLI is not emergency
+recovery; resetting the marker or restoring lost sysop authority requires a
+separately approved operator recovery procedure.

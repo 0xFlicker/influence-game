@@ -22,3 +22,7 @@ Implemented and verified locally:
 
 Publication and a fresh PR dev environment were subsequently authorized.
 Production/staging rollout and live role assignment remain separate steps.
+
+Additional approved scope: host-operator account-ID initial-bootstrap CLI, bundled
+in the API image, explicit dry-run/apply, atomic audit/once marker, and regression
+coverage. No live bootstrap or cloud identity integration is authorized.

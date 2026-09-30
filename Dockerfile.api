@@ -32,6 +32,7 @@ RUN bun build src/index.ts --target=bun --external sharp --outdir=dist --sourcem
   && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --external sharp --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
   && bun build src/scripts/backfill-agent-revisions.ts --target=bun --external sharp --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external \
   && bun build src/scripts/rotate-private-avatar-storage-keys.ts --target=bun --external sharp --outdir=dist --entry-naming=rotate-private-avatar-storage-keys.js --sourcemap=external \
+  && bun build src/scripts/bootstrap-initial-operator.ts --target=bun --outdir=dist --entry-naming=bootstrap-initial-operator.js --sourcemap=external \
   && bun build src/scripts/preflight-auth-identities.ts --target=bun --external sharp --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external \
   && bun build src/scripts/mint-deployment-control-token.ts --target=bun --external sharp --outdir=dist --entry-naming=mint-deployment-control-token.js --sourcemap=external \
   && bun build src/scripts/check-visual-runtime.ts --target=bun --external sharp --outdir=dist --sourcemap=external

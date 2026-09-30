@@ -6,6 +6,10 @@ CREATE TABLE "user_roles" (
   PRIMARY KEY ("user_id", "role_id")
 );
 --> statement-breakpoint
+-- Hold legacy writers until the archive fence commits, including writes
+-- already in flight before candidate startup. This closes the backfill/fence gap.
+LOCK TABLE "address_roles" IN SHARE ROW EXCLUSIVE MODE;
+
 -- Case-insensitive matches must be unique. Unmatched/ambiguous grants stay in
 -- address_roles for operator review and confer no authority in the new app.
 INSERT INTO "user_roles" ("user_id", "role_id", "granted_by", "granted_at")
