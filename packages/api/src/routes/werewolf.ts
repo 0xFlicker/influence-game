@@ -5,6 +5,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { readWerewolfPresentation, readWerewolfCharacter } from "../services/werewolf-presentation.js";
+import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
 export function createWerewolfRoutes(db: DrizzleDB) {
@@ -73,6 +74,11 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       return c.json(presentation);
     });
   }
+  app.get("/api/werewolf/:id/thinking", async c => {
+    const cursor = Number(c.req.query("cursor"));
+    if (!Number.isSafeInteger(cursor) || cursor < 1) return c.json({ error: "Choose a replay position" }, 400);
+    return c.json(await readWerewolfThinking(db, c.req.param("id"), c.req.query("audience") ?? "mystery", cursor));
+  });
   app.get("/api/werewolf/:id", async (c) => {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));

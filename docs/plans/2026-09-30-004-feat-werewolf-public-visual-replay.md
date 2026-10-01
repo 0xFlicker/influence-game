@@ -1,11 +1,15 @@
 ---
 title: Werewolf public visual replay — A2 prerequisite side quest
 type: feat
-status: implemented-local-validation
+status: prototype-superseded
 date: 2026-09-30
 ---
 
 # Werewolf public visual replay
+
+## Product review — 2026-10-01
+
+The user considers this separate playback shell a throwaway prototype. Preserve its production/publication improvements. Its tests established functional replay and containment, not parity with the House Influence player. The replacement direction is [shared House watch-player integration](2026-10-01-001-refactor-shared-house-watch-player.md): reuse the existing shell, director, transport, cast and inspector, and explicitly address evidence and MCP gaps. Do not keep extending the standalone shell.
 
 ## Decision and scope
 

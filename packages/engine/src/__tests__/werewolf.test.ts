@@ -319,7 +319,7 @@ describe("Werewolf pack negotiation", () => {
 describe("Werewolf exact decision contracts", () => {
   test.each(["attack", "pack_talk"] as const)("pack %s rejects malformed or incomplete structured decisions", action => {
     const artifact = werewolfDecisionArtifact({ actorId: "p0", action, legalTargetIds: action === "attack" ? ["p1", "p2"] : [] });
-    const valid = action === "attack" ? { targetId: "p1", thinking: "" } : { cue: null, text: "Choose p1." };
+    const valid = action === "attack" ? { targetId: "p1", thinking: "Remove the anchor." } : { cue: null, text: "Choose p1.", thinking: "Propose the anchor." };
     for (const document of ["p1", "{}", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``, JSON.stringify({ ...valid, extra: true }), action === "attack" ? '{"targetId":"p1"}' : '{"text":"p1"}']) {
       expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, document).status).toBe("invalid");
     }
@@ -335,7 +335,7 @@ describe("Werewolf exact decision contracts", () => {
   test("accepts one exact legal decision and explicit silence", () => {
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, '{"targetId":"p1","thinking":"A public vote contradiction."}').status).toBe("valid");
     const speech = werewolfDecisionArtifact({ actorId: "p0", action: "discuss", legalTargetIds: [] });
-    expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":null,"cue":null}').status).toBe("valid");
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":null,"cue":null,"thinking":"Wait for evidence."}').status).toBe("valid");
     expect(exactStructuredOutputRegistry.decodeJsonDocument(speech, '{"text":" ","thinking":""}').status).toBe("invalid");
   });
   test("discussion rejects malformed prose and incomplete or extra speech fields", () => {

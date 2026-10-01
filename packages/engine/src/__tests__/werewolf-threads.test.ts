@@ -125,12 +125,12 @@ describe("Werewolf ordered recipient threads", () => {
     const request = step.request;
     const artifact = werewolfDecisionArtifact(request);
     const valid = { text: "Why did you change your vote?", cue: "A brittle laugh.", recipientIds: request.legalRecipientIds.slice(0, 3) };
-    for (const payload of [valid, { text: null, cue: "Hesitates.", recipientIds: [] }]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload)).status).toBe("valid");
+    for (const payload of [valid, { text: null, cue: "Hesitates.", recipientIds: [] }]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("valid");
     const invalid = [{ ...valid, recipientIds: [request.actorId] }, { ...valid, recipientIds: ["dead-or-unknown"] },
       { ...valid, recipientIds: [valid.recipientIds[0], valid.recipientIds[0]] }, { ...valid, recipientIds: request.legalRecipientIds },
-      { ...valid, text: null }, { text: valid.text, cue: null }, { ...valid, actorId: request.actorId }, { ...valid, thinking: "secret" },
+      { ...valid, text: null }, { text: valid.text, cue: null }, { ...valid, actorId: request.actorId }, { ...valid, thinking: "" },
       { ...valid, text: "x".repeat(301) }, { ...valid, cue: "" }, {}];
-    for (const payload of invalid) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload)).status).toBe("invalid");
+    for (const payload of invalid) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("invalid");
     for (const payload of ["hello", "{}", `prefix ${JSON.stringify(valid)}`, '```json\n'+JSON.stringify(valid)+'\n```']) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, payload).status).toBe("invalid");
     const before = structuredClone(ctx.events);
     await expect(advanceWerewolf(ctx.store, { decide: async () => ({ kind: "opening", ...valid, recipientIds: [request.actorId] }) })).rejects.toThrow("recipients");
@@ -138,10 +138,10 @@ describe("Werewolf ordered recipient threads", () => {
     expect(() => werewolfEvent(ctx.state, { type: "werewolf.action_accepted", payload: { ...request, decision: { kind: "speech", text: "hello", cue: null }, fallback: null } })).toThrow("speech");
   });
 
-  test("tiny reply contracts reject model identities, gaze and private thinking", () => {
+  test("tiny reply contracts require thinking and reject model identities and gaze", () => {
     const artifact = werewolfDecisionArtifact({ actorId: "p0", action: "discuss", legalTargetIds: [] });
     const valid = { text: "Why?", cue: "Hesitates." };
-    for (const payload of [valid, { text: null, cue: null }]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload)).status).toBe("valid");
-    for (const payload of [{ ...valid, actorId: "p0" }, { ...valid, thinking: "secret" }, { ...valid, lookAtPlayerId: "p1" }, { ...valid, recipientIds: [] }, { text: valid.text }, {}]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(payload)).status).toBe("invalid");
+    for (const payload of [valid, { text: null, cue: null }]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("valid");
+    for (const payload of [{ ...valid, actorId: "p0" }, { ...valid, thinking: "" }, { ...valid, lookAtPlayerId: "p1" }, { ...valid, recipientIds: [] }, { text: valid.text }, {}]) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("invalid");
   });
 });

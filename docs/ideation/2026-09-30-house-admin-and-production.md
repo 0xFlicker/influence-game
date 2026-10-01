@@ -45,7 +45,7 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 
 ## A2 — production studio
 
-Active pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). First, the user selected a [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) to establish the complete player the studio will embed.
+Active pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). First, the user selected a [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) to establish the complete player the studio will embed. The separate viewer was reviewed as a prototype; the [reviewed shared House player integration plan](../plans/2026-10-01-001-refactor-shared-house-watch-player.md) now specifies replacement of its playback shell while preserving production improvements.
 
 **User outcome:** browse a game's material, select a moment, inspect what viewers would see, and make production decisions in context.
 
@@ -79,6 +79,17 @@ JSON structure can suggest a layout. Explicit field metadata must supply labels,
 Inventory Influence's existing actions before migrating them. Establish comparable Overview, Production, Costs and Activity locations, with game-specific phase, cast, decision and outcome content. Link canonical activity moments to production previews. Consider a combined game browser and cross-game cost views through explicit read models.
 
 **Done when:** both games are discoverable and operable, their current state and production readiness are legible, and no existing operator action disappears during migration. Shared screens must not introduce Influence assumptions into Werewolf.
+
+### Pending work and UI surface map
+
+The 2026-10-01 viewer-plan review confirmed that the isolated Werewolf worktree builds toward the planned shared House experience. Keep the existing MCP banner verbatim and do not add Werewolf-specific capability disclaimers, disabled states or other temporary UI changes for pending work. The following tasks are deferred and do not gate shared-player integration. Keep this map current as components move during extraction. If any task is dropped or remains unfinished at release review, revisit the mapped UI against the actual release scope then.
+
+| Task | Pending implementation | UI and backend locations to revisit |
+| --- | --- | --- |
+| A4-MCP | Implement the frozen Werewolf MCP contract after gameplay/event iteration settles enough to support it. Use the [existing MCP inspection plan](../plans/2026-09-27-001-feat-werewolf-mcp-inspection-plan.md): refresh its version assumptions against the then-current canonical rules, implement discovery/rules/audience-safe inspection, and verify access, replay cursors and Influence regression behavior. Do not freeze today's rapidly changing event shape merely to ship the viewer. | Shared `McpBanner` in `packages/web/src/app/games/[slug]/components/match-watch-shell.tsx`, rendered above the theater; desktop “Don't just watch. Cross-examine this game with your AI.”, mobile “Cross-examine with AI”, CTA “Analyze this game”, link `/get-mcp`. Setup destination: `packages/web/src/app/get-mcp/page.tsx` and `get-mcp-client.tsx`. Backend: `packages/api/src/game-mcp/read-model.ts` and game MCP tools. Preserve all banner copy/behavior now. |
+| A4-EVIDENCE | Specify and implement Werewolf evolving strategy state and its public delivery separately from viewer extraction. Inventory missing inspector capabilities without fabricating historical evidence. Werewolf currently has frozen starting strategy; Influence has private evolving strategy machinery but its public strategy-card projection is empty. The implemented Omniscient-only thinking slice is available for reuse now. | Shared `InspectorPanel` Thinking/Strategy sections in `match-watch-shell.tsx`, intelligence display model `match-watch-intelligence-model.ts`, API `services/public-watch-intelligence.ts`; Werewolf `services/werewolf-thinking.ts` and prototype `app/werewolf/werewolf-thinking.tsx` until extraction. Follow these mappings to shared replacements. Preserve Mystery/Omniscient data boundaries throughout. |
+
+These are implementation gaps recorded for follow-through, not instructions to advertise an incomplete Werewolf experience in the current UI. The shared-player plan remains responsible for playback, controls, cast/inspector integration and the reported presentation defects.
 
 ## Shared boundaries
 

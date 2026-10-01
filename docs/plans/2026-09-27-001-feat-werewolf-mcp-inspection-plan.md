@@ -1,7 +1,7 @@
 ---
 title: "feat: Werewolf discovery and spectator inspection through MCP"
 type: feat
-status: planned
+status: deferred
 date: 2026-09-27
 scope: implementation-plan
 source_commit: d9aea15f
@@ -10,6 +10,12 @@ source_commit: d9aea15f
 # Werewolf discovery and spectator inspection through MCP
 
 Follow-up contract note: rules version 3 adds unanimous pack negotiation and `pack_vote` audience entries. The planned reader must include whole resolved pack ballots in Omniscient, omit them in Mystery, and preserve audience-local cursors. Pending ballots and private rationale remain excluded. See [pack negotiation plan](2026-09-27-002-feat-werewolf-pack-negotiation-plan.md).
+
+2026-10-01 disclosure update: the separate browser/API Thinking surface is Omniscient-only and explicitly opt-in, tied to committed replay positions. Mystery never receives thinking, even at completion. The default MCP spectator view in this plan remains free of thinking; a future explicit MCP thinking tool must use that same policy. Native provider reasoning traces and owner strategy remain separate private evidence. See [shared player integration](2026-10-01-001-refactor-shared-house-watch-player.md).
+
+## Scheduling decision — 2026-10-01
+
+Deferred as **A4-MCP** in [the pillar task map](../ideation/2026-09-30-house-admin-and-production.md#pending-work-and-ui-surface-map). Implement this frozen external contract after the gameplay/event iteration phase is ready for that commitment; refresh historical rules assumptions at that time. This work does not block shared House player integration. Reuse the existing MCP banner verbatim in Werewolf now, without capability qualifications or gating. UI surface locations and a future release-review checkpoint are recorded in the pillar document.
 
 ## Goal and execution boundary
 

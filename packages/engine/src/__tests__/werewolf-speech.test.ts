@@ -16,11 +16,11 @@ describe("Werewolf names-only dialogue", () => {
   test.each(["introduce", "pack_talk", "discuss"] as const)("%s rejects spoken UUIDs in both fresh and journaled model values", action => {
     const artifact = werewolfDecisionArtifact({ actorId: "speaker", action, legalTargetIds: [] });
     for (const text of [leakedSpeech, `Ask ${miraId.toUpperCase()}.`, `Mira: {${miraId}}`]) {
-      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ cue: null, text })).status).toBe("invalid");
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ cue: null, text, thinking: "Consider this contribution." })).status).toBe("invalid");
       expect(exactStructuredOutputRegistry.decodeAcceptedValue(artifact, { kind: "speech", text }).status).toBe("invalid");
     }
     for (const text of [cleanSpeech, null]) {
-      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ cue: null, text })).status).toBe("valid");
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ cue: null, text, thinking: "Consider this contribution." })).status).toBe("valid");
     }
   });
 
@@ -42,8 +42,8 @@ describe("Werewolf names-only dialogue", () => {
     expect(replayWerewolf([initial, committed]).history.at(-1)).toMatchObject({ kind: "speech", text: leakedSpeech });
   });
 
-  test.each(["repair", "exhaust"] as const)("pack dialogue retries UUID leakage before accepting speech (%s)", async mode => {
-    const exhausted = mode === "exhaust";
+  test.each(["repair", "exhaust", "missing_thinking"] as const)("pack dialogue retries UUID leakage before accepting speech (%s)", async mode => {
+    const exhausted = mode !== "repair";
     const players = Array.from({ length: 8 }, (_, index) => ({
       id: index === 0 ? miraId : `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
       name: index === 0 ? "Mira" : `Player ${index}`, personality: "Careful", backstory: "", strategy: "", avatarUrl: null,
@@ -66,7 +66,7 @@ describe("Werewolf names-only dialogue", () => {
         return Response.json({ id: `speech-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
           choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
             tool_calls: [{ id: "proposal", type: "function", function: { name: "werewolf_pack_talk", arguments: JSON.stringify({
-              cue: null, text: exhausted || dispatches === 1 ? leakedSpeech : cleanSpeech,
+              ...(mode === "missing_thinking" ? {} : { thinking: "Remove the anchor." }), cue: null, text: mode === "missing_thinking" ? cleanSpeech : exhausted || dispatches === 1 ? leakedSpeech : cleanSpeech,
             }) } }],
           } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
       },
@@ -83,4 +83,23 @@ describe("Werewolf names-only dialogue", () => {
     expect(speech).toHaveLength(exhausted ? 0 : 1);
     expect(speech.some(entry => entry.text?.includes(miraId))).toBe(false);
   });
+});
+
+test("all conversation surfaces require exact non-empty thinking, including passes and recovery", () => {
+  for (const action of ["introduce", "pack_talk", "discuss", "open_thread"] as const) {
+    const artifact = werewolfDecisionArtifact(action === "open_thread"
+      ? { actorId: "p0", action, legalTargetIds: [], legalRecipientIds: ["p1"] }
+      : { actorId: "p0", action, legalTargetIds: [] });
+    const base = { text: null, cue: null, ...(action === "open_thread" ? { recipientIds: [] } : {}) };
+    const valid = { ...base, thinking: "Wait for a useful opening." };
+    expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(valid)).status).toBe("valid");
+    for (const invalid of [base, { ...valid, thinking: "" }, { ...valid, thinking: " " }, { ...valid, thinking: null },
+      { ...valid, thinking: "x".repeat(2001) }, { ...valid, extra: true }, {}]) {
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify(invalid)).status).toBe("invalid");
+      expect(exactStructuredOutputRegistry.decodeAcceptedValue(artifact, { ...invalid, kind: action === "open_thread" ? "opening" : "speech" }).status).toBe("invalid");
+    }
+    for (const invalid of ["hello", `prefix ${JSON.stringify(valid)}`, `\`\`\`json\n${JSON.stringify(valid)}\n\`\`\``]) {
+      expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, invalid).status).toBe("invalid");
+    }
+  }
 });

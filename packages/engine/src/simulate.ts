@@ -17,6 +17,11 @@
  * introductions and pack chat. Mystery readback keeps dialogue roles hidden.
  * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
  * JSON and --chatty records contain private roles, strategies, and thinking.
+ * Werewolf model turns now require thinking, including speech/pass. API games journal
+ * it separately from gameplay speech and expose it only through an Omniscient toggle,
+ * bound to the replay cursor (sealed choices wait for resolution). Mystery never gets it.
+ * Native provider reasoning traces remain separate diagnostics. Standalone canonical
+ * logs contain target thinking; speech thinking lives in accepted provider evidence.
  * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
  * Aggressor defaults preserve confrontational temperament and possible overcommitment;
  * evaluate faction benefit as well as survival when inspecting new-game behavior.

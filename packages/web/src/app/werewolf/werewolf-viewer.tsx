@@ -5,11 +5,13 @@ import { getWerewolfPresentation, stopWerewolf } from "@/lib/werewolf-api";
 import { usePermissions } from "@/hooks/use-permissions";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { WerewolfPresentation } from "@influence/engine/werewolf/presentation";
+import { WerewolfThinking } from "./werewolf-thinking";
 import { WerewolfPlayer } from "./werewolf-player";
 import { replayMoment } from "./replay-moment";
 import styles from "./werewolf-player.module.css";
 
 export function WerewolfViewer({ slug }: { slug: string }) {
+  const [showThinking, setShowThinking] = useState(false);
   const [audience, setAudience] = useState<WerewolfAudience>("mystery");
   const [cursor, setCursor] = useState<number | null>(1);
   const [playing, setPlaying] = useState(false), [speed, setSpeed] = useState(1);
@@ -70,9 +72,10 @@ export function WerewolfViewer({ slug }: { slug: string }) {
   return <div className={styles.player}>
     <Link href="/werewolf" className="text-sm text-white/50 hover:text-white">← Werewolf games</Link>
     <header className={styles.header}><div><p className={styles.eyebrow}>Werewolf · {cursor === null ? "Latest moment" : "Visual replay"}</p><h1>{slug}</h1></div>
-      <fieldset className={styles.modes}><legend className="sr-only">Spectator mode</legend>{(["mystery", "omniscient"] as const).map(mode => <button key={mode} aria-pressed={audience === mode} onClick={() => { setAudience(mode); seek(1); }}>{mode === "mystery" ? "Mystery" : "Omniscient"}</button>)}</fieldset>
+      <fieldset className={styles.modes}><legend className="sr-only">Spectator mode</legend>{(["mystery", "omniscient"] as const).map(mode => <button key={mode} aria-pressed={audience === mode} onClick={() => { setShowThinking(false); setAudience(mode); seek(1); }}>{mode === "mystery" ? "Mystery" : "Omniscient"}</button>)}</fieldset>
     </header>
     <p className={`${styles.meta} mb-4`}>{audience === "mystery" ? "Roles stay hidden until the ending. Follow the public conversation." : "All roles are visible. Private pack discussion and night decisions are included."}</p>
+    {audience === "omniscient" && <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={showThinking} onChange={event => setShowThinking(event.target.checked)} />Show thinking</label>}
     {error && <p role="alert" className={styles.error}>{error}</p>}
     {data ? <WerewolfPlayer key={`${slug}:${audience}:${data.view.cursor}`} data={data} playing={playing && !waiting} speed={speed} onAdvance={advance} /> : <div className={styles.stage}><p role="status" className={styles.loading}>{error ? "Replay unavailable" : "Loading the village…"}</p></div>}
     <div className={styles.transport}>
@@ -88,6 +91,7 @@ export function WerewolfViewer({ slug }: { slug: string }) {
       <label className={styles.seek}>Position<input aria-label="Replay position" type="range" min={1} max={data?.latestCursor ?? Math.max(1, cursor ?? 1)} value={data?.view.cursor ?? cursor ?? 1} disabled={!data} onChange={e => seek(Number(e.target.value))} /></label>
       <p className={styles.meta}>Space to play or pause · Arrow keys to step · Playback pauses while this tab is hidden</p>
     </div>
+    {data && audience === "omniscient" && showThinking && <WerewolfThinking gameId={data.view.gameId} cursor={data.view.cursor} players={data.view.players} />}
     {data && <>
       {moment?.spoken && moment.cue && <details className={styles.ledger}><summary>Performance note</summary><p className={styles.cue}>{moment.cue}</p></details>}
       {moment && moment.details.length > 0 && <details className={styles.ledger}><summary>{data.view.entries.at(-1)?.kind === "result" ? "Cast and winners" : "Decision details"}</summary><ul>{moment.details.map((line, index) => <li key={index}>{line}</li>)}</ul></details>}

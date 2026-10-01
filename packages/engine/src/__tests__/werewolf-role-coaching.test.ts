@@ -38,7 +38,7 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       else expect(Object.hasOwn(context, "roleCoaching")).toBe(false);
       const action = actions[calls++]!;
       expect(context.request.action).toBe(action);
-      const decision = action === "introduce" ? { text: "I will listen first.", cue: null }
+      const decision = action === "introduce" ? { text: "I will listen first.", cue: null, thinking: "Listen first." }
         : { targetId: context.request.legalTargetIds[0], thinking: "A private role decision." };
       return Response.json({ id: `coaching-${calls}`, object: "chat.completion", created: 0, model: "glm-5-2",
         choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
@@ -94,7 +94,7 @@ test.each([
       expect(Object.keys(context).at(-1)).toBe("turnReminder");
       return Response.json({ id: "timing", object: "chat.completion", created: 0, model: "glm-5-2",
         choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-          tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_introduce", arguments: JSON.stringify({ text: null, cue: null }) } }],
+          tool_calls: [{ id: "decision", type: "function", function: { name: "werewolf_introduce", arguments: JSON.stringify({ text: null, cue: null, thinking: "Wait for evidence." }) } }],
         } }], usage: { prompt_tokens: 20, completion_tokens: 20, total_tokens: 40 } });
     } });
   const model = modelCatalogEntryById("katana:glm-5-2")!;

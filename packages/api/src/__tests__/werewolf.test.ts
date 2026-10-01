@@ -8,6 +8,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfLiveView, readWerewolfEvents, readWerewolfView, releaseWerewolfOwner } from "../services/werewolf-games.js";
 import { createOwnedAgentProfile, updateOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createApiProviderExecutionHooks } from "../services/provider-call-journal.js";
@@ -210,7 +211,7 @@ describe("Werewolf House integration", () => {
         dispatches++;
         return new Response(JSON.stringify({ id: `fixture-${dispatches}`, object: "chat.completion", created: 0, model: "glm-5-2",
           choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: null,
-            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: dispatches === 1 ? openingRequest ? JSON.stringify({ text: "Invalid invitation", cue: null, recipientIds: [openingRequest.actorId] }) : invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify(action === "vote" ? { targetId: null, thinking: "Hear more" } : openingRequest ? { cue: null, text: "A persisted contribution.", recipientIds: openingRequest.legalRecipientIds.slice(0, 3).reverse() } : { cue: null, text: "A persisted contribution." }) } }] } }],
+            tool_calls: [{ id: "decision", type: "function", function: { name: `werewolf_${action}`, arguments: dispatches === 1 ? openingRequest ? JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", text: "Invalid invitation", cue: null, recipientIds: [openingRequest.actorId] }) : invalidKind !== "spoken_uuid" ? "{}" : JSON.stringify({ thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "I trust Mira (7c731c26-a298-4987-b015-07ab4bae27ce)." }) : JSON.stringify(action === "vote" ? { targetId: null, thinking: "Hear more" } : openingRequest ? { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution.", recipientIds: openingRequest.legalRecipientIds.slice(0, 3).reverse() } : { thinking: "PRIVATE_SPEECH_THINKING", cue: null, text: "A persisted contribution." }) } }] } }],
           usage: { prompt_tokens: 20, completion_tokens: 15, total_tokens: 35 } }), { headers: { "content-type": "application/json" } });
       } });
     const model = modelCatalogEntryById("katana:glm-5-2")!;
@@ -232,6 +233,7 @@ describe("Werewolf House integration", () => {
     const accepted = await agent(claim.claim.ownerEpoch).decide({ gameId: game.id, actionSlot: state.sequence + 1, request: step.request, observation: observeWerewolf(state, step.request.actorId) });
     expect(dispatches).toBe(2);
     expect(await store.read()).toHaveLength(state.sequence);
+    expect(JSON.stringify(await readWerewolfThinking(db, game.id, "omniscient", 99999))).not.toContain("PRIVATE_SPEECH_THINKING");
     expect(await readWerewolfView(db, game.id, "mystery")).toEqual(before);
     await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
     const replacement = await claimWerewolfGame(db, game.id);
@@ -258,6 +260,12 @@ describe("Werewolf House integration", () => {
       expect(resumed.discussion?.recipientIds).toEqual(accepted.recipientIds);
       expect(resumed.discussion?.respondentIds.slice(0, 3)).toEqual(accepted.recipientIds);
       expect(nextWerewolfStep(resumed)).toMatchObject({ kind: "action", request: { actorId: accepted.recipientIds[0], action: "discuss" } });
+    }
+    if (action !== "vote") {
+      const visible = await readWerewolfThinking(db, game.id, "omniscient", 99999);
+      expect(visible.entries.at(-1)?.thinking).toBe("PRIVATE_SPEECH_THINKING");
+      expect(JSON.stringify(await readWerewolfThinking(db, game.id, "omniscient", visible.cursor - 1))).not.toContain("PRIVATE_SPEECH_THINKING");
+      expect(JSON.stringify(observeWerewolf(resumed, step.request.actorId))).not.toContain("PRIVATE_SPEECH_THINKING");
     }
     expect(dispatches).toBe(2);
     const attempts = await db.select().from(schema.providerCallAttempts);
@@ -379,4 +387,32 @@ describe("Werewolf House integration", () => {
       expect((await readWerewolfLiveView(db, game.id, audience, true)).voteProgress).toMatchObject({ thread: 2, ready: 0, total: plans.length });
     }
   });
+});
+
+test("thinking requires Omniscient opt-in, respects resolution and rewind, and stays hidden in Mystery even at ending", async () => {
+  const game = await create();
+  await runWerewolf(game.store, scripted);
+  const events = await game.store.read();
+  const app = createWerewolfRoutes(db);
+  const path = `/api/werewolf/${game.slug}/thinking`;
+  for (const audience of ["mystery", ""]) {
+    const response = await app.request(`${path}?cursor=99999${audience ? `&audience=${audience}` : ""}`);
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain("PRIVATE_THINKING");
+  }
+  expect((await app.request(`${path}?audience=omniscient`)).status).toBe(400);
+  const full = await readWerewolfThinking(db, game.id, "omniscient", 99999);
+  expect(full.entries.length).toBeGreaterThan(0);
+  const { projectWerewolfView } = await import("@influence/engine/werewolf");
+  const view = projectWerewolfView(replayWerewolf(events), "omniscient");
+  for (const entry of full.entries) {
+    expect(entry.thinking).toBe("PRIVATE_THINKING");
+    expect(["pack_vote", "night", "vote"]).toContain(view.entries[entry.cursor - 1]!.kind);
+  }
+  for (const cursor of new Set(full.entries.map(e => e.cursor))) {
+    const before = await readWerewolfThinking(db, game.id, "omniscient", cursor - 1);
+    expect(before.entries).toEqual(full.entries.filter(e => e.cursor < cursor));
+  }
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));
+  expect((await app.request(`${path}?audience=omniscient&cursor=99999`)).status).toBe(404);
 });

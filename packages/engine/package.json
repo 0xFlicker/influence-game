@@ -32,6 +32,7 @@
     "./visual-scene-plan": "./src/visual-scene-plan.ts",
     "./performance-cue": "./src/performance-cue.ts",
     "./character-portrait": "./src/character-portrait.ts",
+    "./werewolf/thinking": "./src/werewolf/thinking.ts",
     "./werewolf/presentation": "./src/werewolf/presentation.ts"
   },
   "scripts": {

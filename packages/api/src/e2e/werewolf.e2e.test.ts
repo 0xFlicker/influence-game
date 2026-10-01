@@ -396,7 +396,15 @@ test("visual replay freezes its clock, seeks without spoilers, handles failed po
     await page.evaluate('document.activeElement.blur()'); await page.keyboard.press('ArrowRight');
     await page.waitForSelector('[data-werewolf-stage][data-cursor="3"]');
     await click(page, "Omniscient"); await text(page, "werewolf · Alive");
+    expect(await page.$('[aria-label="Player thinking"]')).toBeNull();
+    await page.click('input[type="checkbox"]');
+    await text(page, "No thinking was captured");
+    await click(page, "Latest");
+    await page.waitForFunction(`document.querySelector('[aria-label="Player thinking"] ol li') !== null`);
+    await click(page, "Beginning"); await text(page, "No thinking was captured");
     await click(page, "Mystery"); await text(page, "Role unknown");
+    expect(await page.$('[aria-label="Player thinking"]')).toBeNull();
+    expect(await page.evaluate('document.body.innerText.includes("Show thinking")')).toBe(false);
     expect(await page.evaluate('document.body.innerText.includes("werewolf · Alive")')).toBe(false);
     await click(page, "Next"); await page.waitForSelector('[data-speech-bubble]');
     await page.screenshot({ path: "/tmp/werewolf-replay-desktop.png" });
