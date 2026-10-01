@@ -1,3 +1,4 @@
+import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { createGameAssetRoutes } from "./routes/game-assets.js";
 import { createAccountInferenceRoutes } from "./routes/account-inference.js";
 import { createModerationRoutes } from "./routes/moderation.js";
@@ -492,9 +493,14 @@ async function finishBackgroundRuntimeStartup(
     : null;
   executionScanTimer?.unref();
 
+  const renderWakeDispatcher = gameExecutionWorker && remoteRenderingEnabled()
+    ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
+    : null;
+
   return {
     async stop() {
       stopping = true;
+      await renderWakeDispatcher?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);

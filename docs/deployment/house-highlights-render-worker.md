@@ -238,3 +238,71 @@ aliases only. Rollback restores the prior immutable three-image family;
 queued/leased jobs remain API-owned and can be reclaimed after their lease
 expires. Production handoff additionally binds drain intent and acknowledgement
 to the current worker generation before enabling candidate claims.
+
+## On-demand remote execution (opt-in)
+
+Local polling remains the default. `POSTGAME_MEDIA_EXECUTION_MODE=remote` on both
+API and renderer selects a finite, single-concurrency batch. Remote workers require
+an HTTPS `POSTGAME_MEDIA_API_URL` without URL credentials and:
+
+```text
+POSTGAME_MEDIA_RENDER_GENERATION=<fresh opaque release epoch>
+POSTGAME_MEDIA_WORKER_DIGEST=sha256:<exact image digest>
+POSTGAME_MEDIA_WORKER_INSTANCE_ID=<persisted launch identity>
+POSTGAME_MEDIA_MAX_JOBS=4
+POSTGAME_MEDIA_QUIET_INTERVAL_MS=30000
+```
+
+A worker checks `/api/internal/postgame-media/control` before each claim. Control
+and claim carry `x-render-generation`, `x-render-worker-digest` and
+`x-render-worker-instance`. Only the accepted, undrained generation and exact
+image digest can claim. Draining leaves existing lease heartbeats, constrained
+uploads and finalization available, then the worker exits before another claim.
+Remote polling needs no Compose host acknowledgement file. Child-process render
+isolation remains in place; the child reports a typed attempt outcome to its
+parent so an empty claim is distinguishable from completed/failed work.
+
+The API owns a PostgreSQL release singleton plus permanent used-epoch records.
+`GET /api/internal/postgame-media/release` returns
+`{generation,workerDigest,draining,activeLeases}`. `POST` accepts
+`{operation:"accept"|"drain",generation,workerDigest,previousGeneration}` using a
+separate `POSTGAME_MEDIA_CONTROL_TOKEN`. `previousGeneration` is a compare-and-swap
+fence (null for the first acceptance). Drain must name the current generation and
+digest. Exact active acceptance replay is idempotent; retired epochs cannot be
+readmitted, including rollback. Rollback selects the prior digest with a fresh
+release epoch. The renderer bearer has no release-control authority.
+
+PostgreSQL remains job authority. A migration trigger inserts a wake outbox row
+in the same transaction as every queued enqueue/requeue, including older writers
+during a rolling release. It never creates a second job in SQS. The active game
+worker runtime dispatches at most ten notices per sweep and retries failures with
+the same durable request ID. Configure on the API only:
+
+```text
+POSTGAME_MEDIA_WAKE_URL=https://<wake-function-url>/
+POSTGAME_MEDIA_WAKE_SECRET=<dedicated wake signing secret>
+POSTGAME_MEDIA_WAKE_ENVIRONMENT=prod
+```
+
+Environment accepts `prod` or `staging`. The exact JSON payload is
+`{schemaVersion:1,operation:"wake",environment,requestId}`. `X-Render-Timestamp`
+is epoch seconds; `X-Render-Signature` is the hexadecimal HMAC-SHA256 of timestamp,
+newline, then exact body, with a five-minute receiver skew limit. No wake may
+select a task image or release generation. Store the wake secret separately from
+release-control credentials. Delivered outbox receipts expire after seven days;
+undelivered notifications and used-generation tombstones retain their authority.
+
+Every 30 seconds the active runtime repairs missing wakes for queued jobs or
+expired leases. This covers bounded-batch leftovers, enqueue concurrent with
+quiet exit, failed task launch and missed STOPPED notifications. Failed and
+waiting-music jobs retain their current explicit retry behavior. Validation
+candidates cannot dispatch before runtime acceptance. AWS must independently
+retain one occupied task slot until ECS confirms STOPPED and reconcile uncertain
+launches with a stable `RunTask` client token. With no work, there are no render
+tasks; an approximately one-to-two-minute cold start is acceptable, not a latency
+guarantee.
+
+This application change does not configure secrets, expose staging networking,
+provision AWS, switch release transport or disable the local production worker.
+The separate renderer stack and generation-aware host release adapter are required
+before remote cutover. Live AWS state and a disposable real render remain unverified.

@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { claimPostgameMedia, failPostgameMediaAttempt, finalizePostgameMedia, heartbeatPostgameMedia, reportPostgameMediaProgress } from "../services/postgame-media-worker.js";
 import { isAuthorizedPostgameMediaWorker, workerTokenFromAuthorization } from "../services/postgame-media-worker-auth.js";
+import { secureTokenEquals } from "../services/postgame-media-worker-auth.js";
+import { claimRemotePostgameMedia, getRenderRelease, mutateRenderRelease, parseRendererIdentity, parseRenderReleaseCommand, remoteRenderingEnabled, rendererControl } from "../services/postgame-media-execution.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
   issuePostgameMediaUploadTargets,
@@ -18,10 +20,30 @@ export function createPostgameMediaWorkerRoutes(
   const app = new Hono();
 
   app.use("/api/internal/postgame-media/*", async (c, next) => {
+    if (c.req.path === "/api/internal/postgame-media/release") {
+      const token = workerTokenFromAuthorization(c.req.header("Authorization"));
+      const expected = process.env.POSTGAME_MEDIA_CONTROL_TOKEN?.trim();
+      if (!token || !expected || !secureTokenEquals(token, expected)) return c.json({ error: "Release control authentication required" }, 401);
+      await next();
+      return;
+    }
     if (!isAuthorizedPostgameMediaWorker(c.req.header("Authorization"))) {
       return c.json({ error: "Worker authentication required" }, 401);
     }
     await next();
+  });
+
+  app.get("/api/internal/postgame-media/release", async c => c.json(await getRenderRelease(db)));
+  app.post("/api/internal/postgame-media/release", async c => {
+    const body = await parseJsonBody(c, "POST /api/internal/postgame-media/release");
+    const command = parseRenderReleaseCommand(body);
+    if (!command) return c.json({ error: "Valid release operation, generation, workerDigest and previousGeneration required" }, 400);
+    if (!await mutateRenderRelease(db, command)) return c.json({ error: "Release generation changed", code: "renderer_release_conflict" }, 409);
+    return c.json(await getRenderRelease(db));
+  });
+  app.post("/api/internal/postgame-media/control", async c => {
+    if (!remoteRenderingEnabled()) return c.json({ admitted: true, generation: null, draining: false });
+    return c.json(await rendererControl(db, parseRendererIdentity(c.req.raw.headers)));
   });
 
   app.post("/api/internal/postgame-media/claim", async (c) => {
@@ -41,7 +63,11 @@ export function createPostgameMediaWorkerRoutes(
       return c.json({ error: "Public media storage is not configured" }, 503);
     }
     const publicBaseUrl = postgameMediaPublicBaseUrl(c.req.url);
-    const claim = await claimPostgameMedia(db, workerToken);
+    const remote = remoteRenderingEnabled()
+      ? await claimRemotePostgameMedia(db, workerToken, parseRendererIdentity(c.req.raw.headers))
+      : null;
+    if (remote && !remote.admitted) return c.json({ error: "Renderer generation is not admitted", code: "renderer_not_admitted" }, 409);
+    const claim = remote ? remote.claim : await claimPostgameMedia(db, workerToken);
     if (!claim) return c.json({ claim: null });
     return c.json({
       claim: {
