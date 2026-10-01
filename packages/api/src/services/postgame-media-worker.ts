@@ -63,7 +63,7 @@ export interface ArtifactVerifierContext {
 export type ArtifactVerifier = (context: ArtifactVerifierContext) => Promise<void>;
 
 export async function claimPostgameMedia(
-  db: DrizzleDB,
+  db: DrizzleDB | Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
   workerToken: string,
   now = new Date(),
 ): Promise<PostgameMediaClaim | null> {

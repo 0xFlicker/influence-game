@@ -35,7 +35,17 @@ export interface HouseHighlightsMediaWorkerConfig {
   temporaryRoot: string;
   minimumFreeBytes: number;
   remotionOptions: HouseHighlightsRemotionMediaOptions;
+  executionMode: "local" | "remote";
+  remote?: {
+    generation: string;
+    digest: string;
+    instanceId: string;
+    maxJobs: number;
+    quietIntervalMs: number;
+  };
 }
+
+export type HouseHighlightsMediaWorkerResult = "idle" | "completed" | "waiting_music" | "failed" | "drained";
 
 export type HouseHighlightsMediaWorkerStartupMode = "active" | "standby";
 
@@ -97,7 +107,7 @@ export class HouseHighlightsMediaWorkerDrainController {
 
   constructor(
     private readonly onAcknowledge: (acknowledgement: HouseHighlightsMediaWorkerDrainAcknowledgement) => void | Promise<void> = () => undefined,
-    private readonly workerInstanceId = randomUUID(),
+    private readonly workerInstanceId: string = randomUUID(),
   ) {}
 
   get claimDisabled(): boolean {
@@ -163,9 +173,22 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
   const apiBaseUrl = env.POSTGAME_MEDIA_API_URL;
   const workerToken = env.POSTGAME_MEDIA_WORKER_TOKEN;
   if (!apiBaseUrl || !workerToken) throw new Error("POSTGAME_MEDIA_API_URL and POSTGAME_MEDIA_WORKER_TOKEN are required.");
+  const executionMode = env.POSTGAME_MEDIA_EXECUTION_MODE ?? "local";
+  if (executionMode !== "local" && executionMode !== "remote") throw new Error("POSTGAME_MEDIA_EXECUTION_MODE must be local or remote");
+  const apiUrl = new URL(apiBaseUrl);
+  if (executionMode === "remote" && (apiUrl.protocol !== "https:" || apiUrl.username || apiUrl.password)) {
+    throw new Error("POSTGAME_MEDIA_API_URL must use HTTPS without URL credentials in remote mode");
+  }
+  const remote = executionMode === "remote" ? {
+    generation: requiredIdentity(env.POSTGAME_MEDIA_RENDER_GENERATION, "POSTGAME_MEDIA_RENDER_GENERATION"),
+    digest: requiredIdentity(env.POSTGAME_MEDIA_WORKER_DIGEST, "POSTGAME_MEDIA_WORKER_DIGEST"),
+    instanceId: requiredIdentity(env.POSTGAME_MEDIA_WORKER_INSTANCE_ID, "POSTGAME_MEDIA_WORKER_INSTANCE_ID"),
+    maxJobs: boundedInt(env.POSTGAME_MEDIA_MAX_JOBS, 4, 1, 100, "POSTGAME_MEDIA_MAX_JOBS"),
+    quietIntervalMs: boundedInt(env.POSTGAME_MEDIA_QUIET_INTERVAL_MS, 30_000, 1_000, 120_000, "POSTGAME_MEDIA_QUIET_INTERVAL_MS"),
+  } : undefined;
   const renderOptions = remotionMediaOptions(env);
   return {
-    apiBaseUrl: new URL(apiBaseUrl).toString().replace(/\/$/, ""),
+    apiBaseUrl: apiUrl.toString().replace(/\/$/, ""),
     workerToken,
     pollIntervalMs: positiveInt(env.POSTGAME_MEDIA_POLL_INTERVAL_MS, POLL_INTERVAL_MS),
     httpTimeoutMs: positiveInt(env.POSTGAME_MEDIA_HTTP_TIMEOUT_MS, HTTP_TIMEOUT_MS),
@@ -173,10 +196,25 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     temporaryRoot: env.POSTGAME_MEDIA_TEMP_DIR?.trim() || DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR,
     minimumFreeBytes: positiveInt(env.POSTGAME_MEDIA_MIN_FREE_BYTES, MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES),
     remotionOptions: renderOptions,
+    executionMode,
+    ...(remote ? { remote } : {}),
   };
 }
 
-export async function runHouseHighlightsMediaWorkerOnce(config: HouseHighlightsMediaWorkerConfig, fetchImpl: typeof fetch = fetch): Promise<"idle" | "completed" | "waiting_music" | "failed"> {
+export async function readHouseHighlightsMediaWorkerAdmission(config: HouseHighlightsMediaWorkerConfig, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  if (config.executionMode === "local") return true;
+  if (!config.remote) throw new Error("worker_remote_identity_required");
+  const control = await workerRequest<unknown>(config, "/api/internal/postgame-media/control", { method: "POST" }, fetchImpl);
+  if (typeof control !== "object" || control === null || !("admitted" in control) || !("generation" in control) || !("draining" in control)
+    || typeof control.admitted !== "boolean" || typeof control.draining !== "boolean"
+    || !(typeof control.generation === "string" || (control.generation === null && !control.admitted))) {
+    throw new Error("worker_api_invalid_control");
+  }
+  return control.admitted && !control.draining && control.generation === config.remote.generation;
+}
+
+export async function runHouseHighlightsMediaWorkerOnce(config: HouseHighlightsMediaWorkerConfig, fetchImpl: typeof fetch = fetch): Promise<HouseHighlightsMediaWorkerResult> {
+  if (!await readHouseHighlightsMediaWorkerAdmission(config, fetchImpl)) return "drained";
   await assertHouseHighlightsMediaWorkerTemporarySpace(config.temporaryRoot, config.minimumFreeBytes);
   const response = await workerRequest<{ claim: WorkerClaim | null }>(config, "/api/internal/postgame-media/claim", { method: "POST" }, fetchImpl);
   if (!response.claim) return "idle";
@@ -191,6 +229,7 @@ export interface HouseHighlightsMediaWorkerLoopOptions {
   onError?: (code: string) => void;
   drainController?: HouseHighlightsMediaWorkerDrainController;
   runOnceImpl?: () => Promise<unknown>;
+  nowImpl?: () => number;
 }
 
 export async function runHouseHighlightsMediaWorker(
@@ -203,15 +242,42 @@ export async function runHouseHighlightsMediaWorker(
   const onError = options.onError ?? ((code) => console.error(`[postgame-media-worker] ${code}`));
   const drainController = options.drainController ?? new HouseHighlightsMediaWorkerDrainController();
   const runOnce = options.runOnceImpl ?? (() => runHouseHighlightsMediaWorkerOnce(config, fetchImpl));
+  const now = options.nowImpl ?? (() => performance.now());
+  const remote = config.executionMode === "remote" ? config.remote : undefined;
+  if (config.executionMode === "remote" && !remote) throw new Error("worker_remote_identity_required");
   let consecutiveFailures = 0;
+  let jobs = 0;
+  let quietSince: number | undefined;
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     if (drainController.claimDisabled) break;
     let delayMs = config.pollIntervalMs;
+    // The isolated child checks again immediately before its claim. The parent
+    // also checks before launching that child, so drain prevents new attempts.
+    if (remote && options.runOnceImpl && !await readHouseHighlightsMediaWorkerAdmission(config, fetchImpl)) break;
     drainController.setClaimInFlight(true);
     try {
-      await runOnce();
+      const result = await runOnce();
+      if (remote) {
+        if (!isWorkerResult(result)) throw new Error("worker_remote_attempt_result_missing");
+        if (result === "drained") break;
+        if (result === "idle") {
+          quietSince ??= now();
+          const remainingQuietMs = remote.quietIntervalMs - (now() - quietSince);
+          if (remainingQuietMs <= 0) break;
+          delayMs = Math.min(delayMs, remainingQuietMs);
+        } else {
+          quietSince = undefined;
+          jobs += 1;
+          if (jobs >= remote.maxJobs) break;
+          // Drain serial work promptly; the API remains the job authority.
+          delayMs = 0;
+        }
+      }
       consecutiveFailures = 0;
     } catch (error) {
+      // Remote launch reconciliation owns recovery. Never fall back to an
+      // indefinitely polling local worker after auth, control or claim errors.
+      if (remote) throw error;
       consecutiveFailures += 1;
       onError(safePollFailureCode(error));
       const baseDelay = Math.min(MAX_POLL_BACKOFF_MS, config.pollIntervalMs * 2 ** Math.min(consecutiveFailures - 1, 6));
@@ -231,9 +297,14 @@ export async function runHouseHighlightsMediaWorker(
  */
 export async function runHouseHighlightsMediaWorkerAttempt(
   scriptPath = import.meta.path,
-): Promise<void> {
+): Promise<HouseHighlightsMediaWorkerResult | undefined> {
+  let result: HouseHighlightsMediaWorkerResult | undefined;
   const child = spawn(process.execPath, [scriptPath, "--once"], {
-    stdio: "inherit",
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
+  });
+  child.on("message", (message: unknown) => {
+    if (typeof message !== "object" || message === null || !("type" in message) || !("result" in message)) return;
+    if (message.type === "postgame-media-result" && isWorkerResult(message.result)) result = message.result;
   });
   await new Promise<void>((resolve, reject) => {
     child.once("error", reject);
@@ -242,6 +313,7 @@ export async function runHouseHighlightsMediaWorkerAttempt(
       else reject(new Error(`render_attempt_exit_${signal ?? code}`));
     });
   });
+  return result;
 }
 
 export async function writeHouseHighlightsMediaWorkerDrainAcknowledgement(
@@ -274,7 +346,7 @@ export async function initializeHouseHighlightsMediaWorkerControl(
   return identityFile;
 }
 
-export function assertHouseHighlightsMediaWorkerSmokeResult(result: "idle" | "completed" | "waiting_music" | "failed"): void {
+export function assertHouseHighlightsMediaWorkerSmokeResult(result: HouseHighlightsMediaWorkerResult): void {
   if (result !== "completed") throw new Error(`Smoke requires a queued completed-game render job; received ${result}.`);
 }
 
@@ -511,6 +583,12 @@ async function reportFailure(config: HouseHighlightsMediaWorkerConfig, claim: Wo
 async function workerRequest<T>(config: HouseHighlightsMediaWorkerConfig, path: string, init: RequestInit, fetchImpl: typeof fetch): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${config.workerToken}`);
+  if (config.executionMode === "remote") {
+    if (!config.remote) throw new Error("worker_remote_identity_required");
+    headers.set("x-render-generation", config.remote.generation);
+    headers.set("x-render-worker-digest", config.remote.digest);
+    headers.set("x-render-worker-instance", config.remote.instanceId);
+  }
   if (init.body) headers.set("Content-Type", "application/json");
   const response = await fetchWithTimeout(fetchImpl, `${config.apiBaseUrl}${path}`, { ...init, headers }, config.httpTimeoutMs, "worker_api");
   if (!response.ok) throw new Error(`worker_api_${response.status}`);
@@ -537,6 +615,19 @@ function targetFor(targets: readonly UploadTarget[], artifact: string): UploadTa
 function publicArtifactFor(claim: WorkerClaim, artifact: string): WorkerClaim["publicArtifacts"][number] { const target = claim.publicArtifacts.find((candidate) => candidate.artifact === artifact); if (!target) throw new Error(`missing_public_artifact_${artifact}`); return target; }
 function categorizedFailure(error: unknown): { category: string; message: string } { const message = error instanceof Error ? error.message : "unknown worker failure"; return { category: message.startsWith("artifact_upload") ? "upload" : message.startsWith("worker_api") ? "api" : "render", message: message.slice(0, 240) }; }
 function positiveInt(value: string | undefined, fallback: number): number { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
+function requiredIdentity(value: string | undefined, name: string): string {
+  if (!value?.trim() || value !== value.trim() || /[\r\n]/.test(value)) throw new Error(`${name} is required and must be a single header value in remote mode`);
+  return value;
+}
+function boundedInt(value: string | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  return parsed;
+}
+function isWorkerResult(value: unknown): value is HouseHighlightsMediaWorkerResult {
+  return value === "idle" || value === "completed" || value === "waiting_music" || value === "failed" || value === "drained";
+}
 function safePollFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message : "unknown";
   if (/^(?:worker_api|worker_temp_space_low_)[a-z0-9_]+$/i.test(message)) return `poll_failed:${message}`;
@@ -563,15 +654,16 @@ if (import.meta.main) {
       return;
     }
     if (mode === "poll") {
-      if (!drainAcknowledgementFile) throw new Error("POSTGAME_MEDIA_DRAIN_ACK_FILE is required in poll mode");
+      if (config.executionMode === "local" && !drainAcknowledgementFile) throw new Error("POSTGAME_MEDIA_DRAIN_ACK_FILE is required in local poll mode");
       const startupMode = readHouseHighlightsMediaWorkerStartupMode();
-      const workerInstanceId = randomUUID();
-      await initializeHouseHighlightsMediaWorkerControl(drainAcknowledgementFile, workerInstanceId);
+      if (config.executionMode === "remote" && startupMode !== "active") throw new Error("remote workers require active startup mode");
+      const workerInstanceId = config.remote?.instanceId ?? randomUUID();
+      if (drainAcknowledgementFile) await initializeHouseHighlightsMediaWorkerControl(drainAcknowledgementFile, workerInstanceId);
       const drainController = new HouseHighlightsMediaWorkerDrainController(
-        (acknowledgement) => writeHouseHighlightsMediaWorkerDrainAcknowledgement(
+        (acknowledgement) => drainAcknowledgementFile ? writeHouseHighlightsMediaWorkerDrainAcknowledgement(
           drainAcknowledgementFile,
           acknowledgement,
-        ),
+        ) : undefined,
         workerInstanceId,
       );
       process.on("SIGTERM", () => { drainController.requestDrain("SIGTERM"); });
@@ -588,6 +680,7 @@ if (import.meta.main) {
       return;
     }
     const result = await runHouseHighlightsMediaWorkerOnce(config);
+    if (process.send) process.send({ type: "postgame-media-result", result });
     if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
     console.log(mode === "smoke" ? "Smoke render completed." : result);
   };
