@@ -80,6 +80,8 @@ Inventory Influence's existing actions before migrating them. Establish comparab
 
 **Done when:** both games are discoverable and operable, their current state and production readiness are legible, and no existing operator action disappears during migration. Shared screens must not introduce Influence assumptions into Werewolf.
 
+Shared-player execution: [task specifications and architecture diagrams](../plans/2026-10-01-002-shared-house-watch-player-tasks.md), following the [final consistency/adversarial review](../reviews/2026-10-01-shared-house-watch-player-plan-review.md). These tasks do not pull the deferred MCP contract or evolving strategy into the viewer slice.
+
 ### Pending work and UI surface map
 
 The 2026-10-01 viewer-plan review confirmed that the isolated Werewolf worktree builds toward the planned shared House experience. Keep the existing MCP banner verbatim and do not add Werewolf-specific capability disclaimers, disabled states or other temporary UI changes for pending work. The following tasks are deferred and do not gate shared-player integration. Keep this map current as components move during extraction. If any task is dropped or remains unfinished at release review, revisit the mapped UI against the actual release scope then.
