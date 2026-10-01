@@ -84,3 +84,16 @@ test("a ballot joins the ledger with its spoken reveal, then collection follows 
   expect(votePresentationTiming(duration, duration).progress).toBe(1);
   expect(votePresentationTiming(duration - 375, duration, true).progress).toBe(1);
 });
+
+test("Hear more and unavailable receipts stay distinct and never become speech", () => {
+  const player = {id:"a", name:"Ada", persona:"observer"};
+  const votes = [{voterId:"a",targetId:null,choice:"abstain" as const},{voterId:"b",targetId:null,choice:"unavailable" as const}];
+  const html = renderToString(<VotePresentation beat={{kind:"portrait", purpose:"Ballot", player,
+    speech:{id:"silent",playerId:"a",speaker:"Ada",text:""}}}
+    ledger={{title:"Day vote",votes,current:votes[1]!,total:2,polarity:false}} roster={[player,{id:"b",name:"Ben"}]}
+    silent elapsedMs={1800} />);
+  expect(html).toContain("Hear more");
+  expect(html).toContain("Unavailable");
+  expect(html).not.toContain("data-speech-bubble");
+  expect(voteLedgerRows(votes)).toHaveLength(2);
+});

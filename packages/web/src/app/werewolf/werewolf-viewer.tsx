@@ -1,109 +1,102 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import { getWerewolfPresentation, stopWerewolf } from "@/lib/werewolf-api";
-import { usePermissions } from "@/hooks/use-permissions";
-import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
-import type { WerewolfPresentation } from "@influence/engine/werewolf/presentation";
-import { WerewolfThinking } from "./werewolf-thinking";
-import { WerewolfPlayer } from "./werewolf-player";
-import { replayMoment } from "./replay-moment";
-import styles from "./werewolf-player.module.css";
+import {useCallback, useEffect, useRef, useState} from "react";
+import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
+import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
+import {GamePlayerAvatarPreview} from "@/components/game-player-avatar-preview";
+import {WatchShell, ShellHeader} from "@/components/watch/watch-shell";
+import {CastRail, MobileContextPanel} from "@/components/watch/watch-cast";
+import {WatchInspector, InspectorSection} from "@/components/watch/watch-inspector";
+import {WatchTransport} from "@/components/watch/watch-transport";
+import {usePlayerFullscreen} from "@/components/watch/use-player-fullscreen";
+import {WatchThinking} from "@/components/watch/watch-thinking";
+import type {ThinkingOrder} from "@/components/watch/watch-director";
+import {apiFetch} from "@/lib/api";
+import type {WerewolfThinking as ThinkingData} from "@influence/engine/werewolf/thinking";
+import {useWatchKeyboard} from "@/components/watch/use-watch-keyboard";
+import {getWerewolfWatch, stopWerewolf} from "@/lib/werewolf-api";
+import {usePermissions} from "@/hooks/use-permissions";
+import {useWerewolfWatch} from "./use-werewolf-watch";
+import {adjacentWerewolfPosition} from "./werewolf-watch-model";
+import {WerewolfWatchStage} from "./werewolf-watch-stage";
+import {WerewolfThinking} from "./werewolf-thinking";
+import {replayMoment} from "./replay-moment";
 
-export function WerewolfViewer({ slug }: { slug: string }) {
-  const [showThinking, setShowThinking] = useState(false);
-  const [audience, setAudience] = useState<WerewolfAudience>("mystery");
-  const [cursor, setCursor] = useState<number | null>(1);
-  const [playing, setPlaying] = useState(false), [speed, setSpeed] = useState(1);
-  const [waiting, setWaiting] = useState(false);
-  const [read, setRead] = useState<{ key: string; value: WerewolfPresentation } | null>(null);
-  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
-  const [stopping, setStopping] = useState(false);
-  const { hasPermission } = usePermissions();
-  const publication = useRef<{ slug: string; cutoff: string } | null>(null);
-  const key = `${slug}:${audience}:${cursor}`;
-  // Never paint a future prefix or another audience while a request is pending.
-  const data = read?.key === key ? read.value : null;
-  const moment = data ? replayMoment(data.view) : null;
-  const error = failure?.key === key ? failure.message : null;
-  useEffect(() => {
-    const controller = new AbortController();
-    let fetching = false, finished = false;
-    const refresh = async () => {
-      if (fetching || finished) return;
-      fetching = true;
-      try {
-        const value = await getWerewolfPresentation(slug, audience, cursor, controller.signal, publication.current?.slug === slug ? publication.current.cutoff : undefined);
-        if (!controller.signal.aborted) {
-          publication.current = { slug, cutoff: value.publicationCutoff };
-          // Keep this moment's published picture stable while following the live frontier.
-          setRead(previous => ({ key, value: previous?.key === key && previous.value.view.cursor === value.view.cursor ? { ...value, scene: previous.value.scene } : value }));
-          setFailure(null); finished = value.status !== "in_progress";
-        }
-      } catch (e) {
-        if (!controller.signal.aborted) { setRead(null); setFailure({ key, message: e instanceof Error ? e.message : "Could not load game" }); }
-      } finally { fetching = false; }
-    };
-    void refresh(); const timer = setInterval(() => { void refresh(); }, 3000);
-    return () => { controller.abort(); clearInterval(timer); };
-  }, [slug, audience, cursor, key]);
-  const advance = useCallback(() => {
-    if (!data) return;
-    if (data.view.cursor < data.latestCursor) { setCursor(data.view.cursor + 1); setWaiting(false); }
-    else if (data.status === "in_progress") setWaiting(true);
-    else { setPlaying(false); setWaiting(false); }
-  }, [data]);
-  useEffect(() => { if (playing && waiting) advance(); }, [playing, waiting, advance]);
-  const seek = useCallback((position: number | null) => { setPlaying(false); setWaiting(false); setCursor(position); }, []);
-  const toggle = useCallback(() => {
-    if (!data) return;
-    if (cursor === null) setCursor(data.view.cursor);
-    setPlaying(value => !value);
-  }, [data, cursor]);
-  useEffect(() => {
-    const keyboard = (event: KeyboardEvent) => {
-      if (event.altKey || event.ctrlKey || event.metaKey || event.target instanceof Element && event.target.closest("input,select,textarea,button,a,summary,[contenteditable=true],[role=dialog]")) return;
-      if (event.code === "Space") { event.preventDefault(); toggle(); }
-      if (data && event.code === "ArrowRight") { event.preventDefault(); seek(Math.min(data.latestCursor, data.view.cursor + 1)); }
-      if (data && event.code === "ArrowLeft") { event.preventDefault(); seek(Math.max(1, data.view.cursor - 1)); }
-    };
-    window.addEventListener("keydown", keyboard); return () => window.removeEventListener("keydown", keyboard);
-  }, [toggle, seek, data]);
-  return <div className={styles.player}>
-    <Link href="/werewolf" className="text-sm text-white/50 hover:text-white">← Werewolf games</Link>
-    <header className={styles.header}><div><p className={styles.eyebrow}>Werewolf · {cursor === null ? "Latest moment" : "Visual replay"}</p><h1>{slug}</h1></div>
-      <fieldset className={styles.modes}><legend className="sr-only">Spectator mode</legend>{(["mystery", "omniscient"] as const).map(mode => <button key={mode} aria-pressed={audience === mode} onClick={() => { setShowThinking(false); setAudience(mode); seek(1); }}>{mode === "mystery" ? "Mystery" : "Omniscient"}</button>)}</fieldset>
-    </header>
-    <p className={`${styles.meta} mb-4`}>{audience === "mystery" ? "Roles stay hidden until the ending. Follow the public conversation." : "All roles are visible. Private pack discussion and night decisions are included."}</p>
-    {audience === "omniscient" && <label className="mb-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={showThinking} onChange={event => setShowThinking(event.target.checked)} />Show thinking</label>}
-    {error && <p role="alert" className={styles.error}>{error}</p>}
-    {data ? <WerewolfPlayer key={`${slug}:${audience}:${data.view.cursor}`} data={data} playing={playing && !waiting} speed={speed} onAdvance={advance} /> : <div className={styles.stage}><p role="status" className={styles.loading}>{error ? "Replay unavailable" : "Loading the village…"}</p></div>}
-    <div className={styles.transport}>
-      <div className={styles.controls}>
-        <button onClick={() => seek(1)}>Beginning</button>
-        <button disabled={!data || data.view.cursor <= 1} onClick={() => data && seek(data.view.cursor - 1)}>Previous</button>
-        <button disabled={!data} onClick={toggle}>{playing ? "Pause" : "Play"}</button>
-        <button disabled={!data || data.view.cursor >= data.latestCursor} onClick={() => data && seek(data.view.cursor + 1)}>Next</button>
-        <button onClick={() => seek(null)}>Latest</button>
-        <label>Speed<select aria-label="Playback speed" value={speed} onChange={e => setSpeed(Number(e.target.value))}>{[0.75, 1, 1.5, 2].map(value => <option key={value} value={value}>{value}×</option>)}</select></label>
-        <span className={styles.progress}>{waiting ? "Caught up · waiting for the next moment" : data ? `${data.view.cursor} / ${data.latestCursor} moments` : "…"}</span>
+export function WerewolfViewer({slug, audience}: {slug: string; audience: WerewolfAudience}) {
+  const [publication] = useState(() => new Date().toISOString());
+  return <WerewolfSession key={`${slug}:${audience}`} slug={slug} audience={audience} cutoff={publication} />;
+}
+function WerewolfSession({slug, audience, cutoff}: {slug: string; audience: WerewolfAudience; cutoff: string}) {
+  const watch = useWerewolfWatch(slug, audience, cutoff);
+  const {director, snapshot, data, active} = watch;
+  const frame = useRef<HTMLDivElement>(null);
+  const fullscreen = usePlayerFullscreen(frame);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [thinkingOrder, setThinkingOrder] = useState<ThinkingOrder>("thinking-first");
+  const [thinking, setThinking] = useState(false), [inspecting, setInspecting] = useState(false), [transcript, setTranscript] = useState(false);
+  const [stopping, setStopping] = useState(false), [stopError, setStopError] = useState<string | null>(null);
+  const {hasPermission} = usePermissions();
+  const cursor = active?.cursor ?? 1;
+  const cue = director.getActiveCue();
+  const eliminatedAtReveal = cue?.ballot && cue.moment.entry.kind === "vote" ? cue.moment.entry.result.eliminatedId : null;
+  const players = (active?.snapshot.players ?? []).map(player => player.id === eliminatedAtReveal ? {...player, alive:true} : player);
+  const selectedId = selected ?? players[0]?.id;
+  const identity = data?.players.find(player => player.id === selectedId);
+  const person = players.find(player => player.id === selectedId);
+  const seek = (position: number) => { void watch.seek(position); };
+  const adjacent = (direction: -1 | 1, kind: "scene" | "chapter") => seek(adjacentWerewolfPosition(data?.navigation ?? [], cursor, direction, kind));
+  const back = watch.previous;
+  useWatchKeyboard({toggle: watch.toggle, advance: () => director.manualAdvance(), back, previousChapter: () => adjacent(-1,"scene"), nextChapter: () => adjacent(1,"scene"), speed: value => director.setSpeed(value)});
+  const contribution = cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}) : null;
+  const performer = contribution?.spoken ? contribution.actor : undefined;
+  const thinkingCursor = cue?.moment.cursor;
+  const gameId = data?.gameId;
+  const actorId = performer?.id;
+  const loadThinking = useCallback(async (signal: AbortSignal) => {
+    if (audience !== "omniscient" || !gameId || !actorId || !thinkingCursor) return null;
+    const result = await apiFetch<ThinkingData>(`/api/werewolf/${encodeURIComponent(gameId)}/thinking?audience=omniscient&cursor=${thinkingCursor}`, {signal, cache:"no-store"});
+    return result.entries.filter(entry => entry.cursor === thinkingCursor && entry.actorId === actorId).map(entry => entry.thinking).join("\n\n") || null;
+  }, [audience, gameId, actorId, thinkingCursor]);
+  const cast = {counts: {totalPlayers: players.length}, phaseLabel: active ? `Day ${active.snapshot.day} · ${active.snapshot.phase}` : "Preparing", players: players.map(player => {
+    const frozen = data?.players.find(p => p.id === player.id);
+    const avatar = {name: player.name, avatarUrl: frozen?.avatarUrl ?? undefined, personaKey: player.personaKey ?? undefined, persona: player.personaKey ?? ""};
+    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: <span className="text-[10px] text-white/45">{player.role ?? "Role unknown"}</span>};
+  })};
+  const header = {matchTitle: slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
+  const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role ?? "Role unknown"} · {person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
+    {id:"overview", label:"Overview", content:<InspectorSection title="Character" section={{cards: identity ? [{id:identity.id,title:identity.personaKey ?? identity.name,meta:person?.role ?? "",body:[identity.personality,identity.backstory].filter(Boolean).join("\n\n")}] : [],reason:"Choose a player."}} />},
+    ...(audience === "omniscient" && thinking ? [{id:"thinking",label:"Thinking",content: active && selectedId ? <WerewolfThinking gameId={active.snapshot.gameId} cursor={cursor} players={players} actorId={selectedId} /> : null}] : []),
+    {id:"strategy",label:"Strategy",content:<InspectorSection title="Strategy" section={{cards:[],reason:"No public strategy notes have been captured for this player yet."}} />},
+  ]} />;
+  return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/werewolf" brand="THE HOUSE" />}
+    cast={<CastRail model={cast} onSelectPlayer={setSelected} />}
+    mobileCast={<div className="shrink-0 xl:hidden"><MobileContextPanel model={cast} onSelectPlayer={id => {setSelected(id);setInspecting(true);}} /><button className="px-3 py-1 text-xs text-white/60" onClick={() => setInspecting(true)}>Player info</button></div>}
+    inspector={<div role={inspecting ? "dialog" : undefined} aria-modal={inspecting || undefined} aria-label={inspecting ? "Player information" : undefined} className={inspecting ? "fixed inset-3 z-50 flex min-h-0 flex-col bg-black xl:static" : "hidden min-h-0 xl:block"}>{inspecting && <button className="shrink-0 p-3 text-right text-sm text-white/70 xl:hidden" onClick={() => setInspecting(false)}>Close player info</button>}{inspect}</div>}
+    theater={<section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-white/10 px-3 py-2 text-xs text-white/70">
+        <span aria-label="Viewing mode">{audience === "omniscient" ? "Omniscient" : "Mystery"}</span>
+        {audience === "omniscient" && <label><input type="checkbox" checked={thinking} onChange={e => setThinking(e.target.checked)} /> Show thinking</label>}
+        <button onClick={() => setTranscript(value => !value)}>Transcript</button>
+        {data?.status === "in_progress" && hasPermission("stop_game") && <button disabled={stopping} onClick={async () => {setStopping(true);try {await stopWerewolf(data.gameId);} catch(cause) {setStopError(cause instanceof Error ? cause.message : "Could not stop game");} finally {setStopping(false);}}}>Stop game</button>}
       </div>
-      <label className={styles.seek}>Position<input aria-label="Replay position" type="range" min={1} max={data?.latestCursor ?? Math.max(1, cursor ?? 1)} value={data?.view.cursor ?? cursor ?? 1} disabled={!data} onChange={e => seek(Number(e.target.value))} /></label>
-      <p className={styles.meta}>Space to play or pause · Arrow keys to step · Playback pauses while this tab is hidden</p>
-    </div>
-    {data && audience === "omniscient" && showThinking && <WerewolfThinking gameId={data.view.gameId} cursor={data.view.cursor} players={data.view.players} />}
-    {data && <>
-      {moment?.spoken && moment.cue && <details className={styles.ledger}><summary>Performance note</summary><p className={styles.cue}>{moment.cue}</p></details>}
-      {moment && moment.details.length > 0 && <details className={styles.ledger}><summary>{data.view.entries.at(-1)?.kind === "result" ? "Cast and winners" : "Decision details"}</summary><ul>{moment.details.map((line, index) => <li key={index}>{line}</li>)}</ul></details>}
-      <div className={styles.cast}>{data.view.players.map(player => <span key={player.id} data-alive={player.alive}>{player.name} · {player.role ?? "Role unknown"} · {player.alive ? "Alive" : "Dead"}</span>)}</div>
-      <p className={styles.meta}>{data.view.phase === "complete" ? "Game complete" : `Day ${data.view.day} · ${data.view.phase}`} · {data.view.players.filter(p => p.alive).length} alive</p>
-      {data.status === "suspended" && <p role="status" className={styles.error}>The game stopped after an execution error. Committed play remains available.</p>}
-      {data.status === "cancelled" && <p role="status" className={styles.error}>An operator stopped this game.</p>}
-      <details className={styles.ledger}><summary>Transcript to this moment</summary><ol>{data.view.entries.map((entry, index) => {
-        const moment = replayMoment({ ...data.view, entries: [entry] });
-        return <li key={index}><p className={styles.meta}>{moment.title}</p>{moment.actor && <strong>{moment.speaker}</strong>}<p>{moment.text}</p>{moment.cue && <p className={styles.cue}>Performance note · {moment.cue}</p>}{moment.details.map((line, i) => <p key={i}>{line}</p>)}</li>;
-      })}</ol></details>
-      {data.status === "in_progress" && hasPermission("stop_game") && <button className="mt-4" disabled={stopping} onClick={async () => { setStopping(true); try { await stopWerewolf(data.view.gameId); } catch (e) { setFailure({ key, message: e instanceof Error ? e.message : "Could not stop game" }); } finally { setStopping(false); } }}>Stop game</button>}
-    </>}
-  </div>;
+      {(watch.error || stopError) && <div role="alert" className="shrink-0 p-2 text-xs text-amber-100">{watch.error ?? stopError} <button onClick={watch.retry}>Retry</button></div>}
+      {(data?.status === "cancelled" || data?.status === "suspended") && <p role="status" className="shrink-0 p-2 text-xs text-amber-100">{data.status === "cancelled" ? "An operator stopped this game." : "This game stopped after an execution error."} Committed play remains available.</p>}
+      <div ref={frame} data-player-fullscreen={fullscreen.fullscreen || undefined} className="relative flex min-h-0 flex-1 flex-col bg-black" style={fullscreen.fullscreen ? {position:"fixed",inset:0,width:"100vw",height:"100dvh",zIndex:1000} : undefined}>
+        <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} order={thinkingOrder} speaker={performer?.name ?? "Player"} load={loadThinking}>
+        <WerewolfWatchStage contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={director.getActiveCue()} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} />
+        </WatchThinking>
+        {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
+        <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-3 py-2">
+          <WatchTransport fullscreen={fullscreen.fullscreen} fullscreenButton={fullscreen.button} toggleFullscreen={fullscreen.toggle} fullscreenError={fullscreen.error} isPlaying={snapshot.isPlaying} togglePlay={watch.toggle} speed={snapshot.speed} onSpeed={value => director.setSpeed(value)} goToBeginning={() => seek(1)} goToPrevScene={() => adjacent(-1,"scene")} stepBackOneCue={back} advanceMessage={() => director.manualAdvance()} goToNextScene={() => adjacent(1,"scene")} goToEnd={() => data?.status === "in_progress" ? watch.goLive() : seek(data?.latestCursor ?? 1)} live={data?.status === "in_progress"} cursor={cursor - 1} count={data?.latestCursor ?? 1} settings={audience === "omniscient" ? <div className="space-y-3"><label className="flex gap-2"><input type="checkbox" checked={thinking} onChange={event => setThinking(event.target.checked)} />Show thinking</label><label className="grid gap-2">Thinking order<select className="rounded border border-white/30 bg-zinc-900 p-2" value={thinkingOrder} onChange={event => setThinkingOrder(event.target.value as ThinkingOrder)}><option value="thinking-first">Thinking first</option><option value="speech-first">Speech first</option></select></label></div> : undefined} />
+          <input aria-label="Replay position" type="range" min={1} max={Math.max(1,data?.latestCursor ?? 1)} value={cursor} onChange={e => seek(Number(e.target.value))} className="mt-2 w-full accent-white" />
+        </div>
+      </div>
+      {transcript && <div role="dialog" aria-modal="true" aria-label="Game transcript" className="absolute inset-4 z-40 flex flex-col overflow-hidden rounded-xl border border-white/20 bg-black p-4"><button className="self-end" onClick={() => setTranscript(false)}>Close transcript</button><RawTranscript key={`${cursor}`} slug={slug} audience={audience} cutoff={cutoff} cursor={cursor} /></div>}
+    </section>} />;
+}
+function RawTranscript({slug,audience,cutoff,cursor}: {slug:string;audience:WerewolfAudience;cutoff:string;cursor:number}) {
+  const [start,setStart] = useState(Math.max(1,cursor-31));
+  const [read,setRead] = useState<WerewolfWatchWindow | null>(null);
+  const [error,setError] = useState<string | null>(null);
+  useEffect(() => {const controller = new AbortController();void getWerewolfWatch(slug,audience,start,controller.signal,cutoff).then(value => {if(!controller.signal.aborted)setRead(value);}).catch(cause => {if(!controller.signal.aborted)setError(String(cause));});return () => controller.abort();},[slug,audience,start,cutoff]);
+  return <><h2>Transcript through moment {cursor}</h2>{error && <p role="alert">{error}</p>}<ol className="flex-1 space-y-4 overflow-y-auto py-4">{read?.fromCursor === start && read.moments.filter(m=>m.cursor<=cursor).map(m=>{const line=replayMoment({...m.snapshot,entries:[m.entry]});return <li key={m.cursor}><p className="text-xs text-white/40">{line.title} · {line.speaker}</p><p>{line.text}</p>{line.cue && <p className="text-xs text-white/40">{line.cue}</p>}</li>;})}</ol><div className="flex gap-4"><button disabled={start===1} onClick={()=>setStart(Math.max(1,start-32))}>Earlier</button><button disabled={start+32>cursor} onClick={()=>setStart(start+32)}>Later</button></div></>;
 }

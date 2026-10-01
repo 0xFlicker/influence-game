@@ -14,7 +14,7 @@ export async function checkAdminContinuity(page: Page, gameId: string) {
   const intercept = (request: HTTPRequest) => {
     const path = new URL(request.url()).pathname;
     if (path.startsWith("/api/admin/")) requests.push({path, elapsed: Date.now() - started});
-    if (request.method() === "GET" && path.endsWith(`/${gameId}/costs`)) {
+    if (request.method() === "GET" && path === `/api/admin/werewolf/${gameId}/costs`) {
       if (hold) { held = request; return; }
       if (fail) { void request.respond({status:503, contentType:"application/json", headers:{"Access-Control-Allow-Origin":"*"}, body:JSON.stringify({error:"Cost fixture unavailable"})}); return; }
     }

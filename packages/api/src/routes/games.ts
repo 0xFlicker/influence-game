@@ -969,7 +969,10 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/games/:id/alliances", async (c) => {
     const idOrSlug = c.req.param("id");
-    const result = await getPublicGameAlliances(db, idOrSlug);
+    const raw = c.req.query("throughEventSequence"), rawTranscript = c.req.query("throughTranscriptSequence");
+    for (const value of [raw, rawTranscript]) if (value !== undefined && (value.trim() === "" || !Number.isSafeInteger(Number(value)) || Number(value) < 0)) return c.json({error:"Invalid replay cutoff"},400);
+    c.header("Cache-Control", "private, no-store");
+    const result = await getPublicGameAlliances(db, idOrSlug, raw === undefined ? undefined : {throughEventSequence: Number(raw), throughTranscriptSequence: Number(rawTranscript ?? 0)});
 
     if (!result.ok) {
       return c.json({ error: result.error }, 404);

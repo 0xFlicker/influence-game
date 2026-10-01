@@ -1056,15 +1056,20 @@ export async function getPublicWatchIntelligence(
     round?: number;
     phase?: string;
     limit?: number;
+    throughEventSequence?: number;
+    throughTranscriptSequence?: number;
   } = {},
+  signal?: AbortSignal,
 ): Promise<PublicWatchIntelligenceResult> {
   const search = new URLSearchParams();
   if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
   if (params.round !== undefined) search.set("round", String(params.round));
   if (params.phase) search.set("phase", params.phase);
   if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.throughEventSequence !== undefined) search.set("throughEventSequence", String(params.throughEventSequence));
+  if (params.throughTranscriptSequence !== undefined) search.set("throughTranscriptSequence", String(params.throughTranscriptSequence));
   const query = search.toString();
-  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`);
+  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`, {signal, cache:"no-store"});
 }
 
 /** The results endpoint returns the engine's canonical-event-derived read model verbatim. */
@@ -1640,8 +1645,8 @@ export interface PublicGameAlliancesResponse {
   };
 }
 
-export async function getGameAlliances(gameIdOrSlug: string): Promise<PublicGameAlliancesResponse> {
-  return apiFetch(`/api/games/${gameIdOrSlug}/alliances`);
+export async function getGameAlliances(gameIdOrSlug: string, cutoff?: {throughEventSequence: number; throughTranscriptSequence: number}): Promise<PublicGameAlliancesResponse> {
+  return apiFetch(`/api/games/${gameIdOrSlug}/alliances${cutoff ? `?throughEventSequence=${cutoff.throughEventSequence}&throughTranscriptSequence=${cutoff.throughTranscriptSequence}` : ""}`);
 }
 
 // ---------------------------------------------------------------------------

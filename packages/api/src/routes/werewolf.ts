@@ -4,7 +4,7 @@ import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
-import { readWerewolfPresentation, readWerewolfCharacter } from "../services/werewolf-presentation.js";
+import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
@@ -74,6 +74,15 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       return c.json(presentation);
     });
   }
+  app.get("/api/werewolf/:id/watch", async c => {
+    const audience = c.req.query("audience") ?? "mystery";
+    if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);
+    const fromCursor = Number(c.req.query("fromCursor") ?? 1), limit = Number(c.req.query("limit") ?? 32);
+    if (!Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) return c.json({error: "Invalid watch window"}, 400);
+    const cutoff = c.req.query("publishedBefore");
+    if (cutoff !== undefined && (!Number.isFinite(Date.parse(cutoff)) || new Date(cutoff).toISOString() !== cutoff)) return c.json({error: "Invalid publication snapshot"}, 400);
+    return c.json(await readWerewolfWatch(db, c.req.param("id"), audience, fromCursor, limit, cutoff));
+  });
   app.get("/api/werewolf/:id/thinking", async c => {
     const cursor = Number(c.req.query("cursor"));
     if (!Number.isSafeInteger(cursor) || cursor < 1) return c.json({ error: "Choose a replay position" }, 400);

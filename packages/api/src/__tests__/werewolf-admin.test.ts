@@ -224,3 +224,21 @@ test("summary and activity share live access while operations retain narrower gr
   await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "viewer"));
   expect((await app.request(`/api/admin/werewolf/${g.id}/activity`,{headers:viewer})).status).toBe(403);
 });
+
+test("watch windows are bounded, private by audience and pinned to public media", async () => {
+  const g=await game(), app=createWerewolfRoutes(db);
+  for(const audience of ["mystery","omniscient"] as const){
+    const response=await app.request(`/api/werewolf/${g.slug}/watch?audience=${audience}&limit=8`);
+    expect(response.status).toBe(200);expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const value=await response.json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+    expect(value.moments.length).toBeLessThanOrEqual(8);
+    expect(value.moments.every(moment=>!("entries" in moment.snapshot))).toBe(true);
+    expect(JSON.stringify(value)).not.toContain("PRIVATE_REASON");expect(JSON.stringify(value)).not.toContain('"boundary"');expect(JSON.stringify(value)).not.toContain('"strategy"');
+    if(audience==="mystery")expect(value.moments.every(moment=>moment.snapshot.players.every(player=>!player.role))).toBe(true);
+    const later=await app.request(`/api/werewolf/${g.id}/watch?audience=${audience}&fromCursor=${value.latestCursor+1}&publishedBefore=${encodeURIComponent(value.publicationCutoff)}`);
+    const empty=await later.json() as typeof value;expect(empty.moments).toEqual([]);expect(empty.latestCursor).toBe(value.latestCursor);expect(empty.publicationCutoff).toBe(value.publicationCutoff);
+  }
+  for(const query of ["limit=65","limit=0","fromCursor=-1","fromCursor=1.5","audience=wolf","publishedBefore=bad"]){expect((await app.request(`/api/werewolf/${g.id}/watch?${query}`)).status).toBe(400);}
+  await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,g.id));
+  expect((await app.request(`/api/werewolf/${g.id}/watch`)).status).toBe(404);
+});

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import { SoloPresentation } from "./solo-presentation";
-import type { PresentationDirector } from "./format-presentation-director";
+import type { PresentationDirector } from "./influence-presentation-director";
 import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";

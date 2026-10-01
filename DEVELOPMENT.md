@@ -4,6 +4,8 @@ This document covers development practices for the Influence game prototype and 
 
 ## Werewolf development
 
+The public Werewolf route now uses the shared House player in `packages/web/src/components/watch/`. Influence policy remains in `influence-presentation-director.ts`; Werewolf window loading/presentation remains under `app/werewolf/`. The shared scheduler does not import either game's rules. The browser DTO is `@influence/engine/werewolf/watch-contract`; server projection is `@influence/engine/werewolf/watch`. Do not import the server projector into a client component: it pulls in rules/provider dependencies. See the [implementation evidence](docs/reviews/2026-10-01-shared-house-watch-player-implementation.md) for checks and proof boundaries. No new migration, inference call or gameplay version is required for playback.
+
 Werewolf now requests private `thinking` on every model turn, including speech and passes. In the viewer select **Omniscient → Show thinking**; Mystery never receives it. The API provider journal preserves speech thinking across recovery without adding it to gameplay history or agent observations. Sealed decisions appear only after resolution. Restart gateway and worker for new turns to use the contract; older conversations cannot gain uncaptured thinking. No migration is needed. Native provider reasoning traces remain separate diagnostics.
 
 
@@ -766,3 +768,7 @@ Development → Tests Pass → Version Bump → Tag → Push → Deploy Staging 
 ### Editorial game assets
 
 Use the existing local MinIO bootstrap and `LINODE_PRIVATE_CONTENT_*` settings for game image uploads. `bun run game-assets login --api http://127.0.0.1:3000 --web http://127.0.0.1:3001` requests scoped browser OAuth for a current producer/sysop. Asset `visibility` is `public`/`spoiler` presentation metadata; roles govern writes, and public-game reads work anonymously. Assets never use the filesystem upload fallback. The [game-assets guide](docs/game-assets.md) documents the CLI, metadata, receipts, explicit MinIO smoke, and results-only placement; the [operator review](docs/deployment/game-assets-operator-review.md) covers ephemeral/staging acceptance.
+
+### Shared player thinking and entry modes
+
+Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audience=omniscient`); it stays fixed for the session. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.

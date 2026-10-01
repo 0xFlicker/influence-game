@@ -1,7 +1,7 @@
 ---
 title: Integrate Werewolf into the House watch player
 type: refactor
-status: reviewed
+status: implemented
 date: 2026-10-01
 source_commit: ff55d307
 original_audit_commit: 80c74708
@@ -15,7 +15,7 @@ Execution specification: [tasks and architecture diagrams](2026-10-01-002-shared
 
 The user considers the separate Werewolf viewer a disposable prototype. Keep the production/publication work. Build from the existing House Influence watch experience, extracting shared playback and layout where the existing implementation couples them to Influence. Do not continue filling out a second viewer with copied controls and panels.
 
-This document is a code audit and implementation proposal, not implementation authorization. The prior [visual replay plan](2026-09-30-004-feat-werewolf-public-visual-replay.md) proved a working prototype, not House-player parity. Its green tests did not test that product requirement. Plan review is complete with the 2026-10-01 scope decisions below; shared-player implementation has not begun. The user separately authorized enabling Werewolf `thinking` on all model turns, with an Omniscient-only toggle; that narrow slice is implemented alongside this review.
+Implementation was authorized after review and began from clean `8d1097bc` on `codex/werewolf`. The shared player, Werewolf bounded projection, public route cutover and R5 Influence evidence fix are now implemented. The source audit below describes the pre-implementation baseline; actual extraction paths, validation and remaining proof limits are recorded in [implementation evidence](../reviews/2026-10-01-shared-house-watch-player-implementation.md). The prior [visual replay plan](2026-09-30-004-feat-werewolf-public-visual-replay.md) produced the now-removed prototype while its production/publication work remains intact. The earlier thinking slice is reused, not replaced.
 
 The shared product is the watch shell, theater, cast, inspector, transport, fullscreen, and live/replay behavior. Game engines and server projections retain authority for rules, accepted state and permitted information. Game adapters translate their phase vocabulary, canonical snapshots, chapter boundaries, accepted contributions, room membership and results into presentation. Keep Influence classic/format differences inside the Influence adapter. Werewolf is not another Influence elimination format.
 
@@ -127,3 +127,7 @@ Reusable implementation guardrail: **When adding a game, audit the existing watc
 The separate shared-player refactor above is reviewed and awaiting implementation. The authorized thinking slice adds `werewolf/thinking.ts`, `services/werewolf-thinking.ts`, and a small Omniscient-only panel. Every provider turn supplies strict, non-empty `thinking`; speech evidence is journaled before being stripped from the gameplay decision. Readback requires a matching committed action and accepted-value integrity, then the audience-local release cursor. Existing target-action thinking remains readable. No backfilled/generated thoughts, additional inference calls, rules migration, or change to player observations.
 
 Validation: provider-free baseline 2,152 passed / five skipped; 17 focused PostgreSQL integration tests passed, followed by the full isolated PostgreSQL baseline (1,812 passed); five browser scenarios passed on a clean rerun after an initial teardown-only timeout; final typecheck/lint passed. The existing local `young-tan-frost` returns zero thinking entries at cursors 1–2, two at cursor 12, and 27 at its ending cursor 69; Mystery is denied. Live-model dialogue quality and the full shared-player experience were not evaluated by this slice.
+
+## Playback feedback amendment — October 1
+
+This amendment supersedes the in-player audience switch and separate chapter-button requirements below. Choose Mystery/Omniscient on entry, fixed for that viewing session. Keep one Previous/Next group-navigation pair (Werewolf opening thread or other group action), with matching bracket shortcuts. Put readable shortcut help and viewing options in a settings popover beside fullscreen. Add opt-in captured thinking in scene for both game adapters, using the shared clock; thinking-first is the default and speech-first is selectable. Mystery never loads thinking. Manual fade progression must use animation time while the visible text page retains its reading position; consecutive cached-image replies must remain advanceable.

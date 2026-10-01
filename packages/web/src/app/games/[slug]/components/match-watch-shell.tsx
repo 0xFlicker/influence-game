@@ -3,6 +3,9 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { WatchInspector, InspectorSection, EmptyInspectorState } from "@/components/watch/watch-inspector";
+import { CastRail, MobileContextPanel } from "@/components/watch/watch-cast";
+import { WatchShell, ShellHeader } from "@/components/watch/watch-shell";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { completedGameModeHref } from "@/lib/game-links";
 import { playerProfileHref } from "@/lib/player-profile-links";
@@ -21,7 +24,6 @@ import { diaryPlayerName, groupMessages } from "./diary-room";
 import {
   buildMatchWatchIntelligenceModel,
   type MatchWatchIntelligenceModel,
-  type MatchWatchIntelligenceSectionModel,
 } from "./match-watch-intelligence-model";
 import {
   buildMatchWatchAlliancePanelModel,
@@ -92,21 +94,26 @@ export function MatchWatchShell({
       }),
     [game, displayMessages, live, connStatus, selectedPlayerId, playbackState, replayFrames],
   );
-  const visibleMessages = live ? displayMessages : playbackState?.visibleMessages ?? displayMessages;
+  const visibleMessages = useMemo(() => playbackState?.visibleMessages ?? [], [playbackState?.visibleMessages]);
+  const throughEventSequence = Math.min(playbackState?.canonicalSequence ?? 0, playbackState?.formatSnapshot?.canonicalSequence ?? Infinity);
+  const throughTranscriptSequence = Math.max(0, ...visibleMessages.map(message => message.entrySequence ?? 0));
+  const evidenceKey = `${game.id}:${model.selectedPlayerId}:${throughEventSequence}:${throughTranscriptSequence}`;
+  const [intelligenceKey, setIntelligenceKey] = useState("");
+  const [allianceKey, setAllianceKey] = useState("");
   const inspectorMessages = useMemo(
-    () => (live ? displayMessages : buildReplayTranscriptSlice(displayMessages, playbackState?.visibleMessages)),
-    [live, displayMessages, playbackState?.visibleMessages],
+    () => buildReplayTranscriptSlice(displayMessages, playbackState?.visibleMessages),
+    [displayMessages, playbackState?.visibleMessages],
   );
   const intelligenceModel = useMemo(
     () =>
       buildMatchWatchIntelligenceModel({
         model,
-        intelligence,
+        intelligence: intelligenceKey === evidenceKey ? intelligence : null,
         visibleMessages,
         loadState: intelligenceLoadState,
         error: intelligenceError,
       }),
-    [model, intelligence, visibleMessages, intelligenceLoadState, intelligenceError],
+    [model, intelligence, intelligenceKey, evidenceKey, visibleMessages, intelligenceLoadState, intelligenceError],
   );
   const allianceModel = useMemo(
     () =>
@@ -114,11 +121,11 @@ export function MatchWatchShell({
         model,
         allianceState: {
           loadState: allianceLoadState,
-          facts: allianceFacts,
+          facts: allianceKey === evidenceKey ? allianceFacts : null,
           error: allianceError,
         },
       }),
-    [model, allianceFacts, allianceLoadState, allianceError],
+    [model, allianceFacts, allianceKey, evidenceKey, allianceLoadState, allianceError],
   );
   const replayAtFinalResults = !live && Boolean(playbackState) && isReplayAtFinalResults(messages, playbackState?.visibleMessages);
   const gamePath = game.slug;
@@ -152,9 +159,12 @@ export function MatchWatchShell({
       round: model.round,
       phase: model.phase,
       limit: 4,
+      throughEventSequence,
+      throughTranscriptSequence,
     })
       .then((result) => {
         if (cancelled) return;
+        setIntelligenceKey(evidenceKey);
         setIntelligence(result);
         setIntelligenceLoadState("ready");
       })
@@ -168,7 +178,7 @@ export function MatchWatchShell({
     return () => {
       cancelled = true;
     };
-  }, [game.id, game.slug, model.selectedPlayerId, model.round, model.phase]);
+  }, [game.id, game.slug, model.selectedPlayerId, model.round, model.phase, throughEventSequence, throughTranscriptSequence, evidenceKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,9 +186,10 @@ export function MatchWatchShell({
       setAllianceLoadState("loading");
       setAllianceError(null);
     });
-    void getGameAlliances(game.slug)
+    void getGameAlliances(game.slug, {throughEventSequence, throughTranscriptSequence})
       .then((result) => {
         if (cancelled) return;
+        setAllianceKey(evidenceKey);
         setAllianceFacts(result);
         setAllianceLoadState("ready");
       })
@@ -192,292 +203,21 @@ export function MatchWatchShell({
     return () => {
       cancelled = true;
     };
-  }, [game.id, game.slug]);
+  }, [game.id, game.slug, throughEventSequence, throughTranscriptSequence, evidenceKey]);
 
-  return (
-    <main
-      className="fixed inset-0 z-30 flex min-h-0 flex-col overflow-hidden influence-shell"
-      data-testid="match-watch-shell"
-      data-watch-mode={model.mode}
-    >
-      <div className="pointer-events-none absolute inset-0 influence-phase-atmosphere" />
-      <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />
-      <ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
-      <McpBanner />
-
-      {/*
-        Mobile: app-shell column — sticky chrome above, theater fills remaining height,
-        scrub controls pin to the bottom of the theater via the embedded viewer flex layout.
-        Desktop (xl): three-column grid with independent side-rail scroll.
-      */}
-      <div className="relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden px-2 pb-2 pt-1.5 lg:gap-3 lg:px-3 lg:pb-3 lg:pt-2 xl:grid xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
-        <CastRail model={model} onSelectPlayer={setSelectedPlayerId} />
-        <MobileContextPanel model={model} onSelectPlayer={setSelectedPlayerId} />
-        <TheaterPanel
-          game={game}
-          messages={displayMessages}
-          replayFrames={replayFrames}
-          live={live}
-          connStatus={connStatus}
-          presentationHydrationStatus={presentationHydrationStatus}
-          startSequence={live ? undefined : startSequence}
-          model={model}
-          onPlaybackStateChange={handlePlaybackStateChange}
-        />
-        <InspectorPanel
-          model={model}
-          intelligence={intelligenceModel}
-          allianceModel={allianceModel}
-          messages={inspectorMessages}
-        />
-      </div>
-
-      <ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
-    </main>
-  );
-}
-
-function McpBanner() {
-  return (
-    <Link
-      href="/get-mcp"
-      className="relative mx-2 mt-1.5 flex h-8 shrink-0 items-center justify-between gap-2 overflow-hidden rounded-md border border-cyan-200/35 bg-cyan-300/[0.09] px-2.5 text-cyan-50 shadow-[0_0_28px_rgba(103,232,249,0.08)] transition-colors hover:border-cyan-100/65 hover:bg-cyan-300/[0.16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-100 lg:mx-3 lg:h-auto lg:gap-4 lg:px-3 lg:py-2.5"
-    >
-      <span className="pointer-events-none absolute inset-y-0 left-0 w-0.5 bg-cyan-200 lg:w-1" />
-      <span className="min-w-0 pl-1 lg:pl-1.5">
-        <span className="hidden text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/65 lg:block">Game challenge</span>
-        <span className="block truncate text-[11px] font-semibold tracking-tight text-cyan-50 lg:text-sm">
-          <span className="lg:hidden">Cross-examine with AI</span>
-          <span className="hidden lg:inline">Don&apos;t just watch. Cross-examine this game with your AI.</span>
-        </span>
-      </span>
-      <span className="shrink-0 whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.14em] text-cyan-100">
-        <span className="lg:hidden" aria-hidden="true">→</span>
-        <span className="hidden lg:inline">Analyze this game <span aria-hidden="true">→</span></span>
-      </span>
-    </Link>
-  );
-}
-
-function MobileContextPanel({
-  model,
-  onSelectPlayer,
-}: {
-  model: MatchWatchModel;
-  onSelectPlayer: (playerId: string) => void;
-}) {
-  return (
-    <section className="flex shrink-0 flex-col rounded-md border border-white/10 bg-black/45 px-2 py-1.5 shadow-panel backdrop-blur-glass xl:hidden">
-      <div className="flex items-center gap-1.5 overflow-x-auto" aria-label="Cast selection">
-        <span className="shrink-0 text-[8px] font-semibold uppercase tracking-[0.16em] text-white/40">
-          Cast
-        </span>
-        {model.players.map((card) => (
-          <div
-            key={card.player.id}
-            className={`flex shrink-0 items-center gap-0.5 rounded-md border pl-0.5 pr-1.5 ${
-              card.isSelected
-                ? "border-phase/40 bg-phase/[0.12]"
-                : "border-white/10 bg-white/[0.03]"
-            }`}
-          >
-            <GamePlayerAvatarPreview player={card.player} size="6" />
-            <button
-              type="button"
-              aria-label={`Inspect ${card.player.name}`}
-              aria-pressed={card.isSelected}
-              onClick={() => onSelectPlayer(card.player.id)}
-              className="max-w-16 truncate py-1 text-left text-[10px] font-medium text-white/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
-            >
-              {card.player.name}
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ShellHeader({
-  model,
-  gamePath,
-  showResultsCta,
-}: {
-  model: MatchWatchModel;
-  gamePath: string;
-  showResultsCta: boolean;
-}) {
-  return (
-    <header className="relative mx-2 mt-2 flex h-11 shrink-0 items-center gap-2 rounded-md border border-white/10 bg-black/45 px-2 shadow-panel backdrop-blur-glass lg:mx-3 lg:mt-3 lg:grid lg:h-auto lg:min-h-14 lg:grid-cols-[18rem_minmax(0,1fr)_22rem] lg:items-center lg:gap-3 lg:rounded-lg lg:px-4 lg:py-0">
-      {/* Compact (< lg): single dense row — no stacked brand/slug/actions */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
-        <Link
-          href="/games"
-          aria-label="Exit watch room"
-          title="Exit"
-          className="inline-flex h-8 shrink-0 items-center rounded-md border border-white/10 bg-white/[0.03] px-2 text-[9px] uppercase tracking-[0.12em] text-white/55 transition-colors hover:border-white/25 hover:bg-white/[0.06] hover:text-white/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
-        >
-          Exit
-        </Link>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[11px] font-semibold tracking-wide text-white/90">
-            {model.matchTitle}
-          </div>
-          <div className="truncate text-[9px] uppercase tracking-[0.12em] text-white/35">
-            {model.roundLabel} · {model.connectionLabel}
-          </div>
-        </div>
-        {showResultsCta ? (
-          <Link
-            href={completedGameModeHref(gamePath, "results")}
-            className="inline-flex h-8 shrink-0 items-center rounded-md border border-cyan-300/25 bg-cyan-400/10 px-2 text-[9px] uppercase tracking-[0.12em] text-cyan-100/80"
-          >
-            Results
-          </Link>
-        ) : null}
-        <span
-          aria-label={`${model.counts.alivePlayers} In`}
-          data-testid="match-watch-count-alive"
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.03] px-1.5 text-[9px] uppercase tracking-[0.1em] text-white/55"
-        >
-          <strong className="text-[10px] text-white/95">{model.counts.alivePlayers}</strong>
-          <span className="text-white/35">In</span>
-        </span>
-        <span
-          aria-label={`${model.counts.eliminatedPlayers} Out`}
-          data-testid="match-watch-count-out"
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-white/10 bg-white/[0.03] px-1.5 text-[9px] uppercase tracking-[0.1em] text-white/55"
-        >
-          <strong className="text-[10px] text-white/95">{model.counts.eliminatedPlayers}</strong>
-          <span className="text-white/35">O</span>
-        </span>
-      </div>
-
-      {/* Desktop (lg+): multi-column chrome with room for brand + actions */}
-      <div className="hidden min-w-0 items-center gap-4 lg:flex">
-        <div className="text-sm font-medium tracking-[0.45em] text-white/90">INFLUENCE</div>
-        <div className="h-5 w-px bg-white/10" />
-        <div className="text-[10px] uppercase tracking-[0.28em] text-white/35">Watch Room</div>
-      </div>
-
-      <div className="hidden min-w-0 text-center lg:block">
-        <div className="truncate text-sm font-semibold tracking-[0.18em] text-white/90">
-          {model.matchTitle}
-        </div>
-        <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/35">
-          {model.roundLabel} {model.connectionLabel}
-        </div>
-      </div>
-
-      <div className="hidden min-w-0 flex-wrap items-center justify-end gap-2 lg:flex">
-        {showResultsCta ? (
-          <Link
-            href={completedGameModeHref(gamePath, "results")}
-            className="inline-flex h-8 items-center rounded-md border border-cyan-300/25 bg-cyan-400/10 px-3 text-[10px] uppercase tracking-[0.14em] text-cyan-100/80 transition-colors hover:border-cyan-200/45 hover:bg-cyan-400/15 hover:text-cyan-50"
-          >
-            Full Results
-          </Link>
-        ) : null}
-        <Link
-          href="/games"
-          aria-label="Exit watch room"
-          title="Exit"
-          className="inline-flex h-8 items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-[10px] uppercase tracking-[0.14em] text-white/55 transition-colors hover:border-white/25 hover:bg-white/[0.06] hover:text-white/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
-        >
-          Exit
-        </Link>
-        <StatusPill value={model.counts.alivePlayers} label="In" />
-        <StatusPill value={model.counts.eliminatedPlayers} label="Out" />
-        <span className="inline-flex h-8 items-center gap-2 rounded-md border border-phase/30 bg-phase/10 px-3 text-[10px] uppercase tracking-[0.14em] text-white/80">
-          <span className="h-1.5 w-1.5 rounded-full bg-phase shadow-phase-sm" />
-          {model.connectionLabel}
-        </span>
-      </div>
-    </header>
-  );
-}
-
-function StatusPill({ value, label }: { value: number; label: string }) {
-  return (
-    <span
-      aria-label={`${value} ${label}`}
-      data-testid={`match-watch-count-${label.toLowerCase()}`}
-      className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-[10px] uppercase tracking-[0.14em] text-white/55"
-    >
-      <strong className="text-xs text-white/95">{value}</strong>
-      {label}
-    </span>
-  );
-}
-
-function CastRail({
-  model,
-  onSelectPlayer,
-}: {
-  model: MatchWatchModel;
-  onSelectPlayer: (playerId: string) => void;
-}) {
-  return (
-    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/85">
-          Cast & Status
-        </h2>
-        <span className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.14em] text-white/35">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          {model.counts.totalPlayers} total
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 gap-px border-b border-white/10 bg-white/10">
-        <CastMetric label="Phase" value={model.phaseLabel} />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {model.players.map((card) => (
-          <div
-            key={card.player.id}
-            className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-1 rounded-md border px-1 py-1 transition-colors ${
-              card.isSelected
-                ? "border-phase/40 bg-phase/[0.12] shadow-phase-sm"
-                : "border-transparent hover:border-white/10 hover:bg-white/[0.03]"
-            }`}
-          >
-            <GamePlayerAvatarPreview player={card.player} size="8" />
-            <div className="min-w-0">
-              <button
-                type="button"
-                aria-label={`Inspect ${card.player.name}`}
-                aria-pressed={card.isSelected}
-                onClick={() => onSelectPlayer(card.player.id)}
-                className="grid min-h-11 w-full min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-2 rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-white/90">
-                    {card.player.name}
-                  </span>
-                  <CastStatusTags card={card} />
-                </span>
-                <span className={`justify-self-end rounded px-1.5 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
-                  {card.statusLabel}
-                </span>
-              </button>
-              <AgentOwnerLink card={card} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-function CastMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 bg-white/[0.025] px-3 py-3">
-      <div className="text-[8px] uppercase tracking-[0.16em] text-white/30">{label}</div>
-      <div className="mt-1 truncate text-[11px] font-medium text-white/75">{value}</div>
-    </div>
-  );
+  const castModel = { ...model, players: model.players.map(card => ({
+    id: card.player.id, name: card.player.name, isSelected: card.isSelected, statusLabel: card.statusLabel, statusClass: statusClasses(card),
+    portrait: <GamePlayerAvatarPreview player={card.player} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={card.player} size="6" />,
+    tags: <CastStatusTags card={card} />, owner: <AgentOwnerLink card={card} />,
+  })) };
+  return <WatchShell mode={model.mode}
+    header={<ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />}
+    cast={<CastRail model={castModel} onSelectPlayer={setSelectedPlayerId} />}
+    mobileCast={<MobileContextPanel model={castModel} onSelectPlayer={setSelectedPlayerId} />}
+    theater={<TheaterPanel game={game} messages={displayMessages} replayFrames={replayFrames} live={live} connStatus={connStatus} presentationHydrationStatus={presentationHydrationStatus} startSequence={live ? undefined : startSequence} model={model} onPlaybackStateChange={handlePlaybackStateChange} />}
+    inspector={<InspectorPanel model={model} intelligence={intelligenceModel} allianceModel={allianceModel} messages={inspectorMessages} />}
+    footer={<ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />}
+  />;
 }
 
 function CastStatusTags({
@@ -594,8 +334,6 @@ function TheaterChip({ children }: { children: ReactNode }) {
   );
 }
 
-type InspectorTab = "overview" | "thinking" | "strategy" | "alliance" | "diary";
-const COMPACT_THINKING_TEXT_LIMIT = 260;
 
 function InspectorPanel({
   model,
@@ -609,48 +347,14 @@ function InspectorPanel({
   messages: TranscriptEntry[];
 }) {
   const selected = model.selectedPlayer;
-  const [activeTab, setActiveTab] = useState<InspectorTab>("overview");
   const diaryEntries = useMemo(() => buildDiaryArchiveEntries(messages), [messages]);
-
-  return (
-    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
-      {selected ? <InspectorHero card={selected} /> : null}
-
-      <div className="grid h-11 shrink-0 grid-cols-5 gap-1 border-b border-white/10 px-2 py-1.5" role="tablist" aria-label="Inspector sections">
-        <InspectorLabel active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</InspectorLabel>
-        <InspectorLabel active={activeTab === "thinking"} onClick={() => setActiveTab("thinking")}>Thinking</InspectorLabel>
-        <InspectorLabel active={activeTab === "strategy"} onClick={() => setActiveTab("strategy")}>Strategy</InspectorLabel>
-        <InspectorLabel active={activeTab === "alliance"} onClick={() => setActiveTab("alliance")}>Alliance</InspectorLabel>
-        <InspectorLabel active={activeTab === "diary"} onClick={() => setActiveTab("diary")}>Diary</InspectorLabel>
-      </div>
-
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {activeTab === "overview" ? (
-          <InspectorSection title="Audience Lens" section={intelligence.overview} />
-        ) : null}
-        {activeTab === "thinking" ? (
-          <InspectorSection
-            title="Thinking"
-            meta={sectionMeta(intelligence)}
-            section={intelligence.thinking}
-            expandableCards
-          />
-        ) : null}
-        {activeTab === "strategy" ? (
-          <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
-        ) : null}
-        {activeTab === "alliance" ? (
-          <MatchWatchAlliancePanel
-            allianceModel={allianceModel}
-            players={model.players.map((card) => card.player)}
-          />
-        ) : null}
-        {activeTab === "diary" ? (
-          <InspectorDiary entries={diaryEntries} />
-        ) : null}
-      </div>
-    </aside>
-  );
+  return <div className="hidden min-h-0 xl:block"><WatchInspector hero={selected ? <InspectorHero card={selected} /> : null} sections={[
+    {id:"overview",label:"Overview",content:<InspectorSection title="Audience Lens" section={intelligence.overview} />},
+    {id:"thinking",label:"Thinking",content:<InspectorSection title="Thinking" meta={sectionMeta(intelligence)} section={intelligence.thinking} expandableCards />},
+    {id:"strategy",label:"Strategy",content:<InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />},
+    {id:"alliance",label:"Alliance",content:<MatchWatchAlliancePanel allianceModel={allianceModel} players={model.players.map(card => card.player)} />},
+    {id:"diary",label:"Diary",content:<InspectorDiary entries={diaryEntries} />},
+  ]} /></div>;
 }
 
 function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
@@ -692,118 +396,6 @@ export function AgentOwnerLink({
     >
       Owner: {owner.displayName}
     </Link>
-  );
-}
-
-function InspectorLabel({
-  active,
-  onClick,
-  children,
-}: {
-  active?: boolean;
-  onClick: () => void;
-  children: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active ? "true" : "false"}
-      onClick={onClick}
-      className={`grid place-items-center rounded-md text-[8px] uppercase tracking-[0.12em] ${
-        active
-          ? "border border-phase/20 bg-phase/[0.12] text-white/75"
-          : "text-white/30 hover:bg-white/[0.03] hover:text-white/55"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function InspectorSection({
-  title,
-  meta,
-  section,
-  expandableCards = false,
-}: {
-  title: string;
-  meta?: string;
-  section: MatchWatchIntelligenceSectionModel;
-  expandableCards?: boolean;
-}) {
-  return (
-    <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/55">
-          {title}
-        </h3>
-        {meta ? (
-          <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
-            {meta}
-          </span>
-        ) : null}
-      </div>
-      {section.cards.length > 0 ? (
-        <div className="space-y-3">
-          {section.cards.map((card) => (
-            <IntelligenceCard
-              key={card.id}
-              card={card}
-              expandable={expandableCards}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyInspectorState reason={section.reason ?? "No intelligence available."} />
-      )}
-    </section>
-  );
-}
-
-function IntelligenceCard({
-  card,
-  expandable,
-}: {
-  card: MatchWatchIntelligenceSectionModel["cards"][number];
-  expandable?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const canExpand = expandable && card.body.length > COMPACT_THINKING_TEXT_LIMIT;
-  const shouldClamp = expandable ? canExpand && !expanded : true;
-  const bodyClassName = shouldClamp ? "line-clamp-5" : "";
-
-  return (
-    <div className="border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
-      <div className="mb-1 flex items-center justify-between gap-3">
-        <h4 className="truncate text-[10px] font-semibold text-white/80">{card.title}</h4>
-        <span className="shrink-0 text-[7px] uppercase tracking-[0.12em] text-white/30">
-          {card.meta}
-        </span>
-      </div>
-      <p className={`${bodyClassName} whitespace-pre-wrap text-[10px] leading-5 text-white/65`}>
-        {card.body}
-      </p>
-      {canExpand ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-          className="mt-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/45 transition-colors hover:border-white/20 hover:text-white/70"
-          title={expanded ? "Collapse thinking" : "Expand thinking"}
-        >
-          {expanded ? "Show less" : "Show full"}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function EmptyInspectorState({ reason }: { reason: string }) {
-  return (
-    <p className="rounded-md border border-dashed border-white/10 px-3 py-4 text-[10px] leading-5 text-white/38">
-      {reason}
-    </p>
   );
 }
 
@@ -918,7 +510,9 @@ export function buildReplayTranscriptSlice(
     return messages.slice(0, cursorIndex + 1);
   }
 
-  return messages.filter((message) => message.timestamp <= cursor.timestamp);
+  const sequence = cursor.entrySequence;
+  if (sequence === undefined || sequence === null) return [];
+  return messages.filter((message) => message.entrySequence != null && message.entrySequence <= sequence);
 }
 
 function sectionMeta(intelligence: MatchWatchIntelligenceModel): string | undefined {

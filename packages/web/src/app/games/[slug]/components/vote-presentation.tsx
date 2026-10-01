@@ -8,16 +8,18 @@ import { SoloPresentation } from "./solo-presentation";
 import { FitPresentation } from "./fit-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { voteLedgerRows, type RevealedVote, type VoteLedgerState } from "./vote-ledger-model";
-import { votePresentationTiming } from "./vote-presentation-timing";
+import { SILENT_BALLOT_DURATION_MS, votePresentationTiming } from "./vote-presentation-timing";
 import type { SceneFrame } from "./visual-scene-layout";
 import backdropStyles from "./stage-backdrop.module.css";
 
-export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, ...props }: {
+export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, silent = false, onImageReady, ...props }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   ledger: VoteLedgerState;
   roster: readonly FormatPresentationRosterPlayer[];
   elapsedMs: number;
   controlsInset?: number;
+  silent?: boolean;
+  onImageReady?: (source: string | null) => void;
   readingElapsedMs?: number;
   paused?: boolean;
   reducedMotion?: boolean;
@@ -28,7 +30,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   const [ledgerLayout, setLedgerLayout] = useState({ scale: 1, top: 0 });
   const [imageSource, setImageSource] = useState<string | null>(null);
   const [flight, setFlight] = useState<{ key: string; source: string; from: SceneFrame; to: SceneFrame } | null>(null);
-  const { revealed, progress } = votePresentationTiming(elapsedMs, soloPresentationDurationMs(beat.speech.text), props.reducedMotion);
+  const { revealed, progress } = votePresentationTiming(elapsedMs, silent ? SILENT_BALLOT_DURATION_MS : soloPresentationDurationMs(beat.speech.text), props.reducedMotion);
   const canFly = flight?.key === beat.speech.id && imageSource !== null && flight.source === imageSource && !props.reducedMotion;
   useLayoutEffect(() => {
     const element = ledgerBox.current;
@@ -70,9 +72,9 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   } : null;
   return <div ref={stage} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-vote-presentation>
     <SoloPresentation {...props} beat={beat} elapsedMs={elapsedMs} controlsInset={controlsInset + ledgerHeight + 24}
-      onImageReady={setImageSource}
+      hideSpeech={silent} staticSpeech onImageReady={source => {setImageSource(source); onImageReady?.(source);}}
       imageOpacity={canFly && progress > 0 ? 0 : undefined} />
-    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[28%] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-3 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
+    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[clamp(88px,28%,200px)] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-2 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
       <FitPresentation enabled onLayoutChange={setLedgerLayout}>
         <VoteLedger title={ledger.title} votes={votes} total={ledger.total} roster={roster}
           polarity={ledger.polarity}
@@ -80,7 +82,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
       </FitPresentation>
     </div>
     {canFly && frame && progress > 0 && progress < 1 && <div aria-hidden="true" data-ballot-collection
-      className="pointer-events-none absolute z-30 overflow-hidden" style={{ ...frame, borderRadius: `${progress * 50}%`, boxShadow: `0 12px 48px rgba(0,0,0,${.3 * progress})` }}>
+      className="pointer-events-none absolute z-30 overflow-hidden" style={{ ...frame, borderRadius: `${flight.source === beat.player.fullBodyReferenceUrl ? progress * 50 : 50}%`, boxShadow: `0 12px 48px rgba(0,0,0,${.3 * progress})` }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- collect the displayed saved art into its ledger headshot */}
       <img src={flight.source} alt="" className={`absolute h-full w-full object-cover ${flight.source === beat.player.fullBodyReferenceUrl ? backdropStyles.featheredBody : ""}`} style={{ opacity: 1 - blend }} />
       {/* eslint-disable-next-line @next/next/no-img-element -- same frozen portrait used by the destination receipt */}
@@ -105,7 +107,7 @@ export function VoteLedger({ title, votes, total, roster, currentId, portraitOpa
     </header>
     {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first reveal</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       {voteLedgerRows(votes).map(row => {
-        const target = player(row.targetId);
+        const target = row.targetId ? player(row.targetId) : {id: row.key, name: row.key === "abstain" ? "Hear more" : row.key === "unavailable" ? "Unavailable" : "Forfeited", persona: ""};
         return <li key={target.id} data-vote-target={target.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[.035] px-3 py-2">
           {row.targetId && <AgentAvatar {...target} persona={target.persona ?? ""} size="8" />}
           <div className="min-w-0 flex-1">

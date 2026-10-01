@@ -1,12 +1,14 @@
-"use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useAnimate } from "motion/react";
-import type { PresentationCue } from "./types";
-import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
-import { SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
-import { SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "./scene-speech-timing";
-
+/** One shared clock; game adapters own interpretation, ordering and speech timing. */
+export type ThinkingOrder = "thinking-first" | "speech-first";
+export interface WatchCue { key: string; baseDurationMs: number }
+export interface SpeechBoundaries { showAtMs: number; readAtMs: number; hideAtMs: number; hiddenAtMs: number }
+export interface WatchPolicy<C extends WatchCue> {
+  position(cue: C): number | null;
+  speech(cue: C | null): SpeechBoundaries | null;
+  isCatchUp(cue: C): boolean;
+  acceptAtWatermark(cue: C, watermark: number): boolean;
+  reconcile(cues: C[], active: C | null): C[];
+}
 export interface PresentationClock {
   now(): number;
   setTimeout(callback: () => void, delayMs: number): number;
@@ -20,8 +22,8 @@ export interface PresentationAnimationControlAdapter {
   setSpeed(speed: number): void;
 }
 
-interface PresentationDirectorState {
-  cues: readonly PresentationCue[];
+interface PresentationDirectorState<C extends WatchCue> {
+  cues: readonly C[];
   cursor: number;
   isPlaying: boolean;
   followTail: boolean;
@@ -31,24 +33,23 @@ interface PresentationDirectorState {
   reducedMotion: boolean;
 }
 
-type PresentationDirectorAction =
-  | { type: "load"; cues: readonly PresentationCue[]; cursor?: number }
-  | { type: "append"; cues: readonly PresentationCue[]; cursor?: number }
+type PresentationDirectorAction<C extends WatchCue> =
+  | { type: "load"; cues: readonly C[]; cursor?: number }
+  | { type: "append"; cues: readonly C[]; cursor?: number }
   | { type: "set_playing"; isPlaying: boolean }
   | { type: "set_follow_tail"; followTail: boolean }
   | { type: "set_waiting_at_tail"; waitingAtTail: boolean }
   | { type: "set_cursor"; cursor: number }
   | { type: "set_speed"; speed: number }
   | { type: "set_reduced_motion"; reducedMotion: boolean }
-  | { type: "hydrate"; cues: readonly PresentationCue[]; cursor: number; watermark: number | null }
-  | { type: "reset_round"; cues: readonly PresentationCue[] };
+  | { type: "hydrate"; cues: readonly C[]; cursor: number; watermark: number | null }
+  | { type: "reset_round"; cues: readonly C[] };
 
 export interface PresentationDirectorSnapshot {
   cueKeys: readonly string[];
   cursor: number;
   activeKey: string | null;
-  canonicalSequence: number | null;
-  round: number | null;
+  position: number | null;
   isPlaying: boolean;
   followTail: boolean;
   waitingAtTail: boolean;
@@ -58,18 +59,12 @@ export interface PresentationDirectorSnapshot {
   reducedMotion: boolean;
 }
 
-export interface CreatePresentationDirectorOptions {
+export interface CreatePresentationDirectorOptions<C extends WatchCue> {
+  policy: WatchPolicy<C>;
   clock?: PresentationClock;
   animation?: PresentationAnimationControlAdapter;
   reducedMotion?: boolean;
   followTail?: boolean;
-}
-
-interface RetainedMotionControl {
-  pause(): void;
-  play(): void;
-  complete(): void;
-  speed: number;
 }
 
 const NOOP_ANIMATION: PresentationAnimationControlAdapter = {
@@ -79,10 +74,10 @@ const NOOP_ANIMATION: PresentationAnimationControlAdapter = {
   setSpeed() {},
 };
 
-function reducePresentationDirectorState(
-  state: PresentationDirectorState,
-  action: PresentationDirectorAction,
-): PresentationDirectorState {
+function reducePresentationDirectorState<C extends WatchCue>(
+  state: PresentationDirectorState<C>,
+  action: PresentationDirectorAction<C>,
+): PresentationDirectorState<C> {
   switch (action.type) {
     case "load":
       return {
@@ -127,200 +122,9 @@ function reducePresentationDirectorState(
   }
 }
 
-export function createPresentationDirector(
-  options: CreatePresentationDirectorOptions = {},
-): PresentationDirector {
-  return new PresentationDirector(options);
-}
-
-export function usePresentationDirector({
-  followTail = false,
-}: {
-  followTail?: boolean;
-} = {}): {
-  director: PresentationDirector;
-  snapshot: PresentationDirectorSnapshot;
-  scope: { current: HTMLDivElement | null };
-  reducedMotion: boolean;
-} {
-  const [scope, animate] = useAnimate<HTMLDivElement>();
-  const reducedMotion = usePrefersReducedMotion();
-  const retainedControls = useRef(new Set<RetainedMotionControl>());
-  const animation = useMemo<
-    PresentationAnimationControlAdapter & {
-      track(control: RetainedMotionControl): () => void;
-    }
-  >(() => ({
-    track(control) {
-      retainedControls.current.add(control);
-      return () => retainedControls.current.delete(control);
-    },
-    pause() {
-      for (const control of retainedControls.current) control.pause();
-    },
-    resume() {
-      for (const control of retainedControls.current) control.play();
-    },
-    complete() {
-      for (const control of retainedControls.current) control.complete();
-      retainedControls.current.clear();
-    },
-    setSpeed(speed) {
-      for (const control of retainedControls.current) control.speed = speed;
-    },
-  }), []);
-  const director = useMemo(() => createPresentationDirector(), []);
-  const [snapshot, setSnapshot] = useState(() => director.getSnapshot());
-
-  useEffect(() => {
-    director.activate();
-    const unsubscribe = director.subscribe(() => {
-      setSnapshot(director.getSnapshot());
-    });
-    return () => {
-      unsubscribe();
-      director.dispose();
-    };
-  }, [director]);
-
-  useEffect(() => {
-    director.setAnimationAdapter(animation);
-    director.setReducedMotion(reducedMotion);
-    if (reducedMotion) animation.complete();
-  }, [animation, director, reducedMotion]);
-
-  useEffect(() => {
-    director.setFollowTail(followTail);
-  }, [director, followTail]);
-
-  useEffect(() => {
-    if (!scope.current || !snapshot.activeKey) return;
-    const controls: Array<{
-      control: RetainedMotionControl;
-      release: () => void;
-    }> = [];
-    const track = (control: RetainedMotionControl): void => {
-      control.speed = director.getSnapshot().speed;
-      controls.push({ control, release: animation.track(control) });
-    };
-    const activeCue = director.getActiveCue();
-    const currentStateEntry = scope.current.querySelector(
-      '[data-presentation-current-entry="true"]',
-    );
-    // Semantic content rests visible. Only the director owns entrance effects,
-    // so cancellation, seeking and Strict Mode cannot strand hidden cards.
-    if (!currentStateEntry && director.getSnapshot().isPlaying) {
-      scope.current.querySelectorAll<HTMLElement>("[data-two-names-reveal]").forEach((element) => {
-        const index = Number(element.dataset.dossierIndex ?? 0);
-        const dossier = element.dataset.twoNamesReveal === "dossier";
-        const control = animate(element, reducedMotion
-          ? { opacity: [0, 1] }
-          : { opacity: [0, 1], y: [18, 0], rotateY: [dossier ? (index === 0 ? -22 : 22) : 0, 0] },
-        { duration: reducedMotion ? 0.2 : 0.8, delay: dossier && !reducedMotion ? index * 0.18 : 0, ease: [0.16, 1, 0.3, 1] }) as RetainedMotionControl;
-        track(control);
-      });
-    }
-    if (
-      !reducedMotion
-      && !currentStateEntry
-      && activeCue?.source === "format"
-      && activeCue.kind === "safety_bounce_pointer"
-    ) {
-      const candidates = scope.current.querySelectorAll<HTMLElement>(
-        '[data-pointer-cycle-candidate="true"]',
-      );
-      candidates.forEach((candidate, index) => {
-        const control = animate(
-          candidate,
-          {
-            opacity: [0.2, 1, 0.28],
-            scale: [0.97, 1.04, 1],
-          },
-          {
-            delay: index * 0.2,
-            duration: 0.32,
-            ease: "easeInOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      });
-      const acceptedTarget = Array.from(
-        scope.current.querySelectorAll<HTMLElement>("[data-accepted-target]"),
-      ).find((element) => element.dataset.acceptedTarget === activeCue.targetId);
-      const classifiedCard = Array.from(
-        scope.current.querySelectorAll<HTMLElement>("[data-board-member]"),
-      ).find((element) => element.dataset.boardMember === activeCue.targetId);
-      const landingDelay = candidates.length * 0.2;
-      if (classifiedCard) {
-        const control = animate(
-          classifiedCard,
-          {
-            opacity: [0.35, 1],
-            y: [20, 0],
-            scale: [0.96, 1],
-          },
-          {
-            delay: landingDelay,
-            duration: 0.38,
-            ease: "easeOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      }
-      if (acceptedTarget) {
-        const control = animate(
-          acceptedTarget,
-          { opacity: [0.45, 1], scale: [0.985, 1] },
-          {
-            delay: landingDelay,
-            duration: 0.35,
-            ease: "easeOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      }
-    }
-
-    return () => {
-      for (const { control, release } of controls) {
-        control.complete();
-        release();
-      }
-    };
-  }, [animate, animation, director, reducedMotion, scope, snapshot.activeKey]);
-
-  return {
-    director,
-    snapshot,
-    scope,
-    reducedMotion,
-  };
-}
-
-function usePrefersReducedMotion(): boolean {
-  const [reducedMotion, setReducedMotion] = useState(false);
-  useEffect(() => {
-    if (
-      typeof window === "undefined"
-      || typeof window.matchMedia !== "function"
-    ) {
-      return;
-    }
-    const preference = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    );
-    const syncPreference = (): void => {
-      setReducedMotion(preference.matches);
-    };
-    syncPreference();
-    preference.addEventListener("change", syncPreference);
-    return () => preference.removeEventListener("change", syncPreference);
-  }, []);
-  return reducedMotion;
-}
-
-export class PresentationDirector {
-  private state: PresentationDirectorState;
+export class PresentationDirector<C extends WatchCue> {
+  private readonly policy: WatchPolicy<C>;
+  private state: PresentationDirectorState<C>;
   private cueKeys: readonly string[] = [];
   private readonly clock: PresentationClock;
   private animation: PresentationAnimationControlAdapter;
@@ -329,6 +133,68 @@ export class PresentationDirector {
   private scheduledAt = 0;
   private remainingBaseMs = 0;
   private disposed = false;
+  private ready = true;
+  private thinkingPending = false;
+  private thought: {key: string; text: string; order: ThinkingOrder; duration: number; insertAt: number} | null = null;
+
+  setThinkingPending(key: string, pending: boolean): void {
+    if (key !== this.getActiveCue()?.key || this.thinkingPending === pending) return;
+    this.captureRemainingTime(); this.clearTimer(); this.thinkingPending = pending; this.ensureTimer();
+    for (const listener of this.listeners) listener();
+  }
+
+  setThinking(key: string, text: string | null, order: ThinkingOrder): void {
+    if (key !== this.getActiveCue()?.key) return;
+    this.setThinkingPending(key, false);
+    const normalized = text?.trim() || null;
+    if ((!normalized && !this.thought) || this.thought?.text === normalized && this.thought.order === order) return;
+    this.captureRemainingTime(); this.clearTimer();
+    const contentElapsed = this.getElapsedBaseMs();
+    const speech = this.policy.speech(this.getActiveCue());
+    this.thought = normalized ? {key, text: normalized, order,
+      duration: Math.max(2800, normalized.split(/\s+/).length * 320),
+      insertAt: order === "thinking-first" ? speech?.showAtMs ?? 0 : speech?.hiddenAtMs ?? this.getActiveCue()!.baseDurationMs,
+    } : null;
+    this.manualTransition = null; this.exitReadingPositionMs = null;
+    this.remainingBaseMs = this.activeDurationMs() - (this.thought ? Math.min(contentElapsed, this.thought.insertAt) : contentElapsed);
+    this.ensureTimer();
+    for (const listener of this.listeners) listener();
+  }
+
+  getThinkingFrame() {
+    const thought = this.thought;
+    if (!thought || thought.key !== this.getActiveCue()?.key) return null;
+    const timeline = this.getTimelineElapsedBaseMs();
+    const elapsed = timeline - thought.insertAt;
+    const speech = thought.order === "thinking-first" ? this.speechBoundaries() : null;
+    const end = speech?.hiddenAtMs ?? thought.insertAt + thought.duration;
+    if (elapsed < 0 || timeline >= end || this.state.waitingAtTail) return null;
+    const opacity = speech && timeline > speech.hideAtMs
+      ? Math.max(0, (speech.hiddenAtMs - timeline) / Math.max(1, speech.hiddenAtMs - speech.hideAtMs)) : 1;
+    return {text: thought.text, elapsedMs: Math.min(elapsed, thought.duration), durationMs: thought.duration, opacity};
+  }
+
+  private contentTime(elapsed: number): number {
+    const thought = this.thought;
+    return !thought ? elapsed : elapsed <= thought.insertAt ? elapsed : Math.max(thought.insertAt, elapsed - thought.duration);
+  }
+
+  private speechBoundaries() {
+    const speech = this.policy.speech(this.getActiveCue());
+    if (!speech || !this.thought) return speech;
+    const shift = (time: number) => time >= this.thought!.insertAt ? time + this.thought!.duration : time;
+    return {showAtMs: shift(speech.showAtMs), readAtMs: shift(speech.readAtMs), hideAtMs: shift(speech.hideAtMs), hiddenAtMs: shift(speech.hiddenAtMs)};
+  }
+
+
+  setReady(key: string, ready: boolean): void {
+    if (key !== this.getActiveCue()?.key || this.ready === ready) return;
+    this.captureRemainingTime();
+    this.clearTimer();
+    this.ready = ready;
+    this.ensureTimer();
+    for (const listener of this.listeners) listener();
+  }
   private waitingAtHydrationWatermark = false;
   private hasPlayed = false;
   private navigationRevision = 0;
@@ -342,14 +208,16 @@ export class PresentationDirector {
   isAnimating(): boolean { return this.timerId !== null; }
 
   /** Skipping reading time must fade the visible page, not flash the final page. */
-  getSpeechElapsedBaseMs(): number { return this.exitReadingPositionMs ?? this.getElapsedBaseMs(); }
+  getSpeechElapsedBaseMs(): number { return this.contentTime(this.exitReadingPositionMs ?? this.getTimelineElapsedBaseMs()); }
 
   constructor({
     clock = browserClock(),
     animation = NOOP_ANIMATION,
     reducedMotion = false,
     followTail = false,
-  }: CreatePresentationDirectorOptions = {}) {
+    policy,
+  }: CreatePresentationDirectorOptions<C>) {
+    this.policy = policy;
     this.clock = clock;
     this.animation = animation;
     this.state = {
@@ -369,14 +237,13 @@ export class PresentationDirector {
     return () => this.listeners.delete(listener);
   };
 
-  getSnapshot = (): PresentationDirectorSnapshot => {
+  getSnapshot(): PresentationDirectorSnapshot {
     const cue = this.state.cues[this.state.cursor] ?? null;
     return {
       cueKeys: this.cueKeys,
       cursor: this.state.cursor,
       activeKey: cue?.key ?? null,
-      canonicalSequence: cue?.canonicalSequence ?? null,
-      round: cue?.round ?? null,
+      position: cue ? this.policy.position(cue) : null,
       isPlaying: this.state.isPlaying,
       followTail: this.state.followTail,
       waitingAtTail: this.state.waitingAtTail,
@@ -387,18 +254,20 @@ export class PresentationDirector {
     };
   };
 
-  getActiveCue(): PresentationCue | null {
+  getActiveCue(): C | null {
     return this.state.cues[this.state.cursor] ?? null;
   }
 
   /** Base presentation time for timed overlays; freezes on pause and follows playback speed. */
-  getElapsedBaseMs(): number {
+  getElapsedBaseMs(): number { return this.contentTime(this.getTimelineElapsedBaseMs()); }
+
+  private getTimelineElapsedBaseMs(): number {
     const duration = this.activeDurationMs();
     const elapsed = this.timerId === null ? 0 : Math.max(0, this.clock.now() - this.scheduledAt) * this.state.speed;
     return Math.max(0, Math.min(duration, duration - this.remainingBaseMs + elapsed));
   }
 
-  load(cues: readonly PresentationCue[], cursor = 0): void {
+  load(cues: readonly C[], cursor = 0): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
     if (sameCueKeys(this.state.cues, canonical)) {
@@ -416,11 +285,11 @@ export class PresentationDirector {
     if (wasPlaying) this.ensureTimer();
   }
 
-  append(cues: readonly PresentationCue[]): void {
+  append(cues: readonly C[]): void {
     if (this.disposed || cues.length === 0) return;
     const existingKeys = new Set(this.state.cues.map((cue) => cue.key));
     const activeKey = this.getActiveCue()?.key;
-    const incoming = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
+    const incoming = this.policy.reconcile(canonicalizeCues(cues), this.getActiveCue());
     // Reconcile the complete chronological timeline, including backfilled history.
     const nextCues = incoming;
     if (activeKey && !nextCues.some((cue) => cue.key === activeKey)) return;
@@ -429,10 +298,10 @@ export class PresentationDirector {
     const firstNewIndex = nextCues.findIndex((cue, index) =>
       index > nextCursor
       && !existingKeys.has(cue.key)
-      && !(cue.source !== "format" && cue.liveCatchUp)
-      && (watermark === null || cue.canonicalSequence === null
-        || cue.canonicalSequence > watermark
-        || (cue.source !== "format" && cue.canonicalSequence === watermark)),
+      && !this.policy.isCatchUp(cue)
+      && (watermark === null || this.policy.position(cue) === null
+        || (this.policy.position(cue) ?? 0) > watermark
+        || this.policy.acceptAtWatermark(cue, watermark)),
     );
     if (firstNewIndex >= 0 && this.state.isPlaying
       && (this.waitingAtHydrationWatermark || this.state.waitingAtTail)) {
@@ -463,7 +332,7 @@ export class PresentationDirector {
     }
     if (this.waitingAtHydrationWatermark) {
       const next = this.state.cues.findIndex((cue, index) => index > this.state.cursor
-        && !(cue.source !== "format" && cue.liveCatchUp));
+        && !this.policy.isCatchUp(cue));
       if (next >= 0) {
         this.waitingAtHydrationWatermark = false;
         this.exitReadingPositionMs = null;
@@ -503,13 +372,28 @@ export class PresentationDirector {
       this.waitingAtHydrationWatermark = false;
       this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
       this.advanceOne();
-      const nextSpeech = speechBoundaries(this.getActiveCue());
+      const nextSpeech = this.speechBoundaries();
       if (!this.state.isPlaying && nextSpeech) this.transitionWhilePaused(0, nextSpeech.readAtMs);
       return;
     }
-    const speech = speechBoundaries(this.getActiveCue());
+    if (this.thought) {
+      const elapsed = this.getTimelineElapsedBaseMs();
+      if (this.thought.order === "thinking-first" && elapsed < this.thought.insertAt) {
+        this.positionWithinCue(this.thought.insertAt);
+        return;
+      }
+      if (elapsed < this.thought.insertAt + this.thought.duration && elapsed >= this.thought.insertAt) {
+        this.positionWithinCue(this.thought.insertAt + this.thought.duration);
+        return;
+      }
+    }
+    const speech = this.speechBoundaries();
     if (speech) {
-      const elapsed = this.getElapsedBaseMs();
+      const elapsed = this.getTimelineElapsedBaseMs();
+      if (this.thought?.order === "speech-first" && elapsed >= speech.readAtMs && elapsed < this.thought.insertAt) {
+        this.positionWithinCue(this.thought.insertAt);
+        return;
+      }
       if (elapsed < speech.readAtMs) {
         if (this.state.isPlaying) {
           if (elapsed < speech.showAtMs) this.positionWithinCue(speech.showAtMs);
@@ -597,17 +481,17 @@ export class PresentationDirector {
     this.animation.complete();
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.positionWithinCue(speechBoundaries(this.getActiveCue())?.showAtMs ?? 0);
+    this.positionWithinCue(this.thought ? 0 : this.speechBoundaries()?.showAtMs ?? 0);
   }
 
-  reconnect(cues: readonly PresentationCue[]): void {
+  reconnect(cues: readonly C[]): void {
     if (this.disposed) return;
     const wasWaitingAtTail = this.state.waitingAtTail;
-    const canonical = retainActiveHouseBridge(canonicalizeCues(cues), this.getActiveCue());
+    const canonical = this.policy.reconcile(canonicalizeCues(cues), this.getActiveCue());
     const activeKey = this.state.cues[this.state.cursor]?.key;
     const retainedCursor = activeKey ? canonical.findIndex((cue) => cue.key === activeKey) : -1;
     const cursor = retainedCursor >= 0 ? retainedCursor : Math.max(0, canonical.length - 1);
-    const watermark = highestCanonicalSequence(canonical);
+    const watermark = highestPosition(canonical, this.policy);
     this.captureRemainingTime();
     this.clearTimer();
     this.apply({ type: "hydrate", cues: canonical, cursor, watermark });
@@ -623,7 +507,7 @@ export class PresentationDirector {
     if (this.manualTransition) this.ensureTimer();
   }
 
-  resetRound(cues: readonly PresentationCue[]): void {
+  resetRound(cues: readonly C[]): void {
     if (this.disposed) return;
     const canonical = canonicalizeCues(cues);
     this.clearTimer();
@@ -661,16 +545,18 @@ export class PresentationDirector {
     }
     this.apply({ type: "set_cursor", cursor: nextCursor });
     this.exitReadingPositionMs = null;
-    this.positionWithinCue(manual ? speechBoundaries(this.getActiveCue())?.showAtMs ?? 0 : 0);
+    this.positionWithinCue(manual ? this.speechBoundaries()?.showAtMs ?? 0 : 0);
   }
 
   private activeDurationMs(): number {
-    return cueDurationMs(this.state.cues[this.state.cursor]);
+    return cueDurationMs(this.state.cues[this.state.cursor]) + (this.thought?.duration ?? 0);
   }
 
   private ensureTimer(): void {
     if (
       this.disposed
+      || !this.ready
+      || this.thinkingPending
       || this.timerId !== null
       || (!this.state.isPlaying && !this.manualTransition)
       || this.state.waitingAtTail
@@ -693,7 +579,7 @@ export class PresentationDirector {
           this.remainingBaseMs = Math.max(0, this.activeDurationMs() - transition.stopAtMs);
           if (transition.advance) {
             this.advanceOne();
-            const nextSpeech = speechBoundaries(this.getActiveCue());
+            const nextSpeech = this.speechBoundaries();
             if (nextSpeech) this.transitionWhilePaused(0, nextSpeech.readAtMs);
           }
           for (const listener of this.listeners) listener();
@@ -721,60 +607,50 @@ export class PresentationDirector {
     this.timerId = null;
   }
 
-  private apply(action: PresentationDirectorAction): void {
-    const next = reducePresentationDirectorState(this.state, action);
+  private apply(action: PresentationDirectorAction<C>): void {
+    const next = reducePresentationDirectorState<C>(this.state, action);
     if (next === this.state) return;
     if (next.cues !== this.state.cues) {
       this.cueKeys = next.cues.map((cue) => cue.key);
     }
+    if (next.cues[next.cursor]?.key !== this.state.cues[this.state.cursor]?.key) { this.ready = true; this.thought = null; this.thinkingPending = false; }
     this.state = next;
     for (const listener of this.listeners) listener();
   }
 }
 
-function speechBoundaries(cue: PresentationCue | null) {
-  if (!cue?.speechPresentation) return null;
-  const solo = cue.speechPresentation === "solo";
-  const hideAtMs = cue.baseDurationMs - (solo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + VISUAL_SPEECH_FADE_MS);
-  return {
-    showAtMs: solo ? SOLO_SPEECH_START_MS : SCENE_SPEECH_START_MS,
-    readAtMs: solo ? SOLO_READ_START_MS : SCENE_READ_START_MS,
-    hideAtMs,
-    hiddenAtMs: hideAtMs + (solo ? SOLO_SPEECH_FADE_MS : VISUAL_SPEECH_FADE_MS),
-  };
-}
-
-function cueDurationMs(cue: PresentationCue | undefined): number {
+function cueDurationMs<C extends WatchCue>(cue: C | undefined): number {
   if (!cue) return 0;
   return Math.max(0, cue.baseDurationMs);
 }
 
-function canonicalizeCues(cues: readonly PresentationCue[]): PresentationCue[] {
-  const byKey = new Map<string, PresentationCue>();
+function canonicalizeCues<C extends WatchCue>(cues: readonly C[]): C[] {
+  const byKey = new Map<string, C>();
   for (const cue of cues) {
     if (!byKey.has(cue.key)) byKey.set(cue.key, cue);
   }
   return [...byKey.values()];
 }
 
-function highestCanonicalSequence(cues: readonly PresentationCue[]): number | null {
+function highestPosition<C extends WatchCue>(cues: readonly C[], policy: WatchPolicy<C>): number | null {
   let highest: number | null = null;
   for (const cue of cues) {
-    if (cue.canonicalSequence === null) continue;
-    highest = highest === null ? cue.canonicalSequence : Math.max(highest, cue.canonicalSequence);
+    const position = policy.position(cue);
+    if (position === null) continue;
+    highest = highest === null ? position : Math.max(highest, position);
   }
   return highest;
 }
 
-function sameCueKeys(
-  left: readonly PresentationCue[],
-  right: readonly PresentationCue[],
+function sameCueKeys<C extends WatchCue>(
+  left: readonly C[],
+  right: readonly C[],
 ): boolean {
   return left.length === right.length
     && left.every((cue, index) => cue.key === right[index]?.key);
 }
 
-function clampCursor(cursor: number, cues: readonly PresentationCue[]): number {
+function clampCursor<C extends WatchCue>(cursor: number, cues: readonly C[]): number {
   if (cues.length === 0) return 0;
   return Math.max(0, Math.min(cursor, cues.length - 1));
 }
@@ -787,10 +663,3 @@ function browserClock(): PresentationClock {
   };
 }
 
-/** Backfilled narration can replace a title in history, but cannot interrupt a title already on air. */
-function retainActiveHouseBridge(cues: PresentationCue[], active: PresentationCue | null): PresentationCue[] {
-  if (active?.source !== "house" || cues.some((cue) => cue.key === active.key)) return cues;
-  const following = cues.findIndex((cue) => cue.key === active.followingCueKey);
-  if (following >= 0) cues.splice(following, 0, active);
-  return cues;
-}

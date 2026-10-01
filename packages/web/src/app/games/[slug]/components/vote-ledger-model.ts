@@ -4,7 +4,7 @@ import type { PresentationCue } from "./types";
 export interface RevealedVote {
   voterId: string;
   targetId: string | null;
-  choice: "empower" | "save" | "exit" | "winner" | "forfeit";
+  choice: "empower" | "save" | "exit" | "winner" | "forfeit" | "abstain" | "unavailable";
 }
 export interface VoteLedgerState {
   title: string;
@@ -53,13 +53,14 @@ export function voteLedgerForCue(cues: readonly PresentationCue[], cursor: numbe
 }
 
 export function voteLedgerRows(votes: readonly RevealedVote[]) {
-  const rows = new Map<string | null, { targetId: string | null; votes: RevealedVote[]; saves: number; exits: number }>();
+  const rows = new Map<string, { key: string; targetId: string | null; votes: RevealedVote[]; saves: number; exits: number }>();
   for (const vote of votes) {
-    const row = rows.get(vote.targetId) ?? { targetId: vote.targetId, votes: [], saves: 0, exits: 0 };
+    const key = vote.targetId ?? vote.choice;
+    const row = rows.get(key) ?? { key, targetId: vote.targetId, votes: [], saves: 0, exits: 0 };
     row.votes.push(vote);
     if (vote.choice === "save") row.saves += 1;
     if (vote.choice === "exit") row.exits += 1;
-    rows.set(vote.targetId, row);
+    rows.set(key, row);
   }
   return [...rows.values()];
 }

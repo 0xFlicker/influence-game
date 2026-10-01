@@ -82,3 +82,9 @@ describe("speech pages", () => {
     expect(speechPageIndex(pages, 1)).toBe(1);
   });
 });
+
+test("short stages preserve readable bubble height instead of per-character pages", () => {
+ const bubble = placeSceneBubble(780,198,{width:352,height:198,left:214,top:0});
+ expect(bubble.height).toBe(128);
+ expect(bubble.top + bubble.height).toBeLessThanOrEqual(198);
+});

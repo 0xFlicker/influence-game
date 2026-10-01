@@ -96,6 +96,8 @@ export type PublicWatchIntelligenceResult =
 
 export interface PublicWatchIntelligenceParams {
   gameIdOrSlug: string;
+  throughEventSequence?: number;
+  throughTranscriptSequence?: number;
   actorPlayerId?: string;
   round?: number;
   phase?: string;
@@ -163,7 +165,7 @@ export async function getPublicWatchIntelligence(
     source: watchState.source,
   };
 
-  const receipts = await buildPublicReceipts(db, watchState.gameId, contextRound);
+  const receipts = await buildPublicReceipts(db, watchState.gameId, contextRound, params.throughEventSequence);
   const limit = normalizeLimit(params.limit);
 
   if (!params.actorPlayerId) {
@@ -202,6 +204,8 @@ export async function getPublicWatchIntelligence(
       round: contextRound,
       phase: contextPhase,
       limit,
+      throughEventSequence: params.throughEventSequence,
+      throughTranscriptSequence: params.throughTranscriptSequence,
     }),
     loadTranscriptThinkingCards(db, {
       gameId: watchState.gameId,
@@ -209,6 +213,8 @@ export async function getPublicWatchIntelligence(
       round: contextRound,
       phase: contextPhase,
       limit,
+      throughEventSequence: params.throughEventSequence,
+      throughTranscriptSequence: params.throughTranscriptSequence,
     }),
   ]);
 
@@ -239,8 +245,10 @@ async function buildPublicReceipts(
   db: PublicWatchIntelligenceDB,
   gameId: string,
   round: number,
+  throughEventSequence?: number,
 ): Promise<PublicWatchIntelligenceReceipts> {
-  const events = await getPersistedGameEvents(db, gameId);
+  const full = await getPersistedGameEvents(db, gameId);
+  const events = throughEventSequence === undefined ? full : {...full, events: full.events.filter(event => event.sequence <= throughEventSequence)};
   const projection = getPersistedGameProjection(events);
   const canonicalGameFacts = buildRevealedRoundFacts({
     events: events.events.map((event) => event.envelope),
@@ -276,6 +284,8 @@ async function loadArtifactCards(
     round: number;
     phase: string;
     limit: number;
+    throughEventSequence?: number;
+    throughTranscriptSequence?: number;
   },
 ): Promise<PublicWatchIntelligenceCard[]> {
   const rows = await db
@@ -283,6 +293,7 @@ async function loadArtifactCards(
     .from(schema.gameCognitiveArtifacts)
     .where(and(
       eq(schema.gameCognitiveArtifacts.gameId, params.gameId),
+      params.throughEventSequence === undefined ? undefined : lte(schema.gameCognitiveArtifacts.eventSequence, params.throughEventSequence),
       eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId),
       eq(schema.gameCognitiveArtifacts.visibilityStatus, "active"),
       eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
@@ -354,6 +365,8 @@ async function loadTranscriptThinkingCards(
     round: number;
     phase: string;
     limit: number;
+    throughEventSequence?: number;
+    throughTranscriptSequence?: number;
   },
 ): Promise<PublicWatchIntelligenceCard[]> {
   const rows = await db
@@ -361,6 +374,7 @@ async function loadTranscriptThinkingCards(
     .from(schema.transcripts)
     .where(and(
       eq(schema.transcripts.gameId, params.gameId),
+      params.throughEventSequence === undefined ? undefined : lte(schema.transcripts.entrySequence, params.throughTranscriptSequence ?? 0),
       eq(schema.transcripts.fromPlayerId, params.actorPlayerId),
       isNotNull(schema.transcripts.thinking),
       ne(schema.transcripts.scope, "thinking"),

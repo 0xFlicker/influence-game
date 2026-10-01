@@ -33,6 +33,8 @@
     "./performance-cue": "./src/performance-cue.ts",
     "./character-portrait": "./src/character-portrait.ts",
     "./werewolf/thinking": "./src/werewolf/thinking.ts",
+    "./werewolf/watch-contract": "./src/werewolf/watch-contract.ts",
+    "./werewolf/watch": "./src/werewolf/watch.ts",
     "./werewolf/presentation": "./src/werewolf/presentation.ts"
   },
   "scripts": {

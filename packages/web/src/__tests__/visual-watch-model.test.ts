@@ -2,7 +2,7 @@ import { createFormatKernelViewerScenario } from "@influence/engine/fixtures/for
 import { sceneSpeechDurationMs } from "../app/games/[slug]/components/scene-speech-timing";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import { expect, test } from "bun:test";
-import { createPresentationDirector } from "../app/games/[slug]/components/format-presentation-director";
+import { createPresentationDirector } from "../app/games/[slug]/components/influence-presentation-director";
 import { visualWatchPresentation, paceVisualBallots, transcriptPresentationDurationMs, type VisualWatchData } from "../app/games/[slug]/components/visual-watch-model";
 import { soloPresentationDurationMs } from "../app/games/[slug]/components/solo-presentation-timing";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";

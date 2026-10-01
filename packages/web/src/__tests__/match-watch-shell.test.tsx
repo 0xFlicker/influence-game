@@ -25,10 +25,9 @@ import {
 } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildStoryScenes } from "../app/games/[slug]/components/house-story";
 
-const matchWatchShellSource = readFileSync(
-  join(import.meta.dir, "../app/games/[slug]/components/match-watch-shell.tsx"),
-  "utf8",
-);
+const sharedShellSource = readFileSync(join(import.meta.dir, "../components/watch/watch-shell.tsx"), "utf8");
+const inspectorSource = readFileSync(join(import.meta.dir, "../components/watch/watch-inspector.tsx"), "utf8");
+
 
 function game(): GameDetail {
   return {
@@ -112,11 +111,11 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('href="/profile/arden-voss"');
     expect(html).toContain("Owner: <!-- -->Arden Voss");
     expect(html).toContain('aria-label="View Arden Voss&#x27;s public profile"');
-    expect(matchWatchShellSource).toContain('href="/get-mcp"');
-    expect(matchWatchShellSource).toContain("Cross-examine this game with your AI.");
-    expect(matchWatchShellSource).toContain("Analyze this game");
-    expect(matchWatchShellSource.indexOf("<McpBanner />")).toBeLessThan(
-      matchWatchShellSource.indexOf("<TheaterPanel"),
+    expect(sharedShellSource).toContain('href="/get-mcp"');
+    expect(sharedShellSource).toContain("Cross-examine this game with your AI.");
+    expect(sharedShellSource).toContain("Analyze this game");
+    expect(sharedShellSource.indexOf("<McpBanner />")).toBeLessThan(
+      sharedShellSource.indexOf("{cast}{mobileCast}{theater}"),
     );
   });
 
@@ -533,7 +532,7 @@ describe("MatchWatchShell", () => {
       "utf8",
     );
     const presentationDirectorSource = readFileSync(
-      join(import.meta.dir, "../app/games/[slug]/components/format-presentation-director.ts"),
+      join(import.meta.dir, "../app/games/[slug]/components/influence-presentation-director.ts"),
       "utf8",
     );
 
@@ -546,12 +545,12 @@ describe("MatchWatchShell", () => {
   });
 
   it("makes long thinking cards expandable from the inspector", () => {
-    expect(matchWatchShellSource).toContain("COMPACT_THINKING_TEXT_LIMIT");
-    expect(matchWatchShellSource).toContain("expandableCards");
-    expect(matchWatchShellSource).toContain("shouldClamp = expandable");
-    expect(matchWatchShellSource).toContain("aria-expanded={expanded}");
-    expect(matchWatchShellSource).toContain("Show full");
-    expect(matchWatchShellSource).toContain("Show less");
+    expect(inspectorSource).toContain("COMPACT_THINKING_TEXT_LIMIT");
+    expect(inspectorSource).toContain("expandableCards");
+    expect(inspectorSource).toContain("shouldClamp = expandable");
+    expect(inspectorSource).toContain("aria-expanded={expanded}");
+    expect(inspectorSource).toContain("Show full");
+    expect(inspectorSource).toContain("Show less");
   });
 
   it("builds newest-first diary archive entries with paired House questions", () => {
@@ -789,3 +788,10 @@ function watchState(): GameWatchState {
 function withoutReactTextMarkers(html: string): string {
   return html.replaceAll("<!-- -->", "");
 }
+
+it("does not infer a missing Diary cursor from equal timestamps", () => {
+  const earlier = entry({id: 1, entrySequence: 1, timestamp: 100});
+  const later = entry({id: 2, entrySequence: 3, timestamp: 100});
+  expect(buildReplayTranscriptSlice([earlier, later], [entry({id: 99, entrySequence: 2, timestamp: 100})])).toEqual([earlier]);
+  expect(buildReplayTranscriptSlice([earlier, later], [entry({id: 99, timestamp: 100})])).toEqual([]);
+});

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { Window as HappyDOMWindow } from "happy-dom";
-import { usePlayerFullscreen } from "../app/games/[slug]/components/use-player-fullscreen";
+import { usePlayerFullscreen } from "../components/watch/use-player-fullscreen";
 const keys = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event"] as const;
 const original = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;

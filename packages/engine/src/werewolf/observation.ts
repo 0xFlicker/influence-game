@@ -1,5 +1,5 @@
 import { werewolfTurnReminder, WEREWOLF_PACK_ATTEMPTS, werewolfPackOrder } from "./rules";
-import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfState } from "./types";
+import type { WerewolfDayResult, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfFaction, WerewolfOutcome, WerewolfPackVote, WerewolfRole, WerewolfState, WerewolfHistoryEntry } from "./types";
 
 export type WerewolfAudience = "mystery" | "omniscient";
 
@@ -41,8 +41,13 @@ export interface WerewolfView {
 /** Public allowlist, not a redacted copy of authoritative state. */
 export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudience): WerewolfView {
   if (audience !== "mystery" && audience !== "omniscient") throw new Error("Invalid Werewolf audience");
+  const entries = state.history.flatMap(entry => projectWerewolfEntry(entry, audience));
+  return { ...projectWerewolfSnapshot(state, audience, entries.length), entries };
+}
+
+/** Project only the new history entry; window reads never copy a history prefix. */
+export function projectWerewolfEntry(entry: WerewolfHistoryEntry, audience: WerewolfAudience): WerewolfPublicEntry[] {
   const omniscient = audience === "omniscient";
-  const entries: WerewolfPublicEntry[] = state.history.flatMap((entry): WerewolfPublicEntry[] => {
     switch (entry.kind) {
       case "phase": return [{ kind: "phase", day: entry.day, phase: entry.phase }];
       case "speech": return entry.audience === "public" || omniscient
@@ -58,7 +63,11 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
       case "vote": return [{ kind: "vote", day: entry.day, result: structuredClone(entry.result) }];
       case "result": return [{ kind: "result", day: entry.day, outcome: structuredClone(entry.outcome) }];
     }
-  });
+
+}
+
+export function projectWerewolfSnapshot(state: WerewolfState, audience: WerewolfAudience, cursor: number): Omit<WerewolfView, "entries"> {
+  const omniscient = audience === "omniscient";
   return {
     gameId: state.gameId, rulesVersion: state.config.rulesVersion, preset: state.config.preset, audience,
     day: state.day, maxDays: state.config.maxDays,
@@ -67,10 +76,10 @@ export function projectWerewolfView(state: WerewolfState, audience: WerewolfAudi
       initiativeIds: [...state.discussion.initiativeIds], thread: state.phase === "vote" ? state.discussion.threadIndex : Math.min(state.discussion.threadIndex + 1, state.discussion.initiativeIds.length), totalThreads: state.discussion.initiativeIds.length,
       stage: state.discussion.stage, recipientIds: [...state.discussion.recipientIds], respondentIds: [...state.discussion.respondentIds], ended: state.discussion.ended,
     } : null,
-    cursor: entries.length,
+    cursor,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),
       ...(omniscient || state.outcome ? { role: state.roles[p.id]! } : {}),
-    })), entries, outcome: state.outcome ? structuredClone(state.outcome) : null,
+    })), outcome: state.outcome ? structuredClone(state.outcome) : null,
   };
 }
 

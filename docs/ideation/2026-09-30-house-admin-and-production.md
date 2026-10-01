@@ -108,3 +108,7 @@ These are implementation gaps recorded for follow-through, not instructions to a
 Start with A1. Plan A2 from the stable workspace. Extract A3 patterns from actual repeated evidence rather than generalizing in advance. Plan A4 after the first workspace and studio patterns are proven; inventory can happen earlier without starting the migration.
 
 Confirmed during source audit: the app already has a QueryClient provider and Motion; existing cost components can be extracted; the current Reviews destination is agent learning review and belongs under People. Performance timings and wheel-motion comfort still need browser validation during implementation.
+
+### Shared player implementation map (2026-10-01)
+
+The public Werewolf route now composes `components/watch/watch-shell.tsx`, `watch-cast.tsx`, `watch-inspector.tsx`, `watch-transport.tsx`, shared fullscreen/keyboard hooks and `watch-director.ts`. Influence's adapter remains `games/[slug]/components/influence-presentation-director.ts`; Werewolf's controller/policy/stage remain under `app/werewolf/`. The MCP banner lives once in the shared shell, with its original copy and `/get-mcp` link. A4-MCP (frozen external inspection contract) and A4-EVIDENCE (evolving strategy capture) remain pending. The new internal HTTP watch-window DTO implements neither. See [implementation evidence](../reviews/2026-10-01-shared-house-watch-player-implementation.md).

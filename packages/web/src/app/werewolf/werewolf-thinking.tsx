@@ -4,7 +4,7 @@ import { apiFetch } from "@/lib/api";
 import type { WerewolfThinking as Thinking } from "@influence/engine/werewolf/thinking";
 
 /** Mounted only by the Omniscient toggle; keyed reads prevent stale cursor paint. */
-export function WerewolfThinking({ gameId, cursor, players }: { gameId: string; cursor: number; players: Array<{ id: string; name: string }> }) {
+export function WerewolfThinking({ gameId, cursor, players, actorId }: { gameId: string; cursor: number; players: Array<{ id: string; name: string }>; actorId?: string }) {
   const key = `${gameId}:${cursor}`;
   const [read, setRead] = useState<{ key: string; data?: Thinking; error?: string } | null>(null);
   useEffect(() => {
@@ -15,7 +15,7 @@ export function WerewolfThinking({ gameId, cursor, players }: { gameId: string; 
     return () => controller.abort();
   }, [gameId, cursor, key]);
   const current = read?.key === key ? read : null;
-  const entries = current?.data?.entries;
+  const entries = current?.data?.entries.filter(entry => !actorId || entry.actorId === actorId);
   return <section aria-label="Player thinking" className="my-4 rounded-xl border border-white/10 bg-white/[0.03] p-5">
     <h2 className="font-semibold">Thinking</h2>
     <p className="mb-4 text-sm text-white/50">Private player thinking up to this moment. Sealed choices appear after resolution.</p>

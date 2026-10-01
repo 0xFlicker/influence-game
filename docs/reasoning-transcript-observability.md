@@ -2,6 +2,12 @@
 
 Werewolf freezes the effective game-specific strategy at creation: owner notes when present, otherwise a Werewolf archetype default. CLI House characters use those same defaults. Inspect the private starting event when comparing strategy behavior; changing an archetype or saved notes later does not change a running game. The AI editor writes independent Influence and Werewolf blocks without reusing Influence tactics as a fallback.
 
+## Playback evidence boundaries
+
+Both games now reuse the House watch shell and scheduler. Werewolf's Thinking requests are opt-in, Omniscient-only and bound to the consumed audience cursor and selected player. Prefetched entries and the live head cannot supply current thinking or cast state. Passes remain recorded and become eligible for inspection as their source positions are consumed, without a Pass speech frame. Audience switches clear pending reads and restart paused.
+
+Influence watch intelligence and alliance reads accept `throughEventSequence` and `throughTranscriptSequence`. The player sends its active authoritative boundaries, including presentation-stage cutoffs. Same-phase later thoughts and amended alliance terms must not appear on rewind; unanchored evidence is excluded from exact-position reads. Alliance state is rebuilt from the canonical prefix, and Diary uses the active transcript prefix. Full-game consumers can still make unbounded reads. These changes add no reasoning capture and do not expose native provider reasoning. Keep exact contracts, no `as any`, and future House calls direct.
+
 ## Werewolf decisions
 
 Daytime sealed ballots run concurrently using the same frozen public context. The API simulation report prints a checkpoint explanation, then live `N/M decisions ready` updates and a 30-second heartbeat while waiting. These counts include accepted journal results even before event commitment; they expose no voter identities, targets, abstentions or private reasoning. The live API returns `voteProgress` beside `view`, never inside contestant observations or historical cursor reads. All choices still reveal together. Restart gateway and worker to use the updated code; start a fresh rules-v7 game; no SQL migration is needed. Concurrent ballot execution does not change ballot call counts; actual latency still depends on the provider.
@@ -683,3 +689,11 @@ The admin visual-production page groups scenes, receipts and evidence, exposes p
 ### Character preparation evidence
 
 Character authoring uses `full-body:<requestId>` and `portrait-head:<localizationVersion>:<requestId>` operations owned by the authenticated user. Provider attempts preserve request hashes, response receipts, uncertainty and cost in the existing visual journal. A missing or uncertain head observation returns a manual-crop status; it never turns into an accepted guessed portrait. These are draft-authoring artifacts, not game decisions or transcript events. Final submission still records the selected text, image hashes and crop metadata atomically for future moderation.
+
+### Shared player thinking and entry modes
+
+Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audience=omniscient`); it stays fixed for the session. Omniscient can toggle captured thinking without navigation. The House player settings beside fullscreen provide readable shortcuts and **Thinking first / Speech first** timing for both Influence and Werewolf. The overlay uses the shared director clock, exact speaker/contribution evidence, and no model calls. Uncaptured turns stay without a thought bubble; Mystery cannot load thinking. Strategy Lens remains available for reading eligible evidence.
+
+The shared watch thought bubble is rendered within the scene canvas, above speech, with secondary text and a circle tail toward the actor. In Thinking first mode, it stays anchored when speech is measured and remains visible until both bubbles share the speech exit, including manual dismissal. It does not change raw transcripts or generate new words. Werewolf day-vote abstentions animate silently into the Hear more ledger bucket; unavailable ballots remain distinct.
+
+Shared watch bubbles measure the entire message independently of playback time. Font size and the tallest page establish one stable frame; short contributions use larger type and shorter bubbles, and very short replies can narrow. The text is preserved verbatim, including across pages. Padding is a layout constraint rather than a per-page adjustment.

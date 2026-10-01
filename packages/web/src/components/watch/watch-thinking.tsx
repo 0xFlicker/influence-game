@@ -1,0 +1,66 @@
+"use client";
+import {createContext, useContext, useEffect, useState, type ReactNode} from "react";
+import type {PresentationDirector, ThinkingOrder, WatchCue} from "./watch-director";
+import type {BubbleTypography} from "./bubble-typography";
+import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
+import {visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
+
+type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string};
+const ThinkingContext = createContext<Thought | null>(null);
+export const useSceneThinking = () => useContext(ThinkingContext);
+
+/** Optional captured evidence shares the director's clock; it never makes a model call. */
+export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, order, speaker, load, children}: {
+  director: PresentationDirector<C>; cueKey: string | null; enabled: boolean; order: ThinkingOrder;
+  children: ReactNode; speaker: string; load: (signal: AbortSignal) => Promise<string | null>;
+}) {
+  const [, redraw] = useState(0);
+  const [error, setError] = useState<{key:string; message:string} | null>(null);
+  const errorKey = `${cueKey}:${order}`;
+  useEffect(() => {
+    if (!cueKey) return;
+    if (!enabled) { director.setThinking(cueKey, null, order); return; }
+    const controller = new AbortController();
+    director.setThinkingPending(cueKey, true);
+    void load(AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]))
+      .then(text => { if (!controller.signal.aborted) {director.setThinking(cueKey, text, order);setError(null);} })
+      .catch(() => { if (!controller.signal.aborted) {director.setThinking(cueKey, null, order);setError({key:errorKey,message:"Thinking could not be loaded for this turn."});} });
+    return () => { controller.abort(); director.setThinkingPending(cueKey, false); };
+  }, [director, cueKey, enabled, order, load, errorKey]);
+  useEffect(() => {
+    if (!enabled) return;
+    let frame = 0;
+    const sample = () => {redraw(value => value + 1);frame = director.isAnimating() ? requestAnimationFrame(sample) : 0;};
+    const schedule = () => {if (!frame) frame = requestAnimationFrame(sample);};
+    const unsubscribe = director.subscribe(schedule);
+    schedule();
+    return () => {unsubscribe();cancelAnimationFrame(frame);};
+  }, [enabled, director]);
+  const thought = enabled ? director.getThinkingFrame() : null;
+  return <ThinkingContext.Provider value={thought ? {...thought, speaker} : null}>
+    {children}
+    {enabled && error?.key === errorKey && <p role="status" className="pointer-events-none absolute right-4 top-14 z-30 rounded bg-black/90 p-2 text-xs text-white/70">{error.message}</p>}
+  </ThinkingContext.Provider>;
+}
+
+/** A scene owns placement. There is no opaque lane or separate playback clock. */
+export function ThoughtBubble({box, head, typography, padding = 18}: {
+  box: {left: number; top: number; width: number; height: number};
+  head: {x: number; y: number}; typography?: BubbleTypography | null; padding?: number;
+}) {
+  const thought = useSceneThinking();
+  if (!thought) return null;
+  const reading = visualSpeechDurationMs(thought.text) - 2 * VISUAL_SPEECH_FADE_MS;
+  const start = {x: Math.max(box.left + 20, Math.min(box.left + box.width - 20, head.x)), y: box.top + box.height};
+  return <>
+    {[.15, .48, .81].map((fraction, index) => <span key={fraction} aria-hidden="true" data-thought-tail
+      className="pointer-events-none absolute z-[180] rounded-full border border-slate-300/35 bg-slate-950/90"
+      style={{left: start.x + (head.x - start.x) * fraction - (12 - index * 3) / 2, top: start.y + Math.max(44, head.y - start.y) * fraction, width: 12 - index * 3, height: 12 - index * 3, opacity: thought.opacity}} />)}
+    <aside aria-label={`${thought.speaker} thinking`} data-in-scene-thinking
+      className="pointer-events-none absolute z-[180] flex flex-col rounded-[2rem] border border-slate-300/35 bg-slate-950/90 text-slate-300 shadow-xl"
+      style={{...box, padding, opacity: thought.opacity}}>
+      <p className={`mb-1 flex shrink-0 gap-2 text-[10px] leading-3 font-medium text-slate-400 ${typography && typography.pages.length > 1 && !typography.footerHeight ? "pr-12" : ""}`}><span className="motion-safe:animate-pulse" aria-hidden="true">•••</span>{thought.speaker} thinks</p>
+      <TimedSpeech typography={typography} text={thought.text} elapsedMs={VISUAL_SPEECH_FADE_MS + thought.elapsedMs / thought.durationMs * reading} />
+    </aside>
+  </>;
+}
