@@ -68,24 +68,27 @@ async function checkFailedPackNegotiations() {
     await text(page, "Meet the village");
     await click(page, "Latest");
     await text(page, "Game complete");
-    await text(page, "After thread 1: No majority. Continue discussion.");
+    await page.evaluate("Array.from(document.querySelectorAll('details')).forEach(d => { d.open = true; })");
+    await text(page, "No majority. Discussion continues.");
     await text(page, "Abstain (hear more)");
     await text(page, "Majority required: 5 of 8 living players.");
-    await text(page, "After thread 8:");
+    await text(page, "Vote after thread 8");
     await text(page, "Final ballot: unique most votes wins; ties spare everyone.");
-    await text(page, "was eliminated. Day ends.");
+    await text(page, "is eliminated.");
     expect(await page.evaluate('document.body.innerText.includes("Pack ballot")')).toBe(false);
     await click(page, "Omniscient");
     await text(page, "Meet the village");
     await click(page, "Latest");
-    await text(page, "Pack ballot 3/3");
-    await text(page, "Three ballots without agreement. No pack attack tonight.");
+    await text(page, "Game complete");
+    await page.evaluate("Array.from(document.querySelectorAll('details')).forEach(d => { d.open = true; })");
+    await text(page, "Pack ballot 3 of 3");
+    await text(page, "No agreement. No attack tonight.");
     await text(page, "Doctor protected");
-    await text(page, "checked");
+    await text(page, "investigated");
     expect(await page.evaluate('document.body.innerText.includes("Private fixture")')).toBe(false);
     await page.setViewport({ width: 390, height: 844 });
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Pack ballot 3/3'))?.scrollIntoView({ block: 'start' })");
+    await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('Pack ballot 3 of 3'))?.scrollIntoView({ block: 'start' })");
     await page.screenshot({ path: "/tmp/werewolf-pack-ballots-mobile.png" });
     await page.evaluate("Array.from(document.querySelectorAll('ol > li')).find(entry => entry.textContent.includes('After thread 1:'))?.scrollIntoView({ block: 'start' })");
     await page.screenshot({ path: "/tmp/werewolf-day-checkpoint-mobile.png" });
@@ -93,6 +96,7 @@ async function checkFailedPackNegotiations() {
     await text(page, "Meet the village");
     await click(page, "Latest");
     await text(page, "Game complete");
+    await page.evaluate("Array.from(document.querySelectorAll('details')).forEach(d => { d.open = true; })");
     expect(await page.evaluate('document.body.innerText.includes("Pack ballot") || document.body.innerText.includes("failed to agree")')).toBe(false);
   } finally { await page.close(); }
 }
@@ -215,20 +219,21 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     expect(await page.evaluate('document.body.innerText.includes("Role unknown")')).toBe(true);
     const gameUrl = page.url();
     await click(page, "Omniscient");
-    await page.waitForFunction('document.body.innerText.includes("Seer · Alive")');
+    await page.waitForFunction('document.body.innerText.includes("seer · Alive")');
     await page.screenshot({ path: "/tmp/werewolf-omniscient-desktop.png", fullPage: true });
     await click(page, "Mystery");
     await page.waitForFunction('document.body.innerText.includes("Role unknown")');
-    expect(await page.evaluate('document.body.innerText.includes("Seer · Alive")')).toBe(false);
+    expect(await page.evaluate('document.body.innerText.includes("seer · Alive")')).toBe(false);
     await page.setViewport({ width: 390, height: 844 });
     await page.screenshot({ path: "/tmp/werewolf-mystery-mobile.png", fullPage: true });
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await click(page, "Latest");
     await text(page, "Game complete");
+    await page.evaluate("Array.from(document.querySelectorAll('details')).forEach(d => { d.open = true; })");
     await text(page, "Thread 1");
-    await text(page, "Reply to respondent");
-    await text(page, "Invited:");
-    await text(page, "Passed.");
+
+
+    await text(page, "Pass");
     await text(page, "I will compare the claims with today's vote.");
     expect(await page.evaluate('document.body.innerText.includes("Discussion beat")')).toBe(false);
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
@@ -312,9 +317,18 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     }
     await click(page, "Save reviewed version");
     await text(page, "Review saved. Publish this version when ready.");
-    await click(page, "Publish for private production");
-    await text(page, "Published to private Werewolf production");
+    await click(page, "Publish for viewers");
+    await text(page, "Published for new viewer sessions");
     expect(mediaWrites.map(write => [write.action,write.expectedVersion])).toEqual([["review",1],["publish",2]]);
+    const viewer = await browser.newPage();
+    try {
+      await viewer.goto(`${servers.webUrl}/werewolf/${game.slug}`, { waitUntil: "domcontentloaded" });
+      await text(viewer, "Meet the village"); await click(viewer, "Next");
+      await viewer.waitForSelector('[aria-label="Current room"] [data-speech-bubble]', { visible: true });
+      expect(await viewer.evaluate(`Array.from(document.querySelectorAll('[aria-label="Current room"] img')).some(image => image.complete && image.src.includes("/media/"))`)).toBe(true);
+      await viewer.screenshot({ path: "/tmp/werewolf-replay-published-panel.png" });
+    } finally { await viewer.close(); }
+
     await page.select('select', 'overview'); await text(page, "Game overview");
     await click(page, "Hide game"); await text(page, "Restore listing");
     expect((await database.db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.hiddenAt).not.toBeNull();
@@ -355,3 +369,42 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     throw error;
   } finally { await page.close(); }
 }, 90_000);
+
+test("visual replay freezes its clock, seeks without spoilers, handles failed portraits and keyboard focus", async () => {
+  const [game] = await database.db.select().from(schema.games).where(eq(schema.games.gameKind, "werewolf"));
+  if (!game) throw new Error("Missing completed replay fixture");
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: 1440, height: 1000 });
+    await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+    await page.setRequestInterception(true);
+    page.on("request", request => { if (request.url().includes("/characters/")) void request.respond({ status: 404, body: "Missing frozen reference" }); else void request.continue(); });
+    await page.goto(`${servers.webUrl}/werewolf/${game.slug}`, { waitUntil: "domcontentloaded" });
+    await text(page, "Meet the village"); await click(page, "Next");
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="2"][data-ready="true"] [data-speech-bubble]');
+    const clock = () => page.$eval('[data-werewolf-stage]', node => Number(node.getAttribute('data-elapsed')));
+    const before = await clock();
+    await click(page, "Play");
+    await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]').dataset.elapsed) > ${before + 200}`);
+    await click(page, "Pause"); const paused = await clock();
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(await clock()).toBe(paused);
+    await page.select('select[aria-label="Playback speed"]', "2");
+    await page.focus('select[aria-label="Playback speed"]'); await page.keyboard.press('Space');
+    expect(await clock()).toBe(paused);
+    await page.keyboard.press('Escape');
+    await page.evaluate('document.activeElement.blur()'); await page.keyboard.press('ArrowRight');
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="3"]');
+    await click(page, "Omniscient"); await text(page, "werewolf · Alive");
+    await click(page, "Mystery"); await text(page, "Role unknown");
+    expect(await page.evaluate('document.body.innerText.includes("werewolf · Alive")')).toBe(false);
+    await click(page, "Next"); await page.waitForSelector('[data-speech-bubble]');
+    await page.screenshot({ path: "/tmp/werewolf-replay-desktop.png" });
+    await page.setViewport({ width: 390, height: 844 });
+    expect(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')).toBe(true);
+    await page.screenshot({ path: "/tmp/werewolf-replay-mobile.png" });
+    await click(page, "Latest"); await text(page, "Game complete");
+    await click(page, "Beginning"); await text(page, "Role unknown");
+    expect(await page.evaluate('document.body.innerText.includes("Game complete")')).toBe(false);
+  } finally { await page.close(); }
+}, 60_000);

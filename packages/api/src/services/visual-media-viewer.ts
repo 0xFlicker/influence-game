@@ -6,7 +6,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 /** Viewer selection only; no accepted game or transcript records are rewritten. */
 export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: Record<string, number>) {
   const [game] = await db.select({ kind: schema.games.gameKind, hidden: schema.games.hiddenAt }).from(schema.games).where(eq(schema.games.id, gameId));
-  // Werewolf production is admin-only until its audience-aware viewer integration ships.
+  // Werewolf uses its own audience/cursor-checked presentation and media routes.
   if (!game || game.kind === "werewolf" || game.hidden) return { publicationSnapshot: {} as Record<string, number>, bindings: {} as Record<string, string>, scenes: [] };
   const [scenes, publications, versions, dialogue, canonicalEvents] = await Promise.all([
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),

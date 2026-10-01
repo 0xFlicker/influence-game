@@ -4,6 +4,7 @@ import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
+import { readWerewolfPresentation, readWerewolfCharacter } from "../services/werewolf-presentation.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
 export function createWerewolfRoutes(db: DrizzleDB) {
@@ -44,6 +45,34 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       .where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt))).orderBy(desc(schema.games.createdAt)).limit(100);
     return c.json(rows);
   });
+  for (const route of ["/api/werewolf/:id/presentation", "/api/werewolf/:id/media/:asset", "/api/werewolf/:id/characters/:player"]) {
+    app.get(route, async c => {
+      const audience = c.req.query("audience") ?? "mystery";
+      if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);
+      const raw = c.req.query("cursor"), cursor = raw === undefined ? undefined : Number(raw);
+      if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) return c.json({ error: "Invalid replay position" }, 400);
+      const publishedBefore = c.req.query("publishedBefore");
+      if (publishedBefore !== undefined && (!Number.isFinite(Date.parse(publishedBefore)) || new Date(publishedBefore).toISOString() !== publishedBefore)) return c.json({ error: "Invalid publication snapshot" }, 400);
+      const { presentation, permitted } = await readWerewolfPresentation(db, c.req.param("id")!, audience, cursor, publishedBefore);
+      const asset = c.req.param("asset"), player = c.req.param("player");
+      if (asset) {
+        if (!permitted.has(asset)) return c.json({ error: "Image not available at this replay position" }, 404);
+        const [image] = await db.select({ bytes: schema.visualArtifacts.image }).from(schema.visualArtifacts)
+          .where(and(eq(schema.visualArtifacts.id, asset), eq(schema.visualArtifacts.gameId, presentation.view.gameId)));
+        if (!image) return c.json({ error: "Image not found" }, 404);
+        c.header("Content-Type", "image/png"); return c.body(new Uint8Array(image.bytes));
+      }
+      if (player) {
+        if (!presentation.view.players.some(p => p.id === player)) return c.json({ error: "Character not found" }, 404);
+        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player);
+        if (!bytes) return c.json({ error: "Frozen character reference unavailable" }, 404);
+        // Frozen references may be JPEG/WebP as well as PNG. Browsers decode the bytes.
+        c.header("Content-Type", bytes[0] === 0xff ? "image/jpeg" : bytes.toString("ascii", 0, 4) === "RIFF" ? "image/webp" : "image/png");
+        return c.body(new Uint8Array(bytes));
+      }
+      return c.json(presentation);
+    });
+  }
   app.get("/api/werewolf/:id", async (c) => {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));

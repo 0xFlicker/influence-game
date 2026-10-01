@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { selectVisualShot, type AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { frameVisualScene, placeSceneBubble, sceneCameraProgress, type PanelTreatment } from "./visual-scene-layout";
@@ -13,26 +13,30 @@ import { SceneImage, panelTransition, sceneImageLayers, type SceneCameraView } f
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal" }: {
+export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId }: {
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
+  /** Frame a silent performance or elimination without inventing speech. */
+  focusPlayerId?: string;
+  onReadyChange?: (ready: boolean) => void;
   controlsInset?: number; reducedMotion?: boolean; navigationRevision?: number;
   speechPresentation?: "solo" | "scene";
   readingElapsedMs?: number;
   panelTreatment?: PanelTreatment;
 }) {
   const openingKey = `${roomScene.id}:${roomScene.version}:${navigationRevision}`;
-  const speechKey = speech?.id ?? "silent";
+  const focusedPlayerId = speech?.playerId ?? focusPlayerId;
+  const speechKey = speech?.id ?? `silent:${focusedPlayerId ?? "room"}`;
   const [opening, setOpening] = useState({ key: openingKey, beat: speechKey });
   if (opening.key !== openingKey) setOpening({ key: openingKey, beat: speechKey });
   const openingBeat = opening.key === openingKey ? opening.beat : speechKey;
-  const shot = roomScene.shots ? (roomScene.shots.mode === "establishing" && openingBeat === speechKey && elapsedMs < 650 ? roomScene.shots.overview : selectVisualShot(roomScene.shots, speech?.playerId)) : null;
+  const shot = roomScene.shots ? (roomScene.shots.mode === "establishing" && openingBeat === speechKey && elapsedMs < 650 ? roomScene.shots.overview : selectVisualShot(roomScene.shots, focusedPlayerId)) : null;
   const scene = shot ? { ...roomScene, imageUrl: shot.imageUrl, anchors: shot.anchors } : roomScene;
   const treatment = roomScene.shots && roomScene.shots.groups.length > 1 && roomScene.shots.groups.some(group => group.imageUrl === scene.imageUrl) ? panelTreatment : "separate";
-  const pointer = shot?.pointers.find(p => p.playerId === speech?.playerId);
+  const pointer = shot?.pointers.find(p => p.playerId === focusedPlayerId);
   // Late viewer publications keep the accepted cue's original staging budget.
   const solo = speech && speechPresentation === "solo" ? soloPresentationMotion(speech.text, elapsedMs, false, reducedMotion) : null;
   const opacity = solo?.speechOpacity ?? (speech ? sceneSpeechOpacity(speech.text, elapsedMs, reducedMotion) : 0);
-  const anchor = speech?.playerId ? scene.anchors.find((item) => item.playerId === speech.playerId && item.confidence === "clear") : undefined;
+  const anchor = focusedPlayerId ? scene.anchors.find((item) => item.playerId === focusedPlayerId && item.confidence === "clear") : undefined;
   const speechMeasure = useRef<HTMLDivElement>(null);
   const [speechHeight, setSpeechHeight] = useState(220);
   const frameRef = useRef<HTMLElement>(null);
@@ -57,6 +61,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   }, [speech?.text, size.width]);
   const imageFailed = failedUrl === scene.imageUrl;
   const imageKnown = loaded.url === scene.imageUrl || imageFailed;
+  useEffect(() => { onReadyChange?.(imageKnown); }, [imageKnown, onReadyChange]);
   let head = imageFailed ? undefined : pointer ? { x: pointer.x, y: pointer.y, width: 0, height: 0 } : anchor?.head;
   let target = frameVisualScene(size.width, size.height, imageKnown ? loaded.width : 0, imageKnown ? loaded.height : 0, pointer && treatment !== "focal" ? undefined : head, treatment);
   // If an extreme close-up leaves no readable bubble space, show the full image

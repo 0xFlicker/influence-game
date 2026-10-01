@@ -11,7 +11,7 @@ import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
   { action: "review"; review: VisualShotReview } | { action: "regenerate" } | { action: "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
-  { action: "publish"; versionId: string; expectedPublication: number }
+  { action: "publish"; versionId: string; expectedPublication: number; audience?: "public" | "private" }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
 const reject = (code: string, message: string): never => { throw new Rejected(code, message); };
@@ -43,10 +43,13 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         if (!version) return reject("unverified", "Choose a verified version");
         const [last] = await tx.select().from(publications).where(eq(publications.sceneId, scene.id)).orderBy(desc(publications.revision)).limit(1);
         if ((last?.revision ?? 0) !== input.expectedPublication) return reject("publication_conflict", "Published version changed; refresh first");
-        const id = randomUUID();
-        await tx.insert(publications).values({ id, gameId, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
         const [game] = await tx.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
-        receipt = { accepted: true, code: "published", message: game?.kind === "werewolf" ? "Published to private Werewolf production. Public playback is unchanged." : "Published for new viewer sessions", publicationId: id };
+        if (game?.kind === "werewolf" && !input.audience) return reject("audience_required", "Choose public viewers or private production explicitly");
+        if (game?.kind !== "werewolf" && input.audience === "private") return reject("audience_not_supported", "Private publication is only supported for Werewolf production");
+        const audience = input.audience ?? "public";
+        const id = randomUUID();
+        await tx.insert(publications).values({ id, gameId, audience, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
+        receipt = { accepted: true, code: "published", message: audience === "private" ? "Published to private Werewolf production. Public playback is unchanged." : "Published for new viewer sessions", publicationId: id };
       } else if (input.action === "review") {
         if (history.some(j => active(j.status))) return reject("already_pending", "Wait for the active repair before saving a review");
         let shots;

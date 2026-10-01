@@ -3684,10 +3684,11 @@ export const visualMediaVersions = pgTable("visual_media_versions", {
 }, (t) => [unique("visual_media_version_unique").on(t.sceneId, t.version)]);
 
 export const visualMediaPublications = pgTable("visual_media_publications", {
+  audience: text("audience").notNull().default("public").$type<"public" | "private">(),
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id), sceneId: text("scene_id").notNull().references(() => visualScenes.id),
   versionId: text("version_id").notNull().references(() => visualMediaVersions.id), revision: integer("revision").notNull(),
   operatorId: text("operator_id").notNull(), createdAt: text("created_at").notNull(),
-}, (t) => [unique("visual_media_publication_unique").on(t.sceneId, t.revision)]);
+}, (t) => [unique("visual_media_publication_unique").on(t.sceneId, t.revision), check("visual_media_publication_audience_check", sql`${t.audience} IN ('public', 'private')`)]);
 
 export const visualMediaRequests = pgTable("visual_media_requests", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),

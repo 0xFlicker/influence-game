@@ -736,6 +736,13 @@
       "when": 1790726400001,
       "tag": "0104_werewolf",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790809200000,
+      "tag": "0105_visual_publication_audience",
+      "breakpoints": true
     }
   ]
 }

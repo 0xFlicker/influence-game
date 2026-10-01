@@ -16,7 +16,7 @@ interface MediaVersion {
 }
 export interface MediaRecords {
   jobs: MediaJob[]; versions: MediaVersion[];
-  publications: Array<{ id: string; sceneId: string; versionId: string; revision: number; createdAt: string; operatorId: string }>;
+  publications: Array<{ id: string; sceneId: string; versionId: string; revision: number; createdAt: string; operatorId: string; audience?: "public" | "private" }>;
   requests: Array<{ id: string; input: Record<string, unknown>; receipt: Receipt }>;
 }
 export interface MediaAttempt {
@@ -43,8 +43,8 @@ function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId
   </button> : <p role={result.error ? "alert" : "status"}>{result.error ?? "Loading image…"}</p>}</div>;
 }
 
-export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", publicationAudience = "viewers", onRequestPending }: {
-  apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string; publicationAudience?: "viewers" | "private production";
+export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", publicationAudience = "viewers", requirePublication = false, onRequestPending }: {
+  requirePublication?: boolean; apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string; publicationAudience?: "viewers" | "private production";
   onRequestPending?: (pending: boolean) => void;
   gameId: string; sceneId: string; originalFailed: boolean; media: MediaRecords; canOperate: boolean;
   refresh: () => Promise<void>; refreshError: string | null; onOpen: (url: string, label: string) => void;
@@ -55,7 +55,8 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const active = jobs.find(isActiveMediaJob);
   const versions = media.versions.filter(version => version.sceneId === sceneId);
   const publications = media.publications.filter(publication => publication.sceneId === sceneId);
-  const published = versions.find(version => version.id === publications[0]?.versionId) ?? versions.find(version => version.version === 0);
+  const publication = publications.find(p => (p.audience ?? "public") === (publicationAudience === "viewers" ? "public" : "private"));
+  const published = versions.find(version => version.id === publication?.versionId) ?? (!requirePublication ? versions.find(version => version.version === 0) : undefined);
   const session = useAdminSession(), client = useQueryClient();
   const resource = `${apiPrefix}/${gameId}/visual`, operationKey = `operation:${resource}/media:${sceneId}`;
   const [operation] = useAdminValue<Operation | undefined>(operationKey, undefined);
@@ -130,7 +131,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
           {(!selected.shots || selected.shots.mode === "scene") && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>}
-          <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? `Restore for ${publicationAudience}` : `Publish for ${publicationAudience}`}</button>
+          <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", ...(requirePublication ? { audience: publicationAudience === "viewers" ? "public" : "private" } : {}), versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id && (p.audience ?? "public") === (publicationAudience === "viewers" ? "public" : "private")) || !requirePublication && selected.version === 0 ? `Restore for ${publicationAudience}` : `Publish for ${publicationAudience}`}</button>
         </div>}
       </>}
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>

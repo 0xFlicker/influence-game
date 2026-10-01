@@ -84,13 +84,13 @@ export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug
         const participants = ids.map(id => ({ id, name: state.players.find(player => player.id === id)!.name }));
         const data = { sceneId: scene?.id ?? null, roomId, round: state.day, boundarySequence, afterDialogueSequence: boundarySequence,
           participants, roles: {}, allianceGroups: [], cues: decision.cue ? [{ playerId: event.payload.actorId, cue: decision.cue }] : [] };
-        const published = media.publications.find(p => p.sceneId === scene?.id);
+        const published = media.publications.find(p => p.sceneId === scene?.id && p.audience === "public");
         const version = media.versions.find(v => v.sceneId === scene?.id);
         const shots = version?.shots ?? scene?.shots;
         const covered = new Set(shots ? [...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds) : (version?.localization.anchors ?? scene?.anchors ?? []).filter(a => a.confidence === "clear").map(a => a.playerId));
         scenes.push({ ...data, key: sha256StableJson({ gameId, roomId, boundarySequence }),
           previewHash: sha256StableJson({ ...data, sceneId: undefined }), roomName: roomId === "lobby" ? "Village lobby" : "Private pack room",
-          audience: roomId === "lobby" ? "public" : "pack", available: Boolean(published || scene?.status === "ready"), originalFailed: scene?.status === "failed",
+          audience: roomId === "lobby" ? "public" : "pack", available: Boolean(published), originalFailed: scene?.status === "failed",
           coverage: participants.map(p => ({ ...p, verified: covered.has(p.id), fallback: refs.find(ref => ref.profile.id === p.id)?.kind ?? "missing" })),
           panelCount: shots?.groups.length ?? 0 });
       }

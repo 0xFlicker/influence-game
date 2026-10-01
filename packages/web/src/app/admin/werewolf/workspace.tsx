@@ -153,7 +153,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           </>}
           {displayed === "activity" && <Activity gameId={data.id} currentCursor={data.snapshot.cursor} />}
           {displayed === "costs" && <GameCosts gameId={data.id} />}
-          {displayed === "production" && <><section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Production assets are admin-only for now. Publishing a version does not add it to the public Werewolf viewer.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" ? <p className={styles.empty}>Scene production becomes available when this game completes.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
+          {displayed === "production" && <><section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" ? <p className={styles.empty}>Scene production becomes available when this game completes.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
         </div>
       </div>
     </>}{children}

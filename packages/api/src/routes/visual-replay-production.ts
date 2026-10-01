@@ -106,7 +106,8 @@ function decodeReplayMediaControl(value: unknown): MediaControl | null {
   else if (b.action === "continue") { if (b.sourceJobId !== undefined && !string("sourceJobId")) return null; fields.push("sourceJobId"); }
   else if (b.action === "publish") {
     if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;
-    fields.push("versionId", "expectedPublication");
+    if (b.audience !== undefined && b.audience !== "public" && b.audience !== "private") return null;
+    fields.push("versionId", "expectedPublication", "audience");
   } else if (b.action !== "regenerate") return null;
   if (Object.keys(b).some(key => !fields.includes(key))) return null;
   return b as MediaControl;

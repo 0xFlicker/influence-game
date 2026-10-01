@@ -45,6 +45,8 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 
 ## A2 — production studio
 
+Active pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). First, the user selected a [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) to establish the complete player the studio will embed.
+
 **User outcome:** browse a game's material, select a moment, inspect what viewers would see, and make production decisions in context.
 
 Desktop composition: scene/asset browser on the left, selected preview in the center, contextual inspector on the right, timeline and transport beneath. Mobile uses linked Browser, Preview and Inspector screens rather than shrinking the entire desktop interface.
