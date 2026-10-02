@@ -51,11 +51,30 @@ export function ThoughtBubble({box, head, typography, padding = 18}: {
   const thought = useSceneThinking();
   if (!thought) return null;
   const reading = visualSpeechDurationMs(thought.text) - 2 * VISUAL_SPEECH_FADE_MS;
-  const start = {x: Math.max(box.left + 20, Math.min(box.left + box.width - 20, head.x)), y: box.top + box.height};
+  const beside = head.x < box.left || head.x > box.left + box.width;
+  const start = {x: beside ? head.x < box.left ? box.left : box.left + box.width : Math.max(box.left + 20, Math.min(box.left + box.width - 20, head.x)),
+    y: beside ? Math.max(box.top + 20, Math.min(box.top + box.height - 20, head.y)) : box.top + box.height};
+  const dx = start.x - head.x, dy = start.y - head.y;
+  const distance = Math.hypot(dx, dy);
+  // Leave a little air at the head; grow each circle by 4px toward the thought.
+  // Choose the count for roughly 8px gaps, then distribute the remaining space.
+  const length = Math.max(0, distance - 16);
+  const count = Math.max(1, Math.round((Math.sqrt(100 + 8 * (length + 12)) - 10) / 4));
+  const circleSpan = 2 * count * count + 2 * count - 4;
+  const gap = count > 1 ? (length - circleSpan) / (count - 1) : 0;
   return <>
-    {[.15, .48, .81].map((fraction, index) => <span key={fraction} aria-hidden="true" data-thought-tail
-      className="pointer-events-none absolute z-[180] rounded-full border border-slate-300/35 bg-slate-950/90"
-      style={{left: start.x + (head.x - start.x) * fraction - (12 - index * 3) / 2, top: start.y + Math.max(44, head.y - start.y) * fraction, width: 12 - index * 3, height: 12 - index * 3, opacity: thought.opacity}} />)}
+    {Array.from({length:count}, (_, index) => {
+      // Omit the smallest two circles nearest the character; keep the trail
+      // suggestive and off the face, even when the connecting span is long.
+      if (index < Math.min(2, count - 1)) return null;
+      const diameter = 6 + index * 4;
+      const offset = count === 1 ? distance : 16 + 2 * index * index + 6 * index + gap * index;
+      const fraction = distance > 0 ? offset / distance : 1;
+      return <span key={index} aria-hidden="true" data-thought-tail
+        className="pointer-events-none absolute z-[180] rounded-full border border-slate-300/35 bg-slate-950/90"
+        style={{left: head.x + dx * fraction - diameter / 2, top: head.y + dy * fraction - diameter / 2,
+          width:diameter, height:diameter, opacity:thought.opacity}} />;
+    })}
     <aside aria-label={`${thought.speaker} thinking`} data-in-scene-thinking
       className="pointer-events-none absolute z-[180] flex flex-col rounded-[2rem] border border-slate-300/35 bg-slate-950/90 text-slate-300 shadow-xl"
       style={{...box, padding, opacity: thought.opacity}}>

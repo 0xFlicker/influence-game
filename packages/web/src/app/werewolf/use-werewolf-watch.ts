@@ -20,8 +20,10 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const request = useRef<AbortController | null>(null);
   const intent = useRef(0);
   const target = useRef(1);
+  const playIntent = useRef(false);
   const awaitingInitialCue = useRef(true);
   const [revision, setRevision] = useState(0);
+  const [navigationRevision, setNavigationRevision] = useState(0);
   const commitWindow = useCallback((value: WerewolfWatchWindow, active: number) => {
     // Validate overlaps before replacing a refreshed window.
     werewolfCues([...windows.current.values(), value]);
@@ -32,9 +34,11 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     for (const key of keys.slice(3)) windows.current.delete(key);
     setData(value); setRevision(n => n + 1);
   }, [director]);
-  const seek = useCallback(async (position: number, play = false, previous = false, initial = false) => {
+  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false) => {
+    playIntent.current = play;
     awaitingInitialCue.current = initial;
     target.current = position;
+    setNavigationRevision(n => n + 1);
     const generation = ++intent.current;
     request.current?.abort();
     const controller = new AbortController(); request.current = controller;
@@ -54,7 +58,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
           director.load(cues); director.seek(selected); setTail(null);
           // Tail is always a scheduler holding state, even for terminal games.
           director.setFollowTail(true);
-          if (play) director.play();
+          if (playIntent.current) director.play();
           break;
         }
         if (previous && window.fromCursor > 1) {next = window.fromCursor - 1; continue;}
@@ -62,14 +66,14 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         director.load([]); setTail(window.moments.at(-1) ?? null); break;
       }
     } catch (cause) {
-      if (!controller.signal.aborted && cause instanceof ApiError && [401,403,404].includes(cause.status)) { director.pause(); director.load([]); windows.current.clear(); setData(null); setTail(null); }
+      if (!controller.signal.aborted && cause instanceof ApiError && [401,403,404].includes(cause.status)) { playIntent.current = false; setFollow(false); director.pause(); director.load([]); windows.current.clear(); setData(null); setTail(null); }
       if (!controller.signal.aborted && generation === intent.current) setError(cause instanceof Error ? cause.message : "Could not prepare replay");
     } finally { if (!controller.signal.aborted && generation === intent.current) setPreparing(false); }
   }, [slug, audience, cutoff, commitWindow, director]);
   const cancel = useCallback(() => { intent.current++; request.current?.abort(); }, []);
   useEffect(() => { void seek(1, false, false, true); return cancel; }, [seek, cancel]);
   useEffect(() => {
-    const visibility = () => { if (document.hidden) setFollow(false); };
+    const visibility = () => { if (document.hidden) {playIntent.current = false; setFollow(false);} };
     document.addEventListener("visibilitychange", visibility);
     return () => document.removeEventListener("visibilitychange", visibility);
   }, []);
@@ -103,7 +107,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         commitWindow(value, activeCursor);
         const cues = werewolfCues([...windows.current.values()]);
         if (!director.getActiveCue() && awaitingInitialCue.current && cues.some(cue => cue.moment.cursor >= activeCursor)) {
-          void seek(activeCursor, false, false, true); return;
+          void seek(activeCursor, playIntent.current, false, true); return;
         }
         if (!director.getActiveCue() && follow && cues.some(cue => cue.moment.cursor > activeCursor)) {
           void seek(activeCursor + 1, true); return;
@@ -112,7 +116,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         if (director.getActiveCue()) director.append(cues);
       } catch (cause) {
         if (!controller.signal.aborted && intent.current === generation) {
-          if (cause instanceof ApiError && [401,403,404].includes(cause.status)) {director.pause();director.load([]);windows.current.clear();setData(null);setTail(null);}
+          if (cause instanceof ApiError && [401,403,404].includes(cause.status)) {playIntent.current = false;setFollow(false);director.pause();director.load([]);windows.current.clear();setData(null);setTail(null);}
           setError(cause instanceof Error ? cause.message : "Could not refresh replay");
         }
       }
@@ -125,17 +129,17 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const buffered = [...windows.current.values()];
   const active = holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
   useEffect(() => {
-    if (holding && data && data.status !== "in_progress" && activeCursor >= data.latestCursor) director.pause();
-  }, [holding, data, activeCursor, director]);
+    if (!preparing && holding && data && data.status !== "in_progress" && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
+  }, [preparing, holding, data, activeCursor, director]);
   const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
   void revision;
-  return {...clock, data, active, media, preparing, error, follow, holding, seek,
+  return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision,
     retry: () => void seek(target.current),
-    toggle: () => { if (director.getSnapshot().isPlaying) {director.pause(); setFollow(false);} else {director.play(); setFollow(true);} },
+    toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
     previous: () => {
       const current = director.getSnapshot().cursor;
-      if (current > 0) {cancel(); setPreparing(false); setError(null); director.pause(); setFollow(false); setTail(null); director.seek(current - 1); target.current = director.getActiveCue()?.moment.cursor ?? 1;}
-      else void seek(Math.max(1, activeCursor - 1), false, true);
+      if (current > 0) {setNavigationRevision(n => n + 1); cancel(); setPreparing(false); setError(null); director.pause(); setFollow(playIntent.current); setTail(null); director.seek(current - 1); if (playIntent.current) director.play(); target.current = director.getActiveCue()?.moment.cursor ?? 1;}
+      else void seek(Math.max(1, activeCursor - 1), playIntent.current, true);
     },
     goLive: () => void seek(data?.latestCursor ?? 1, true, true),
   };

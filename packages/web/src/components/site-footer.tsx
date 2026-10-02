@@ -71,8 +71,8 @@ export function SiteFooter() {
       className="border-t border-border-active/60 bg-surface-overlay/30 px-6 py-10 backdrop-blur-sm"
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
-        <div className="grid gap-10 md:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))]">
-          <div className="max-w-sm">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))]">
+          <div className="col-span-2 max-w-sm md:col-span-1">
             <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">
               {HOUSE_VENUE.name}
             </Link>

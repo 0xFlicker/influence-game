@@ -181,7 +181,8 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Receipts");
     expect(textHtml).toContain("Atlas is still competing in round 1.");
     expect(html).toContain("data-replay-controls");
-    expect(html).toContain("Speed:");
+    expect(html).toContain('aria-label="Player settings"');
+    expect(html).toContain('aria-label="Replay position"');
     expect(html).toContain("Atlas");
     expect(html).toContain("Lyra");
     expect(html).toContain("relative h-full min-h-0 overflow-hidden");

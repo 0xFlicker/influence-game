@@ -43,6 +43,22 @@ function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId
   </button> : <p role={result.error ? "alert" : "status"}>{result.error ?? "Loading image…"}</p>}</div>;
 }
 
+function VersionImages({version, label, annotated = false, ...props}: {
+  version: MediaVersion; label: string; annotated?: boolean;
+  gameId: string; apiPrefix: string; onOpen: (url: string, label: string) => void;
+}) {
+  const shots = version.shots;
+  const pictures = shots ? [
+    ...(shots.overview ? [{shot: shots.overview, name: shots.groups.length > 1 ? "Harmonized scene" : "Scene"}] : []),
+    ...shots.groups.filter(shot => shot.imageArtifactId !== shots.overview?.imageArtifactId).map((shot, index) => ({shot, name: `Panel ${index + 1}`})),
+  ] : [];
+  return <div className="space-y-3" aria-label={label}>
+    {pictures.length ? pictures.map(({shot, name}) => <VersionImage key={`${shot.imageArtifactId}:${annotated}`} {...props}
+      artifactId={annotated ? shot.annotatedArtifactId : shot.imageArtifactId} label={`${label} · ${name}${annotated ? " annotations" : ""}`} />)
+      : <VersionImage key={`${version.id}:${annotated}`} {...props} artifactId={annotated ? version.annotatedArtifactId : version.imageArtifactId} label={`${label}${annotated ? " annotations" : ""}`} />}
+  </div>;
+}
+
 export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", publicationAudience = "viewers", requirePublication = false, onRequestPending }: {
   requirePublication?: boolean; apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string; publicationAudience?: "viewers" | "private production";
   onRequestPending?: (pending: boolean) => void;
@@ -99,7 +115,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
       {uncertain && <button className={button} disabled={busy} onClick={() => void send({})}>Check request</button>}
     </div>}
     {canOperate && editingVersion !== null && <ImageReviewEditor key={editingVersion} gameId={gameId} sceneId={sceneId} apiPrefix={apiPrefix} disabled={busy || !!active || uncertain} onClose={() => setEditingVersion(null)} onSave={review => void send({ action: "review", review, expectedVersion: editingVersion })} />}
-    <p className="text-xs text-white/50">Repairs may incur provider charges. Candidates need review and publication; gameplay is unchanged.</p>
+    <p className="text-xs text-white/50">Repairs may incur provider charges. Regeneration includes harmonization for multi-panel scenes. Candidates need review and publication; gameplay is unchanged.</p>
     {unresolved.length > 0 && <div role="status" className="rounded bg-amber-400/10 p-3 text-sm text-amber-200">
       <p>Needs reconciliation: {unresolved.length} provider request(s) have an uncertain outcome.</p>
       {unresolved.map(attempt => <p key={attempt.id} className="break-all text-xs">{attempt.operationKey.split(":").at(-1)} · Attempt {attempt.id}</p>)}
@@ -122,8 +138,8 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Reviewed"}</option>)}</select></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={annotated} onChange={event => setAnnotated(event.target.checked)} />Numbered annotations</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>{publicationAudience === "viewers" ? "Viewers currently see portraits." : "No published production version yet."}</p>}
-          <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} apiPrefix={apiPrefix} />
+          {published ? <VersionImages version={published} annotated={annotated} gameId={gameId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>{publicationAudience === "viewers" ? "Viewers currently see portraits." : "No published production version yet."}</p>}
+          <VersionImages version={selected} annotated={annotated} gameId={gameId} label={`Candidate v${selected.version}`} onOpen={onOpen} apiPrefix={apiPrefix} />
         </div>
         <p className="text-sm">{selected.localization.count} verified people · {selectedAnchors} head anchors</p>
         {!selectedAnchors && selected.localization.count > 0 && <p className="text-sm text-amber-200">Head positions are uncertain. Viewers use named portrait speech panels.</p>}

@@ -16,11 +16,12 @@ import { SceneImage, panelTransition, sceneImageLayers, type SceneCameraView } f
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId }: {
+export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId }: {
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;
   onReadyChange?: (ready: boolean) => void;
+  paused?: boolean;
   controlsInset?: number; reducedMotion?: boolean; navigationRevision?: number;
   speechPresentation?: "solo" | "scene";
   readingElapsedMs?: number;
@@ -71,7 +72,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
     const previous = camera.speechKey === speechKey
       ? sceneImageLayers(camera.from, camera.target, elapsedMs - camera.startedAt, camera.direction).at(-1)!
       : camera.target;
-    const snap = reducedMotion || navigationRevision !== camera.navigationRevision || !previous.url
+    const snap = paused || reducedMotion || navigationRevision !== camera.navigationRevision || !previous.url
       || size.width !== camera.size.width || size.height !== camera.size.height;
     const from = snap ? nextView : previous;
     setCamera({ key: viewKey, speechKey, from, target: nextView, startedAt: elapsedMs,

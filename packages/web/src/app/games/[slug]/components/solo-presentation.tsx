@@ -1,5 +1,6 @@
 "use client";
 
+import {validHeadRectangle} from "@influence/engine/character-portrait";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
 import {ThoughtBubble, useSceneThinking} from "@/components/watch/watch-thinking";
 import {layoutThought} from "@/components/watch/thought-layout";
@@ -52,8 +53,13 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   }, []);
   const thought = useSceneThinking();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 308, player.headRectangle);
-  const thoughtLayout = thought ? layoutThought(size.width, Math.max(0, size.height - controlsInset), geometry.bubble,
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 308, player.headRectangle, Boolean(thought), !hideSpeech);
+  const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
+  const thoughtOnLeft = geometry.thought && geometry.thought.left < geometry.image.left;
+  // Aim beside the upper head, never through the mouth or the center of the face.
+  const head = {x: geometry.image.left + geometry.image.width * (thoughtOnLeft ? headRect.x : headRect.x + headRect.width),
+    y: geometry.image.top + geometry.image.height * (headRect.y + headRect.height * .25)};
+  const thoughtLayout = thought && geometry.thought ? {thought:geometry.thought, speech:geometry.bubble, head} : thought ? layoutThought(size.width, Math.max(0, size.height - controlsInset), geometry.bubble,
     {x: geometry.image.left + geometry.image.width * .65, y: geometry.image.top + geometry.image.height * .28}) : null;
   const available = Math.max(0, size.height - controlsInset);
   // On narrow screens, give the upper text and headshot neighboring space.
@@ -74,7 +80,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const thoughtFit = useBubbleTypography(frame, thought?.text ?? "", thoughtBox, "thought", compact);
   const fittedThought = {...thoughtBox, width:thoughtFit.typography?.width ?? thoughtBox.width, height:thoughtFit.typography?.height ?? thoughtBox.height};
   const bubble = {...speechBox, width:speechFit.typography?.width ?? speechBox.width, height:speechFit.typography?.height ?? speechBox.height,
-    top:thoughtLayout ? Math.max(fittedThought.top + fittedThought.height + 16, speechBox.top - (thoughtBox.height - fittedThought.height)) : speechBox.top};
+    top:thoughtLayout && !fullBody ? Math.max(fittedThought.top + fittedThought.height + 16, speechBox.top - (thoughtBox.height - fittedThought.height)) : speechBox.top};
   return <section ref={frame} aria-label={`${beat.purpose}: ${player.name}`} data-solo-image={fullBody ? "full-body" : "portrait"}
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />

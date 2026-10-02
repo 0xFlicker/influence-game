@@ -136,3 +136,18 @@ test.each([false, true])("published media refreshes silently between beats (live
 });
 
 function render(ui: React.ReactNode) { return baseRender(ui, { wrapper: adminTestWrapper() }); }
+
+
+test("reviews every retained panel alongside the harmonized scene in clean and numbered modes", async () => {
+  respond(async url => Response.json({imageUrl: `/images/${url.split("/").at(-1)}`}));
+  const shot = (id: string) => ({imageArtifactId:id, annotatedArtifactId:`${id}-numbered`, participantIds:[], visibleParticipantIds:[], anchors:[], pointers:[]});
+  const version: MediaRecords["versions"][number] = {id:"v1",sceneId:"scene",version:1,imageArtifactId:"combined",annotatedArtifactId:"combined-numbered",verificationVersion:"test",localization:{count:0,anchors:[]},
+    shots:{mode:"scene",overview:shot("combined"),groups:[shot("left"),shot("middle"),shot("right")]}};
+  const mounted = render(<SceneRepairPanel {...props({...empty(),jobs:[job("ready")],versions:[version]})} />);
+  fireEvent.click(mounted.getByText("Versions and review"));
+  for (const [name,id] of [["Harmonized scene","combined"],["Panel 1","left"],["Panel 2","middle"],["Panel 3","right"]]) {
+    await waitFor(() => expect(mounted.getByAltText(`Candidate v1 · ${name}`).getAttribute("src")).toBe(`/images/${id}`));
+  }
+  fireEvent.click(mounted.getByLabelText("Numbered annotations"));
+  await waitFor(() => expect(mounted.getByAltText("Candidate v1 · Panel 3 annotations").getAttribute("src")).toBe("/images/right-numbered"));
+});

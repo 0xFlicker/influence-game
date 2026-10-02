@@ -875,16 +875,16 @@ function DramaticReplayTheater({
         onBlurCapture={event => {if (!event.currentTarget.contains(event.relatedTarget)) controlsHovered.current = false;}}
         onPointerEnter={(event) => { if (event.pointerType === "mouse") controlsHovered.current = true; }}
         onPointerLeave={() => { controlsHovered.current = false; resetControlsTimer(); }}
-        className={`${fullscreen ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
+        className={`${fullscreen ? "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/85 to-transparent" : "shrink-0 border-t border-white/5 bg-black/70"} px-3 md:px-6 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 md:py-2 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
         <WatchTransport fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
           header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={isPlaying} togglePlay={() => { if (isPlaying) pausePresentation(); else director.play(); }} speed={speed} onSpeed={value => director.setSpeed(value)}
-          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} stepBackOneCue={stepBackOneCue} advanceMessage={advanceMessage} goToNextScene={goToNextScene} goToEnd={goToEnd}
+          goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={position => director.seek(position - 1)} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
-          settings={<div className="space-y-3"><label className="flex gap-2"><input type="checkbox" checked={showThinking} onChange={event => setShowThinking(event.target.checked)} />Show thinking in scene</label><label className="grid gap-2">Thinking order<select className="rounded border border-white/30 bg-zinc-900 p-2" value={thinkingOrder} onChange={event => setThinkingOrder(event.target.value as ThinkingOrder)}><option value="thinking-first">Thinking first</option><option value="speech-first">Speech first</option></select></label></div>} />
+          thinking={{enabled:showThinking,onChange:setShowThinking,order:thinkingOrder,onOrderChange:setThinkingOrder}} />
       </div>
     </div>
   );

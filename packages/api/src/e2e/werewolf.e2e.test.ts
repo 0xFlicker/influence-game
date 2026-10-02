@@ -316,6 +316,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.screenshot({ path: "/tmp/werewolf-admin-production-mobile.png", fullPage: true });
     await click(page, "Versions and review");
     await text(page, "3 group shots");
+    for (let panel = 1; panel <= 3; panel++) await page.waitForSelector(`img[alt="Candidate v1 · Panel ${panel}"]`);
     await click(page, "Correct images");
     await text(page, "Save reviewed version");
     for (const group of groups) {
@@ -331,7 +332,17 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     try {
       await viewer.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`, { waitUntil: "domcontentloaded" });
       await viewer.waitForSelector('[data-werewolf-stage][data-cursor]');
+      await viewer.waitForSelector('[aria-label="Current room"]');
+      const persistentRoom = await viewer.$('[aria-label="Current room"]');
+      await viewer.emulateMediaFeatures([{name: "prefers-reduced-motion", value: "no-preference"}]);
+      await viewer.click('button[aria-label="Play replay"]');
+      await viewer.waitForSelector('[data-panel-transition="true"]', {timeout: 25000});
+      expect(await persistentRoom!.evaluate(element => element.isConnected)).toBe(true);
+      await viewer.click('button[aria-label="Pause replay"]');
+      await seekWatch(viewer, 2);
       await checkConsecutiveReplies(viewer);
+      expect(await persistentRoom!.evaluate(element => element.isConnected)).toBe(true);
+      await persistentRoom!.dispose();
       await viewer.waitForSelector('[aria-label="Current room"] [data-speech-bubble]', { visible: true });
       expect(await viewer.$eval('[aria-label="Current room"]', element => element.getBoundingClientRect().height)).toBeGreaterThan(100);
       expect(await viewer.$eval('[aria-label="Current room"]', element => element.getBoundingClientRect().width)).toBeGreaterThan(100);
@@ -449,11 +460,20 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     await page.keyboard.press("Space");
     await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]');
     await watchText(page, "Frontier contribution.");
+    // A playing seek into silent history still exposes Pause while fetching the next line.
+    delayMiddle = true;
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'33');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Pause replay')");
+    await page.evaluate("document.activeElement?.blur()");
+    await page.keyboard.press("Space");
+    await page.waitForFunction("!Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent==='Preparing…')");
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]');
+    await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')");
+    await page.keyboard.press("Space");
     await seekWatch(page, 1);
-    // Play naturally through three windows of passes. They never produce a Pass card.
+    // Seeking retains play intent through three windows of passes. They never produce a Pass card.
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("4");
-    await page.keyboard.press("Space");
     await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]', {timeout: 25_000});
     expect(await page.$$('[data-watch-context]')).toHaveLength(1);
     expect(failures).toEqual([]);
