@@ -17,7 +17,7 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
   render = renderVisualSceneBestEffort) {
   const prepared = new Set<string>();
   return async (state: WerewolfState, request: WerewolfRequest) => {
-    if (!["introduce", "pack_talk", "open_thread", "discuss"].includes(request.action)) return;
+    if (!["pack_talk", "open_thread", "discuss"].includes(request.action)) return;
     const roomId = request.action === "pack_talk" ? "mingle-1" : "lobby";
     const ids = state.aliveIds.filter(id => roomId === "lobby" || state.roles[id] === "werewolf");
     const key = JSON.stringify([roomId, ids]);

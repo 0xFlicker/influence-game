@@ -368,3 +368,10 @@ New multi-panel scenes and Producer **Regenerate scene** jobs generate and verif
 The legacy Producer **Versions and review** comparison now displays every source panel and the harmonized scene when available, with clean/numbered views and enlargement. There is no new harmonization-only action in this pass: use **Regenerate scene**, review the candidate, then **Publish for viewers**. This incurs normal panel generation plus harmonization and verification costs. Existing published versions are not automatically regenerated or replaced.
 
 Werewolf keeps the shared `VisualSceneView` mounted across consecutive speakers in the same scene/version. Readiness and timeout state are scoped to the current cue and selected image, so stale loads cannot release another cue. Natural playback retains pan/slide/dissolve camera state. Explicit navigation has its own revision and snaps to the requested view; paused manual advancement also settles immediately without requiring the clock to play. Reduced motion continues to settle directly.
+
+
+### Individual Werewolf introductions and stable thinking framing (2026-10-02)
+
+Werewolf introductions use the shared individual reveal with frozen full-body art or portrait. They do not schedule or bind generated lobby scenes, including in older games with a published introduction lobby. The first daytime thread prepares a lobby for the actual living cast after night resolution. A protected target or a night without an agreed attack can leave the full starting roster; membership comes from canonical living IDs. Influence retains its individual introductions and full-roster round-one lobby.
+
+When Show thinking is enabled, the shared individual presentation reserves its smaller full-body framing throughout the turn, including loading, speech-first delays, and the empty intervals before and after bubbles. Timed thought visibility no longer resizes the character. Turning the option off restores the speech-only composition.

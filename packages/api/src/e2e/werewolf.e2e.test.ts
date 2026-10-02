@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
+import { readWerewolfPresentation } from "../services/werewolf-presentation.js";
 import { readReplayVisualProduction, renderMissingReplayScene } from "../services/visual-replay-production.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
@@ -277,9 +278,14 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   await renderMissingReplayScene(database.db, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
   const job = await claimVisualMediaJob(database.db, "browser-fixture");
   if (!job) throw new Error("Fixture render job missing");
+  // Initiative is seeded randomly per game. Keep the opening/reply actors in
+  // verified panels while reserving an unrelated character for fallback checks.
+  const replay = (await readWerewolfPresentation(database.db, game.id, "mystery")).presentation;
+  const featured = [...new Set(replay.view.entries.filter(entry => entry.kind === "discussion").slice(0, 5).map(entry => entry.contribution.actorId))];
+  const visualCast = [...featured.map(id => job.plan.cast.find(p => p.id === id)!), ...job.plan.cast.filter(p => !featured.includes(p.id))];
   const groups: StoredVisualShot[] = [], groupImageUrls: string[] = [];
   for (let i = 0; i < 3; i++) {
-    const members = job.plan.cast.slice(i * 2, i * 2 + 2);
+    const members = visualCast.slice(i * 2, i * 2 + 2);
     const bytes = await sharp(Buffer.from(`<svg width="640" height="360"><rect width="640" height="360" fill="${["#28382b", "#394059", "#593939"][i]}"/><text x="30" y="170" fill="white" font-size="25">Fixture panel ${i + 1}</text></svg>`)).png().toBuffer();
     groupImageUrls.push(`data:image/png;base64,${bytes.toString("base64")}`);
     const artifactId = await storeVisualArtifact(database.db, game.id, bytes);
@@ -309,9 +315,9 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
     await page.click("[data-workspace-section] button[aria-expanded]");
     await page.waitForSelector('[aria-label="Character framing preview"] img');
-    await page.select('select[aria-label="Frame character"]', job.plan.cast[4]!.id);
+    await page.select('select[aria-label="Frame character"]', visualCast[4]!.id);
     await page.waitForFunction(`Array.from(document.querySelectorAll('[aria-label="Character framing preview"] img')).some(image => image.complete && image.src === ${JSON.stringify(groupImageUrls[2])})`);
-    await page.select('select[aria-label="Frame character"]', job.plan.cast[7]!.id);
+    await page.select('select[aria-label="Frame character"]', visualCast.at(-1)!.id);
     await page.waitForSelector('img[alt$="portrait fallback"]');
     await page.screenshot({ path: "/tmp/werewolf-admin-production-mobile.png", fullPage: true });
     await click(page, "Versions and review");
@@ -332,6 +338,13 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     try {
       await viewer.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`, { waitUntil: "domcontentloaded" });
       await viewer.waitForSelector('[data-werewolf-stage][data-cursor]');
+      await viewer.waitForSelector('[data-solo-image]');
+      expect(await viewer.$('[aria-label="Current room"]')).toBeNull();
+      const presentation = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+      const opening = presentation.view.entries.findIndex(entry => entry.kind === "discussion" && entry.contribution.text === "Who can explain their suspicion?");
+      expect(opening).toBeGreaterThan(0);
+      await seekWatch(viewer, opening + 1);
+      await viewer.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${opening + 1}`);
       await viewer.waitForSelector('[aria-label="Current room"]');
       const persistentRoom = await viewer.$('[aria-label="Current room"]');
       await viewer.emulateMediaFeatures([{name: "prefers-reduced-motion", value: "no-preference"}]);
@@ -339,7 +352,8 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
       await viewer.waitForSelector('[data-panel-transition="true"]', {timeout: 25000});
       expect(await persistentRoom!.evaluate(element => element.isConnected)).toBe(true);
       await viewer.click('button[aria-label="Pause replay"]');
-      await seekWatch(viewer, 2);
+      await seekWatch(viewer, opening + 1);
+      await viewer.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${opening + 1}`);
       await checkConsecutiveReplies(viewer);
       expect(await persistentRoom!.evaluate(element => element.isConnected)).toBe(true);
       await persistentRoom!.dispose();
@@ -349,14 +363,16 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
       expect(await viewer.$eval('[aria-label="Current room"] [data-speech-bubble]', element => element.textContent)).toContain("A short contribution");
       expect(await viewer.evaluate(`Array.from(document.querySelectorAll('[aria-label="Current room"] img')).some(image => image.complete && image.src.includes("/media/"))`)).toBe(true);
       await viewer.screenshot({ path: "/tmp/werewolf-replay-published-panel.png" });
-      const presentation = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
-      const opening = presentation.view.entries.findIndex(entry => entry.kind === "discussion" && entry.contribution.text === "Who can explain their suspicion?");
-      expect(opening).toBeGreaterThan(0);
       await seekWatch(viewer, opening + 1);
+      await viewer.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${opening + 1}`);
       await checkConsecutiveReplies(viewer);
       await checkBallotCollection(viewer, presentation);
       await checkInSceneThinking(viewer, `${servers.webUrl}/werewolf/${game.slug}`, servers.apiUrl);
 
+    } catch(error) {
+      console.error("Viewer failure", await viewer.evaluate("({text:document.body.innerText,cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor'),elapsed:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')})"));
+      await viewer.screenshot({path:"/tmp/werewolf-intros-viewer-failure.png"});
+      throw error;
     } finally { await viewer.close(); }
 
     await page.select('select', 'overview'); await text(page, "Game overview");

@@ -2,7 +2,7 @@
 
 import {validHeadRectangle} from "@influence/engine/character-portrait";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
-import {ThoughtBubble, useSceneThinking} from "@/components/watch/watch-thinking";
+import {ThoughtBubble, useSceneThinking, useSceneThinkingEnabled} from "@/components/watch/watch-thinking";
 import {layoutThought} from "@/components/watch/thought-layout";
 import { useLayoutEffect, useRef, useState } from "react";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
@@ -52,8 +52,9 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
     return () => observer.disconnect();
   }, []);
   const thought = useSceneThinking();
+  const thinkingEnabled = useSceneThinkingEnabled();
   const geometry = layoutSoloPresentation(size.width, size.height, loaded.source === source ? loaded.width : 0,
-    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 308, player.headRectangle, Boolean(thought), !hideSpeech);
+    loaded.source === source ? loaded.height : 0, Boolean(fullBody), controlsInset, 308, player.headRectangle, fullBody ? thinkingEnabled : Boolean(thought), !hideSpeech);
   const headRect = validHeadRectangle(player.headRectangle) ? player.headRectangle : {x:.4, y:.04, width:.2, height:.16};
   const thoughtOnLeft = geometry.thought && geometry.thought.left < geometry.image.left;
   // Aim beside the upper head, never through the mouth or the center of the face.

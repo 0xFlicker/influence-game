@@ -20,7 +20,7 @@ for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: compl
       expect(JSON.stringify(frame)).not.toContain("SECRET STRATEGY");
       expect(JSON.stringify(frame)).not.toContain("SECRET REASON");
       if (audience === "mystery") {
-        expect(frame.roomId).toBe("lobby");
+        expect(frame.roomId).toBe(frame.view.entries.at(-1)!.day === 0 ? null : "lobby");
         expect(JSON.stringify(frame)).not.toContain("SECRET PACK");
         if (frame.view.phase !== "complete") expect(frame.view.players.every(p => !p.role)).toBe(true);
       } else if (frame.roomId === "mingle-1") expect(frame.participantIds.every(id => state.roles[id] === "werewolf")).toBe(true);

@@ -4,7 +4,7 @@ import type { WerewolfEvent, WerewolfState } from "./types";
 import {isWerewolfPlayable, type WerewolfWatchIdentity, type WerewolfWatchMoment, type WerewolfWatchIndex} from "./watch-contract";
 
 /** Server-only staging coordinates never appear in the browser DTO. */
-export interface WerewolfWatchStaging { boundary: number; roomId: "lobby" | "mingle-1"; participantIds: string[] }
+export interface WerewolfWatchStaging { boundary: number; roomId: "lobby" | "mingle-1" | null; participantIds: string[] }
 export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32) {
   if (!["mystery", "omniscient"].includes(audience) || !Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) throw new Error("Invalid watch window");
   let state: WerewolfState | null = null, cursor = 0;
@@ -35,10 +35,10 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
         navigation.push({ cursor, chapterId, sceneId, label });
       }
       if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
-      const roomId = entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack" ? "mingle-1" : "lobby";
+      const roomId = entry.day === 0 ? null : entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack" ? "mingle-1" : "lobby";
       const staging = before ?? state;
       moments.push({ cursor, entry, snapshot: projectWerewolfSnapshot(state, audience, cursor), chapterId, sceneId, mediaKey: null,
-        staging: { boundary: event.sequence - 1, roomId, participantIds: staging.aliveIds.filter(id => roomId === "lobby" || staging.roles[id] === "werewolf") } });
+        staging: { boundary: event.sequence - 1, roomId, participantIds: roomId === null ? [] : staging.aliveIds.filter(id => roomId === "lobby" || staging.roles[id] === "werewolf") } });
     }
   }
   if (!state) throw new Error("Werewolf replay is empty");

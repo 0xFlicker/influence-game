@@ -6,6 +6,9 @@ import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import {visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 
 type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string};
+const ThinkingEnabledContext = createContext(false);
+/** Layout intent remains stable while the timed thought is hidden or loading. */
+export const useSceneThinkingEnabled = () => useContext(ThinkingEnabledContext);
 const ThinkingContext = createContext<Thought | null>(null);
 export const useSceneThinking = () => useContext(ThinkingContext);
 
@@ -37,10 +40,10 @@ export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, or
     return () => {unsubscribe();cancelAnimationFrame(frame);};
   }, [enabled, director]);
   const thought = enabled ? director.getThinkingFrame() : null;
-  return <ThinkingContext.Provider value={thought ? {...thought, speaker} : null}>
+  return <ThinkingEnabledContext.Provider value={enabled}><ThinkingContext.Provider value={thought ? {...thought, speaker} : null}>
     {children}
     {enabled && error?.key === errorKey && <p role="status" className="pointer-events-none absolute right-4 top-14 z-30 rounded bg-black/90 p-2 text-xs text-white/70">{error.message}</p>}
-  </ThinkingContext.Provider>;
+  </ThinkingContext.Provider></ThinkingEnabledContext.Provider>;
 }
 
 /** A scene owns placement. There is no opaque lane or separate playback clock. */

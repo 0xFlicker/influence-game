@@ -17,6 +17,7 @@ for (const preset of ["one_wolf","two_wolves"] as const) test(`${preset}: bounde
       expect(JSON.stringify(window)).not.toContain("PRIVATE STRATEGY");expect(JSON.stringify(window)).not.toContain("PRIVATE THINKING");
       if(audience==="mystery")expect(JSON.stringify(window)).not.toContain("PRIVATE PACK");
       for(const moment of window.moments){const legacy=projectWerewolfPresentation(events,audience,moment.cursor);const {entries,...snapshot}=legacy.view;
+        if (moment.entry.day === 0) { expect(moment.staging.roomId).toBeNull(); expect(moment.staging.participantIds).toEqual([]); }
         expect(moment.snapshot).toEqual(snapshot);expect(moment.entry).toEqual(entries.at(-1)!);expect(moment.staging.participantIds).toEqual(legacy.participantIds);
         if(moment.entry.kind==="discussion")expect(isWerewolfPlayable(moment.entry)).toBe(false);
       }

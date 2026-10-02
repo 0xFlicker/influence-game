@@ -81,7 +81,10 @@ test("pack and lobby production use canonical membership and publish privately t
   const g = await game(), before = await readWerewolfEvents(db, g.id);
   const inventory = await readReplayVisualProduction(db, g.id);
   const pack = inventory.scenes.find(s => s.roomId === "mingle-1")!;
-  expect(pack.participants).toHaveLength(2); expect(inventory.scenes.find(s => s.roomId === "lobby")!.participants).toHaveLength(8);
+  expect(pack.participants).toHaveLength(2); expect(inventory.scenes.every(s => s.round !== null && s.round > 0)).toBe(true);
+  const firstDay = before.find(e => e.type === "werewolf.action_accepted" && e.payload.action === "open_thread")!;
+  const living = replayWerewolf(before.filter(e => e.sequence < firstDay.sequence)).aliveIds;
+  expect(inventory.scenes.find(s => s.roomId === "lobby")!.participants.map(p => p.id)).toEqual(living);
   const headers = await operator("producer"), app = createVisualReplayProductionRoutes(db);
   const receipt = await renderMissingReplayScene(db, g.id, "user-producer", { key: pack.key, previewHash: pack.previewHash, requestId: "pack-render" });
   expect(receipt.accepted).toBe(true);

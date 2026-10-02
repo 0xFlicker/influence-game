@@ -77,7 +77,7 @@ export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug
   const prior = new Map<string, string>();
   const scenes = [];
   for (const event of events.slice(1)) {
-    if (event.type === "werewolf.action_accepted" && ["introduce", "pack_talk", "open_thread", "discuss"].includes(event.payload.action)) {
+    if (event.type === "werewolf.action_accepted" && ["pack_talk", "open_thread", "discuss"].includes(event.payload.action)) {
       const decision = event.payload.decision;
       const roomId = event.payload.action === "pack_talk" ? "mingle-1" as const : "lobby" as const;
       const ids = state.aliveIds.filter(id => roomId === "lobby" || state.roles[id] === "werewolf");

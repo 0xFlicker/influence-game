@@ -42,8 +42,8 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
   const actor = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.voterId) : moment.actor;
   const text = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
-    kind:"portrait", purpose: cue.ballot ? "Ballot" : moment.spoken ? "Conversation" : "Farewell",
-    caption: cue.ballot ? "Vote to eliminate" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",
+    kind:"portrait", purpose: cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
+    caption: cue.ballot ? "Vote to eliminate" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",
     player: {...actor, name: `${actor.name}${cue.moment.snapshot.audience === "omniscient" && actor.role ? ` · ${actor.role}` : ""}`, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;

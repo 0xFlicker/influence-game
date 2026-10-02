@@ -40,6 +40,8 @@ async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicatio
 
 }
 function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging) {
+  // Introductions use frozen individual art, including games with old lobby renders.
+  if (frame.roomId === null) return { scene: null, permitted: new Set<string>() };
   const root = `/api/werewolf/${encodeURIComponent(gameId)}`;
   const query = `audience=${audience}&cursor=${cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const mediaUrl = (asset: string) => `${root}/media/${encodeURIComponent(asset)}?${query}`;
