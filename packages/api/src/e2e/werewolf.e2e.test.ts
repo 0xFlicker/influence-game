@@ -70,10 +70,10 @@ async function checkFailedPackNegotiations() {
     const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
     expect(mystery.view.entries.some(entry=>entry.kind==="pack_vote")).toBe(false);
     expect(mystery.view.entries.filter(entry=>entry.kind==="vote").some(entry=>!entry.result.dayEnded)).toBe(true);
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`,{waitUntil:"domcontentloaded"});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('[data-werewolf-stage][data-cursor]');
     await pauseWerewolf(page);
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=omniscient`,{waitUntil:'domcontentloaded'});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:'domcontentloaded'});
     await pauseWerewolf(page);
     const omni = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
     const finalPack = omni.view.entries.findIndex(entry=>entry.kind==="pack_vote" && entry.result.attempt===3);
@@ -82,7 +82,7 @@ async function checkFailedPackNegotiations() {
     await seekWatch(page,finalPack+1);await watchText(page,"No agreement. No attack tonight.");
     await page.setViewport({width:390,height:844});await page.screenshot({path:"/tmp/werewolf-pack-ballots-mobile.png"});
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`,{waitUntil:'domcontentloaded'});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`,{waitUntil:'domcontentloaded'});
     await pauseWerewolf(page);
     await page.waitForFunction('!document.body.innerText.includes("Pack ballot")');
   } finally { await page.close(); }
@@ -116,7 +116,7 @@ test("CLI creates an API Werewolf game and prints original sequential contributi
   try {
     const [exitCode, stdout, stderr] = await Promise.all([cli.exited, new Response(cli.stdout).text(), new Response(cli.stderr).text()]);
     expect({ exitCode, stderr }).toMatchObject({ exitCode: 0 });
-    expect(stdout).toContain(`${servers.webUrl}/werewolf/`);
+    expect(stdout).toContain(`${servers.webUrl}/games/`);
     expect(stdout).toContain("Night 1:");
     expect(stdout).toContain("Votes:");
     expect(stdout).toContain("Result:");
@@ -201,7 +201,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.setViewport({ width: 1440, height: 1000 });
     await click(page, "Create Werewolf Game");
-    await page.waitForFunction("location.pathname.startsWith('/werewolf/') && location.pathname.split('/')[2]");
+    await page.waitForFunction("location.pathname.startsWith('/games/') && location.pathname.split('/')[2] !== 'new'");
     const lobbyUrl = page.url();
     const slug = new URL(lobbyUrl).pathname.split('/')[2]!;
     await page.waitForSelector('.pre-show-hero-actions button');
@@ -222,12 +222,12 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     await page.select('select[aria-label="Game type"]', 'werewolf');
     await page.select('select[aria-label="Game status"]', 'waiting');
     await page.type('input[aria-label="Search games"]', slug);
-    await page.waitForSelector(`a[href="/werewolf/${slug}"]`);
+    await page.waitForSelector(`a[href="/games/${slug}"]`);
     await page.screenshot({ path: "/tmp/werewolf-games-library-desktop.png", fullPage: true });
     await page.setViewport({ width: 390, height: 844 });
     await page.screenshot({ path: "/tmp/werewolf-games-library-mobile.png", fullPage: true });
     expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
-    await page.click(`a[href="/werewolf/${slug}"]`);
+    await page.click(`a[href="/games/${slug}"]`);
     await page.waitForSelector('button[aria-label="Remove Arden Vale from cast"]');
     await page.click('.pre-show-hero-actions button');
     await page.waitForSelector('dialog input[aria-label="Arden Vale"]:disabled');
@@ -251,9 +251,9 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
       await text(spectator, "Arden Vale");
       expect(await spectator.evaluate('Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Start Werewolf")')).toBe(false);
       await click(page, "Start Werewolf");
-      await spectator.waitForSelector('a[href="?audience=mystery"]');
+      await spectator.waitForSelector('a[href$="/replay?audience=mystery"]');
     } finally { await spectatorContext.close(); }
-    await page.waitForSelector('a[href="?audience=mystery"]');
+    await page.waitForSelector('a[href$="/replay?audience=mystery"]');
     await checkSharedWerewolfWatch(page,page.url(),servers.apiUrl);
   } catch (error) {
     await page.screenshot({ path: "/tmp/werewolf-browser-failure.png", fullPage: true });
@@ -339,7 +339,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     expect(mediaWrites.map(write => [write.action,write.expectedVersion])).toEqual([["review",1],["publish",2]]);
     const viewer = await browser.newPage();
     try {
-      await viewer.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`, { waitUntil: "domcontentloaded" });
+      await viewer.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`, { waitUntil: "domcontentloaded" });
       await viewer.waitForSelector('[data-werewolf-stage][data-cursor]');
       await pauseWerewolf(viewer);
       await viewer.waitForSelector('[data-solo-image]');
@@ -371,7 +371,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
       await viewer.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${opening + 1}`);
       await checkConsecutiveReplies(viewer);
       await checkBallotCollection(viewer, presentation);
-      await checkInSceneThinking(viewer, `${servers.webUrl}/werewolf/${game.slug}`, servers.apiUrl);
+      await checkInSceneThinking(viewer, `${servers.webUrl}/games/${game.slug}/replay`, servers.apiUrl);
 
     } catch(error) {
       console.error("Viewer failure", await viewer.evaluate("({text:document.body.innerText,cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor'),elapsed:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')})"));
@@ -428,7 +428,7 @@ test("shared House replay handles failed portraits and reduced motion", async ()
     await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);
     await page.setRequestInterception(true);
     page.on("request",request=>{if(request.url().includes("/characters/")) void request.respond({status:404,body:"Missing frozen reference"});else void request.continue();});
-    await checkSharedWerewolfWatch(page,`${servers.webUrl}/werewolf/${game.slug}`,servers.apiUrl);
+    await checkSharedWerewolfWatch(page,`${servers.webUrl}/games/${game.slug}/replay`,servers.apiUrl);
   } finally {await page.close();}
 },90_000);
 
@@ -462,7 +462,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     } else void reply();
   });
   try {
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`, {waitUntil: "domcontentloaded"});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`, {waitUntil: "domcontentloaded"});
     await page.waitForSelector('[data-werewolf-stage][data-cursor="1"]');
     await pauseWerewolf(page);
     const stage = await page.$('[data-werewolf-stage]');
@@ -520,7 +520,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     if (!servers.webUrl) throw new Error("Web server missing");
     await page.goto(servers.webUrl,{waitUntil:"domcontentloaded"});
     await page.evaluate("localStorage.setItem('house:watch:viewer:v1',JSON.stringify({thinking:true,thinkingOrder:'speech-first'}))");
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=omniscient`,{waitUntil:"domcontentloaded"});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('button[aria-label="Pause replay"]');
     await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')) > 900");
     await pauseWerewolf(page);
@@ -539,9 +539,50 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     await page.click('[role="dialog"] input[type="checkbox"]');
     saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
     expect(JSON.parse(saved as string).thinking).toBe(true);
-    await page.goto(`${servers.webUrl}/werewolf/${game.slug}?audience=mystery`,{waitUntil:"domcontentloaded"});
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('button[aria-label="Pause replay"]');
     expect(await page.$('[data-in-scene-thinking]')).toBeNull();
     expect(await page.evaluate("localStorage.getItem('house:watch:viewer:v1')")).toBe(saved);
+  } finally {await page.close();}
+},90_000);
+
+
+test("House entry is anonymous, rejects invalid audiences and shares a later source moment without restarting", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  const claim = await claimWerewolfGame(database.db,game.id); if(!claim.ok) throw new Error(claim.error);
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}) {
+    if(request.action === "open_thread") return {kind:"opening",text:"What have you learned?",recipientIds:request.legalRecipientIds.slice(0,3),cue:null};
+    if(request.action === "vote" && request.voteMode === "majority") return {kind:"target",targetId:null,thinking:"Hear more"};
+    return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture decision"} : {kind:"speech",text:"I want to compare the evidence.",cue:null};
+  }});
+  const page=await browser.newPage();
+  const reads:string[]=[];page.on("request",request=>{if(request.url().includes("/api/"))reads.push(request.url());});
+  try {
+    await page.goto(`${servers.webUrl}/games/${game.slug}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('a[href$="/replay?audience=mystery"]');
+    expect(reads.some(url=>url.includes(`/api/games/${game.slug}`))).toBe(false);
+    expect(reads.some(url=>url.includes("/watch?"))).toBe(false);
+    await page.screenshot({path:"/tmp/house-werewolf-entry-desktop.png"});
+    await page.setViewport({width:390,height:844});await page.screenshot({path:"/tmp/house-werewolf-entry-mobile.png",fullPage:true});
+    expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+    await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery&audience=omniscient`,{waitUntil:"domcontentloaded"});
+    await text(page,"Invalid replay link");expect(reads.some(url=>url.includes("/watch?"))).toBe(false);
+    const window=await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=mystery&fromCursor=33`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+    const moment=window.moments.find(value=>value.entry.kind === "discussion" && value.entry.contribution.text !== null);if(!moment)throw new Error("Expected later speech fixture");
+    const link=`${servers.webUrl}/games/${game.slug}/replay?audience=mystery&cursor=${moment.cursor}`;
+    await page.goto(link,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-werewolf-stage][data-cursor]');
+    expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(moment.cursor);
+    expect(reads.filter(url=>url.includes('/watch?')).every(url=>!url.includes("fromCursor=1&"))).toBe(true);
+    await pauseWerewolf(page);
+    await page.evaluate("Object.defineProperty(navigator,'share',{configurable:true,value:undefined});Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async url=>{document.documentElement.dataset.copiedMoment=url;}}})");
+    await page.click('button[aria-label="Player settings"]');await click(page,"Share this moment");await text(page,"Share link copied.");
+    expect(await page.evaluate("document.documentElement.dataset.copiedMoment")).toBe(link);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    await page.click('button[aria-label="Close settings"]');await page.click('button[aria-label="Play replay"]');
+    await page.click('button[aria-label="Player settings"]');await click(page,"Share this moment");
+    expect(await page.$('button[aria-label="Pause replay"]')).not.toBeNull();
+    expect(reads.some(url=>url.includes("/thinking"))).toBe(false);
+    await page.goto(`${servers.webUrl}/werewolf/${game.slug}`,{waitUntil:"domcontentloaded"});await text(page,"404");
   } finally {await page.close();}
 },90_000);

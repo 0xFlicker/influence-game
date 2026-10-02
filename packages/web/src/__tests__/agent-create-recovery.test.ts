@@ -84,3 +84,9 @@ test("head recovery ignores server-owned confirmation stamps but protects confli
   expect(buildRecoveredUpdate({ ...baseline, headPosition: head }, { ...baseline, headPosition: next }, remote({ headPosition: committed }))).toEqual({ headPosition: next });
   expect(() => buildRecoveredUpdate({ ...baseline, headPosition: head }, { ...baseline, headPosition: next }, remote({ headPosition: { ...committed, rect: { ...head.rect, y: .2 } } }))).toThrow("headPosition changed");
 });
+
+test("Werewolf continuation keeps its strategy separate and detects conflicting edits",()=>{
+ const base={...baseline,werewolfStrategyStyle:"Stay hidden"};
+ expect(buildRecoveredUpdate(base,{...base,werewolfStrategyStyle:"Protect the seer"},remote({werewolfStrategyStyle:"Stay hidden"}))).toEqual({werewolfStrategyStyle:"Protect the seer"});
+ expect(()=>buildRecoveredUpdate(base,{...base,werewolfStrategyStyle:"Protect the seer"},remote({werewolfStrategyStyle:"A concurrent plan"}))).toThrow("changed in another session");
+});

@@ -1,4 +1,5 @@
 import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
+import { createGameEntryRoutes } from "./routes/game-entries.js";
 import { createWerewolfRoutes } from "./routes/werewolf.js";
 import { createGameAssetRoutes } from "./routes/game-assets.js";
 import { createAccountInferenceRoutes } from "./routes/account-inference.js";
@@ -595,6 +596,7 @@ const mcpRoutes = createMcpRoutes(db);
 app.route("/", mcpRoutes);
 
 // Game routes
+app.route("/", createGameEntryRoutes(db));
 app.route("/", createWerewolfRoutes(db));
 app.route("/", createWerewolfAdminRoutes(db));
 const gameRoutes = createGameRoutes(db);

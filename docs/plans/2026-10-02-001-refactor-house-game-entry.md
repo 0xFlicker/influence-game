@@ -1,24 +1,28 @@
 ---
 title: One House game entry and replay routing
 type: refactor
-status: proposed
+status: implemented
 date: 2026-10-02
 roadmap_slice: W0
 ---
 
 # One House game entry and replay routing
 
+## Implementation update — 2026-10-02
+
+W0 and the small R35 core follow-up are implemented on `codex/werewolf`. See [verification, operator notes and outstanding boundaries](../reviews/2026-10-02-house-game-entry-implementation.md) and [integration knowledge for a third game](../solutions/architecture-patterns/house-game-entry-and-replay-moments.md). The original scope below records the reviewed design; R35 was subsequently authorized alongside implementation. Broader Werewolf Results, MCP, editorial and visibility parity remain separate roadmap slices.
+
 ## Outcome and boundary
 
 A viewer opens either game at `/games/[slug]`, joins through the same casting interface, and watches through `/games/[slug]/replay`. The House owns these pages and their common UI; explicit Influence and Werewolf modules supply game data, actions, audience policy and presentation. Delete the separate public Werewolf page tree after switching every active caller.
 
-This is W0 of the [integration roadmap](../ideation/2026-09-30-house-admin-and-production.md#w0--one-house-experience-game-modules-underneath). Implement through the [task specifications](2026-10-02-002-house-game-entry-tasks.md). Source audit: `codex/werewolf`, `62c7a54e`, 2026-10-02. This document proposes implementation; it does not claim shipped behavior. The [simplification and consistency review](../reviews/2026-10-02-house-game-entry-plan-review.md) records the revisions below. This plan owns product/architecture decisions; the task document owns execution order and proof, rather than defining another contract.
+This is W0 of the [integration roadmap](../ideation/2026-09-30-house-admin-and-production.md#w0--one-house-experience-game-modules-underneath). Implement through the [task specifications](2026-10-02-002-house-game-entry-tasks.md). Source audit: `codex/werewolf`, `62c7a54e`, 2026-10-02. Implementation is complete on the feature branch; this is not a deployment claim. The [simplification and consistency review](../reviews/2026-10-02-house-game-entry-plan-review.md) records the revisions below. This plan owns product/architecture decisions; the task document owns execution order and proof, rather than defining another contract.
 
 **Included:** visibility-safe game identity resolution; shared lifecycle entry, casting presentation and library card; fixed-audience replay entry; metadata; links and agent-creation continuation; removal of obsolete public routing; focused regression evidence.
 
 **Deferred:** W1 result facts/page, W2 MCP match inspection, W3 learning, W4 Cuts, W5 trailers/music, W6 night scenes, W9 art exploration, A2 studio redesign. Existing Influence results/highlights/trailers continue working. W0 does not add their Werewolf backends, placeholder artifacts or special warning/disabled UI. The shared entry accepts real available actions; W1/W4 add their destinations when implemented. Full route-family parity is the roadmap outcome, not a claim for W0 alone.
 
-Sharing a specific replay moment is an explicit product requirement, tracked in [R35](../refactor-queue.md#r35-share-the-current-replay-moment-across-house-game-players). It is the focused follow-up to W0 and does not depend on completing W1/W2. Preserve existing in-player seeking and Influence sequence URLs now; W1/W2 will consume the same share-link contract rather than inventing their own.
+Sharing a specific replay moment is an explicit product requirement, tracked in [R35](../refactor-queue.md#r35-share-the-current-replay-moment-across-house-game-players). Its core shipped alongside W0 after authorization: the shared action, typed source links and direct initial seeking. R35 retains the verification/policy follow-ups listed in the implementation report. W1/W2 consume the same share-link contract rather than inventing their own.
 
 No gameplay/rules changes, new feature flags, database migration, paid generation or historical game mutation is required. Keep existing game enablement configuration. Internal `/api/werewolf` services and admin URLs need not be renamed in this slice.
 
@@ -128,7 +132,7 @@ Site navigation belongs to entry/casting/audience-choice pages. Once playback mo
 
 `?mode=replay/results` retains its existing meaning. Preserve a valid audience only for a replay destination; Results does not consume it. An explicit Werewolf audience on a live/completed base URL redirects to replay after lifecycle resolution. Ordinary card links target the base entry. A waiting base URL never auto-enters playback when polling observes start.
 
-**Keep replay URLs minimal:** Influence retains `/replay/:sequence` with its current canonical event-sequence semantics. Werewolf uses `/replay?audience=mystery|omniscient` and starts from the beginning, as today. Missing audience opens the chooser; invalid/repeated audience produces an understandable invalid-link state without loading watch data. Werewolf `/replay/:sequence` returns not found rather than interpreting a canonical sequence as its audience-local cursor. R35 adds the missing cross-game share-at-moment action and Werewolf link/initial-seek support as a focused follow-up. It is not discarded or blocked on Results/MCP; existing in-player cursors and seeking remain unchanged in W0.
+**Keep replay URLs minimal:** Influence retains `/replay/:sequence` with its current canonical event-sequence semantics. Werewolf uses `/replay?audience=mystery|omniscient` and starts from the beginning unless a validated R35 `cursor` is supplied with an explicit audience. Missing audience opens the chooser; invalid/repeated audience produces an understandable invalid-link state without loading watch data. Werewolf `/replay/:sequence` returns not found rather than interpreting a canonical sequence as its audience-local cursor. The authorized R35 addition supplies the shared share action and Werewolf initial-cursor loading. The source cursor is audience-local; it is never a cue index or Influence event sequence.
 
 Hydrate saved preferences before Werewolf autoplay. Mystery never requests thinking even if this device previously enabled it in Omniscient. Changing audience means entering a new session, not switching the running player in place. Preserve Influence's existing autoplay behavior.
 

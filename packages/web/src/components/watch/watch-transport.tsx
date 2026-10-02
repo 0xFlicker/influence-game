@@ -1,15 +1,16 @@
 "use client";
+import {ShareMoment} from "./share-moment";
 import {useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
 import type {ThinkingOrder} from "./watch-director";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
 interface WatchTransportProps {
  fullscreen: boolean; fullscreenButton: RefObject<HTMLButtonElement | null>; toggleFullscreen: () => void | Promise<void>; fullscreenError: string | null;
- header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
+ shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void; goToNextScene: () => void; goToEnd: () => void;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void; order: ThinkingOrder; onOrderChange: (order: ThinkingOrder) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings}: WatchTransportProps) {
+export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref}: WatchTransportProps) {
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
  const capacity = width >= 1280 ? 3 : width >= 1020 ? 2 : width >= 780 ? 1 : 0;
@@ -70,6 +71,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
       <div {...getFloatingProps()} onClick={event => event.stopPropagation()} ref={setFloating} tabIndex={-1} role="dialog" aria-label="Player settings" style={floatingStyles} className="z-[200] w-[min(22rem,85vw)] overflow-y-auto rounded-xl border border-white/25 bg-zinc-950 p-5 text-sm text-white shadow-2xl">
         <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Player settings</h2><button type="button" aria-label="Close settings" onClick={() => {setOpen(false);settingsButton.current?.focus();}} className="px-2 text-white/70">✕</button></div>
         {header}
+        {shareHref && <div className="mb-4"><ShareMoment key={shareHref} href={shareHref} /></div>}
         {settings && <div className="mb-4 border-b border-white/10 pb-4" onClick={event => {if (event.target instanceof Element && event.target.closest("button")) setOpen(false);}}>{settings}</div>}
         <div className="space-y-4">
           {capacity < 1 && speedControl}

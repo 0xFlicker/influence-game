@@ -40,7 +40,7 @@ describe("games list House/Influence rebrand", () => {
   it("includes Werewolf discovery while retaining game-specific cards and creation", () => {
     expect(gamesPageSource).toContain('href="/games/new"');
     expect(gamesPageSource).toContain("includeWerewolf");
-    expect(gamesBrowserSource).toContain("WerewolfGameCard");
+    expect(gamesBrowserSource).toContain("WerewolfLibraryCard");
     expect(gamesBrowserSource).toContain('aria-label="Game type"');
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");

@@ -1,5 +1,5 @@
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
-import { sceneSpeechDurationMs } from "../games/[slug]/components/scene-speech-timing";
+import { sceneSpeechDurationMs } from "@/app/games/[slug]/components/scene-speech-timing";
 
 /** Presentation language comes from typed accepted entries, never parsed dialogue. */
 export function replayMoment(view: WerewolfView) {

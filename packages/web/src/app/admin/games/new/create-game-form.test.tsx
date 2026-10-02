@@ -454,7 +454,7 @@ test("Werewolf uses shared model/casting controls and submits configurable roles
   fireEvent.click(mounted.getByRole("checkbox",{name:/Visual Mode/}));
   expect(mounted.queryByText("Round formats")).toBeNull();
   fireEvent.click(mounted.getByRole("button",{name:"Create Werewolf Game"}));
-  await waitFor(()=>expect(pushed).toEqual(["/werewolf/custom-village"]));
+  await waitFor(()=>expect(pushed).toEqual(["/games/custom-village"]));
   expect(calls[0]!.url).toContain("/api/werewolf/lobbies");
   expect(calls[0]!.body).toMatchObject({setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"katana:grok-4-6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]});
   expect((calls[0]!.body.personaPool as string[]).length).toBeGreaterThan(1);

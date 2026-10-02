@@ -105,6 +105,7 @@ describe("house highlights card image", () => {
       init?: Parameters<typeof fetch>[1],
     ) => {
       const url = input instanceof Request ? input.url : input.toString();
+      if(url.includes("/api/game-entries/")) return Response.json({id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"});
       if (url.includes("/postgame/highlights")) {
         requestedHeaders = init?.headers;
         return new Response(JSON.stringify(mainCutFixture()), {
@@ -133,8 +134,8 @@ describe("house highlights card image", () => {
 
   it("renders a generic png for missing scenes without exposing diagnostics", async () => {
     process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify(mainCutFixture()), {
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) =>
+      new Response(JSON.stringify(String(url).includes("/api/game-entries/") ? {id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"} : mainCutFixture()), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })) as unknown as typeof fetch;
@@ -176,6 +177,7 @@ describe("house highlights card image", () => {
     let apiRequests = 0;
     globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
       const url = input instanceof Request ? input.url : input.toString();
+      if(url.includes("/api/game-entries/")) return Response.json({id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"});
       if (url.includes("/postgame/highlights")) {
         apiRequests += 1;
         if (apiRequests === 1) {

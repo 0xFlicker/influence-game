@@ -139,8 +139,8 @@ describe("HouseHighlightsView", () => {
     const originalApiBackendUrl = process.env.API_BACKEND_URL;
     const originalFetch = globalThis.fetch;
     process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify(mainCutFixture()), {
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) =>
+      new Response(JSON.stringify(String(url).includes("/api/game-entries/") ? {id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"} : mainCutFixture()), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })) as unknown as typeof fetch;

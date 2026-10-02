@@ -4,10 +4,10 @@ import {useCallback, useEffect, useLayoutEffect, useState} from "react";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {selectVisualShot} from "@influence/engine/visual-mode";
 import type {PresentationDirector} from "@/components/watch/watch-director";
-import {VisualSceneView} from "../games/[slug]/components/visual-scene-view";
-import {SoloPresentation} from "../games/[slug]/components/solo-presentation";
-import {VotePresentation} from "../games/[slug]/components/vote-presentation";
-import type {VisualPresentationBeat} from "../games/[slug]/components/visual-presentation";
+import {VisualSceneView} from "@/app/games/[slug]/components/visual-scene-view";
+import {SoloPresentation} from "@/app/games/[slug]/components/solo-presentation";
+import {VotePresentation} from "@/app/games/[slug]/components/vote-presentation";
+import type {VisualPresentationBeat} from "@/app/games/[slug]/components/visual-presentation";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {replayMoment} from "./replay-moment";
 

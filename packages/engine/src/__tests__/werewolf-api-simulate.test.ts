@@ -86,7 +86,7 @@ describe("Werewolf API simulation", () => {
     expect(requests.map(request => request.path)).toEqual(["/api/auth/local-cli-session", "/api/werewolf", "/api/werewolf/report-game", "/api/werewolf/report-game"]);
     expect(requests[1]?.body).toMatchObject({ preset: "two_wolves", maxDays: 10, agentProfileIds: ["owned-1"], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
     expect(result.status).toBe("completed");
-    expect(result.report).toContain("http://localhost:3001/werewolf/report-slug");
+    expect(result.report).toContain("http://localhost:3001/games/report-slug/replay?audience=mystery");
     expect(result.report).toContain("Night 1:");
     expect(result.report).toContain("Votes:");
     expect(result.report.match(/Result:/g)).toHaveLength(1);
@@ -155,7 +155,7 @@ describe("Werewolf API simulation", () => {
     const args = runArgs();
     await expect(runWerewolfApiSimulation(args, { log: () => {} })).rejects.toThrow("503");
     expect(calls).toBe(1);
-    expect(await readFile(args.out, "utf8")).toContain("Check http://localhost:3001/werewolf before launching again");
+    expect(await readFile(args.out, "utf8")).toContain("Check http://localhost:3001/games?game=werewolf before launching again");
     const { initial } = await fixture();
     globalThis.fetch = Object.assign(async () => Response.json({ slug: "report-slug", status: "suspended", view: projectWerewolfView(initial, "mystery") }), { preconnect: originalFetch.preconnect });
     await expect(runWerewolfApiSimulation(runArgs(["--game", "report-slug"]), { log: () => {} })).rejects.toThrow("suspended");
@@ -184,7 +184,7 @@ describe("Werewolf API simulation", () => {
     }, { preconnect: originalFetch.preconnect });
     await expect(runWerewolfApiSimulation(args, { log: () => {} })).rejects.toThrow("503");
     const report = await readFile(args.out, "utf8");
-    expect(report).toContain("http://localhost:3001/werewolf/saved-game");
+    expect(report).toContain("http://localhost:3001/games/saved-game/replay?audience=mystery");
     expect(report).toContain("--game 'already-created'");
     expect(report).toContain("Report stopped:");
     expect(calls).toBe(2);

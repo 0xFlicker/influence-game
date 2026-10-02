@@ -147,10 +147,10 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", {name:"Player settings", exact:true}).click();
     const settings = page.getByRole("dialog", {name:"Player settings"});
     await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
-    await settings.getByLabel("Show thinking in scene").check();
+    await page.getByLabel("Show thinking", { exact: true }).check();
     await expect(page.locator('[data-in-scene-thinking]')).toContainText("One precise question");
     await expect(page.getByRole("heading", {name:"Introductions",exact:true})).toBeVisible();
-    await settings.getByLabel("Thinking order").selectOption("speech-first");
+    await page.getByLabel("Thinking order", { exact: true }).selectOption("speech-first");
     await expect(page.locator('[data-in-scene-thinking]')).toHaveCount(0);
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
     await playbackKey(page,"Space");
@@ -175,7 +175,7 @@ test.describe("format-aware game viewer", () => {
     await page.screenshot({path:"/tmp/influence-mobile-thinking.png"});
     await page.setViewportSize({width:1280,height:720});
     await page.getByRole("button",{name:"Player settings",exact:true}).click();
-    await settings.getByLabel("Thinking order").selectOption("thinking-first");
+    await page.getByLabel("Thinking order", { exact: true }).selectOption("thinking-first");
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
     const thoughtBox = await page.locator('[data-in-scene-thinking]').boundingBox();
     await playbackKey(page,"ArrowRight");
@@ -186,6 +186,35 @@ test.describe("format-aware game viewer", () => {
     await playbackKey(page,"ArrowRight");
     await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
     await expect(page.locator('[data-in-scene-thinking]')).toHaveCount(0);
+  });
+
+  for (const status of ["completed", "in_progress"] as const) test(`shared Influence moment links open their canonical action and preserve playback intent (${status})`, async ({ page }) => {
+    const slug = "shared-action-fixture";
+    await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
+    await page.goto(viewerUrl(`/games/${slug}/replay/16`));
+    await pauseAutoplay(page, "Pause replay");
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
+      } });
+    });
+    await page.getByRole("button", { name: "Share this moment", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Share link copied.");
+    const href = await page.evaluate(() => document.documentElement.dataset.copiedMoment);
+    expect(href).toBe(viewerUrl(`/games/${slug}/replay/16`));
+    await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+    const position = await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue();
+    expect(Number(position)).toBeGreaterThan(1);
+    await page.goto(href!);
+    await pauseAutoplay(page, "Pause replay");
+    await expect(page.getByRole("slider", { name: "Replay position", exact: true })).toHaveValue(position);
+    await page.getByRole("button", { name: "Play replay", exact: true }).click();
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Share this moment", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 
   test("content-fitted bubbles keep the same frame across all speech pages", async ({page}) => {
@@ -1782,10 +1811,10 @@ async function advanceClockUntilVisible(
   throw new Error(`${stageLabel} did not appear before ${maxElapsedMs}ms.`);
 }
 
-async function pauseAutoplay(page: Page, accessibleName: string): Promise<void> {
+async function pauseAutoplay(page: Page, _accessibleName: string): Promise<void> {
   await page.mouse.move(20, 20);
   const pauseButton = page.getByRole("button", {
-    name: accessibleName,
+    name: /^(?:⏸ Pause|Pause replay)$/,
     exact: true,
   });
   const playButton = page.getByRole("button", {

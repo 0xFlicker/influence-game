@@ -52,6 +52,8 @@
  * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
  * counts as live spectator telemetry, separate from public history and player context.
  * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * API Werewolf replay links use /games/:slug/replay?audience=...; the viewer
+ * can share an audience-bound source cursor without another model call.
  * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).

@@ -1,9 +1,1 @@
 .werewolf-library-card { background: radial-gradient(circle at 85% 15%, #a4badd28, transparent 45%), linear-gradient(145deg, #20293b, #0c101a 65%); border-color: #98b7d944; }
-.werewolf-library-link { position: relative; display: flex; flex-direction: column; min-height: 320px; padding: 2rem; color: #e6edf8; }
-.werewolf-library-link:focus-visible { outline: 2px solid #c2d9f2; outline-offset: -4px; }
-.werewolf-library-link > img { align-self: flex-end; opacity: .9; margin-bottom: 1.5rem; }
-.werewolf-library-eyebrow { color: #b4ccea; text-transform: uppercase; letter-spacing: .18em; font-size: .65rem; }
-.werewolf-library-link h2 { font: 1.8rem Georgia, serif; margin-top: .8rem; overflow-wrap: anywhere; }
-.werewolf-library-link > p:not(.werewolf-library-eyebrow) { color: #afbdcf; font-size: .85rem; line-height: 1.65; margin-top: .7rem; }
-.werewolf-library-meta { color: #a3b0c4; font-size: .7rem; line-height: 1.7; margin-top: 1rem; }
-.werewolf-library-link > strong { color: #d1e3fa; font-size: .8rem; font-weight: 500; padding-top: 1.5rem; margin-top: auto; }

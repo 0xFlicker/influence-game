@@ -7,6 +7,7 @@ import {WatchThinking} from "@/components/watch/watch-thinking";
 import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {getPublicWatchIntelligence} from "@/lib/api";
+import { gameReplaySequenceHref } from "@/lib/game-links";
 import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation } from "./visual-presentation";
@@ -356,7 +357,7 @@ function DramaticReplayTheater({
   const reconnectHydrationPendingRef = useRef(false);
   // Scroll ref for stacked diary/mingle content (INF-93)
 
-  const fallbackCue = presentationCues[0] ?? null;
+  const fallbackCue = presentationCues[startSequence === undefined ? 0 : findPresentationCueIndexForSequence(presentationCues,startSequence)] ?? null;
   const activeCue = director.getActiveCue() ?? fallbackCue;
   const classicCue = activeCue?.source === "classic" ? activeCue : null;
   const formatCue = activeCue?.source === "format" ? activeCue : null;
@@ -432,6 +433,13 @@ function DramaticReplayTheater({
     ) {
       return;
     }
+    if (startSequence !== undefined && !initialSequenceSeekAppliedRef.current && directorSnapshot.cueKeys.length === 0) {
+      const seekIndex = findPresentationCueIndexForSequence(presentationCues, startSequence);
+      director.load(presentationCues, Math.max(0,seekIndex));
+      initialSequenceSeekAppliedRef.current = true;
+      director.play();
+      return;
+    }
     if (live && directorSnapshot.cueKeys.length === 0) {
       const latest = presentationCues.at(-1);
       if (latest?.source === "classic" && !latest.liveCatchUp) {
@@ -446,18 +454,6 @@ function DramaticReplayTheater({
     }
     if (directorSnapshot.cueKeys.length === 0) {
       director.load(presentationCues);
-      if (
-        !live
-        && startSequence !== undefined
-        && !initialSequenceSeekAppliedRef.current
-      ) {
-        const seekIndex = findPresentationCueIndexForSequence(
-          presentationCues,
-          startSequence,
-        );
-        if (seekIndex > 0) director.seek(seekIndex);
-        initialSequenceSeekAppliedRef.current = true;
-      }
       director.play();
       return;
     }
@@ -883,7 +879,7 @@ function DramaticReplayTheater({
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <WatchTransport fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
+        <WatchTransport shareHref={activeCue?.canonicalSequence != null ? gameReplaySequenceHref(game.slug,activeCue.canonicalSequence) : undefined} fullscreen={fullscreen} fullscreenButton={fullscreenButton} toggleFullscreen={toggleFullscreen} fullscreenError={fullscreenError}
           header={activeFormatIdForSocialScene ? <div className="mb-3 flex justify-center"><ActiveFormatLabel formatId={activeFormatIdForSocialScene} /></div> : null}
           isPlaying={isPlaying} togglePlay={() => { if (isPlaying) pausePresentation(); else director.play(); }} speed={speed} onSpeed={value => director.setSpeed(value)}
           goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={position => director.seek(position - 1)} goToNextScene={goToNextScene} goToEnd={goToEnd}

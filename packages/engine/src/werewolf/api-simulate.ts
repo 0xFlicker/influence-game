@@ -92,8 +92,8 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         body: JSON.stringify({ preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
       });
       game = created.id;
-      if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /werewolf before launching again.");
-      watchUrl = new URL(`/werewolf/${encodeURIComponent(created.slug)}`, args.webUrl).href;
+      if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /games?game=werewolf before launching again.");
+      watchUrl = new URL(`/games/${encodeURIComponent(created.slug)}/replay?audience=${args.audience}`, args.webUrl).href;
       emit(`Started ${created.slug}: ${WEREWOLF_PRESETS[args.preset].players} players, up to ${args.maxDays} days.`);
       emit(`Model: ${args.providerManifest.map((selection) => `${selection.catalogId} (${selection.reasoningPolicy})`).join(", ")}.`);
       emit(`Watch: ${watchUrl}`);
@@ -116,7 +116,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       const view = detail.view;
       if (!view || view.audience !== args.audience || !Array.isArray(view.entries) || view.cursor !== view.entries.length || view.cursor < cursor) throw new Error("Invalid Werewolf audience timeline");
       if (!rosterPrinted) {
-        if (!watchUrl) emit(`Watch: ${new URL(`/werewolf/${encodeURIComponent(detail.slug)}`, args.webUrl).href}`);
+        if (!watchUrl) emit(`Watch: ${new URL(`/games/${encodeURIComponent(detail.slug)}/replay?audience=${args.audience}`, args.webUrl).href}`);
         emit(`Cast (${args.audience}): ${view.players.map(player => `${player.name}${args.audience === "omniscient" && player.role ? ` [${player.role}]` : ""}`).join(", ")}`);
         emit("Village wins by eliminating every wolf. Wolves win when they equal or outnumber everyone else.");
         emit("After each thread, everyone votes for a target or abstains to hear more. A strict majority of all living players eliminates the target and ends the day; otherwise discussion continues. The final ballot requires a target: unique most votes wins; a tie means no village elimination.");
@@ -170,7 +170,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
   } catch (error) {
     emit(`Report stopped: ${error instanceof Error ? error.message : String(error)}`);
     if (game) emit(`Resume report: ${resume(game)}`);
-    else if (creationRequested) emit(`Check ${args.webUrl}/werewolf before launching again; the creation request may have reached the server.`);
+    else if (creationRequested) emit(`Check ${args.webUrl}/games?game=werewolf before launching again; the creation request may have reached the server.`);
     await flush();
     throw error;
   }

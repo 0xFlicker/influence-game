@@ -49,6 +49,7 @@ export async function installDeterministicFormatGame(
     currentDecisions(),
   );
 
+  await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/replay-watch-frames")) {
@@ -118,6 +119,7 @@ export async function installDeterministicClassicGame(
   },
 ): Promise<void> {
   const game = buildDeterministicClassicGame(options);
+  await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/visual")) {
@@ -149,6 +151,7 @@ export async function installDeterministicCompletedClassicGame(
   slug: string,
 ): Promise<void> {
   const fixture = buildDeterministicCompletedClassicGame(slug);
+  await page.route(`**/api/game-entries/${slug}`, route => fulfillJson(route,{id:slug,slug,gameKind:"influence"}));
   await page.route(gameApiPattern(slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/visual")) {

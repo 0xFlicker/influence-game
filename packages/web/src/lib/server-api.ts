@@ -9,6 +9,11 @@ import type {
   TranscriptEntry,
 } from "./api";
 
+import type { GameEntryIdentity } from "./game-entry";
+export function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
+  return serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" });
+}
+
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;
 
 export class ServerApiError extends Error {

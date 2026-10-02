@@ -1,6 +1,7 @@
 "use client";
+import { CastingRoster, CastCard, CastInvitation } from "@/components/casting/casting-roster";
 
-import Image from "next/image";
+import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -107,30 +108,11 @@ export function GamePreShow({ game, onGameUpdated }: {
         <PreGameControls game={game} onGameUpdated={onGameUpdated} />
       </CastingHero>
 
-      <section className="pre-show-cast" aria-labelledby="pre-show-cast-title">
-        <header className="pre-show-cast-heading">
-          <div><p className="pre-show-eyebrow">The competitors</p><h2 id="pre-show-cast-title">Meet the cast.</h2></div>
-          <p>{game.players.length > 0 ? "Select a portrait to take a closer look." : "Every rivalry starts with an introduction."}</p>
-        </header>
-        {game.players.length === 0 ? (
-          <div className="pre-show-empty">
-            <span className="pre-show-empty-number" aria-hidden="true">01</span>
-            <div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><button type="button" disabled={!ready} onClick={join}>Bring your agent <span aria-hidden="true">↗</span></button></div>
-          </div>
-        ) : (
-          <div className="pre-show-cast-grid">
-            {game.players.map((player, index) => {
-              const model = getGamePlayerAvatarPreviewModel(player);
-              return <button key={player.id} type="button" className="pre-show-cast-card" aria-label={`Meet ${player.name}`} onClick={() => setSelectedPlayer(player)}>
-                <Image src={resolveAgentAvatarUrl(model.avatarUrl, player.persona, player.name, player.personaKey)} alt={`Portrait of ${player.name}`} fill sizes="(max-width: 639px) 45vw, (max-width: 1023px) 30vw, 240px" unoptimized />
-                <span className="pre-show-cast-number" aria-hidden="true">{(index + 1).toString().padStart(2, "0")}</span>
-                <span className="pre-show-cast-copy"><span>{player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)}</span><strong>{player.name}</strong><span className="pre-show-cast-record">{castRecord(player)} <span aria-hidden="true">↗</span></span></span>
-              </button>;
-            })}
-            {canJoin && <button type="button" className="pre-show-invitation" disabled={!ready} onClick={join}><span aria-hidden="true">＋</span><strong>Your agent,<br /><em>in the spotlight.</em></strong><span>{inCast ? "Add another agent" : "Choose your agent"} ↗</span></button>}
-          </div>
-        )}
-      </section>
+      <CastingRoster eyebrow="The competitors" description={game.players.length ? "Select a portrait to take a closer look." : "Every rivalry starts with an introduction."}
+        empty={!game.players.length ? <div className="pre-show-empty"><span className="pre-show-empty-number" aria-hidden="true">01</span><div><h3>The first seat is yours.</h3><p>No agents have entered yet. Create a character with something to prove, or bring one you already know.</p><button type="button" disabled={!ready} onClick={join}>Bring your agent ↗</button></div></div> : undefined}
+        invitation={canJoin && <CastInvitation disabled={!ready} onChoose={join} joined={inCast} />}>
+        {game.players.map((player,index) => { const model=getGamePlayerAvatarPreviewModel(player); return <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} detail={castRecord(player)} onInspect={() => setSelectedPlayer(player)} />; })}
+      </CastingRoster>
 
       <footer className="pre-show-footer"><p>{game.visibility === "private" ? "Private game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
       {refreshError && <p role="alert" className="pre-show-notice">Cast refresh failed. {refreshError} <button type="button" onClick={() => refreshRef.current?.()}>Try again</button></p>}
@@ -189,18 +171,9 @@ function castRecord(player: GamePlayer): string {
 }
 
 function CastPortrait({ player, onClose }: { player: GamePlayer; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const model = getGamePlayerAvatarPreviewModel(player);
   const owner = player.currentAgent?.owner;
-  useEffect(() => {
-    const element = dialog.current;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    element?.showModal();
-    return () => { element?.close(); previous?.focus(); };
-  }, []);
-  return <dialog ref={dialog} className="pre-show-portrait-dialog" aria-label={`Meet ${player.name}`} onCancel={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <button type="button" className="pre-show-portrait-close" onClick={onClose} aria-label="Close portrait">×</button>
-    <div className="pre-show-portrait-image"><Image src={resolveAgentAvatarUrl(model.avatarUrl, player.persona, player.name, player.personaKey)} alt={`Portrait of ${player.name}`} fill sizes="(max-width: 639px) 90vw, 440px" unoptimized /></div>
-    <div className="pre-show-portrait-copy"><p className="pre-show-eyebrow">{player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)}</p><h2>{player.name}</h2><p>{player.currentAgent ? `Career record · ${castRecord(player)}` : "Career record unavailable"}</p>{owner && <Link href={playerProfileHref(owner)}>Created by {owner.displayName} ↗</Link>}</div>
-  </dialog>;
+  return <CastPortraitDialog name={player.name} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} onClose={onClose}>
+    <p>{player.currentAgent ? `Career record · ${castRecord(player)}` : "Career record unavailable"}</p>{owner && <Link href={playerProfileHref(owner)}>Created by {owner.displayName} ↗</Link>}
+  </CastPortraitDialog>;
 }

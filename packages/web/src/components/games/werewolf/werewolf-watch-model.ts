@@ -1,11 +1,11 @@
 import {isWerewolfPlayable, type WerewolfWatchMoment, type WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import type {WatchPolicy} from "@/components/watch/watch-director";
 import {replayMoment} from "./replay-moment";
-import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "../games/[slug]/components/scene-speech-timing";
+import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "@/app/games/[slug]/components/scene-speech-timing";
 import {VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
-import {soloPresentationDurationMs} from "../games/[slug]/components/solo-presentation-timing";
-import {SILENT_BALLOT_DURATION_MS} from "../games/[slug]/components/vote-presentation-timing";
-import type {RevealedVote, VoteLedgerState} from "../games/[slug]/components/vote-ledger-model";
+import {soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
+import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
+import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; ballot?: VoteLedgerState }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,

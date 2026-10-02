@@ -157,7 +157,7 @@ These are high-level tasks, not simultaneous implementation projects. A4-EVIDENC
 
 ### W0 — one House experience, game modules underneath
 
-Focused implementation planning: [W0 plan](../plans/2026-10-02-001-refactor-house-game-entry.md) and [HE-01–07 task specifications](../plans/2026-10-02-002-house-game-entry-tasks.md). Both are proposed; implementation has not begun. They bound W0 to shared entry/casting/cards/replay and defer Werewolf results, MCP and editorial pipelines to their own slices.
+Focused implementation planning: [W0 plan](../plans/2026-10-02-001-refactor-house-game-entry.md) and [HE-01–07 task specifications](../plans/2026-10-02-002-house-game-entry-tasks.md). W0 entry/casting/card/routing integration and the R35 share-action core are implemented on the feature branch; see [implementation evidence and remaining boundaries](../reviews/2026-10-02-house-game-entry-implementation.md). They bound W0 to shared entry/casting/cards/replay and defer Werewolf results, MCP and editorial pipelines to their own slices.
 
 **Confirmed direction (2026-10-02):** retire the separate Werewolf UI application boundary. `/games/[slug]` is the canonical game entry for both kinds. Use the existing `/games/[slug]/replay`, `/results` and `/highlights` family for the corresponding House experiences, with audience/cursor context where applicable. Preserve the shared route’s lifecycle behavior: casting before start, live viewing, and completed episode entry with replay/results. The exact audience-choice placement must fit that flow, not bypass it through a second game page.
 
@@ -182,7 +182,7 @@ flowchart TD
 
 **Done when:** a viewer or owner can use the same entry points and controls for either game; game differences appear in the appropriate content rather than a separate navigation system. Direct links, refreshes, audience selection, saved preferences, replay seeking, completed entry and social metadata work through House routes. Test both games against the common UI contract and their distinct knowledge/lifecycle rules.
 
-**Inspect when planning:** `packages/web/src/app/games/[slug]/page.tsx`, `replay/`, `results/`, `highlights/`, `game-viewer.tsx`; `app/games/episode-landing.tsx`, `werewolf-game-card.tsx`; `app/werewolf/[slug]/page.tsx`, `werewolf-entry.tsx`, `werewolf-viewer.tsx`; `components/watch/`, `lib/game-links.ts`, `lib/server-api.ts`, `lib/werewolf-api.ts`. These are current source locations to consolidate, not the proposed final package structure.
+**Inspect when planning:** `packages/web/src/app/games/[slug]/page.tsx`, `replay/`, `results/`, `highlights/`, `game-viewer.tsx`; `app/games/episode-landing.tsx`, `werewolf-game-card.tsx`; `app/werewolf/[slug]/page.tsx`, `werewolf-entry.tsx`, `werewolf-viewer.tsx`; `components/watch/`, `lib/game-links.ts`, `lib/server-api.ts`, `lib/werewolf-api.ts`. These were planning source locations. Public Werewolf code now lives in `components/games/werewolf/`; shared presentation lives in `components/games/` and `components/casting/`.
 
 ### W1 — make the ending worth reaching
 

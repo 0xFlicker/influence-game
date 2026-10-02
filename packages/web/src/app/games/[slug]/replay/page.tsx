@@ -1,27 +1,6 @@
-import { loadReplayPageData, ReplayPageShell } from "./replay-page";
-
-interface Props {
-  params: Promise<{ slug: string }>;
-}
-
-export async function generateMetadata({ params }: Props) {
-  const { slug } = await params;
-  return {
-    title: `Replay: ${slug} — Influence`,
-    description: "Watch the public replay for this completed Influence game.",
-  };
-}
-
-export default async function GameReplayPage({ params }: Props) {
-  const { slug } = await params;
-  const data = await loadReplayPageData(slug);
-
-  return (
-    <ReplayPageShell
-      slug={slug}
-      initialGame={data.initialGame}
-      initialMessages={data.initialMessages}
-      initialReplayFrames={data.initialReplayFrames}
-    />
-  );
+import { HouseGameRoute } from "../house-route";
+export const metadata = { title: "Replay — The House", description: "Watch the game in the House player." };
+export default async function GameReplayPage({params,searchParams}: {params:Promise<{slug:string}>;searchParams:Promise<{audience?:string|string[];cursor?:string|string[]}>}) {
+  const {slug} = await params;
+  return <HouseGameRoute slug={slug} mode="replay" {...await searchParams} />;
 }

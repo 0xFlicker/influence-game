@@ -81,3 +81,7 @@ Document validation: relative links, Markdown fences and `git diff --check`. No 
 - Private/unlisted creation exists for Influence, while Werewolf hardcodes public. The revised plan describes a common House visibility policy, with missing Werewolf support and existing Influence inconsistencies recorded under W7.
 - Direct watch/media URLs retain checks because entry-page access is not a credential. Kind is explicitly resolved rather than guessed from endpoint failures.
 - Sharing the current moment is required product work, recorded as R35 in the requested main-checkout refactor queue and mirrored into this worktree. No application behavior changed in this clarification pass.
+
+## Implementation follow-through — 2026-10-02
+
+W0 and R35 core are now implemented. [Evidence and operator notes](2026-10-02-house-game-entry-implementation.md) distinguish verified integration from remaining roadmap scope. Game-specific canonical facts and permissions remain with their modules; House owns entry, casting, cards and share controls.

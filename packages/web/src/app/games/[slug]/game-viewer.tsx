@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
 import { GamePreShow } from "./components/game-pre-show";
+import { GameSiteEntry } from "@/components/games/game-site-entry";
 
 import type {
   SpectacleMessagePhase,
@@ -993,7 +994,7 @@ export function GameViewer({
   }
 
   if (game.status === "waiting") {
-    return <GamePreShow game={game} onGameUpdated={setGame} />;
+    return <GameSiteEntry><GamePreShow game={game} onGameUpdated={setGame} /></GameSiteEntry>;
   }
 
   const matchWatchDecision = getMatchWatchRouteDecision(
@@ -1023,7 +1024,7 @@ export function GameViewer({
           presentationHydrationStatus={matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
             ? (wsStatus === "connecting" ? "loading" : "reconnecting")
             : presentationHydration.status}
-          startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}
+          startSequence={startSequence}
         />
         {gamePresentation.incomplete && (
           <div className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-700/50 bg-black/90 p-3 text-xs text-amber-100 shadow-xl">

@@ -40,7 +40,7 @@ export function GameList() {
       <div><p className={styles.eyebrow}>{title(game.status)}{game.hidden ? " · Hidden" : ""}</p><h2>{game.slug}</h2><p>{game.playerCount} players · {game.status === "waiting" ? "Casting open" : game.progress ? `Day ${game.progress.day} · ${title(game.progress.phase)}` : "State unavailable"}</p>{game.error && <p className={styles.warning}>{game.error}</p>}</div>
       <div><span className={styles.small}>Gameplay cost</span><strong className={styles.number}>{game.cost?.state === "actual" ? money(game.cost.actualCostMicrousd) : game.cost?.state === "estimated" ? `~${money(game.cost.estimatedCostMicrousd)}` : "N/C"}</strong><span className={styles.small}>{game.cost?.callCount ?? 0} recorded calls</span></div>
       <div><span className={styles.small}>Production</span><span>{game.production.active ? `${game.production.active} active jobs` : game.production.failed ? `${game.production.failed} jobs need attention` : "Ready to inspect"}</span></div>
-      <Link className={styles.open} href={game.status === "waiting" ? `/werewolf/${game.slug}` : `${href(game.id, "overview")}?${params}`}>Open <span aria-hidden>↗</span></Link>
+      <Link className={styles.open} href={game.status === "waiting" ? `/games/${game.slug}` : `${href(game.id, "overview")}?${params}`}>Open <span aria-hidden>↗</span></Link>
     </article>)}</div>
     <p className={styles.footnote}>Latest 100 games · N/C means no collected price, not zero spend.</p>
   </div>;
@@ -145,7 +145,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           {actionError && <Notice>{actionError}</Notice>}
           {displayed === "overview" && <>
           <section className={styles.surface}><h2 tabIndex={-1}>Game overview</h2><p>{data.snapshot.outcome ? `${title(data.snapshot.outcome.faction ?? "Draw")} · ${title(data.snapshot.outcome.reason)}` : "The game has not reached a result."}</p><p className={styles.small}>Created {new Date(data.createdAt).toLocaleString()}</p>
-          <div className={styles.actions}>{!data.hidden && <Link href={`/werewolf/${data.slug}`}>Open spectator view ↗</Link>}{data.capabilities.visibility && <button disabled={busy} onClick={() => void action("visibility")}>{data.hidden ? "Restore listing" : "Hide game"}</button>}{data.capabilities.stop && <button disabled={busy} onClick={() => setConfirm(true)}>Stop game</button>}</div>
+          <div className={styles.actions}>{!data.hidden && <Link href={`/games/${data.slug}`}>Open spectator view ↗</Link>}{data.capabilities.visibility && <button disabled={busy} onClick={() => void action("visibility")}>{data.hidden ? "Restore listing" : "Hide game"}</button>}{data.capabilities.stop && <button disabled={busy} onClick={() => setConfirm(true)}>Stop game</button>}</div>
           {confirm && <div className={styles.notice}><p>Stop this game? Accepted history is retained. A stopped game cannot resume.</p><button disabled={busy} onClick={() => void action("stop")}>Confirm stop</button><button onClick={() => setConfirm(false)}>Keep running</button></div>}
           <p className={styles.footnote}>Hiding removes public discovery and direct viewing. Admin records remain available.</p></section>
           <section className={styles.surface}><h2>Cast</h2><p className={styles.small}>Omniscient operations view · original roles</p><div className={styles.cast}>{data.snapshot.players.map(p => <div key={p.id}><strong>{p.name}</strong><span>{title(p.role ?? "unknown")} · {p.alive ? "Alive" : "Eliminated"}</span></div>)}</div></section>

@@ -12,14 +12,15 @@ export async function pauseWerewolf(page: Page) {
 }
 export async function watchText(page:Page,value:string){await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`,{timeout:25000});}
 export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:string){
+ const replayUrl=new URL(url);replayUrl.pathname=`/games/${replayUrl.pathname.split('/')[2]}/replay`;replayUrl.search="";url=replayUrl.href;
  const errors:string[]=[],requests:string[]=[];
  page.on("pageerror",error=>errors.push(String(error)));
  page.on("request",request=>{if(request.url().includes('/watch?'))requests.push(request.url());});
- const slug=new URL(url).pathname.split('/').at(-1)!;
+ const slug=new URL(url).pathname.split('/')[2]!;
  await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:"domcontentloaded"});
  // This manual-control scenario starts from a known preference; persistence has its own proof.
  await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
- await page.waitForSelector('a[href="?audience=mystery"]'); await page.click('a[href="?audience=mystery"]');
+ await page.waitForSelector('a[href$="/replay?audience=mystery"]'); await page.click('a[href$="/replay?audience=mystery"]');
  await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);await watchText(page,"Cross-examine this game with your AI.");
  expect(await page.$('select[aria-label="Spectator mode"]')).toBeNull();
  await page.click('button[aria-label="Player settings"]');await watchText(page,"Viewing mode: Mystery");await page.click('button[aria-label="Close settings"]');
@@ -84,7 +85,7 @@ export async function checkConsecutiveReplies(page: Page, count = 4) {
 
 /** Exact per-contribution fixture isolates overlay timing from paid model generation. */
 export async function checkInSceneThinking(page: Page, url: string, apiUrl: string) {
-  const slug = new URL(url).pathname.split('/').at(-1)!;
+  const slug = new URL(url).pathname.split('/')[2]!;
   const presentation = await (await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
   const entries = presentation.view.entries.flatMap((entry, index) => entry.kind === "speech" && entry.text ? [{cursor:index + 1, actorId:entry.actorId, day:entry.day, action:"introduce", thinking:"I should ask one precise question before revealing what I know."}] : []);
   const diagnostics:string[] = [];

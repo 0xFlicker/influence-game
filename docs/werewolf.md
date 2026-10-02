@@ -1,6 +1,6 @@
 # Werewolf
 
-Werewolf is a separate, unranked game under The House. Choose Werewolf at `/games/new`; discover both games at `/games`. Individual Werewolf matches retain `/werewolf/:slug`; there is no separate root Werewolf navigation or creation page. The first release uses public custom games, existing saved characters, and the existing game-worker deployment. It does not enroll contestants in Influence's Daily Free queue or award Influence ratings, season points, career wins, jury results, or owner-learning reviews.
+Werewolf is a separate, unranked game under The House. Choose Werewolf at `/games/new`; discover both games at `/games`. Individual Werewolf matches use `/games/:slug`, with playback at `/games/:slug/replay`; there is no separate root Werewolf navigation or creation page. The first release uses public custom games, existing saved characters, and the existing game-worker deployment. It does not enroll contestants in Influence's Daily Free queue or award Influence ratings, season points, career wins, jury results, or owner-learning reviews.
 
 ## Character and strategy
 
@@ -216,7 +216,7 @@ The pure engine and PostgreSQL tests cover full matches, prefix replay, secrecy,
 
 - Rules, events, knowledge, model contracts, and simulation: [`packages/engine/src/werewolf/`](../packages/engine/src/werewolf/).
 - Database/service boundary: [`werewolf-games.ts`](../packages/api/src/services/werewolf-games.ts), [`werewolf-runtime.ts`](../packages/api/src/services/werewolf-runtime.ts), [`werewolf-schema.ts`](../packages/api/src/db/werewolf-schema.ts), [`routes/werewolf.ts`](../packages/api/src/routes/werewolf.ts).
-- Viewer and custom-game creation: [`packages/web/src/app/werewolf/`](../packages/web/src/app/werewolf/).
+- Viewer and custom-game creation: [`packages/web/src/components/games/werewolf/`](../packages/web/src/components/games/werewolf/).
 - Research, dependency inventory, and source map: [Werewolf plan](plans/2026-09-26-001-feat-werewolf-game-mode-plan.md).
 
 Measure bluff quality, claim tracking, Seer disclosure, pack coordination, win rates by seed/role/model, fallback frequency, latency, and spend before tuning the presets. Hunter and other complex roles, automated scheduling, Werewolf ratings/reviews, and generated narration/video are separate extensions. Renaming the repository remains a separate TODO.
@@ -231,7 +231,7 @@ Bubble typography measures the full contribution before display. Short messages 
 
 ### Casting a custom village
 
-`/games` includes a distinct Werewolf shelf, with shared search/status filtering and an explicit game-type filter. Werewolf cards open `/werewolf/:slug`; Influence cards retain their own episode and replay routes. The public discovery APIs remain game-specific so Werewolf does not inherit Influence results, ratings or season projections.
+`/games` includes a distinct Werewolf shelf, with shared search/status filtering and an explicit game-type filter. Both games use the shared House card template and open `/games/:slug`, with game-specific episode actions. The public discovery APIs remain game-specific so Werewolf does not inherit Influence results, ratings or season projections.
 
 At `/games/new`, **Create Werewolf Game** requires `create_game` and saves a waiting lobby. Configure 6, 7 or 8 players, 1 or 2 wolves, and optional Seer and Doctor roles. Model routing, reasoning, fallback budgets, archetype pool and balanced/random casting use the shared House form. Werewolf archetypes keep their own strategy guidance. It does not start model calls. Share its URL to invite players. The shared House portrait selector now joins that persisted game; refreshing, leaving, or another browser opening the URL reads the same cast. Creating a new agent from the lobby uses the `join_werewolf` continuation and returns to that game after saving and joining.
 
@@ -253,3 +253,9 @@ Portraits and full-body references have separate immutable URLs. Cast chips use 
 `NEXT_PUBLIC_ENABLED_GAMES` is a comma-separated deployment setting (`influence,werewolf` by default). Supply the same value to the API runtime and web build; `Dockerfile.web` accepts it as a build argument. Omit a game to disable new creation and discovery while preserving existing match URLs. This is a rollout setting, not an authorization boundary. Both games' public rules remain readable.
 
 Rules are maintained in `docs/rules-page-content.md` (Influence) and `docs/werewolf-rules-page-content.md` (Werewolf), rendered directly at `/rules?game=influence|werewolf`. Update those Markdown files instead of copying rules into JSX. Desktop uses a chapter sidebar; mobile uses a sticky bottom game/section selector. Docker copies both documents into the runtime image.
+
+## House entry and moment sharing
+
+Both games now enter through `/games/:slug`. Casting, episode layout, cards and playback controls share House components while game modules retain their own data and rules. `/werewolf/:slug` was removed. Choose Mystery or Omniscient before playback; there is no mid-match audience switch. Public entry and replay work signed out.
+
+In player settings, **Share this moment** uses native sharing or copies a link such as `/games/example/replay?audience=mystery&cursor=65`. The cursor is a stable source entry for that audience, not an animation or page index. Opening the link begins in that source window with device preferences. Missing audience with a cursor, repeated/invalid values and unavailable initial positions fail explicitly. Links confer no private access. See [integration knowledge](solutions/architecture-patterns/house-game-entry-and-replay-moments.md).

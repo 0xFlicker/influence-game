@@ -5,7 +5,7 @@ import Link from "next/link";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, gameCollectionHref, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
 import { listWerewolfGames, type WerewolfGameSummary } from "@/lib/werewolf-api";
-import { WerewolfGameCard } from "./werewolf-game-card";
+import { WerewolfLibraryCard } from "@/components/games/werewolf/werewolf-library-card";
 import { EpisodeCard } from "./episode-preview";
 import {
   fillGame,
@@ -391,7 +391,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
       ) : (
         <div className={compact ? "episode-compact" : ""}>
           {filteredWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games?game=werewolf">
-            {filteredWerewolf.map(game => <WerewolfGameCard key={game.id} game={game} />)}
+            {filteredWerewolf.map(game => <WerewolfLibraryCard key={game.id} game={game} />)}
           </EpisodeShelf>}
           {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", filtered] as const] : Array.from(filtered.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).filter(([, items]) => items.length > 0).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>
             {items.map(game => <GameCard key={game.id} game={game} onJoin={onJoin} canFill={canFill} canStart={canStart} canStop={canStop} canHide={canHide} onRefresh={refreshGames} />)}

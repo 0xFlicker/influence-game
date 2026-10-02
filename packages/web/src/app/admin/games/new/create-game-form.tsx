@@ -854,7 +854,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
           providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode });
-        router.push(`/werewolf/${slug}`);
+        router.push(`/games/${slug}`);
       } else {
         const { slug } = await createGame(params);
         router.push(`/games/${slug}`);

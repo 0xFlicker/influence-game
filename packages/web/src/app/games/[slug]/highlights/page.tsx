@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { Nav } from "@/components/nav";
+import { HouseGameRoute } from "../house-route";
 import { gameHighlightCardImageHref } from "@/lib/game-links";
-import { getServerPostgameHighlights } from "@/lib/server-api";
-import { HouseHighlightsClient } from "./house-highlights-client";
+import { getServerGameEntry, getServerPostgameHighlights } from "@/lib/server-api";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -15,6 +14,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
   if (selectedSceneId) {
     try {
+      if ((await getServerGameEntry(slug)).gameKind !== "influence") return {title:"The House"};
       const response = await getServerPostgameHighlights(slug);
       const scene = response.highlights.scenes.find((entry) => entry.id === selectedSceneId);
       if (scene) {
@@ -58,26 +58,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 export default async function HouseHighlightsPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const selectedSceneId = sceneParam(searchParams ? await searchParams : {});
-  let initialHighlights: Awaited<ReturnType<typeof getServerPostgameHighlights>> | undefined;
-
-  try {
-    initialHighlights = await getServerPostgameHighlights(slug);
-  } catch (err) {
-    console.error(`[HouseHighlightsPage] SSR fetch failed for slug="${slug}":`, err);
-  }
-
-  return (
-    <div className="min-h-screen">
-      <Nav />
-      <main className="mx-auto w-full max-w-6xl px-5 py-8 sm:px-6 sm:py-10">
-        <HouseHighlightsClient
-          gameSlug={slug}
-          initialResponse={initialHighlights}
-          selectedSceneId={selectedSceneId}
-        />
-      </main>
-    </div>
-  );
+  return <HouseGameRoute slug={slug} mode="highlights" scene={selectedSceneId ?? undefined} />;
 }
 
 function sceneParam(params: { scene?: string | string[] }): string | null {

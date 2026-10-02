@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import type { HouseHighlightPlayerRef, HouseHighlightSceneCard } from "@/lib/api";
-import { getServerPostgameHighlights, resolveServerApiUrl } from "@/lib/server-api";
+import { getServerGameEntry, getServerPostgameHighlights, resolveServerApiUrl } from "@/lib/server-api";
 import { houseHighlightGeneratedBackgroundAsset } from "../../../components/house-highlights-backgrounds";
 import { sceneForCardImage } from "../card-image-data";
 import {
@@ -49,6 +49,7 @@ export async function GET(request: Request, context: RouteContext) {
   try {
     const response = await cardImageRenderQueue.run(renderKey, async () => {
       try {
+        if ((await getServerGameEntry(slug)).gameKind !== "influence") return new Response(null, {status:404, headers:FALLBACK_CACHE_HEADERS});
         const response = await getServerPostgameHighlights(slug);
         const scene = sceneForCardImage(response, sceneId);
 

@@ -46,7 +46,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
     if (!game) return c.json({ error: "Werewolf game not found" }, 404);
-    if (!game.startedAt) return c.json({ error: "This game has not started. Open its Werewolf casting lobby.", href: `/werewolf/${game.slug}` }, 409);
+    if (!game.startedAt) return c.json({ error: "This game has not started. Open its Werewolf casting lobby.", href: `/games/${encodeURIComponent(game.slug)}` }, 409);
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
     const roles = c.get("userRoles") ?? [], permissions = c.get("userPermissions") ?? [];
     return c.json({ id: game.id, slug: game.slug, status: game.status, hidden: Boolean(game.hiddenAt), createdAt: game.createdAt, endedAt: game.endedAt,

@@ -1,4 +1,3 @@
-import { Nav } from "@/components/nav";
 import type {
   GameDetail,
   GameWatchReplayFrame,
@@ -9,7 +8,6 @@ import {
   getServerGameReplayWatchFrames,
   getServerGameTranscript,
 } from "@/lib/server-api";
-import { GameViewer } from "../game-viewer";
 
 export async function loadReplayPageData(slug: string): Promise<{
   initialGame: GameDetail | undefined;
@@ -33,41 +31,4 @@ export async function loadReplayPageData(slug: string): Promise<{
   }
 
   return { initialGame, initialMessages, initialReplayFrames };
-}
-
-export function ReplayPageShell({
-  slug,
-  initialGame,
-  initialMessages,
-  initialReplayFrames,
-  startSequence,
-}: {
-  slug: string;
-  initialGame: GameDetail | undefined;
-  initialMessages: TranscriptEntry[] | undefined;
-  initialReplayFrames: GameWatchReplayFrame[] | undefined;
-  startSequence?: number;
-}) {
-  return (
-    <div className="flex min-h-screen flex-col">
-      <Nav />
-
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">
-            {initialGame?.slug ?? slug}
-          </h1>
-        </div>
-
-        <GameViewer
-          gameId={slug}
-          completedMode="replay"
-          initialGame={initialGame}
-          initialMessages={initialMessages}
-          initialReplayFrames={initialReplayFrames}
-          startSequence={startSequence}
-        />
-      </main>
-    </div>
-  );
 }

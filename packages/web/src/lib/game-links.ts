@@ -29,8 +29,23 @@ export function gameResultsHref(gameIdOrSlug: string, anchor?: string): string {
   return `${gameHref(gameIdOrSlug)}/results${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
-export function gameReplayHref(gameIdOrSlug: string, anchor?: string): string {
-  return `${gameHref(gameIdOrSlug)}/replay${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+export type ReplayAudience = "mystery" | "omniscient";
+export function parseReplayAudience(value: string | string[] | undefined): ReplayAudience | undefined | "invalid" {
+  return value === undefined ? undefined : value === "mystery" || value === "omniscient" ? value : "invalid";
+}
+export function gameReplayHref(gameIdOrSlug: string, anchor?: string, audience?: ReplayAudience): string {
+  return `${gameHref(gameIdOrSlug)}/replay${audience ? `?audience=${audience}` : ""}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+}
+
+/** Stable audience-local source position, never a presentation cue or speech-page index. */
+export function werewolfMomentHref(gameIdOrSlug: string, audience: ReplayAudience, cursor: number): string {
+  if (!Number.isSafeInteger(cursor) || cursor < 1) throw new Error("Invalid replay cursor");
+  return `${gameReplayHref(gameIdOrSlug, undefined, audience)}&cursor=${cursor}`;
+}
+export function parseReplayCursor(value: string | string[] | undefined): number | undefined | "invalid" {
+  if (value === undefined) return undefined;
+  const cursor = typeof value === "string" ? parseReplaySequenceParam(value) : undefined;
+  return cursor !== undefined && cursor > 0 ? cursor : "invalid";
 }
 
 /**

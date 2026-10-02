@@ -1,7 +1,7 @@
 ---
 title: House game entry task specifications
 type: refactor
-status: proposed
+status: implemented
 date: 2026-10-02
 roadmap_slice: W0
 ---
@@ -20,6 +20,10 @@ flowchart LR
   T5 --> T6
   T6 --> T7["HE-07 Regression and visual proof"]
 ```
+
+## Implementation update — 2026-10-02
+
+W0 and the small R35 core follow-up are implemented on `codex/werewolf`. See [verification, operator notes and outstanding boundaries](../reviews/2026-10-02-house-game-entry-implementation.md) and [integration knowledge for a third game](../solutions/architecture-patterns/house-game-entry-and-replay-moments.md). The original scope below records the reviewed design; R35 was subsequently authorized alongside implementation. Broader Werewolf Results, MCP, editorial and visibility parity remain separate roadmap slices.
 
 ## HE-01 — visible game identity
 
@@ -44,7 +48,7 @@ flowchart LR
 
 - Extend the existing replay helper with optional typed audience, preserving Influence anchors/sequence callers.
 - Follow the plan's lifecycle/URL table: missing audience opens choice, explicit audience starts Werewolf, invalid/repeated audience does not load the player. Waiting always returns to casting; replay mode redirects preserve only valid audience.
-- Keep Influence sequence links unchanged; Werewolf sequence-path links return not found. Track the missing shared share-at-moment action and Werewolf link/initial-seek support in [R35](../refactor-queue.md#r35-share-the-current-replay-moment-across-house-game-players), a focused W0 follow-up that Results/MCP will reuse.
+- Keep Influence sequence links unchanged; Werewolf sequence-path links return not found. The authorized [R35](../refactor-queue.md#r35-share-the-current-replay-moment-across-house-game-players) core adds the shared share action and audience-bound Werewolf cursor link/initial seek. Results/MCP will reuse these contracts.
 
 **Proof:** existing `packages/web/src/__tests__/replay-sequence-deep-link.test.ts` plus focused cases for encoded identifiers, audience omission/validation, repeated params, mode redirects and wrong-kind sequence paths. Influence sequence 0 stays supported.
 
@@ -91,7 +95,7 @@ flowchart LR
 
 - Resolve identity before replay-specific data loads. Keep Influence transcript/watch-frame boot and Werewolf bounded-window boot separate.
 - Replay dispatch renders the existing full-screen watch shell directly; no extra Nav/max-width/player shell wraps it. Entry and direct-link audience choice use the site layout. The two Werewolf watch actions on episode entry already carry audience, avoiding a second chooser. No running-player audience switch.
-- Preserve current start-from-beginning behavior and load saved viewer preferences before autoplay. Preserve separate producer preference scope. No initial-cursor prop or watch-hook algorithm change is needed.
+- Default to the beginning and load saved viewer preferences before autoplay. With the authorized R35 addition, an explicit validated cursor starts in its own source window. Preserve separate producer preference scope and existing seek cancellation/play intent.
 - Keep live append/hydrate/seek cancellation, silent-entry consumption and play intent. Entry refreshes must not remount the director/stage. Pin publication per session and clear old game/audience requests on real session change.
 - Reuse shared watch shell, inspector, cast, thinking, transport and fullscreen unchanged unless integration requires a narrow fix. Keep MCP banner verbatim. Move game-specific implementation, not game semantics into the shared clock.
 - Relocate all imports, including producer scene-preview and test imports, without changing production authorization/publication.
@@ -135,7 +139,7 @@ Run `bun run test`, `bun run test:postgres`, `bun run check` after focused cover
 
 For visual inspection, use an existing local Werewolf episode plus an Influence episode, and narrow/wide viewport screenshots. Verify network/request behavior as well as appearance; screenshots cannot prove audience safety. Record any environment blocker and exact unproven acceptance item. No claim of deployment or full Werewolf parity.
 
-Update the pillar document W0 status only after acceptance, linking a dated implementation report with checks, browser evidence and remaining W1–W9/A2 boundaries. R35 is the near-term share-at-moment follow-up and does not depend on W1/W2; results and MCP should consume that common contract. W1 result facts and W2's external MCP contract remain separately scoped.
+Update the pillar document W0 status only after acceptance, linking a dated implementation report with checks, browser evidence and remaining W1–W9/A2 boundaries. R35 core is included; its documented verification/policy follow-ups remain independent of W1/W2. Results and MCP should consume the common share action and typed source-link contracts. W1 result facts and W2's external MCP contract remain separately scoped.
 
 ## Commit checkpoints
 
