@@ -3,30 +3,33 @@ title: House admin and production experience
 type: ideation
 status: active
 date: 2026-09-30
+updated: 2026-10-02
 ---
 
 # House admin and production experience
 
 ## Product intent
 
-Make House administration a coherent, comfortable application for running games and producing something enjoyable to watch. Werewolf and Influence should share navigation, presentation quality and operational services while retaining their own rules and lifecycle. Admin screens are user-facing product surfaces.
+Make The House one coherent application for playing, watching, understanding and producing games. The goal is Werewolf parity with Influence through shared routes, UI modules and workflows. The user should not have to navigate a separate Werewolf application to do the same things. Game identity, art direction and actual rule differences remain visible where useful; implementation differences belong behind the House experience. Admin screens are user-facing product surfaces.
 
-The current priority is continuity: pages disappear during section changes, Werewolf looks disconnected from the House admin, and useful evidence is buried in JSON. The longer-term direction is a production studio organized around selected scenes and a player preview, with operational jobs available separately.
+The initial continuity work and shared replay integration are implemented locally. The current priority is completing Werewolf’s place in The House: a game people can discover, cast, watch, understand at the ending, inspect with MCP, review, and share. The broader production studio remains important, but its redesign is not a prerequisite for finishing that loop.
 
-This document owns the four-pillar task map and product boundaries. Each pillar gets a scoped implementation plan when it becomes active. It is not authorization to implement all four at once.
+The player shares its shell and playback infrastructure, and visuals/playback have improved for both games. Separate Werewolf routes and page orchestration remain integration debt. Results presentation still needs a stronger finish. The integration roadmap below records remaining product work separately from the four admin/production pillars; it is a living inventory, not a claim that every historical request has been recovered.
+
+This document owns the four-pillar task map, the Werewolf integration roadmap, and product boundaries. Each selected slice gets a scoped implementation plan. Updating this inventory is not authorization to implement every slice at once.
 
 ## Task map
 
 | ID | Pillar | Status | Deliverable |
 | --- | --- | --- | --- |
 | A1 | Fix continuity and bring Werewolf into House admin | Implemented locally; acceptance evidence recorded | Persistent navigation and game workspace, continuous section changes, House styling, readable cost details |
-| A2 | Turn Production into a studio | Direction established; needs its own plan | Scene/asset browser, selected preview and inspector, job center, then timeline and playback |
+| A2 | Turn Production into a studio | Brainstorm retained; sequencing follows the Werewolf integration pass | Scene/asset browser, selected preview and inspector, job center, then timeline and playback |
 | A3 | Improve detail display across admin | Direction established; follows A1 evidence | Reusable compact metadata and domain receipts in remaining operational screens |
-| A4 | Improve game visualization for Influence and Werewolf | Direction established; needs capability inventory | Consistent game workspaces with explicit game-specific state and presentation |
+| A4 | Improve game visualization for Influence and Werewolf | Shared player implemented; results and broader product integration remain | Consistent game workspaces with explicit game-specific state and presentation |
 
 A1 implementation plan: [Admin continuity and Werewolf integration](../plans/2026-09-30-002-refactor-admin-continuity-and-production-studio.md).
 
-A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). A1 is implemented and locally validated; its task checklist retains comparative measurement and extended browser-matrix evidence follow-ups. A2–A4 remain unimplemented.
+A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). A1 is implemented and locally validated; its task checklist retains comparative measurement and extended browser-matrix evidence follow-ups. The A2 studio and A3 general metadata work remain pending; A4 now includes the implemented shared player and the remaining integration roadmap below.
 
 Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30-001-feat-werewolf-admin-production-workspace.md).
 
@@ -36,7 +39,7 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 
 - Shared House black surfaces, persistent admin navigation and consistent game identity/header.
 - Top-level areas: Games, Production, Operations and People; local navigation owns their routes. Visibility follows permissions and direct routes enforce access.
-- Werewolf becomes a game choice under Games. Keep existing list APIs and game engines separate.
+- Werewolf becomes a game choice under Games. A1 kept existing list APIs separate to bound that completed slice; this is not the target product boundary. W0 unifies House entry and UI contracts while the game engines retain their own rules.
 - Preserve loaded data during refresh, prepare section requests, eliminate the detail-to-section request waterfall, and make cold loading and errors local.
 - Immediate prepared section swaps inside a stationary frame. The [wheel effect is saved](2026-09-30-top-level-wheel-transition.md) for a future top-level swipe interaction; it is too deep in the hierarchy on Werewolf section tabs.
 - Replace the Werewolf cost JSON wall with readable model usage and call receipts, reusing existing cost presentation components.
@@ -45,7 +48,9 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 
 ## A2 — production studio
 
-Active pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). First, the user selected a [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) to establish the complete player the studio will embed. The separate viewer was reviewed as a prototype; the [reviewed shared House player integration plan](../plans/2026-10-01-001-refactor-shared-house-watch-player.md) now specifies replacement of its playback shell while preserving production improvements.
+Pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). The [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) led to the implemented [shared House player integration](../plans/2026-10-01-001-refactor-shared-house-watch-player.md). Reuse that player in the studio. The separate prototype is not the target architecture.
+
+Sequencing update (2026-10-02): finish the Werewolf product integrations below through existing production services and minimal contextual controls. Do not make MCP, results, House Cuts, trailers or owner review wait for the scene-browser/job-center redesign. Feed their concrete requirements into A2; preserve its eventual single production home for both games.
 
 **User outcome:** browse a game's material, select a moment, inspect what viewers would see, and make production decisions in context.
 
@@ -88,8 +93,8 @@ The 2026-10-01 viewer-plan review confirmed that the isolated Werewolf worktree 
 
 | Task | Pending implementation | UI and backend locations to revisit |
 | --- | --- | --- |
-| A4-MCP | Implement the frozen Werewolf MCP contract after gameplay/event iteration settles enough to support it. Use the [existing MCP inspection plan](../plans/2026-09-27-001-feat-werewolf-mcp-inspection-plan.md): refresh its version assumptions against the then-current canonical rules, implement discovery/rules/audience-safe inspection, and verify access, replay cursors and Influence regression behavior. Do not freeze today's rapidly changing event shape merely to ship the viewer. | Shared `McpBanner` in `packages/web/src/app/games/[slug]/components/match-watch-shell.tsx`, rendered above the theater; desktop “Don't just watch. Cross-examine this game with your AI.”, mobile “Cross-examine with AI”, CTA “Analyze this game”, link `/get-mcp`. Setup destination: `packages/web/src/app/get-mcp/page.tsx` and `get-mcp-client.tsx`. Backend: `packages/api/src/game-mcp/read-model.ts` and game MCP tools. Preserve all banner copy/behavior now. |
-| A4-EVIDENCE | Specify and implement Werewolf evolving strategy state and its public delivery separately from viewer extraction. Inventory missing inspector capabilities without fabricating historical evidence. Werewolf currently has frozen starting strategy; Influence has private evolving strategy machinery but its public strategy-card projection is empty. The implemented Omniscient-only thinking slice is available for reuse now. | Shared `InspectorPanel` Thinking/Strategy sections in `match-watch-shell.tsx`, intelligence display model `match-watch-intelligence-model.ts`, API `services/public-watch-intelligence.ts`; Werewolf `services/werewolf-thinking.ts` and prototype `app/werewolf/werewolf-thinking.tsx` until extraction. Follow these mappings to shared replacements. Preserve Mystery/Omniscient data boundaries throughout. |
+| A4-MCP | Implement the frozen Werewolf MCP contract after gameplay/event iteration settles enough to support it. Use the [existing MCP inspection plan](../plans/2026-09-27-001-feat-werewolf-mcp-inspection-plan.md): refresh its version assumptions against the then-current canonical rules, implement discovery/rules/audience-safe inspection, and verify access, replay cursors and Influence regression behavior. Do not freeze today's rapidly changing event shape merely to ship the viewer. | Shared banner in `packages/web/src/components/watch/watch-shell.tsx`, composed by the game adapters and rendered above the theater; desktop “Don't just watch. Cross-examine this game with your AI.”, mobile “Cross-examine with AI”, CTA “Analyze this game”, link `/get-mcp`. Setup destination: `packages/web/src/app/get-mcp/page.tsx` and `get-mcp-client.tsx`. Backend: `packages/api/src/game-mcp/read-model.ts` and game MCP tools. Preserve all banner copy/behavior now. |
+| A4-EVIDENCE | Specify and implement Werewolf evolving strategy state and its public delivery separately from viewer extraction. Inventory missing inspector capabilities without fabricating historical evidence. Werewolf currently has frozen starting strategy; Influence has private evolving strategy machinery but its public strategy-card projection is empty. The implemented Omniscient-only thinking slice is available for reuse now. | Shared `components/watch/watch-inspector.tsx` and `watch-thinking.tsx`; Influence adapter `match-watch-shell.tsx`, display model `match-watch-intelligence-model.ts`, API `services/public-watch-intelligence.ts`; Werewolf adapter `app/werewolf/werewolf-viewer.tsx`, `werewolf-thinking.tsx` and API `services/werewolf-thinking.ts`. Preserve Mystery/Omniscient data boundaries throughout. |
 
 These are implementation gaps recorded for follow-through, not instructions to advertise an incomplete Werewolf experience in the current UI. The shared-player plan remains responsible for playback, controls, cast/inspector integration and the reported presentation defects.
 
@@ -105,10 +110,202 @@ These are implementation gaps recorded for follow-through, not instructions to a
 
 ## Sequence and decision record
 
-Start with A1. Plan A2 from the stable workspace. Extract A3 patterns from actual repeated evidence rather than generalizing in advance. Plan A4 after the first workspace and studio patterns are proven; inventory can happen earlier without starting the migration.
+A1 established the workspace; the shared-player side quest subsequently delivered part of A4 ahead of A2. As of 2026-10-02, prioritize the Werewolf integration sequence below before committing to the full studio rebuild. Extract A3 patterns from repeated evidence while doing that work. A2 then consolidates proven game and media workflows rather than guessing their requirements.
 
-Confirmed during source audit: the app already has a QueryClient provider and Motion; existing cost components can be extracted; the current Reviews destination is agent learning review and belongs under People. Performance timings and wheel-motion comfort still need browser validation during implementation.
+Confirmed during source audit: the app already has a QueryClient provider and Motion; existing cost components can be extracted; the current Reviews destination is agent learning review and belongs under People. Comparative performance evidence remains recorded in the A1 checklist. The wheel effect is retained only for a future top-level interaction, not nested admin section changes.
 
 ### Shared player implementation map (2026-10-01)
 
 The public Werewolf route now composes `components/watch/watch-shell.tsx`, `watch-cast.tsx`, `watch-inspector.tsx`, `watch-transport.tsx`, shared fullscreen/keyboard hooks and `watch-director.ts`. Influence's adapter remains `games/[slug]/components/influence-presentation-director.ts`; Werewolf's controller/policy/stage remain under `app/werewolf/`. The MCP banner lives once in the shared shell, with its original copy and `/get-mcp` link. A4-MCP (frozen external inspection contract) and A4-EVIDENCE (evolving strategy capture) remain pending. The new internal HTTP watch-window DTO implements neither. See [implementation evidence](../reviews/2026-10-01-shared-house-watch-player-implementation.md).
+
+
+## Werewolf integration roadmap — 2026-10-02
+
+**Outcome:** Werewolf reaches Influence parity inside the same House experience across discovery, casting, viewing, results, analysis, owner improvement and sharing. Both games live under `/games/[slug]` and use the same House page families and workflows. Game-specific modules supply rules, knowledge, faction outcomes, strategic evaluation and scene treatments to those shared surfaces. This does not automatically mean adding ratings, seasons, a Daily Free queue or every Influence mechanic.
+
+This source pass was made on `codex/werewolf` at `62c7a54e`. “Implemented” below means present in this local worktree, supported by the linked implementation records; it is not a deployment or new paid-provider acceptance claim.
+
+### What we are building on
+
+| Area | Current baseline | Remaining boundary |
+| --- | --- | --- |
+| Entry and casting | Both games in `/games` and `/games/new`; shared agent selection and configuration; persistent Werewolf casting lobbies; shared character identity with separate strategy notes | Move the current `/werewolf/:slug` experience into the canonical `/games/[slug]` route family. Replace separate Werewolf page/card orchestration with House UI modules, and update game links, ownership/history and completion actions. This is a required integration slice, not optional URL cleanup. |
+| Gameplay | Canonical Werewolf rules v7, durable execution, sequential public threads, pack negotiation, role actions, simulation and cost evidence | Prompt tuning, additional roles and balance experiments are separate from product integration. |
+| Watch | Shared House shell, cast/inspector, transport, fullscreen, original speech, Omniscient thinking, fixed audience sessions, saved thinking/order and Werewolf autoplay | Finish result scenes and Werewolf night presentation; continue targeted playback regression coverage. |
+| Visual production | Automatic scene preparation, frozen character references, individual introductions, living-cast daytime scenes, multi-panel harmonization, producer repair/regeneration, verified publication and audience-filtered delivery | Wolf-form assets and bespoke pack/night outcome staging are still design work. Shared studio/library navigation is pending. |
+| Operations | Werewolf Overview/Production/Costs/Activity inside House admin | Broader cross-game production and evidence consolidation remains A2/A3. |
+| After the match | Werewolf canonical faction result and replay ending exist | Full House results, MCP match inspection, owner review, House Cuts and trailers need Werewolf integration. An ending card is not the whole completed-game experience. |
+
+Source pointers: `packages/api/src/services/werewolf-lobbies.ts`, `werewolf-games.ts`, `werewolf-visual-runtime.ts`, `werewolf-production.ts`, `werewolf-presentation.ts`; `packages/web/src/app/games/new/page.tsx`, `app/games/werewolf-game-card.tsx`, `app/rules/`, `app/werewolf/`, `components/watch/`; [visual mode](../visual-mode.md) and [shared-player implementation evidence](../reviews/2026-10-01-shared-house-watch-player-implementation.md).
+
+### Remaining slices
+
+| ID | Deliverable | Completion evidence | Dependencies |
+| --- | --- | --- | --- |
+| W0 | One House game entry and modular UI | Both kinds resolve through `/games/[slug]` and the existing replay/results/highlights route family, using shared entry, casting, player and navigation modules | Inventory current route, transport and metadata assumptions; explicit game adapters |
+| W1 | Results and completed-game experience | A finished Werewolf game has a useful result destination, replay return links and understandable faction/player outcomes on desktop/mobile | Canonical Werewolf projection; existing House results UI inventory |
+| W2 / A4-MCP | MCP integration | Discover, read rules, inspect current/replayed Werewolf history and follow valid game-specific links through the existing server | Refresh the frozen MCP plan against current rules, casting and thinking contracts |
+| W3 | Postgame review and owner learning | An owner can review a Werewolf performance and deliberately apply a Werewolf strategy proposal without changing Influence strategy | W1 facts plus role/knowledge-aware evidence, explicit eligibility and revision policy |
+| W4 | House Cuts and shareable moment cards | Human-approved selection algorithms and analysis, demonstrated through varied, evidence-linked shareable cards | W1 facts and audience-safe dialogue; explicit editorial review gate |
+| W5 | Trailer and episode release assets | Human-approved trailer approach and new music, proven in a playable Werewolf trailer with cost/job evidence and publication | W4 selected material; W9 art direction; existing media pipeline; local music model and human-operated Suno |
+| W9 | Werewolf art style exploration | Dedicated human-reviewed exploration establishes distinct default rooms/backgrounds and a reusable visual direction within The House | Representative characters, shared player layouts and existing image production |
+| W6 | Werewolf-specific night production | Omniscient pack and night scenes show the intended cast/treatment; Mystery remains unspoiled; both work without generated imagery | Existing player/production; W9 art direction and separate night-scene design |
+| W7 | House-wide integration audit | Completion actions, game history, profile links, rules, production discovery and sharing land in the right game experience | Inventory now; close gaps as W1–W6 land |
+| W8 | Integration and release proof | One ordinary Werewolf journey works end to end, with failures/retries and Influence regressions checked | All selected launch slices, including creative approvals; explicit dispositions for deferred items |
+
+These are high-level tasks, not simultaneous implementation projects. A4-EVIDENCE (evolving in-game strategy) remains separately scoped: captured thinking and frozen starting strategy already exist, but continuous strategy updates must not be fabricated to satisfy an inspector or review.
+
+### W0 — one House experience, game modules underneath
+
+Focused implementation planning: [W0 plan](../plans/2026-10-02-001-refactor-house-game-entry.md) and [HE-01–07 task specifications](../plans/2026-10-02-002-house-game-entry-tasks.md). Both are proposed; implementation has not begun. They bound W0 to shared entry/casting/cards/replay and defer Werewolf results, MCP and editorial pipelines to their own slices.
+
+**Confirmed direction (2026-10-02):** retire the separate Werewolf UI application boundary. `/games/[slug]` is the canonical game entry for both kinds. Use the existing `/games/[slug]/replay`, `/results` and `/highlights` family for the corresponding House experiences, with audience/cursor context where applicable. Preserve the shared route’s lifecycle behavior: casting before start, live viewing, and completed episode entry with replay/results. The exact audience-choice placement must fit that flow, not bypass it through a second game page.
+
+This is more than moving the Werewolf page into another folder:
+
+- Resolve a slug to authorized game identity and `gameKind` before choosing its data/presentation adapter. The route, metadata loader and navigation must no longer assume every game is Influence or probe one game service and treat failures as another game kind.
+- House owns the entry/lifecycle shell, casting layout and agent picker, library cards, player shell/controls/settings, result/review/share navigation, loading/error states and responsive behavior. Both games plug into those modules; do not carry forward a second Werewolf page tree or copied controls under a shared URL.
+- Influence and Werewolf own their canonical projections, permitted audiences, configuration/rule sections, inspector details, result facts and specialized scenes. Use typed, explicit adapters/components at those boundaries. Keep their timing and rule interpretation out of the common player; keep shared behavior out of duplicated game wrappers.
+- Inventory the existing UI and public read contracts before extraction. Share the smallest stable contract that supports both real games, preserving discriminated game-specific data. Internal engines, event stores and service endpoints need not be identical for the House UI to be coherent. Avoid a speculative plugin registry or a lowest-common-denominator game model.
+- Update `game-links.ts`, server loaders, game cards, casting redirects, episode/replay/results/highlight links, simulation launch output, MCP follow-ups, producer preview links, canonical/Open Graph metadata and tests in the same route cutover. Preserve audience, replay position, publication and authorization semantics. Distinct game artwork can be supplied to a shared card template.
+- Remove obsolete `/werewolf/[slug]` page ownership and superseded UI after callers move. No permanent parallel route or compatibility UI is part of this plan. Historical docs may identify former source locations; active user instructions and generated links must use House routes.
+- Apply the same ownership rule to admin and production as their slices land: one House workspace with game modules. W0 does not require the entire A2 studio to ship, but later work must not create another Werewolf-only results, review or production application.
+
+```mermaid
+flowchart TD
+  Entry["/games/[slug] · House game identity and lifecycle"] --> UI["House entry, casting, player, results and sharing UI"]
+  UI --> Influence["Influence data and presentation modules"]
+  UI --> Werewolf["Werewolf data and presentation modules"]
+  Influence --> InfluenceFacts["Influence canonical rules and projections"]
+  Werewolf --> WerewolfFacts["Werewolf canonical rules and projections"]
+```
+
+**Done when:** a viewer or owner can use the same entry points and controls for either game; game differences appear in the appropriate content rather than a separate navigation system. Direct links, refreshes, audience selection, saved preferences, replay seeking, completed entry and social metadata work through House routes. Test both games against the common UI contract and their distinct knowledge/lifecycle rules.
+
+**Inspect when planning:** `packages/web/src/app/games/[slug]/page.tsx`, `replay/`, `results/`, `highlights/`, `game-viewer.tsx`; `app/games/episode-landing.tsx`, `werewolf-game-card.tsx`; `app/werewolf/[slug]/page.tsx`, `werewolf-entry.tsx`, `werewolf-viewer.tsx`; `components/watch/`, `lib/game-links.ts`, `lib/server-api.ts`, `lib/werewolf-api.ts`. These are current source locations to consolidate, not the proposed final package structure.
+
+### W1 — make the ending worth reaching
+
+- Separate canonical outcome facts from presentation: faction winner, every winning teammate including eliminated members, revealed roles, survival/elimination chronology, day ballots, night outcomes and day-limit draw. Cancellation or execution failure is not a draw or victory.
+- Extend the shared `/games/[slug]/results` destination with Werewolf result modules and stronger hierarchy: who won and why, cast/roles, a readable day/night recap and evidence links into the replay. The result scene in the player and the full result page should agree. Audit links from game cards, the end of playback and agent histories.
+- Build Werewolf-specific result/analysis projections over its canonical history; reuse result presentation primitives where appropriate. Do not fill Influence’s single-winner, finalist, jury or alliance fields with invented equivalents.
+- Make spoiler handling explicit: opening a completed match in Mystery still starts unspoiled; opening Results deliberately reveals the ending. Cards/metadata outside Results must follow their chosen spoiler policy.
+- Consume the shared share-at-moment contract tracked in [R35](../refactor-queue.md#r35-share-the-current-replay-moment-across-house-game-players). This is a product requirement and near-term W0 follow-up, not blocked on W1/W2. Werewolf positions are audience-local, unlike Influence canonical sequences; results/MCP/cards must use the same game-aware link helper.
+- Anchor the subsequent review, Cuts and trailer work to stable game/actor/moment references. Interpretive commentary can live beside those facts without becoming the game record.
+
+**Inspect when planning:** `packages/api/src/services/completed-game-results.ts`, `postgame-analysis.ts`; `packages/engine/src/postgame-analysis.ts` and `werewolf/observation.ts`; `packages/web/src/app/games/[slug]/results/page.tsx`, `components/completed-results-*.tsx`, `app/werewolf/replay-moment.ts` and `werewolf-watch-stage.tsx`. The existing results route and analysis shapes are Influence-oriented; adaptation is substantive work, not changing a page title.
+
+### W2 — finish the MCP promise
+
+Implement [the existing Werewolf MCP plan](../plans/2026-09-27-001-feat-werewolf-mcp-inspection-plan.md) after a focused refresh, not by treating its older payload examples as current. It still describes beat/message budgets, older creation assumptions, and excludes thinking. Current rules use ordered-recipient threads and checkpoint/final ballots; casting now has a waiting state; Omniscient thinking has a separate user-enabled path. Resolve those differences explicitly before freezing the external contract.
+
+Cover catalog discovery, rules, archetype guidance, audience-safe current/replay inspection, stable cursors, completed outcomes and valid next actions. Prefer shared House discovery and inspection workflows with game dispatch underneath; review the proposed game-specific tool names against that goal before implementing them. All generated web follow-ups use the canonical House routes. Keep authorization distinct from audience choice. Map which owner/producer diagnostic tools apply, which are game-specific, and which should return a typed wrong-game response. Later W3/W4/W5 capabilities need their own MCP parity entries rather than an assumption that the first reader covers everything.
+
+Keep the shared MCP banner verbatim while working toward the planned state, as previously agreed. Record any omitted release capability here and assess it at release review rather than churning temporary UI copy now.
+
+**Inspect when planning:** `packages/api/src/game-mcp/read-model.ts`, `server.ts`, `contracts.ts`, `rules.ts`, `app-resource.ts`, `tool-authorization.ts`; Werewolf observation/thinking/watch contracts and HTTP services. The read-model currently filters catalog/game resolution to Influence; profile tools already accept `werewolfStrategyStyle`, which does not constitute match inspection.
+
+### W3 — review the performance, then improve the right strategy
+
+“Review” here includes the completed-game analysis experience and the owner’s agent-learning/revision loop. Producer image review remains part of Production. The public recap belongs in W1; private coaching and applying changes belong here.
+
+- Evaluate decisions with the actor’s role, faction objective and information available at that turn. A dead villager can win; a surviving wolf can play badly. Separate decision quality from outcome luck and avoid hindsight leakage from the final role reveal.
+- Preserve evidence provenance for accepted speech, ballots, role actions, captured thinking and frozen strategy. Missing evidence is missing, not a reconstructed inner monologue. Do not require evolving strategy machinery as a prerequisite to reviewing an otherwise complete game.
+- Extend the same owner review UI with Werewolf evidence/evaluation modules, retaining selection, evidence preview, durable jobs, costs, readback and deliberate apply. Make review records and evidence game-specific; proposals target `werewolfStrategyStyle`. Preserve shared identity, Influence notes and Influence review/revision meaning.
+- Plan eligibility, credits/pricing, stale-review detection and game-specific strategy fingerprints explicitly. Existing eligibility uses free-track completion and Analytical Revision semantics; simply making Werewolf custom games appear in the picker is insufficient. Do not silently award Influence learning credits or apply its survival-based evidence classification.
+- Web and MCP should expose the same authorized review/apply capability. Preserve owner-only access even when an operator also has producer permission.
+
+**Inspect when planning:** `packages/api/src/services/owner-learning-{eligibility,evidence,review,apply,public}.ts`, `game-mcp/owner-learning.ts`; `packages/web/src/app/dashboard/agents/[id]/review/`; [owner-learning architecture and lifecycle](../solutions/architecture-patterns/owner-learning-loop.md). The current apply service writes `strategyStyle`; this must not be reused unchanged for Werewolf.
+
+### W4 — House Cuts: a more expansive editorial eye
+
+House Cuts are the shareable cards of interesting moments, with enough context to work outside the full replay. Both games use the same House gallery, card, share and editorial workflows, supplied by their game modules. The user wants discovery to be less mechanical. This is a shared editorial improvement for both games, with Werewolf as a new source, not merely a second list of hard-coded event triggers.
+
+**Look for:** a credible bluff; a claim that quietly changes the room; an unanswered question; a conspicuous dodge; trust earned and later betrayed; a mistaken accusation that snowballs; a restrained player finally speaking up; an excellent or disastrous read; a funny juxtaposition; a revealing exchange with no immediate elimination. A moment may span several replies or return to an earlier thread for its payoff. These are editorial lenses, not a mandatory category quota.
+
+Proposed selection flow to explore in the scoped plan:
+
+1. Give the editorial pass audience-approved dialogue and canonical event context across the game, with stable references. Use mechanical turning points as useful candidates, not the only admissible pool. Longer games need bounded coverage across days/threads, not only the final windows.
+2. Let a model or producer propose moments and explain why they are interesting. Use a strict candidate schema for participants, source spans, exact quotations, editorial angle, spoiler level and optional outcome references. Reading prose to discover a story is welcome; it does not create a role fact, authoritative intention or causal result.
+3. Validate references, quotes and factual claims against the record; distinguish an interpretation such as “this seems to unsettle the room” from a verified action. Avoid claiming an agent intended something unless the permitted evidence supports it. Review for misleading omissions and context that reverses a quote’s meaning.
+4. Select a varied, concise set rather than several cards about the same vote. Allow a striking standalone exchange without forcing every card into the existing setup/conflict/payoff or alliance/jury template. Keep meaningful empty/thin results instead of inventing drama.
+5. Publish cards with clear character identity, readable dialogue/framing, game identity, share image and deep link to the moment in the correct audience. Omniscient cuts and Mystery-safe cuts must remain distinguishable in imagery, captions, metadata and destination—not just a toggle on the landing page.
+
+Prototype selection against real completed Influence and Werewolf games before committing to an algorithm. Compare candidate coverage, human editorial preference, repetition, quote/context fidelity, spoilers and model cost. Keep selection/edit versions and producer override/approval separate from game truth. Generation must be an explicit recorded job, not a paid side effect of loading Results or scrubbing.
+
+**Human approval gate — selection algorithms and analysis.** Before adopting the House Cut selection/analysis approach as a production default, prepare a concrete review packet: the candidate-discovery and ranking method, prompts/schemas and relevant versions, representative game analyses, selected and rejected moments with reasons, source evidence, example finished cards, spoiler behavior, and cost/coverage findings. Include dialogue-led moments as well as mechanical events from both games. The human reviews whether the analysis is insightful and faithful, whether the selection is interesting and varied, and what it systematically misses.
+
+Exploration and prototypes produce the reviewable material; they do not imply approval. Record explicit human approval of the identified approach/version and examples before operational rollout. Material changes to selection algorithms or analytical prompts return through this gate. This design/quality gate is separate from the existing approval/publication of individual Cuts; neither substitutes for the other. Automated factual validation remains necessary but cannot approve editorial quality on the human’s behalf.
+
+**Inspect when planning:** `packages/engine/src/postgame-highlights/{build,candidates,selection,types,visual-briefs}.ts`, `packages/api/src/services/postgame-highlights.ts`; `packages/web/src/app/games/[slug]/highlights/`, `components/house-highlights-{card,view,model}.tsx`. Current candidates primarily derive from structured Influence analysis, alliances, jury and vote events; this is exactly the expansion being requested.
+
+### W5 — trailer and release assets
+
+- Turn the selected editorial material into a short episode trailer with Werewolf-specific framing and faction stakes. Do not assume the Influence jury/winner ending or copy a chronological recap into a teaser.
+- Reuse the existing render manifest, media worker, storage, job/cost receipts, repair and publication path. Add the Werewolf facts/material adapter; keep cinematic timing and reusable visual treatments in the media/presentation layer.
+- Plan title, cover/poster, trailer destination and share metadata together. Decide spoiler policy before selection: a teaser and a full-spoiler recap may use the same source material differently. A published trailer must not expose hidden material through its preview image or captions accidentally.
+- Completed gameplay and ordinary results remain available while media is absent, pending or failed. Regeneration must not silently replace a published release; keep versions and deliberate publication.
+- Validate an actual playable artifact and public/private storage delivery separately from local renderer tests. No new media jobs are authorized by this roadmap update.
+
+**New music is required.** Werewolf needs its own musical direction and newly selected music; do not silently reuse the Influence trailer score as the finished Werewolf soundtrack. Explore mood, instrumentation, pacing, tension/release and ending, then audition tracks against an actual rough cut rather than judging isolated audio alone.
+
+- The user has identified an accessible local music model. The agent can use that lane during the planned music session; confirm its interface, capabilities and output handling then. No local generation has been exercised by this documentation pass.
+- Suno is a human-operated lane. Prepare the brief/prompts, requested variations and cue/duration requirements for the human; the human operates Suno and returns candidate audio. Do not plan agent-driven Suno operation or treat a pending human generation as a completed asset.
+- Compare candidate sources in the same listening review. Preserve source/version provenance and the chosen track’s use permissions with the release assets. A session does not have to wait for Suno to produce local-model candidates for review.
+- Translate the approved music into the trailer’s required duration/cue variants and mix. Reuse the render pipeline’s cue sheet and prepared-score machinery after auditing its Influence assumptions. See [the existing music cue sheet](../house-highlights-trailer-music-cue-sheet.md); its current scores are a technical reference, not the Werewolf creative choice.
+
+**Human approval gate — trailer approach, analysis and music.** Present the selection/story analysis, proposed edit/pacing rules, a representative storyboard or rough cut, new music candidates auditioned to picture, and a finished sample. Obtain explicit human approval of the trailer approach and selected score/version before treating them as production defaults or publishing the release. Record requested changes and approved artifacts. Material changes to the trailer’s analytical/editing approach or replacement music require renewed review; renderer checks alone do not satisfy this gate.
+
+**Inspect when planning:** `packages/engine/src/postgame-media/house-highlights-trailer-manifest.ts`; API `services/postgame-media*.ts` (coordinator currently selects Influence); web `remotion/house-highlights-trailer/`, `scripts/render-house-highlights-media-worker.ts`, `app/admin/admin-postgame-media.tsx`; [media pipeline learnings](../solutions/architecture-patterns/house-highlights-postgame-media-pipeline.md).
+
+### W9 — dedicated Werewolf art style exploration
+
+Schedule this as a whole creative working session when selected, rather than choosing a room prompt incidentally during implementation. Werewolf’s default room images and background styling should have their own identity. Keep House iconography, shared controls, layout and interaction conventions; supply the distinct visual world through game-specific art direction and reusable styling inputs to the shared modules.
+
+**Explore together:**
+
+- The daytime village/discussion room: setting, architecture, materials, era, palette, light, atmosphere and staging. Establish what makes it visibly different from Influence’s default House lobby without prescribing the winning aesthetic in advance.
+- The visual relationship between day rooms, dark pack meetings, night streets/stalking scenes and dawn outcomes. W6 supplies the scene requirements; this session supplies the coherent art direction.
+- Background styling in individual reveals, no-generated-image fallbacks, scene margins/blurred extensions, outcome scenes, cards and trailer/poster assets. Avoid a disconnected gray fallback world when the generated rooms have a deliberate style.
+- Character compatibility: preserve recognizable frozen character identity and test a varied cast. Decide how wolf-form variants fit the same world without changing the original shared character assets.
+- Production practicality: readable silhouettes/head anchors, space for thinking/speech, room composition across panels, harmonization, mobile crops and wide-screen framing. Evaluate inside the real House player as well as on a mood board.
+
+**Session deliverables:** a small set of materially different visual directions with references/sample images, a side-by-side comparison using the same representative cast and scenes, in-player desktop/mobile previews, and a recommended direction. After human selection, record an art brief covering palette/materials/lighting, default room/background references, prompt templates, reusable style inputs, and acceptable fallback treatments. Include the connection to W5’s music/trailer mood.
+
+**Human selection gate:** approve the concrete visual direction before making it the default for new Werewolf production. The exploration itself does not replace existing published imagery. Implementation must then connect the approved direction to automatic scene generation, producer regeneration, fallback backgrounds and release assets through the same House production services. Record this as a dependency for final W6 artwork and W5 release styling; W0 routing and factual results/MCP work can proceed independently.
+
+### W6 — finish the night’s visual identity
+
+Carry forward [the night-production brainstorm](../brainstorms/2026-10-01-werewolf-night-production-and-playback.md): reusable match-specific wolf-form character assets, dark pack meeting for two wolves, lone-wolf skip to the resolved hunt/outcome, distant stalking composition and a restrained graphic claw accent only on confirmed elimination. Protection/no agreement needs its own nonlethal outcome. Omniscient can see the pack; Mystery must not receive identifying private art or target metadata.
+
+Keep the same choreography usable with frozen character art and a dark backdrop when generated images are absent. Add automatic preparation and producer repair through existing services. Harmonization and retained scene mounts are already implemented; wolf transformation and night-outcome art are not. This work can proceed independently of the full studio redesign. Use the human-selected W9 art direction for final artwork and share assets with trailers where appropriate.
+
+### W7 — close the surrounding House gaps
+
+**Visibility parity follow-up:** one House entry policy permits anonymous public/unlisted watching and restricts private games to eligible accounts. Werewolf currently hardcodes public creation; complete visibility configuration plus listing, lobby, replay/thinking, asset and operator access together before offering private/unlisted games. Membership storage is a game implementation detail. Audit the existing Influence hidden-detail discrepancy and unlisted listing behavior; neither should become a new game-specific UI rule.
+
+Audit by user journey, not only by searching for the word Influence. W0 establishes the shared UI boundary; W7 tracks every remaining parity gap against it:
+
+- Discover/create/join/start → choose audience → watch → finish → results → inspect/review/share → return to the owned agent or another game.
+- Dashboard, public profile and game history: show Werewolf participation/outcomes without counting them as Influence career wins or ratings. Keep game identity and strategy revision references explicit.
+- Main games cards, result links, MCP setup instructions, rules navigation/Markdown, names, titles, covers, social previews and permission-aware operator actions. Maintain a parity ledger: shared capability, each game’s support, owning module, remaining work, and any deliberate product difference. An implementation omission is pending work, not automatically a legitimate game difference.
+- Production discovery: the per-game adapter supports Werewolf, but `listReplayVisualGames` in `services/visual-replay-production.ts` still lists completed Influence games. Establish a usable common entry before the larger A2 studio move; do not duplicate another producer UI.
+- Audit operational recovery, stop/hide behavior, costs and media publication from those entry points. The existing `NEXT_PUBLIC_ENABLED_GAMES` rollout configuration must agree across API and web; preserve access to existing game URLs when creation/discovery is disabled. Do not add a second flag scheme.
+- Update stale reference docs: `docs/werewolf.md` still contains pre-casting-lobby and older audience-navigation wording. Refresh affected user/operator instructions with each implementation slice, using current source as authority.
+
+Ratings, seasons, Daily Free scheduling/queueing, additional roles, balance changes, evolving in-game strategy, and an emotional-cue interpretation track remain explicit future decisions. “Fully integrated” does not silently enroll Werewolf in those systems; release planning should mark each supported, intentionally distinct, or deferred.
+
+### W8 — proof and the eventual new-game checklist
+
+For each selected slice, record the user-visible surface, canonical source/adapter, permission/audience policy, jobs/costs (if any), tests, browser evidence and remaining limitations. The release pass should demonstrate a complete ordinary game journey plus draw/cancellation, thin evidence, hidden games, missing/failed media, stale review proposals and retry/publication boundaries. Verify Influence regressions wherever shared code changes.
+
+Use this session and the implementation documents to refine a reusable new-game checklist: **House route/UI integration; art and music direction; human editorial approval; availability and discovery; casting/configuration; shared character + game strategy; execution/recovery; rules; viewer/knowledge boundaries; results/history; MCP; owner review; Cuts/shares; trailers/release assets; production/repair; costs/operations; release proof**. Treat it as a checklist with explicit game-specific decisions, not a new generic game/plugin framework. This inventory is the starting point for mining the full session, not a declaration that the extraction is complete.
+
+### Recommended sequence and decisions still open
+
+1. Specify and implement W0’s shared routes/UI boundary first; inventory W1/W2 dependencies during that work. Then specify W1 facts/results and refresh W2’s MCP contract together; they can then be implemented in separate coherent slices.
+2. Plan W3 owner review and prototype W4 editorial selection against that evidence. They can proceed independently; continuous strategy memory is not a prerequisite. Put W4’s algorithms and sample analyses through the human review gate before adopting them.
+3. Hold the dedicated W9 art exploration session and select a visual direction. Deliver shareable Cuts, then develop W5 trailers and new music from approved material. Local music generation and human-operated Suno provide candidates; obtain the trailer/music approvals. W6 choreography can progress alongside these, with final artwork using the approved direction, without blocking text-based analysis or basic cards.
+4. Close W7 omissions throughout and perform W8 before release. Return to A2 with proven scene, Cut, trailer and review workflows; extract A3 detail primitives where repetition warrants them.
+
+Before those implementation plans: settle the results information hierarchy, review eligibility/revision semantics, Cuts/trailer spoiler policies and editorial cost budget, the concrete human approval checkpoints, the art/music exploration brief, and which W6 treatments belong in the first release. This update authorizes documentation only; it does not schedule model calls, change gameplay, publish artifacts or commit to the whole studio rebuild.

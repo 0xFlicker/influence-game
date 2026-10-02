@@ -10,9 +10,13 @@ pillar: A2
 
 Parent: [four-pillar direction](2026-09-30-house-admin-and-production.md). This is pre-planning: proposals and questions, not an approved implementation scope.
 
-## Prerequisite side quest
+## Integration sequencing update — 2026-10-02
 
-The user selected **Replace the public Werewolf viewer** as the first complete rendering target. Scope and source map: [Werewolf public visual replay](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md). Prove that player before finalizing the studio; then embed the same player rather than building another preview engine. The earlier private-player-first suggestion is not the selected direction.
+The shared House playback infrastructure is implemented locally; the parent roadmap now requires consolidating the remaining Werewolf page orchestration into House UI modules and the canonical `/games/[slug]` route family. The parent [Werewolf integration roadmap](2026-09-30-house-admin-and-production.md#werewolf-integration-roadmap--2026-10-02) prioritizes that shared UI boundary, then results, MCP, owner review, House Cuts and trailers, plus the remaining night visuals and cross-game surface gaps. Those slices should use current production services and minimal controls; they do not depend on this full studio redesign. Keep this brainstorm as the later consolidation direction. The roadmap also requires human approval of House Cut algorithms/analysis and trailer approach/music, plus a dedicated Werewolf room/background art exploration session. The studio should eventually expose the chosen versions and review evidence; its redesign is not required to conduct those creative reviews. New music can be explored through the local model; Suno remains human-operated.
+
+## Completed prerequisite side quest
+
+The user selected **Replace the public Werewolf viewer** as the first complete rendering target. Scope and source map: [Werewolf public visual replay](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md). The subsequent shared-player implementation supplies that player; embed it rather than building another preview engine. The earlier private-player-first suggestion is not the selected direction.
 
 ## Starting problem
 
@@ -28,11 +32,11 @@ The user's recent feedback also establishes two interaction constraints: nested 
 - `packages/web/src/app/admin/replay-visual-production-panel.tsx` exposes coverage, candidate versions, review, publication and attempt evidence in a vertically expanding list. Extract its operations into a focused inspector without replacing their server authority.
 - `packages/web/src/app/admin/games/[id]/visual/scene-repair-panel.tsx`, `image-review-editor.tsx` and `admin-session.tsx` already provide request identity, receipt recovery, version conflicts and session drafts. Preserve that ownership when tools move.
 - `packages/api/src/routes/visual-replay-production.ts` enforces producer/sysop roles. Existing Influence visual-editor and postgame editorial routes have different grants; UI consolidation must inventory these separately.
-- Werewolf image publication remains private production; Influence publication can affect viewers. One shared button must not conceal that difference.
+- Both games now deliver published scene versions to viewers. Werewolf publication additionally respects its audience-filtered media and replay publication cutoff. Candidate/private inspection and public publication remain distinct for both games; preserve those semantics when moving controls.
 
 ## Proposed navigation
 
-Production owns one game library spanning Influence and Werewolf, plus a dedicated studio per game. Game operations offer an **Open in studio** link to that same destination; the studio offers **Game overview**. These are two entry points to one workspace, not duplicate production implementations.
+Production owns one game library spanning Influence and Werewolf, plus a dedicated studio per game. Game operations offer an **Open in studio** link to that same destination; the studio offers **Game overview**. These are two entry points to one House workspace. Scene, result and release-asset differences come from game modules; Werewolf does not retain a separate producer application.
 
 Candidate route shape: `/admin/production` for the library, `/admin/production/games/:id` for a studio, `/admin/production/jobs` for cross-game jobs. Final route/selection encoding belongs in the plan. Scene/version/moment selection should be addressable; list filters and return context should survive the round trip. Retire duplicate editors rather than maintaining two evolving UIs.
 
@@ -56,7 +60,7 @@ Desktop: scene browser at left, large selected preview in the center, contextual
 
 Mobile: Browser → Preview → Inspector are linked views of the same selection, with an obvious back path. Selection and pending work survive movement; no attempt to squeeze three columns into a phone.
 
-Keep the scene being inspected distinct from the published version. Preview must say whether it shows a candidate, an accepted private production version or the current viewer presentation. Generating or selecting an image must not publish it.
+Keep the scene being inspected distinct from the published version. Preview must say whether it shows an unpublished candidate or the current published viewer presentation. Generating or selecting an image must not publish it.
 
 A small activity tray follows the selected game's work without replacing the cross-game job page. Operators can keep browsing while a job runs; only conflicting operations are locked. The job center reads the existing backend states rather than creating a scheduler. Retry, cancellation and reconciliation appear only where the job's actual API supports them.
 
@@ -66,7 +70,7 @@ Start with scene browsing to reach useful existing behavior quickly. A scene gro
 
 Eventually the moment timeline selects a presentation cursor and highlights the scene used there. Selecting a scene can show **Used in these moments**. Repairing one shared scene should show how broadly the choice is used before publication; it should not fabricate duplicate jobs for every speech line.
 
-A real player preview and timeline are separate deliverables. The current character-framing preview is not proof that either game's complete playback can already run inside the studio. Before planning playback, inventory each game's canonical presentation model, supported moments, seeking behavior and audience projection. Private Werewolf pack material must not leak into a Mystery preview merely because the operator has omniscient access.
+A real player preview and timeline are separate deliverables. The shared public player is now available, but embedding it with private candidate assets and a synchronized studio selection remains work. Before planning that integration, inventory each game's presentation adapter, supported moments, seeking behavior and audience projection. Private Werewolf pack material must not leak into a Mystery preview merely because the operator has omniscient access.
 
 ## Candidate first useful scope — not yet selected
 
