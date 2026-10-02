@@ -16,11 +16,11 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const [error, setError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(true);
   const [tail, setTail] = useState<WerewolfWatchWindow["moments"][number] | null>(null);
-  const [follow, setFollow] = useState(false);
+  const [follow, setFollow] = useState(true);
   const request = useRef<AbortController | null>(null);
   const intent = useRef(0);
   const target = useRef(1);
-  const playIntent = useRef(false);
+  const playIntent = useRef(true);
   const awaitingInitialCue = useRef(true);
   const [revision, setRevision] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
@@ -71,7 +71,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     } finally { if (!controller.signal.aborted && generation === intent.current) setPreparing(false); }
   }, [slug, audience, cutoff, commitWindow, director]);
   const cancel = useCallback(() => { intent.current++; request.current?.abort(); }, []);
-  useEffect(() => { void seek(1, false, false, true); return cancel; }, [seek, cancel]);
+  useEffect(() => { void seek(1, playIntent.current, false, true); return cancel; }, [seek, cancel]);
   useEffect(() => {
     const visibility = () => { if (document.hidden) {playIntent.current = false; setFollow(false);} };
     document.addEventListener("visibilitychange", visibility);

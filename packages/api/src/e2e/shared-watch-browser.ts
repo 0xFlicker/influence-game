@@ -5,6 +5,11 @@ export async function seekWatch(page:Page,cursor:number){
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(cursor))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
  await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor}`);
 }
+/** Playback now opens running; manual-control proofs explicitly pause first. */
+export async function pauseWerewolf(page: Page) {
+ await page.waitForSelector('button[aria-label="Pause replay"]');
+ await page.click('button[aria-label="Pause replay"]');
+}
 export async function watchText(page:Page,value:string){await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`,{timeout:25000});}
 export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:string){
  const errors:string[]=[],requests:string[]=[];
@@ -12,8 +17,10 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  page.on("request",request=>{if(request.url().includes('/watch?'))requests.push(request.url());});
  const slug=new URL(url).pathname.split('/').at(-1)!;
  await page.setViewport({width:1440,height:1000});await page.goto(url,{waitUntil:"domcontentloaded"});
+ // This manual-control scenario starts from a known preference; persistence has its own proof.
+ await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
  await page.waitForSelector('a[href="?audience=mystery"]'); await page.click('a[href="?audience=mystery"]');
- await page.waitForSelector('[data-werewolf-stage][data-cursor]');await watchText(page,"Cross-examine this game with your AI.");
+ await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);await watchText(page,"Cross-examine this game with your AI.");
  expect(await page.$('select[aria-label="Spectator mode"]')).toBeNull();
  await page.click('button[aria-label="Player settings"]');await watchText(page,"Viewing mode: Mystery");await page.click('button[aria-label="Close settings"]');
  expect(await page.$$('a[href="/get-mcp"]')).toHaveLength(1);expect(await page.$$('[data-watch-context]')).toHaveLength(1);await watchText(page,"Role unknown");
@@ -28,9 +35,9 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await page.waitForSelector('[data-player-fullscreen] [role="dialog"][aria-label="Game transcript"]');
  await page.evaluate("Array.from(document.querySelectorAll('button')).find(e=>e.textContent==='Close transcript').click()");
  await page.keyboard.press('Escape');await page.waitForFunction("!document.querySelector('[data-player-fullscreen]')");
- await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('Space');
- const before=await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-elapsed')));
- await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed'))>${before+100}`);
+ const before=await page.$eval('[data-werewolf-stage]',e=>({elapsed:Number(e.getAttribute('data-elapsed')),cursor:Number(e.getAttribute('data-cursor'))}));
+ await page.click('button[aria-label="Play replay"]');
+ await page.waitForFunction(`(() => {const stage=document.querySelector('[data-werewolf-stage]');return Number(stage?.getAttribute('data-cursor'))!==${before.cursor} || Number(stage?.getAttribute('data-elapsed'))>${before.elapsed+100};})()`);
  // Seeking while playing must preserve intent, including an overlapping fetch.
  await seekWatch(page, first + 1);
  await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Pause replay')");
@@ -46,12 +53,12 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')")).toBe(true);
  await seekWatch(page,mystery.latestCursor);await watchText(page,"Game complete");await seekWatch(page,1);await watchText(page,"Role unknown");
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(first);
- await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
+ await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();await page.click('button[aria-label="Player settings"]');await page.click('input[type="checkbox"]');await page.click('button[aria-label="Close settings"]');
  await page.evaluate("Array.from(document.querySelectorAll('[role=\"tab\"]')).find(e=>e.textContent==='Thinking')?.click()");
  await page.waitForSelector('[aria-label="Player thinking"]');
  const omni=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
- await seekWatch(page,omni.latestCursor);await watchText(page,"Game complete");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await watchText(page,"Role unknown");
+ await seekWatch(page,omni.latestCursor);await watchText(page,"Game complete");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);await watchText(page,"Role unknown");
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();expect(await page.evaluate("document.body.innerText.includes('Show thinking')")).toBe(false);
  await page.setViewport({width:390,height:844});await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('ArrowRight');await page.waitForSelector('[data-speech-bubble]');
  expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);await page.screenshot({path:"/tmp/shared-watch-mobile.png"});
@@ -88,8 +95,9 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
     if (request.url().includes('/thinking?')) void request.respond({status:200, contentType:'application/json', headers:{'access-control-allow-origin':new URL(url).origin, 'access-control-allow-credentials':'true', 'access-control-allow-headers':'content-type, authorization', 'access-control-allow-methods':'GET, OPTIONS'}, body:JSON.stringify({cursor:Number(new URL(request.url()).searchParams.get('cursor')), entries})});
     else void request.continue();
   });
+  await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
   await page.goto(`${url}?audience=omniscient`, {waitUntil:'domcontentloaded'});
-  await page.waitForSelector('[data-werewolf-stage][data-cursor]');
+  await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');

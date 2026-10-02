@@ -9,7 +9,8 @@ import {WatchInspector, InspectorSection} from "@/components/watch/watch-inspect
 import {WatchTransport} from "@/components/watch/watch-transport";
 import {usePlayerFullscreen} from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
-import type {ThinkingOrder} from "@/components/watch/watch-director";
+import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
+import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {apiFetch} from "@/lib/api";
 import type {WerewolfThinking as ThinkingData} from "@influence/engine/werewolf/thinking";
 import {useWatchKeyboard} from "@/components/watch/use-watch-keyboard";
@@ -21,18 +22,20 @@ import {WerewolfWatchStage} from "./werewolf-watch-stage";
 import {WerewolfThinking} from "./werewolf-thinking";
 import {replayMoment} from "./replay-moment";
 
-export function WerewolfViewer({slug, audience}: {slug: string; audience: WerewolfAudience}) {
+export function WerewolfViewer({slug, audience, preferenceScope = "viewer"}: {slug: string; audience: WerewolfAudience; preferenceScope?: WatchPreferenceScope}) {
+  const preferences = useWatchPreferences(preferenceScope);
   const [publication] = useState(() => new Date().toISOString());
-  return <WerewolfSession key={`${slug}:${audience}`} slug={slug} audience={audience} cutoff={publication} />;
+  if (!preferences.ready) return <WatchWaiting label="Preparing the player…" />;
+  return <WerewolfSession preferences={preferences} key={`${slug}:${audience}`} slug={slug} audience={audience} cutoff={publication} />;
 }
-function WerewolfSession({slug, audience, cutoff}: {slug: string; audience: WerewolfAudience; cutoff: string}) {
+function WerewolfSession({slug, audience, cutoff, preferences}: {slug: string; audience: WerewolfAudience; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>}) {
   const watch = useWerewolfWatch(slug, audience, cutoff);
   const {director, snapshot, data, active} = watch;
   const frame = useRef<HTMLDivElement>(null);
   const fullscreen = usePlayerFullscreen(frame);
   const [selected, setSelected] = useState<string | null>(null);
-  const [thinkingOrder, setThinkingOrder] = useState<ThinkingOrder>("thinking-first");
-  const [thinking, setThinking] = useState(false), [inspecting, setInspecting] = useState(false), [transcript, setTranscript] = useState(false);
+  const {thinking, setThinking, thinkingOrder, setThinkingOrder} = preferences;
+  const [inspecting, setInspecting] = useState(false), [transcript, setTranscript] = useState(false);
   const [stopping, setStopping] = useState(false), [stopError, setStopError] = useState<string | null>(null);
   const {hasPermission} = usePermissions();
   const cursor = active?.cursor ?? 1;

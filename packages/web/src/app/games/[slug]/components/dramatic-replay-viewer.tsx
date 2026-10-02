@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
-import type {ThinkingOrder} from "@/components/watch/watch-director";
+import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
+import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {getPublicWatchIntelligence} from "@/lib/api";
 import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
@@ -72,6 +73,7 @@ export function isFormatSocialTranscriptMessage(
 }
 
 interface DramaticReplayViewerProps {
+  preferenceScope?: WatchPreferenceScope;
   game: GameDetail;
   messages: TranscriptEntry[];
   players: GamePlayer[];
@@ -86,9 +88,11 @@ interface DramaticReplayViewerProps {
 }
 
 export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
+  const preferences = useWatchPreferences(props.preferenceScope);
+  if (!preferences.ready) return <WatchWaiting label="Preparing the player…" />;
   return (
     <MotionConfig reducedMotion="user">
-      <DramaticReplayTheater {...props} />
+      <DramaticReplayTheater {...props} preferences={preferences} />
     </MotionConfig>
   );
 }
@@ -280,7 +284,8 @@ function DramaticReplayTheater({
   embedded = false,
   startSequence,
   onPlaybackStateChange,
-}: DramaticReplayViewerProps) {
+  preferences,
+}: DramaticReplayViewerProps & {preferences: ReturnType<typeof useWatchPreferences>}) {
   const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
@@ -343,8 +348,7 @@ function DramaticReplayTheater({
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
   const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
-  const [showThinking, setShowThinking] = useState(false);
-  const [thinkingOrder, setThinkingOrder] = useState<ThinkingOrder>("thinking-first");
+  const {thinking:showThinking, setThinking:setShowThinking, thinkingOrder, setThinkingOrder} = preferences;
   const controlsRef = useRef<HTMLDivElement>(null);
   const controlsHovered = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(true);

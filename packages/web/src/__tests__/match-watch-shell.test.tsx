@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { act, cleanup, render } from "@testing-library/react";
+import { Window } from "happy-dom";
+import type { ReactElement } from "react";
 import { Phase } from "@influence/engine";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,6 +27,22 @@ import {
   isFormatSocialTranscriptMessage,
 } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildStoryScenes } from "../app/games/[slug]/components/house-story";
+
+
+// These checks need the mounted theater: it waits for device preferences before
+// starting its director. Keep the server-shell assertions below separate.
+let restoreDOM: (() => Promise<void>) | undefined;
+async function renderPlayer(element: ReactElement) {
+  await restoreDOM?.();
+  restoreDOM = undefined;
+  const dom = new Window({url: "http://localhost"});
+  const keys = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame"] as const;
+  const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
+  restoreDOM = async () => {await act(async () => {cleanup();});await dom.close();for(const key of keys){const descriptor=descriptors.get(key);if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}};
+  return render(element).container.innerHTML;
+}
+afterEach(async () => {await restoreDOM?.();restoreDOM=undefined;});
 
 const sharedShellSource = readFileSync(join(import.meta.dir, "../components/watch/watch-shell.tsx"), "utf8");
 const inspectorSource = readFileSync(join(import.meta.dir, "../components/watch/watch-inspector.tsx"), "utf8");
@@ -151,9 +170,9 @@ describe("MatchWatchShell", () => {
     expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
   });
 
-  it("renders persistent replay watch chrome around the embedded theater", () => {
+  it("renders persistent replay watch chrome around the embedded theater", async () => {
     const currentGame = game();
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[entry()]}
@@ -198,9 +217,9 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('title="Exit"');
   });
 
-  it("uses the portrait theater for nonvisual live games and replays", () => {
+  it("uses the portrait theater for nonvisual live games and replays", async () => {
     for (const live of [false, true]) {
-      const html = renderToString(<MatchWatchShell
+      const html = await renderPlayer(<MatchWatchShell
         game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
         messages={[entry({ text: "Can I count on you?", phase: "LOBBY", scope: "public" })]}
         live={live} connStatus={live ? "live" : "replay"}
@@ -331,7 +350,7 @@ describe("MatchWatchShell", () => {
     expect(textHtml).not.toContain("Council");
   });
 
-  it("renders typed format cues inside the deep animation boundary", () => {
+  it("renders typed format cues inside the deep animation boundary", async () => {
     const currentGame = {
       ...game(),
       gameKernel: "format" as const,
@@ -374,7 +393,7 @@ describe("MatchWatchShell", () => {
         },
       },
     };
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[]}
@@ -387,16 +406,18 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-presentation-animation-boundary="true"');
     expect(html).toContain('data-format-cue="format_menu"');
     expect(html).toContain("The House offers two formats");
+    const serverHtml = renderToString(<MatchWatchShell game={currentGame} messages={[]} replayFrames={[menuFrame]} live={false} connStatus="replay" />);
+    expect(serverHtml).toContain("Preparing the player");
     // Server rendering has no director cursor yet; transport pressure must not
     // disclose cast roles before the client reports its staged snapshot.
-    expect(html).not.toContain("Empowered");
-    expect(html).not.toContain("Exposed");
-    expect(html).not.toContain("Shielded");
-    expect(html).not.toContain("Power Play");
-    expect(html).not.toContain("Council");
+    expect(serverHtml).not.toContain("Empowered");
+    expect(serverHtml).not.toContain("Exposed");
+    expect(serverHtml).not.toContain("Shielded");
+    expect(serverHtml).not.toContain("Power Play");
+    expect(serverHtml).not.toContain("Council");
   });
 
-  it("surfaces a live compiler diagnostic without inventing a replacement state", () => {
+  it("surfaces a live compiler diagnostic without inventing a replacement state", async () => {
     const currentGame = {
       ...game(),
       status: "in_progress" as const,
@@ -433,7 +454,7 @@ describe("MatchWatchShell", () => {
       },
     };
 
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[]}
