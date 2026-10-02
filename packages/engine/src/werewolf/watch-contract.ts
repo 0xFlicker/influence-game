@@ -1,6 +1,6 @@
 import type {WerewolfView, WerewolfPublicEntry, WerewolfAudience} from "./observation";
 import type {AcceptedVisualScene} from "../visual-mode";
-export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; personaKey: string | null; personality: string; backstory: string }
+export interface WerewolfWatchIdentity { id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; personality: string; backstory: string }
 export interface WerewolfWatchMoment {
   cursor: number;
   entry: WerewolfPublicEntry;

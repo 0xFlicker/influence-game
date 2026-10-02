@@ -372,3 +372,29 @@ describe("Werewolf exact decision contracts", () => {
     expect(broken.events).toHaveLength(1);
   });
 });
+
+
+test("configurable villages preserve role counts and finish without disabled night roles", async () => {
+  for (const playerCount of [6, 7, 8] as const) for (const wolves of [1, 2] as const) for (const seer of [false, true]) for (const doctor of [false, true]) {
+    const players = Array.from({length: playerCount}, (_, i) => ({id:`p${i}`,name:`Player ${i}`,personality:"Calm",backstory:"",strategy:"",avatarUrl:null}));
+    const config = werewolfConfig(wolves === 1 ? "one_wolf" : "two_wolves", 1, {playerCount,wolves,seer,doctor});
+    const events = [startWerewolf("custom", players, config, "seed")];
+    const roles = Object.values(replayWerewolf(events).roles);
+    expect(roles.filter(role => role === "werewolf")).toHaveLength(wolves);
+    expect(roles.filter(role => role === "seer")).toHaveLength(Number(seer));
+    expect(roles.filter(role => role === "doctor")).toHaveLength(Number(doctor));
+    expect(startWerewolf("custom", players, config, "seed")).toEqual(events[0]!);
+    const store: WerewolfStore = {read:async()=>structuredClone(events),append:async event=>{applyWerewolfEvent(replayWerewolf(events),event);events.push(event);}};
+    await runWerewolf(store, quietAgent);
+    expect(replayWerewolf(events).outcome).not.toBeNull();
+  }
+});
+
+
+test("Werewolf setup rejects incomplete, contradictory and unsupported configurations",()=>{
+  const valid={playerCount:7,wolves:2,seer:true,doctor:false};
+  for(const invalid of [null,{},[],{...valid,playerCount:9},{...valid,wolves:3},{...valid,seer:"yes"},{...valid,doctor:undefined},{...valid,extra:true}]) {
+    expect(()=>werewolfConfig("two_wolves",10,invalid as import("../werewolf/types").WerewolfSetup)).toThrow();
+  }
+  expect(()=>werewolfConfig("one_wolf",10,{playerCount:7,wolves:2,seer:true,doctor:false})).toThrow("match");
+});

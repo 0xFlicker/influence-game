@@ -1,4 +1,5 @@
 "use client";
+import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {useCallback, useEffect, useLayoutEffect, useState} from "react";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {selectVisualShot} from "@influence/engine/visual-mode";
@@ -10,12 +11,12 @@ import type {VisualPresentationBeat} from "../games/[slug]/components/visual-pre
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
 import {replayMoment} from "./replay-moment";
 
-export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, contextLabel}: {cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: PresentationDirector<WerewolfWatchCue>; holding: boolean; contextLabel?: string}) {
+export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel}: {cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: PresentationDirector<WerewolfWatchCue>; holding: boolean; status?: string; contextLabel?: string}) {
   const moment = cue ? replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]}) : null;
   return <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black" data-werewolf-stage data-cursor={cue?.moment.cursor} data-elapsed={Math.floor(elapsed)} onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button,a,input,select,summary")) director.manualAdvance();}}>
     <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60" data-watch-context>{contextLabel ?? moment?.title ?? "The village"}</div>
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {cue && moment && (!holding || cue.moment.entry.kind === "result") ? <SceneContent key={cue.key} cue={cue} moment={moment} scene={scene} elapsed={elapsed} reduced={reduced} director={director} /> : <div className="grid h-full place-items-center bg-[radial-gradient(ellipse_at_center,#232520,#080a08)] text-sm text-white/40">{holding ? "End of available conversation" : "Preparing the village…"}</div>}
+      {cue && moment && (!holding || cue.moment.entry.kind === "result") ? <SceneContent key={cue.key} cue={cue} moment={moment} scene={scene} elapsed={elapsed} reduced={reduced} director={director} /> : <WatchWaiting label={status === "in_progress" ? "Waiting for the next scene…" : status === "suspended" ? "Game paused. Waiting for the House…" : holding ? "End of available conversation" : "Preparing the village…"} />}
     </div>
   </div>;
 }

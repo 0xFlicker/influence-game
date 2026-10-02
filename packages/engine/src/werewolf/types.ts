@@ -18,9 +18,12 @@ export interface WerewolfPlayer {
   personaKey?: string | null;
 }
 
+export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
+
 export interface WerewolfConfig {
   rulesVersion: 7;
   preset: WerewolfPreset;
+  setup?: WerewolfSetup;
   maxDays: number;
 }
 

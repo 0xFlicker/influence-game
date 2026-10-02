@@ -1,0 +1,88 @@
+import { beforeEach, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
+import sharp from "sharp";
+import { advanceWerewolf, replayWerewolf, nextWerewolfStep, type WerewolfAgent } from "@influence/engine/werewolf";
+import { schema, type DrizzleDB } from "../db/index.js";
+import { setupTestDB } from "./test-utils.js";
+import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
+import { WEREWOLF_AUTO_PUBLISHER } from "../services/werewolf-production.js";
+import { createWerewolfVisualPreparation } from "../services/werewolf-visual-runtime.js";
+import { acceptVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
+import { readWerewolfWatch } from "../services/werewolf-presentation.js";
+let db: DrizzleDB;
+beforeEach(async()=>{db=await setupTestDB();await db.insert(schema.users).values({id:"owner"});});
+async function fixture() {
+  const game=await createWerewolfGame(db,"owner",{preset:"two_wolves",maxDays:1,agentProfileIds:[]});
+  const claim=await claimWerewolfGame(db,game.id);
+  if(!claim.ok)throw new Error(claim.error);
+  const store=createWerewolfStore(db,game.id,claim.claim.ownerEpoch);
+  const controller=new AbortController();
+  return {game,store,controller,epoch:claim.claim.ownerEpoch};
+}
+const agent:WerewolfAgent={async decide({request}){
+  if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
+  if(request.legalTargetIds.length)return {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"};
+  return {kind:"speech",text:"Fixture contribution",cue:null};
+}};
+
+test("automatic scenes publish once, recover without another render, and respect Mystery pack boundaries",async()=>{
+  const f=await fixture();let renders=0;
+  const render:NonNullable<Parameters<typeof createWerewolfVisualPreparation>[4]>=async(db,scene,guard)=>{
+    if(scene.status==="ready")return scene;
+    renders++;
+    const image=await sharp({create:{width:160,height:90,channels:3,background:scene.roomId === "lobby" ? "#445566" : "#665544"}}).png().toBuffer();
+    const id=await storeVisualArtifact(db,f.game.id,image);
+    return acceptVisualScene(db,{sceneId:scene.id,planHash:scene.planHash,imageArtifactId:id,anchors:[],verifiedParticipantIds:scene.plan.cast.map(p=>p.id),assertBoundary:guard});
+  };
+  let prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,render);
+  const original=f.store.prepare!;
+  f.store.prepare=async(state,request,sequence)=>{await original(state,request,sequence);await prepare(state,request);};
+  await advanceWerewolf(f.store,agent);
+  expect(renders).toBe(1);
+  const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
+  if(step.kind!=="action")throw new Error("Expected next introduction");
+  // Simulate a restarted process before the next accepted contribution.
+  prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,render);
+  await prepare(state,step.request);
+  expect(renders).toBe(1);
+  expect(await db.select().from(schema.visualMediaPublications)).toHaveLength(1);
+  for(let n=0;n<30;n++){
+    const events=await f.store.read();
+    if(events.some(e=>e.type==="werewolf.action_accepted"&&e.payload.action==="pack_talk"))break;
+    await advanceWerewolf(f.store,agent);
+  }
+  expect(renders).toBe(2);
+  const publications=await db.select().from(schema.visualMediaPublications);
+  expect(publications).toHaveLength(2);
+  expect(publications.every(p=>p.operatorId===WEREWOLF_AUTO_PUBLISHER&&p.revision===1)).toBe(true);
+  // A live session opened before either image was ready still receives original scenes.
+  const cutoff="2000-01-01T00:00:00.000Z";
+  const omni=await readWerewolfWatch(db,f.game.id,"omniscient",1,64,cutoff);
+  expect(Object.values(omni.media).some(s=>s.roomId==="mingle-1")).toBe(true);
+  const mystery=await readWerewolfWatch(db,f.game.id,"mystery",1,64,cutoff);
+  expect(Object.values(mystery.media).some(s=>s.roomId==="lobby")).toBe(true);
+  expect(Object.values(mystery.media).some(s=>s.roomId==="mingle-1")).toBe(false);
+  const routes=(await import("../routes/werewolf.js")).createWerewolfRoutes(db);
+  const pack=Object.values(omni.media).find(s=>s.roomId==="mingle-1")!;
+  expect((await routes.request(pack.imageUrl.replace("audience=omniscient","audience=mystery"))).status).toBe(404);
+});
+
+test("aborted preparation cannot publish or commit a fallback contribution",async()=>{
+  const f=await fixture();
+  const prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,async()=>{f.controller.abort();throw new Error("stopped");});
+  const state=replayWerewolf(await readWerewolfEvents(db,f.game.id)),step=nextWerewolfStep(state);
+  if(step.kind!=="action")throw new Error("Expected introduction");
+  await expect(prepare(state,step.request)).rejects.toThrow();
+  expect(await db.select().from(schema.visualMediaPublications)).toHaveLength(0);
+  expect(await readWerewolfEvents(db,f.game.id)).toHaveLength(1);
+});
+
+test("missing renderer continues with character art and does not retry each speech",async()=>{
+  const f=await fixture();let attempts=0;
+  const prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,async()=>{attempts++;throw new Error("Renderer unavailable");});
+  const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
+  if(step.kind!=="action")throw new Error("Expected introduction");
+  await prepare(state,step.request);await prepare(state,step.request);
+  expect(attempts).toBe(1);
+  expect(await db.select().from(schema.visualMediaPublications).where(eq(schema.visualMediaPublications.gameId,f.game.id))).toHaveLength(0);
+});

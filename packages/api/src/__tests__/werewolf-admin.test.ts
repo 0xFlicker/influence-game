@@ -15,7 +15,7 @@ import { readWerewolfScenePreview, werewolfReferences } from "../services/werewo
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { controlVisualMedia, readVisualMedia } from "../services/visual-media-repair.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
-import { readWerewolfPresentation } from "../services/werewolf-presentation.js";
+import { readWerewolfCharacter, readWerewolfWatch, readWerewolfPresentation } from "../services/werewolf-presentation.js";
 import { contentSnapshot } from "../services/agent-content-submissions.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 let db: DrizzleDB;
@@ -157,6 +157,12 @@ test("production reads captured revision bytes, never a later character edit", a
   await db.update(schema.agentProfiles).set({ name: "Edited Arden Vale", fullBodyReferenceUrl: "/new-full.png" }).where(eq(schema.agentProfiles.id, "custom"));
   const refs = await werewolfReferences(db, g.id);
   const saved = refs.find(r => r.profile.name === "Arden Vale")!;
+  expect(saved.portraitBytes).toEqual(portraitBytes);
+  expect(await readWerewolfCharacter(db,g.id,saved.profile.id)).toEqual(portraitBytes);
+  expect(await readWerewolfCharacter(db,g.id,saved.profile.id,"body")).toEqual(bytes);
+  const identity=(await readWerewolfWatch(db,g.id,"mystery",1,10)).players.find(p=>p.id===saved.profile.id)!;
+  expect(identity.fullBodyReferenceUrl).toContain("image=body");
+  expect(identity.avatarUrl).not.toContain("image=body");
   expect(saved.kind).toBe("full_body"); expect(saved.bytes).toEqual(bytes); expect(JSON.stringify(refs)).not.toContain("new-full");
   const [portraitProfile] = await db.insert(schema.agentProfiles).values({ id: "portrait-only", userId: "owner", name: "Rowan Finch", personality: "Quiet", avatarUrl: "/old.png", fullBodyReferenceUrl: "/uncaptured-full.png" }).returning();
   await db.insert(schema.agentContentRevisions).values({ id: "portrait-content", agentProfileId: "portrait-only", userId: "owner", ancestryKnown: true, fingerprint: "portrait-content", snapshot: { ...contentSnapshot(portraitProfile!), assets: { "/old.png": "portrait-hash" } } });

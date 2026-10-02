@@ -67,7 +67,7 @@ function WerewolfSession({slug, audience, cutoff}: {slug: string; audience: Were
     ...(audience === "omniscient" && thinking ? [{id:"thinking",label:"Thinking",content: active && selectedId ? <WerewolfThinking gameId={active.snapshot.gameId} cursor={cursor} players={players} actorId={selectedId} /> : null}] : []),
     {id:"strategy",label:"Strategy",content:<InspectorSection title="Strategy" section={{cards:[],reason:"No public strategy notes have been captured for this player yet."}} />},
   ]} />;
-  return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/werewolf" brand="THE HOUSE" />}
+  return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/games" brand="THE HOUSE" />}
     cast={<CastRail model={cast} onSelectPlayer={setSelected} />}
     mobileCast={<div className="shrink-0 xl:hidden"><MobileContextPanel model={cast} onSelectPlayer={id => {setSelected(id);setInspecting(true);}} /><button className="px-3 py-1 text-xs text-white/60" onClick={() => setInspecting(true)}>Player info</button></div>}
     inspector={<div role={inspecting ? "dialog" : undefined} aria-modal={inspecting || undefined} aria-label={inspecting ? "Player information" : undefined} className={inspecting ? "fixed inset-3 z-50 flex min-h-0 flex-col bg-black xl:static" : "hidden min-h-0 xl:block"}>{inspecting && <button className="shrink-0 p-3 text-right text-sm text-white/70 xl:hidden" onClick={() => setInspecting(false)}>Close player info</button>}{inspect}</div>}
@@ -82,7 +82,7 @@ function WerewolfSession({slug, audience, cutoff}: {slug: string; audience: Were
       {(data?.status === "cancelled" || data?.status === "suspended") && <p role="status" className="shrink-0 p-2 text-xs text-amber-100">{data.status === "cancelled" ? "An operator stopped this game." : "This game stopped after an execution error."} Committed play remains available.</p>}
       <div ref={frame} data-player-fullscreen={fullscreen.fullscreen || undefined} className="relative flex min-h-0 flex-1 flex-col bg-black" style={fullscreen.fullscreen ? {position:"fixed",inset:0,width:"100vw",height:"100dvh",zIndex:1000} : undefined}>
         <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} order={thinkingOrder} speaker={performer?.name ?? "Player"} load={loadThinking}>
-        <WerewolfWatchStage contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={director.getActiveCue()} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} />
+        <WerewolfWatchStage contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={director.getActiveCue()} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
         <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-3 py-2">

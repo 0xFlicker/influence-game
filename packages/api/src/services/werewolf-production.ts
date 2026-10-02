@@ -10,6 +10,8 @@ import { readVisualProfileImage } from "./visual-game-assets.js";
 import { storeVisualArtifact } from "./visual-scene-store.js";
 import { sha256StableJson } from "./stable-hash.js";
 
+export const WEREWOLF_AUTO_PUBLISHER = "house:werewolf:auto";
+
 export class WerewolfReferenceError extends Error {}
 
 /** Uses immutable submitted content, never the current editable character profile. */
@@ -20,6 +22,9 @@ export async function werewolfReferences(db: DrizzleDB, gameId: string) {
       .where(and(eq(schema.agentContentRevisions.id, player.contentRevisionId), eq(schema.agentContentRevisions.agentProfileId, player.agentProfileId ?? ""))) : [];
     const snapshot = revision?.snapshot;
     const assets = snapshot?.assets;
+    const avatar = snapshot?.avatarUrl;
+    const avatarHash = typeof avatar === "string" && assets && typeof assets === "object" && !Array.isArray(assets) ? (assets as Record<string, unknown>)[avatar] : null;
+    const [portraitAsset] = typeof avatarHash === "string" ? await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, avatarHash)) : [];
     let url: string | null = null;
     let bytes: Buffer | null = null;
     let kind = "missing";
@@ -35,7 +40,7 @@ export async function werewolfReferences(db: DrizzleDB, gameId: string) {
     const profile: FrozenVisualProfile = { id: player.id, name: player.name, personaKey: player.personaKey ?? "", avatarUrl: null,
       fullBodyReferenceUrl: kind === "full_body" ? url : null,
       performanceInstructions: typeof snapshot?.performanceInstructions === "string" ? snapshot.performanceInstructions : "" };
-    return { profile, kind, bytes, bundled };
+    return { profile, kind, bytes, portraitBytes: portraitAsset?.bytes ?? null, bundled };
   }));
 }
 

@@ -1,6 +1,6 @@
 # Werewolf
 
-Werewolf is a separate, unranked game under The House. Choose Werewolf in the game-creation screen or open `/werewolf` from the navigation to create or watch a game. The first release uses public custom games, existing saved characters, and the existing game-worker deployment. It does not enroll contestants in Influence's Daily Free queue or award Influence ratings, season points, career wins, jury results, or owner-learning reviews.
+Werewolf is a separate, unranked game under The House. Choose Werewolf at `/games/new`; discover both games at `/games`. Individual Werewolf matches retain `/werewolf/:slug`; there is no separate root Werewolf navigation or creation page. The first release uses public custom games, existing saved characters, and the existing game-worker deployment. It does not enroll contestants in Influence's Daily Free queue or award Influence ratings, season points, career wins, jury results, or owner-learning reviews.
 
 ## Character and strategy
 
@@ -189,7 +189,7 @@ Omniscient labels every speaker with their actual role, such as `Vera [villager]
 
 Omniscient also prints each pack ballot as `Night N · ballot X/3`, with named choices and the agreement, retry, or no-attack outcome. Doctor protection and Seer checks remain visible when no attack was agreed. Up to six proposal calls and six ballot calls can occur with two wolves; agreement stops attempts immediately. A lone wolf uses one ballot call. Reporting adds no inference.
 
-Every API run saves a unique text file under `packages/engine/docs/simulations/`, appending after each poll so it can be followed with `tail -f`. `--out` selects a new file and never overwrites an existing report. Reading reports adds no model calls. The worker pays only for configured player decisions and their provider retries; no House generation occurs. Closing/timing out the CLI does not stop its server game. The printed resume command reads the same accepted conversation. Creation is never automatically retried; check `/werewolf` after an ambiguous creation error.
+Every API run saves a unique text file under `packages/engine/docs/simulations/`, appending after each poll so it can be followed with `tail -f`. `--out` selects a new file and never overwrites an existing report. Reading reports adds no model calls. The worker pays only for configured player decisions and their provider retries; no House generation occurs. Closing/timing out the CLI does not stop its server game. The printed resume command reads the same accepted conversation. Creation is never automatically retried; check `/games?game=werewolf` after an ambiguous creation error.
 
 The standalone engine simulator remains separate; it does not create API games:
 
@@ -233,10 +233,23 @@ Bubble typography measures the full contribution before display. Short messages 
 
 `/games` includes a distinct Werewolf shelf, with shared search/status filtering and an explicit game-type filter. Werewolf cards open `/werewolf/:slug`; Influence cards retain their own episode and replay routes. The public discovery APIs remain game-specific so Werewolf does not inherit Influence results, ratings or season projections.
 
-At `/werewolf`, **Create Werewolf game** requires `create_game` and saves a waiting lobby with a six- or eight-player preset and configured model. It does not start model calls. Share its URL to invite players. The shared House portrait selector now joins that persisted game; refreshing, leaving, or another browser opening the URL reads the same cast. Creating a new agent from the lobby uses the `join_werewolf` continuation and returns to that game after saving and joining.
+At `/games/new`, **Create Werewolf Game** requires `create_game` and saves a waiting lobby. Configure 6, 7 or 8 players, 1 or 2 wolves, and optional Seer and Doctor roles. Model routing, reasoning, fallback budgets, archetype pool and balanced/random casting use the shared House form. Werewolf archetypes keep their own strategy guidance. It does not start model calls. Share its URL to invite players. The shared House portrait selector now joins that persisted game; refreshing, leaving, or another browser opening the URL reads the same cast. Creating a new agent from the lobby uses the `join_werewolf` continuation and returns to that game after saving and joining.
 
 Authenticated players can enter one owned, eligible agent. Current admins, sysops and producers can enter multiple owned agents and remove cast members; ordinary players may remove only their own. Duplicate joins are idempotent while waiting, and all admission/removal/start operations lock the game row to serialize capacity and the start boundary. The lobby shows only approved public identity, never private personality/strategy or roles. Archived or withheld members are redacted and must be removed before starting.
 
 **Start Werewolf** separately requires `start_game`, respects deployment admission, fills remaining seats with House agents, freezes each member's current approved identity and Werewolf strategy, assigns roles, and atomically commits `werewolf.started` with `in_progress`. No roles or gameplay events exist before that point. Blank Werewolf strategy uses the archetype default; Influence strategy is never substituted. The waiting page refreshes into the viewing-mode choice when the game starts. Cancelled unstarted games have no replay. The CLI's existing immediate-create-and-start API remains its explicit simulation path.
 
 Migration `0106_werewolf_lobbies.sql` adds the admission table; it does not change historical game events. The House hall, icon, casting hero and agent selector are shared; Werewolf owns its admission state and rules. Waiting games in the admin list link to their casting lobby rather than attempting to render gameplay or production before any events exist.
+
+
+## Automatic visuals and public integration
+
+Enable **Visual Mode** at creation to prepare scenes before the first introduction, each changed living village roster, and each changed pack roster. The game worker uses the shared House scene renderer, frozen revision assets, durable paid-attempt accounting, and bounded repair policy. Unavailable imagery continues with character art. Game stop, cancellation and ownership loss fence acceptance and publication; a restart reuses the same scene rather than repaying for accepted imagery.
+
+The initial accepted scene is automatically published for spectator playback. Live sessions admit newly arriving automatic originals even when their session publication cutoff predates the image. Producer replacements still obey the session cutoff. Mystery cannot fetch pack scenes; scene membership and event boundaries remain canonical. Production remains the completed-game review and repair workspace. Enabling visuals incurs image-provider costs in addition to player inference; it currently produces viewer scenes, not additional image input in Werewolf agents' observations.
+
+Portraits and full-body references have separate immutable URLs. Cast chips use portraits; the shared solo renderer uses a full-body reference when present. It must not crop that reference as a portrait. Before the first contribution, or at the live frontier, the player displays a reduced-motion-aware waiting pulse rather than an ending.
+
+`NEXT_PUBLIC_ENABLED_GAMES` is a comma-separated deployment setting (`influence,werewolf` by default). Supply the same value to the API runtime and web build; `Dockerfile.web` accepts it as a build argument. Omit a game to disable new creation and discovery while preserving existing match URLs. This is a rollout setting, not an authorization boundary. Both games' public rules remain readable.
+
+Rules are maintained in `docs/rules-page-content.md` (Influence) and `docs/werewolf-rules-page-content.md` (Werewolf), rendered directly at `/rules?game=influence|werewolf`. Update those Markdown files instead of copying rules into JSX. Desktop uses a chapter sidebar; mobile uses a sticky bottom game/section selector. Docker copies both documents into the runtime image.

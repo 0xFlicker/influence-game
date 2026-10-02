@@ -26,6 +26,7 @@ export interface WerewolfView {
   gameId: string;
   rulesVersion: 7;
   preset: "one_wolf" | "two_wolves";
+  setup?: import("./types").WerewolfSetup;
   audience: WerewolfAudience;
   day: number;
   maxDays: number;
@@ -33,7 +34,7 @@ export interface WerewolfView {
   discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; recipientIds: string[]; respondentIds: string[]; ended: boolean } | null;
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
-  players: Array<{ id: string; name: string; avatarUrl: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole }>;
+  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole }>;
   entries: WerewolfPublicEntry[];
   outcome: WerewolfOutcome | null;
 }
@@ -69,7 +70,7 @@ export function projectWerewolfEntry(entry: WerewolfHistoryEntry, audience: Were
 export function projectWerewolfSnapshot(state: WerewolfState, audience: WerewolfAudience, cursor: number): Omit<WerewolfView, "entries"> {
   const omniscient = audience === "omniscient";
   return {
-    gameId: state.gameId, rulesVersion: state.config.rulesVersion, preset: state.config.preset, audience,
+    gameId: state.gameId, rulesVersion: state.config.rulesVersion, preset: state.config.preset, ...(state.config.setup ? { setup: state.config.setup } : {}), audience,
     day: state.day, maxDays: state.config.maxDays,
     phase: state.phase === "pack" ? "night" : state.phase,
     discussion: state.discussion ? {

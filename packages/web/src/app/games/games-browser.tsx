@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { enabledGameKinds } from "@influence/engine/game-availability";
 import { collectionLabel, gameCollectionHref, matchesGameCollection, type GameCollection } from "@/lib/game-collections";
 import { listWerewolfGames, type WerewolfGameSummary } from "@/lib/werewolf-api";
 import { WerewolfGameCard } from "./werewolf-game-card";
@@ -241,20 +242,21 @@ interface GamesBrowserProps {
   compact?: boolean;
   collection?: GameCollection;
   includeWerewolf?: boolean;
+  initialKind?: "all" | "influence" | "werewolf";
 }
 
-export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false }: GamesBrowserProps) {
+export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false, initialKind = "all" }: GamesBrowserProps) {
   const { hasPermission } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [werewolfGames, setWerewolfGames] = useState<WerewolfGameSummary[]>([]);
-  const [kind, setKind] = useState("all");
+  const [kind, setKind] = useState<string>(initialKind);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refreshGames = useCallback(async () => {
     try {
-      const [data, wolves] = await Promise.all([listGames(), includeWerewolf ? listWerewolfGames() : Promise.resolve([])]);
+      const [data, wolves] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([])]);
       setGames(data); setWerewolfGames(wolves);
       setError(null);
     } catch (err) {
@@ -269,7 +271,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
 
     async function fetchGames() {
       try {
-        const [data, wolves] = await Promise.all([listGames(), includeWerewolf ? listWerewolfGames() : Promise.resolve([])]);
+        const [data, wolves] = await Promise.all([listGames(), includeWerewolf && enabledGameKinds().includes("werewolf") ? listWerewolfGames() : Promise.resolve([])]);
         if (!cancelled) {
           setGames(data); setWerewolfGames(wolves);
           setError(null);
@@ -377,7 +379,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     <div>
       {!compact && <div className="episode-library-toolbar">
         <input aria-label="Search games" value={filters.search} onChange={e => setFilters(f => ({ ...f, search: e.target.value }))} placeholder="Search titles, Agents, or code words…" />
-        {includeWerewolf && <select aria-label="Game type" value={kind} onChange={event => setKind(event.target.value)}><option value="all">All types</option><option value="influence">Influence</option><option value="werewolf">Werewolf</option></select>}
+        {includeWerewolf && <select aria-label="Game type" value={kind} onChange={event => setKind(event.target.value)}><option value="all">All types</option>{enabledGameKinds().map(game => <option key={game} value={game}>{game === "werewolf" ? "Werewolf" : "Influence"}</option>)}</select>}
         <select aria-label="Game status" value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value as StatusFilter }))}>{statusOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
         <select aria-label="Game category" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value as CategoryFilter }))}>{categoryOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
         {collection && <Link href="/games">All shelves</Link>}
@@ -388,7 +390,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
         </div>
       ) : (
         <div className={compact ? "episode-compact" : ""}>
-          {filteredWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/werewolf">
+          {filteredWerewolf.length > 0 && <EpisodeShelf name="Werewolf" grid={compact || !!filters.search || filters.status !== "all" || kind === "werewolf"} href="/games?game=werewolf">
             {filteredWerewolf.map(game => <WerewolfGameCard key={game.id} game={game} />)}
           </EpisodeShelf>}
           {(compact || filters.search || filters.status !== "all" || filters.category !== "all" || collection ? [[collection ? collectionLabel(collection, games) : "Games", filtered] as const] : Array.from(filtered.reduce((map, game) => { const name = shelfName(game); map.set(name, [...(map.get(name) ?? []), game]); return map; }, new Map<string, GameSummary[]>())).sort(([a], [b]) => shelfRank(a) - shelfRank(b))).filter(([, items]) => items.length > 0).map(([name, items]) => <EpisodeShelf key={name} name={name} grid={compact || Boolean(filters.search) || filters.status !== "all" || filters.category !== "all" || !!collection} href={items[0] ? gameCollectionHref(items[0]) : "/games"}>

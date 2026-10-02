@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import { CreateGameForm } from "./create-game-form";
 
 export const metadata = {
-  title: `Create ${ACTIVE_GAME.name} Game - ${HOUSE_VENUE.name} Admin`,
+  title: `Create Game - ${HOUSE_VENUE.name} Admin`,
 };
 
 export default function NewGamePage() {
@@ -20,7 +20,7 @@ export default function NewGamePage() {
             </Link>
             <span className="text-white/20">/</span>
             <h1 className="text-2xl font-bold text-white">
-              Create {ACTIVE_GAME.name} Game
+              Create Game
             </h1>
           </div>
           <CreateGameForm />

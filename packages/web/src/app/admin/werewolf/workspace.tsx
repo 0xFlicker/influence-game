@@ -35,7 +35,7 @@ export function GameList() {
       <label>Visibility<select value={visibility} onChange={e => change("visibility", e.target.value)}>{["visible", "hidden", "all"].map(v => <option key={v} value={v}>{title(v)}</option>)}</select></label></div>
     {error && <Notice>{error}</Notice>}
     {!data && !error && <p role="status" className={styles.empty}>Loading Werewolf games…</p>}
-    {rows?.length === 0 && <p className={styles.empty}>No games match these filters. <Link href="/werewolf">Open the Werewolf lobby</Link></p>}
+    {rows?.length === 0 && <p className={styles.empty}>No games match these filters. <Link href="/games?game=werewolf">Browse Werewolf games</Link></p>}
     <div className={styles.list}>{rows?.map(game => <article key={game.id} className={styles.row}>
       <div><p className={styles.eyebrow}>{title(game.status)}{game.hidden ? " · Hidden" : ""}</p><h2>{game.slug}</h2><p>{game.playerCount} players · {game.status === "waiting" ? "Casting open" : game.progress ? `Day ${game.progress.day} · ${title(game.progress.phase)}` : "State unavailable"}</p>{game.error && <p className={styles.warning}>{game.error}</p>}</div>
       <div><span className={styles.small}>Gameplay cost</span><strong className={styles.number}>{game.cost?.state === "actual" ? money(game.cost.actualCostMicrousd) : game.cost?.state === "estimated" ? `~${money(game.cost.estimatedCostMicrousd)}` : "N/C"}</strong><span className={styles.small}>{game.cost?.callCount ?? 0} recorded calls</span></div>

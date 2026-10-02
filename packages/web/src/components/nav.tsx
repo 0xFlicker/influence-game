@@ -57,7 +57,6 @@ export function Nav() {
         Games
       </Link>
 
-      <Link href="/werewolf" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>Werewolf</Link>
 
       <Link href="/games/free" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         Intake

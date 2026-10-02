@@ -22,8 +22,8 @@ describe("create game Influence selection", () => {
     expect(combinedSource).toContain("ACTIVE_GAME.name");
     expect(createFormSource).toContain("Choose a game at");
     expect(createFormSource).toContain("Selected");
-    expect(createPageSource).toContain("Create {ACTIVE_GAME.name} Game");
-    expect(adminCreatePageSource).toContain("Create {ACTIVE_GAME.name} Game");
+    expect(createPageSource).toContain("Create Game");
+    expect(adminCreatePageSource).toContain("Create Game");
   });
 
   it("defaults new public games to a GPT-6 Luna primary route", () => {
@@ -44,8 +44,8 @@ describe("create game Influence selection", () => {
   });
 
   it("links to playable Werewolf without placeholders for other games", () => {
-    expect(createFormSource).toContain('href="/werewolf#start"');
-    expect(createFormSource).toContain("Choose Werewolf");
+    expect(createFormSource).toContain("Village roles");
+    expect(createFormSource).toContain("setKind(game)");
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");
     expect(combinedSource).not.toContain("disabled future");

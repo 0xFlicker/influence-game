@@ -3,7 +3,7 @@ import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type {
   WerewolfAcceptedAction, WerewolfConfig, WerewolfDayResult, WerewolfDiscussion, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfEvent,
   WerewolfEventData, WerewolfNightResult, WerewolfOutcome, WerewolfPackVote, WerewolfPlayer,
-  WerewolfPreset, WerewolfRequest, WerewolfRole, WerewolfState, WerewolfStep,
+  WerewolfSetup, WerewolfPreset, WerewolfRequest, WerewolfRole, WerewolfState, WerewolfStep,
 } from "./types";
 
 export const WEREWOLF_PRESETS = {
@@ -28,10 +28,14 @@ After earlier threads, all living players submit sealed ballots: choose one othe
 Death removes all speaking, voting and night actions. Roles remain secret until game end. There are no final words, whispers, jury, empowerment, role changes, or resurrection.
 The village wins when no wolves remain. Wolves win when living wolves equal or outnumber living non-wolves. Check victory after the entire night or day resolution. The day limit is a draw if neither faction has won.`;
 
-export function werewolfConfig(preset: WerewolfPreset, maxDays = 10): WerewolfConfig {
+export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: WerewolfSetup): WerewolfConfig {
   if (!Object.hasOwn(WEREWOLF_PRESETS, preset)) throw new Error("Unknown Werewolf preset");
   if (!Number.isInteger(maxDays) || maxDays < 1 || maxDays > 20) throw new Error("Werewolf maxDays must be an integer from 1 to 20");
-  return { rulesVersion: 7, preset, maxDays };
+  if (setup !== undefined && (!setup || typeof setup !== "object" || Array.isArray(setup)
+    || Object.keys(setup).length !== 4 || ![6, 7, 8].includes(setup.playerCount) || ![1, 2].includes(setup.wolves)
+    || typeof setup.seer !== "boolean" || typeof setup.doctor !== "boolean")) throw new Error("Choose 6–8 players, 1–2 wolves, and Seer/Doctor toggles");
+  if (setup && (setup.wolves === 1 ? "one_wolf" : "two_wolves") !== preset) throw new Error("Werewolf preset must match the selected wolf count");
+  return { rulesVersion: 7, preset, maxDays, ...(setup ? { setup: { ...setup } } : {}) };
 }
 
 function same(left: unknown, right: unknown): boolean {
@@ -47,9 +51,9 @@ function same(left: unknown, right: unknown): boolean {
 
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string): Record<string, WerewolfRole> {
   if (config.rulesVersion !== 7) throw new WerewolfRulesVersionError();
-  const validConfig = werewolfConfig(config.preset, config.maxDays);
+  const validConfig = werewolfConfig(config.preset, config.maxDays, config.setup);
   if (!same(config, validConfig)) throw new Error("Invalid Werewolf rules configuration");
-  if (players.length !== WEREWOLF_PRESETS[config.preset].players) throw new Error("Werewolf roster does not match preset");
+  if (players.length !== (config.setup?.playerCount ?? WEREWOLF_PRESETS[config.preset].players)) throw new Error("Werewolf roster does not match preset");
   if (!seed || new Set(players.map((p) => p.id)).size !== players.length) throw new Error("Werewolf requires a seed and distinct seat IDs");
   if (new Set(players.map((p) => p.name.trim().toLowerCase())).size !== players.length) throw new Error("Werewolf requires distinct player names");
   for (const p of players) {
@@ -61,7 +65,12 @@ export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: 
     const j = Math.floor(random() * (i + 1));
     [ids[i], ids[j]] = [ids[j]!, ids[i]!];
   }
-  return Object.fromEntries(ids.map((id, i) => [id, WEREWOLF_PRESETS[config.preset].roles[i]!])) as Record<string, WerewolfRole>;
+  const roles: readonly WerewolfRole[] = config.setup ? [
+    ...Array<WerewolfRole>(config.setup.wolves).fill("werewolf"),
+    ...(config.setup.seer ? ["seer" as const] : []), ...(config.setup.doctor ? ["doctor" as const] : []),
+    ...Array<WerewolfRole>(config.setup.playerCount - config.setup.wolves - Number(config.setup.seer) - Number(config.setup.doctor)).fill("villager"),
+  ] : WEREWOLF_PRESETS[config.preset].roles;
+  return Object.fromEntries(ids.map((id, i) => [id, roles[i]!])) as Record<string, WerewolfRole>;
 }
 
 export function startWerewolf(gameId: string, players: WerewolfPlayer[], config: WerewolfConfig, seed: string): WerewolfEvent {

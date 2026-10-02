@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { enabledGameKinds, type HouseGameKind } from "@influence/engine/game-availability";
+import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
+import { createWerewolfLobby } from "@/lib/werewolf-api";
+import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { useRouter } from "next/navigation";
 import { modelCatalogEntryById } from "@influence/engine/model-catalog";
 import { DEFAULT_GAME_FALLBACK, DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
@@ -726,7 +729,13 @@ function ProviderRouteEditor({
 // Create game form
 // ---------------------------------------------------------------------------
 
-export function CreateGameForm() {
+export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } = {}) {
+  const enabled = enabledGameKinds();
+  const [kind, setKind] = useState<HouseGameKind>(initialKind && enabled.includes(initialKind) ? initialKind : enabled[0] ?? "influence");
+  const [village, setVillage] = useState<WerewolfSetup>({ playerCount: 6, wolves: 1, seer: true, doctor: false });
+  const [maxDays, setMaxDays] = useState(10);
+  const isWerewolf = kind === "werewolf";
+  const gameName = isWerewolf ? "Werewolf" : ACTIVE_GAME.name;
   const router = useRouter();
   const [form, setForm] = useState<FormState>(DEFAULT_STATE);
   const [models, setModels] = useState<GameModelOption[]>(GAME_MODELS);
@@ -789,13 +798,14 @@ export function CreateGameForm() {
   }
 
   const { providerRoute, ...gameParams } = form;
-  const activeProviderRoute = form.visualMode
+  const needsImageModels = form.visualMode && !isWerewolf;
+  const activeProviderRoute = needsImageModels
     ? providerRoute.filter(entry => supportsVisualMode(entry.catalogId, models))
     : providerRoute;
-  const skippedModels = form.visualMode
+  const skippedModels = needsImageModels
     ? providerRoute.filter(entry => !supportsVisualMode(entry.catalogId, models))
     : [];
-  const visualDefault = form.visualMode && activeProviderRoute.length === 0
+  const visualDefault = needsImageModels && activeProviderRoute.length === 0
     ? [...models].sort((a, b) => Number(b.catalogId === DEFAULT_MODEL_CATALOG_ID) - Number(a.catalogId === DEFAULT_MODEL_CATALOG_ID))
       .find(model => model.configured && model.available !== false && supportsVisualMode(model.catalogId, models))
     : undefined;
@@ -805,7 +815,7 @@ export function CreateGameForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!hasOpeningFormat(form.formatManifest, form.playerCount)) {
+    if (!isWerewolf && !hasOpeningFormat(form.formatManifest, form.playerCount)) {
       setError("Select at least one format available in the opening round.");
       return;
     }
@@ -841,13 +851,21 @@ export function CreateGameForm() {
             : { maxCallsPerGame: entry.maxCallsPerGame }),
         })),
       };
-      const { slug } = await createGame(params);
-      router.push(`/games/${slug}`);
+      if (isWerewolf) {
+        const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
+          providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode });
+        router.push(`/werewolf/${slug}`);
+      } else {
+        const { slug } = await createGame(params);
+        router.push(`/games/${slug}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create game.");
       setSubmitting(false);
     }
   }
+
+  if (!enabled.length) return <p role="status" className="text-white/65">New games are currently unavailable.</p>;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -855,24 +873,16 @@ export function CreateGameForm() {
       <SectionCard title="Game">
         <p className="mb-4 text-sm text-white/50">Choose a game at {HOUSE_VENUE.name}.</p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/5 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-white text-lg font-semibold">{ACTIVE_GAME.name}</p>
-              <span className="rounded-sm border border-emerald-500/35 bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Selected</span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-white/55">Build alliances, survive changing round rules, and win the jury&apos;s vote.</p>
-          </div>
-          <Link href="/werewolf#start" className="rounded-xl border border-white/15 p-4 transition-colors hover:border-amber-200/50 hover:bg-amber-200/5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200">
-            <p className="text-white text-lg font-semibold">Werewolf</p>
-            <p className="mt-3 text-sm leading-6 text-white/55">Secret roles, a hidden pack, and a village trying to find them. Play with one or two wolves.</p>
-            <p className="mt-3 text-sm font-medium text-amber-200">Choose Werewolf →</p>
-          </Link>
+          {enabled.map(game => <button key={game} type="button" aria-pressed={kind === game} onClick={() => { setKind(game); setError(null); }} className={`rounded-xl border p-4 text-left transition-colors ${kind === game ? "border-amber-200/50 bg-amber-200/5" : "border-white/15 hover:border-white/40"}`}>
+            <span className="flex items-center justify-between gap-3"><span className="text-lg font-semibold text-white">{game === "werewolf" ? "Werewolf" : "Influence"}</span>{kind === game && <span className="text-xs uppercase tracking-widest text-amber-200">Selected</span>}</span>
+            <span className="mt-3 block text-sm leading-6 text-white/60">{game === "werewolf" ? "Secret roles, a hidden pack, and a village trying to find them." : "Build alliances, survive changing round rules, and win the jury’s vote."}</span>
+          </button>)}
         </div>
       </SectionCard>
 
       {/* Players */}
       <SectionCard title="Players">
-        <RadioGroup
+        {isWerewolf ? <RadioGroup label="Player count" value={String(village.playerCount)} options={[6,7,8].map(n => ({value:String(n),label:String(n)}))} onChange={value => setVillage(v => ({...v,playerCount:Number(value) as WerewolfSetup["playerCount"]}))} /> : <RadioGroup
           label="Player count"
           value={String(form.playerCount) as never}
           options={CREATE_GAME_PLAYER_COUNTS.map((n) => ({
@@ -880,17 +890,21 @@ export function CreateGameForm() {
             label: String(n),
           }))}
           onChange={(v) => set("playerCount", parseInt(v) as FormState["playerCount"])}
-        />
+        />}
       </SectionCard>
 
       {/* Round formats */}
-      <SectionCard title="Round formats">
+      {isWerewolf ? <SectionCard title="Village roles">
+        <RadioGroup label="Werewolves" value={String(village.wolves)} options={[{value:"1",label:"1 wolf"},{value:"2",label:"2 wolves"}]} onChange={value => setVillage(v => ({...v,wolves:Number(value) as 1 | 2}))} />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">{(["seer", "doctor"] as const).map(role => <label key={role} className="flex cursor-pointer gap-3 rounded-xl border border-white/15 p-4"><input type="checkbox" checked={village[role]} onChange={event => setVillage(v => ({...v,[role]:event.target.checked}))} /><span><strong className="capitalize">{role}</strong><span className="mt-1 block text-sm text-white/60">{role === "seer" ? "Investigates one player each night." : "Protects one player each night; no consecutive repeats."}</span></span></label>)}</div>
+        <p className="mt-4 text-sm text-white/60">{village.playerCount - village.wolves - Number(village.seer) - Number(village.doctor)} villagers fill the remaining roles. Roles are assigned secretly at the start.</p>
+      </SectionCard> : <SectionCard title="Round formats">
         <FormatManifestEditor
           selectedIds={form.formatManifest}
           playerCount={form.playerCount}
           onChange={(formatManifest) => set("formatManifest", formatManifest)}
         />
-      </SectionCard>
+      </SectionCard>}
 
       {/* Provider route */}
       <SectionCard title="Models">
@@ -898,7 +912,7 @@ export function CreateGameForm() {
           entries={form.providerRoute}
           models={models}
           inventoryUnavailable={inventoryUnavailable}
-          visualMode={form.visualMode}
+          visualMode={needsImageModels}
           activeRoute={effectiveProviderRoute}
           onChange={(providerRoute) => {
             providerRouteEdited.current = true;
@@ -958,7 +972,7 @@ export function CreateGameForm() {
                     {p.name}
                   </span>
                   <span className="text-xs text-white/30 leading-tight block mt-0.5">
-                    {p.desc}
+                    {isWerewolf ? defaultWerewolfStrategy(p.key).split(". ")[0] + "." : p.desc}
                   </span>
                 </button>
               );
@@ -981,18 +995,18 @@ export function CreateGameForm() {
       <SectionCard title="Game Mode">
         <label className="mb-5 flex items-start gap-3">
           <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
-          <span>Visual Mode<span className="block text-sm text-white/50">Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created.</span></span>
+          <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Failed scenes fall back to character art; Production can inspect and repair them." : "Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>
         </label>
         {skippedModels.length > 0 && <p role="status" className="mb-4 text-sm text-white/55">
           Skipped for this game: {skippedModels.map(entry => models.find(model => model.catalogId === entry.catalogId)?.displayName ?? entry.catalogId).join(", ")}. You can change or remove these slots. Turning off Visual Mode restores them.
         </p>}
-        {form.visualMode && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
+        {needsImageModels && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
           {visualDefault ? "Using " : "Visual Primary: "}{models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}{visualDefault ? " as Primary because the selected models do not support images." : "."}
         </p>}
-        {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
+        {needsImageModels && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
           options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
           onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
-        <RadioGroup
+        {!isWerewolf && <RadioGroup
           label="Viewer mode"
           value={form.viewerMode}
           options={[
@@ -1000,11 +1014,11 @@ export function CreateGameForm() {
             { value: "live" as const, label: "Live", sublabel: "Paced for viewers" },
           ]}
           onChange={(v) => set("viewerMode", v as "live" | "speedrun")}
-        />
+        />}
       </SectionCard>
 
       {/* Timing */}
-      <SectionCard title="Timing Config">
+      {isWerewolf ? <SectionCard title="Game length"><label className="flex items-center gap-4">Maximum days<input aria-label="Maximum days" type="number" min={1} max={20} required value={maxDays} onChange={event => setMaxDays(Number(event.target.value))} className="w-24 rounded-lg border border-white/15 bg-white/5 px-3 py-2" /></label><p className="mt-3 text-sm text-white/60">A draw if neither faction wins by this limit. Conversations and votes set the pace.</p></SectionCard> : <SectionCard title="Timing Config">
         <RadioGroup
           label="Preset"
           value={form.timingPreset}
@@ -1048,10 +1062,10 @@ export function CreateGameForm() {
             />
           </div>
         </div>
-      </SectionCard>
+      </SectionCard>}
 
       {/* Visibility */}
-      <SectionCard title="Visibility">
+      {!isWerewolf && <SectionCard title="Visibility">
         <RadioGroup
           label="Who can see this game"
           value={form.visibility}
@@ -1062,7 +1076,8 @@ export function CreateGameForm() {
           ]}
           onChange={(v) => set("visibility", v)}
         />
-      </SectionCard>
+      </SectionCard>}
+      {isWerewolf && <p className="text-sm text-white/60">Creates a public casting lobby. Add agents and invite friends before starting.</p>}
 
       {/* Submit */}
       <div className="flex items-center justify-end pt-2">
@@ -1070,10 +1085,10 @@ export function CreateGameForm() {
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !enabled.includes(kind)}
             className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {submitting ? "Creating…" : `Create ${ACTIVE_GAME.name} Game`}
+            {submitting ? "Creating…" : `Create ${gameName} Game`}
           </button>
         </div>
       </div>

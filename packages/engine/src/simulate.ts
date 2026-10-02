@@ -12,7 +12,9 @@
  * and turn positions. No House rewrite or --summaries mode; readback makes no model calls.
  * Ballots, survivors and results print and append to a unique report
  * under engine/docs/simulations. Use --max-days 2 only for a short smoke run.
- * Its --game ID_OR_SLUG option watches an existing game without starting another.
+ * Its --game ID_OR_SLUG option watches an existing game without starting another,
+ * including UI-created 6–8-seat villages with optional Seer/Doctor roles. UI Visual Mode
+ * generates spectator scenes automatically; reporting those games adds no model calls.
  * API --audience omniscient labels every chat speaker with their role, including
  * introductions and pack chat. Mystery readback keeps dialogue roles hidden.
  * The standalone command is provider-free unless --model-catalog is explicit. Its canonical

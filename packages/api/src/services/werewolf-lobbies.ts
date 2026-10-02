@@ -1,3 +1,6 @@
+import { enabledGameKinds } from "@influence/engine/game-availability";
+import type { WerewolfSetup } from "@influence/engine/werewolf/types";
+import { normalizeWerewolfCasting } from "./werewolf-games.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { startWerewolf, werewolfConfig, WEREWOLF_PRESETS, type WerewolfPreset } from "@influence/engine/werewolf";
@@ -11,14 +14,19 @@ import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import { freezeWerewolfRoster, validateWerewolfModels, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number }) {
-  const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
+export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean }) {
+  if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
+  let rules;
+  try { rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.setup); }
+  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid village configuration", 400); }
+  const casting = normalizeWerewolfCasting(input);
+  if (input.visualMode !== undefined && typeof input.visualMode !== "boolean") throw new WerewolfGameError("Visual Mode must be on or off", 400);
   const providerManifest = validateWerewolfModels(input.providerManifest);
   const id = randomUUID();
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
-  const count = WEREWOLF_PRESETS[input.preset].players;
+  const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility: "public" }) });
+    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility: "public" }) });
   return { id, slug };
 }
 
@@ -78,9 +86,9 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     if (!admission.ok) throw new WerewolfGameError(admission.error, 503);
     const config = JSON.parse(game.config);
     validateWerewolfModels(config.providerManifest);
-    const rules = werewolfConfig(config.preset, config.maxDays);
+    const rules = werewolfConfig(config.preset, config.maxDays, config.setup);
     const seats = await tx.select().from(schema.werewolfLobbySeats).where(eq(schema.werewolfLobbySeats.gameId, game.id)).orderBy(asc(schema.werewolfLobbySeats.joinedAt), asc(schema.werewolfLobbySeats.id));
-    const players = await freezeWerewolfRoster(tx, seats, game.maxPlayers);
+    const players = await freezeWerewolfRoster(tx, seats, game.maxPlayers, normalizeWerewolfCasting(config));
     const event = startWerewolf(game.id, players, rules, randomUUID());
     await tx.insert(schema.werewolfEvents).values({ gameId: game.id, sequence: event.sequence, event });
     await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));

@@ -158,7 +158,7 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
       } else if (request.method() === "POST" && request.url().endsWith("/api/agent-profiles/generate")) {
         editorRequests.push(JSON.parse(request.postData()!));
         void respond({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Unwanted Influence rewrite", werewolfStrategyStyle: "Track who changes their story.", personaKey: "aggressive", gender: "female", performanceInstructions: "Unwanted performance", visualDesign: "Unwanted visuals", introQuips: ["One", "Two", "Three"] });
-      } else if (request.url().includes("/api/provider-models")) void respond({ status: "complete", models: [{ catalogId: "openai:gpt-6-luna", displayName: "Scripted test model", configured: true, available: true }] });
+      } else if (request.url().includes("/api/provider-models")) void respond({ status: "complete", models: [{ catalogId: "openai:gpt-6-luna", displayName: "Scripted test model", configured: true, available: true, capabilities: { supportsImageInput: true }, allowedReasoningPolicies: ["none", "low", "medium", "high"], defaultReasoningPolicy: "medium" }] });
       else void request.continue();
     });
     await page.evaluate("document.querySelector('#agent-werewolfStrategyStyle').nextElementSibling.open = true");
@@ -188,11 +188,15 @@ test("owner edits a game-specific strategy, creates Werewolf, and watches both v
     expect(profile!.name).toBe("Arden Vale");
     expect(profile!.personaKey).toBe("observer");
     await page.goto(`${servers.webUrl}/games/new`, { waitUntil: "domcontentloaded" });
-    await page.waitForSelector('a[href="/werewolf#start"]');
-    await page.screenshot({ path: "/tmp/werewolf-create-game-choice.png", fullPage: false });
-    await page.click('a[href="/werewolf#start"]');
-    await page.waitForFunction("location.pathname === '/werewolf'");
-    await click(page, "Create Werewolf game");
+    await page.waitForSelector('button[aria-pressed="false"]');
+    await page.evaluate(`Array.from(document.querySelectorAll('button[aria-pressed]')).find(b => b.textContent.includes('Werewolf')).click()`);
+    await text(page, "VILLAGE ROLES");
+    await page.screenshot({ path: "/tmp/werewolf-create-game-choice.png", fullPage: true });
+    await page.setViewport({ width: 390, height: 844 });
+    await page.screenshot({ path: "/tmp/werewolf-create-game-mobile.png", fullPage: true });
+    expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
+    await page.setViewport({ width: 1440, height: 1000 });
+    await click(page, "Create Werewolf Game");
     await page.waitForFunction("location.pathname.startsWith('/werewolf/') && location.pathname.split('/')[2]");
     const lobbyUrl = page.url();
     const slug = new URL(lobbyUrl).pathname.split('/')[2]!;

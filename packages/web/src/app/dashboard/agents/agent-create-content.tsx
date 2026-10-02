@@ -26,7 +26,7 @@ import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./ag
 export type AgentCreateFlow = "manage" | "join_game" | "join_werewolf" | "daily_free";
 
 export function AgentCreateRulesLink({ werewolf = false }: { werewolf?: boolean } = {}) {
-  return <> <Link href={werewolf ? "/werewolf#werewolf-rules" : "/rules"} className="influence-link">Read the Rules</Link> before setting their strategy.</>;
+  return <> <Link href={werewolf ? "/rules?game=werewolf" : "/rules"} className="influence-link">Read the Rules</Link> before setting their strategy.</>;
 }
 
 export function AgentCreateContent({

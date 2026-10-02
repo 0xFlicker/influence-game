@@ -1,3 +1,4 @@
+import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes, visibleEpisodeGames } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
@@ -133,6 +134,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/games", requireAuth(db), requirePermission("create_game"), async (c) => {
+    if (!enabledGameKinds().includes("influence")) return c.json({ error: "Influence creation is unavailable." }, 403);
     const body = await parseJsonBody(c, "POST /api/games");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -321,6 +323,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games", optionalAuth(db), async (c) => {
+    if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
 
     let rows;

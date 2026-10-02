@@ -1,3 +1,4 @@
+import { enabledGameKinds } from "@influence/engine/game-availability";
 import { Hono } from "hono";
 import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
@@ -44,7 +45,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.post("/api/werewolf/lobbies", requireAuth(db), requirePermission("create_game"), async c => {
     const input = await c.req.json().catch(() => null);
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some(key => !["preset", "providerManifest", "maxDays"].includes(key))
+      || Object.keys(input).some(key => !["preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode"].includes(key))
       || !["one_wolf", "two_wolves"].includes(input.preset)
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || input.maxDays < 1 || input.maxDays > 20))) return c.json({ error: "Choose a Werewolf preset and a day limit from 1 to 20." }, 400);
     return c.json(await createWerewolfLobby(db, c.get("user").id, input), 201);
@@ -61,6 +62,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   });
   app.post("/api/werewolf/:id/start", requireAuth(db), requirePermission("start_game"), async c => c.json(await startWerewolfLobby(db, c.req.param("id"))));
   app.get("/api/werewolf", async (c) => {
+    if (!enabledGameKinds().includes("werewolf")) return c.json([]);
     c.header("Cache-Control", "private, no-store");
     const rows = await db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
       playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
@@ -89,7 +91,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       }
       if (player) {
         if (!presentation.view.players.some(p => p.id === player)) return c.json({ error: "Character not found" }, 404);
-        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player);
+        const bytes = await readWerewolfCharacter(db, presentation.view.gameId, player, c.req.query("image") === "body" ? "body" : "portrait");
         if (!bytes) return c.json({ error: "Frozen character reference unavailable" }, 404);
         // Frozen references may be JPEG/WebP as well as PNG. Browsers decode the bytes.
         c.header("Content-Type", bytes[0] === 0xff ? "image/jpeg" : bytes.toString("ascii", 0, 4) === "RIFF" ? "image/webp" : "image/png");

@@ -35,7 +35,8 @@
     "./werewolf/thinking": "./src/werewolf/thinking.ts",
     "./werewolf/watch-contract": "./src/werewolf/watch-contract.ts",
     "./werewolf/watch": "./src/werewolf/watch.ts",
-    "./werewolf/presentation": "./src/werewolf/presentation.ts"
+    "./werewolf/presentation": "./src/werewolf/presentation.ts",
+    "./game-availability": "./src/game-availability.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

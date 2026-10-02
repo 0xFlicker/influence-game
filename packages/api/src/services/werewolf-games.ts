@@ -1,6 +1,7 @@
+import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, pickArchetypes, resolveModelSelection } from "@influence/engine";
+import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, HOUSE_PERSONA_KEYS, resolveModelSelection } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
 import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
@@ -34,7 +35,16 @@ export function validateWerewolfModels(input?: unknown) {
   return providerManifest;
 }
 
-export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; agentProfileId: string }>, count: number): Promise<WerewolfPlayer[]> {
+export function normalizeWerewolfCasting(input: { personaPool?: unknown; fillStrategy?: unknown }) {
+  const all = HOUSE_PERSONA_KEYS;
+  const pool = input.personaPool ?? all;
+  if (!Array.isArray(pool) || pool.length < 2 || pool.some(key => !all.includes(key)) || new Set(pool).size !== pool.length) throw new WerewolfGameError("Choose at least two distinct archetypes", 400);
+  const fillStrategy = input.fillStrategy ?? "balanced";
+  if (fillStrategy !== "balanced" && fillStrategy !== "random") throw new WerewolfGameError("Choose balanced or random casting", 400);
+  return { personaPool: pool as typeof all, fillStrategy };
+}
+
+export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; agentProfileId: string }>, count: number, casting = normalizeWerewolfCasting({})): Promise<WerewolfPlayer[]> {
   if (seats.length > count) throw new WerewolfGameError("The village exceeds its seat limit.");
   const profiles = seats.length ? await tx.select().from(schema.agentProfiles)
     .where(inArray(schema.agentProfiles.id, seats.map(seat => seat.agentProfileId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
@@ -53,7 +63,14 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
     if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
     const fill = count - players.length;
     const names = pickAgentNames(fill, players.map((p) => p.name));
-    const archetypes = pickArchetypes(fill);
+    const archetypes: typeof casting.personaPool = [];
+    let remaining = casting.personaPool.filter(key => !players.some(player => player.personaKey === key));
+    for (let i = 0; i < fill; i++) {
+      if (!remaining.length) remaining = [...casting.personaPool];
+      const pool = casting.fillStrategy === "random" ? casting.personaPool : remaining;
+      const selected = pool[Math.floor(Math.random() * pool.length)]!;
+      archetypes.push(selected); remaining = remaining.filter(key => key !== selected);
+    }
     for (let i = 0; i < fill; i++) {
       const identity = getHousePersonaDetails(archetypes[i]!);
       players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
@@ -65,6 +82,7 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
   preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
 }) {
+  if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
   if (!Object.hasOwn(WEREWOLF_PRESETS, input.preset)) throw new WerewolfGameError("Choose one_wolf or two_wolves", 400);
   const count = WEREWOLF_PRESETS[input.preset].players;
   if (!Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
@@ -118,7 +136,7 @@ export async function claimWerewolfGame(db: DrizzleDB, gameId: string, processId
   });
 }
 
-async function lockWerewolfOwner(tx: Tx, gameId: string, ownerEpoch: string) {
+export async function lockWerewolfOwner(tx: Tx, gameId: string, ownerEpoch: string) {
   const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
   const [owner] = await tx.select().from(schema.gameRunOwners).where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.ownerEpoch, ownerEpoch))).for("update");
   if (!game || game.gameKind !== "werewolf" || game.status !== "in_progress" || !owner || owner.status !== "active"

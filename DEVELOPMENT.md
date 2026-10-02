@@ -4,6 +4,11 @@ This document covers development practices for the Influence game prototype and 
 
 ## Werewolf development
 
+Use `/games/new?game=werewolf` for the shared creator: 6–8 seats, 1–2 wolves, optional Seer/Doctor, model routes, reasoning, archetypes and automatic Visual Mode. Starting the saved lobby freezes the setup and fills unclaimed seats. The root `/werewolf` page is removed; `/games` owns discovery. `NEXT_PUBLIC_ENABLED_GAMES=influence,werewolf` controls enabled creation/discovery in the API runtime and web build. Existing match URLs still work.
+
+With Visual Mode on, the worker prepares public village and private pack scenes using the shared renderer before speech. Initial accepted scenes automatically publish; Mystery retains its pack-image isolation. Production still handles completed-game corrections. Required tests use injected image fixtures and make no paid calls. Rules pages render repository Markdown directly; see `docs/werewolf.md#automatic-visuals-and-public-integration`.
+
+
 The public Werewolf route now uses the shared House player in `packages/web/src/components/watch/`. Influence policy remains in `influence-presentation-director.ts`; Werewolf window loading/presentation remains under `app/werewolf/`. The shared scheduler does not import either game's rules. The browser DTO is `@influence/engine/werewolf/watch-contract`; server projection is `@influence/engine/werewolf/watch`. Do not import the server projector into a client component: it pulls in rules/provider dependencies. See the [implementation evidence](docs/reviews/2026-10-01-shared-house-watch-player-implementation.md) for checks and proof boundaries. No new migration, inference call or gameplay version is required for playback.
 
 Werewolf now requests private `thinking` on every model turn, including speech and passes. In the viewer select **Omniscient → Show thinking**; Mystery never receives it. The API provider journal preserves speech thinking across recovery without adding it to gameplay history or agent observations. Sealed decisions appear only after resolution. Restart gateway and worker for new turns to use the contract; older conversations cannot gain uncaptured thinking. No migration is needed. Native provider reasoning traces remain separate diagnostics.

@@ -614,6 +614,7 @@ export {
   isReservedHouseAgentName,
   pickAgentNames,
   pickArchetypes,
+  HOUSE_PERSONA_KEYS,
 } from "./house-personas";
 
 // LLM provider configuration

@@ -57,7 +57,7 @@ function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refre
     <nav className="pre-show-nav" aria-label="Game navigation"><Link href="/games">← All games</Link><span className="pre-show-code">{game.slug}</span><Link className="pre-show-create" href={createHref}>＋ Create agent</Link></nav>
     <CastingHero gameKind="werewolf" intro="A village full of familiar faces. A pack hiding among them. Bring your agent and see who survives the night."
       playerCount={game.playerCount} castCount={game.players.length} seatsLabel={`${openSeats} ${openSeats === 1 ? "seat" : "seats"} open`}
-      canJoin={canJoin} disabled={busy || !auth.ready} onChoose={choose} chooseLabel={inCast ? "Add another agent" : "Join with an agent"} rulesHref="/werewolf#werewolf-rules">
+      canJoin={canJoin} disabled={busy || !auth.ready} onChoose={choose} chooseLabel={inCast ? "Add another agent" : "Join with an agent"} rulesHref="/rules?game=werewolf">
       {inCast && <p className="pre-show-notice">Your agent is in. This cast is saved.</p>}
       {hasPermission("start_game") && <div className="mt-5"><button disabled={busy} className="pre-show-join" onClick={() => void act(() => startWerewolfLobby(game.id))}>{busy ? "Updating…" : "Start Werewolf"}</button><p className="pre-show-notice">{openSeats ? `Starting adds ${openSeats} House agents to fill the village.` : "The village is ready."} Roles and strategies freeze at the start.</p></div>}
       {hasPermission("stop_game") && <button className="mt-4 text-sm text-red-300" disabled={busy} onClick={() => void act(() => stopWerewolf(game.id))}>Cancel game</button>}

@@ -124,3 +124,32 @@ test("lobby creation and start have separate permission gates, while ordinary au
   expect((await app.request(`/api/werewolf/${game.id}/start`, { method: "POST", headers: owner })).status).toBe(403);
   expect(await readWerewolfEvents(db, game.id)).toEqual([]);
 });
+
+
+test("custom setup, provider policy, casting and visuals survive lobby start", async () => {
+  const setup = {playerCount:7 as const,wolves:2 as const,seer:false,doctor:true};
+  const g = await createWerewolfLobby(db,"owner",{preset:"two_wolves",setup,visualMode:true,personaPool:["observer","aggressive"],fillStrategy:"balanced",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
+  expect((await readWerewolfLobby(db,g.id)).playerCount).toBe(7);
+  await startWerewolfLobby(db,g.id);
+  const state = replayWerewolf(await readWerewolfEvents(db,g.id));
+  expect(state.config.setup).toEqual(setup);
+  expect(state.players).toHaveLength(7);
+  expect(new Set(state.players.map(p=>p.personaKey))).toEqual(new Set(["observer","aggressive"]));
+  const roles = Object.values(state.roles);
+  expect(roles.filter(r=>r==="werewolf")).toHaveLength(2);
+  expect(roles).not.toContain("seer");
+  expect(roles.filter(r=>r==="doctor")).toHaveLength(1);
+  const [row] = await db.select().from(schema.games).where(eq(schema.games.id,g.id));
+  expect(JSON.parse(row!.config)).toMatchObject({visualMode:true,providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID,reasoningPolicy:"low"}]});
+});
+
+test("disabled Werewolf rejects creation and discovery but leaves existing game reads available",async()=>{
+  const g = await create();
+  const old=process.env.NEXT_PUBLIC_ENABLED_GAMES;
+  try {
+    process.env.NEXT_PUBLIC_ENABLED_GAMES="influence";
+    await expect(create()).rejects.toThrow("unavailable");
+    expect(await (await createWerewolfRoutes(db).request("/api/werewolf")).json()).toEqual([]);
+    expect((await readWerewolfLobby(db,g.id)).id).toBe(g.id);
+  } finally {if(old===undefined)delete process.env.NEXT_PUBLIC_ENABLED_GAMES;else process.env.NEXT_PUBLIC_ENABLED_GAMES=old;}
+});

@@ -110,7 +110,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
 }
 
 /** Preserve the current accepted gameplay version without changing its source record. */
-async function captureOriginalMediaVersion(tx: VisualTransaction, scene: typeof schema.visualScenes.$inferSelect) {
+export async function captureOriginalMediaVersion(tx: VisualTransaction, scene: typeof schema.visualScenes.$inferSelect) {
   if (scene.status !== "ready" || !scene.imageArtifactId || !scene.annotatedArtifactId) return;
   await tx.insert(versions).values(originalVersion(scene)).onConflictDoNothing();
 }

@@ -435,3 +435,28 @@ async function configureTextFallbacks(mounted: ReturnType<typeof render>) {
   fireEvent.click(mounted.getByRole("button", { name: /Add fallback/ }));
   fireEvent.change(mounted.getByRole("combobox", { name: "Fallback 2 model" }), { target: { value: "katana:grok-4-5" } });
 }
+
+
+test("Werewolf uses shared model/casting controls and submits configurable roles and automatic visuals",async()=>{
+  installDom();
+  const calls:Array<{url:string;body:Record<string,unknown>}>=[];
+  globalThis.fetch=(async(request,init)=>{
+    if(String(request).endsWith("/api/provider-models"))return jsonResponse(providerInventory());
+    calls.push({url:String(request),body:JSON.parse(String(init?.body))});
+    return jsonResponse({id:"wolf",slug:"custom-village"},201);
+  }) as typeof fetch;
+  const mounted=render(<CreateGameForm initialKind="werewolf"/>);
+  await waitFor(()=>expect(mounted.getByRole("combobox",{name:"Primary model"})).not.toBeNull());
+  fireEvent.click(mounted.getByRole("button",{name:"7"}));
+  fireEvent.click(mounted.getByRole("button",{name:"2 wolves"}));
+  fireEvent.click(mounted.getByRole("checkbox",{name:/Seer/i}));
+  fireEvent.click(mounted.getByRole("checkbox",{name:/Doctor/i}));
+  fireEvent.click(mounted.getByRole("checkbox",{name:/Visual Mode/}));
+  expect(mounted.queryByText("Round formats")).toBeNull();
+  fireEvent.click(mounted.getByRole("button",{name:"Create Werewolf Game"}));
+  await waitFor(()=>expect(pushed).toEqual(["/werewolf/custom-village"]));
+  expect(calls[0]!.url).toContain("/api/werewolf/lobbies");
+  expect(calls[0]!.body).toMatchObject({setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"katana:grok-4-6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]});
+  expect((calls[0]!.body.personaPool as string[]).length).toBeGreaterThan(1);
+  expect(calls[0]!.body).not.toHaveProperty("formatManifest");
+});

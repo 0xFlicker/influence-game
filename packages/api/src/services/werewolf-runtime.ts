@@ -1,3 +1,4 @@
+import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
 import { runWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
@@ -46,7 +47,16 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
     });
   }, 30_000);
   heartbeat.unref();
-  const promise = runWerewolf(createWerewolfStore(db, gameId, ownerEpoch), agent, controller.signal)
+  const store = createWerewolfStore(db, gameId, ownerEpoch);
+  if (config.visualMode === true) {
+    const prepareTurn = store.prepare!;
+    const prepareScene = createWerewolfVisualPreparation(db, gameId, ownerEpoch, controller.signal);
+    store.prepare = async (state, request, sequence) => {
+      await prepareTurn(state, request, sequence);
+      await prepareScene(state, request);
+    };
+  }
+  const promise = runWerewolf(store, agent, controller.signal)
     .then(() => {})
     .catch(async (error) => {
       if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);
