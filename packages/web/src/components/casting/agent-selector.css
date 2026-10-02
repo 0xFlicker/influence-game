@@ -62,3 +62,5 @@
   .agent-selector-submit-row > p { font-size: .7rem; }
 }
 @media (prefers-reduced-motion: reduce) { .agent-selector *, .agent-selector-loading span { transition: none; animation: none; } }
+
+.agent-selector-card:has(input:disabled) { opacity: .5; cursor: default; }

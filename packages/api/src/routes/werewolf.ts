@@ -1,11 +1,13 @@
 import { Hono } from "hono";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
+import { createWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
+import { modelLabelFromConfig } from "../lib/model-label.js";
 import { abortWerewolf } from "../services/werewolf-runtime.js";
 
 export function createWerewolfRoutes(db: DrizzleDB) {
@@ -39,12 +41,34 @@ export function createWerewolfRoutes(db: DrizzleDB) {
       throw error;
     }
   });
+  app.post("/api/werewolf/lobbies", requireAuth(db), requirePermission("create_game"), async c => {
+    const input = await c.req.json().catch(() => null);
+    if (!input || typeof input !== "object" || Array.isArray(input)
+      || Object.keys(input).some(key => !["preset", "providerManifest", "maxDays"].includes(key))
+      || !["one_wolf", "two_wolves"].includes(input.preset)
+      || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || input.maxDays < 1 || input.maxDays > 20))) return c.json({ error: "Choose a Werewolf preset and a day limit from 1 to 20." }, 400);
+    return c.json(await createWerewolfLobby(db, c.get("user").id, input), 201);
+  });
+  app.get("/api/werewolf/:id/lobby", async c => c.json(await readWerewolfLobby(db, c.req.param("id"))));
+  app.post("/api/werewolf/:id/join", requireAuth(db), async c => {
+    const input = await c.req.json().catch(() => null);
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || typeof input.agentProfileId !== "string" || !input.agentProfileId.trim()) return c.json({ error: "Choose an owned agent." }, 400);
+    return c.json(await joinWerewolfLobby(db, c.req.param("id"), c.get("user").id, input.agentProfileId));
+  });
+  app.delete("/api/werewolf/:id/seats/:playerId", requireAuth(db), async c => {
+    await leaveWerewolfLobby(db, c.req.param("id"), c.get("user").id, c.req.param("playerId"));
+    return c.json({ removed: true });
+  });
+  app.post("/api/werewolf/:id/start", requireAuth(db), requirePermission("start_game"), async c => c.json(await startWerewolfLobby(db, c.req.param("id"))));
   app.get("/api/werewolf", async (c) => {
     c.header("Cache-Control", "private, no-store");
     const rows = await db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
-      playerCount: schema.games.maxPlayers, createdAt: schema.games.createdAt }).from(schema.games)
+      playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
       .where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt))).orderBy(desc(schema.games.createdAt)).limit(100);
-    return c.json(rows);
+    const seats = rows.length ? await db.select({ gameId: schema.werewolfLobbySeats.gameId, total: count() }).from(schema.werewolfLobbySeats)
+      .where(inArray(schema.werewolfLobbySeats.gameId, rows.map(game => game.id))).groupBy(schema.werewolfLobbySeats.gameId) : [];
+    const joined = new Map(seats.map(row => [row.gameId, row.total]));
+    return c.json(rows.map(({ config, ...game }) => ({ ...game, gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) })));
   });
   for (const route of ["/api/werewolf/:id/presentation", "/api/werewolf/:id/media/:asset", "/api/werewolf/:id/characters/:player"]) {
     app.get(route, async c => {
@@ -92,6 +116,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
     if (!game) return c.json({ error: "Game not found" }, 404);
+    if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
     const audience = c.req.query("audience") ?? "mystery";
     if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);
     const cursor = c.req.query("cursor");
@@ -107,7 +132,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     const id = c.req.param("id");
     const stopped = await db.transaction(async (tx) => {
       const [game] = await tx.select().from(schema.games).where(and(eq(schema.games.id, id), eq(schema.games.gameKind, "werewolf"))).for("update");
-      if (!game || game.status !== "in_progress") return false;
+      if (!game || !["waiting", "in_progress"].includes(game.status)) return false;
       await tx.update(schema.games).set({ status: "cancelled", endedAt: new Date().toISOString() }).where(eq(schema.games.id, id));
       await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: new Date().toISOString(), failureReason: "operator_stop" })
         .where(and(eq(schema.gameRunOwners.gameId, id), eq(schema.gameRunOwners.status, "active")));

@@ -14,8 +14,8 @@
 .pre-show-eyebrow > span { margin: 0 .5rem; opacity: .5; }
 .pre-show-status { display: flex; align-items: center; gap: .5rem; margin-top: 2rem; color: #bcb4a5; font-size: .75rem; }
 .pre-show-status > span { width: .35rem; height: .35rem; border-radius: 50%; background: #dfbe80; box-shadow: 0 0 12px #dfbe8070; }
-.pre-show h1 { margin-top: .8rem; font-size: clamp(2.8rem, 5.2vw, 4.5rem); font-weight: 500; letter-spacing: -.065em; line-height: 1.03; }
-.pre-show h1 em { font-family: Georgia, 'Times New Roman', serif; color: #e5c88f; font-weight: 400; letter-spacing: -.06em; }
+.pre-show .pre-show-title { margin-top: .8rem; font-size: clamp(2.8rem, 5.2vw, 4.5rem); font-weight: 500; letter-spacing: -.065em; line-height: 1.03; }
+.pre-show .pre-show-title em { font-family: Georgia, 'Times New Roman', serif; color: #e5c88f; font-weight: 400; letter-spacing: -.06em; }
 .pre-show-intro { max-width: 22rem; margin-top: 1.4rem; font-size: .9rem; line-height: 1.8; color: #c3bcaf; text-wrap: pretty; }
 .pre-show-hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1.2rem; margin-top: 1.7rem; }
 .pre-show-join { display: inline-flex; align-items: center; gap: 1.5rem; min-height: 2.8rem; border-radius: .35rem; padding: .65rem 1rem; background: #dfbe80; color: #211a10; font-size: .8rem; font-weight: 600; }
@@ -85,7 +85,7 @@
   .pre-show-hero::before { background: linear-gradient(90deg, #110e14ec, #110e148f), url('/agent-creation-hall.webp') 70% center / cover; }
   .pre-show-hero-copy { padding: 1.7rem 1.4rem; }
   .pre-show-status { margin-top: 1.4rem; }
-  .pre-show h1 { font-size: clamp(2.8rem, 11vw, 4rem); }
+  .pre-show .pre-show-title { font-size: clamp(2.8rem, 11vw, 4rem); }
   .pre-show-intro { max-width: 24rem; font-size: .85rem; }
   .pre-show-poster { display: none; }
   .pre-show-admission { flex-wrap: wrap; gap: .7rem 1rem; padding: 1rem 1.4rem; }
@@ -107,3 +107,15 @@
   .pre-show *, .pre-show-cast-card > img { transition: none; }
   .pre-show-cast-card:hover, .pre-show-cast-card:hover > img, .pre-show-join:hover { transform: none; }
 }
+
+/* The venue and House mark are shared; Werewolf stages the hall at night. */
+.pre-show-hero[data-game-kind="werewolf"]::before { filter: saturate(.55) hue-rotate(12deg); }
+.werewolf-casting-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; padding: 1.5rem 0; border-bottom: 1px solid #dfbe8025; }
+.werewolf-casting-settings label { display: grid; gap: .6rem; font-size: .8rem; color: #c3bcaf; }
+.werewolf-casting-settings select { width: 100%; min-width: 0; min-height: 2.8rem; padding: .6rem .8rem; border: 1px solid #dfbe8038; border-radius: .35rem; background: #110e14; color: #eee8dd; }
+.werewolf-casting-settings select:focus-visible { outline: 2px solid #dfbe80; outline-offset: 3px; }
+.werewolf-cast-remove { position: absolute; top: .4rem; right: .4rem; z-index: 3; width: 2.75rem; height: 2.75rem; border-radius: 50%; background: #09070bd9; color: #fff3db; font-size: 1.5rem; }
+.werewolf-cast-remove:hover { background: #39222b; }
+.werewolf-casting-launch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.5rem; margin-top: 2rem; padding: 1.5rem 0; border-block: 1px solid #dfbe8025; }
+.werewolf-casting-launch > div > p:not(:first-child) { margin-top: .5rem; font-size: .8rem; line-height: 1.6; color: #bcb4a7; }
+@media (max-width: 639px) { .werewolf-casting-settings { grid-template-columns: 1fr; gap: 1rem; } }

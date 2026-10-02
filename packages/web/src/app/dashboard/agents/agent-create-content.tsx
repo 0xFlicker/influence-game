@@ -19,13 +19,14 @@ import {
   type SavedAgent,
   type UpdateAgentParams,
 } from "@/lib/api";
+import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
 import { AgentForm } from "./agent-form";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
-export type AgentCreateFlow = "manage" | "join_game" | "daily_free";
+export type AgentCreateFlow = "manage" | "join_game" | "join_werewolf" | "daily_free";
 
-export function AgentCreateRulesLink() {
-  return <> <Link href="/rules" className="influence-link">Read the Rules</Link> before setting their strategy.</>;
+export function AgentCreateRulesLink({ werewolf = false }: { werewolf?: boolean } = {}) {
+  return <> <Link href={werewolf ? "/werewolf#werewolf-rules" : "/rules"} className="influence-link">Read the Rules</Link> before setting their strategy.</>;
 }
 
 export function AgentCreateContent({
@@ -65,7 +66,7 @@ export function AgentCreateContent({
     }
     agent ??= await getAgentByCreationRequestId(creationRequestId);
 
-    let joinTarget: Awaited<ReturnType<typeof getGame>> | null = null;
+    let joinTarget: { slug: string; status: string } | null = null;
     if (agent) {
       const baseline = createBaseline.current ?? readCreateBaseline(baselineKey);
       if (!baseline) {
@@ -81,9 +82,9 @@ export function AgentCreateContent({
         });
       }
     } else {
-      if (flow === "join_game") {
+      if (flow === "join_game" || flow === "join_werewolf") {
         if (!gameId) throw new Error("The game to join is no longer available.");
-        joinTarget = await getGame(gameId);
+        joinTarget = flow === "join_werewolf" ? await getWerewolfLobby(gameId) : await getGame(gameId);
         if (joinTarget.status !== "waiting") {
           throw new Error("This game is no longer accepting players.");
         }
@@ -98,12 +99,13 @@ export function AgentCreateContent({
     writeEditorStorage(baselineKey, JSON.stringify(params));
     createdAgentId.current = agent.id;
     writeEditorStorage(continuationKey, agent.id);
-    if (flow === "join_game" && gameId) {
-      await joinGame(gameId, { agentProfileId: agent.id });
-      const joinedGame = joinTarget ?? await getGame(gameId);
+    if ((flow === "join_game" || flow === "join_werewolf") && gameId) {
+      if (flow === "join_werewolf") await joinWerewolfLobby(gameId, agent.id);
+      else await joinGame(gameId, { agentProfileId: agent.id });
+      const joinedGame = joinTarget ?? (flow === "join_werewolf" ? await getWerewolfLobby(gameId) : await getGame(gameId));
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
-      router.replace(`/games/${encodeURIComponent(joinedGame.slug)}`);
+      router.replace(`/${flow === "join_werewolf" ? "werewolf" : "games"}/${encodeURIComponent(joinedGame.slug)}`);
       return;
     }
     if (flow === "daily_free") {
@@ -119,12 +121,12 @@ export function AgentCreateContent({
     router.replace("/dashboard/agents");
   }
 
-  const context = flow === "join_game"
+  const context = flow === "join_game" || flow === "join_werewolf"
     ? {
         title: "Create an Agent and join",
         description: "Build a saved competitor, then enter the selected game.",
         submitLabel: "Create & join",
-        cancelPath: gameId ? `/dashboard?joinGameId=${encodeURIComponent(gameId)}` : "/dashboard",
+        cancelPath: gameId ? (flow === "join_werewolf" ? `/werewolf/${encodeURIComponent(gameId)}` : `/dashboard?joinGameId=${encodeURIComponent(gameId)}`) : "/dashboard",
       }
     : flow === "daily_free"
       ? {
@@ -150,7 +152,7 @@ export function AgentCreateContent({
         </nav>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">{context.title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
-          {context.description}<AgentCreateRulesLink />
+          {context.description}<AgentCreateRulesLink werewolf={flow === "join_werewolf"} />
         </p>
       </header>
       <AgentForm

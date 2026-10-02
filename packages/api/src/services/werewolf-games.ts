@@ -24,6 +24,43 @@ export async function readWerewolfEvents(db: DrizzleDB | Tx, gameId: string): Pr
   return rows.map((row) => row.event);
 }
 
+export function validateWerewolfModels(input?: unknown) {
+  let providerManifest;
+  try { providerManifest = normalizeProviderManifest(input ?? [{ catalogId: DEFAULT_MODEL_CATALOG_ID }]); }
+  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid provider manifest", 400); }
+  for (const selection of providerManifest) {
+    if (resolveModelSelection(selection).model.evaluationStatus !== "game-ready") throw new WerewolfGameError("Model is not available", 400);
+  }
+  return providerManifest;
+}
+
+export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; agentProfileId: string }>, count: number): Promise<WerewolfPlayer[]> {
+  if (seats.length > count) throw new WerewolfGameError("The village exceeds its seat limit.");
+  const profiles = seats.length ? await tx.select().from(schema.agentProfiles)
+    .where(inArray(schema.agentProfiles.id, seats.map(seat => seat.agentProfileId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
+  if (profiles.length !== seats.length) throw new WerewolfGameError("A cast member is no longer available. Remove them before starting.");
+  const players: WerewolfPlayer[] = [];
+    for (const seat of seats) {
+      const profile = profiles.find((p) => p.id === seat.agentProfileId)!;
+      if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
+      const [revision] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
+      if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
+      const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
+      players.push({ id: seat.id, agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
+        name: character.name, personality: character.personality, backstory: character.backstory ?? "",
+        strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
+    }
+    if (new Set(players.map(player => player.name.trim().toLowerCase())).size !== players.length) throw new WerewolfGameError("Two cast members now share a name. Rename or remove one before starting.");
+    const fill = count - players.length;
+    const names = pickAgentNames(fill, players.map((p) => p.name));
+    const archetypes = pickArchetypes(fill);
+    for (let i = 0; i < fill; i++) {
+      const identity = getHousePersonaDetails(archetypes[i]!);
+      players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
+    }
+  return players;
+}
+
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
   preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
@@ -34,12 +71,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     || new Set(input.agentProfileIds).size !== input.agentProfileIds.length || input.agentProfileIds.length > count) {
     throw new WerewolfGameError("Choose distinct owned characters within the seat limit", 400);
   }
-  let providerManifest;
-  try { providerManifest = normalizeProviderManifest(input.providerManifest ?? [{ catalogId: DEFAULT_MODEL_CATALOG_ID }]); }
-  catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid provider manifest", 400); }
-  for (const selection of providerManifest) {
-    if (resolveModelSelection(selection).model.evaluationStatus !== "game-ready") throw new WerewolfGameError("Model is not available", 400);
-  }
+  const providerManifest = validateWerewolfModels(input.providerManifest);
   const gameId = randomUUID();
   const slug = await generateUniqueSlug(async (candidate) => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   await db.transaction(async (tx) => {
@@ -48,24 +80,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const profiles = input.agentProfileIds.length ? await tx.select().from(schema.agentProfiles)
       .where(and(inArray(schema.agentProfiles.id, input.agentProfileIds), eq(schema.agentProfiles.userId, userId))).orderBy(asc(schema.agentProfiles.id)).for("update") : [];
     if (profiles.length !== input.agentProfileIds.length) throw new WerewolfGameError("A selected character is unavailable", 403);
-    const players: WerewolfPlayer[] = [];
-    for (const id of input.agentProfileIds) {
-      const profile = profiles.find((p) => p.id === id)!;
-      if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("A selected character is archived or awaiting review", 409);
-      const [revision] = profile.contentRevisionId ? await tx.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
-      if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
-      const character = revision ? decodeContentSnapshot(revision.snapshot, profile) : profile;
-      players.push({ id: randomUUID(), agentProfileId: profile.id, contentRevisionId: profile.contentRevisionId,
-        name: character.name, personality: character.personality, backstory: character.backstory ?? "",
-        strategy: resolveWerewolfStrategy(character.werewolfStrategyStyle, character.personaKey), avatarUrl: character.avatarUrl, personaKey: character.personaKey });
-    }
-    const fill = count - players.length;
-    const names = pickAgentNames(fill, players.map((p) => p.name));
-    const archetypes = pickArchetypes(fill);
-    for (let i = 0; i < fill; i++) {
-      const identity = getHousePersonaDetails(archetypes[i]!);
-      players.push({ id: randomUUID(), name: names[i]!, personality: identity.personalityBlurb, backstory: "", strategy: resolveWerewolfStrategy(null, archetypes[i]!), avatarUrl: null, personaKey: archetypes[i]! });
-    }
+    const players = await freezeWerewolfRoster(tx, input.agentProfileIds.map(agentProfileId => ({ id: randomUUID(), agentProfileId })), count);
     const rules = werewolfConfig(input.preset, input.maxDays ?? 10);
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,

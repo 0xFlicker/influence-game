@@ -1,5 +1,5 @@
 import { Nav } from "@/components/nav";
-import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import { GamesBrowser } from "./games-browser";
 import Link from "next/link";
 
@@ -17,14 +17,14 @@ export default function GamesPage() {
           Every room has a story.
         </h1>
         <p className="influence-copy mb-8">
-          Find an {ACTIVE_GAME.name} game to enter. Find an episode to get lost in.
+          Find a House game to enter. Find an episode to get lost in.
         </p>
 
         <nav aria-label="Game" className="mb-6 flex items-center gap-5 text-sm">
-          <span aria-current="page" className="font-semibold text-white">Influence</span>
+          <span aria-current="page" className="font-semibold text-white">All games</span>
           <Link href="/werewolf" className="text-white/60 hover:text-white">Werewolf →</Link>
         </nav>
-        <GamesBrowser />
+        <GamesBrowser includeWerewolf />
       </main>
     </div>
   );

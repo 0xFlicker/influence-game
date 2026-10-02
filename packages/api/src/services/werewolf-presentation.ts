@@ -13,6 +13,7 @@ import { readVisualProfileImage } from "./visual-game-assets.js";
 export async function readWerewolfPresentation(db: DrizzleDB, id: string, audience: WerewolfAudience, cursor?: number, publicationCutoff = new Date().toISOString()) {
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game) throw new WerewolfGameError("Game not found", 404);
+  if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
   const frame = projectWerewolfPresentation(await readWerewolfEvents(db, game.id), audience, cursor);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const { scene, permitted } = bindWerewolfScene(rows, game.id, audience, frame.view.cursor, publicationCutoff, frame);
@@ -66,6 +67,7 @@ function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScen
 export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: WerewolfAudience, fromCursor: number, limit: number, publicationCutoff = new Date().toISOString()): Promise<WerewolfWatchWindow> {
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game) throw new WerewolfGameError("Game not found", 404);
+  if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
   const projection = projectWerewolfWatch(await readWerewolfEvents(db, game.id), audience, fromCursor, limit);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const media: WerewolfWatchWindow["media"] = {};

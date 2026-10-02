@@ -31,16 +31,16 @@ export function GameList() {
     <Link href="/admin/games" className={styles.back}>← Administration</Link>
     <header className={styles.heading}><div><p className={styles.eyebrow}>Game operations & production</p><h1>Werewolf</h1><p>Follow the game. Inspect the spend. Prepare the scene.</p></div><button onClick={() => void refresh()}>Refresh</button></header>
     <div className={styles.filters}><label>Find a game<input value={query} onChange={e => change("q", e.target.value)} placeholder="Search by game name" /></label>
-      <label>Status<select value={filter} onChange={e => change("status", e.target.value)}>{["all", "in_progress", "completed", "suspended", "cancelled"].map(v => <option key={v} value={v}>{title(v)}</option>)}</select></label>
+      <label>Status<select value={filter} onChange={e => change("status", e.target.value)}>{["all", "waiting", "in_progress", "completed", "suspended", "cancelled"].map(v => <option key={v} value={v}>{title(v)}</option>)}</select></label>
       <label>Visibility<select value={visibility} onChange={e => change("visibility", e.target.value)}>{["visible", "hidden", "all"].map(v => <option key={v} value={v}>{title(v)}</option>)}</select></label></div>
     {error && <Notice>{error}</Notice>}
     {!data && !error && <p role="status" className={styles.empty}>Loading Werewolf games…</p>}
     {rows?.length === 0 && <p className={styles.empty}>No games match these filters. <Link href="/werewolf">Open the Werewolf lobby</Link></p>}
     <div className={styles.list}>{rows?.map(game => <article key={game.id} className={styles.row}>
-      <div><p className={styles.eyebrow}>{title(game.status)}{game.hidden ? " · Hidden" : ""}</p><h2>{game.slug}</h2><p>{game.playerCount} players · {game.progress ? `Day ${game.progress.day} · ${title(game.progress.phase)}` : "State unavailable"}</p>{game.error && <p className={styles.warning}>{game.error}</p>}</div>
+      <div><p className={styles.eyebrow}>{title(game.status)}{game.hidden ? " · Hidden" : ""}</p><h2>{game.slug}</h2><p>{game.playerCount} players · {game.status === "waiting" ? "Casting open" : game.progress ? `Day ${game.progress.day} · ${title(game.progress.phase)}` : "State unavailable"}</p>{game.error && <p className={styles.warning}>{game.error}</p>}</div>
       <div><span className={styles.small}>Gameplay cost</span><strong className={styles.number}>{game.cost?.state === "actual" ? money(game.cost.actualCostMicrousd) : game.cost?.state === "estimated" ? `~${money(game.cost.estimatedCostMicrousd)}` : "N/C"}</strong><span className={styles.small}>{game.cost?.callCount ?? 0} recorded calls</span></div>
       <div><span className={styles.small}>Production</span><span>{game.production.active ? `${game.production.active} active jobs` : game.production.failed ? `${game.production.failed} jobs need attention` : "Ready to inspect"}</span></div>
-      <Link className={styles.open} href={`${href(game.id, "overview")}?${params}`}>Open <span aria-hidden>↗</span></Link>
+      <Link className={styles.open} href={game.status === "waiting" ? `/werewolf/${game.slug}` : `${href(game.id, "overview")}?${params}`}>Open <span aria-hidden>↗</span></Link>
     </article>)}</div>
     <p className={styles.footnote}>Latest 100 games · N/C means no collected price, not zero spend.</p>
   </div>;

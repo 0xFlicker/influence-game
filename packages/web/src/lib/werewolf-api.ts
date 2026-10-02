@@ -1,12 +1,23 @@
 import type { WerewolfPresentation } from "@influence/engine/werewolf/presentation";
-import { apiFetch, resolveApiUrl } from "./api";
+import { apiFetch, resolveApiUrl, type GameStatus, type SavedAgent } from "./api";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { WerewolfPreset } from "@influence/engine/werewolf/types";
 
-export interface WerewolfGameSummary { id: string; slug: string; status: string; playerCount: number; createdAt: string }
+export interface WerewolfGameSummary { gameKind: "werewolf"; id: string; slug: string; status: GameStatus; playerCount: number; joinedPlayers: number; modelLabel: string; createdAt: string }
+export interface WerewolfLobbyData {
+  id: string; slug: string; status: GameStatus; started: boolean; playerCount: number; modelLabel: string; preset: WerewolfPreset;
+  players: Array<{ id: string; agentProfileId: string; ownerPublicId: string; name: string; avatarUrl: string | null; personaKey: SavedAgent["personaKey"]; available: boolean }>;
+}
 export const listWerewolfGames = () => apiFetch<WerewolfGameSummary[]>("/api/werewolf", { cache: "no-store" });
-export const createWerewolf = (preset: WerewolfPreset, agentProfileIds: string[], catalogId: string) =>
-  apiFetch<{ id: string; slug: string }>("/api/werewolf", { method: "POST", body: JSON.stringify({ preset, agentProfileIds, providerManifest: [{ catalogId }] }) });
+export const createWerewolfLobby = (preset: WerewolfPreset, catalogId: string) =>
+  apiFetch<{ id: string; slug: string }>("/api/werewolf/lobbies", { method: "POST", body: JSON.stringify({ preset, providerManifest: [{ catalogId }] }) });
+export const getWerewolfLobby = async (id: string, signal?: AbortSignal) => {
+  const data = await apiFetch<WerewolfLobbyData>(`/api/werewolf/${encodeURIComponent(id)}/lobby`, { cache: "no-store", signal });
+  return { ...data, players: data.players.map(player => ({ ...player, avatarUrl: player.avatarUrl ? resolveApiUrl(player.avatarUrl) : null })) };
+};
+export const joinWerewolfLobby = (id: string, agentProfileId: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/join`, { method: "POST", body: JSON.stringify({ agentProfileId }) });
+export const leaveWerewolfLobby = (id: string, playerId: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/seats/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+export const startWerewolfLobby = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/start`, { method: "POST" });
 export const stopWerewolf = (id: string) => apiFetch(`/api/werewolf/${encodeURIComponent(id)}/stop`, { method: "POST" });
 
 export async function getWerewolfPresentation(slug: string, audience: WerewolfAudience, cursor: number | null, signal?: AbortSignal, publishedBefore?: string): Promise<WerewolfPresentation> {

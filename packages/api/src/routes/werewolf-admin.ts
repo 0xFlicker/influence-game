@@ -34,7 +34,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
     const rows = await Promise.all(games.map(async game => {
       let progress: { day: number; phase: string } | null = null;
       let error: string | null = null;
-      try { const state = replayWerewolf(await readWerewolfEvents(db, game.id)); progress = { day: state.day, phase: state.phase }; }
+      try { if (!game.startedAt) progress = { day: 0, phase: game.status }; else { const state = replayWerewolf(await readWerewolfEvents(db, game.id)); progress = { day: state.day, phase: state.phase }; } }
       catch (cause) { error = cause instanceof Error ? cause.message : "Game state unavailable"; }
       return { id: game.id, slug: game.slug, status: game.status, createdAt: game.createdAt, playerCount: game.maxPlayers, hidden: Boolean(game.hiddenAt), progress, error,
         cost: costs.get(game.id) ?? null, production: { active: jobs.filter(j => j.gameId === game.id && ["queued", "rendering", "verifying"].includes(j.status)).length,
@@ -46,6 +46,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
     if (!game) return c.json({ error: "Werewolf game not found" }, 404);
+    if (!game.startedAt) return c.json({ error: "This game has not started. Open its Werewolf casting lobby.", href: `/werewolf/${game.slug}` }, 409);
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
     const roles = c.get("userRoles") ?? [], permissions = c.get("userPermissions") ?? [];
     return c.json({ id: game.id, slug: game.slug, status: game.status, hidden: Boolean(game.hiddenAt), createdAt: game.createdAt, endedAt: game.endedAt,

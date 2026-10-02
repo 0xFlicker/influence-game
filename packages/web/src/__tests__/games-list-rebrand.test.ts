@@ -37,9 +37,11 @@ describe("games list House/Influence rebrand", () => {
     expect(gamesBrowserSource).not.toContain("Any tier");
   });
 
-  it("links to the separate Werewolf lobby while retaining Influence list filters", () => {
+  it("includes Werewolf discovery while retaining game-specific cards and creation", () => {
     expect(gamesPageSource).toContain('href="/werewolf"');
-    expect(gamesBrowserSource).not.toContain("Werewolf");
+    expect(gamesPageSource).toContain("includeWerewolf");
+    expect(gamesBrowserSource).toContain("WerewolfGameCard");
+    expect(gamesBrowserSource).toContain('aria-label="Game type"');
     expect(combinedSource).not.toContain("Mafia");
     expect(combinedSource).not.toContain("Salem");
   });

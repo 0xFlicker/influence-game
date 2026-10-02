@@ -3807,7 +3807,7 @@ export const gameAssetOperations = pgTable("game_asset_operations", {
   check("game_asset_operations_request_check", sql`length(${t.requestId}) BETWEEN 1 AND 200`),
 ]);
 
-export { werewolfEvents, werewolfTurns } from "./werewolf-schema.js";
+export { werewolfEvents, werewolfTurns, werewolfLobbySeats } from "./werewolf-schema.js";
 // Role authority belongs to an Influence account, independently of credentials.
 export const userRoles = pgTable("user_roles", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),

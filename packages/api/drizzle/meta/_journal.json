@@ -743,6 +743,13 @@
       "when": 1790809200000,
       "tag": "0105_visual_publication_audience",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790809200001,
+      "tag": "0106_werewolf_lobbies",
+      "breakpoints": true
     }
   ]
 }

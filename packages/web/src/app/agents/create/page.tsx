@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 function createFlow(value: string | undefined): AgentCreateFlow {
-  return value === "join_game" || value === "daily_free" ? value : "manage";
+  return value === "join_game" || value === "join_werewolf" || value === "daily_free" ? value : "manage";
 }
 
 export default async function AgentCreatePage({
@@ -22,7 +22,7 @@ export default async function AgentCreatePage({
     <div className="min-h-screen flex flex-col">
       <Nav />
       <main className="w-full flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
-          <AgentCreateContent flow={flow} gameId={flow === "join_game" ? query.gameId : undefined} />
+          <AgentCreateContent flow={flow} gameId={flow === "join_game" || flow === "join_werewolf" ? query.gameId : undefined} />
       </main>
     </div>
   );

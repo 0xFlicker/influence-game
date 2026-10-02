@@ -14,7 +14,7 @@ import { getGame, type GameDetail, type GamePlayer, type GameSummary } from "@/l
 import { gameDisplayName } from "@/lib/game-identity";
 import { playerProfileHref } from "@/lib/player-profile-links";
 import { getPersonaLabel } from "@/lib/personas";
-import "./game-pre-show.css";
+import { CastingHero } from "@/components/casting/casting-hero";
 
 export function GamePreShow({ game, onGameUpdated }: {
   game: GameDetail;
@@ -97,32 +97,15 @@ export function GamePreShow({ game, onGameUpdated }: {
         <Link className="pre-show-create" href={createHref}><span aria-hidden="true">＋</span> Create agent</Link>
       </nav>
 
-      <header className="pre-show-hero">
-        <div className="pre-show-hero-copy">
-          <p className="pre-show-eyebrow">{game.season?.name ?? "The House presents"} <span aria-hidden="true">/</span> Influence</p>
-          <p className="pre-show-status"><span aria-hidden="true" /> {openSeats > 0 ? "Casting open" : "Cast complete"}</p>
-          <h1>Before the<br /><em>first move.</em></h1>
-          <p className="pre-show-intro">{openSeats > 0
-            ? "A room full of strangers. One future winner. Send in your agent and see who they become."
-            : "The cast is assembled. The alliances, the betrayals, the first move — all still to come."}</p>
-          <div className="pre-show-hero-actions">
-            {canJoin && <button type="button" className="pre-show-join" disabled={!ready} onClick={join}>{inCast ? "Add another agent" : "Join with an agent"} <span aria-hidden="true">↗</span></button>}
-            <Link href="/rules">How Influence works <span aria-hidden="true">↗</span></Link>
-          </div>
-          {inCast && <p className="pre-show-notice" role="status">Your agent is in. Stay for the opening move.</p>}
-          <PreGameControls game={game} onGameUpdated={onGameUpdated} />
-        </div>
-        <div className="pre-show-poster" aria-hidden="true">
-          <Image src="/logo.png" alt="" width={120} height={120} />
-          <p>Trust is a strategy.<br /><em>So is betrayal.</em></p>
-          <span>The House / Influence</span>
-        </div>
-        <div className="pre-show-admission">
-          <div><strong>{game.players.length.toString().padStart(2, "0")}</strong><span>of {game.playerCount} agents in the cast</span></div>
-          <div className="pre-show-seats" aria-hidden="true">{Array.from({ length: game.playerCount }, (_, i) => <span key={i} data-filled={i < game.players.length} />)}</div>
-          <p role="status" aria-live="polite">{openSeats > 0 ? `${openSeats} ${openSeats === 1 ? "seat" : "seats"} open` : "Waiting for the opening move"}</p>
-        </div>
-      </header>
+      <CastingHero gameKind="influence" eyebrow={game.season?.name ?? "The House presents"}
+        intro={openSeats > 0 ? "A room full of strangers. One future winner. Send in your agent and see who they become." : "The cast is assembled. The alliances, the betrayals, the first move — all still to come."}
+        playerCount={game.playerCount} castCount={game.players.length}
+        seatsLabel={`${openSeats} ${openSeats === 1 ? "seat" : "seats"} open`}
+        canJoin={!!canJoin} disabled={!ready} onChoose={join}
+        chooseLabel={inCast ? "Add another agent" : "Join with an agent"} rulesHref="/rules">
+        {inCast && <p className="pre-show-notice" role="status">Your agent is in. Stay for the opening move.</p>}
+        <PreGameControls game={game} onGameUpdated={onGameUpdated} />
+      </CastingHero>
 
       <section className="pre-show-cast" aria-labelledby="pre-show-cast-title">
         <header className="pre-show-cast-heading">
