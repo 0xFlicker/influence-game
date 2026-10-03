@@ -79,3 +79,22 @@ Before enabling the inbox, complete owner draft recovery and safe status,
 reversible owner archival, authorized HTTP/MCP evidence and action contracts,
 moderator/admin screens, and browser/concurrency verification. Do not mistake
 passing service tests for an operator-ready workflow.
+
+
+## Text edits and saved image evidence
+
+Profile edits reuse the immutable image bytes captured by the content revision
+being edited. Published profiles use `contentRevisionId`; held owner corrections
+use `latestContentRevisionId`, matching the submitted draft. This lets an Influence
+or Werewolf strategy edit succeed when the original local uploads are absent.
+Head geometry remains validated against those saved bytes. New or explicitly
+reselected image URLs are fetched and validated before saving, including when a
+caller explicitly selects the same URL again. Missing stored evidence fails
+clearly rather than dropping artwork from the new revision. Existing profile
+version checks still reject concurrent changes during preparation.
+
+Regression coverage in `agent-content-submissions.test.ts` deletes the original
+uploads, changes Werewolf strategy through the agent-tool service, and verifies
+unchanged image evidence, Influence strategy and head confirmation. It also
+rejects missing selected images and forged head hashes, and replaces a portrait
+while retaining a missing full-body source through its saved evidence.

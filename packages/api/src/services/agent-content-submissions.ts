@@ -1,6 +1,6 @@
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AgentProfileMutationRead } from "./agent-profile-management.js";
@@ -13,12 +13,34 @@ export class ContentSubmissionConflict extends Error {}
 export type ContentAssetEvidence = Record<string, { hash: string; bytes: Buffer }>;
 
 /** Capture exact bytes before the profile transaction. No provider calls. */
-export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop">): Promise<ContentAssetEvidence> {
+export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop">, saved: ContentAssetEvidence = {}): Promise<ContentAssetEvidence> {
   const evidence: ContentAssetEvidence = {};
   for (const url of new Set([profile.avatarUrl, profile.fullBodyReferenceUrl, profile.portraitCrop?.sourceUrl])) {
     if (!url) continue;
+    if (saved[url]) { evidence[url] = saved[url]; continue; }
     const bytes = await readVisualProfileImage(url, { name: "", personaKey: "" });
     evidence[url] = { hash: createHash("sha256").update(bytes).digest("hex"), bytes };
+  }
+  return evidence;
+}
+/** Reuse the immutable image evidence belonging to the draft being edited. */
+export async function readSavedContentAssets(db: DrizzleDB, profile: Profile): Promise<ContentAssetEvidence> {
+  const revisionId = profile.moderationRequired ? profile.latestContentRevisionId : profile.contentRevisionId;
+  if (!revisionId) return {};
+  const [revision] = await db.select().from(schema.agentContentRevisions).where(and(
+    eq(schema.agentContentRevisions.id, revisionId), eq(schema.agentContentRevisions.agentProfileId, profile.id),
+  ));
+  if (!revision) throw new ContentSubmissionConflict("The character content revision is unavailable. Reload before submitting.");
+  const references = (revision.snapshot.assets ?? {}) as Record<string, string>;
+  const hashes = [...new Set(Object.values(references))];
+  if (!hashes.length) return {};
+  const assets = await db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes));
+  const byHash = new Map(assets.map((asset) => [asset.hash, asset]));
+  const evidence: ContentAssetEvidence = {};
+  for (const [url, hash] of Object.entries(references)) {
+    const asset = byHash.get(hash);
+    if (!asset) throw new Error("Saved character image evidence is unavailable");
+    evidence[url] = { hash, bytes: asset.bytes };
   }
   return evidence;
 }

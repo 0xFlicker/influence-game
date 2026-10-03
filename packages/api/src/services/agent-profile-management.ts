@@ -1,7 +1,7 @@
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
-import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
+import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, readSavedContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
@@ -656,7 +656,12 @@ export async function updateOwnedAgentProfile(
   const startingDraft = await latestSubmittedProfile(db, startingProfile);
   const prepared = prepareAgentProfileUpdates(context, input, startingDraft.avatarUrl);
   await assertAvailableProfileName(db, prepared.name ?? startingDraft.name, agentId);
-  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared });
+  const savedAssets = await readSavedContentAssets(db, startingDraft);
+  // Explicitly selected images must still be read and validated, even at the same URL.
+  for (const url of [prepared.avatarUrl, prepared.fullBodyReferenceUrl, prepared.portraitCrop?.sourceUrl]) {
+    if (url) delete savedAssets[url];
+  }
+  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared }, savedAssets);
   const sourceReviewId = input.sourceReviewId === undefined
     ? undefined
     : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
