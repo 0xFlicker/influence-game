@@ -1,13 +1,15 @@
 ---
 title: "feat: Werewolf discovery and spectator inspection through MCP"
 type: feat
-status: deferred
+status: superseded
 date: 2026-09-27
 scope: implementation-plan
 source_commit: d9aea15f
 ---
 
 # Werewolf discovery and spectator inspection through MCP
+
+**Superseded by [W2 — House MCP discovery and game inspection](2026-10-02-005-feat-house-mcp-game-inspection.md).** Retained as historical design context; its tool names, access assumptions, discussion model and thinking exclusions are not the implementation specification.
 
 Follow-up contract note: rules version 3 adds unanimous pack negotiation and `pack_vote` audience entries. The planned reader must include whole resolved pack ballots in Omniscient, omit them in Mystery, and preserve audience-local cursors. Pending ballots and private rationale remain excluded. See [pack negotiation plan](2026-09-27-002-feat-werewolf-pack-negotiation-plan.md).
 
