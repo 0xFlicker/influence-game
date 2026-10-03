@@ -7,10 +7,7 @@ import {
   getMcpResourceUrl,
   type McpSetupClient,
 } from "@/lib/mcp-setup";
-import {
-  ACTIVE_GAME,
-  HOUSE_VENUE,
-} from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import { CopyCommandButton } from "./copy-command-button";
 
 interface GetMcpSetupContentProps {
@@ -35,9 +32,9 @@ export function GetMcpSetupContent({
             Connect {HOUSE_VENUE.name} to your AI.
           </h1>
           <p className="influence-copy mt-5 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
-            Add the player-facing MCP endpoint once, approve access in the browser,
-            and let your AI inspect your {ACTIVE_GAME.name} games,
-            agents, and rules.
+            Connect once to explore Influence and Werewolf with your AI. Approve
+            access in the browser, then ask about games, agents, rules,
+            conversations, and results.
           </p>
 
           <div className="mt-7 max-w-3xl space-y-3 text-sm leading-6 sm:text-base sm:leading-7">

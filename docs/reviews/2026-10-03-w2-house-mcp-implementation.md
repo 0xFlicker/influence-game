@@ -1,6 +1,6 @@
 # W2 implementation and verification
 
-Plan: [House MCP discovery and game inspection](../plans/2026-10-02-005-feat-house-mcp-game-inspection.md). Implemented in the Werewolf feature checkout from `d4d2afaf`. This report describes local proof, not deployment or acceptance inside a hosted MCP client.
+Plan: [House MCP discovery and game inspection](../plans/2026-10-02-005-feat-house-mcp-game-inspection.md). Implemented in the Werewolf feature checkout from `d4d2afaf`. This report describes local proof, including authenticated reads through the attached Codex MCP connector. It does not establish deployment or acceptance inside the separate ChatGPT web app.
 
 ## Delivered
 
@@ -35,7 +35,7 @@ The broad suite ran before the final private-bookkeeping filter, integrity asser
 - A 20-day Werewolf fixture measured roughly **four seconds** for a bounded thinking read because the existing history/evidence validators still walk the complete history. Output size is bounded; projection work is not. Avoid per-turn high-frequency polling of this explicit evidence tool. A later optimization should reuse validated traversal without weakening artifact integrity or audience cutoffs.
 - Public catalog filtering currently precedes the response limit in memory. `mine` also scans casting/start ownership rows. This is correct for current data and deliberately simple, but database-side filtering and indexes deserve measurement as catalog size grows.
 - No new migrations, gameplay behavior, providers, feature flags, production studio, review/learning, House Cuts or trailer work. W3 onward retain their own approval and design gates.
-- A real host connection, deployment and operator acceptance remain release checks. The legacy machine resource URIs remain stable; this is one House MCP service.
+- The attached local Codex host connection is verified below. Deployment, separate ChatGPT web-app acceptance and operator acceptance remain release checks. The legacy machine resource URIs remain stable; this is one House MCP service.
 
 See [cross-game integration lessons](../solutions/architecture-patterns/house-mcp-across-game-kinds.md).
 
@@ -50,3 +50,23 @@ bun scripts/generate-house-mcp-schemas.cjs "$toolDir/node_modules/typescript-jso
 ```
 
 The generator first requires the repository API typecheck. Its bundled older TypeScript parser is used only for schema emission; actual fixture outputs must still pass runtime validation. The script preserves typed string/number index signatures while closing fixed objects. Regenerate and run contract fixtures whenever a service DTO changes; do not hand-maintain a second DTO tree.
+
+## Live local MCP connector validation — 2026-10-03
+
+Validated committed implementation `adc46711` through the attached `the-house-localhost` tools against the running API on port 3000. The preceding OAuth fix advertises issuer-bound authorization responses and returns `iss` on success/error callbacks; real browser authorization completed and the connector attached successfully. These checks used the existing agents:read, agents:write, games:read and producer grant, but invoked read-only tools only. No games, agent profiles, visibility settings or production assets were changed.
+
+| Surface | Observed result |
+| --- | --- |
+| Discovery | Shared Public catalog returns both formats and canonical `/games/:slug` links, without ending fields. Influence filtering and producer inventory work. |
+| Werewolf replay | Drained `hazy-ruby-sand` in five pages per audience: 78 Mystery entries and 82 Omniscient entries. Audience-local cursors were consecutive without omissions or duplicates. Largest sampled serialized page was below 46 KiB. |
+| Audience boundary | Mystery contained no pack speech or role fields before the outcome. Omniscient included both pack-dialogue entries and role fields. Neither ordinary history contained thinking, reasoning context or frozen strategy fields. |
+| Explicit thinking | Introduction cutoff `[3]` returned only the two eligible introduction records. Cutoff `[82]` drained 94 records across five pages, all within the cutoff with no duplicate cursor/actor/action keys. Includes pack, night actions, discussion and votes. |
+| Results | Werewolf results contain six cast members, two night receipts and five vote receipts; outcome matches both complete audience traversals. Influence `young-olive-oak` results also succeed. |
+| Influence continuity | Initial replay and its returned continuation execute successfully using separate canonical/transcript positions. A returned player-thinking follow-up gives an explicit unavailable result at the early position where that player has no captured thinking. |
+| Waiting game | `warm-plum-song` returns empty history, no results link and `manualReread: true`, with valid reread follow-ups. Results return `not_completed`. There is no poll cursor for this historical waiting record; passing null is rejected by the input schema. |
+| Visibility | Existing Unlisted `visual-operations-review` is absent from Public discovery and readable by known slug. Local read-only configuration inspection confirmed its Unlisted status. Existing Hidden `cold-wine-vale` is rejected by both shared game/results tools despite the producer grant, identically to an unknown game within each tool. |
+| Invalid requests | Reusing a cursor for another game or audience returns `invalid_cursor`; a future thinking position is rejected; Werewolf thinking with public audience returns `invalid_input`. |
+| Format boundary | Influence-specific `read_projection` rejects Werewolf with `unsupported_game_kind` and a shared `read_game` follow-up. |
+| Rules | Both game kinds return their rules; Werewolf doctor search succeeds. |
+
+No unexpected failures were observed. Negative cases above intentionally produce errors. This live pass does not test an in-progress append, token expiry/refresh, revocation, grants without producer, or the separate ChatGPT web UI; those authorization and append scenarios retain the isolated test evidence above. OAuth/HTTP regression immediately preceding this pass: 60 tests passed, with package typecheck and lint passing.

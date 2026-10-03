@@ -1,12 +1,9 @@
 import { Nav } from "@/components/nav";
-import {
-  ACTIVE_GAME,
-  HOUSE_VENUE,
-} from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import { GetMcpClient } from "./get-mcp-client";
 
 export const metadata = {
-  title: `Connect MCP - ${HOUSE_VENUE.name} / ${ACTIVE_GAME.name}`,
+  title: `Connect MCP - ${HOUSE_VENUE.name} | Influence & Werewolf`,
 };
 
 interface GetMcpPageProps {
