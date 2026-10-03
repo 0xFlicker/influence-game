@@ -16,6 +16,7 @@ import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, read
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { renderVisualCandidate } from "../services/visual-scene-renderer.js";
 import { createVisualRoutes } from "../routes/visual.js";
+import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { createSessionToken } from "../middleware/auth.js";
 
 let db: DrizzleDB, scene: StoredVisualScene, imageId: string, png: Buffer, calls: string[], fail: string | null;
@@ -33,6 +34,7 @@ beforeEach(async () => {
       const properties = body.text.format.schema.properties;
       const kind = properties.identities ? "composition" : properties.matches ? "identities" : "heads";
       calls.push(kind);
+      if (fail === "composition-http" && kind === "composition") return Response.json({ error: { message: "Verification unavailable" } }, { status: 400 });
       const ids: string[] = (properties.identities ?? properties.matches ?? properties.anchors).items.properties.playerId.enum ?? [];
       const count = fail === "count" ? ids.length + 1 : ids.length;
       const anchors = ids.map((playerId, i) => ({ playerId, label: i + 1, confidence: "clear", head: { x: i / ids.length, y: .2, width: .05, height: .1 } }));
@@ -50,6 +52,19 @@ afterEach(() => { globalThis.fetch = originalFetch; if (originalSecret === undef
 const send = (extra: Partial<MediaControl> = {}) => controlVisualMedia(db, "media", "admin", { requestId: crypto.randomUUID(), sceneId: scene.id, expectedVersion: 0, action: "regenerate", ...extra } as MediaControl);
 async function run(render = renderVisualCandidate) { const job = await claimVisualMediaJob(db, crypto.randomUUID()); expect(job).not.toBeNull(); await executeVisualMediaJob(db, job!, new AbortController().signal, render); return job!; }
 async function acceptedOriginal() { scene = await acceptVisualScene(db, { sceneId: scene.id, planHash: scene.planHash, imageArtifactId: imageId, anchors: [], verifiedParticipantIds: scene.plan.cast.map(m => m.id) }); }
+async function acceptedPanels() {
+  const groups = await Promise.all(visualRenderGroups(scene.plan).map(async (placements, index) => {
+    const image = await sharp({ create: { width: 512, height: 864, channels: 3, background: index ? "#887766" : "#334455" } }).png().toBuffer();
+    const id = await storeVisualArtifact(db, "media", image);
+    const ids = placements.map(p => p.playerId);
+    return { imageArtifactId: id, annotatedArtifactId: id, participantIds: ids, visibleParticipantIds: ids,
+      anchors: ids.map((playerId, i) => ({ playerId, label: i + 1, confidence: "clear" as const, head: { x: .1 + i * .2, y: .2, width: .1, height: .1 } })),
+      pointers: [{ playerId: ids[0]!, x: .3, y: .4 }] };
+  }));
+  scene = await acceptVisualScene(db, { sceneId: scene.id, planHash: scene.planHash, imageArtifactId: groups[0]!.imageArtifactId,
+    anchors: [], verifiedParticipantIds: scene.plan.cast.map(m => m.id), shots: { mode: "groups", overview: null, groups } });
+  return { id: `original:${scene.id}`, groups };
+}
 
 test.each(["in_progress", "suspended", "completed"])("repairs %s scenes independently and publishes only by review", async status => {
   await db.update(schema.games).set({ status }).where(eq(schema.games.id, "media"));
@@ -206,7 +221,7 @@ test("continue reuses successful group images and retries only the failed group"
   fail = "first-image"; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); const second = await run();
   expect(calls).toEqual(["image"]);
   fail = null; calls = []; await send({ expectedVersion: 2, action: "continue", sourceJobId: second.id }); await run();
-  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities", "image", "composition", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {
@@ -314,4 +329,105 @@ test("manual review rejects foreign pixels, foreign identities and ambiguous hea
   expect(await send({ action: "review", review: { expectedRevision: scene.renderRevision + 1, planHash: scene.planHash, mode: "scene", shots: [base] } })).toMatchObject({ accepted: false, code: "invalid_review" });
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
   expect(calls).toEqual([]);
+});
+
+test("harmonizes selected saved panels once, preserves their pixels and metadata, and requires publication", async () => {
+  const source = await acceptedPanels();
+  const original = await db.select().from(schema.visualScenes), games = await db.select().from(schema.games);
+  const input = { action: "harmonize" as const, sourceVersionId: source.id, requestId: "harmonize-once" };
+  const receipt = await send(input);
+  expect(receipt).toMatchObject({ accepted: true, version: 1 });
+  expect(await send(input)).toEqual(receipt);
+  expect(calls).toEqual([]);
+  const job = await run();
+  expect(job).toMatchObject({ mode: "harmonize", sourceVersionId: source.id, sourceImageId: null });
+  const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job.id)!;
+  expect(media.jobs[0]!.status).toBe("ready");
+  expect(calls).toEqual(["image", "composition", "heads", "identities"]);
+  expect(version.shots).toMatchObject({ mode: "scene", groups: source.groups });
+  expect(version.localization.verifiedParticipantIds).toEqual(scene.plan.cast.map(m => m.id));
+  expect(media.publications).toEqual([]);
+  expect(await db.select().from(schema.visualScenes)).toEqual(original);
+  expect(await db.select().from(schema.games)).toEqual(games);
+  expect((await readViewerMedia(db, "media")).scenes[0]!.shots!.mode).toBe("groups");
+  const app = createVisualRoutes(db);
+  expect((await app.request(`/api/games/media/visual/artifacts/${version.imageArtifactId}`)).status).toBe(404);
+  await send({ action: "publish", expectedVersion: 1, expectedPublication: 0, versionId: job.id });
+  expect((await readViewerMedia(db, "media")).scenes[0]!.shots!.mode).toBe("scene");
+  expect((await app.request(`/api/games/media/visual/artifacts/${version.imageArtifactId}`)).status).toBe(200);
+  await expect(Promise.resolve(db.update(schema.visualRepairJobs).set({ sourceVersionId: job.id }).where(eq(schema.visualRepairJobs.id, job.id)))).rejects.toThrow();
+});
+
+test("harmonization restart and continuation keep the source and reuse a completed composite", async () => {
+  const source = await acceptedPanels();
+  const receipt = await send({ action: "harmonize", sourceVersionId: source.id });
+  fail = "composition-http";
+  const job = await run();
+  expect((await readVisualMedia(db, "media")).jobs[0]!.status).toBe("failed");
+  expect(calls.filter(c => c === "image")).toHaveLength(1);
+  fail = null; calls = [];
+  const next = await send({ action: "continue", sourceJobId: receipt.jobId!, expectedVersion: 1 });
+  const claimed = await claimVisualMediaJob(db, "before-restart");
+  await db.update(schema.visualRepairJobs).set({ leaseUntil: new Date(0).toISOString() }).where(eq(schema.visualRepairJobs.id, next.jobId!));
+  const reclaimed = await claimVisualMediaJob(db, "after-restart");
+  expect(reclaimed!.id).toBe(claimed!.id);
+  expect(reclaimed).toMatchObject({ sourceVersionId: source.id, reusePrefix: `media:${job.id}` });
+  await executeVisualMediaJob(db, reclaimed!, new AbortController().signal);
+  const media = await readVisualMedia(db, "media");
+  expect(media.jobs[0]!.status).toBe("ready");
+  expect(calls).toEqual(["composition", "heads", "identities"]);
+  expect(media.versions.find(v => v.id === next.jobId)!.shots!.groups).toEqual(source.groups);
+  expect(media.publications).toEqual([]);
+});
+
+test("identity rejection retains the saved panels without another render", async () => {
+  const source = await acceptedPanels();
+  await send({ action: "harmonize", sourceVersionId: source.id }); fail = "duplicate";
+  const job = await run(), media = await readVisualMedia(db, "media");
+  expect(media.jobs[0]!.status).toBe("ready");
+  expect(media.versions.find(v => v.id === job.id)!.shots).toEqual({ mode: "groups", overview: null, groups: source.groups });
+  expect(calls.filter(c => c === "image")).toHaveLength(1);
+  expect(media.publications).toEqual([]);
+  expect((await db.select().from(schema.visualOperationEvents)).some(row => row.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
+});
+
+test("harmonization rejects unavailable or ineligible sources before queueing", async () => {
+  await acceptedOriginal();
+  expect(await send({ action: "harmonize", sourceVersionId: "missing" })).toMatchObject({ code: "source_missing" });
+  expect(await send({ action: "harmonize", sourceVersionId: `original:${scene.id}` })).toMatchObject({ code: "source_not_panels" });
+  const source = (await readVisualMedia(db, "media")).versions[0]!;
+  const panel = { imageArtifactId: imageId, annotatedArtifactId: imageId, participantIds: ["p0"], visibleParticipantIds: ["p0"], anchors: [], pointers: [] };
+  const save = async (id: string, shots: typeof source.shots) => db.insert(schema.visualMediaVersions).values({ ...source, id, version: Number(id.split("-")[1]), shots });
+  await save("portrait-1", { mode: "portraits", overview: null, groups: [panel, panel] });
+  await save("single-2", { mode: "groups", overview: null, groups: [panel] });
+  await save("missing-3", { mode: "groups", overview: null, groups: [panel, { ...panel, imageArtifactId: "unavailable" }] });
+  await save("invalid-4", { mode: "groups", overview: null, groups: [panel, { ...panel, participantIds: ["foreign"] }] });
+  const other = await prepareVisualScene(db, { gameId: "media", boundarySequence: 3, plan: planVisualScene({ roomId: "mingle-1", backgroundArtifactId: imageId, cast: scene.plan.cast.slice(0, 2) }) });
+  await db.insert(schema.visualMediaVersions).values({ ...source, id: "other-scene", sceneId: other.id, version: 0 });
+  for (const [sourceVersionId, code] of [["portrait-1", "source_not_panels"], ["single-2", "source_not_panels"], ["missing-3", "source_artifact_missing"], ["invalid-4", "invalid_source_panels"], ["other-scene", "source_missing"]]) {
+    expect(await send({ action: "harmonize", sourceVersionId: sourceVersionId! })).toMatchObject({ accepted: false, code });
+  }
+  expect((await readVisualMedia(db, "media")).jobs).toEqual([]); expect(calls).toEqual([]);
+});
+
+test.each(["admin", "producer"])("%s media endpoint authorizes and validates the harmonization action", async role => {
+  const source = await acceptedPanels();
+  await db.insert(schema.users).values({ id: "operator", displayName: "Operator" });
+  await grantTestAuthority(db, "operator", ["view_admin", "start_game"]);
+  if (role === "producer") {
+    await db.insert(schema.roles).values({ id: role, name: role }).onConflictDoNothing();
+    await db.insert(schema.userRoles).values({ userId: "operator", roleId: role });
+  }
+  const token = await createSessionToken("operator", { roles: [role], permissions: ["view_admin", "start_game"] });
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const app = role === "admin" ? createVisualRoutes(db) : createVisualReplayProductionRoutes(db);
+  const url = role === "admin" ? "/api/admin/games/media/visual/media" : "/api/admin/production/games/media/visual/media";
+  const input = { action: "harmonize", sceneId: scene.id, expectedVersion: 0, requestId: "harmonize-api", sourceVersionId: source.id };
+  expect((await app.request(url, { method: "POST", body: JSON.stringify(input) })).status).toBe(401);
+  for (const sourceVersionId of [undefined, "", 42]) expect((await app.request(url, { method: "POST", headers, body: JSON.stringify({ ...input, sourceVersionId }) })).status).toBe(400);
+  const result = await app.request(url, { method: "POST", headers, body: JSON.stringify(input) });
+  expect(result.status).toBe(200);
+  const receipt = await result.json();
+  expect(await (await app.request(url, { method: "POST", headers, body: JSON.stringify(input) })).json()).toEqual(receipt);
+  expect((await readVisualMedia(db, "media")).jobs).toHaveLength(1); expect(calls).toEqual([]);
 });

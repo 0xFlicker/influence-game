@@ -41,6 +41,22 @@ function VersionImage({ gameId, artifactId, label, onOpen, apiPrefix }: { gameId
   </button> : <p role={result.error ? "alert" : "status"}>{result.error ?? "Loading image…"}</p>}</div>;
 }
 
+function VersionImages({version, label, annotated = false, ...props}: {
+  version: MediaVersion; label: string; annotated?: boolean;
+  gameId: string; apiPrefix: string; onOpen: (url: string, label: string) => void;
+}) {
+  const shots = version.shots;
+  const pictures = shots ? [
+    ...(shots.overview ? [{shot: shots.overview, name: shots.groups.length > 1 ? "Harmonized scene" : "Scene"}] : []),
+    ...shots.groups.filter(shot => shot.imageArtifactId !== shots.overview?.imageArtifactId).map((shot, index) => ({shot, name: `Panel ${index + 1}`})),
+  ] : [];
+  return <div className="space-y-3" aria-label={label}>
+    {pictures.length ? pictures.map(({shot, name}) => <VersionImage key={`${shot.imageArtifactId}:${annotated}`} {...props}
+      artifactId={annotated ? shot.annotatedArtifactId : shot.imageArtifactId} label={`${label} · ${name}${annotated ? " annotations" : ""}`} />)
+      : <VersionImage key={`${version.id}:${annotated}`} {...props} artifactId={annotated ? version.annotatedArtifactId : version.imageArtifactId} label={`${label}${annotated ? " annotations" : ""}`} />}
+  </div>;
+}
+
 export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOperate, refresh, refreshError, onOpen, attempts, apiPrefix = "/api/admin/games", renderDisabled = false, renderLabel = "Regenerate scene", onRequestPending }: {
   apiPrefix?: string; renderDisabled?: boolean; renderLabel?: string;
   onRequestPending?: (pending: boolean) => void;
@@ -97,7 +113,7 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
       {uncertain && <button className={button} disabled={busy} onClick={() => void send({})}>Check request</button>}
     </div>}
     {canOperate && editingVersion !== null && <ImageReviewEditor key={editingVersion} gameId={gameId} sceneId={sceneId} apiPrefix={apiPrefix} disabled={busy || !!active || uncertain} onClose={() => setEditingVersion(null)} onSave={review => void send({ action: "review", review, expectedVersion: editingVersion })} />}
-    <p className="text-xs text-white/50">Repairs may incur provider charges. Candidates need review and publication; gameplay is unchanged.</p>
+    <p className="text-xs text-white/50">Repairs may incur provider charges. Regeneration includes harmonization for multi-panel scenes. Candidates need review and publication; gameplay is unchanged.</p>
     {unresolved.length > 0 && <div role="status" className="rounded bg-amber-400/10 p-3 text-sm text-amber-200">
       <p>Needs reconciliation: {unresolved.length} provider request(s) have an uncertain outcome.</p>
       {unresolved.map(attempt => <p key={attempt.id} className="break-all text-xs">{attempt.operationKey.split(":").at(-1)} · Attempt {attempt.id}</p>)}
@@ -119,17 +135,19 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         <label className="block text-sm">Candidate <select aria-label="Candidate version" className="ml-2 rounded bg-neutral-900 p-2" value={selected.id} onChange={event => setSelection(event.target.value)}>{versions.map(version => <option value={version.id} key={version.id}>v{version.version}{version.version === 0 ? " · Original gameplay image" : " · Reviewed"}</option>)}</select></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={annotated} onChange={event => setAnnotated(event.target.checked)} />Numbered annotations</label>
         <div className="grid gap-3 sm:grid-cols-2">
-          {published ? <VersionImage key={published.imageArtifactId} gameId={gameId} artifactId={published.imageArtifactId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>Viewers currently see portraits.</p>}
-          <VersionImage key={`${selected.id}:${annotated}`} gameId={gameId} artifactId={annotated ? selected.annotatedArtifactId : selected.imageArtifactId} label={`Candidate v${selected.version}${annotated ? " annotations" : ""}`} onOpen={onOpen} apiPrefix={apiPrefix} />
+          {published ? <VersionImages version={published} annotated={annotated} gameId={gameId} label={`Published v${published.version}`} onOpen={onOpen} apiPrefix={apiPrefix} /> : <p>Viewers currently see portraits.</p>}
+          <VersionImages version={selected} annotated={annotated} gameId={gameId} label={`Candidate v${selected.version}`} onOpen={onOpen} apiPrefix={apiPrefix} />
         </div>
         <p className="text-sm">{selected.localization.count} verified people · {selectedAnchors} head anchors</p>
         {!selectedAnchors && selected.localization.count > 0 && <p className="text-sm text-amber-200">Head positions are uncertain. Viewers use named portrait speech panels.</p>}
         {selected.shots && selected.shots.mode !== "scene" && <p className="text-sm text-white/60">{selected.shots.mode === "portraits" ? "This version uses portraits." : `${selected.shots.groups.length} group shots. Open Correct images to inspect each picture.`}</p>}
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
+          {selected.shots && selected.shots.mode !== "portraits" && selected.shots.groups.length > 1 && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "harmonize", sourceVersionId: selected.id })}>Harmonize existing panels</button>}
           {(!selected.shots || selected.shots.mode === "scene") && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>}
           <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? "Restore for viewers" : "Publish for viewers"}</button>
         </div>}
+        {selected.shots && selected.shots.mode !== "portraits" && selected.shots.groups.length > 1 && <p className="text-xs text-white/50">Harmonization uses this version’s saved panels. Only the composite and its verification incur new provider charges. Review and publish the candidate when ready.</p>}
       </>}
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>
         <p className="break-all text-xs">{job.id} · {job.step}</p>{job.failure && <p className="text-sm text-amber-200">{job.failure}</p>}
