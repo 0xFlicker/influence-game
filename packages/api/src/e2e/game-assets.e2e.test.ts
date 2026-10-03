@@ -14,7 +14,7 @@ import { startTestServers, stopTestServers, type TestServerHandles } from "./tes
 import { cleanupE2eResources } from "./cleanup.js";
 
 /** Real API/web/browser, per-process DB, and an in-process S3 fixture; no cloud credentials. */
-test("banner stays on results, discovers late images, and is visible logged out and signed in, including after sign-out and same-game navigation", async () => {
+test("unlisted banner stays on results, discovers late images, and is visible logged out and signed in, including after sign-out and same-game navigation", async () => {
   let testDb: TestDB | undefined, servers: TestServerHandles | undefined, browser: Browser | undefined;
   const envKeys = ["JWT_SECRET", "LINODE_PRIVATE_CONTENT_ENDPOINT", "LINODE_PRIVATE_CONTENT_BUCKET", "LINODE_PRIVATE_CONTENT_ACCESS_KEY", "LINODE_PRIVATE_CONTENT_SECRET_KEY", "NEXT_PUBLIC_E2E_LAYERED_AUTH"] as const;
   const previous = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
@@ -28,7 +28,7 @@ test("banner stays on results, discovers late images, and is visible logged out 
     const userId = randomUUID(), gameId = randomUUID(), slug = `banner-browser-${gameId}`;
     await db.insert(schema.users).values({ id: userId, walletAddress: `0x${userId.replaceAll("-", "")}`, displayName: "Banner viewer", handle: `banner-${userId.slice(0, 8)}` });
     await db.insert(schema.legalAcceptances).values({ userId, termsVersion: CURRENT_TERMS_VERSION, privacyVersion: CURRENT_PRIVACY_VERSION, deploymentSha: "0123456789abcdef0123456789abcdef01234567", source: "existing_account" });
-    const config = { visibility: "public", variant: "classic", modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" } };
+    const config = { visibility: "unlisted", variant: "classic", modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" } };
     await db.insert(schema.games).values({ id: gameId, slug, status: "completed", minPlayers: 4, maxPlayers: 4, config: JSON.stringify(config) });
     await db.insert(schema.gameResults).values({ id: randomUUID(), gameId, winnerId: null, roundsPlayed: 1, finishedAt: new Date().toISOString(), tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }) });
     const jwt = await createSessionToken(userId);
@@ -61,7 +61,7 @@ test("banner stays on results, discovers late images, and is visible logged out 
     await anonymousReload;
     await page.waitForSelector('img[alt="Late spoiler banner"]');
     expect(await page.$('img[alt="Late spoiler banner"]')).not.toBeNull();
-    await db.update(schema.games).set({ config: JSON.stringify({ ...config, visibility: "private" }) }).where(eq(schema.games.id, gameId));
+    await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
     before = bannerRequests.length; await visit(`/games/${slug}/results`); expect(await page.$('[data-testid="game-results-banner"] img')).toBeNull(); expect(bannerRequests.length).toBeGreaterThanOrEqual(before);
   } finally {
     await cleanupE2eResources([

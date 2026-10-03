@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { GameSiteEntry } from "./game-site-entry";
-import { useAuth } from "@/hooks/use-auth";
 import { ApiError, type GameDetail, type GameWatchReplayFrame, type TranscriptEntry } from "@/lib/api";
 import { getGameEntry, type GameEntryIdentity } from "@/lib/game-entry";
 import { parseReplayAudience, parseReplayCursor } from "@/lib/game-links";
@@ -28,14 +27,11 @@ export interface HouseGameEntryProps {
 }
 
 export function HouseGameEntry(props: HouseGameEntryProps) {
-  const auth = useAuth();
   const query = useQuery({
-    queryKey: ["house-entry", props.slug, auth.account?.publicId ?? "anonymous"],
+    queryKey: ["house-entry", props.slug],
     queryFn: ({ signal }) => getGameEntry(props.slug, signal),
     initialData: props.identity,
-    // A successful public SSR read needs no authentication roundtrip. A 404
-    // may instead be a private game and must wait for the normal client token.
-    enabled: !props.identity && (props.initialStatus !== 404 || auth.ready),
+    enabled: !props.identity,
     retry: false,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -72,7 +68,7 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
     return <GameSiteEntry><Highlights gameSlug={identity.slug} selectedSceneId={props.scene ?? null} /></GameSiteEntry>;
   }
   return <GameViewer
-    key={`${identity.id}:${props.identity ? "public" : auth.account?.publicId ?? "anonymous"}`}
+    key={identity.id}
     gameId={identity.slug}
     completedMode={props.mode}
     initialGame={props.initialGame}

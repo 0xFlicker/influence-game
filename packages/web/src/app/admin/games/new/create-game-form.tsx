@@ -218,7 +218,7 @@ interface FormState {
   personaPool: PersonaKey[];
   fillStrategy: "random" | "balanced";
   maxRounds: number | "auto";
-  visibility: "public" | "unlisted" | "private";
+  visibility: "public" | "unlisted";
 }
 
 const DEFAULT_STATE: FormState = {
@@ -849,7 +849,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       };
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
-          providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode });
+          visibility: form.visibility, providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode });
         router.push(`/games/${slug}`);
       } else {
         const { slug } = await createGame(params);
@@ -1044,19 +1044,18 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       </SectionCard>}
 
       {/* Visibility */}
-      {!isWerewolf && <SectionCard title="Visibility">
+      <SectionCard title="Visibility">
         <RadioGroup
           label="Who can see this game"
           value={form.visibility}
           options={[
-            { value: "public", label: "Public", sublabel: "Listed, anonymous viewable" },
-            { value: "unlisted", label: "Unlisted", sublabel: "Link-only" },
-            { value: "private", label: "Private", sublabel: "Admin + players only" },
+            { value: "public", label: "Public", sublabel: "Listed; anyone can watch" },
+            { value: "unlisted", label: "Unlisted", sublabel: "Link-only; anyone with the link can watch" },
           ]}
           onChange={(v) => set("visibility", v)}
         />
-      </SectionCard>}
-      {isWerewolf && <p className="text-sm text-white/60">Creates a public casting lobby. Add agents and invite friends before starting.</p>}
+      </SectionCard>
+      <p className="text-sm text-white/60">Creates {form.visibility === "public" ? "a public" : "an unlisted"} casting lobby. Add agents and invite friends before starting.</p>
 
       {/* Submit */}
       <div className="flex items-center justify-end pt-2">

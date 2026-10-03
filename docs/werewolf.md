@@ -261,3 +261,10 @@ Rules are maintained in `docs/rules-page-content.md` (Influence) and `docs/werew
 Both games now enter through `/games/:slug`. Casting, episode layout, cards and playback controls share House components while game modules retain their own data and rules. `/werewolf/:slug` was removed. Choose Mystery or Omniscient before playback; there is no mid-match audience switch. Public entry and replay work signed out.
 
 In player settings, **Share this moment** uses native sharing or copies a link such as `/games/example/replay?audience=mystery&cursor=65`. The cursor is a stable source entry for that audience, not an animation or page index. Opening the link begins in that source window with device preferences. Missing audience with a cursor, repeated/invalid values and unavailable initial positions fail explicitly. Links confer no private access. See [integration knowledge](solutions/architecture-patterns/house-game-entry-and-replay-moments.md).
+
+
+### House game visibility
+
+Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
+
+Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.

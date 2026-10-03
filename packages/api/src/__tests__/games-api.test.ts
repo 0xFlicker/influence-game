@@ -477,6 +477,14 @@ describe("Game REST API", () => {
       }
     });
 
+    test("rejects unsupported game visibility before writing a game", async () => {
+      for (const visibility of ["private", null, false, {}, ["public"]]) {
+        const response = await app.request("/api/games", { method: "POST", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ visibility }) });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: "Game visibility must be public or unlisted" });
+      }
+    });
+
     test("creates a game and returns id + slug", async () => {
       const res = await app.request(
         "/api/games",
@@ -2998,7 +3006,7 @@ describe("Game REST API", () => {
       expect(body[0]!.id).not.toBe(g1);
     });
 
-    test("GET /api/games/:id still returns hidden game by direct ID", async () => {
+    test("GET /api/games/:id denies hidden game by direct ID", async () => {
       const { id } = await createTestGame(app, adminToken);
 
       await app.request(`/api/games/${id}/hide`, {
@@ -3007,10 +3015,9 @@ describe("Game REST API", () => {
       });
 
       const res = await app.request(`/api/games/${id}`);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
 
-      const body = (await res.json()) as { id: string };
-      expect(body.id).toBe(id);
+      expect(await res.json()).toEqual({error:"Game not found"});
     });
 
     test("unhidden game reappears in GET /api/games", async () => {

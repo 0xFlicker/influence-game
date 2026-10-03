@@ -8,6 +8,9 @@ roadmap_slice: W0
 
 # One House game entry and replay routing
 
+> Visibility follow-up: [W7 Public and Unlisted](2026-10-02-003-feat-house-game-visibility.md) supersedes this completed slice's Private-game access and auth-retry requirements. The shared identity now includes visibility; Public and Unlisted view anonymously, and Private support was removed.
+
+
 ## Implementation update — 2026-10-02
 
 W0 and the small R35 core follow-up are implemented on `codex/werewolf`. See [verification, operator notes and outstanding boundaries](../reviews/2026-10-02-house-game-entry-implementation.md) and [integration knowledge for a third game](../solutions/architecture-patterns/house-game-entry-and-replay-moments.md). The original scope below records the reviewed design; R35 was subsequently authorized alongside implementation. Broader Werewolf Results, MCP, editorial and visibility parity remain separate roadmap slices.

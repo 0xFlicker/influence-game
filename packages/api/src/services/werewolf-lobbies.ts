@@ -1,3 +1,5 @@
+import { parseGameVisibility } from "@influence/engine/game-visibility";
+import { isViewerGame, storedGameVisibility } from "./game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import type { WerewolfSetup } from "@influence/engine/werewolf/types";
 import { normalizeWerewolfCasting } from "./werewolf-games.js";
@@ -14,7 +16,9 @@ import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import { freezeWerewolfRoster, validateWerewolfModels, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean }) {
+export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { visibility?: unknown; preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean }) {
+  let visibility;
+  try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
   let rules;
   try { rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.setup); }
@@ -26,13 +30,13 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility: "public" }) });
+    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 
 async function lockLobby(tx: Tx, id: string) {
   const [game] = await tx.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id)))).for("update");
-  if (!game) throw new WerewolfGameError("Game not found", 404);
+  if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (game.status !== "waiting") throw new WerewolfGameError("This game is no longer accepting cast changes.");
   return game;
 }
@@ -100,7 +104,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
 export async function readWerewolfLobby(db: DrizzleDB, id: string, includeHidden = false) {
   return db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), includeHidden ? undefined : isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id)))).for("share");
-    if (!game) throw new WerewolfGameError("Game not found", 404);
+    if (!game || (!includeHidden && !isViewerGame(game))) throw new WerewolfGameError("Game not found", 404);
     const config = JSON.parse(game.config);
     const rows = game.status === "waiting" ? await tx.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId })
       .from(schema.werewolfLobbySeats).innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
@@ -112,6 +116,6 @@ export async function readWerewolfLobby(db: DrizzleDB, id: string, includeHidden
       const character = await publishedCharacter(tx, row.profile);
       return { ...identity, name: character.name, avatarUrl: character.avatarUrl, personaKey: character.personaKey, available: true };
     }));
-    return { id: game.id, slug: game.slug, status: game.status, started: game.startedAt !== null, playerCount: game.maxPlayers, modelLabel: modelLabelFromConfig(config), preset: config.preset as WerewolfPreset, players };
+    return { id: game.id, slug: game.slug, visibility: storedGameVisibility(game.config), status: game.status, started: game.startedAt !== null, playerCount: game.maxPlayers, modelLabel: modelLabelFromConfig(config), preset: config.preset as WerewolfPreset, players };
   });
 }

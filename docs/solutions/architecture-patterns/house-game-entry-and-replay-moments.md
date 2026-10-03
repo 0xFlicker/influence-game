@@ -13,9 +13,9 @@ Two game engines need one product entry without pretending their gameplay data i
 
 ## Implemented boundary
 
-`GET /api/game-entries/:idOrSlug` returns exactly `{ id, slug, gameKind }`. It is an optional-auth, private/no-store read. Public games work signed out; hidden/missing identities return 404. Private Influence retains owner, participant and operator access through the existing visibility predicate. Werewolf creation remains public-only, and private Werewolf identities fail closed pending W7 transport parity. Malformed configuration is an error, not another game kind.
+`GET /api/game-entries/:idOrSlug` returns `{ id, slug, gameKind, visibility }`. It is a private/no-store read. Public and Unlisted work signed out; hidden/missing or unsupported stored visibility returns 404 with an operator diagnostic for invalid data. W7 removed Private and the account-dependent entry retry. Both games use the same discovery/direct-link policy; audience, publication and evidence permissions remain separate.
 
-Resolve identity before metadata, detail or game-specific presentation. Never probe an Influence endpoint and interpret 409, 404 or a network failure as Werewolf. Successful anonymous SSR identity seeds the client immediately. An anonymous SSR 404 allows the existing authenticated client transport to retry once auth becomes ready. This does not require signing in to public games. Detail/watch/media still enforce their own access because callers can bypass entry entirely.
+Resolve identity before metadata, detail or game-specific presentation. Never probe an Influence endpoint and interpret 409, 404 or a network failure as Werewolf. Successful anonymous SSR identity seeds the client immediately. An anonymous SSR failure may be retried by the client without waiting for authentication; game visibility does not depend on account state. Detail/watch/media still enforce their own access because callers can bypass entry entirely.
 
 ```mermaid
 flowchart TD
@@ -47,11 +47,11 @@ A single `join_game` agent-creation flow resolves identity before joining throug
 
 ## Adding a third game
 
-1. Add its explicit database/identity kind and define public/private visibility in both routing and direct transports. Do not assume entry authorization protects media.
+1. Add its explicit database/identity kind and apply Public/Unlisted visibility in both routing and direct transports. Do not assume entry authorization protects media.
 2. Implement concrete entry/casting/watch modules. Supply presentation props to the existing House components; add game-specific rules and metadata content only where needed.
 3. Define one stable replay source coordinate and any audience boundary. Add typed link generation, strict parameter parsing and initial-position loading. Reuse the shared share action.
 4. Keep canonical facts, participant identity and accepted decisions in that game's projections. Never parse dialogue into routing, outcomes or replay coordinates.
-5. Test anonymous entry, private/hidden denial, create-and-join recovery, audience restrictions, completed/live playback and share roundtrips with actual browser assertions. Add results/editorial/MCP modules through the same House routes when they exist.
+5. Test anonymous entry, hidden/invalid-visibility denial, create-and-join recovery, audience restrictions, completed/live playback and share roundtrips with actual browser assertions. Add results/editorial/MCP modules through the same House routes when they exist.
 
 ## Verification lessons
 
@@ -64,3 +64,10 @@ See [implementation evidence and remaining boundaries](../../reviews/2026-10-02-
 ## Creation options follow active behavior
 
 On 2026-10-02 the creation-time `viewerMode` and `timingPreset` options were removed, along with unused phase timers and the unconnected server event pacer. Trace a setting to its runtime consumer before copying it into another game. The House player already owns playback preferences; game configuration retains actual game-length limits. Visibility and visual-failure policy are shared product contracts, but parity requires authorization and durable runtime behavior as well as identical form controls. Track those remaining contracts in W7 of the integration roadmap.
+
+
+### Visibility integration (W7)
+
+Use `game-visibility.ts` for the House two-value contract. Public discovery must filter in SQL before limits or counts. Direct readers allow both supported values; use `isViewerGame` after resolving ID/slug. Owner/admin histories are separate query intents: do not accidentally apply public discovery filtering to scoped exports. The entry identity carries visibility for route-level noindex metadata; it does not replace independent data/media/stream checks. A third game should adopt those shared boundaries and retain its concrete audience projection.
+
+Live Influence delivery rechecks visibility at delivery, including catch-up, and closes unavailable streams. The player clears on that closure. Werewolf's existing HTTP refresh/seek error handling clears buffered media on 404. Ordinary image URLs remain appropriate because Unlisted does not require authentication. No private-game ACL schema, migration or plugin registry is needed.

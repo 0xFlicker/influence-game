@@ -260,7 +260,7 @@ describe("durable run inspection read model", () => {
         maxRounds: 5,
         formatManifest: ["two_names"],
         modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-        visibility: "private",
+        visibility: "unlisted",
       },
     });
     await db.update(schema.games).set({ maxPlayers: 5, startedAt: null })
@@ -392,7 +392,7 @@ describe("durable run inspection read model", () => {
       config: {
         maxRounds: 1,
         modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-        visibility: "private",
+        visibility: "unlisted",
       },
     });
     await db.update(schema.games).set({ maxPlayers: 5, startedAt: null })

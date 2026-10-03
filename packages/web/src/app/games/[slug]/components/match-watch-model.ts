@@ -848,6 +848,8 @@ function getConnectionLabel(
       return "Reconnecting";
     case "disconnected":
       return "Disconnected";
+    case "unavailable":
+      return "Unavailable";
     case "replay":
     case undefined:
       return "Live";

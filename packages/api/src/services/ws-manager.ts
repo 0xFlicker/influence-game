@@ -104,6 +104,27 @@ interface WsPublisher {
 }
 
 let _server: WsPublisher | null = null;
+let viewerAvailable: ((gameId: string) => Promise<boolean>) | undefined;
+const connections = new Map<string, Set<ServerWebSocket<WsConnectionData>>>();
+
+// Visibility reads are asynchronous; retain publication/snapshot delivery order per game.
+const pendingDeliveries = new Map<string, Promise<void>>();
+
+function deliver(gameId: string, send: () => void): void {
+  const available = viewerAvailable;
+  if (!available) { send(); return; }
+  const pending = (pendingDeliveries.get(gameId) ?? Promise.resolve()).then(async () => {
+    if (await available(gameId)) { send(); return; }
+    for (const ws of connections.get(gameId) ?? []) ws.close(1008, "Game unavailable");
+  }).catch(error => {
+    console.error(`[ws] Visibility check failed for ${gameId}:`, error);
+    for (const ws of connections.get(gameId) ?? []) ws.close(1011, "Game unavailable");
+  });
+  pendingDeliveries.set(gameId, pending);
+  void pending.finally(() => {
+    if (pendingDeliveries.get(gameId) === pending) pendingDeliveries.delete(gameId);
+  });
+}
 
 /** Track observer count per game for diagnostics. */
 const gameObserverCount = new Map<string, number>();
@@ -113,8 +134,9 @@ const gameObserverCount = new Map<string, number>();
 // ---------------------------------------------------------------------------
 
 /** Bind the Bun Server instance so we can call server.publish(). */
-export function setServer(server: WsPublisher): void {
+export function setServer(server: WsPublisher, available?: (gameId: string) => Promise<boolean>): void {
   _server = server;
+  viewerAvailable = available;
 }
 
 /** Parse the optional reconnect cursor without accepting coercive number syntax. */
@@ -215,6 +237,8 @@ function shouldBroadcastTranscriptEntry(entry: TranscriptEntry): boolean {
 /** Called when a new WebSocket connection opens. */
 export function handleOpen(ws: ServerWebSocket<WsConnectionData>): void {
   const { gameId } = ws.data;
+  const peers = connections.get(gameId) ?? new Set();
+  peers.add(ws); connections.set(gameId, peers);
   ws.subscribe(gameTopic(gameId));
   gameObserverCount.set(gameId, (gameObserverCount.get(gameId) ?? 0) + 1);
 }
@@ -222,6 +246,8 @@ export function handleOpen(ws: ServerWebSocket<WsConnectionData>): void {
 /** Called when a WebSocket connection closes. */
 export function handleClose(ws: ServerWebSocket<WsConnectionData>): void {
   const { gameId } = ws.data;
+  connections.get(gameId)?.delete(ws);
+  if (!connections.get(gameId)?.size) connections.delete(gameId);
   ws.unsubscribe(gameTopic(gameId));
   const count = (gameObserverCount.get(gameId) ?? 1) - 1;
   if (count <= 0) {
@@ -236,13 +262,13 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
   if (!_server) return;
   const outbound = buildWsPublicationPayload(event);
   if (!outbound) return;
-  _server.publish(gameTopic(gameId), JSON.stringify(outbound));
+  deliver(gameId, () => _server?.publish(gameTopic(gameId), JSON.stringify(outbound)));
 }
 
 /** Broadcast one already-materialized durable publication. */
 export function broadcastGamePublication(event: WsPublicationEvent): void {
   if (!_server) return;
-  _server.publish(gameTopic(event.gameId), JSON.stringify(event));
+  deliver(event.gameId, () => _server?.publish(gameTopic(event.gameId), JSON.stringify(event)));
 }
 
 /** Send one durable publication directly during reconnect catch-up. */
@@ -250,13 +276,13 @@ export function sendGamePublication(
   ws: ServerWebSocket<WsConnectionData>,
   event: WsPublicationEvent,
 ): void {
-  ws.send(JSON.stringify(event));
+  deliver(ws.data.gameId, () => ws.send(JSON.stringify(event)));
 }
 
 /** Broadcast a non-message WsOutboundEvent to all observers of a game. */
 export function broadcastRaw(gameId: string, event: WsRawOutboundEvent): void {
   if (!_server) return;
-  _server.publish(gameTopic(gameId), JSON.stringify(event));
+  deliver(gameId, () => _server?.publish(gameTopic(gameId), JSON.stringify(event)));
 }
 
 /** Broadcast viewer-safe watch state to all observers of a game. */
@@ -282,11 +308,11 @@ export function broadcastViewerDecisionEvent(gameId: string, event: CanonicalGam
   if (!_server) return;
   const viewerDecision = projectViewerDecisionEvent(event);
   if (!viewerDecision) return;
-  _server.publish(gameTopic(gameId), JSON.stringify({
+  deliver(gameId, () => _server?.publish(gameTopic(gameId), JSON.stringify({
     type: "viewer_decision_event",
     gameId,
     event: viewerDecision,
-  } satisfies WsPublicationPayload));
+  } satisfies WsPublicationPayload)));
 }
 
 /** Send viewer-safe watch state to a single client (for catch-up on connect). */
@@ -300,7 +326,7 @@ export function sendWatchState(
     state,
     throughPublicationSequence,
   };
-  ws.send(JSON.stringify(outbound));
+  deliver(ws.data.gameId, () => ws.send(JSON.stringify(outbound)));
 }
 
 /** Get the number of active observers for a game. */

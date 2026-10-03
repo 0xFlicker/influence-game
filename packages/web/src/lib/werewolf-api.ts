@@ -5,11 +5,12 @@ import type { WerewolfPreset } from "@influence/engine/werewolf/types";
 
 export interface WerewolfGameSummary { gameKind: "werewolf"; id: string; slug: string; status: GameStatus; playerCount: number; joinedPlayers: number; modelLabel: string; createdAt: string }
 export interface WerewolfLobbyData {
-  id: string; slug: string; status: GameStatus; started: boolean; playerCount: number; modelLabel: string; preset: WerewolfPreset;
+  id: string; slug: string; visibility: import("./api").GameVisibility; status: GameStatus; started: boolean; playerCount: number; modelLabel: string; preset: WerewolfPreset;
   players: Array<{ id: string; agentProfileId: string; ownerPublicId: string; name: string; avatarUrl: string | null; personaKey: SavedAgent["personaKey"]; available: boolean }>;
 }
 export const listWerewolfGames = () => apiFetch<WerewolfGameSummary[]>("/api/werewolf", { cache: "no-store" });
 export interface CreateWerewolfParams {
+  visibility: import("./api").GameVisibility;
   preset: WerewolfPreset; setup: import("@influence/engine/werewolf/types").WerewolfSetup;
   maxDays: number; providerManifest: import("./api").GameProviderManifestEntry[];
   personaPool: import("./api").PersonaKey[]; fillStrategy: "balanced" | "random"; visualMode: boolean;

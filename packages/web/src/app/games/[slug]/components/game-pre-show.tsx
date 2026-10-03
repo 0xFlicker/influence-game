@@ -114,7 +114,7 @@ export function GamePreShow({ game, onGameUpdated }: {
         {game.players.map((player,index) => { const model=getGamePlayerAvatarPreviewModel(player); return <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(model.avatarUrl,player.persona,player.name,player.personaKey)} eyebrow={player.currentAgent?.role?.label ?? getPersonaLabel(model.personaKey)} detail={castRecord(player)} onInspect={() => setSelectedPlayer(player)} />; })}
       </CastingRoster>
 
-      <footer className="pre-show-footer"><p>{game.visibility === "private" ? "Private game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
+      <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span aria-hidden="true">/</span> {game.playerCount} agents <span aria-hidden="true">/</span> {game.modelLabel}</p><p>The cast updates here. The show begins here.</p></footer>
       {refreshError && <p role="alert" className="pre-show-notice">Cast refresh failed. {refreshError} <button type="button" onClick={() => refreshRef.current?.()}>Try again</button></p>}
       {joining && <JoinGameModal game={summary} onClose={() => setJoining(false)} onSuccess={() => { setJoining(false); refreshRef.current?.(); }} />}
       {selectedPlayer && <CastPortrait player={selectedPlayer} onClose={closePortrait} />}

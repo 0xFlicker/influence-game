@@ -47,7 +47,7 @@ export interface DiaryRoomData {
   entries: Array<{ question: TranscriptEntry; answer: TranscriptEntry | null }>;
 }
 
-export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting";
+export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting" | "unavailable";
 export type WatchConnStatus = ConnStatus | "replay";
 
 export interface GameViewerProps {

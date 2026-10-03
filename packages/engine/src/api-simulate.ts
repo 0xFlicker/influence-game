@@ -30,7 +30,7 @@ interface ApiSimArgs {
   providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   maxRounds: number | "auto";
-  visibility: "public" | "unlisted" | "private";
+  visibility: "public" | "unlisted";
   waitForAdvance: boolean;
   advanceTimeoutMs: number;
   pollIntervalMs: number;
@@ -353,8 +353,9 @@ function parseProvider(value: string | undefined): ApiSimArgs["provider"] | unde
 }
 
 function parseVisibility(value: string | undefined): ApiSimArgs["visibility"] | undefined {
-  if (value === "public" || value === "unlisted" || value === "private") return value;
-  return undefined;
+  if (value === undefined) return undefined;
+  if (value === "public" || value === "unlisted") return value;
+  throw new Error("Visibility must be public or unlisted");
 }
 
 function sleep(ms: number): Promise<void> {

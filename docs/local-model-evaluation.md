@@ -471,3 +471,10 @@ House replay links from the Werewolf API simulator now use `/games/:slug/replay?
 ### Game creation and playback pacing
 
 Creation-time Speed-run/Live and phase timing presets have been removed. API simulations no longer accept `--viewer-mode` or `--timing-preset`; use `--max-rounds` for the Influence game-length limit. Werewolf retains its maximum-day limit. Playback speed, thinking visibility and thinking order belong to the existing House player settings. These preferences do not change model reasoning or execution speed.
+
+
+### House game visibility
+
+Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
+
+Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.

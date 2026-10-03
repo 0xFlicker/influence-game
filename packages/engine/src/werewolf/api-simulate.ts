@@ -13,6 +13,7 @@
  * Choices and private reasoning stay sealed until the full checkpoint resolves.
  * No `as any`, Influence House calls, or prose parsing.
  */
+import { parseGameVisibility } from "../game-visibility";
 import { parseArgs } from "node:util";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -28,6 +29,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   const { values } = parseArgs({ args: argv, options: {
     "api-url": { type: "string", default: env.INFLUENCE_API_BASE_URL ?? "http://127.0.0.1:3000" },
     "web-url": { type: "string", default: "http://localhost:3001" },
+    visibility: { type: "string", default: env.INFLUENCE_API_SIM_VISIBILITY ?? "public" },
     preset: { type: "string", default: "one_wolf" }, "max-days": { type: "string", default: "10" },
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
     "reasoning-policy": { type: "string", default: "low" },
@@ -48,7 +50,7 @@ export function parseWerewolfApiArgs(argv: string[], env: Record<string, string 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000) throw new Error("--timeout-seconds must be a positive number of at least one second");
   const providerManifest = normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: values["reasoning-policy"] }]);
   resolveProviderManifest(providerManifest);
-  return { apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays,
+  return { visibility: parseGameVisibility(values.visibility), apiUrl: apiUrl.origin, webUrl: webUrl.origin, preset: config.preset, maxDays: config.maxDays,
     agentProfileIds: values.agent, providerManifest, game: values.game, audience: values.audience as WerewolfAudience,
     transcript: values.transcript, out: values.out, timeoutMs, help: Boolean(values.help) };
 }
@@ -89,7 +91,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
       creationRequested = true;
       const created = await apiFetch<{ id: string; slug: string }>(args.apiUrl, "/api/werewolf", {
         method: "POST", headers: authHeaders(token),
-        body: JSON.stringify({ preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
+        body: JSON.stringify({ visibility: args.visibility, preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
       });
       game = created.id;
       if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /games?game=werewolf before launching again.");

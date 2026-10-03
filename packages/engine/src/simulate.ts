@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 /**
+ * API-backed House visibility is Public or Unlisted; local artifacts are not published.
+ * See api-simulate.ts for --visibility. This does not change decision trace permissions.
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.

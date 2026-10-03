@@ -21,26 +21,18 @@ test("both kinds resolve anonymously by id and slug with only routing identity",
   const game=await seed(kind);
   for(const key of [game.id,game.slug]) {
    const result=await read(key);expect(result.status).toBe(200);expect(result.headers.get("Cache-Control")).toBe("private, no-store");
-   expect(await result.json()).toEqual({id:game.id,slug:game.slug,gameKind:kind});
+   expect(await result.json()).toEqual({id:game.id,slug:game.slug,gameKind:kind,visibility:"public"});
   }
  }
 });
-test("private Influence admits only its owner, participant and current operator",async()=>{
+test("removed Private is inaccessible to everyone",async()=>{
  const game=await seed("influence","private");
- await db.insert(schema.gamePlayers).values({id:"seat",gameId:game.id,userId:"participant",persona:"{}",agentConfig:"{}"});
- await db.insert(schema.roles).values({id:"operator",name:"operator"});
- await db.insert(schema.permissions).values({id:"view_admin",name:"view_admin",description:"Admin"});
- await db.insert(schema.rolePermissions).values({roleId:"operator",permissionId:"view_admin"});
- await db.insert(schema.userRoles).values({userId:"operator",roleId:"operator"});
- for(const user of [undefined,"other"])expect((await read(game.slug,user)).status).toBe(404);
- for(const user of ["owner","participant","operator"])expect((await read(game.slug,user)).status).toBe(200);
- await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,game.id));
- for(const user of [undefined,"owner","participant","operator"])expect(await (await read(game.slug,user)).json()).toEqual({error:"Game not found"});
+ for(const user of [undefined,"owner","participant","operator"]) expect((await read(game.slug,user)).status).toBe(404);
 });
 test("unlisted entry works by known URL; malformed config fails closed; unsupported private Werewolf stays inaccessible",async()=>{
  const game=await seed("werewolf","unlisted");expect((await read(game.slug)).status).toBe(200);
  for(const config of ["bad","null","[]",'{"visibility":"surprise"}','{"visibility":["public"]}']) {
-  await db.update(schema.games).set({config}).where(eq(schema.games.id,game.id));expect((await read(game.id)).status).toBe(500);
+  await db.update(schema.games).set({config}).where(eq(schema.games.id,game.id));expect((await read(game.id)).status).toBe(404);
  }
  await db.update(schema.games).set({config:'{"visibility":"private"}'}).where(eq(schema.games.id,game.id));
  expect((await read(game.id,"owner")).status).toBe(404);

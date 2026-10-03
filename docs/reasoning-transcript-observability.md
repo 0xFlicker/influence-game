@@ -705,3 +705,6 @@ House replay links from the Werewolf API simulator now use `/games/:slug/replay?
 ### Game creation and playback pacing
 
 Creation-time Speed-run/Live and phase timing presets have been removed. API simulations no longer accept `--viewer-mode` or `--timing-preset`; use `--max-rounds` for the Influence game-length limit. Werewolf retains its maximum-day limit. Playback speed, thinking visibility and thinking order belong to the existing House player settings. These preferences do not change model reasoning or execution speed.
+
+
+House game discovery uses Public/Unlisted for both games. The API launchers expose `--visibility public|unlisted`; this never changes transcript scope, Mystery/Omniscient, captured thinking, or producer-only raw reasoning access. Private decision traces remain private evidence even though Private game visibility has been removed. No model-output or canonical event contract changed.

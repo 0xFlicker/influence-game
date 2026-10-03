@@ -1,7 +1,7 @@
 ---
 title: Public and Unlisted games across The House
 type: refactor
-status: proposed
+status: implemented
 date: 2026-10-02
 roadmap_slice: W7
 ---
@@ -21,7 +21,7 @@ Public remains the default. Unlisted copy explicitly says **“Anyone with the l
 
 The operator confirmed on 2026-10-02 that there are **no production Private games**. Remove Private instead of building account-based game access. This supersedes the earlier three-mode draft at this path, including its proposed membership schema, private invitations, authenticated image loader and WebSocket authentication handshake. No production Private migration or compatibility mode is needed.
 
-This is a focused slice of [W7](../ideation/2026-09-30-house-admin-and-production.md#w7--close-the-surrounding-house-gaps), following [House game entry](2026-10-02-001-refactor-house-game-entry.md). Source audit: `codex/werewolf`, `aadd6d9b` plus ongoing creation-setting cleanup and Werewolf defaults. This is planning only; the application still needs the changes below.
+This is a focused slice of [W7](../ideation/2026-09-30-house-admin-and-production.md#w7--close-the-surrounding-house-gaps), following [House game entry](2026-10-02-001-refactor-house-game-entry.md). Source audit: `codex/werewolf`, `aadd6d9b` plus ongoing creation-setting cleanup and Werewolf defaults. Implemented on the Werewolf feature branch. See the verification record below; no deployment or operator-data conversion was performed.
 
 ## Boundaries that remain
 
@@ -127,3 +127,28 @@ Run `bun run test`, `bun run test:postgres` in a disposable DB, and `bun run che
 ## Scope limits
 
 No private-game ACLs, participant-ownership migration, private invitation flow, protected-image infrastructure, new viewer authentication protocol, visibility editor or rollout flag. Visual-failure policy, studio redesign, Werewolf results/MCP/Cuts/trailers and art exploration remain separate work. Reuse current game modules and shared House UI; deployment is the gate.
+
+
+## Implementation and verification — 2026-10-02
+
+VIS-01 through VIS-05 are implemented. Public/Unlisted creation, list filtering, anonymous direct viewing, hidden-game denial, metadata, CLI validation and retired Private UI now use the shared House contract. The game implementations retain their own audience, publication and evidence rules.
+
+- `bun run test`: 2,205 passed, 5 skipped, 0 failed.
+- `bun run test:postgres`: 1,827 passed, 0 failed in a disposable database.
+- Focused final PostgreSQL run: 124 passed, including ordered asynchronous stream delivery and hidden-stream closure.
+- `bun run check`: type checks and lint passed.
+- Deterministic browser: anonymous Unlisted Werewolf entry/replay, audience validation and a later-moment share link passed. Both game creation forms passed at 1,440px and 390px, with anonymous Unlisted casting access and noindex metadata.
+- Anonymous Unlisted results images passed the real API/web/browser journey, including sign-in/sign-out and hidden-game denial. Restored a missing results-banner mount exposed by this check.
+- No sitemap generator exists in this repository. Discovery queries filter before limits and public aggregates; owner/operator views keep their existing scope.
+
+Read-only local inventory found 79 Public, 5 Unlisted and 3 retired Private records. These three Influence games were left untouched and now fail closed in ordinary viewers:
+
+| Slug | ID |
+| --- | --- |
+| vast-pink-key | 2ad67397-51ea-4242-be46-f1084e6c5632 |
+| open-ivory-sun | ff38658d-2db0-4201-b5c3-0f30d31cf132 |
+| calm-cyan-frost | c8c891fe-9ef1-4019-8e43-d61a26735c33 |
+
+Proposed disposition: explicitly convert these local records to Unlisted if the operator wants to retain link viewing. No automatic conversion, deletion, compatibility path or production migration was added. Staging inventory and deployment remain unverified. Production absence of Private games is the operator's statement, not a new database audit.
+
+See [implementation verification](../reviews/2026-10-02-house-game-visibility-implementation.md) for test scope and limitations.

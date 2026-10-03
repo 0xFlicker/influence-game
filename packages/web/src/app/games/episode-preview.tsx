@@ -100,7 +100,7 @@ export function EpisodeCard({ game, actions }: { game: GameSummary; actions: Rea
   }, [expanded]);
   const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(game);
   const label = game.status === "in_progress" ? "Live" : game.status === "waiting" ? "Open seats" : game.status === "completed" ? "Completed" : game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
-  const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "private" ? "Your private game" : "Public game";
+  const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "unlisted" ? "Unlisted game" : "Public game";
   const links = <><Link className="influence-button-primary" href={gameReplayHref(game.slug)}>{game.status === "in_progress" ? "Watch live" : "Watch Replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
   return <>
     <GameCard ref={card} data-testid="episode-card" title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}

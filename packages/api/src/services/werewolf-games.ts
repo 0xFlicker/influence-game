@@ -1,3 +1,4 @@
+import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
@@ -80,8 +81,10 @@ export async function freezeWerewolfRoster(tx: Tx, seats: Array<{ id: string; ag
 
 /** Starting is one transaction: freeze character + selected game strategy, roles, and model policy. */
 export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
-  preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
+  visibility?: unknown; preset: WerewolfPreset; agentProfileIds: string[]; providerManifest?: unknown; maxDays?: number;
 }) {
+  let visibility;
+  try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
   if (!Object.hasOwn(WEREWOLF_PRESETS, input.preset)) throw new WerewolfGameError("Choose one_wolf or two_wolves", 400);
   const count = WEREWOLF_PRESETS[input.preset].players;
@@ -103,7 +106,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, serviceTier: "flex", visibility: "public", rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
   });
   return { id: gameId, slug };

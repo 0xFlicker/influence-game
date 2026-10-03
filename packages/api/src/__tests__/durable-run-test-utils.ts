@@ -126,7 +126,7 @@ export async function insertGame(
     config: JSON.stringify(params.config ?? {
       maxRounds: 5,
       modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-      visibility: "private",
+      visibility: "unlisted",
     }),
     status: params.status ?? "suspended",
     trackType: "custom",

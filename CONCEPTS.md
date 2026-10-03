@@ -811,3 +811,8 @@ login credentials and wallet metadata. Current database grants authorize request
 Queue scheduler service principals are separately registered operational
 identities with only `schedule_free_game` on draw/start; they cannot receive human
 roles or authenticate as human administrators.
+
+
+## House game visibility
+
+**Public** games appear in general discovery. **Unlisted** games are omitted from discovery but anyone with a direct link can watch. Neither requires viewer login. **Hidden** is a separate moderation state that blocks ordinary viewer reads; authorized administration remains separate. Mystery/Omniscient and production publication are content/audience boundaries, not game discovery settings. The former Private game setting is unsupported.

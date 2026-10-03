@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
+import { GameBanner } from "@/components/game-banner";
 import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
 import {
   getCompletedGameResults,
@@ -128,6 +129,7 @@ export function CompletedResultsReview({
 
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">
+      <GameBanner gameId={gameId} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-white/35">Final Results</div>

@@ -227,7 +227,7 @@ async function createTerminalFixture(
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       },
-      visibility: "private",
+      visibility: "unlisted",
     },
   });
   await db.update(schema.games).set({

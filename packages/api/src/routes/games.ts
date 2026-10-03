@@ -1,5 +1,5 @@
 import { enabledGameKinds } from "@influence/engine/game-availability";
-import { createEpisodeRoutes, visibleEpisodeGames } from "./episodes.js";
+import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Game REST API routes.
@@ -99,6 +99,9 @@ import {
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 
+import { parseGameVisibility } from "@influence/engine/game-visibility";
+import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
+
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
 function publicErrorInfo(
@@ -124,7 +127,8 @@ export function createGameRoutes(db: DrizzleDB) {
   // Influence endpoints must never interpret another game through its defaults.
   app.use("/api/games/*", async (c, next) => {
     const id = decodeURIComponent(c.req.path.split("/")[3] ?? "");
-    const [game] = id ? await db.select({ gameKind: schema.games.gameKind }).from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id))) : [];
+    const [game] = id ? await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, gameKind: schema.games.gameKind }).from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id))) : [];
+    if (game && (c.req.method === "GET" || /\/(join|fill|start)$/.test(c.req.path)) && !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     if (game?.gameKind === "werewolf") return c.json({ error: "Use the Werewolf game endpoint", href: `/api/werewolf/${encodeURIComponent(id)}` }, 409);
     await next();
   });
@@ -169,6 +173,7 @@ export function createGameRoutes(db: DrizzleDB) {
       }, 400);
     }
 
+    try { parseGameVisibility(visibility); } catch { return c.json({ error: "Game visibility must be public or unlisted" }, 400); }
     if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
     if (typeof visualMode !== "boolean") return c.json({ error: "visualMode must be a boolean" }, 400);
     const minPlayers = MIN_NEW_GAME_PLAYERS;
@@ -241,7 +246,7 @@ export function createGameRoutes(db: DrizzleDB) {
       }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
-      visibility: visibility ?? "public",
+      visibility: parseGameVisibility(visibility),
       slotType: "all_ai",
       visualMode,
       visualFailurePolicy,
@@ -291,12 +296,11 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db
         .select()
         .from(schema.games)
-        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), isNull(schema.games.hiddenAt)));
+        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), publicGameFilter()));
     } else {
-      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), isNull(schema.games.hiddenAt)));
+      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), publicGameFilter()));
     }
 
-    rows = await visibleEpisodeGames(db, rows, c.get("user")?.id, c.get("userPermissions"));
     const episodes = await readEpisodePresentations(db, rows);
     c.header("Cache-Control", "private, no-store");
     const gameIds = rows.map((game) => game.id);
@@ -374,7 +378,7 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.games)
       .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))[0];
 
-    if (!game || !(await visibleEpisodeGames(db, [game], c.get("user")?.id, c.get("userPermissions"))).length) {
+    if (!game || !isViewerGame(game)) {
       return c.json({ error: "Game not found" }, 404);
     }
 
@@ -867,7 +871,7 @@ export function createGameRoutes(db: DrizzleDB) {
           .select()
           .from(schema.games)
           .where(and(eq(schema.games.id, playerRecord.gameId), isNull(schema.games.hiddenAt))))[0];
-        if (!game) return null;
+        if (!game || !isViewerGame(game)) return null;
         if (game.status !== "completed" || !game.endedAt) return null;
 
         const config = JSON.parse(game.config);

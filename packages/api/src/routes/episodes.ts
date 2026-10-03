@@ -1,20 +1,15 @@
+import { isViewerGame } from "../services/game-visibility.js";
 import { Hono } from "hono";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { optionalAuth, requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { decodeEpisodeCopy, queueEpisodeCopy, readEpisodePreview } from "../services/episode-presentation.js";
 
-export async function visibleEpisodeGames<T extends { id: string; config: string; createdById: string | null }>(db: DrizzleDB, games: T[], userId?: string, permissions: string[] = []): Promise<T[]> {
-  if (permissions.includes("view_admin")) return games;
-  const seats = userId ? await db.select({ gameId: schema.gamePlayers.gameId }).from(schema.gamePlayers).where(eq(schema.gamePlayers.userId, userId)) : [];
-  const joined = new Set(seats.map(p => p.gameId));
-  return games.filter(g => (JSON.parse(g.config) as { visibility?: string }).visibility !== "private" || (userId && (g.createdById === userId || joined.has(g.id))));
-}
 export function createEpisodeRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
   app.get("/api/games/:id/episode", optionalAuth(db), async c => {
     const games = await db.select().from(schema.games).where(or(eq(schema.games.id, c.req.param("id")), eq(schema.games.slug, c.req.param("id"))));
-    const [game] = await visibleEpisodeGames(db, games.filter(g => !g.hiddenAt), c.get("user")?.id, c.get("userPermissions"));
+    const game = games.find(isViewerGame);
     if (!game) return c.json({ error: "Game not found" }, 404);
     c.header("Cache-Control", "private, no-store");
     return c.json(await readEpisodePreview(db, game));

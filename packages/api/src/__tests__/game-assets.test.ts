@@ -87,11 +87,11 @@ describe("editorial game assets", () => {
     expect((await read(path + "/content", producerToken)).status).toBe(200);
     expect((await mutation(path, "PATCH", { requestId: "denied-edit", expectedRevision: 1, altText: "changed" })).status).toBe(403);
   });
-  test("assets follow existing private-game access; hidden and cross-game IDs remain unavailable", async () => {
-    await db.update(schema.games).set({ config: JSON.stringify({ visibility: "private" }), createdById: producer }).where(eq(schema.games.id, gameId));
+  test("unlisted assets allow anonymous access; hidden and cross-game IDs remain unavailable", async () => {
+    await db.update(schema.games).set({ config: JSON.stringify({ visibility: "unlisted" }), createdById: producer }).where(eq(schema.games.id, gameId));
     const { asset } = await payload(await upload("private-game"));
     const path = `/api/games/${gameId}/assets/${asset.id}`;
-    expect((await read(path)).status).toBe(404); expect((await read(path, viewerToken)).status).toBe(404);
+    expect((await read(path)).status).toBe(200); expect((await read(path, viewerToken)).status).toBe(200);
     await db.insert(schema.gamePlayers).values({ id: randomUUID(), gameId, userId: viewer, persona: "{}", agentConfig: "{}" });
     expect((await read(path, viewerToken)).status).toBe(200);
     await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));

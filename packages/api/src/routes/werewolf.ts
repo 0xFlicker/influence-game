@@ -1,3 +1,4 @@
+import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { Hono } from "hono";
 import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
@@ -24,14 +25,14 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some((key) => !["preset", "agentProfileIds", "providerManifest", "maxDays"].includes(key))
+      || Object.keys(input).some((key) => !["visibility", "preset", "agentProfileIds", "providerManifest", "maxDays"].includes(key))
       || (input.preset !== "one_wolf" && input.preset !== "two_wolves")
       || !Array.isArray(input.agentProfileIds) || input.agentProfileIds.some((id) => typeof id !== "string")
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || Number(input.maxDays) < 1 || Number(input.maxDays) > 20))) {
       return c.json({ error: "Choose a valid Werewolf preset, character list, day limit (1–20)." }, 400);
     }
     try {
-      const game = await createWerewolfGame(db, c.get("user")!.id, { preset: input.preset,
+      const game = await createWerewolfGame(db, c.get("user")!.id, { visibility: input.visibility, preset: input.preset,
         agentProfileIds: input.agentProfileIds as string[], providerManifest: input.providerManifest,
         ...(input.maxDays !== undefined ? { maxDays: Number(input.maxDays) } : {}) });
       return c.json(game, 201);
@@ -45,7 +46,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.post("/api/werewolf/lobbies", requireAuth(db), requirePermission("create_game"), async c => {
     const input = await c.req.json().catch(() => null);
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some(key => !["preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode"].includes(key))
+      || Object.keys(input).some(key => !["visibility", "preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode"].includes(key))
       || !["one_wolf", "two_wolves"].includes(input.preset)
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || input.maxDays < 1 || input.maxDays > 20))) return c.json({ error: "Choose a Werewolf preset and a day limit from 1 to 20." }, 400);
     return c.json(await createWerewolfLobby(db, c.get("user").id, input), 201);
@@ -66,7 +67,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     c.header("Cache-Control", "private, no-store");
     const rows = await db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
       playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
-      .where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt))).orderBy(desc(schema.games.createdAt)).limit(100);
+      .where(and(eq(schema.games.gameKind, "werewolf"), publicGameFilter())).orderBy(desc(schema.games.createdAt)).limit(100);
     const seats = rows.length ? await db.select({ gameId: schema.werewolfLobbySeats.gameId, total: count() }).from(schema.werewolfLobbySeats)
       .where(inArray(schema.werewolfLobbySeats.gameId, rows.map(game => game.id))).groupBy(schema.werewolfLobbySeats.gameId) : [];
     const joined = new Map(seats.map(row => [row.gameId, row.total]));
@@ -117,7 +118,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.get("/api/werewolf/:id", async (c) => {
     const id = c.req.param("id");
     const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
-    if (!game) return c.json({ error: "Game not found" }, 404);
+    if (!game || !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
     const audience = c.req.query("audience") ?? "mystery";
     if (audience !== "mystery" && audience !== "omniscient") return c.json({ error: "Choose mystery or omniscient" }, 400);

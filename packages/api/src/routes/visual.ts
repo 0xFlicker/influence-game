@@ -1,3 +1,4 @@
+import { isViewerGame } from "../services/game-visibility.js";
 import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
@@ -25,7 +26,7 @@ export function createVisualRoutes(db: DrizzleDB) {
   app.use("/api/admin/games/:id/visual/*", legacyWerewolfGuard);
   app.get("/api/games/:id/visual", async (c) => {
     const [game] = await db.select().from(schema.games).where(or(eq(schema.games.id, c.req.param("id")), eq(schema.games.slug, c.req.param("id"))));
-    if (!game || game.gameKind === "werewolf" || game.hiddenAt) return c.json({ error: "Game not found" }, 404);
+    if (!game || game.gameKind === "werewolf" || !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
     const enabled = (JSON.parse(game.config) as { visualMode?: boolean }).visualMode === true;
 
     const [rows, assets, players] = await Promise.all([
@@ -70,7 +71,7 @@ export function createVisualRoutes(db: DrizzleDB) {
   app.get("/api/games/:id/visual/artifacts/:artifact", async (c) => {
     const gameId = c.req.param("id"), artifactId = c.req.param("artifact");
     const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
-    if (!game || game.gameKind === "werewolf" || game.hiddenAt) return c.json({ error: "Visual artifact not found" }, 404);
+    if (!game || game.gameKind === "werewolf" || !isViewerGame(game)) return c.json({ error: "Visual artifact not found" }, 404);
     const [scenes, assets, published, shotScenes, shotVersions] = await Promise.all([
       db.select({ id: schema.visualScenes.id }).from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"), eq(schema.visualScenes.imageArtifactId, artifactId))),
       db.select({ portraits: schema.visualGameAssets.portraits, cast: schema.visualGameAssets.cast }).from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId)),

@@ -350,7 +350,7 @@ test.describe("local public player identity", () => {
     const page = await context.newPage();
     const games = Array.from({ length: 60 }, (_, i) => ({
       id: `production-${i}`, slug: `episode-${i}`, status: "completed", playerCount: 6, currentRound: 4, maxRounds: 5, currentPhase: "END", alivePlayers: 1, eliminatedPlayers: 5,
-      modelLabel: "Standard", visibility: i === 2 ? "private" : "public", createdAt: new Date().toISOString(), hidden: false,
+      modelLabel: "Standard", visibility: i === 2 ? "unlisted" : "public", createdAt: new Date().toISOString(), hidden: false,
       completionSettlement: { state: "not_applicable" }, season: i === 0 ? { id: "s0", name: "Season 0", slug: "season-0" } : null,
       episode: { title: `Episode ${i}`, description: "A teaser", status: "unrequested", cast: [], frameOrder: [], locked: false, revision: 0, episodeNumber: null, coverUrl: null },
     }));
@@ -370,7 +370,7 @@ test.describe("local public player identity", () => {
       await expect(page.getByRole("button", { name: "Backfill missing titles" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Edit episode", exact: true })).toHaveCount(0);
       await expect(page.getByRole("region", { name: "Season 0", exact: true }).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/games/season/season-0");
-      for (const [path, expected] of [["season/season-0", "Episode 0"], ["private", "Episode 2"]]) {
+      for (const [path, expected] of [["season/season-0", "Episode 0"]]) {
         await page.goto(`${servers.webUrl}/games/${path}`, { waitUntil: "networkidle" });
         await expect(page.getByTestId("episode-card")).toHaveCount(1);
         await expect(page.getByTestId("episode-card").getByRole("heading", { name: expected, exact: true })).toBeVisible();

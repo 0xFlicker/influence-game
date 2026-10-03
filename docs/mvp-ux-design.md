@@ -96,7 +96,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |
 | `fillStrategy` | `random \| balanced` | required | `balanced` |
 | `maxRounds` | `number \| "auto"` | ≥ 5 | `auto` (computed) |
-| `visibility` | `public \| unlisted \| private` | required | `public` |
+| `visibility` | `public \| unlisted` | required | `public` |
 
 **`mixed` mode (future):** Reserves N player slots for wallet-authenticated humans; AI fills remaining slots when game starts or a deadline is hit. V1 ships `all_ai` only — keep toggle visible but disabled with a "Coming soon" tooltip.
 

@@ -7,7 +7,7 @@ import { insertGame } from "./durable-run-test-utils.js";
 import { decodeEpisodeCopy, queueEpisodeCopy, readEpisodePresentations, runEpisodeJob } from "../services/episode-presentation.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
-import { createEpisodeRoutes, visibleEpisodeGames } from "../routes/episodes.js";
+import { createEpisodeRoutes } from "../routes/episodes.js";
 
 describe("episode presentation", () => {
   let db: DrizzleDB;
@@ -66,10 +66,11 @@ describe("episode presentation", () => {
     const [row] = await db.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, id));
     expect(row?.status).toBe("failed"); expect(row?.title).toBe("Existing"); expect(row?.failure).toContain("Bad structured output");
   });
-  test("private cards and previews are not exposed anonymously", async () => {
+  test("hidden previews are not exposed anonymously", async () => {
     const id = await insertGame(db);
     const games = await db.select().from(schema.games).where(eq(schema.games.id, id));
-    expect(await visibleEpisodeGames(db, games)).toEqual([]);
+    expect(games).toHaveLength(1);
+    await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, id));
     const app = createEpisodeRoutes(db);
     expect((await app.request(`/api/games/${id}/episode`)).status).toBe(404);
     expect((await app.request(`/api/admin/games/${id}/episode`, { method: "PATCH", body: "{}" })).status).toBe(401);

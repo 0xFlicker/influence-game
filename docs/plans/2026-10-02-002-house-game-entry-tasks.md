@@ -8,6 +8,9 @@ roadmap_slice: W0
 
 # House game entry — implementation tasks
 
+> Visibility follow-up: [W7 Public and Unlisted](2026-10-02-003-feat-house-game-visibility.md) supersedes this completed slice's Private-game access and auth-retry requirements. The shared identity now includes visibility; Public and Unlisted view anonymously, and Private support was removed.
+
+
 Implements the [W0 plan](2026-10-02-001-refactor-house-game-entry.md), not the whole [integration roadmap](../ideation/2026-09-30-house-admin-and-production.md). All tasks are pending. The [review resolutions](../reviews/2026-10-02-house-game-entry-plan-review.md) are incorporated. The plan is authoritative for behavior; tasks below specify edits and proof. These are ordered work units, not a request to dispatch parallel agents. Keep the current Werewolf worktree and protect unrelated edits; do not merge or deploy as part of this plan.
 
 ```mermaid

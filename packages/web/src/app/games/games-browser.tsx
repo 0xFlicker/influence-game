@@ -402,8 +402,8 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   );
 }
 
-function shelfRank(name: string) { return name === "Your private games" ? 2 : name === "Public games" ? 1 : 0; }
-function shelfName(game: GameSummary) { return game.visibility === "private" ? "Your private games" : game.season?.name ?? "Public games"; }
+function shelfRank(name: string) { return name === "Public games" ? 1 : 0; }
+function shelfName(game: GameSummary) { return game.season?.name ?? "Public games"; }
 function EpisodeShelf({ name, grid, href, children }: { name: string; grid: boolean; href: string; children: React.ReactNode }) {
   const rail = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });

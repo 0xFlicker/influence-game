@@ -27,6 +27,7 @@ import { checkAdminContinuity } from "./admin-continuity-browser.js";
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 const originalMock = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
 const originalRole = process.env.INFLUENCE_API_ROLE;
+const originalOpenAiKey = process.env.OPENAI_API_KEY;
 let database: TestDB;
 let servers: TestServerHandles;
 let browser: Browser;
@@ -34,6 +35,7 @@ let admin: Awaited<ReturnType<typeof createAdminUser>>;
 let profileId: string;
 beforeAll(async () => {
   process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
+  process.env.OPENAI_API_KEY = "e2e-dummy-key-no-provider-calls";
   process.env.INFLUENCE_API_ROLE = "game-worker";
   database = await createIsolatedTestDb();
   admin = await createAdminUser(database.db);
@@ -93,6 +95,8 @@ afterAll(async () => {
     ["servers", async () => { if (servers) await stopTestServers(servers); }],
     ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
   ]);
+  if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAiKey;
   if (originalMock === undefined) delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
   else process.env.INFLUENCE_API_TEST_MOCK_RUNNER = originalMock;
   if (originalRole === undefined) delete process.env.INFLUENCE_API_ROLE;
@@ -548,7 +552,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
 
 
 test("House entry is anonymous, rejects invalid audiences and shares a later source moment without restarting", async () => {
-  const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1,visibility:"unlisted"});
   const claim = await claimWerewolfGame(database.db,game.id); if(!claim.ok) throw new Error(claim.error);
   await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}) {
     if(request.action === "open_thread") return {kind:"opening",text:"What have you learned?",recipientIds:request.legalRecipientIds.slice(0,3),cue:null};
@@ -561,6 +565,9 @@ test("House entry is anonymous, rejects invalid audiences and shares a later sou
     await page.goto(`${servers.webUrl}/games/${game.slug}`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('a[href$="/replay?audience=mystery"]');
     expect(reads.some(url=>url.includes(`/api/games/${game.slug}`))).toBe(false);
+    await page.waitForSelector('meta[name="robots"][content*="noindex"]');
+    const listed = await (await fetch(`${servers.apiUrl}/api/werewolf`)).json() as Array<{id:string}>;
+    expect(listed.some(row=>row.id===game.id)).toBe(false);
     expect(reads.some(url=>url.includes("/watch?"))).toBe(false);
     await page.screenshot({path:"/tmp/house-werewolf-entry-desktop.png"});
     await page.setViewport({width:390,height:844});await page.screenshot({path:"/tmp/house-werewolf-entry-mobile.png",fullPage:true});
@@ -586,3 +593,36 @@ test("House entry is anonymous, rejects invalid audiences and shares a later sou
     await page.goto(`${servers.webUrl}/werewolf/${game.slug}`,{waitUntil:"domcontentloaded"});await text(page,"404");
   } finally {await page.close();}
 },90_000);
+
+
+test("House visibility creation works for both games on desktop and mobile", async () => {
+  const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/games/new`, {privateKey:admin.wallet.privateKey});
+  try {
+    for (const kind of ["Influence", "Werewolf"]) {
+      await page.goto(`${servers.webUrl}/games/new`,{waitUntil:"domcontentloaded"});
+      await page.waitForSelector('button[aria-pressed]');
+      if (kind === "Werewolf") await page.evaluate(`Array.from(document.querySelectorAll('button[aria-pressed]')).find(b=>b.textContent.trim().startsWith('Werewolf')).click()`);
+      await text(page,"Who can see this game");
+      expect(await page.evaluate(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Private')`)).toBe(false);
+      await page.evaluate(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim().startsWith('Unlisted')).click()`);
+      await text(page,"Creates an unlisted casting lobby");
+      await page.setViewport({width:1440,height:1000});
+      await page.screenshot({path:`/tmp/visibility-${kind.toLowerCase()}-desktop.png`,fullPage:true});
+      await page.setViewport({width:390,height:844});
+      await page.screenshot({path:`/tmp/visibility-${kind.toLowerCase()}-mobile.png`,fullPage:true});
+      expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+      await click(page,`Create ${kind} Game`);
+      await page.waitForFunction("location.pathname.startsWith('/games/') && location.pathname !== '/games/new'");
+      const slug = new URL(page.url()).pathname.split('/')[2]!;
+      const [game] = await database.db.select().from(schema.games).where(eq(schema.games.slug,slug));
+      expect(JSON.parse(game!.config).visibility).toBe("unlisted");
+      const context=await browser.createBrowserContext();
+      try {
+        const anonymous=await context.newPage();
+        await anonymous.goto(page.url(),{waitUntil:"domcontentloaded"});
+        await text(anonymous,"Unlisted game");
+        await anonymous.waitForSelector('meta[name="robots"][content*="noindex"]');
+      } finally {await context.close();}
+    }
+  } finally {await page.close();}
+},180_000);

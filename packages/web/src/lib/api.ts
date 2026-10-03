@@ -300,7 +300,8 @@ export type PublicPlayerProfileEnvelope =
     };
 
 export type FillStrategy = "random" | "balanced";
-export type GameVisibility = "public" | "unlisted" | "private";
+export type { GameVisibility } from "@influence/engine/game-visibility";
+import type { GameVisibility } from "@influence/engine/game-visibility";
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
 export type TrackType = "custom" | "free";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";

@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { publicGameFilter } from "./game-visibility.js";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { eligibleAgentContent } from "./agent-content-eligibility.js";
@@ -166,7 +167,7 @@ export async function getPublicPlayerCompetitionFacts(
     eq(schema.games.gameKind, "influence"),
       eq(schema.games.status, "completed"),
     eq(schema.games.trackType, "free"),
-    isNull(schema.games.hiddenAt),
+    publicGameFilter(),
   );
 
   const [aggregateByAgent, recentResults] = await Promise.all([
@@ -215,7 +216,7 @@ async function getPublicAgentCompetitionAggregates(
     eq(schema.games.gameKind, "influence"),
       eq(schema.games.status, "completed"),
     eq(schema.games.trackType, "free"),
-    isNull(schema.games.hiddenAt),
+    publicGameFilter(),
   ];
   if (ownerId) {
     filters.push(eq(schema.competitionReceipts.ownerId, ownerId));

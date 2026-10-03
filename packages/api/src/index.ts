@@ -1,3 +1,4 @@
+import { isViewerGame, viewerGameAvailable } from "./services/game-visibility.js";
 import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
 import { createGameEntryRoutes } from "./routes/game-entries.js";
 import { createWerewolfRoutes } from "./routes/werewolf.js";
@@ -705,11 +706,11 @@ const server = await listenBeforeRuntimeInitialization({
 
         // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
         const gameRow = (await db
-          .select({ id: schema.games.id, status: schema.games.status, gameKind: schema.games.gameKind })
+          .select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, status: schema.games.status, gameKind: schema.games.gameKind })
           .from(schema.games)
           .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
 
-        if (!gameRow) {
+        if (!gameRow || !isViewerGame(gameRow)) {
           return new Response("Game not found", { status: 404 });
         }
         if (gameRow.gameKind === "werewolf") {
@@ -785,7 +786,7 @@ const server = await listenBeforeRuntimeInitialization({
       },
     },
   }),
-  onListening: (listeningServer) => setServer(listeningServer),
+  onListening: (listeningServer) => setServer(listeningServer, id => viewerGameAvailable(db, id)),
   initializeRuntime: () => runtimeActivation.initialize(),
   onReady: () => {
     acceptingRequests = true;

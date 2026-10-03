@@ -817,6 +817,8 @@ export function GameViewer({
       ? "live"
       : wsStatus;
 
+  if (wsStatus === "unavailable") return <div role="alert">Game no longer available.</div>;
+
   // Loading / error states
   if (loadError) {
     return (

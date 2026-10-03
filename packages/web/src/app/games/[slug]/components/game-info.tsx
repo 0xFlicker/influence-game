@@ -4,12 +4,13 @@ import type { GameDetail, GamePlayer, PhaseKey } from "@/lib/api";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { PHASE_LABELS } from "./constants";
 
-export function ConnectionBadge({ status }: { status: "connecting" | "live" | "disconnected" | "reconnecting" | "replay" }) {
+export function ConnectionBadge({ status }: { status: "connecting" | "live" | "disconnected" | "reconnecting" | "replay" | "unavailable" }) {
   const configs = {
     connecting: { dot: "bg-yellow-400 animate-pulse", text: "Connecting…", cls: "text-yellow-400" },
     live: { dot: "bg-green-400 animate-pulse", text: "Live", cls: "text-green-400" },
     disconnected: { dot: "bg-red-400", text: "Disconnected", cls: "text-red-400" },
     reconnecting: { dot: "bg-orange-400 animate-pulse", text: "Reconnecting…", cls: "text-orange-400" },
+    unavailable: { dot: "bg-red-400", text: "Unavailable", cls: "text-red-400" },
     replay: { dot: "bg-indigo-400", text: "Replay", cls: "text-indigo-400" },
   };
   const cfg = configs[status];
