@@ -1,14 +1,14 @@
 export const INFLUENCE_MCP_APP_RESOURCE_URI = "ui://influence/app";
 export const INFLUENCE_MCP_APP_MIME_TYPE = "text/html";
 
-const APP_TITLE = "Influence";
+const APP_TITLE = "The House";
 
 export function createInfluenceMcpAppResource() {
   return {
     uri: INFLUENCE_MCP_APP_RESOURCE_URI,
-    name: "Influence MCP App",
+    name: "House MCP App",
     mimeType: INFLUENCE_MCP_APP_MIME_TYPE,
-    description: "Minimal app surface for proving authenticated Influence game reads.",
+    description: "Minimal app surface for proving authenticated House game reads.",
   };
 }
 
@@ -23,7 +23,7 @@ export function createInfluenceMcpAppResourceContent(): {
     mimeType: INFLUENCE_MCP_APP_MIME_TYPE,
     text: createInfluenceMcpAppHtml(),
     _meta: {
-      "openai/widgetDescription": "Shows whether Influence is connected and can read the user's games.",
+      "openai/widgetDescription": "Shows whether The House is connected and can discover Public games.",
       "openai/widgetPrefersBorder": true,
       "openai/widgetCSP": {
         connect_domains: [],
@@ -37,8 +37,8 @@ export function createInfluenceMcpAppToolMeta(): Record<string, unknown> {
   return {
     "openai/outputTemplate": INFLUENCE_MCP_APP_RESOURCE_URI,
     "openai/widgetAccessible": true,
-    "openai/toolInvocation/invoking": "Reading Influence games",
-    "openai/toolInvocation/invoked": "Influence games ready",
+    "openai/toolInvocation/invoking": "Reading House games",
+    "openai/toolInvocation/invoked": "House games ready",
   };
 }
 
@@ -122,7 +122,7 @@ function createInfluenceMcpAppHtml(): string {
 <body>
   <main>
     <div class="status" id="status">Connecting</div>
-    <h1>Influence games</h1>
+    <h1>House games</h1>
     <p id="summary">Checking whether this host exposes the MCP app bridge.</p>
     <ul class="list" id="games" aria-live="polite"></ul>
   </main>
@@ -136,26 +136,13 @@ function createInfluenceMcpAppHtml(): string {
       statusEl.className = className ? "status " + className : "status";
     }
 
-    function extractPayload(value) {
-      if (value && Array.isArray(value.content)) {
-        const text = value.content.find((item) => item && item.type === "text" && typeof item.text === "string");
-        if (text) {
-          return JSON.parse(text.text);
-        }
-      }
-      return value || {};
-    }
-
     function renderGames(value) {
-      const payload = extractPayload(value);
-      const games = Array.isArray(payload && payload.canonicalGameFacts && payload.canonicalGameFacts.games)
-        ? payload.canonicalGameFacts.games
-        : Array.isArray(payload && payload.games)
-          ? payload.games
-          : [];
+      const payload = value?.structuredContent;
+      if (!payload || payload.schemaVersion !== 2 || !Array.isArray(payload.games)) throw new Error("Unsupported House catalog response");
+      const games = payload.games;
       gamesEl.textContent = "";
       if (games.length === 0) {
-        summaryEl.textContent = "Connected. No Influence games were returned for this account yet.";
+        summaryEl.textContent = "Connected. No Public House games were returned.";
         return;
       }
       summaryEl.textContent = "Connected. " + games.length + " game" + (games.length === 1 ? "" : "s") + " available.";
@@ -163,9 +150,9 @@ function createInfluenceMcpAppHtml(): string {
         const item = document.createElement("li");
         item.className = "game";
         const title = document.createElement("strong");
-        title.textContent = String(game.slug || game.id || "Influence game");
+        title.textContent = String(game.slug || game.id || "House game");
         const meta = document.createElement("span");
-        meta.textContent = [game.status, game.trackType, game.createdAt].filter(Boolean).join(" · ");
+        meta.textContent = [game.status, game.gameKind, game.createdAt].filter(Boolean).join(" · ");
         item.append(title, meta);
         gamesEl.append(item);
       }
@@ -173,7 +160,7 @@ function createInfluenceMcpAppHtml(): string {
 
     function timeoutAfter(ms) {
       return new Promise((_, reject) => {
-        window.setTimeout(() => reject(new Error("Timed out while reading Influence games.")), ms);
+        window.setTimeout(() => reject(new Error("Timed out while reading House games.")), ms);
       });
     }
 

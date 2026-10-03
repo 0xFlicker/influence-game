@@ -41,7 +41,7 @@ async function lockLobby(tx: Tx, id: string) {
   return game;
 }
 
-async function publishedCharacter(db: DrizzleDB | Tx, profile: typeof schema.agentProfiles.$inferSelect) {
+async function publishedCharacter(db: Pick<DrizzleDB, "select">, profile: typeof schema.agentProfiles.$inferSelect) {
   if (!hasEligibleAgentContent(profile)) throw new WerewolfGameError("This agent is archived or awaiting review. Remove them from the cast before starting.");
   const [revision] = profile.contentRevisionId ? await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, profile.contentRevisionId)) : [];
   if (profile.contentRevisionId && !revision) throw new Error("Missing approved character revision");
@@ -106,16 +106,21 @@ export async function readWerewolfLobby(db: DrizzleDB, id: string, includeHidden
     const [game] = await tx.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), includeHidden ? undefined : isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id)))).for("share");
     if (!game || (!includeHidden && !isViewerGame(game))) throw new WerewolfGameError("Game not found", 404);
     const config = JSON.parse(game.config);
-    const rows = game.status === "waiting" ? await tx.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId })
-      .from(schema.werewolfLobbySeats).innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
-      .innerJoin(schema.users, eq(schema.users.id, schema.agentProfiles.userId)).where(eq(schema.werewolfLobbySeats.gameId, game.id))
-      .orderBy(asc(schema.werewolfLobbySeats.joinedAt), asc(schema.werewolfLobbySeats.id)) : [];
-    const players = await Promise.all(rows.map(async row => {
-      const identity = { id: row.seat.id, agentProfileId: row.seat.agentProfileId, ownerPublicId: row.ownerPublicId };
-      if (!hasEligibleAgentContent(row.profile)) return { ...identity, name: "Unavailable agent", avatarUrl: null, personaKey: null, available: false };
-      const character = await publishedCharacter(tx, row.profile);
-      return { ...identity, name: character.name, avatarUrl: character.avatarUrl, personaKey: character.personaKey, available: true };
-    }));
+    const players = game.status === "waiting" ? await readWerewolfCastingPlayers(tx, game.id) : [];
     return { id: game.id, slug: game.slug, visibility: storedGameVisibility(game.config), status: game.status, started: game.startedAt !== null, playerCount: game.maxPlayers, modelLabel: modelLabelFromConfig(config), preset: config.preset as WerewolfPreset, players };
   });
+}
+
+/** Public casting characters; assigned roles and strategies are absent. */
+export async function readWerewolfCastingPlayers(db: Pick<DrizzleDB, "select">, gameId: string) {
+  const rows = await db.select({ seat: schema.werewolfLobbySeats, profile: schema.agentProfiles, ownerPublicId: schema.users.publicId })
+      .from(schema.werewolfLobbySeats).innerJoin(schema.agentProfiles, eq(schema.agentProfiles.id, schema.werewolfLobbySeats.agentProfileId))
+      .innerJoin(schema.users, eq(schema.users.id, schema.agentProfiles.userId)).where(eq(schema.werewolfLobbySeats.gameId, gameId))
+      .orderBy(asc(schema.werewolfLobbySeats.joinedAt), asc(schema.werewolfLobbySeats.id));
+  return Promise.all(rows.map(async row => {
+      const identity = { id: row.seat.id, agentProfileId: row.seat.agentProfileId, ownerPublicId: row.ownerPublicId };
+      if (!hasEligibleAgentContent(row.profile)) return { ...identity, name: "Unavailable agent", avatarUrl: null, personaKey: null, available: false };
+      const character = await publishedCharacter(db, row.profile);
+      return { ...identity, name: character.name, avatarUrl: character.avatarUrl, personaKey: character.personaKey, available: true };
+    }));
 }

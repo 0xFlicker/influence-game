@@ -1,3 +1,4 @@
+import {readHouseGameThinking} from "../services/house-game-inspection.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
@@ -264,6 +265,17 @@ describe("Werewolf House integration", () => {
     if (action !== "vote") {
       const visible = await readWerewolfThinking(db, game.id, "omniscient", 99999);
       expect(visible.entries.at(-1)?.thinking).toBe("PRIVATE_SPEECH_THINKING");
+      const input={gameIdOrSlug:game.id,audience:"omniscient" as const,position:[visible.cursor]};
+      expect(JSON.stringify(await readHouseGameThinking(db,input))).toContain("PRIVATE_SPEECH_THINKING");
+      const recorded=(await db.select().from(schema.providerLogicalCalls)).find(call=>call.actorId===step.request.actorId && call.action===`werewolf.${step.request.action}` && call.acceptedAttemptId)!;
+      expect(recorded).toBeDefined();
+      await db.update(schema.providerLogicalCalls).set({acceptedValueSha256:"sha256:invalid"}).where(eq(schema.providerLogicalCalls.id,recorded.id));
+      await expect(readHouseGameThinking(db,input)).rejects.toMatchObject({code:"unavailable"});
+      await db.update(schema.providerLogicalCalls).set({acceptedValueSha256:recorded.acceptedValueSha256,actorId:"different-actor"}).where(eq(schema.providerLogicalCalls.id,recorded.id));
+      expect(JSON.stringify(await readHouseGameThinking(db,input))).not.toContain("PRIVATE_SPEECH_THINKING");
+      await db.update(schema.providerLogicalCalls).set({actorId:recorded.actorId,action:"werewolf.wrong_action"}).where(eq(schema.providerLogicalCalls.id,recorded.id));
+      expect(JSON.stringify(await readHouseGameThinking(db,input))).not.toContain("PRIVATE_SPEECH_THINKING");
+      await db.update(schema.providerLogicalCalls).set({action:recorded.action}).where(eq(schema.providerLogicalCalls.id,recorded.id));
       expect(JSON.stringify(await readWerewolfThinking(db, game.id, "omniscient", visible.cursor - 1))).not.toContain("PRIVATE_SPEECH_THINKING");
       expect(JSON.stringify(observeWerewolf(resumed, step.request.actorId))).not.toContain("PRIVATE_SPEECH_THINKING");
     }

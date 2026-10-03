@@ -9,7 +9,7 @@ import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
 import { sha256StableJson } from "./stable-hash.js";
 
 /** Explicit opt-in surface. Never return prompts, native reasoning, or pending calls. */
-export async function readWerewolfThinking(db: DrizzleDB, id: string, audience: string, cursor: number): Promise<WerewolfThinking> {
+export async function readWerewolfThinking(db: Pick<DrizzleDB, "select">, id: string, audience: string, cursor: number): Promise<WerewolfThinking> {
   if (audience !== "omniscient") throw new WerewolfGameError("Thinking is available only in Omniscient mode", 403);
   const [game] = await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, startedAt: schema.games.startedAt }).from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);

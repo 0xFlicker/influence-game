@@ -1076,6 +1076,8 @@ export function buildOAuthRedirect(
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
+  // Bind success and error callbacks to the advertised issuer, including split API/web origins.
+  url.searchParams.set("iss", getMcpOAuthAuthorizationServerIssuer());
   return url.toString();
 }
 

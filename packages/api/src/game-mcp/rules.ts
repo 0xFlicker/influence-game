@@ -1,3 +1,4 @@
+import { WEREWOLF_RULES, defaultWerewolfStrategy } from "@influence/engine/werewolf";
 import {
   USER_SELECTABLE_AGENT_ARCHETYPES,
   type AgentArchetype,
@@ -15,31 +16,33 @@ export interface GameMcpArchetypeSummary {
   label: string;
   description: string;
   creationHint: string;
-  strategyHint?: string;
+  strategyHints?: { influence: string; werewolf: string };
   selectable: true;
 }
 
 export interface GameMcpRulesRead {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  gameKind: "influence" | "werewolf";
   rules: {
     summary: string;
     sections: GameMcpRulesSection[];
     archetypes: GameMcpArchetypeSummary[];
     ratingProvenance: {
-      kind: "account-level-free-track";
+      kind: "account-level-free-track" | "unranked";
       note: string;
     };
   };
 }
 
 export interface GameMcpRulesSearchRead {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  gameKind: "influence" | "werewolf";
   query: string;
   matches: GameMcpRulesSection[];
 }
 
 export interface GameMcpArchetypesRead {
-  schemaVersion: 1;
+  schemaVersion: 2;
   archetypes: GameMcpArchetypeSummary[];
 }
 
@@ -112,14 +115,14 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   },
 ];
 
-export function getGameMcpRules(): GameMcpRulesRead {
+export function getGameMcpRules(gameKind: "influence" | "werewolf"): GameMcpRulesRead {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3, gameKind,
     rules: {
-      summary: "Influence is an AI social-strategy game about alliance management, empower-driven format choice, format-specific elimination, and jury persuasion.",
-      sections: RULE_SECTIONS,
+      summary: gameKind === "werewolf" ? "Werewolf is a hidden-role game: village and wolves compete through discussion, votes and night actions." : "Influence is an AI social-strategy game about alliance management, empower-driven format choice, format-specific elimination, and jury persuasion.",
+      sections: sectionsFor(gameKind),
       archetypes: listGameMcpArchetypeSummaries({ includeStrategyHints: true }),
-      ratingProvenance: {
+      ratingProvenance: gameKind === "werewolf" ? {kind:"unranked",note:"Werewolf games are unranked."} : {
         kind: "account-level-free-track",
         note: "Free-track ELO is account-level and separate from receipt-derived seasonal Agent and Architect championship points. Do not describe account ELO as per-agent ELO.",
       },
@@ -128,16 +131,17 @@ export function getGameMcpRules(): GameMcpRulesRead {
 }
 
 export function searchGameMcpRules(input: {
+  gameKind: "influence" | "werewolf";
   query: string;
   limit?: number;
 }): GameMcpRulesSearchRead {
   const normalizedQuery = input.query.trim().toLowerCase();
   const limit = clampLimit(input.limit, 8, 20);
   if (!normalizedQuery) {
-    return { schemaVersion: 2, query: input.query, matches: [] };
+    return { schemaVersion: 3, gameKind: input.gameKind, query: input.query, matches: [] };
   }
 
-  const matches = RULE_SECTIONS
+  const matches = sectionsFor(input.gameKind)
     .map((section) => ({
       section,
       score: scoreRulesSection(section, normalizedQuery),
@@ -148,7 +152,7 @@ export function searchGameMcpRules(input: {
     .map((entry) => entry.section);
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3, gameKind: input.gameKind,
     query: input.query,
     matches,
   };
@@ -158,7 +162,7 @@ export function listGameMcpArchetypes(input: {
   includeStrategyHints?: boolean;
 } = {}): GameMcpArchetypesRead {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     archetypes: listGameMcpArchetypeSummaries(input),
   };
 }
@@ -180,7 +184,7 @@ function archetypeSummary(
     label: archetype.label,
     description: archetype.description,
     creationHint: archetype.creationHint,
-    ...(includeStrategyHints && { strategyHint: archetype.strategyHint }),
+    ...(includeStrategyHints && { strategyHints: { influence: archetype.strategyHint, werewolf: defaultWerewolfStrategy(archetype.key) } }),
     selectable: true,
   };
 }
@@ -197,4 +201,8 @@ function scoreRulesSection(section: GameMcpRulesSection, query: string): number 
 function clampLimit(value: number | undefined, fallback: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.min(Math.max(Math.floor(value), 1), max);
+}
+
+function sectionsFor(kind:"influence"|"werewolf"):GameMcpRulesSection[] {
+  return kind === "influence" ? RULE_SECTIONS : [{id:"werewolf-rules",title:"Werewolf rules",tags:["werewolf","roles","seer","doctor","wolves","vote","night","discussion"],body:WEREWOLF_RULES}];
 }

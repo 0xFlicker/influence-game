@@ -820,3 +820,9 @@ roles or authenticate as human administrators.
 ## House game visibility
 
 **Public** games appear in general discovery. **Unlisted** games are omitted from discovery but anyone with a direct link can watch. Neither requires viewer login. **Hidden** is a separate moderation state that blocks ordinary viewer reads; authorized administration remains separate. Mystery/Omniscient and production publication are content/audience boundaries, not game discovery settings. The former Private game setting is unsupported.
+
+## House spectator inspection
+
+A protocol-neutral read of a visible Public or Unlisted game, dispatched by game kind. Public discovery is distinct from known-link access and from private owner/producer evidence. The deployed MCP adds authenticated grant checks without requiring participation for spectator data. Default discovery contains no ending spoilers; current view and completed results can.
+
+Werewolf inspection positions count audience-visible source entries, including silent entries. Mystery and Omniscient positions are not interchangeable. Influence canonical event and transcript entry positions remain separate; dialogue never becomes authoritative board state. A replay page pins its source head and projects its board at the delivered prefix. Thinking is an explicit spectator artifact with its own cutoff, not native provider reasoning or a private strategy read.

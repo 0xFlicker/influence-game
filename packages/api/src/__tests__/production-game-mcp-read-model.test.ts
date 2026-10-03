@@ -109,23 +109,12 @@ describe("ProductionGameMcpReadModel", () => {
     await appendGameEvents(db, { gameId, ownerEpoch, events });
 
     const readModel = new ProductionGameMcpReadModel(db);
-    const games = await readModel.listGames(PRODUCER_ACCESS);
-    expect(games.canonicalGameFacts.games).toHaveLength(1);
-    expect(games.canonicalGameFacts.games[0]).toMatchObject({
+    const games = await readModel.listGames(PRODUCER_ACCESS, 20, "producer");
+    expect(games.games).toHaveLength(1);
+    expect(games.games[0]).toMatchObject({
       id: gameId,
       slug: "mcp-read-model-game",
-      rated: false,
-      eventLog: {
-        status: "complete",
-        rowCount: events.length,
-        trustedEventCount: events.length,
-        lastTrustedSequence: events.length,
-      },
-      projection: {
-        status: "complete",
-        round: 1,
-        alivePlayers: expect.arrayContaining(["Atlas", "Echo", "Mira", "Nyx"]),
-      },
+      gameKind: "influence",
     });
 
     const projection = await readModel.readProjection("mcp-read-model-game", PRODUCER_ACCESS);
@@ -249,8 +238,8 @@ describe("ProductionGameMcpReadModel", () => {
     expect(serializedInspection).not.toContain("payload");
     expect(serializedInspection).not.toContain("tokenUsage");
 
-    const pendingList = await readModel.listGames(PRODUCER_ACCESS);
-    expect(pendingList.canonicalGameFacts.games[0]?.projection).not.toHaveProperty("winner");
+    const pendingList = await readModel.listGames(PRODUCER_ACCESS, 20, "producer");
+    expect(pendingList.games[0]).not.toHaveProperty("projection");
     const pendingProjection = await readModel.readProjection(gameId, PRODUCER_ACCESS);
     expect(pendingProjection.canonicalGameFacts.projection.summary).toMatchObject({
       winner: null,
@@ -822,14 +811,14 @@ describe("ProductionGameMcpReadModel", () => {
       userId,
       authProfile: "subject" as const,
     };
-    const games = await readModel.listGames(gamesAccess, 20);
-    const gameIds = games.canonicalGameFacts.games.map((game) => game.id);
+    const games = await readModel.listGames(gamesAccess, 20, "mine");
+    const gameIds = games.games.map((game) => game.id);
 
     expect(gameIds).toContain(createdGameId);
     expect(gameIds).toContain(joinedGameId);
     expect(gameIds).toContain(agentProfileGameId);
     expect(gameIds).not.toContain(unrelatedGameId);
-    expect(games.developerEvidence).toBeUndefined();
+    expect(games).not.toHaveProperty("developerEvidence");
 
     const producerProjection = await readModel.readProjection(createdGameId, PRODUCER_ACCESS);
     expect(Object.keys(
@@ -1353,13 +1342,12 @@ describe("ProductionGameMcpReadModel", () => {
     const readModel = new ProductionGameMcpReadModel(db);
     const access = { userId: ownerUserId, authProfile: "subject" as const };
 
-    const listed = await readModel.listGames(access, 20);
-    const formatListRow = listed.canonicalGameFacts.games.find((g) => g.id === formatGameId);
-    const classicListRow = listed.canonicalGameFacts.games.find((g) => g.id === classicGameId);
-    expect(formatListRow?.gameKernel).toBe("format");
-    expect(formatListRow?.gameKernelSource).toBe("stored");
-    expect(classicListRow?.gameKernel).toBe("classic");
-    expect(classicListRow?.gameKernelSource).toBe("stored");
+    const listed = await readModel.listGames(access, 20, "mine");
+    const formatListRow = listed.games.find((g) => g.id === formatGameId);
+    const classicListRow = listed.games.find((g) => g.id === classicGameId);
+    expect(formatListRow?.gameKind).toBe("influence");
+    expect(classicListRow?.gameKind).toBe("influence");
+    expect(formatListRow).not.toHaveProperty("projection");
 
     const formatFacts = await readModel.readRoundFacts({ gameIdOrSlug: formatGameId, round: 1 }, access);
     expect(formatFacts.canonicalGameFacts.roundFacts.format.status).toBe("available");
@@ -1455,11 +1443,8 @@ describe("ProductionGameMcpReadModel", () => {
       }],
     });
 
-    const listed = await readModel.listGames(PRODUCER_ACCESS, 100);
-    expect(
-      listed.canonicalGameFacts.games.find((game) => game.id === gameId)
-        ?.gameKernelDiagnostics,
-    ).toEqual(resolved!.gameKernelDiagnostics);
+    const listed = await readModel.listGames(PRODUCER_ACCESS, 100, "producer");
+    expect(listed.games.find(game=>game.id===gameId)).not.toHaveProperty("gameKernelDiagnostics");
 
     const projection = await readModel.readProjection(gameId, PRODUCER_ACCESS);
     expect(projection.game.gameKernelDiagnostics).toEqual(

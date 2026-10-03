@@ -18,7 +18,7 @@ export class WerewolfGameError extends Error {
   constructor(message: string, public readonly status: 400 | 403 | 404 | 409 | 503 = 409) { super(message); }
 }
 
-export async function readWerewolfEvents(db: DrizzleDB | Tx, gameId: string): Promise<WerewolfEvent[]> {
+export async function readWerewolfEvents(db: Pick<DrizzleDB, "select">, gameId: string): Promise<WerewolfEvent[]> {
   const rows = await db.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId, gameId)).orderBy(asc(schema.werewolfEvents.sequence));
   for (const row of rows) {
     if (row.event.gameId !== row.gameId || row.event.sequence !== row.sequence) throw new Error("Corrupt Werewolf event envelope");

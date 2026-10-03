@@ -40,7 +40,8 @@
     "./game-visibility": "./src/game-visibility.ts",
     "./game-availability": "./src/game-availability.ts",
     "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",
-    "./werewolf/results-contract": "./src/werewolf/results-contract.ts"
+    "./werewolf/results-contract": "./src/werewolf/results-contract.ts",
+    "./game-links": "./src/game-links.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

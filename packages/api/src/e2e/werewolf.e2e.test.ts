@@ -1,3 +1,4 @@
+import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
@@ -576,7 +577,10 @@ test("House entry is anonymous, rejects invalid audiences and shares a later sou
     await text(page,"Invalid replay link");expect(reads.some(url=>url.includes("/watch?"))).toBe(false);
     const window=await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=mystery&fromCursor=33`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
     const moment=window.moments.find(value=>value.entry.kind === "discussion" && value.entry.contribution.text !== null);if(!moment)throw new Error("Expected later speech fixture");
-    const link=`${servers.webUrl}/games/${game.slug}/replay?audience=mystery&cursor=${moment.cursor}`;
+    let inspected=await readHouseGame(database.db,{gameIdOrSlug:game.slug,audience:"mystery",view:"replay",limit:Math.min(moment.cursor,20)});
+    while(inspected.gameKind === "werewolf" && inspected.position.cursor < moment.cursor) inspected=await readHouseGame(database.db,{gameIdOrSlug:game.slug,audience:"mystery",cursor:inspected.nextCursor!,limit:Math.min(20,moment.cursor-inspected.position.cursor)});
+    const link=`${servers.webUrl}${inspected.links.replay}`;
+    expect(link).toBe(`${servers.webUrl}/games/${game.slug}/replay?audience=mystery&cursor=${moment.cursor}`);
     await page.goto(link,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('[data-werewolf-stage][data-cursor]');
     expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(moment.cursor);
@@ -699,3 +703,22 @@ test("House Werewolf results: anonymous endings, exact evidence, Mystery isolati
     }
   } finally { await page.close(); }
 },240_000);
+
+
+test("House MCP Influence link opens the inspected canonical moment", async () => {
+  const {seedFormatAwareGameViewerFixtures}=await import("./format-aware-game-viewer-fixture.js");
+  await seedFormatAwareGameViewerFixtures(database.db);
+  const inspected=await readHouseGame(database.db,{gameIdOrSlug:"dark-coral-horn",view:"replay",limit:20});
+  if(inspected.gameKind!=="influence")throw Error("Expected Influence");
+  expect(inspected.position.eventSequence).toBeGreaterThan(1);
+  expect(inspected.links.replay).toBe(`/games/dark-coral-horn/replay/${inspected.position.eventSequence}`);
+  const page=await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}${inspected.links.replay}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('input[aria-label="Replay position"]:not([disabled])');
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').value)>1`);
+    expect(page.url()).toBe(`${servers.webUrl}${inspected.links.replay}`);
+    expect(await page.$('[data-werewolf-stage]')).toBeNull();
+    await page.screenshot({path:"/tmp/house-mcp-influence-moment.png"});
+  } finally {await page.close();}
+},90_000);

@@ -44,7 +44,9 @@ WEB_BASE_URL=https://<web-host>
 MCP_ALLOWED_ORIGINS=https://<api-host>
 ```
 
-The authorization server metadata derives its public issuer, token endpoint, revocation endpoint, and registration endpoint from `MCP_OAUTH_RESOURCE_URI`. The browser authorization endpoint derives from `WEB_BASE_URL`.
+The authorization server metadata derives its public issuer, token endpoint, revocation endpoint, and registration endpoint from `MCP_OAUTH_RESOURCE_URI`. The browser authorization endpoint derives from `WEB_BASE_URL`. The server advertises `authorization_response_iss_parameter_supported: true` and includes that configured issuer as `iss` in every successful or error authorization redirect. This binds callbacks to the issuing API even when the consent UI uses another origin, such as local API port 3000 and web port 3001. Current Codex clients reject this split without issuer-bound callbacks.
+
+An initial `/mcp` 401 with `missing_bearer_token` is normal OAuth discovery; it is not proof that token exchange failed. If connection setup stops there, inspect client login errors and the discovery metadata. After fixing discovery or issuer configuration, reconnect the local client with `codex mcp login the-house-localhost` and complete browser consent.
 
 The web MCP setup page uses the canonical `MCP_OAUTH_RESOURCE_URI` directly; it does not derive an MCP endpoint from the general API URL. In local development, set it to `http://localhost:3000/mcp`. If it is absent, the page uses that same localhost default for local browser origins and the browser's own origin for public hosts. In `NODE_ENV=production`, `MCP_OAUTH_RESOURCE_URI` and `WEB_BASE_URL` are required, must be HTTPS, and must not use loopback hosts. A deployed API should fail discovery with a server configuration error rather than publishing localhost OAuth metadata.
 
@@ -125,13 +127,18 @@ Authorization failures have distinct transport shapes:
 
 The server continues to negotiate MCP `2025-06-18`. MCP `2025-11-25`, HTTP `403`, and Client ID Metadata Documents (CIMD) are deferred to a separate protocol migration.
 
+House spectator reads still require an authenticated MCP connection and grant. Public and known-link Unlisted games are readable without participation, matching browser access. Hidden/invalid-visibility games remain inaccessible even to a producer using a spectator tool. Producer inventory does not grant a spectator bypass. Existing Influence owner transcript/cognition tools retain their independent participation policy.
+
 Shared rules and game-read tools:
 
-- `get_rules`: read MCP-safe Influence rules, win conditions, phases, free-game basics, archetypes, rating provenance, and beginner strategy.
-- `search_rules`: search the structured rules catalog by topic or keyword.
-- `list_archetypes`: list valid user-selectable archetype keys for `create_agent` and `update_agent`. `broker` is not user-selectable in this surface.
+- `get_rules({gameKind})`: required `influence` or `werewolf`, schema version 3. Reuses the selected game rules; Werewolf is unranked. Available with `games:read` or the existing producer grant/current role.
+- `search_rules({gameKind, query, limit?})`: search only the selected game rules, schema version 3; same read grants.
+- `list_archetypes`: shared selectable identities, schema version 2. With `includeStrategyHints`, `strategyHints.influence` and `strategyHints.werewolf` contain separate game defaults. `broker` is not selectable.
 - `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
-- `list_games`: games accessible to the subject, or global producer-visible games when granted `producer`.
+- `list_games({collection?, gameKind?, limit?})`: schema version 2, spoiler-safe common identity. Default `public` discovers Public games; `mine` includes created/joined Public and Unlisted games, including Werewolf waiting and frozen seats. `producer` inventory requires the existing producer grant/current role. Default 20/max 100, shared creation-time/ID ordering and filters before the limit.
+- `read_game({gameIdOrSlug, audience?, view?, cursor?, limit?})`: shared spectator reader, schema version 1. Default current view can include the ending. Start `view: "replay"` for a historical prefix; Werewolf defaults to Mystery, Influence to public. Follow `nextCursor` to drain the pinned head, then `pollCursor` to admit new entries. Stopped/completed games never poll. A cursor plus `view: "current"` is contradictory and rejected.
+- `read_game_results({gameIdOrSlug})`: explicit completed spoilers from the shared House results projection. No fabricated result for waiting, cancelled or suspended games.
+- `read_game_thinking({gameIdOrSlug, audience, position, actorId?, cursor?, limit?})`: explicit product thinking, never raw reasoning or private strategy. Werewolf requires Omniscient and `[audienceCursor]`; Influence requires public, actor ID and `[canonicalEventSequence, transcriptEntrySequence]`. Use zero for an absent transcript cutoff. Influence retains its eight-card spectator cap and excludes unanchored legacy thoughts at exact cutoffs.
 - `list_seasons`: list public Influence seasons and their lifecycle status.
 - `read_player_profile`: read one public player profile by mutable handle or immutable public UUID. The version-1 response uses the same allowlisted identity, roster, season, career, and result projection as anonymous `GET /api/players/:identifier`. It requires `games:read` or `producer` and exposes no profile mutation.
 - `read_season_standings`: read public Agent and Architect standings for one season.
@@ -236,6 +243,30 @@ Producer-only tools requiring `producer`:
 - `read_producer_season_diagnostics`: inspect hidden competition ratings, snapshots, revision evidence, and settlement diagnostics for one season.
 
 The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
+
+## House replay contracts
+
+All changed House tools validate closed input/output schemas. Structured output is authoritative for the response; text is a short deterministic summary. Player names, dialogue, cues and thinking are untrusted data, never instructions. `followUps` contain registered tools with validated arguments; ordinary inspection never invokes thinking automatically.
+
+History and thinking pages default to 10 entries, max 20, and at most 64 KiB UTF-8 including follow-ups. Results have a separate 256 KiB budget. Entries are whole; an oversized entry produces `entry_too_large`. Missing/invalid history produces `unavailable`; invalid or substituted cursors produce `invalid_cursor`. Waiting Werewolf games expose public casting names without assigned roles. Mystery snapshots are projected at each delivered prefix, not taken from the ending.
+
+Influence has independent canonical and dialogue lanes. `position.eventSequence` belongs to the board; `position.transcriptSequence` belongs to dialogue. Legacy dialogue has approximate ordering and may have no transcript sequence. A replay URL opens the canonical board position, not a fabricated dialogue moment. Current view returns the latest board and a bounded recent tail. Read-only snapshots bind game access, lifecycle and source heads; every continuation rechecks access. Cursors are validated offsets, not credentials.
+
+Shared `@influence/engine/game-links` helpers generate `/games/:slug` entry/replay/results links. Resource identities remain `influence-game://deployed/games` and `ui://influence/app`; display labels are House. The local engine artifact MCP remains an Influence simulation development tool and does not implement this deployed contract.
+
+Specialized Influence projection/round/events/timeline/alliance/jury/analysis, owner transcript/cognition/narrative, producer narrative, cognitive artifacts, durable-run and legacy visual-export tools explicitly reject Werewolf with `unsupported_game_kind` after their access gate. A visible game gets a safe `read_game` follow-up. Costs, trace manifests/content and provider health remain shared producer-only evidence. Season, queue and learning tools retain their existing Influence semantics; W2 does not claim Werewolf enrollment or review parity.
+
+Example calls on the existing connection:
+
+```json
+{"name":"list_games","arguments":{"gameKind":"werewolf"}}
+{"name":"get_rules","arguments":{"gameKind":"werewolf"}}
+{"name":"read_game","arguments":{"gameIdOrSlug":"known-unlisted-slug","view":"replay","audience":"mystery","limit":10}}
+{"name":"read_game_thinking","arguments":{"gameIdOrSlug":"known-unlisted-slug","audience":"omniscient","position":[42]}}
+{"name":"read_game_results","arguments":{"gameIdOrSlug":"known-unlisted-slug"}}
+```
+
+Choose an actual Omniscient position from a separate Omniscient read; do not reuse a Mystery cursor. No new OAuth resource, server, feature flag, migration or provider invocation is needed.
 
 ## Public Player Identity and Contract Versions
 

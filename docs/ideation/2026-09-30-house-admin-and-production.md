@@ -199,13 +199,13 @@ Focused implementation plan: [W1 — Werewolf results and the House completed-ga
 
 ### W2 — finish the MCP promise
 
-Focused plan: [W2 — House MCP discovery and game inspection](../plans/2026-10-02-005-feat-house-mcp-game-inspection.md). It supersedes the older Werewolf MCP draft with shared House spectator tools, current v7 threads/checkpoints/final plurality, waiting casting, W1 results, and explicit thinking reads. One access decision remains for review: whether ordinary MCP spectators should match browser Public/Unlisted visibility for both games, while preserving owner-only and producer evidence policies.
+Focused plan: [W2 — House MCP discovery and game inspection](../plans/2026-10-02-005-feat-house-mcp-game-inspection.md). It supersedes the older Werewolf MCP draft with shared House spectator tools, current v7 threads/checkpoints/final plurality, waiting casting, W1 results, and explicit thinking reads. Approved and implemented locally: ordinary MCP spectators match browser Public/Unlisted visibility for both games; owner-only and producer policies remain independent. Shared catalog, rules, replay/results/thinking readers and closed schemas use the existing server. See [W2 implementation evidence](../reviews/2026-10-03-w2-house-mcp-implementation.md).
 
 Cover catalog discovery, rules, archetype guidance, audience-safe current/replay inspection, stable cursors, completed outcomes and valid next actions. Prefer shared House discovery and inspection workflows with game dispatch underneath; review the proposed game-specific tool names against that goal before implementing them. All generated web follow-ups use the canonical House routes. Keep authorization distinct from audience choice. Map which owner/producer diagnostic tools apply, which are game-specific, and which should return a typed wrong-game response. Later W3/W4/W5 capabilities need their own MCP parity entries rather than an assumption that the first reader covers everything.
 
 Keep the shared MCP banner verbatim while working toward the planned state, as previously agreed. Record any omitted release capability here and assess it at release review rather than churning temporary UI copy now.
 
-**Inspect when planning:** `packages/api/src/game-mcp/read-model.ts`, `server.ts`, `contracts.ts`, `rules.ts`, `app-resource.ts`, `tool-authorization.ts`; Werewolf observation/thinking/watch contracts and HTTP services. The read-model currently filters catalog/game resolution to Influence; profile tools already accept `werewolfStrategyStyle`, which does not constitute match inspection.
+**Inspect when planning:** `packages/api/src/game-mcp/read-model.ts`, `server.ts`, `contracts.ts`, `rules.ts`, `app-resource.ts`, `tool-authorization.ts`; Werewolf observation/thinking/watch contracts and HTTP services. The shared catalog and spectator readers dispatch by game kind. Specialized Influence evidence readers remain guarded; profile editing alone does not imply review, learning, season or enrollment parity.
 
 ### W3 — review the performance, then improve the right strategy
 

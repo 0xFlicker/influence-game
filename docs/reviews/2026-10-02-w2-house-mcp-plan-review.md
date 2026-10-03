@@ -24,9 +24,9 @@ Plan: [House MCP discovery and game inspection](../plans/2026-10-02-005-feat-hou
 9. Private cursor/trace metadata leaks through a shared envelope: no owner/producer cursor reuse, raw event counts or broad DTO spread; exact output validation.
 10. Results become unbounded or lose ballots: distinct result-size budget backed by the W1 maximum fixture; whole entries and explicit size failures.
 
-## Outstanding decision
+## Access decision — resolved 2026-10-03
 
-The operator was asked whether ordinary MCP spectator access should match browser Public/Unlisted access for both games. The plan recommends that policy but does not treat it as approved. If created/joined-only access is retained, change the catalog collection/default and shared eligibility predicate consistently; do not invent different policies by game.
+The operator approved Public discovery and direct lookup of known Unlisted games through the authenticated MCP. The shared predicate applies to both games; independent private-owner and producer permissions remain intact. See the [implementation review](2026-10-03-w2-house-mcp-implementation.md) for local proof.
 
 ## Implementation stop point
 

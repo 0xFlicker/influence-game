@@ -1,7 +1,7 @@
 ---
 title: House MCP discovery and game inspection
 type: feat
-status: proposed
+status: implemented
 date: 2026-10-02
 roadmap_slice: W2
 source_commit: ca0e04dc
@@ -10,23 +10,27 @@ supersedes: 2026-09-27-001-feat-werewolf-mcp-inspection-plan.md
 
 # W2 — inspect both games through The House MCP
 
+## Implementation status
+
+Implemented locally on 2026-10-03. See [verification and remaining release checks](../reviews/2026-10-03-w2-house-mcp-implementation.md) and [integration lessons](../solutions/architecture-patterns/house-mcp-across-game-kinds.md). W2 code and local validation are complete; deployment and a real MCP host acceptance check are separate.
+
 ## Outcome
 
 An AI connected to The House can discover a game, learn its rules, follow its conversation and outcomes, inspect a particular replay position, optionally read available thinking, and open the corresponding House page. Influence and Werewolf use the same spectator workflow; their adapters retain their own rules, disclosure, coordinates and outcomes.
 
 This refresh replaces the older Werewolf MCP implementation proposal. W0 supplies House entry and moment links; W1 supplies canonical Werewolf results and shared result dispatch. W2 is read-only game inspection, not gameplay control, generated analysis or producer UI work. Keep the shared MCP banner verbatim.
 
-**Planning only.** No runtime, OAuth, database or deployment changes are authorized by this document alone. Implement in the current Werewolf checkout when requested. No new server, OAuth resource, dependency, database migration, gameplay version, feature flag or generic game plugin registry is expected.
+**Implementation approved 2026-10-03.** Work in the current Werewolf checkout. No new server, OAuth resource, dependency, database migration, gameplay version, feature flag or generic game plugin registry is expected.
 
-## Decision requiring confirmation: spectator access
+## Approved decision: spectator access
 
 The current authenticated `games:read` MCP path limits ordinary game inspection to created/joined games. Browser Public/Unlisted visibility is a different policy. Current Influence owner transcript tools can include private conversation and are not safe public readers.
 
-**Recommendation, pending the operator's answer:** the new spectator path matches browser visibility for **both** games. Public games are discoverable; an Unlisted game is readable by a supplied ID/slug/link but absent general discovery. Hidden or invalid-visibility games are unavailable. MCP still requires its existing authenticated connection and grant; this does not make `/mcp` anonymous.
+**Approved 2026-10-03:** the new spectator path matches browser visibility for **both** games. Public games are discoverable; an Unlisted game is readable by a supplied ID/slug/link but absent general discovery. Hidden or invalid-visibility games are unavailable. MCP still requires its existing authenticated connection and grant; this does not make `/mcp` anonymous.
 
-Do not implement this scope expansion before the answer. If existing created/joined access is retained instead, use that eligibility predicate consistently for the new spectator tools and catalog, including Werewolf waiting seats and frozen started rosters. The projection, paging and tool architecture below is unchanged. Do not grant private evidence merely because a public spectator read is allowed.
+The operator confirmed known-slug access for Unlisted games and authorized implementation. Private evidence retains its independent owner/producer policy.
 
-The default catalog should be spoiler-safe for both games. Add explicit `collection: public | mine | producer`, default `public` under the recommended policy. `mine` includes eligible created/joined Public and Unlisted games; `producer` requires the existing producer grant and current role. Under the alternative policy, default to `mine` and omit `public` from the input schema. Producer catalog access does not change spectator payloads or automatically enable thinking.
+The default catalog is spoiler-safe for both games. `collection: public | mine | producer` defaults to `public`. `mine` includes created/joined Public and Unlisted games, including Werewolf waiting seats and frozen rosters. `producer` requires the existing producer grant and current role. Producer catalog access does not bypass spectator visibility or enable thinking.
 
 ## Verified starting point
 
