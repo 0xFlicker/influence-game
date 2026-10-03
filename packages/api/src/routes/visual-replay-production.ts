@@ -95,7 +95,7 @@ function decodeReplayMediaControl(value: unknown): MediaControl | null {
   if (!string("requestId") || !string("sceneId") || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0) return null;
   const fields = ["requestId", "sceneId", "expectedVersion", "action"];
   if (b.action === "review") { try { b.review = decodeVisualShotReview(b.review); } catch { return null; } fields.push("review"); }
-  else if (b.action === "verify") { if (!string("sourceVersionId")) return null; fields.push("sourceVersionId"); }
+  else if (b.action === "verify" || b.action === "harmonize") { if (!string("sourceVersionId")) return null; fields.push("sourceVersionId"); }
   else if (b.action === "continue") { if (b.sourceJobId !== undefined && !string("sourceJobId")) return null; fields.push("sourceJobId"); }
   else if (b.action === "publish") {
     if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;

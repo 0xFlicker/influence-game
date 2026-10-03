@@ -143,9 +143,11 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
         {selected.shots && selected.shots.mode !== "scene" && <p className="text-sm text-white/60">{selected.shots.mode === "portraits" ? "This version uses portraits." : `${selected.shots.groups.length} group shots. Open Correct images to inspect each picture.`}</p>}
         <details><summary className="text-sm">Identity and head findings</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs">{JSON.stringify({ verifier: selected.verificationVersion, ...selected.localization }, null, 2)}</pre></details>
         {canOperate && <div className="flex flex-wrap gap-2">
+          {selected.shots && selected.shots.mode !== "portraits" && selected.shots.groups.length > 1 && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "harmonize", sourceVersionId: selected.id })}>Harmonize existing panels</button>}
           {(!selected.shots || selected.shots.mode === "scene") && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "verify", sourceVersionId: selected.id })}>Recheck image</button>}
           <button className={button} disabled={busy || uncertain || selected.id === published?.id} onClick={() => void send({ action: "publish", versionId: selected.id, expectedPublication: publications[0]?.revision ?? 0 })}>{publications.some(p => p.versionId === selected.id) || selected.version === 0 ? "Restore for viewers" : "Publish for viewers"}</button>
         </div>}
+        {selected.shots && selected.shots.mode !== "portraits" && selected.shots.groups.length > 1 && <p className="text-xs text-white/50">Harmonization uses this version’s saved panels. Only the composite and its verification incur new provider charges. Review and publish the candidate when ready.</p>}
       </>}
       {jobs.map(job => <details key={job.id}><summary className="cursor-pointer text-sm">v{job.version} · {job.status.replaceAll("_", " ")}</summary>
         <p className="break-all text-xs">{job.id} · {job.step}</p>{job.failure && <p className="text-sm text-amber-200">{job.failure}</p>}

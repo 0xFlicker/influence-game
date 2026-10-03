@@ -5,7 +5,7 @@ import { schema } from "../db/index.js";
 import { annotateVisualScene, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import sharp from "sharp";
-import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type StoredVisualShot, type VisualShotPresentation } from "@influence/engine/visual-mode";
+import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type StoredVisualShot, type VisualShotPresentation } from "@influence/engine/visual-mode";
 import { visualRenderGroups } from "@influence/engine/visual-scene-plan";
 import type { DrizzleDB } from "../db/index.js";
 import { localizeDurableVisualScene, renderDurableVisualImage } from "./visual-render-journal.js";
@@ -42,6 +42,7 @@ export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisua
 export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualScene, signal?: AbortSignal, beforeDispatch?: VisualBoundaryGuard, options: {
   renderContext?: { style: string; roomName: string; roomDirection: string };
   allowMissing?: boolean;
+  sourcePanels?: StoredVisualShot[];
   operationPrefix?: string; reusePrefix?: string; jobId?: string;
   onStep?: (step: string) => Promise<void>; onImage?: (id: string) => Promise<void>;
 } = {}) {
@@ -69,12 +70,18 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     if (scene.repairMode === "verify" && scene.candidateArtifactId) {
       finalImage = await readVisualArtifact(db, gameId, scene.candidateArtifactId);
     } else {
-    const groups = visualRenderGroups(plan);
+    const groups = options.sourcePanels ? [] : visualRenderGroups(plan);
 
     const room = VISUAL_ROOMS[plan.roomId];
     const common = `${options.renderContext?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${options.renderContext?.roomName ?? room.name}. ${options.renderContext?.roomDirection ?? room.direction}\nPreserve the supplied room's architecture, furniture and materials. These contestants are playing a social-strategy game; use believable conversational staging, some seated and some standing as directed. Match each character's face, hair, clothing and body to their reference. Keep every face clearly visible to the camera in a front or three-quarter view, including seated people. Nobody may face away, hide behind another person, or have their face obscured by hair or furniture. No extra people.`;
     const sectionImages: Buffer[] = [];
     const sectionMembers: Array<typeof references> = [];
+    if (options.sourcePanels) {
+      if (options.sourcePanels.length < 2) throw new Error("Harmonization requires at least two saved panels");
+      for (const panel of options.sourcePanels) assertVisualShot(panel, plan.cast.map(m => m.id));
+      await options.onStep?.("loading saved panels");
+      sectionImages.push(...await Promise.all(options.sourcePanels.map(panel => readVisualArtifact(db, gameId, panel.imageArtifactId))));
+    }
     for (const [index, group] of groups.entries()) {
       const members = group.map((placement) => {
         const reference = references.find((entry) => entry.member.id === placement.playerId);
@@ -89,7 +96,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
       sectionImages.push(rendered.image);
       sectionMembers.push(members);
     }
-    if (!groups.length) {
+    if (!groups.length && !options.sourcePanels) {
       await options.onStep?.("empty-room");
       const rendered = await renderDurableVisualImage(db, { gameId, sceneId: scene.id, repairJobId: options.jobId, operationKey: `${renderKey}:empty-room`, reuseOperationKey: reuse("empty-room"), allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
         request: { width: 1536, height: 864, references: background ? [background] : [], prompt: `${common}\nShow the empty room in widescreen. Exactly zero people, including reflections. No labels or text.` } });
@@ -106,8 +113,8 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
       finalImage = assembly;
     }
     await options.onImage?.(await storeVisualArtifact(db, gameId, finalImage));
-    const playable: StoredVisualShot[] = [];
-    for (const [index, image] of sectionImages.entries()) {
+    const playable: StoredVisualShot[] = [...(options.sourcePanels ?? [])];
+    if (!options.sourcePanels) for (const [index, image] of sectionImages.entries()) {
       const members = sectionMembers[index] ?? [];
       try {
         const localized = await localize(image, members, `section-localization:${index}`);

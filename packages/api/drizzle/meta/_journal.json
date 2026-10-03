@@ -729,6 +729,13 @@
       "when": 1790726400000,
       "tag": "0103_account_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0104_visual_panel_harmonization",
+      "breakpoints": true
     }
   ]
 }

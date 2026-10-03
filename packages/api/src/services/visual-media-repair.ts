@@ -1,7 +1,7 @@
 import { decodeVisualShotReview, saveReviewedShots, type VisualShotReview } from "./visual-shot-review.js";
-import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
+import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, like, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
@@ -10,7 +10,7 @@ import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
-  { action: "review"; review: VisualShotReview } | { action: "regenerate" } | { action: "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
+  { action: "review"; review: VisualShotReview } | { action: "regenerate" } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
   { action: "publish"; versionId: string; expectedPublication: number }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
@@ -76,7 +76,18 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           .where(and(eq(schema.visualRenderOperations.sceneId, scene.id), sql`${schema.visualRenderAttempts.reconciliation} IS NULL AND (${schema.visualRenderAttempts.receipt} IS NULL OR ${schema.visualRenderAttempts.receipt}->>'chargeUncertain' = 'true')`));
         if (uncertain.length) return reject("needs_reconciliation", `Reconcile ${uncertain.length} uncertain paid attempt(s) before requesting another render`);
         let renderContext = { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction };
-        let plan = scene.plan, sourceImageId: string | null = null, reusePrefix: string | null = null;
+        let plan = scene.plan, sourceImageId: string | null = null, sourceVersionId: string | null = null, reusePrefix: string | null = null;
+        if (input.action === "harmonize") {
+          const [source] = await tx.select().from(versions).where(and(eq(versions.id, input.sourceVersionId), eq(versions.sceneId, scene.id), eq(versions.gameId, gameId)));
+          if (!source) return reject("source_missing", "Image version not found for this scene");
+          if (!source.shots || source.shots.mode === "portraits" || source.shots.groups.length < 2) return reject("source_not_panels", "Choose a version with at least two saved group panels");
+          try { for (const shot of source.shots.groups) assertVisualShot(shot, source.plan.cast.map(m => m.id)); }
+          catch (error) { return reject("invalid_source_panels", error instanceof Error ? error.message : "Invalid source panels"); }
+          const artifactIds = [...new Set(source.shots.groups.flatMap(shot => [shot.imageArtifactId, shot.annotatedArtifactId]))];
+          const artifacts = await tx.select({ id: schema.visualArtifacts.id }).from(schema.visualArtifacts).where(and(eq(schema.visualArtifacts.gameId, gameId), inArray(schema.visualArtifacts.id, artifactIds)));
+          if (artifacts.length !== artifactIds.length) return reject("source_artifact_missing", "A saved panel image is unavailable for this game");
+          plan = source.plan; sourceVersionId = source.id;
+        }
         if (input.action === "verify") {
           const [source] = await tx.select().from(versions).where(and(eq(versions.id, input.sourceVersionId), eq(versions.sceneId, scene.id)));
           if (source?.shots && source.shots.mode !== "scene") return reject("source_is_shot_collection", "Use Correct images to review a collection of group shots");
@@ -91,10 +102,11 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           reusePrefix = source ? `media:${source.id}` : `${scene.id}:render:${scene.renderRevision}`;
           renderContext = source?.renderContext ?? renderContext;
           plan = source?.plan ?? scene.plan; sourceImageId = source?.sourceImageId ?? null;
+          sourceVersionId = source?.sourceVersionId ?? null;
         }
         const id = randomUUID(), version = input.expectedVersion + 1;
-        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: input.action, plan, renderContext, sourceImageId, reusePrefix, status: "queued", createdAt: new Date().toISOString() });
-        receipt = { accepted: true, code: "queued", message: `Version ${version} queued for rendering`, jobId: id, versionId: id, version };
+        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: input.action, plan, renderContext, sourceImageId, sourceVersionId, reusePrefix, status: "queued", createdAt: new Date().toISOString() });
+        receipt = { accepted: true, code: "queued", message: sourceVersionId ? `Version ${version} queued to harmonize saved panels. Review and publish when ready.` : `Version ${version} queued for rendering`, jobId: id, versionId: id, version };
       }
     } catch (error) {
       if (!(error instanceof Rejected)) throw error;
