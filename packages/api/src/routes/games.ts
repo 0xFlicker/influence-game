@@ -1,3 +1,4 @@
+import { createGameResultsRoutes } from "./game-results.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
@@ -50,7 +51,6 @@ import {
   buildGameWatchState,
   getGameWatchReplayFrames,
 } from "../services/game-watch-state.js";
-import { getCompletedGameResults } from "../services/completed-game-results.js";
 import { getPublicGameAlliances } from "../services/public-alliance-read-model.js";
 import {
   buildCompactPostgameBrief,
@@ -124,6 +124,8 @@ function publicErrorInfo(
 
 export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.route("/", createGameResultsRoutes(db));
+
   // Influence endpoints must never interpret another game through its defaults.
   app.use("/api/games/*", async (c, next) => {
     const id = decodeURIComponent(c.req.path.split("/")[3] ?? "");
@@ -907,24 +909,6 @@ export function createGameRoutes(db: DrizzleDB) {
       .filter(Boolean);
 
     return c.json(results);
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /api/games/:id/results — completed game results review
-  // -------------------------------------------------------------------------
-
-  app.get("/api/games/:id/results", async (c) => {
-    const idOrSlug = c.req.param("id");
-    const result = await getCompletedGameResults(db, idOrSlug);
-
-    if (!result.ok) {
-      if (result.status === "not_found") {
-        return c.json({ error: result.error }, 404);
-      }
-      return c.json({ error: result.error, status: result.status }, 409);
-    }
-
-    return c.json(result);
   });
 
   // -------------------------------------------------------------------------

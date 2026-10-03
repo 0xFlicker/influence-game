@@ -35,11 +35,12 @@ test("anonymous 404 defers to authenticated client retry; transport failures ret
   }
 });
 
-test("unsupported Werewolf result, highlight and Influence sequence routes stop before game loaders", async () => {
+test("Werewolf results dispatches; unsupported highlights and Influence sequences stop before loaders", async () => {
   const reads = serveIdentity();
-  for (const mode of ["results", "highlights"] as const) {
-    await expect(HouseGameRoute({ slug: "wolf-game", mode })).rejects.toThrow("NEXT_HTTP_ERROR_FALLBACK;404");
-  }
+  const results = await HouseGameRoute({slug:"wolf-game", mode:"results"});
+  expect(results.props.mode).toBe("results");
+  expect(results.props.initialGame).toBeUndefined();
+  await expect(HouseGameRoute({slug:"wolf-game",mode:"highlights"})).rejects.toThrow("NEXT_HTTP_ERROR_FALLBACK;404");
   await expect(HouseGameRoute({ slug: "wolf-game", mode: "replay", startSequence: 4 })).rejects.toThrow("NEXT_HTTP_ERROR_FALLBACK;404");
   expect(reads).toHaveLength(3);
   expect(reads.every(url => url.endsWith("/api/game-entries/wolf-game"))).toBe(true);

@@ -20,7 +20,8 @@ import {useWerewolfWatch} from "./use-werewolf-watch";
 import {adjacentWerewolfPosition} from "./werewolf-watch-model";
 import {WerewolfWatchStage} from "./werewolf-watch-stage";
 import {WerewolfThinking} from "./werewolf-thinking";
-import {werewolfMomentHref} from "@/lib/game-links";
+import Link from "next/link";
+import {gameResultsHref, werewolfMomentHref} from "@/lib/game-links";
 import {replayMoment} from "./replay-moment";
 
 export function WerewolfViewer({slug, audience, preferenceScope = "viewer", startCursor}: {slug: string; audience: WerewolfAudience; preferenceScope?: WatchPreferenceScope; startCursor?: number}) {
@@ -83,9 +84,11 @@ function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {sl
         <WerewolfWatchStage navigationRevision={watch.navigationRevision} contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={director.getActiveCue()} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
+        {active?.entry.kind === "result" && <Link className="self-center rounded-lg border border-white/20 px-4 py-2 text-sm text-white" href={gameResultsHref(slug)}>View final results</Link>}
         <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-3 py-2">
           <WatchTransport shareHref={active ? werewolfMomentHref(slug,audience,active.cursor) : undefined} fullscreen={fullscreen.fullscreen} fullscreenButton={fullscreen.button} toggleFullscreen={fullscreen.toggle} fullscreenError={fullscreen.error} isPlaying={watch.follow} togglePlay={watch.toggle} speed={snapshot.speed} onSpeed={value => director.setSpeed(value)} goToBeginning={() => seek(1)} goToPrevScene={() => adjacent(-1,"scene")} onSeek={seek} goToNextScene={() => adjacent(1,"scene")} goToEnd={() => data?.status === "in_progress" ? watch.goLive() : seek(data?.latestCursor ?? 1)} live={data?.status === "in_progress"} cursor={cursor - 1} count={data?.latestCursor ?? 1} settings={<div className="flex flex-col items-start gap-3 text-sm text-white/80">
         <span className="text-xs text-white/50" aria-label="Viewing mode">Viewing mode: {audience === "omniscient" ? "Omniscient" : "Mystery"}</span>
+        {data?.status === "completed" && <Link href={gameResultsHref(slug)}>View results · Spoilers</Link>}
         <button onClick={() => setTranscript(value => !value)}>Transcript</button>
         {data?.status === "in_progress" && hasPermission("stop_game") && <button disabled={stopping} onClick={async () => {setStopping(true);try {await stopWerewolf(data.gameId);} catch(cause) {setStopError(cause instanceof Error ? cause.message : "Could not stop game");} finally {setStopping(false);}}}>Stop game</button>}
       </div>} thinking={audience === "omniscient" ? {enabled:thinking,onChange:setThinking,order:thinkingOrder,onOrderChange:setThinkingOrder} : undefined} />

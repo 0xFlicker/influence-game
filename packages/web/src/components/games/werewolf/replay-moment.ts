@@ -1,3 +1,4 @@
+import { werewolfOutcomeTitle } from "@influence/engine/werewolf/results-contract";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { sceneSpeechDurationMs } from "@/app/games/[slug]/components/scene-speech-timing";
 
@@ -15,7 +16,7 @@ export function replayMoment(view: WerewolfView) {
     case "pack_vote": pack = true; title = `Pack ballot ${entry.result.attempt} of 3`; text = entry.result.targetId ? `The pack agrees on ${name(entry.result.targetId)}.` : entry.result.endReason === "attempt_limit" ? "No agreement. No attack tonight." : "No agreement. The pack will try again."; details.push(...entry.result.ballots.map(b => `${name(b.voterId)} → ${name(b.targetId)}`)); break;
     case "night": title = `Dawn · Day ${entry.day}`; actorId = entry.killedId; text = actorId ? `${name(actorId)} died during the night.` : "Everyone survived the night."; if (entry.attackTargetId !== undefined) details.push(`Pack target: ${name(entry.attackTargetId)}`, `Doctor protected: ${name(entry.protectedId ?? null)}`); if (entry.investigation) details.push(`${name(entry.investigation.seerId)} investigated ${name(entry.investigation.targetId)}: ${entry.investigation.isWolf ? "wolf" : "not a wolf"}`); break;
     case "vote": title = `Day ${entry.day} · Vote after thread ${entry.result.thread}`; actorId = entry.result.eliminatedId; text = actorId ? `${name(actorId)} is eliminated.` : entry.result.dayEnded ? "No unique vote leader. Nobody is eliminated." : "No majority. Discussion continues."; details.push(entry.result.voteMode === "plurality" ? "Final ballot: unique most votes wins; ties spare everyone." : `Majority required: ${entry.result.requiredVotes} of ${entry.result.ballots.length} living players.`, ...entry.result.ballots.map(b => `${name(b.voterId)} → ${b.targetId ? name(b.targetId) : b.unavailable ? "Abstain (unavailable)" : "Abstain (hear more)"}`)); break;
-    case "result": title = "Game complete"; text = entry.outcome.faction === "village" ? "The village wins" : entry.outcome.faction === "wolves" ? "The wolves win" : "The game ends in a draw"; details.push(...view.players.map(p => `${p.name} · ${p.role ?? "Unknown role"}${entry.outcome.winnerIds.includes(p.id) ? " · Winner" : ""}`)); break;
+    case "result": title = "Game complete"; text = werewolfOutcomeTitle(entry.outcome); details.push(...view.players.map(p => `${p.name} · ${p.role ?? "Unknown role"}${entry.outcome.winnerIds.includes(p.id) ? " · Winner" : ""}`)); break;
   }
   const actor = view.players.find(p => p.id === actorId);
   const speaker = actor ? `${actor.name}${view.audience === "omniscient" && actor.role ? ` · ${actor.role}` : ""}` : "The House";

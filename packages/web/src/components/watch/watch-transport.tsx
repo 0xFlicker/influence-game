@@ -80,7 +80,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
         </div>
         <div className="mt-4 flex gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => {goToBeginning();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">Restart replay</button><button type="button" onClick={() => {goToEnd();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">{live ? "Go live" : "Go to end"}</button></div>
         <h3 className="mb-3 mt-4 font-semibold">Keyboard shortcuts</h3>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Reveal / dismiss speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings or fullscreen</dd></dl>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2 text-white/80"><dt>Space</dt><dd>Play / pause</dd><dt>Click, Enter, →</dt><dd>Show / hide speech, then advance</dd><dt>←</dt><dd>Previous contribution</dd><dt>[ / ]</dt><dd>Previous / next group</dd><dt>1 / 2 / 3 / 4</dt><dd>0.5× / 1× / 2× / 4×</dd><dt>Escape</dt><dd>Close settings or fullscreen</dd></dl>
       </div>
     </FloatingFocusManager>
   </FloatingPortal>}

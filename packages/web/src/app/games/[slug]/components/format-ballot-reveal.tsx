@@ -55,7 +55,7 @@ export function FormatBallotReveal({
           data-roll-call-ledger
           className="w-full min-w-[28rem] border-separate border-spacing-y-1 text-left text-xs"
         >
-          <caption className="sr-only">Revealed format ballot ledger</caption>
+          <caption className="sr-only">Vote record</caption>
           <thead>
             <tr>
               <th className="px-3 py-2 font-medium uppercase tracking-[0.16em] text-white/35">

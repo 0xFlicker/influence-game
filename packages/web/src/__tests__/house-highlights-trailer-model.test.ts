@@ -72,6 +72,7 @@ function resultsFixture(): CompletedGameResultsResponse {
 
   return {
     ok: true,
+    gameKind: "influence",
     schemaVersion: 1,
     game: {
       id: "game-edge-smoke-dusk",

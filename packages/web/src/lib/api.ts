@@ -1081,6 +1081,7 @@ export type CompletedGameResultsJury = EngineCompletedGameResultsJury;
 export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 
 export interface CompletedGameResultsResponse {
+  gameKind: "influence";
   ok: true;
   /** v2 adds kernel routing; v1 remains accepted for cached legacy fixtures. */
   schemaVersion: 1 | 2;
@@ -1096,8 +1097,23 @@ export interface CompletedGameResultsResponse {
   results: CompletedGameResultsRead;
 }
 
+export interface WerewolfCompletedResultsResponse {
+  ok: true;
+  gameKind: "werewolf";
+  schemaVersion: 1;
+  game: { id: string; slug: string; status: GameStatus; completedAt: string | null };
+  results: import("@influence/engine/werewolf/results-contract").WerewolfResults & {
+    players: Array<import("@influence/engine/werewolf/results-contract").WerewolfResultPlayer & { avatarUrl: string }>;
+  };
+}
+export type HouseGameResultsResponse = CompletedGameResultsResponse | WerewolfCompletedResultsResponse;
+export async function getHouseGameResults(gameIdOrSlug: string, signal?: AbortSignal): Promise<HouseGameResultsResponse> {
+  return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/results`, {signal, cache: "no-store"});
+}
 export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
-  return apiFetch(`/api/games/${gameIdOrSlug}/results`);
+  const result = await getHouseGameResults(gameIdOrSlug);
+  if (result.gameKind !== "influence") throw new Error("Expected Influence results");
+  return result;
 }
 
 export type HouseHighlightsState =

@@ -11,14 +11,11 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
   let sceneId = "introduction", chapterId = "introduction", packAttempt = 1;
-  for (const event of events) {
-    const before: WerewolfState | null = state;
-    state = applyWerewolfEvent(state, event);
-    const appended = state.history.slice(before?.history.length ?? 0);
-    const visible = appended.flatMap(entry => projectWerewolfEntry(entry, audience));
-    if (visible.length > 1) throw new Error("Watch event requires explicit multi-entry staging");
-    for (const entry of visible) {
-      cursor++;
+  for (const frame of walkWerewolfHistory(events, audience)) {
+    const { event, before, entry } = frame;
+    state = frame.state;
+    cursor = frame.cursor;
+    if (entry) {
       chapterId = entry.kind === "result" ? "ending" : entry.day === 0 ? "introduction" : `cycle:${entry.day}`;
       if (entry.kind === "phase") {
         if (entry.phase === "introduction") { sceneId = "introduction"; chapterId = "introduction"; }
@@ -44,4 +41,21 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
   if (!state) throw new Error("Werewolf replay is empty");
   const players: WerewolfWatchIdentity[] = state.players.map(p => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, personality: p.personality, backstory: p.backstory }));
   return { gameId: state.gameId, rulesVersion: state.config.rulesVersion, latestCursor: cursor, fromCursor, throughCursor: moments.at(-1)?.cursor ?? Math.min(cursor, fromCursor - 1), players, moments, navigation };
+}
+
+
+/** Internal traversal: one validated authority for audience-local source positions.
+ * Frames include private reducer state and must never be serialized to clients.
+ */
+export function* walkWerewolfHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience) {
+  let state: WerewolfState | null = null, cursor = 0;
+  for (const event of events) {
+    const before: WerewolfState | null = state;
+    state = applyWerewolfEvent(state, event);
+    const visible = state.history.slice(before?.history.length ?? 0).flatMap(entry => projectWerewolfEntry(entry, audience));
+    if (visible.length > 1) throw new Error("Watch event requires explicit multi-entry staging");
+    const entry = visible[0];
+    if (entry) cursor++;
+    yield { event, before, state, entry, cursor };
+  }
 }

@@ -186,6 +186,8 @@ flowchart TD
 
 ### W1 — make the ending worth reaching
 
+Focused implementation plan: [W1 — Werewolf results and the House completed-game experience](../plans/2026-10-02-004-feat-werewolf-house-results.md). Implemented locally: shared House results endpoint and header, canonical faction/cast outcomes, expandable night/day recap, and exact Omniscient replay evidence links. Validation and remaining boundaries: [W1 implementation review](../reviews/2026-10-02-w1-house-results-implementation.md). W2 remains the separate MCP integration slice.
+
 - Separate canonical outcome facts from presentation: faction winner, every winning teammate including eliminated members, revealed roles, survival/elimination chronology, day ballots, night outcomes and day-limit draw. Cancellation or execution failure is not a draw or victory.
 - Extend the shared `/games/[slug]/results` destination with Werewolf result modules and stronger hierarchy: who won and why, cast/roles, a readable day/night recap and evidence links into the replay. The result scene in the player and the full result page should agree. Audit links from game cards, the end of playback and agent histories.
 - Build Werewolf-specific result/analysis projections over its canonical history; reuse result presentation primitives where appropriate. Do not fill Influence’s single-winner, finalist, jury or alliance fields with invented equivalents.

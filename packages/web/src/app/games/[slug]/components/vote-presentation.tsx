@@ -101,11 +101,11 @@ export function VoteLedger({ title, votes, total, roster, currentId, portraitOpa
   polarity?: boolean;
 }) {
   const player = (id: string | null) => roster.find(entry => entry.id === id) ?? { id: id ?? "forfeit", name: id ?? "Forfeited", persona: "" };
-  return <section aria-label="Revealed vote ledger" data-vote-ledger>
+  return <section aria-label="Vote record" data-vote-ledger>
     <header className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[.16em] text-white/55">
-      <h2 className="min-w-0 truncate">{title}</h2><p className="shrink-0" data-votes-revealed>{votes.length} / {total} revealed</p>
+      <h2 className="min-w-0 truncate">{title}</h2><p className="shrink-0" data-votes-revealed>{votes.length} / {total} votes shown</p>
     </header>
-    {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first reveal</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+    {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first vote</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
       {voteLedgerRows(votes).map(row => {
         const target = row.targetId ? player(row.targetId) : {id: row.key, name: row.key === "abstain" ? "Hear more" : row.key === "unavailable" ? "Unavailable" : "Forfeited", persona: ""};
         return <li key={target.id} data-vote-target={target.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[.035] px-3 py-2">

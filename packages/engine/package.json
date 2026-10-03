@@ -34,10 +34,13 @@
     "./character-portrait": "./src/character-portrait.ts",
     "./werewolf/thinking": "./src/werewolf/thinking.ts",
     "./werewolf/watch-contract": "./src/werewolf/watch-contract.ts",
+    "./werewolf/results": "./src/werewolf/results.ts",
     "./werewolf/watch": "./src/werewolf/watch.ts",
     "./werewolf/presentation": "./src/werewolf/presentation.ts",
     "./game-visibility": "./src/game-visibility.ts",
-    "./game-availability": "./src/game-availability.ts"
+    "./game-availability": "./src/game-availability.ts",
+    "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",
+    "./werewolf/results-contract": "./src/werewolf/results-contract.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

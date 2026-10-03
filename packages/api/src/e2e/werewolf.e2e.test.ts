@@ -626,3 +626,76 @@ test("House visibility creation works for both games on desktop and mobile", asy
     }
   } finally {await page.close();}
 },180_000);
+
+test("House Werewolf results: anonymous endings, exact evidence, Mystery isolation and mobile", async () => {
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {buildWerewolfResults} = await import("@influence/engine/werewolf/results");
+  const page = await browser.newPage();
+  page.setDefaultNavigationTimeout(90_000);
+  await page.setRequestInterception(true);
+  page.on("request", request => {
+    if(request.url().includes("/characters/") && request.url().includes("-p0?")) void request.respond({status:404,body:"Missing fixture portrait"});
+    else void request.continue();
+  });
+  try {
+    for (const scenario of ["village","wolves","disagreement"] as const) {
+      const id = `browser-results-${scenario}`, slug = `browser-ending-${scenario}`;
+      const events = await werewolfResultsFixture(scenario,id);
+      const results = buildWerewolfResults(events);
+      await database.db.insert(schema.games).values({id,slug,gameKind:"werewolf",status:"completed",maxPlayers:results.players.length,startedAt:new Date().toISOString(),endedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:scenario === "village" ? "one_wolf" : "two_wolves",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+      await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+      await page.setViewport({width:1440,height:1000});
+      await page.goto(`${servers.webUrl}/games/${slug}/results`,{waitUntil:"networkidle0"});
+      await page.waitForSelector('[data-testid="werewolf-results"]');
+      const banner = await fetch(`${servers.apiUrl}/api/games/${id}/assets?label=banner&limit=100`);
+      expect(banner.status).toBe(200);
+      expect(await page.evaluate('document.body.innerText')).not.toContain("Retry banner");
+      await text(page, scenario === "village" ? "The village wins" : scenario === "wolves" ? "The wolves win" : "The game ends in a draw");
+      expect(await page.$$('[data-testid="werewolf-results"] li')).toHaveLength(results.players.length);
+      expect(await page.$$('[data-winner]')).toHaveLength(results.outcome.winnerIds.length);
+      expect(await page.$eval('meta[name="robots"]',node=>node.getAttribute('content'))).toContain('noindex');
+      // One missing portrait falls back; other frozen/bundled image responses decode normally.
+      await page.waitForFunction(`document.querySelector('[aria-label$="portrait unavailable"]') && Array.from(document.querySelectorAll('[data-testid="werewolf-results"] img')).every(image => image.complete && image.naturalWidth > 0)`);
+      await page.focus('details details summary'); await page.keyboard.press('Enter');
+      await page.waitForSelector('details[open]');
+      const lastVote = results.recap.findLast(item => item.kind === "vote")!;
+      await page.$eval(`#${lastVote.id}`, node => node.setAttribute('open',''));
+      expect(await page.$$(`#${lastVote.id} tbody tr`)).toHaveLength(lastVote.result.ballots.length);
+      await page.screenshot({path:`/tmp/w1-results-${scenario}-desktop.png`,fullPage:true});
+      await page.setViewport({width:390,height:844});
+      expect(await page.evaluate('document.documentElement.scrollWidth <= innerWidth')).toBe(true);
+      await page.screenshot({path:`/tmp/w1-results-${scenario}-mobile.png`,fullPage:true});
+      if(scenario !== "village") continue;
+      const vote = results.recap.find(item=>item.kind === "vote")!;
+      await page.$eval(`#${vote.id}`,node=>node.setAttribute('open',''));
+      const link = `#${vote.id} a`;
+      expect(await page.$eval(link,node=>node.getAttribute('href'))).toBe(`/games/${slug}/replay?audience=omniscient&cursor=${vote.source.cursor}`);
+      await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}),page.click(link)]);
+      await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${vote.source.cursor}`);
+      await pauseWerewolf(page);
+      await page.goto(`${servers.webUrl}/games/${slug}/replay?audience=omniscient&cursor=${results.source.cursor}`,{waitUntil:'domcontentloaded'});
+      await text(page,"View final results");
+      await Promise.all([page.waitForNavigation({waitUntil:'domcontentloaded'}), page.click(`a[href="/games/${slug}/results"]`)]);
+      await page.waitForSelector('[data-testid="werewolf-results"]');
+      const mystery = await (await fetch(`${servers.apiUrl}/api/werewolf/${slug}/watch?audience=mystery&fromCursor=1&limit=1`)).json();
+      expect(mystery).toMatchObject({audience:"mystery",fromCursor:1});
+      expect(JSON.stringify(mystery)).not.toContain('SECRET_THINKING');
+      await page.goto(`${servers.webUrl}/games/${slug}/replay?audience=mystery&cursor=1`,{waitUntil:'domcontentloaded'});
+      await page.waitForSelector('[data-werewolf-stage][data-cursor]'); await pauseWerewolf(page);
+      expect(await page.evaluate('document.body.innerText')).not.toContain('The village wins');
+      await page.goto(`${servers.webUrl}/games/${slug}`,{waitUntil:'networkidle0'});
+      await text(page,"View results · Spoilers");
+      expect(await page.evaluate('document.body.innerText')).not.toContain('The village wins');
+      await page.goto(`${servers.webUrl}/games/${slug}/results`,{waitUntil:'networkidle0'});
+      await page.waitForSelector('[data-testid="werewolf-results"]');
+      // Deny a refetch in place; previously loaded final facts must disappear.
+      await database.db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,id));
+      await page.evaluate('window.dispatchEvent(new Event("visibilitychange")); window.dispatchEvent(new Event("focus"));');
+      await page.waitForSelector('[role="alert"]');
+      expect(await page.$('[data-testid="werewolf-results"]')).toBeNull();
+      await page.reload({waitUntil:'networkidle0'});
+      expect(await page.$('[data-testid="werewolf-results"]')).toBeNull();
+      await text(page,"Game not found");
+    }
+  } finally { await page.close(); }
+},240_000);

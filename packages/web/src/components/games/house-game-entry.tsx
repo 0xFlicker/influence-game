@@ -7,6 +7,7 @@ import { ApiError, type GameDetail, type GameWatchReplayFrame, type TranscriptEn
 import { getGameEntry, type GameEntryIdentity } from "@/lib/game-entry";
 import { parseReplayAudience, parseReplayCursor } from "@/lib/game-links";
 
+const WerewolfResults = dynamic(() => import("./werewolf/werewolf-results").then(m => m.WerewolfResultsPage));
 const WerewolfEntry = dynamic(() => import("./werewolf/werewolf-entry").then(m => m.WerewolfEntry));
 const EpisodeLanding = dynamic(() => import("@/app/games/episode-landing").then(m => m.EpisodeLanding));
 const GameViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(m => m.GameViewer));
@@ -48,9 +49,10 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
   }
 
   if (identity.gameKind === "werewolf") {
-    if (props.mode === "results" || props.mode === "highlights" || props.startSequence !== undefined) {
+    if (props.mode === "highlights" || props.startSequence !== undefined) {
       return <GameSiteEntry><h1>Game page not found</h1></GameSiteEntry>;
     }
+    if (props.mode === "results") return <GameSiteEntry><WerewolfResults key={identity.id} slug={identity.slug} /></GameSiteEntry>;
     const audience = parseReplayAudience(props.audience);
     const cursor = parseReplayCursor(props.cursor);
     if (audience === "invalid" || cursor === "invalid" || (cursor !== undefined && audience === undefined)) {

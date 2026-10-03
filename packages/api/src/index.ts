@@ -600,6 +600,8 @@ app.route("/", mcpRoutes);
 app.route("/", createGameEntryRoutes(db));
 app.route("/", createWerewolfRoutes(db));
 app.route("/", createWerewolfAdminRoutes(db));
+// Shared assets enforce their own access policy before the Influence-only game guard.
+app.route("/", createGameAssetRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
@@ -657,7 +659,6 @@ const uploadRoutes = createUploadRoutes();
 app.route("/", uploadRoutes);
 
 // Profile & leaderboard routes
-app.route("/", createGameAssetRoutes(db));
 
 const profileRoutes = createProfileRoutes(db);
 app.route("/", profileRoutes);

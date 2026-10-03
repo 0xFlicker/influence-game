@@ -535,6 +535,10 @@ The default web watch surface for live in-progress games and completed replays. 
 
 ## Completed game results review
 
+House `/games/:slug/results` dispatches by game kind through one results endpoint. Werewolf results deliberately reveal the completed cast and resolved night facts, including Doctor protection and Seer investigations. Victory belongs to every original faction teammate, even eliminated players; survival is separate. Day-limit draws have no winners. Stopped, suspended and inconsistent games have no synthetic result. Recap evidence pairs canonical event sequence with an Omniscient audience-local replay cursor, counted by the same traversal as watch windows. These facts do not include private strategy, thinking, provider traces or seed, and do not seed Mystery replay caches.
+
+Influence-specific results follow below; faction victories do not create Influence winner, jury, ranking or rating records.
+
 The public-by-URL postgame review surface for completed games. Its authoritative facts come from persisted canonical game events replayed into projections, then rolled up per round into revealed facts, elimination order, vote history, endgame eliminations, jury votes, and final placement. Older completed games may degrade to the terminal `game_results` row when no canonical event log is available. Cognitive artifact snippets may add public agent context, but raw payloads, private traces, source pointers, and producer reasoning are not result truth.
 
 ## Postgame analysis projection
