@@ -65,13 +65,17 @@ test("renders and verifies a small scene once, then resumes entirely from durabl
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
 });
 
-test("retains verified group pixels and never generates a harmonized composition", async () => {
+test("harmonizes multi-panel scenes, verifies the whole cast and retains original panels", async () => {
   const planned = await scene(12);
   const ready = await renderPlannedVisualScene(db, planned);
   expect(ready.shots?.groups.flatMap(s => s.anchors)).toHaveLength(12);
-  expect(ready.shots?.mode).toBe("groups");
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length);
-  expect(visionCalls).toBe(visualRenderGroups(planned.plan).length * 3);
+  expect(ready.shots?.mode).toBe("scene");
+  expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(12);
+  expect(ready.anchors).toHaveLength(12);
+  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
+  expect(visionCalls).toBe((visualRenderGroups(planned.plan).length + 1) * 3);
+  await renderPlannedVisualScene(db, planned);
+  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
 });
 
 test("failed identity verification pauses the scene without another automatic paid attempt", async () => {
@@ -94,7 +98,7 @@ test("loss of the boundary retains paid output but prevents subsequent dispatch 
   expect(await readVisualRenderAccounting(db, "game")).toMatchObject({ unpricedAttempts: 1, uncertainAttempts: 0 });
   const resumed = await renderPlannedVisualScene(db, planned);
   expect(resumed.status).toBe("ready");
-  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length);
+  expect(imageCalls).toBe(visualRenderGroups(planned.plan).length + 1);
 });
 
 test("checks the boundary again before xAI availability fallback", async () => {
@@ -318,4 +322,36 @@ test("best effort discards a duplicate-filled group while keeping the other grou
   const callsBefore = imageCalls;
   expect((await renderPlannedVisualScene(db, ready, undefined, undefined, true)).id).toBe(ready.id);
   expect(imageCalls).toBe(callsBefore);
+});
+
+
+test("rejects a duplicated harmonized cast without losing original panels", async () => {
+  const mock = globalThis.fetch;
+  const planned = await scene(6);
+  const groupCount = visualRenderGroups(planned.plan).length;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/responses") && imageCalls > groupCount) rejectIdentity = true;
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, planned);
+  expect(ready.status).toBe("ready");
+  expect(ready.shots?.mode).toBe("groups");
+  expect(ready.shots?.overview).toBeNull();
+  expect(ready.shots?.groups.flatMap(shot => shot.visibleParticipantIds)).toHaveLength(6);
+  expect((await db.select().from(schema.visualOperationEvents)).some(event => event.event.message === "Harmonized image rejected; retaining verified original panels")).toBe(true);
+});
+
+test("harmonization strictly verifies all identities even under best effort", async () => {
+  const mock = globalThis.fetch;
+  const planned = await scene(6);
+  const groupCount = visualRenderGroups(planned.plan).length;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).endsWith("/responses") && imageCalls > groupCount) {
+      expect(JSON.parse(String(init?.body)).text.format.schema.required).not.toContain("missingParticipantIds");
+    }
+    return mock(url, init);
+  }, { preconnect: originalFetch.preconnect });
+  const ready = await renderPlannedVisualScene(db, planned, undefined, undefined, true);
+  expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(6);
+  expect(ready.shots?.mode).toBe("scene");
 });

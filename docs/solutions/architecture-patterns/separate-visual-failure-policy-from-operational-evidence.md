@@ -29,3 +29,6 @@ Policy changes and resume are separate actions. Resume clears only a visual-owne
 See [Visual Mode operations](../../visual-mode.md) and [durable provider fallback authority](coordinate-provider-attempts-with-durable-fallback-authority.md).
 
 Generated group images are independent media. Do not generatively stitch them back into the only usable output: that can destroy identities. Keep the contact sheet as review evidence, preserve each playable shot, and save producer corrections as immutable media versions with explicit publication. A manual speech pointer is presentation metadata, never an identity anchor.
+
+
+2026-10-02 update: optional harmonization is restored for new multi-panel renders and Producer regenerations. Strictly verify the complete cast before selecting the composite as the playable scene, retain all verified source panels in the version, and retain group playback on composite identity rejection. The legacy version comparison displays both the composite and individual panels. This does not relax provider uncertainty or owner/lease fences.

@@ -206,7 +206,7 @@ test("continue reuses successful group images and retries only the failed group"
   fail = "first-image"; calls = []; await send({ expectedVersion: 1, action: "continue", sourceJobId: first.id }); const second = await run();
   expect(calls).toEqual(["image"]);
   fail = null; calls = []; await send({ expectedVersion: 2, action: "continue", sourceJobId: second.id }); await run();
-  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities"]);
+  expect(calls).toEqual(["image", "composition", "heads", "identities", "composition", "heads", "identities", "image", "composition", "heads", "identities"]);
 });
 
 test.each(["count", "duplicate"])("rejects %s identities without automatic regeneration", async failure => {
