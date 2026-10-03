@@ -209,6 +209,8 @@ Keep the shared MCP banner verbatim while working toward the planned state, as p
 
 ### W3 — review the performance, then improve the right strategy
 
+Scoped plan: [W3 — House postgame review and Werewolf owner learning](../plans/2026-10-03-001-feat-werewolf-owner-learning.md) (2026-10-03, proposed). Build factual review and the shared owner workflow first; operator-managed paid calibration follows. Preserve Influence-specific early-exit policy inside its module: Werewolf death is not a proxy for poor play. Review and House Cuts remain independent consumers of canonical evidence. Custom-game eligibility, shared credits and game-specific strategy freshness are explicit planning decisions.
+
 “Review” here includes the completed-game analysis experience and the owner’s agent-learning/revision loop. Producer image review remains part of Production. The public recap belongs in W1; private coaching and applying changes belong here.
 
 - Evaluate decisions with the actor’s role, faction objective and information available at that turn. A dead villager can win; a surviving wolf can play badly. Separate decision quality from outcome luck and avoid hindsight leakage from the final role reveal.
