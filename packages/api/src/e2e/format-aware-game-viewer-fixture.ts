@@ -59,7 +59,6 @@ async function insertFormatFixture(
         reasoningPolicy: "action-policy",
       },
       visibility: "public",
-      viewerMode: "speedrun",
     }),
     status: "completed",
     gameKernel: "format",
@@ -241,7 +240,6 @@ async function insertClassicFixture(db: DrizzleDB): Promise<void> {
     config: JSON.stringify({
       maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
       visibility: "public",
-      viewerMode: "speedrun",
     }),
     status: "completed",
     gameKernel: "classic",

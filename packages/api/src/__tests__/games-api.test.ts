@@ -165,7 +165,6 @@ async function createTestGame(
         },
         personaPool: ["honest", "strategic", "deceptive"],
         fillStrategy: "balanced",
-        timingPreset: "fast",
         maxRounds: 10,
         visibility: "public",
         slotType: "all_ai",
@@ -488,7 +487,6 @@ describe("Game REST API", () => {
               catalogId: "openai:gpt-5.6-luna",
               reasoningPolicy: "action-policy",
             },
-            timingPreset: "standard",
             maxRounds: 10,
             visibility: "public",
           },
@@ -522,6 +520,9 @@ describe("Game REST API", () => {
       expect(transcriptState.prefixDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
       const config = JSON.parse(game.config);
       expect(config).not.toHaveProperty("modelTier");
+      expect(config).not.toHaveProperty("timers");
+      expect(config).not.toHaveProperty("viewerMode");
+      expect(config.maxRounds).toBe(10);
       expect(config.modelSelection).toEqual({
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
@@ -592,7 +593,6 @@ describe("Game REST API", () => {
               catalogId: "katana:grok-4-3",
               reasoningPolicy: "high",
             },
-            timingPreset: "standard",
             maxRounds: 10,
             visibility: "public",
           },

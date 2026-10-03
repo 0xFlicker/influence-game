@@ -2,7 +2,9 @@
 
 **Author:** Lead Game Designer
 **Date:** 2026-03-18
-**Status:** v1 Draft — Engineering implementation reference
+**Status:** Historical v1 design; creation-time pacing modes removed 2026-10-02.
+
+**Current behavior:** The House player owns playback speed, thinking and reveal order. Games no longer accept `viewerMode` or phase timer presets. The mode table and rollout proposal below describe the historical design, not current configuration. Game-length limits remain.
 **Related Issues:** [INF-71](/INF/issues/INF-71) (this spec), [INF-70](/INF/issues/INF-70) (diary Q&A linking), parent [INF-parent](/INF/issues/e59737b7-6c0c-45f8-a2c2-d1fd3245749e) (game observability improvements)
 **References:** [MVP UX Design](./mvp-ux-design.md), project game specification
 

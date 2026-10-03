@@ -259,19 +259,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       return existing.length > 0;
     });
 
-    const timerPresets = {
-      introduction: 30000,
-      lobby: 30000,
-      mingle: 45000,
-      rumor: 30000,
-      vote: 20000,
-      power: 15000,
-      council: 20000,
-    };
-
     const computedMaxRounds = Math.max(10, (maxPlayers - 4) + 3 + 2);
     const config = {
-      timers: timerPresets,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
@@ -283,7 +272,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       fillStrategy: "balanced",
       visibility: "public",
       slotType: "mixed",
-      viewerMode: "live",
       formatManifest: [...DEFAULT_FORMAT_MANIFEST],
     };
 

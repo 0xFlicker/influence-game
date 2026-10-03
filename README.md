@@ -157,3 +157,7 @@ bun run simulate:api -- \
 Real-model simulations are an operator confidence gate, not an implementation-agent completion gate. Implementing agents should emit the bounded recipe above and leave it operator-unverified rather than launching or waiting on a simulation.
 
 House replay links from the Werewolf API simulator now use `/games/:slug/replay?audience=mystery|omniscient`. Player settings offer **Share this moment**, binding the audience and canonical visible-entry cursor. Sharing/presentation makes no model call and does not alter accepted dialogue, captured thinking or game state. See [House entry integration](docs/solutions/architecture-patterns/house-game-entry-and-replay-moments.md).
+
+### Game creation and playback pacing
+
+Creation-time Speed-run/Live and phase timing presets have been removed. API simulations no longer accept `--viewer-mode` or `--timing-preset`; use `--max-rounds` for the Influence game-length limit. Werewolf retains its maximum-day limit. Playback speed, thinking visibility and thinking order belong to the existing House player settings. These preferences do not change model reasoning or execution speed.

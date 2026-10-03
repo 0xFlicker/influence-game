@@ -300,10 +300,8 @@ export type PublicPlayerProfileEnvelope =
     };
 
 export type FillStrategy = "random" | "balanced";
-export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
-export type ViewerMode = "live" | "speedrun" | "replay";
 export type TrackType = "custom" | "free";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";
 export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
@@ -449,10 +447,8 @@ export interface CreateGameParams {
   providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
-  timingPreset: TimingPreset;
   maxRounds: number | "auto";
   visibility: GameVisibility;
-  viewerMode: "live" | "speedrun";
   formatManifest?: EngineLaunchFormatId[];
 }
 
@@ -529,7 +525,6 @@ export interface GameSummary {
   eliminatedPlayers: number;
   modelLabel: string;
   visibility: GameVisibility;
-  viewerMode: ViewerMode;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
@@ -2745,7 +2740,6 @@ export interface GameDetail {
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
-  viewerMode: ViewerMode;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;

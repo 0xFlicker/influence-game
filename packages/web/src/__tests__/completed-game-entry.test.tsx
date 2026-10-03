@@ -361,7 +361,6 @@ describe("CompletedGameEntry", () => {
           players: [],
           modelLabel: "OpenAI gpt-5-mini · Adaptive",
           visibility: "public",
-          viewerMode: "replay",
           createdAt: "2026-07-09T00:00:00.000Z",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -411,7 +410,6 @@ describe("CompletedGameEntry", () => {
         players: [],
         modelLabel: "OpenAI gpt-5-mini · Adaptive",
         visibility: "public",
-        viewerMode: "live",
         createdAt: "2026-07-09T00:00:00.000Z",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as unknown as typeof fetch;

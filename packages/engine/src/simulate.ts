@@ -715,22 +715,6 @@ export function buildSimulationConfig(
 
   return {
     ...DEFAULT_CONFIG,
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-      plea: 0,
-      accusation: 0,
-      defense: 0,
-      openingStatements: 0,
-      juryQuestions: 0,
-      closingArguments: 0,
-      juryVote: 0,
-    },
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
@@ -2096,7 +2080,7 @@ async function main() {
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
 
-  // Simulation config: no timers (agents respond as fast as they can)
+  // Agents respond as fast as they can; playback pacing belongs to the viewer.
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
     richProducer: args.richProducer ?? false,

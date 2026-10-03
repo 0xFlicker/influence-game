@@ -112,7 +112,6 @@ describe("game completion settlement capture", () => {
         },
         completionConfig: {
           maxRounds: 5,
-          viewerMode: "replay",
           modelSelection: { default: "gpt-5-mini" },
         },
         finishedAt: FINISHED_AT,

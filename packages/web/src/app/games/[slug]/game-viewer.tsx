@@ -131,8 +131,6 @@ export function GameViewer({
   const currentPhaseRef = useRef<PhaseKey>(
     (initialGame?.watchState?.currentPhase ?? initialGame?.currentPhase ?? "INIT") as PhaseKey,
   );
-  // Speedrun flag — derive early so useEffects can use it as dependency
-  const isSpeedrun = game?.viewerMode === "speedrun";
   // Diary Room tab state (desktop toggle)
   const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
   const [newDiaryCount, setNewDiaryCount] = useState(0);
@@ -457,15 +455,9 @@ export function GameViewer({
     }
   }, [replayIndex, isReplay]);
 
-  // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
+  // Drain reveal queue — release one message every 1.5s
   useEffect(() => {
     if (revealQueue.length === 0 || isReplay) return;
-
-    if (isSpeedrun) {
-      setRevealShown((s) => [...s, ...revealQueue]);
-      setRevealQueue([]);
-      return;
-    }
 
     const HOLD_MS = 1500;
     const timer = setTimeout(() => {
@@ -491,7 +483,7 @@ export function GameViewer({
     }, HOLD_MS);
 
     return () => clearTimeout(timer);
-  }, [revealQueue, isReplay, isSpeedrun]);
+  }, [revealQueue, isReplay]);
 
   // Spectacle queue drain — take next message when current finishes
   useEffect(() => {
@@ -517,7 +509,7 @@ export function GameViewer({
       !spectacleCurrent.fromPlayerId || spectacleCurrent.scope === "system";
 
     if (spectaclePhase === "typing") {
-      if (isSystem || isSpeedrun) {
+      if (isSystem) {
         setSpectaclePhase("revealing");
         return;
       }
@@ -529,12 +521,10 @@ export function GameViewer({
     }
 
     if (spectaclePhase === "done") {
-      const holdMs = isSpeedrun
-        ? 100
-        : Math.max(
-            POST_REVEAL_BASE_MS,
-            spectacleCurrent.text.length * POST_REVEAL_PER_CHAR_MS,
-          );
+      const holdMs = Math.max(
+        POST_REVEAL_BASE_MS,
+        spectacleCurrent.text.length * POST_REVEAL_PER_CHAR_MS,
+      );
       const timer = setTimeout(() => {
         setSpectacleCurrent(null);
       }, holdMs);
@@ -545,7 +535,6 @@ export function GameViewer({
     spectacleCurrent,
     spectaclePhase,
     isReplay,
-    isSpeedrun,
   ]);
 
   const handleWsEvent = useCallback(
@@ -1219,7 +1208,6 @@ export function GameViewer({
               players={game.players}
               onRevealComplete={() => setSpectaclePhase("done")}
               queueLength={spectacleQueue.length}
-              speedrun={isSpeedrun}
             />
           )}
 
@@ -1230,7 +1218,6 @@ export function GameViewer({
             empoweredPlayerId={empoweredPlayerId}
             eliminatedRounds={eliminatedRounds}
             recentlyUnshielded={recentlyUnshielded}
-            speedrun={isSpeedrun}
           />
         )}
 
@@ -1469,7 +1456,6 @@ export function GameViewer({
                 players={game.players}
                 onRevealComplete={() => setSpectaclePhase("done")}
                 queueLength={spectacleQueue.length}
-                speedrun={isSpeedrun}
               />
             )}
 
@@ -1502,7 +1488,6 @@ export function GameViewer({
             empoweredPlayerId={empoweredPlayerId}
             eliminatedRounds={eliminatedRounds}
             recentlyUnshielded={recentlyUnshielded}
-            speedrun={isSpeedrun}
           />
         </div>
       </div>

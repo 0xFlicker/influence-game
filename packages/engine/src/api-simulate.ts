@@ -29,10 +29,8 @@ interface ApiSimArgs {
   modelCatalogId?: string;
   providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
-  timingPreset: "fast" | "standard" | "slow";
   maxRounds: number | "auto";
   visibility: "public" | "unlisted" | "private";
-  viewerMode: "live" | "speedrun";
   waitForAdvance: boolean;
   advanceTimeoutMs: number;
   pollIntervalMs: number;
@@ -88,10 +86,8 @@ export function parseArgs(
     providerManifest: parseProviderManifestEnv(env.INFLUENCE_API_SIM_PROVIDER_MANIFEST),
     serviceTier: normalizeServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER) ?? "flex",
     reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_API_SIM_REASONING_POLICY) ?? undefined,
-    timingPreset: parseTimingPreset(env.INFLUENCE_API_SIM_TIMING_PRESET) ?? "fast",
     maxRounds: envMaxRounds ?? 5,
     visibility: parseVisibility(env.INFLUENCE_API_SIM_VISIBILITY) ?? "public",
-    viewerMode: parseViewerMode(env.INFLUENCE_API_SIM_VIEWER_MODE) ?? "speedrun",
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
@@ -156,18 +152,12 @@ export function parseArgs(
       const policy = normalizeReasoningPolicy(next);
       if (policy) args.reasoningPolicy = policy;
       i++;
-    } else if (arg === "--timing-preset" && next) {
-      args.timingPreset = parseTimingPreset(next) ?? args.timingPreset;
-      i++;
     } else if (arg === "--max-rounds" && next) {
       args.maxRounds = parseMaxRounds(next) ?? args.maxRounds;
       hasExplicitMaxRounds = true;
       i++;
     } else if (arg === "--visibility" && next) {
       args.visibility = parseVisibility(next) ?? args.visibility;
-      i++;
-    } else if (arg === "--viewer-mode" && next) {
-      args.viewerMode = parseViewerMode(next) ?? args.viewerMode;
       i++;
     } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
       args.formatManifest = resolveFormatManifest(
@@ -266,11 +256,9 @@ export function buildGameCreateBody(
   return {
     playerCount: args.players,
     providerManifest,
-    timingPreset: args.timingPreset,
     maxRounds: args.maxRounds,
     visibility: args.visibility,
     fillStrategy: "balanced",
-    viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
     formatManifest: [...args.formatManifest],
   };
@@ -364,18 +352,8 @@ function parseProvider(value: string | undefined): ApiSimArgs["provider"] | unde
   return undefined;
 }
 
-function parseTimingPreset(value: string | undefined): ApiSimArgs["timingPreset"] | undefined {
-  if (value === "fast" || value === "standard" || value === "slow") return value;
-  return undefined;
-}
-
 function parseVisibility(value: string | undefined): ApiSimArgs["visibility"] | undefined {
   if (value === "public" || value === "unlisted" || value === "private") return value;
-  return undefined;
-}
-
-function parseViewerMode(value: string | undefined): ApiSimArgs["viewerMode"] | undefined {
-  if (value === "live" || value === "speedrun") return value;
   return undefined;
 }
 

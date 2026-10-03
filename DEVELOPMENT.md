@@ -783,3 +783,7 @@ Werewolf viewing mode is selected before playback (`?audience=mystery` or `?audi
 Game identity resolves through optional-auth `/api/game-entries/:idOrSlug` before dispatching. Use the existing client/server transports. Public games do not need login. New game modules reuse `components/games/`, `components/casting/` and `components/watch/`; see [third-game guidance](docs/solutions/architecture-patterns/house-game-entry-and-replay-moments.md).
 
 Run the Werewolf Puppeteer suite and Influence Playwright suite sequentially; they share `.next/e2e`. Keep temporary DB cleanup in `finally`, passing the database URL, and never repair development migration history to make tests pass. [Implementation evidence](docs/reviews/2026-10-02-house-game-entry-implementation.md) records the exact checks.
+
+### Game creation and playback pacing
+
+Creation-time Speed-run/Live and phase timing presets have been removed. API simulations no longer accept `--viewer-mode` or `--timing-preset`; use `--max-rounds` for the Influence game-length limit. Werewolf retains its maximum-day limit. Playback speed, thinking visibility and thinking order belong to the existing House player settings. These preferences do not change model reasoning or execution speed.

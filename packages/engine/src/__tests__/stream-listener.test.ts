@@ -23,22 +23,6 @@ function makeAgents(count: number): MockAgent[] {
 }
 
 const FAST_CONFIG: GameConfig = {
-  timers: {
-    introduction: 5_000,
-    lobby: 5_000,
-    mingle: 5_000,
-    rumor: 5_000,
-    vote: 5_000,
-    power: 5_000,
-    council: 5_000,
-    plea: 5_000,
-    accusation: 5_000,
-    defense: 5_000,
-    openingStatements: 5_000,
-    juryQuestions: 5_000,
-    closingArguments: 5_000,
-    juryVote: 5_000,
-  },
   maxRounds: 20,
   minPlayers: 5,
   maxPlayers: 12,

@@ -485,7 +485,6 @@ async function insertOwnedCompletedMediaGame(
     config: {
       maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
       visibility: "public",
-      viewerMode: "speedrun",
     },
   });
   await db.insert(schema.gamePlayers).values(Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({

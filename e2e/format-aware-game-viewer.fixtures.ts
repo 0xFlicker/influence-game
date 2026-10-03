@@ -212,7 +212,6 @@ function buildDeterministicFormatGame(
     players,
     modelTier: "standard",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-07-27T00:00:00.000Z",
     startedAt: "2026-07-27T00:00:01.000Z",
     ...(status === "completed"
@@ -373,7 +372,6 @@ function buildDeterministicCompletedClassicGame(slug: string) {
       players,
       modelTier: "standard",
       visibility: "public",
-      viewerMode: "replay",
       winner: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
       createdAt: "2026-07-27T00:00:00.000Z",
       startedAt: "2026-07-27T00:00:01.000Z",
@@ -424,7 +422,6 @@ function buildDeterministicClassicGame({
     players,
     modelTier: "standard",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-07-27T00:00:00.000Z",
   };
 }

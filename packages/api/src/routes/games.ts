@@ -148,10 +148,8 @@ export function createGameRoutes(db: DrizzleDB) {
       modelSelection,
       personaPool,
       fillStrategy,
-      timingPreset,
       maxRounds,
       visibility,
-      viewerMode,
       serviceTier,
       formatManifest,
       visualMode = false,
@@ -177,47 +175,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
 
     // Build GameConfig (engine-compatible)
-    const timerPresets: Record<string, Record<string, number>> = {
-      fast: {
-        introduction: 15000,
-        lobby: 15000,
-        mingle: 20000,
-        rumor: 15000,
-        vote: 10000,
-        power: 10000,
-        council: 10000,
-      },
-      standard: {
-        introduction: 30000,
-        lobby: 30000,
-        mingle: 45000,
-        rumor: 30000,
-        vote: 20000,
-        power: 15000,
-        council: 20000,
-      },
-      slow: {
-        introduction: 60000,
-        lobby: 60000,
-        mingle: 90000,
-        rumor: 60000,
-        vote: 40000,
-        power: 30000,
-        council: 40000,
-      },
-    };
-
-    const timers = timerPresets[timingPreset ?? "standard"] ?? timerPresets.standard;
     const computedMaxRounds =
       maxRounds === "auto" || maxRounds == null
         ? Math.max(10, (maxPlayers - 4) + 3 + 2)
         : maxRounds;
-
-    // Validate viewerMode — only "live" and "speedrun" are valid at creation time
-    const validCreationModes = ["live", "speedrun"];
-    const resolvedViewerMode = validCreationModes.includes(viewerMode)
-      ? viewerMode
-      : "speedrun"; // Default for admin-created games
 
     const normalizedServiceTier = serviceTier == null
       ? "flex"
@@ -265,7 +226,6 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const config = {
-      timers,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
@@ -285,7 +245,6 @@ export function createGameRoutes(db: DrizzleDB) {
       slotType: "all_ai",
       visualMode,
       visualFailurePolicy,
-      viewerMode: resolvedViewerMode,
       formatManifest: frozenFormatManifest,
     };
 
@@ -373,7 +332,6 @@ export function createGameRoutes(db: DrizzleDB) {
           eliminatedPlayers: watchState.counts.eliminatedPlayers,
           modelLabel: modelLabelFromConfig(config),
           visibility: config.visibility ?? "public",
-          viewerMode: config.viewerMode ?? "speedrun",
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -464,7 +422,6 @@ export function createGameRoutes(db: DrizzleDB) {
       })),
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
-      viewerMode: config.viewerMode ?? "speedrun",
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),

@@ -701,3 +701,7 @@ The shared watch thought bubble is rendered within the scene canvas, above speec
 Shared watch bubbles measure the entire message independently of playback time. Font size and the tallest page establish one stable frame; short contributions use larger type and shorter bubbles, and very short replies can narrow. The text is preserved verbatim, including across pages. Padding is a layout constraint rather than a per-page adjustment.
 
 House replay links from the Werewolf API simulator now use `/games/:slug/replay?audience=mystery|omniscient`. Player settings offer **Share this moment**, binding the audience and canonical visible-entry cursor. Sharing/presentation makes no model call and does not alter accepted dialogue, captured thinking or game state. See [House entry integration](solutions/architecture-patterns/house-game-entry-and-replay-moments.md).
+
+### Game creation and playback pacing
+
+Creation-time Speed-run/Live and phase timing presets have been removed. API simulations no longer accept `--viewer-mode` or `--timing-preset`; use `--max-rounds` for the Influence game-length limit. Werewolf retains its maximum-day limit. Playback speed, thinking visibility and thinking order belong to the existing House player settings. These preferences do not change model reasoning or execution speed.

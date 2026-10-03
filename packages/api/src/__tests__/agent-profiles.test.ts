@@ -1086,7 +1086,6 @@ describe("Agent Profile API", () => {
         jsonReq({
           playerCount: 6,
           modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-          timingPreset: "fast",
         }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
@@ -1127,7 +1126,6 @@ describe("Agent Profile API", () => {
         jsonReq({
           playerCount: 6,
           modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-          timingPreset: "fast",
         }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
@@ -1174,7 +1172,6 @@ describe("Agent Profile API", () => {
         jsonReq({
           playerCount: 6,
           modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-          timingPreset: "fast",
         }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
@@ -1202,7 +1199,6 @@ describe("Agent Profile API", () => {
         jsonReq({
           playerCount: 6,
           modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-          timingPreset: "fast",
         }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
@@ -1226,7 +1222,6 @@ describe("Agent Profile API", () => {
         jsonReq({
           playerCount: 6,
           modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
-          timingPreset: "fast",
         }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };

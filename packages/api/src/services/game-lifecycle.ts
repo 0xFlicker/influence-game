@@ -426,20 +426,6 @@ export function buildEngineConfigFromGameRecord(
   minPlayers: number,
   maxPlayers: number,
 ): GameConfig {
-  const defaultTimers = {
-    introduction: 30000,
-    lobby: 30000,
-    mingle: 45000,
-    rumor: 30000,
-    vote: 20000,
-    power: 15000,
-    council: 20000,
-  };
-  const storedTimers = (gameConfig.timers ?? {}) as Record<string, number>;
-
-  const roomPhaseTimer = storedTimers.mingle ?? defaultTimers.mingle;
-  const { whisper: _unsupportedWhisperTimer, ...currentTimers } = storedTimers;
-
   return {
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
@@ -447,11 +433,6 @@ export function buildEngineConfigFromGameRecord(
     formatManifest: resolveFormatManifest(
       gameConfig.formatManifest ?? LEGACY_FORMAT_MANIFEST,
     ),
-    timers: {
-      ...defaultTimers,
-      ...currentTimers,
-      mingle: roomPhaseTimer,
-    },
     diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
     // Preserve House narration configuration sealed into the game record.
     ...(typeof gameConfig.enableHouseRoundSummaries === "boolean" && {

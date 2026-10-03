@@ -1482,7 +1482,6 @@ describe("admin route RBAC", () => {
           },
         ],
         visibility: "private",
-        viewerMode: "speedrun",
       },
     });
 

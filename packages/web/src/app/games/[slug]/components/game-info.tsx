@@ -143,13 +143,11 @@ export function PlayerRoster({
   empoweredPlayerId,
   eliminatedRounds,
   recentlyUnshielded,
-  speedrun,
 }: {
   players: GamePlayer[];
   empoweredPlayerId: string | null;
   eliminatedRounds: ReadonlyMap<string, number>;
   recentlyUnshielded: ReadonlySet<string>;
-  speedrun: boolean;
 }) {
   const alive = players.filter((p) => p.status === "alive");
   const eliminated = players.filter((p) => p.status === "eliminated");
@@ -162,7 +160,7 @@ export function PlayerRoster({
       <div className="space-y-1.5">
         {alive.map((p) => {
           const isEmpowered = p.id === empoweredPlayerId;
-          const isShattered = !speedrun && recentlyUnshielded.has(p.id);
+          const isShattered = recentlyUnshielded.has(p.id);
 
           return (
             <div

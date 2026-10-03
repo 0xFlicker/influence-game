@@ -127,7 +127,6 @@ export async function insertGame(
       maxRounds: 5,
       modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "private",
-      viewerMode: "speedrun",
     }),
     status: params.status ?? "suspended",
     trackType: "custom",

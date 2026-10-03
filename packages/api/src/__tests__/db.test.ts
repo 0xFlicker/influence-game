@@ -104,7 +104,7 @@ describe("Database Schema", () => {
   describe("games", () => {
     test("insert and query a game", async () => {
       const gameId = randomUUID();
-      const config = { timers: {}, maxRounds: 10, minPlayers: 5, maxPlayers: 8 };
+      const config = { maxRounds: 10, minPlayers: 5, maxPlayers: 8 };
 
       await db.insert(schema.games)
         .values({

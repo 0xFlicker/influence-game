@@ -217,10 +217,8 @@ interface FormState {
   providerRoute: ProviderRouteEntry[];
   personaPool: PersonaKey[];
   fillStrategy: "random" | "balanced";
-  timingPreset: "fast" | "standard" | "slow" | "custom";
   maxRounds: number | "auto";
   visibility: "public" | "unlisted" | "private";
-  viewerMode: "live" | "speedrun";
 }
 
 const DEFAULT_STATE: FormState = {
@@ -231,10 +229,8 @@ const DEFAULT_STATE: FormState = {
   providerRoute: DEFAULT_PROVIDER_MANIFEST.map(providerRouteEntry),
   personaPool: [...ALL_PERSONA_KEYS],
   fillStrategy: "balanced",
-  timingPreset: "standard",
   maxRounds: "auto",
   visibility: "public",
-  viewerMode: "speedrun",
 };
 
 // ---------------------------------------------------------------------------
@@ -732,7 +728,7 @@ function ProviderRouteEditor({
 export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } = {}) {
   const enabled = enabledGameKinds();
   const [kind, setKind] = useState<HouseGameKind>(initialKind && enabled.includes(initialKind) ? initialKind : enabled[0] ?? "influence");
-  const [village, setVillage] = useState<WerewolfSetup>({ playerCount: 6, wolves: 1, seer: true, doctor: false });
+  const [village, setVillage] = useState<WerewolfSetup>({ playerCount: 6, wolves: 1, seer: true, doctor: true });
   const [maxDays, setMaxDays] = useState(10);
   const isWerewolf = kind === "werewolf";
   const gameName = isWerewolf ? "Werewolf" : ACTIVE_GAME.name;
@@ -882,7 +878,11 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       {/* Players */}
       <SectionCard title="Players">
-        {isWerewolf ? <RadioGroup label="Player count" value={String(village.playerCount)} options={[6,7,8].map(n => ({value:String(n),label:String(n)}))} onChange={value => setVillage(v => ({...v,playerCount:Number(value) as WerewolfSetup["playerCount"]}))} /> : <RadioGroup
+        {isWerewolf ? <RadioGroup label="Player count" value={String(village.playerCount)} options={[6,7,8].map(n => ({value:String(n),label:String(n)}))} onChange={value => setVillage(v => ({
+          ...v,
+          playerCount: Number(value) as WerewolfSetup["playerCount"],
+          wolves: Number(value) === 8 ? 2 : 1,
+        }))} /> : <RadioGroup
           label="Player count"
           value={String(form.playerCount) as never}
           options={CREATE_GAME_PLAYER_COUNTS.map((n) => ({
@@ -1006,31 +1006,10 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         {needsImageModels && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
           options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
           onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
-        {!isWerewolf && <RadioGroup
-          label="Viewer mode"
-          value={form.viewerMode}
-          options={[
-            { value: "speedrun" as const, label: "Speed-run", sublabel: "Instant, for testing" },
-            { value: "live" as const, label: "Live", sublabel: "Paced for viewers" },
-          ]}
-          onChange={(v) => set("viewerMode", v as "live" | "speedrun")}
-        />}
       </SectionCard>
 
-      {/* Timing */}
-      {isWerewolf ? <SectionCard title="Game length"><label className="flex items-center gap-4">Maximum days<input aria-label="Maximum days" type="number" min={1} max={20} required value={maxDays} onChange={event => setMaxDays(Number(event.target.value))} className="w-24 rounded-lg border border-white/15 bg-white/5 px-3 py-2" /></label><p className="mt-3 text-sm text-white/60">A draw if neither faction wins by this limit. Conversations and votes set the pace.</p></SectionCard> : <SectionCard title="Timing Config">
-        <RadioGroup
-          label="Preset"
-          value={form.timingPreset}
-          options={[
-            { value: "fast", label: "Fast", sublabel: "20s phases" },
-            { value: "standard", label: "Standard", sublabel: "30s phases" },
-            { value: "slow", label: "Slow", sublabel: "60s phases" },
-            { value: "custom", label: "Custom" },
-          ]}
-          onChange={(v) => set("timingPreset", v)}
-        />
-
+      {/* Game length */}
+      {isWerewolf ? <SectionCard title="Game length"><label className="flex items-center gap-4">Maximum days<input aria-label="Maximum days" type="number" min={1} max={20} required value={maxDays} onChange={event => setMaxDays(Number(event.target.value))} className="w-24 rounded-lg border border-white/15 bg-white/5 px-3 py-2" /></label><p className="mt-3 text-sm text-white/60">A draw if neither faction wins by this limit. Conversations and votes set the pace.</p></SectionCard> : <SectionCard title="Game length">
         <div>
           <label className="block text-sm text-white/60 mb-2">Max rounds</label>
           <div className="flex items-center gap-3">

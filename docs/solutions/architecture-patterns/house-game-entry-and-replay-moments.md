@@ -60,3 +60,7 @@ Use Bun provider-free tests for parsers/components/recovery; PostgreSQL tests fo
 Do not run the two browser harnesses concurrently in one checkout: both currently use `.next/e2e` and contend for Next's dev lock. They also rewrite generated Next type includes; restore those generated-only edits after shutdown before running the repository check. Existing shared `influence_test` can have migration-ledger drift when different worktrees use different experimental migrations. Run the baseline against a fresh isolated database instead of replaying or rewriting the operator's development DB. Always pass `database.databaseUrl` to `destroyIsolatedTestDb`, and clean only your own isolated database.
 
 See [implementation evidence and remaining boundaries](../../reviews/2026-10-02-house-game-entry-implementation.md).
+
+## Creation options follow active behavior
+
+On 2026-10-02 the creation-time `viewerMode` and `timingPreset` options were removed, along with unused phase timers and the unconnected server event pacer. Trace a setting to its runtime consumer before copying it into another game. The House player already owns playback preferences; game configuration retains actual game-length limits. Visibility and visual-failure policy are shared product contracts, but parity requires authorization and durable runtime behavior as well as identical form controls. Track those remaining contracts in W7 of the integration roadmap.

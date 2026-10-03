@@ -696,10 +696,6 @@ function validatePromptThreadCase(
   const config = {
     ...DEFAULT_CONFIG,
     ...configInput,
-    timers: {
-      ...DEFAULT_CONFIG.timers,
-      ...(isRecord(configInput.timers) ? configInput.timers : {}),
-    },
   } as GameConfig;
   const mingleSessionsPerRound =
     config.mingleSessionsPerRound ?? DEFAULT_MINGLE_BEATS;

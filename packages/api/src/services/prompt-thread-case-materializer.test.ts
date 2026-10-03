@@ -74,7 +74,6 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
       maxRounds: 5,
       modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "private",
-      viewerMode: "speedrun",
     },
   });
   const ownerEpoch = await insertOwner(db, gameId, { status: "active" });

@@ -62,7 +62,7 @@ test.describe("local public player identity", () => {
     for (const width of [1440, 390]) {
       const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 1100 }, hasTouch: width === 390, isMobile: width === 390 });
       const page = await context.newPage();
-      let game: GameDetail = { id: "preshow-fixture", slug: "preshow-fixture", status: "waiting", gameKernel: "classic", playerCount: 4, players: [], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: new Date().toISOString() };
+      let game: GameDetail = { id: "preshow-fixture", slug: "preshow-fixture", status: "waiting", gameKernel: "classic", playerCount: 4, players: [], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
       let failRefresh = false;
       let joinedProfile: string | null = null;
       try {
@@ -149,7 +149,7 @@ test.describe("local public player identity", () => {
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions } }); });
         await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
-        await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: "2026-09-26" } }));
+        await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: "2026-09-26" } }));
         await page.route("**/api/games/control-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
         for (const action of ["start", "stop", "hide"]) await page.route(`**/api/games/control-fixture/${action}`, route => { actions.push(action); return route.fulfill(fail ? { status: 409, json: { error: "Please try again" } } : { json: { status: "ok" } }); });
         await page.goto(`${servers.webUrl}/games/control-fixture`, { waitUntil: "networkidle" });
@@ -196,7 +196,7 @@ test.describe("local public player identity", () => {
       const owner = { publicId: fixture.publicId, handle: fixture.handle, displayName: "E2E Flick" };
       let roles: string[] = [];
       let agents = [savedAgent("mira", "Mira Vale", "social"), savedAgent("vesper", "Vesper Han", "observer"), ...Array.from({ length: 6 }, (_, i) => savedAgent(`cast-${i}`, `Competitor ${i + 1}`, "strategic"))];
-      let game: GameDetail = { id: "selector-fixture", slug: "selector-fixture", status: "waiting", gameKernel: "classic", playerCount: 10, players: [{ id: "house", name: "Atlas", persona: "Fixture", personaKey: "diplomat", status: "alive", shielded: false }], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", viewerMode: "live", createdAt: new Date().toISOString() };
+      let game: GameDetail = { id: "selector-fixture", slug: "selector-fixture", status: "waiting", gameKernel: "classic", playerCount: 10, players: [{ id: "house", name: "Atlas", persona: "Fixture", personaKey: "diplomat", status: "alive", shielded: false }], currentRound: 0, maxRounds: 11, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString() };
       let listFails = true;
       let joinFails = true;
       const attempts: string[] = [];
@@ -284,7 +284,7 @@ test.describe("local public player identity", () => {
 
   test("episode cards use desktop destinations and a fullscreen touch trailer", async ({ browser }) => {
     test.setTimeout(90_000);
-    const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", viewerMode: "speedrun", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
+    const game = { id: "episode-fixture", slug: "quiet-sage-room", status: "completed", playerCount: 4, players: [], currentRound: 5, maxRounds: 5, currentPhase: "DONE", alivePlayers: 1, eliminatedPlayers: 3, phaseTimeRemaining: null, modelLabel: "Standard", visibility: "public", createdAt: new Date().toISOString(), season: { id: "s0", name: "Season 0", slug: "season-0" }, episode: { title: "Good Company", description: "Four strangers. Four different ideas about trust.", episodeNumber: 42, cast: [{ id: "mira", name: "Mira", avatarUrl: null, personaKey: "strategic" }], coverUrl: null, status: "ready", locked: false, revision: 1, frameOrder: [] } };
     const preview = { episode: game.episode, frames: [{ id: "house", kind: "house", label: "A word from the House", text: game.episode.description }], media: { schemaVersion: 1, mediaType: "house_highlights_trailer", status: "ready", renderVersion: 1, durationSeconds: 12, preview: { title: game.episode.title, description: game.episode.description }, video: { url: `${servers.webUrl}/episode-fixture.mp4`, contentType: "video/mp4", width: 1920, height: 1080 }, poster: { url: `${servers.webUrl}/house-highlights/generated/alliance-formation.jpg`, altText: "The House", contentType: "image/jpeg" }, captions: { url: `${servers.webUrl}/episode-fixture.vtt`, contentType: "text/vtt", language: "en", label: "English" }, manifest: { url: "", contentType: "application/json" } } };
     for (const touch of [false, true]) {
       const context = await browser.newContext({ viewport: touch ? { width: 390, height: 844 } : { width: 1440, height: 1000 }, hasTouch: touch, isMobile: touch });

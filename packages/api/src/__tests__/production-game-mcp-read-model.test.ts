@@ -2248,7 +2248,6 @@ async function insertEdgeSmokeDuskFixture(db: DrizzleDB): Promise<void> {
       maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
       modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "public",
-      viewerMode: "speedrun",
     },
   });
   await db.update(schema.games)

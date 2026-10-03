@@ -1073,7 +1073,6 @@ export function createAdminRoutes(
         modelSelection: config.modelSelection,
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
-        viewerMode: config.viewerMode ?? "speedrun",
         visualMode: config.visualMode === true,
         visualPaused: game.status === "suspended" && Boolean(config.visualPause),
         trackType: game.trackType,
