@@ -223,6 +223,8 @@ Scoped plan: [W3 — House postgame review and Werewolf owner learning](../plans
 
 ### W4 — House Cuts: a more expansive editorial eye
 
+Scoped draft: [W4 — Shared House Cuts and editorial discovery](../plans/2026-10-04-001-feat-house-cuts-editorial-discovery.md). Start with an evidence-to-candidate-to-sample-card prototype and human review packet; integrate the approved approach into shared House publication and sharing afterward. W3 broader coaching calibration remains pending and does not block W4.
+
 House Cuts are the shareable cards of interesting moments, with enough context to work outside the full replay. Both games use the same House gallery, card, share and editorial workflows, supplied by their game modules. The user wants discovery to be less mechanical. This is a shared editorial improvement for both games, with Werewolf as a new source, not merely a second list of hard-coded event triggers.
 
 **Look for:** a credible bluff; a claim that quietly changes the room; an unanswered question; a conspicuous dodge; trust earned and later betrayed; a mistaken accusation that snowballs; a restrained player finally speaking up; an excellent or disastrous read; a funny juxtaposition; a revealing exchange with no immediate elimination. A moment may span several replies or return to an earlier thread for its payoff. These are editorial lenses, not a mandatory category quota.
