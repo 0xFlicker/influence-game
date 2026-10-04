@@ -245,12 +245,18 @@ export function OwnerLearningReviewWorkspace({
   const offeredReviewId = useRef<string | null>(null);
   const previousState = useRef<string | null>(null);
   const terminalFocus = useRef<HTMLDivElement | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const statusRequest = useRef<Promise<boolean> | null>(null);
   const polling = review ? isReviewPolling(review) : false;
 
   const loadReview = useCallback(async (announceErrors = true) => {
     if (!getAuthToken()) return null;
     try {
       const next = await getOwnerLearningReview(reviewId, agentId);
+      setLastCheckedAt(Date.now());
+      setCheckFailed(false);
       setReview(next);
       setActiveGameId((current) => current || next.selectedGameIds[0] || "");
       setError(null);
@@ -263,34 +269,44 @@ export function OwnerLearningReviewWorkspace({
     }
   }, [agentId, reviewId]);
 
-  const pollReview = useCallback(async (): Promise<boolean> => {
-    if (!getAuthToken()) return false;
-    try {
-      const status = await getOwnerLearningReviewStatus(reviewId, agentId);
-      if (isReviewStatusTerminal(status)) {
-        try {
+  const pollReview = useCallback((): Promise<boolean> => {
+    // Manual checks and scheduled polling share one request, so an older response
+    // cannot overwrite a newer status or multiply requests on repeated clicks.
+    if (statusRequest.current) return statusRequest.current;
+    setChecking(true);
+    const request = (async () => {
+      if (!getAuthToken()) {
+        setError("Sign in again to check this review.");
+        return false;
+      }
+      try {
+        const status = await getOwnerLearningReviewStatus(reviewId, agentId);
+        if (isReviewStatusTerminal(status)) {
           const next = await getOwnerLearningReview(reviewId, agentId);
           setReview(next);
           setActiveGameId((current) => current || next.selectedGameIds[0] || "");
-          setError(null);
-          return false;
-        } catch (nextError) {
-          if (isRetryableOwnerLearningPollError(nextError)) return true;
-          setError(apiMessage(nextError, "Review unavailable."));
-          return false;
+        } else {
+          setReview((current) => {
+            if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
+            return { ...current, ...status };
+          });
         }
+        setLastCheckedAt(Date.now());
+        setCheckFailed(false);
+        setError(null);
+        return !isReviewStatusTerminal(status);
+      } catch (pollError) {
+        setCheckFailed(true);
+        if (isRetryableOwnerLearningPollError(pollError)) return true;
+        setError(apiMessage(pollError, "Review unavailable."));
+        return false;
       }
-      setReview((current) => {
-        if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
-        return { ...current, ...status };
-      });
-      setError(null);
-      return true;
-    } catch (pollError) {
-      if (isRetryableOwnerLearningPollError(pollError)) return true;
-      setError(apiMessage(pollError, "Review unavailable."));
-      return false;
-    }
+    })();
+    statusRequest.current = request;
+    return request.finally(() => {
+      statusRequest.current = null;
+      setChecking(false);
+    });
   }, [agentId, reviewId]);
 
   useEffect(() => {
@@ -386,6 +402,8 @@ export function OwnerLearningReviewWorkspace({
       <span className="sr-only" aria-live="polite">{reviewStatusAnnouncement(review)}</span>
       <OwnerLearningReviewView
         review={review}
+        statusCheck={polling ? <ReviewStatusCheck lastCheckedAt={lastCheckedAt} failed={checkFailed}
+          checking={checking} onCheck={() => { void pollReview(); }} /> : null}
         agent={agent}
         activeGameId={activeGameId}
         pendingAction={pendingAction}
@@ -400,6 +418,33 @@ export function OwnerLearningReviewWorkspace({
         }}
         onResolve={(resolution) => void mutate("resolve", () => resolveOwnerLearningReview(review.id, resolution))}
       />
+    </div>
+  );
+}
+
+function ReviewStatusCheck({ lastCheckedAt, failed, checking, onCheck }: {
+  lastCheckedAt: number | null;
+  failed: boolean;
+  checking: boolean;
+  onCheck: () => void;
+}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = lastCheckedAt === null ? 0 : Math.max(0, Math.floor((now - lastCheckedAt) / 1_000));
+  const label = seconds < 15 ? "Checked just now"
+    : seconds < 60 ? `Checked ${seconds}s ago` : `Checked ${Math.floor(seconds / 60)}m ago`;
+  return (
+    <div className="olm-status-check">
+      <span>{failed ? "Unable to check status" : lastCheckedAt !== null
+        ? <time dateTime={new Date(lastCheckedAt).toISOString()} title={new Date(lastCheckedAt).toLocaleString()}>{label}</time>
+        : "Status not checked"}</span>
+      <span aria-hidden="true"> · </span>
+      <button type="button" onClick={onCheck} disabled={checking}>
+        {checking ? "Checking…" : failed ? "Try again" : "Check again"}
+      </button>
     </div>
   );
 }

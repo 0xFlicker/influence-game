@@ -36,6 +36,12 @@ The fix uses an optional, Influence-only revision join. Shared admin responses c
 
 **Lesson:** removing a game-specific foreign key is only half the integration. Audit read-model joins, admin diagnostics, aggregate accounting and UI identity labels wherever that identity is consumed. A successful owner/MCP workflow does not establish operator visibility. Regression coverage must exercise running and completed reviews without an Influence revision, list/detail inclusion, call receipts and costs, alongside existing Influence and admin authorization tests.
 
+## Review progress and connection status
+
+The shared owner review page has a small status-check control while work is queued or running. It records the time of a successful read independently of persisted review progress, including unchanged responses. Failed checks show “Unable to check status” with “Try again”; automatic polling continues for transient errors. Manual checks share any request already in flight and never start or retry analysis. The control disappears when a terminal review loads. Existing failure/recovery presentation remains responsible for analysis failures.
+
+Connection freshness is not model progress: never advance the checked timestamp on a failed read or use a successful poll to claim another analysis step completed.
+
 ## Verification and limits
 
 See [W3 implementation proof](../../reviews/2026-10-03-w3-owner-learning-implementation.md). The shared local test DB had migration history from another branch, so a fresh disposable database verified the full branch migration chain and API baseline. Never repair the operator's DB merely to make a branch test suite run.

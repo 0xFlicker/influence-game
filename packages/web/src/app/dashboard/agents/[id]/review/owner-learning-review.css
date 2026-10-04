@@ -1348,3 +1348,10 @@
     transition: none !important;
   }
 }
+
+/* Connection reassurance stays separate from review progress. */
+.olm-review-status-group { display: flex; flex-direction: column; gap: 8px; }
+.olm-status-check { color: rgb(var(--text-muted)); font-size: 12px; }
+.olm-status-check button { color: rgb(var(--text-secondary)); text-decoration: underline; text-underline-offset: 3px; }
+.olm-status-check button:disabled { cursor: wait; opacity: 0.65; }
+.olm-status-check button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

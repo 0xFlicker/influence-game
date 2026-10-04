@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { WerewolfLearningFacts, werewolfLearningFacts } from "./werewolf-learning-facts";
 import { AgentAvatar } from "@/components/agent-avatar";
 import type { OwnerLearningReview, SavedAgent } from "@/lib/api";
@@ -15,6 +16,7 @@ import {
 
 interface OwnerLearningReviewViewProps {
   review: OwnerLearningReview;
+  statusCheck?: ReactNode;
   agent: SavedAgent | null;
   activeGameId: string;
   pendingAction: "retry" | "apply" | "resolve" | null;
@@ -28,6 +30,7 @@ interface OwnerLearningReviewViewProps {
 
 export function OwnerLearningReviewView({
   review,
+  statusCheck,
   agent,
   activeGameId,
   pendingAction,
@@ -82,7 +85,10 @@ export function OwnerLearningReviewView({
             <p>{review.selectedGameIds.length} selected game{review.selectedGameIds.length === 1 ? "" : "s"} · {trackLabel(review.analysisTrack)}</p>
           </div>
         </div>
-        <ReviewStatus review={review} />
+        <div className="olm-review-status-group">
+          <ReviewStatus review={review} />
+          {statusCheck}
+        </div>
       </header>
 
       {review.resolution && <ResolutionBanner review={review} />}
