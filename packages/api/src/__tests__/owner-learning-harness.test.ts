@@ -371,6 +371,44 @@ describe("owner learning bounded harness", () => {
     expect(resumed.divesUsed).toBe(3);
   });
 
+  for (const dives of [0, 1]) {
+    test(`requires a final result when drafting on call ${dives + 2}`, async () => {
+      const evidence = harnessEvidence("evidence_rich", 1);
+      for (const missingFinal of [false, true]) {
+        let finalCalls = 0;
+        const run = runOwnerLearningHarness({
+          reviewId: "review-early-final", analysisTrack: "evidence_rich",
+          currentStrategyStyle: "Build trust.", evidence,
+          async invoke(input) {
+            const budget = providerTurn(input.request).callBudget as { finalResultRequired: boolean };
+            if (input.stage !== "drafting_recommendations") {
+              expect(budget.finalResultRequired).toBe(false);
+              return { provisionalThemes: [], selectedMomentHandles: input.ordinal === 1
+                ? providerMomentHandles(input.request).slice(0, dives) : [], finalResult: null };
+            }
+            finalCalls += 1;
+            expect(input.ordinal).toBe(dives + 2);
+            expect(budget.finalResultRequired).toBe(true);
+            expect(input.responseSchema).toBe(OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA);
+            return { provisionalThemes: [], selectedMomentHandles: [], finalResult: missingFinal ? null : {
+              diagnosis: "The available evidence does not establish a strategy defect.",
+              analysisTrack: "evidence_rich", recommendations: [],
+              noChange: { rationale: "Gather more evidence before changing the strategy." },
+            } };
+          },
+        });
+        if (missingFinal) {
+          await expect(run).rejects.toThrow("final turn did not contain a result");
+        } else {
+          const result = await run;
+          expect(result.logicalCallsUsed).toBe(dives + 2);
+          expect(result.result.noChange).toBeDefined();
+        }
+        expect(finalCalls).toBe(1);
+      }
+    });
+  }
+
   test("requires the fourth logical call to finish the review", async () => {
     const evidence = harnessEvidence("evidence_rich", 3);
     await expect(runOwnerLearningHarness({

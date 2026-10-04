@@ -42,6 +42,12 @@ The shared owner review page has a small status-check control while work is queu
 
 Connection freshness is not model progress: never advance the checked timestamp on a failed read or use a successful poll to claim another analysis step completed.
 
+## Final assessment contract before the call limit
+
+A real Werewolf review finished its scan and one investigation, then failed on the final drafting call and its owner retry. The harness required a completed result in that stage, but selected the non-final provider schema and sent `finalResultRequired: false` because it was only call three. The model returned valid intermediate findings with `finalResult: null`, which local finalization correctly rejected.
+
+Finality comes from the workflow stage as well as the budget boundary. Every `drafting_recommendations` invocation now uses the strict final-result schema and `finalResultRequired: true`, including calls two and three. The fourth call still requires a result regardless of stage. Tests cover early completion with zero/one investigation, legitimate no-change results and rejection of missing final results. Do not fabricate a completed review from provisional findings or replay paid calls to paper over a contract error; saved failures retain their original evidence and retry accounting.
+
 ## Verification and limits
 
 See [W3 implementation proof](../../reviews/2026-10-03-w3-owner-learning-implementation.md). The shared local test DB had migration history from another branch, so a fresh disposable database verified the full branch migration chain and API baseline. Never repair the operator's DB merely to make a branch test suite run.

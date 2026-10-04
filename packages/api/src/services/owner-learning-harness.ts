@@ -236,7 +236,8 @@ export async function runOwnerLearningHarness(
     }
     logicalCallsUsed += 1;
     if (isDive) divesUsed += 1;
-    const finalResultRequired = logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS;
+    const finalResultRequired = stage === "drafting_recommendations"
+      || logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS;
     const responseSchema = finalResultRequired
       ? OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA
       : OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA;
