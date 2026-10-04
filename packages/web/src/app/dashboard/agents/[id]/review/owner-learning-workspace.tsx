@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ApiError,
   applyOwnerLearningReview,
@@ -29,6 +29,9 @@ import { formatAvailabilityTimestamp, isReviewPolling, reviewPath } from "./owne
 
 export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialKind = searchParams.get("game") === "werewolf" ? "werewolf" : "influence";
+  const [gameKind, setGameKind] = useState<"influence" | "werewolf">(initialKind);
   const [eligible, setEligible] = useState<OwnerLearningEligibleInputs | null>(null);
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState(agentId);
@@ -50,12 +53,14 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
         router.replace(reviewPath(next.openReview.agentProfileId, next.openReview.id));
         return;
       }
-      const profile = next.profiles.find((entry) => entry.agentProfileId === agentId)
+      const profile = next.profiles.find((entry) => entry.agentProfileId === agentId && entry.gameKind === initialKind)
+        ?? next.profiles.find((entry) => entry.agentProfileId === agentId)
         ?? next.profiles.find((entry) => entry.agentProfileId === next.recommendedAgentProfileId)
         ?? next.profiles[0]
         ?? null;
       setEligible(next);
       if (profile) {
+        setGameKind(profile.gameKind);
         setSelectedProfileId(profile.agentProfileId);
         setSelectedGameIds(profile.recommendedGameIds);
       }
@@ -66,7 +71,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [agentId, router]);
+  }, [agentId, initialKind, router]);
 
   useEffect(() => {
     void loadEligible();
@@ -77,16 +82,20 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     if (!selectedProfileId) return;
-    getAgent(selectedProfileId).then(setAgent).catch(() => setAgent(null));
+    let current = true;
+    setAgent(null);
+    getAgent(selectedProfileId).then(value => { if (current) setAgent(value); }).catch(() => { if (current) setAgent(null); });
+    return () => { current = false; };
   }, [selectedProfileId]);
 
   useEffect(() => {
+    const requestId = ++preflightRequest.current;
     if (!eligible || selectedGameIds.length === 0) {
+      setPreflightPending(false);
       setPreflight(null);
       setPreflightFailed(false);
       return;
     }
-    const requestId = ++preflightRequest.current;
     setPreflightPending(true);
     setPreflightFailed(false);
     preflightOwnerLearningReview({ agentProfileId: selectedProfileId, gameIds: selectedGameIds })
@@ -107,9 +116,12 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       });
   }, [eligible, selectedGameIds, selectedProfileId]);
 
-  function changeProfile(profileId: string) {
-    const profile = eligible?.profiles.find((entry) => entry.agentProfileId === profileId);
+  function changeProfile(profileId: string, kind = gameKind) {
+    const profile = eligible?.profiles.find((entry) => entry.agentProfileId === profileId && entry.gameKind === kind)
+      ?? eligible?.profiles.find(entry => entry.gameKind === kind);
     if (!profile) return;
+    setGameKind(profile.gameKind);
+    window.history.replaceState(null, "", `${window.location.pathname}?game=${profile.gameKind}`);
     setSelectedProfileId(profile.agentProfileId);
     setSelectedGameIds(profile.recommendedGameIds);
     setPreflight(null);
@@ -191,8 +203,10 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   }
 
   return (
+    <>
+    {new Set(eligible.profiles.map(profile => profile.gameKind)).size > 1 && <label className="olm-agent-switcher mb-6"><span>Game</span><select aria-label="Review game" value={gameKind} onChange={event => changeProfile(selectedProfileId, event.target.value === "werewolf" ? "werewolf" : "influence")}><option value="influence">Influence</option><option value="werewolf">Werewolf</option></select></label>}
     <OwnerLearningEntryView
-      eligible={eligible}
+      eligible={{ ...eligible, profiles: eligible.profiles.filter(profile => profile.gameKind === gameKind) }}
       agent={agent}
       selectedProfileId={selectedProfileId}
       selectedGameIds={selectedGameIds}
@@ -201,13 +215,14 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       preflightFailed={preflightFailed}
       startPending={startPending}
       notice={notice}
-      onChangeProfile={changeProfile}
+      onChangeProfile={id => changeProfile(id)}
       onToggleGame={toggleGame}
       onStart={() => void startReview()}
       onDismiss={eligible.prompt.threshold && !eligible.prompt.suppressedByDismissal
         ? () => void dismissPrompt()
         : undefined}
     />
+    </>
   );
 }
 

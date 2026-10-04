@@ -1342,7 +1342,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: LIST_LEARNING_REVIEW_INPUTS_TOOL,
-      description: "List the authenticated owner's eligible Agent Profiles and one to three selectable Daily Free ranked games, deterministic prompt state, and any open review summary. The credit object is the complete purchase allowance: metered balance 1 can start now, metered balance 0 includes nextAvailableAt when time alone will restore it, and sysop access is mode unlimited with no numeric balance. Requires agents:read and games:read. No side effects.",
+      description: "List the authenticated owner's eligible Agent Profiles and one to three selectable completed games of one kind (Influence Daily Free or Werewolf custom), deterministic prompt state, and any open review summary. The credit object is the complete purchase allowance: metered balance 1 can start now, metered balance 0 includes nextAvailableAt when time alone will restore it, and sysop access is mode unlimited with no numeric balance. Requires agents:read and games:read. No side effects.",
       inputSchema: LIST_LEARNING_REVIEW_INPUTS_INPUT_SCHEMA,
       outputSchema: LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_READ_SCOPES,
@@ -1369,7 +1369,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: PREFLIGHT_LEARNING_REVIEW_TOOL,
-      description: "Preflight one exact owned Agent Profile and one to three selected Daily Free ranked games without purchasing or starting a review. Returns the deterministic analysis track and evidence preview the owner should inspect before the non-refundable start action. Requires agents:read and games:read. No side effects and no model call.",
+      description: "Preflight one exact owned Agent Profile and one to three selected completed games of one kind (Influence Daily Free or Werewolf custom) without purchasing or starting a review. Returns the deterministic analysis track and evidence preview the owner should inspect before the non-refundable start action. Requires agents:read and games:read. No side effects and no model call.",
       inputSchema: PREFLIGHT_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_READ_SCOPES,
@@ -1378,7 +1378,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: START_OR_RESUME_LEARNING_REVIEW_TOOL,
-      description: "Start or resume the owner's durable singleton learning review for one owned Agent Profile and one to three selected Daily Free ranked games. A new metered review consumes the available balance without refund; persisted sysop access is unlimited and consumes no credit. An existing idempotency key or open review resumes instead. Requires agents:read, games:read, and agents:write. Side effect only when newly enqueued.",
+      description: "Start or resume the owner's durable singleton learning review for one owned Agent Profile and one to three selected completed games of one kind (Influence Daily Free or Werewolf custom). A new metered review consumes the available balance without refund; persisted sysop access is unlimited and consumes no credit. An existing idempotency key or open review resumes instead. Requires agents:read, games:read, and agents:write. Side effect only when newly enqueued.",
       inputSchema: START_OR_RESUME_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -1398,7 +1398,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: APPLY_LEARNING_REVIEW_TOOL,
-      description: "Apply only the exact persisted strategyStyle proposal from an owned ready review. Immediately before calling, show the user the exact persisted before/after diff and obtain a fresh affirmative user message. Accepts only reviewId and proposalFingerprint; the server enforces ownership, exact fingerprint, idempotency, and revision freshness, but does not claim to verify conversational consent. Requires agents:read, games:read, and agents:write. Side effect: updates the Agent Profile and resolves the review as applied.",
+      description: "Apply only the exact persisted game-specific strategy proposal (strategyStyle for Influence, werewolfStrategyStyle for Werewolf) from an owned ready review. Immediately before calling, show the user the exact persisted before/after diff and obtain a fresh affirmative user message. Accepts only reviewId and proposalFingerprint; the server enforces ownership, exact fingerprint, idempotency, and revision freshness, but does not claim to verify conversational consent. Requires agents:read, games:read, and agents:write. Side effect: updates the Agent Profile and resolves the review as applied.",
       inputSchema: APPLY_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,

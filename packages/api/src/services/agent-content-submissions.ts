@@ -24,7 +24,7 @@ export async function prepareContentAssets(profile: Pick<Profile, "avatarUrl" | 
   return evidence;
 }
 /** Reuse the immutable image evidence belonging to the draft being edited. */
-export async function readSavedContentAssets(db: DrizzleDB, profile: Profile): Promise<ContentAssetEvidence> {
+export async function readSavedContentAssets(db: Pick<DrizzleDB, "select">, profile: Profile): Promise<ContentAssetEvidence> {
   const revisionId = profile.moderationRequired ? profile.latestContentRevisionId : profile.contentRevisionId;
   if (!revisionId) return {};
   const [revision] = await db.select().from(schema.agentContentRevisions).where(and(

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { WerewolfLearningFacts, werewolfLearningFacts } from "./werewolf-learning-facts";
 import { AgentAvatar } from "@/components/agent-avatar";
 import type { OwnerLearningReview, SavedAgent } from "@/lib/api";
 import { recordOwnerLearningManualEditorOpened } from "@/lib/api";
@@ -41,6 +42,7 @@ export function OwnerLearningReviewView({
     ?? review.evidence.games[0]
     ?? null;
   const activeFacts = canonicalFacts(activeEvidence?.canonicalFacts);
+  const wolfFacts = werewolfLearningFacts(activeEvidence?.canonicalFacts);
   const rows = activityRows(activeFacts);
   const running = review.resolution == null
     && (
@@ -75,7 +77,7 @@ export function OwnerLearningReviewView({
             />
           </div>
           <div>
-            <p className="olm-kicker">Owner review · {shortRevision(review.reviewedRevisionId)}</p>
+            <p className="olm-kicker">Owner review · {review.gameKind === "werewolf" ? "Werewolf" : shortRevision(review.reviewedRevisionId)}</p>
             <h1>{reviewHeading(review, agent?.name ?? "Agent")}</h1>
             <p>{review.selectedGameIds.length} selected game{review.selectedGameIds.length === 1 ? "" : "s"} · {trackLabel(review.analysisTrack)}</p>
           </div>
@@ -106,7 +108,7 @@ export function OwnerLearningReviewView({
             })}
           </div>
 
-          {activeEvidence ? (
+          {wolfFacts ? <WerewolfLearningFacts facts={wolfFacts} /> : activeEvidence ? (
             <section className="olm-fact-callout">
               <div className="olm-fact-number">
                 {placement(activeFacts.reviewedPlayer.placement)}
@@ -119,7 +121,7 @@ export function OwnerLearningReviewView({
             </section>
           ) : null}
 
-          <div className="olm-activity" aria-label="Accepted action timeline">
+          {!wolfFacts && <div className="olm-activity" aria-label="Accepted action timeline">
             {rows.length === 0 ? (
               <p className="olm-timeline-empty">No action rows were recorded for this game. The accepted result remains available above.</p>
             ) : rows.map((row) => (
@@ -131,7 +133,7 @@ export function OwnerLearningReviewView({
                 <span className="olm-result-tag">{row.result}</span>
               </div>
             ))}
-          </div>
+          </div>}
 
         </div>
 
@@ -168,7 +170,7 @@ export function OwnerLearningReviewView({
                     <h3>{recommendation.title}</h3>
                     <p>{recommendation.rationale}</p>
                     {recommendation.keepGuidance && <p className="olm-keep-guidance"><strong>Keep:</strong> {recommendation.keepGuidance}</p>}
-                    {isHealthCheck && recommendation.proof && (
+                    {recommendation.proof && (
                       <div className="olm-proof">
                         <div><span>Observed evidence</span><p>{recommendation.proof.observedEvidence}</p></div>
                         <div><span>Strategic interpretation</span><p>{recommendation.proof.strategicInterpretation}</p></div>
@@ -178,6 +180,13 @@ export function OwnerLearningReviewView({
                   </div>
                   <aside className="olm-rec-evidence">
                     <span>{recommendationSupportLabel(recommendation)}</span>
+                    {review.gameKind === "werewolf" && [...new Set(recommendation.evidenceRefs.map(ref => `${ref.gameId}:${ref.coordinate}`))].map(key => {
+                      const ref = recommendation.evidenceRefs.find(ref => `${ref.gameId}:${ref.coordinate}` === key)!;
+                      const facts = werewolfLearningFacts(review.evidence.games.find(game => game.gameId === ref.gameId)?.canonicalFacts);
+                      const coordinate = review.evidence.games.find(game => game.gameId === ref.gameId)?.candidateMoments.find(moment => moment.id === ref.coordinate)?.sourceCoordinate;
+                      const decision = facts?.werewolf.decisions.find(decision => coordinate === `werewolf:${decision.sequence}`);
+                      return facts ? <Link key={key} className="block mt-2 underline" href={decision ? `#decision-${facts.game.id}-${decision.sequence}` : `#facts-${facts.game.id}`} onClick={() => onSelectGame(ref.gameId)}>Open supporting evidence</Link> : null;
+                    })}
                   </aside>
                 </article>
               ))}
@@ -202,7 +211,7 @@ export function OwnerLearningReviewView({
                 <p>{proposalDock.description}</p>
               </div><span>{proposalDock.badge}</span></header>
               <div className="olm-diff" aria-label="Proposed strategy changes">
-                <div className="olm-minus">− {review.result.proposal.before}</div>
+                <div className="olm-minus">{review.gameKind === "werewolf" ? "Werewolf strategy" : "Influence strategy"} · Before<br />{review.result.proposal.before || "No override saved; using the archetype default."}</div>
                 <div className="olm-plus">+ {review.result.proposal.after}</div>
               </div>
               <footer>
@@ -213,7 +222,7 @@ export function OwnerLearningReviewView({
                       href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}`}
                       className="olm-button olm-button-secondary"
                     >View {agent?.name ?? "agent"}</Link>
-                    <Link href="/games/free" className="olm-button olm-button-primary">Go to Intake</Link>
+                    <Link href={review.gameKind === "werewolf" ? "/games" : "/games/free"} className="olm-button olm-button-primary">{review.gameKind === "werewolf" ? "Find a game" : "Go to Intake"}</Link>
                   </>
                 ) : (
                   <>
@@ -231,7 +240,7 @@ export function OwnerLearningReviewView({
                     <button
                       type="button"
                       className="olm-button olm-button-primary"
-                      disabled={pendingAction != null || !review.proposalFingerprint}
+                      disabled={pendingAction != null || !review.proposalFingerprint || review.applyDisposition !== "available"}
                       onClick={onApply}
                     >{pendingAction === "apply" ? "Applying…" : "Apply strategy update"}</button>
                   </>
@@ -292,7 +301,7 @@ function AnalysisRail({ review, mcpConnectionState }: {
         <strong>{mcpConnectionState === "connected" ? "Continue with your AI" : "Want a deeper conversation?"}</strong>
         <p>{mcpConnectionState === "connected"
           ? "Ask your connected assistant to list open learning reviews."
-          : "Influence MCP lets your own AI inspect these games, ask follow-ups, and update your agent with you."}</p>
+          : "The House MCP lets your own AI inspect these games, ask follow-ups, and update your agent with you."}</p>
       </div>
     </aside>
   );
@@ -309,11 +318,11 @@ function McpReviewCallout({ review, connectionState }: {
         <strong>{connectionState === "connected" ? "Interrogate this review with your own AI" : "Take this review deeper with your own AI"}</strong>
         <p>{connectionState === "connected"
           ? "Ask your assistant to list open learning reviews, then inspect this review by ID."
-          : "Connect Influence MCP, return here, and ask your assistant to list open learning reviews."}</p>
+          : "Connect The House MCP, return here, and ask your assistant to list open learning reviews."}</p>
       </div></div>
       {connectionState === "connected"
         ? <span className="olm-connected">MCP connected</span>
-        : <Link href={`/get-mcp?returnTo=${encodeURIComponent(returnTo)}`} className="olm-text-link">Connect Influence MCP →</Link>}
+        : <Link href={`/get-mcp?returnTo=${encodeURIComponent(returnTo)}`} className="olm-text-link">Connect The House MCP →</Link>}
     </aside>
   );
 }
@@ -351,7 +360,7 @@ function proposalDockPresentation(review: OwnerLearningReview): {
       title: "Strategy update applied",
       description: "The exact strategy change is preserved here as review history.",
       badge: "Applied",
-      footer: revision
+      footer: review.gameKind === "werewolf" ? "This Werewolf strategy is active. Future games use it." : revision
         ? `${shortRevision(revision)} is active. Future games use it.`
         : "The new strategy revision is active. Future games use it.",
     };

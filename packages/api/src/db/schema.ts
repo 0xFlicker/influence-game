@@ -2901,15 +2901,14 @@ export const agentLearningReviewEntitlements = pgTable("agent_learning_review_en
 
 export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence", {
   id: text("id").primaryKey(),
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   ownerUserId: text("owner_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   agentProfileId: text("agent_profile_id")
     .notNull()
     .references(() => agentProfiles.id, { onDelete: "restrict" }),
-  analyticalRevisionId: text("analytical_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  analyticalRevisionId: text("analytical_revision_id").notNull(), // Game-specific review identity; not a rating revision.
   gameId: text("game_id")
     .notNull()
     .references(() => games.id, { onDelete: "restrict" }),
@@ -2922,6 +2921,7 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
   sourceHash: text("source_hash").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("agent_learning_game_evidence_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_game_evidence_identity_unique").on(
     table.ownerUserId,
     table.agentProfileId,
@@ -2940,15 +2940,15 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
 
 export const agentLearningReviews = pgTable("agent_learning_reviews", {
   id: text("id").primaryKey(),
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   ownerUserId: text("owner_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   agentProfileId: text("agent_profile_id")
     .notNull()
     .references(() => agentProfiles.id, { onDelete: "restrict" }),
-  reviewedRevisionId: text("reviewed_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  reviewedRevisionId: text("reviewed_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  reviewedStrategyStyle: text("reviewed_strategy_style"),
   selectedGameFingerprint: text("selected_game_fingerprint").notNull(),
   startIdempotencyKey: text("start_idempotency_key").notNull(),
   eligibilityPolicyVersion: text("eligibility_policy_version").notNull(),
@@ -2984,6 +2984,7 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   completedAt: text("completed_at"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("agent_learning_reviews_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_reviews_owner_idempotency_unique").on(
     table.ownerUserId,
     table.startIdempotencyKey,
@@ -3419,12 +3420,8 @@ export const agentLearningReviewApplications = pgTable("agent_learning_review_ap
     .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
   proposalFingerprint: text("proposal_fingerprint").notNull(),
   sourceRecommendationIds: jsonb("source_recommendation_ids").notNull().$type<string[]>(),
-  priorRevisionId: text("prior_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
-  resultingRevisionId: text("resulting_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  priorRevisionId: text("prior_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  resultingRevisionId: text("resulting_revision_id").notNull(), // Game-specific review identity; not a rating revision.
   priorStrategyStyle: text("prior_strategy_style").notNull(),
   resultingStrategyStyle: text("resulting_strategy_style").notNull(),
   mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),

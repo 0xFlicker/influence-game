@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
 import Image from "next/image";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
     <GameBanner gameId={game.id} />
     <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.slug} · Day {results.day} · {results.players.length} players</p></>}
       actions={<><Link className="influence-button-primary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug)}>Watch from the beginning</Link><Link className="influence-button-secondary rounded-lg px-4 py-2 text-sm" href={werewolfMomentHref(slug,"omniscient",results.source.cursor)}>Watch the ending · Omniscient</Link></>} />
+    <OwnerLearningActivation enabled contextGameId={game.id} />
     <div className={styles.layout}>
       <nav className={styles.index} aria-label="Results sections"><a href="#cast">Cast</a><a href="#recap">Recap</a>{days.map(day => <a className={styles.dayLink} key={day} href={`#day-${day}`}>Night & day {day}</a>)}</nav>
       <div className="min-w-0 space-y-10">

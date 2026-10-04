@@ -205,6 +205,7 @@ async function settlePromises(): Promise<void> {
 function runningReview(): OwnerLearningReview {
   return {
     id: "review-1",
+    gameKind: "influence",
     agentProfileId: "agent-1",
     reviewedRevisionId: "revision-1",
     selectedGameIds: ["game-1"],

@@ -235,6 +235,7 @@ function generatedText(text: string) {
 }
 
 function followUpsForReview(review: OwnerLearningReviewDTO) {
+  if (review.gameKind === "werewolf") return review.result?.recommendations.flatMap(r => r.evidenceRefs.map(ref => ({ evidenceRef: ref, toolName: "read_game_results", arguments: { gameIdOrSlug: ref.gameId } }))) ?? [];
   const refs = review.result?.recommendations.flatMap((recommendation) => recommendation.evidenceRefs) ?? [];
   const unique = new Map<string, ReturnType<typeof followUpForEvidenceRef>>();
   for (const ref of refs) {

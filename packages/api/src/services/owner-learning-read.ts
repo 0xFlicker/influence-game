@@ -1,3 +1,4 @@
+import { currentReviewIdentity } from "./owner-learning-game.js";
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -24,7 +25,7 @@ export async function getOwnedOwnerLearningReview(
 ): Promise<OwnerLearningReviewDTO> {
   const row = (await db.select({
     review: schema.agentLearningReviews,
-    currentRevisionId: schema.agentProfiles.currentRevisionId,
+    profile: schema.agentProfiles,
   }).from(schema.agentLearningReviews)
     .innerJoin(schema.agentProfiles, and(
       eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id),
@@ -64,6 +65,7 @@ export async function getOwnedOwnerLearningReview(
   const application = applicationRows[0] ?? null;
   return {
     id: row.review.id,
+    gameKind: row.review.gameKind,
     agentProfileId: row.review.agentProfileId,
     reviewedRevisionId: row.review.reviewedRevisionId,
     selectedGameIds: evidenceRows.map((entry) => entry.gameId),
@@ -84,7 +86,9 @@ export async function getOwnedOwnerLearningReview(
       resolution: row.review.resolution,
       hasProposal: Boolean(row.review.result?.proposal && row.review.proposalFingerprint),
       hasApplication: application != null,
-      reviewedRevisionIsCurrent: row.currentRevisionId === row.review.reviewedRevisionId,
+      reviewedRevisionIsCurrent: currentReviewIdentity(row.review.gameKind, row.profile) === row.review.reviewedRevisionId
+        && (row.review.gameKind !== "werewolf" || (row.profile.werewolfStrategyStyle ?? "") === (row.review.reviewedStrategyStyle ?? ""))
+        && (row.review.gameKind !== "werewolf" || (!row.profile.moderationRequired && row.profile.latestContentRevisionId === row.profile.contentRevisionId)),
     }),
     evidence: {
       games: evidenceRows.map((entry) => ({
@@ -134,7 +138,9 @@ export async function getOwnedOwnerLearningReviewStatus(
     logicalCallCount: schema.agentLearningReviews.logicalCallCount,
     diveCount: schema.agentLearningReviews.diveCount,
     reviewedRevisionId: schema.agentLearningReviews.reviewedRevisionId,
-    currentRevisionId: schema.agentProfiles.currentRevisionId,
+    gameKind: schema.agentLearningReviews.gameKind,
+    reviewedStrategyStyle: schema.agentLearningReviews.reviewedStrategyStyle,
+    profile: schema.agentProfiles,
     applicationId: schema.agentLearningReviewApplications.reviewId,
     updatedAt: schema.agentLearningReviews.updatedAt,
     resolvedAt: schema.agentLearningReviews.resolvedAt,
@@ -172,7 +178,9 @@ export async function getOwnedOwnerLearningReviewStatus(
       resolution: row.resolution,
       hasProposal: Boolean(row.result?.proposal && row.proposalFingerprint),
       hasApplication: row.applicationId != null,
-      reviewedRevisionIsCurrent: row.currentRevisionId === row.reviewedRevisionId,
+      reviewedRevisionIsCurrent: currentReviewIdentity(row.gameKind, row.profile) === row.reviewedRevisionId
+        && (row.gameKind !== "werewolf" || (row.profile.werewolfStrategyStyle ?? "") === (row.reviewedStrategyStyle ?? ""))
+        && (row.gameKind !== "werewolf" || (!row.profile.moderationRequired && row.profile.latestContentRevisionId === row.profile.contentRevisionId)),
     }),
     updatedAt: row.updatedAt,
     resolvedAt: row.resolvedAt,

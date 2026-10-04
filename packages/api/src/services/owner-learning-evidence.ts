@@ -1,3 +1,4 @@
+import { projectWerewolfReviewEvidence, type WerewolfReviewFacts } from "./owner-learning-werewolf.js";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { PostgamePlayerGameSummary } from "@influence/engine";
@@ -73,7 +74,9 @@ export function resolveOwnerLearningMoment(
   return candidate;
 }
 
-export interface OwnerLearningCanonicalGameFacts {
+export type OwnerLearningCanonicalGameFacts = InfluenceReviewFacts | WerewolfReviewFacts;
+
+export interface InfluenceReviewFacts {
   game: {
     id: string;
     slug: string;
@@ -223,6 +226,7 @@ export async function projectOwnerLearningEvidence(
     cursorSecret?: string;
   },
 ): Promise<OwnerLearningEvidenceProjection> {
+  if (selection.gameKind === "werewolf") return projectWerewolfReviewEvidence(db, selection);
   const projectedGames = await Promise.all(selection.games.map(async (
     selectedGame,
   ): Promise<OwnerLearningProjectedGameEvidence> => {
@@ -314,7 +318,7 @@ export async function projectOwnerLearningEvidence(
   }));
 
   const analysisTrack = classifyOwnerLearningEvidence(projectedGames.map((game) => ({
-    eliminatedRound: game.canonicalFacts.reviewedPlayer.eliminatedRound,
+    eliminatedRound: "werewolf" in game.canonicalFacts ? null : game.canonicalFacts.reviewedPlayer.eliminatedRound,
     narrativeCoverage: game.narrativeCoverage,
   })));
   const reviewInput = buildBudgetedOwnerLearningInput({
@@ -492,6 +496,7 @@ async function materializeOwnerLearningGameEvidence(
   if (!analyticalRevisionId) throw new Error("Owner learning selection is missing the projected game");
   await db.insert(schema.agentLearningGameEvidence).values({
     id: randomUUID(),
+    gameKind: input.selection.gameKind,
     ownerUserId: input.selection.ownerUserId,
     agentProfileId: input.selection.agentProfileId,
     analyticalRevisionId,

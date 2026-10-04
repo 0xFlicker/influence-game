@@ -224,7 +224,7 @@ describe("owner learning admin ledger", () => {
       dateTo: "2026-08-04T23:59:59.999Z",
       track: "evidence_rich",
       status: "ready",
-      model: "openai:gpt-5.6-luna",
+      model: "openai:gpt-6-luna",
       resolution: "applied",
       application: "accepted",
     });

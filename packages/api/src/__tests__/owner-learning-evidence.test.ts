@@ -242,6 +242,7 @@ describe("owner learning evidence", () => {
     const db = await setupTestDB();
     const fixture = await insertProjectionFixture(db);
     const selection: OwnerLearningValidatedSelection = {
+      gameKind: "influence",
       ownerUserId: fixture.ownerUserId,
       agentProfileId: fixture.agentProfileId,
       agentProfileName: EDGE_SMOKE_DUSK_PLAYERS.lilith.name,
@@ -267,6 +268,7 @@ describe("owner learning evidence", () => {
     expect(projection.games).toHaveLength(1);
     const game = projection.games[0]!;
     expect(game.canonicalFacts.reviewedPlayer.id).toBe(EDGE_SMOKE_DUSK_PLAYERS.lilith.id);
+    if ("werewolf" in game.canonicalFacts) throw new Error("Expected Influence evidence");
     expect(game.canonicalFacts.actionsByAgent.votesCastByRound.length).toBeGreaterThan(0);
     expect(game.narrativeGroups.length).toBeGreaterThan(50);
     const narrative = JSON.stringify(game.narrativeGroups);

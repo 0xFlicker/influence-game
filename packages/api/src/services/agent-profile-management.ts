@@ -1,3 +1,4 @@
+import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
@@ -690,6 +691,11 @@ export async function updateOwnedAgentProfile(
           agentProfileId: agentId,
           ...(sourceReviewId ? { sourceReviewId } : {}),
         });
+        if (sourceReviewId && learningReview && !learningReview.resolvedAt && (
+          currentReviewIdentity(learningReview.gameKind, locked.existing) !== learningReview.reviewedRevisionId
+          || (learningReview.gameKind === "werewolf" && (locked.existing.werewolfStrategyStyle ?? "") !== (learningReview.reviewedStrategyStyle ?? ""))
+          || (learningReview.gameKind === "werewolf" && (locked.existing.moderationRequired || locked.existing.latestContentRevisionId !== locked.existing.contentRevisionId))
+        )) throw new OwnerLearningResolutionError("review_state_conflict", 409);
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
           context: { ...context, contentAssets },
           agentId,
@@ -718,8 +724,11 @@ export async function updateOwnedAgentProfile(
         const resolution = await resolveOwnerLearningReviewForProfileMutation(tx, {
           review: learningReview,
           ...(sourceReviewId ? { sourceReviewId } : {}),
-          analyticalRevisionChanged: mutation.profileRevision.outcome === "created",
-          resultingStrategyStyle: mutation.profile.strategyStyle,
+          analyticalRevisionChanged: learningReview?.gameKind === "werewolf"
+            ? currentReviewIdentity("werewolf", locked.existing) !== currentReviewIdentity("werewolf", mutation.profile)
+              || locked.existing.werewolfStrategyStyle !== mutation.profile.werewolfStrategyStyle
+            : mutation.profileRevision.outcome === "created",
+          resultingStrategyStyle: mutation.profile[reviewStrategyField(learningReview?.gameKind ?? "influence")],
           nowIso: mutation.profile.updatedAt,
         });
         return {
@@ -1232,7 +1241,7 @@ function mapOwnerLearningResolutionError(
     "source_review_conflict",
     error.code === "review_profile_mismatch"
       ? "That learning review belongs to a different agent."
-      : "That learning review has already been resolved.",
+      : "This review cannot accept that edit. Reopen it to check the current strategy and review status.",
     409,
   );
 }

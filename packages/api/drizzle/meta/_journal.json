@@ -750,6 +750,13 @@
       "when": 1790809200001,
       "tag": "0106_werewolf_lobbies",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0107_house_owner_learning",
+      "breakpoints": true
     }
   ]
 }

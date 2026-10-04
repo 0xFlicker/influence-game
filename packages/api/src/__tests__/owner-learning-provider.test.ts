@@ -97,7 +97,7 @@ describe("owner learning provider", () => {
     expect(diagnostics).toEqual([{
       reviewId: "review-1",
       callOrdinal: 2,
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       requestedTier: "flex",
       status: 400,
     }]);
@@ -157,7 +157,7 @@ describe("owner learning provider", () => {
       JSON.stringify({
         reviewId: "review-default-log",
         callOrdinal: 3,
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         requestedTier: "flex",
         status: 400,
       }),
@@ -209,7 +209,7 @@ describe("owner learning provider", () => {
     expect(diagnostics).toEqual([{
       reviewId: "review-safe",
       callOrdinal: 4,
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       requestedTier: "flex",
       status: 400,
     }]);
@@ -446,7 +446,7 @@ describe("owner learning provider", () => {
           id: "resp-test",
           object: "response",
           created_at: 1,
-          model: "gpt-5.6-luna",
+          model: "gpt-6-luna",
           status: "completed",
           service_tier: "flex",
           output: [{
@@ -488,7 +488,7 @@ describe("owner learning provider", () => {
     });
 
     expect(requestBody).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       store: false,
       service_tier: "flex",
       max_output_tokens: 8_000,
@@ -516,7 +516,7 @@ describe("owner learning provider", () => {
         id: "resp-incomplete",
         object: "response",
         created_at: 1,
-        model: "gpt-5.6-luna",
+        model: "gpt-6-luna",
         status: "incomplete",
         service_tier: "flex",
         incomplete_details: { reason: "max_output_tokens" },
@@ -582,7 +582,7 @@ describe("owner learning provider", () => {
           id: "resp-boundary",
           object: "response",
           created_at: 1,
-          model: "gpt-5.6-luna",
+          model: "gpt-6-luna",
           status: "completed",
           service_tier: "flex",
           output: [{

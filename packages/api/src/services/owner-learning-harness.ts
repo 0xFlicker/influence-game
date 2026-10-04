@@ -316,6 +316,7 @@ export async function runOwnerLearningHarness(
       reviewId: input.reviewId,
       analysisTrack: input.analysisTrack,
       currentStrategyStyle: input.currentStrategyStyle ?? "",
+      strategyField: input.evidence.games.some(game => "werewolf" in game.canonicalFacts) ? "werewolfStrategyStyle" : "strategyStyle",
       allowedEvidenceRefs,
     });
     return {
@@ -345,13 +346,14 @@ export function validateOwnerLearningHarnessResult(
     reviewId: string;
     analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
     currentStrategyStyle: string;
+    strategyField?: "strategyStyle" | "werewolfStrategyStyle";
     allowedEvidenceRefs: readonly OwnerLearningEvidenceRef[];
   },
 ): OwnerLearningReviewResult {
   let parsed: OwnerLearningReviewResult;
   try {
     parsed = parseOwnerLearningReviewResult(
-      hydrateServerAuthoredProposal(value, input.currentStrategyStyle),
+      hydrateServerAuthoredProposal(value, input.currentStrategyStyle, input.strategyField ?? "strategyStyle"),
     );
   } catch (error) {
     if (!(error instanceof OwnerLearningReviewResultValidationError)) throw error;
@@ -428,7 +430,7 @@ export function validateOwnerLearningHarnessResult(
   };
 }
 
-function hydrateServerAuthoredProposal(value: unknown, currentStrategyStyle: string): unknown {
+function hydrateServerAuthoredProposal(value: unknown, currentStrategyStyle: string, field: "strategyStyle" | "werewolfStrategyStyle"): unknown {
   const hydrated = structuredClone(value);
   const result = objectValue(hydrated, "review result");
   if (result.proposal == null) return hydrated;
@@ -441,7 +443,7 @@ function hydrateServerAuthoredProposal(value: unknown, currentStrategyStyle: str
     );
   }
   result.proposal = {
-    field: "strategyStyle",
+    field,
     before: currentStrategyStyle,
     after: proposal.after,
   };
@@ -551,6 +553,7 @@ function canonicalFactsForMoment(
   game: OwnerLearningProjectedGameEvidence,
   moment: OwnerLearningCandidateMoment,
 ): Record<string, unknown> {
+  if ("werewolf" in game.canonicalFacts) return { ...game.canonicalFacts };
   if (moment.round == null) return { reviewedPlayer: game.canonicalFacts.reviewedPlayer };
   const round = moment.round;
   return {

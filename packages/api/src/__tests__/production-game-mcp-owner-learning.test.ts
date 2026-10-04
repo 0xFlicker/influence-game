@@ -1,3 +1,4 @@
+import { playedWerewolfReview } from "./owner-learning-werewolf-test-utils.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -34,6 +35,38 @@ import { setupTestDB } from "./test-utils.js";
 const NOW = new Date("2026-08-04T03:00:00.000Z");
 
 describe("production MCP owner-learning parity", () => {
+  test("Werewolf uses the same MCP lifecycle with owner-only evidence and a game-specific proposal", async () => {
+    const db = await setupTestDB();
+    const f = await playedWerewolfReview(db);
+    const auth = ownerAuth(f.ownerUserId);
+    const server = createProductionGameMcpServer(db, { generationEnabled: true });
+    const args = { agentProfileId: f.villager.agentProfileId!, gameIds: [f.game.id] };
+    const inputs = await callTool(server, auth, "list_learning_review_inputs", {});
+    expectMatchesJsonSchema(inputs, LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA);
+    const preflight = await callTool(server, auth, "preflight_learning_review", args);
+    expectMatchesJsonSchema(preflight, PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(preflight).toMatchObject({ preflight: { selection: { gameKind: "werewolf" } } });
+    expect(JSON.stringify(preflight)).not.toContain("PRIVATE_PACK");
+    const started = await callTool(server, auth, "start_or_resume_learning_review", { ...args, idempotencyKey: "wolf-mcp" });
+    expectMatchesJsonSchema(started, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    const rows = await db.select().from(schema.agentLearningReviews);
+    const reviewId = rows[0]!.id;
+    const resumed = await callTool(server, auth, "start_or_resume_learning_review", { ...args, idempotencyKey: "wolf-mcp" });
+    expect(resumed).toMatchObject({ status: "resumed" });
+    const proposal = { field: "werewolfStrategyStyle" as const, before: "", after: "Compare a public claim with the next ballot before committing your vote." };
+    const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal });
+    await db.update(schema.agentLearningReviews).set({ analysisStatus: "ready", stage: "complete", proposalFingerprint, result: { diagnosis: "Synthetic MCP review", analysisTrack: "evidence_rich", recommendations: [{ id: "rec-wolf-mcp", title: "Compare evidence", disposition: "change", confidence: "medium", rationale: "Workflow test", evidenceRefs: [] }], proposal } }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const read = await callTool(server, auth, "read_learning_review", { reviewId });
+    expectMatchesJsonSchema(read, READ_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(read).toMatchObject({ review: { gameKind: "werewolf", result: { proposal: { field: "werewolfStrategyStyle" } } } });
+    expect((await rawToolCall(server, ownerAuth("stranger"), "read_learning_review", { reviewId })).error).toBeDefined();
+    const applied = await callTool(server, auth, "apply_learning_review", { reviewId, proposalFingerprint });
+    expectMatchesJsonSchema(applied, APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    const profile = (await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, args.agentProfileId)))[0]!;
+    expect(profile.werewolfStrategyStyle).toBe(proposal.after);
+    expect(profile.strategyStyle).toBe("INFLUENCE_ONLY");
+  });
+
   test("keeps disabled admission deterministic, then resumes one owner-wide review across surfaces", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);

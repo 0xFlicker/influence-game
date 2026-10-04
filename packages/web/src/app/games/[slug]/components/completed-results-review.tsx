@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
+import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
 import { ResultsHeader } from "@/components/games/results-header";
 import { GameBanner } from "@/components/game-banner";
 import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
@@ -152,6 +153,7 @@ export function CompletedResultsReview({
           </Link>
       </>} />
 
+      <OwnerLearningActivation enabled contextGameId={gameId} />
       {kernelDiagnostic ? (
         <div
           role="status"

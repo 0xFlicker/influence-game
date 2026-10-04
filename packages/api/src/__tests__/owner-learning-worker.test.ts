@@ -548,7 +548,7 @@ describe("owner learning worker durability", () => {
       evidence: Record<string, unknown>;
     }).evidence;
     expect(stagedRequest).toMatchObject({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       service_tier: "flex",
       store: false,
       max_output_tokens: 8_000,

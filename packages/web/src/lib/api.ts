@@ -2182,6 +2182,7 @@ export interface OwnerLearningEligibleInputs {
   eligibilityPolicyVersion: string;
   credit: OwnerLearningCredit;
   profiles: Array<{
+    gameKind: "influence" | "werewolf";
     agentProfileId: string;
     name: string;
     currentRevisionId: string;
@@ -2245,6 +2246,7 @@ export interface OwnerLearningEvidenceRef {
 }
 
 export interface OwnerLearningReview {
+  gameKind: "influence" | "werewolf";
   id: string;
   agentProfileId: string;
   reviewedRevisionId: string;
@@ -2259,7 +2261,7 @@ export interface OwnerLearningReview {
     analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
     strategyHealthClassification?: "guidance_gap" | "execution_gap" | "no_clear_strategy_defect";
     recommendations: OwnerLearningRecommendation[];
-    proposal?: { field: "strategyStyle"; before: string; after: string };
+    proposal?: { field: "strategyStyle" | "werewolfStrategyStyle"; before: string; after: string };
     noChange?: { rationale: string };
   };
   proposalFingerprint: string | null;
@@ -2313,6 +2315,7 @@ export type OwnerLearningReviewStatus = Pick<
 export interface OwnerLearningPreflight {
   status: "awaiting_evidence" | "ready" | "generation_unavailable";
   selection: {
+    gameKind: "influence" | "werewolf";
     agentProfileId: string;
     agentProfileName: string;
     reviewedRevisionId: string;

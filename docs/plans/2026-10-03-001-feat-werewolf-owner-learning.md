@@ -1,7 +1,7 @@
 ---
 title: House postgame review and Werewolf owner learning
 type: feat
-status: proposed
+status: implementing
 date: 2026-10-03
 roadmap_slice: W3
 source_commit: a1a3eda0
@@ -13,7 +13,7 @@ source_commit: a1a3eda0
 
 An owner can select completed Werewolf games, inspect a factual account of their agent's decisions, request a bounded strategic review, and deliberately apply a proposal to `werewolfStrategyStyle` through the existing House review experience. Influence continues through the same workflow with its own evidence and evaluation policy. A third game should require a game module, not a second review application.
 
-Build factual correctness and the owner workflow first. Calibrate coaching with a small, deliberately varied set of games managed by the operator. Valid evidence references and schema-valid output prove neither good coaching nor improved win rate. Operator approval of the quality packet is required before adopting Werewolf coaching as the release default. This planning request does not authorize paid review calls or new paid simulations.
+Build factual correctness and the owner workflow first. Calibrate coaching with a small, deliberately varied set of games managed by the operator. Valid evidence references and schema-valid output prove neither good coaching nor improved win rate. Operator approval of the quality packet is required before adopting Werewolf coaching as the release default. Implementation approval does not authorize paid calibration calls or new paid simulations.
 
 Source roadmap: [House integration pillars, W3](../ideation/2026-09-30-house-admin-and-production.md#w3--review-the-performance-then-improve-the-right-strategy). Dependencies: [W1 results](2026-10-02-004-feat-werewolf-house-results.md), [W2 inspection](2026-10-02-005-feat-house-mcp-game-inspection.md), and [owner-learning lifecycle](../solutions/architecture-patterns/owner-learning-loop.md).
 
@@ -34,7 +34,7 @@ Public completed-game recap remains W1. Editorial House Cuts remain W4. W3 is pr
 | Dashboard review routes and `game-mcp/owner-learning.ts` | Extend existing owner surfaces and tools, not Werewolf-only alternatives. |
 | `postgame-highlights.ts` | Independent consumer of canonical postgame analysis; review does not consume Cuts. No W4 dependency. |
 
-Current limits are four logical model calls, three moment investigations and three recommendations. Keep these unless measured calibration identifies a concrete need. The current review model is `gpt-5.6-luna`; do not confuse this with gameplay's `gpt-6-luna`. Confirm the intended review model with the operator before paid calibration and record exact model/policy in every run. Model benchmarking is not a W3 prerequisite.
+Current limits are four logical model calls, three moment investigations and three recommendations. Keep these unless measured calibration identifies a concrete need. Approved 2026-10-03: use `gpt-6-luna` for reviews. The older model in the implementation was a mistake. Record exact model/policy in every run. Model benchmarking is not a W3 prerequisite.
 
 ## Product decisions
 
@@ -44,15 +44,15 @@ A death is not a Werewolf performance score. Evaluate the actor's faction object
 
 Keep Influence's existing early-exit classification in its module. Werewolf never selects an analysis track because of survival duration alone, and never inherits the health-check validator that rejects insufficient-evidence no-change rationales. Werewolf may honestly conclude that available evidence supports no recommendation. Model confidence is a qualitative assessment, not a calibrated probability.
 
-### Eligibility and funding — proposed policy for operator review
+### Eligibility and funding — approved with plan on 2026-10-03
 
 - Factual preview is model-free and does not consume credit.
 - Werewolf review selection admits one-to-three distinct completed, nonhidden Public or Unlisted games in which the owner has a frozen, profile-backed participant. House-fill characters, stopped/incomplete runs and unverifiable captures are ineligible. A known Unlisted game remains absent public discovery.
 - All selected games belong to one profile, one game kind and the current game-specific strategy family. No mixed Influence/Werewolf review. Show previously analyzed games explicitly.
 - Permit Werewolf custom games explicitly; do not relabel them Daily Free or create competition/rating receipts.
-- Proposed ordinary-owner funding: a qualifying Werewolf completion can replenish the existing owner-wide credit under the same one-credit cap and rolling purchase policy. Spending covers either game. Preserve completion watermarks and transactional admission; do not introduce per-game credits or silently grant them during factual reads.
+- Approved ordinary-owner funding: a qualifying Werewolf completion can replenish the existing owner-wide credit under the same one-credit cap and rolling purchase policy. Spending covers either game. Preserve completion watermarks and transactional admission; do not introduce per-game credits or silently grant them during factual reads.
 - Initial paid calibration uses the existing persisted sysop entitlement, with the operator owning the reviewed test profiles. Operator/producer roles do not grant access to other owners' private learning evidence.
-- The funding extension is a proposed product decision, not approval inferred from this plan. Confirm it before changing entitlement behavior. Factual integration and deterministic workflow tests can proceed independently.
+- The operator approved this plan and implementation on 2026-10-03, including the shared-credit extension. Paid calibration still requires a separately approved budget and game selection.
 
 ### Owner experience
 
@@ -121,7 +121,7 @@ Extend persisted review/evidence/application contracts with explicit game kind, 
 | --- | --- | --- |
 | WR-01: extract the boundary | Existing Influence workflow uses its review module; common contracts gain explicit kind/target identity. | Influence selection, evidence, recovery and apply regressions pass; no changed coaching or credits. |
 | WR-02: factual Werewolf review | Owned selection, frozen strategy identity, canonical facts, actor-time context, source links and evidence preview. | Synthetic role/outcome fixtures and existing real captures render without provider calls. Missing evidence is explicit. |
-| WR-03: shared analysis and deliberate apply | Werewolf instructions and context into the existing worker; shared web/MCP lifecycle, receipts, moderation-aware apply and manual update. | Deterministic model stubs exercise complete review-to-apply, retries, no-change and concurrency. Entitlement change waits for the explicit policy decision. |
+| WR-03: shared analysis and deliberate apply | Werewolf instructions and context into the existing worker; shared web/MCP lifecycle, receipts, moderation-aware apply and manual update. | Deterministic model stubs exercise complete review-to-apply, retries, no-change and concurrency. Shared-credit extension approved with this plan. |
 | WR-04: operator calibration | Approved paid runs on a frozen varied packet, reviewed findings and concrete prompt/policy corrections. | Operator approves quality/cost evidence or records remaining deficiencies. No claim of improved win rate. |
 | WR-05: release proof and learning | Full checks, browser/MCP journey, implementation record and reusable new-game integration notes. | Document exact local/provider/browser/deployment proof and remaining release decisions. |
 
@@ -160,6 +160,16 @@ Required implementation checks: `bun run test`, `bun run test:postgres`, `bun ru
 
 W3 is complete when both games use one owner review workflow, Werewolf reviews are grounded in actor-time facts, a deliberate proposal updates only Werewolf strategy, web/MCP behavior agrees, regression checks pass, and the operator has reviewed calibration evidence. Record funding/model approval and any unavailable real-game cases explicitly; infrastructure completion is not coaching approval or deployment proof.
 
-Before implementation changes entitlement, confirm the proposed shared-credit admission for Werewolf custom games. Before paid calibration, confirm model and budget. All other scope above is implementable without inventing a ranked Werewolf system or waiting for W4.
+Shared-credit admission and `gpt-6-luna` are approved. Before paid calibration, confirm the budget and game selection. All other scope above is implementable without inventing a ranked Werewolf system or waiting for W4.
 
 Export implementation lessons to `docs/solutions/architecture-patterns/`, update the owner-learning lifecycle documentation and this roadmap, and extend the new-game checklist with evidence/knowledge, strategy identity, entitlement, moderation and calibration requirements. Do not write personal memory files as part of this work.
+
+## Implementation record — 2026-10-03
+
+WR-01 through WR-03 are implemented in the Werewolf worktree: shared eligibility/credits and lifecycle, explicit strategy target/identity, actor-time Werewolf evidence, bounded provider context, dashboard/results entry, manual editor, MCP and moderated apply. All review request construction and fingerprints use `gpt-6-luna`. WR-04 remains pending operator budget, packet selection and qualitative approval. WR-05 local validation is recorded in [implementation proof](../reviews/2026-10-03-w3-owner-learning-implementation.md); it does not establish deployed or paid-model acceptance.
+
+Migration `0107_house_owner_learning` follows this branch's 0106. It preserves historical Influence identities and receipts while removing review-only foreign keys to Influence rating revisions, and adds game discriminators plus the reviewed raw strategy override. No gameplay or rating table is generalized. The local shared test DB had unrelated newer migration history, so validation used disposable databases instead of repairing or resetting operator data.
+
+The model-free evidence UI deliberately collapses detailed decisions. Observation, captured thinking, prior conversation and a labeled Omniscient source link are available per decision. Public later outcomes are separate context; other characters' private thinking and night choices are excluded even when their owner is the same.
+
+Exported integration guidance: [House owner learning across game kinds](../solutions/architecture-patterns/house-owner-learning-across-game-kinds.md). No paid calibration, real MCP-host mutation, deployment, commit or push is part of this implementation proof.

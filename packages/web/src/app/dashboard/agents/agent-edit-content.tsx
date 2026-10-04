@@ -82,11 +82,13 @@ export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentPr
     || review.agentProfileId !== agentId
     || review.resolution
     || !proposal
-    || normalized(agent?.strategyStyle) !== normalized(proposal.before)
+    || review.applyDisposition !== "available"
+    || normalized(agent?.[proposal.field]) !== normalized(proposal.before)
   ));
   const strategyComparison: StrategyComparison | undefined = agent
     ? proposal && !reviewInvalid
       ? {
+          field: proposal.field,
           baseline: proposal.before,
           initialWorking: proposal.after,
           baselineLabel: "Review baseline",
