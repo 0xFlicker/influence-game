@@ -1,292 +1,43 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { join } from "node:path";
-import type { HouseHighlightsResponse } from "../lib/api";
-import { sceneForCardImage } from "../app/games/[slug]/highlights/card-image/card-image-data";
-import {
-  CardImageRenderOverloadedError,
-  createCardImageRenderQueue,
-} from "../app/games/[slug]/highlights/card-image/card-image-render-queue";
-import {
-  avatarSrcForImage,
-  generatedBackgroundForImage,
-  GET,
-} from "../app/games/[slug]/highlights/card-image/[sceneId]/route";
-import {
-  houseHighlightVisualBriefFixture,
-  houseHighlightVisualCardFixture,
-} from "./house-highlights-fixtures";
-
-const originalApiBackendUrl = process.env.API_BACKEND_URL;
+import { afterEach, expect, test } from "bun:test";
+import { GET } from "../app/games/[slug]/highlights/card-image/[sceneId]/route";
+import { createCardImageRenderQueue, CardImageRenderOverloadedError } from "../app/games/[slug]/highlights/card-image/card-image-render-queue";
+import { houseCutsFixture } from "./house-cuts-fixture";
 const originalFetch = globalThis.fetch;
-
-afterEach(() => {
-  if (originalApiBackendUrl === undefined) {
-    delete process.env.API_BACKEND_URL;
-  } else {
-    process.env.API_BACKEND_URL = originalApiBackendUrl;
+afterEach(() => { globalThis.fetch = originalFetch; });
+const request = (id = "v1-1", audience = "omniscient") => GET(new Request(`http://example.test/card.png?audience=${audience}`), { params: Promise.resolve({ slug: "edge-smoke-dusk", sceneId: id }) });
+test("renders a PNG from the published audience without auth or public caching", async () => {
+  let requested = "", headers: HeadersInit | undefined;
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    requested = String(input); headers = init?.headers; return Response.json(houseCutsFixture("omniscient"));
+  }) as unknown as typeof fetch;
+  const response = await request();
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toContain("image/png");
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(requested).toContain("/cuts?audience=omniscient");
+  expect(JSON.stringify(headers)).not.toContain("Authorization");
+  expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+});
+test("unknown or hidden cards return 404 and upstream failures remain retryable", async () => {
+  globalThis.fetch = (async () => Response.json(houseCutsFixture())) as unknown as typeof fetch;
+  expect((await request("missing")).status).toBe(404);
+  for (const status of [404, 503]) {
+    globalThis.fetch = (async () => new Response(null, { status })) as unknown as typeof fetch;
+    const response = await request();
+    expect(response.status).toBe(status);
+    expect(response.headers.get("cache-control")).toContain("no-store");
   }
-  globalThis.fetch = originalFetch;
 });
-
-describe("house highlights card image", () => {
-  it("coalesces duplicate card renders and bounds distinct queued work", async () => {
-    const queue = createCardImageRenderQueue<string>({ maxQueued: 1 });
-    let releaseFirst!: () => void;
-    const firstGate = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    let firstRuns = 0;
-    const first = queue.run("same-card", async () => {
-      firstRuns += 1;
-      await firstGate;
-      return "first";
-    });
-    const duplicate = queue.run("same-card", async () => "duplicate");
-    const queued = queue.run("second-card", async () => "second");
-    const overflow = queue.run("third-card", async () => "third");
-
-    await expect(overflow).rejects.toBeInstanceOf(CardImageRenderOverloadedError);
-    releaseFirst();
-
-    expect(await Promise.all([first, duplicate, queued])).toEqual(["first", "first", "second"]);
-    expect(firstRuns).toBe(1);
-  });
-
-  it("recovers the render lane after a failed job", async () => {
-    const queue = createCardImageRenderQueue<string>();
-
-    await expect(queue.run("failed-card", async () => {
-      throw new Error("render failed");
-    })).rejects.toThrow("render failed");
-
-    expect(await queue.run("next-card", async () => "rendered")).toBe("rendered");
-    expect(await queue.run("failed-card", async () => "retried")).toBe("retried");
-  });
-
-  it("finds scenes by encoded share image ids", () => {
-    const scene = sceneForCardImage(mainCutFixture(), "alliance-cut%3A1%3Aember");
-
-    expect(scene?.id).toBe("alliance-cut:1:ember");
-    expect(scene?.visualCard.factLines.map((fact) => fact.text)).toContain(
-      "Nova voted against Ember in Round 1.",
-    );
-  });
-
-  it("returns null for missing scenes", () => {
-    expect(sceneForCardImage(mainCutFixture(), "missing-scene")).toBeNull();
-  });
-
-  it("resolves relative avatar URLs against the server API origin for share images", () => {
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-
-    expect(avatarSrcForImage("/api/uploads/local?key=avatars/ember.png")).toBe(
-      "http://127.0.0.1:3333/api/uploads/local?key=avatars/ember.png",
-    );
-    expect(avatarSrcForImage("https://cdn.example.test/avatars/ember.png")).toBe(
-      "https://cdn.example.test/avatars/ember.png",
-    );
-    expect(avatarSrcForImage("/avatars/personas/strategic.png", "http://localhost:3001/card.png")).toBe(
-      "http://localhost:3001/avatars/personas/strategic.png",
-    );
-  });
-
-  it("resolves generated backgrounds against the share image origin", () => {
-    expect(generatedBackgroundForImage("betrayal_vote", "http://localhost:3001/card.png")).toBe(
-      "http://localhost:3001/house-highlights/generated/betrayal-vote.jpg",
-    );
-    expect(generatedBackgroundForImage("mystery_visual", "http://localhost:3001/card.png")).toBeNull();
-  });
-
-  it("renders a png response for a valid scene without auth headers", async () => {
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    let requestedHeaders: HeadersInit | undefined;
-    globalThis.fetch = (async (
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if(url.includes("/api/game-entries/")) return Response.json({id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"});
-      if (url.includes("/postgame/highlights")) {
-        requestedHeaders = init?.headers;
-        return new Response(JSON.stringify(mainCutFixture()), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response(Bun.file(join(import.meta.dir, "../../public/house-highlights/generated/betrayal-vote.jpg")), {
-        status: 200,
-        headers: { "Content-Type": "image/jpeg" },
-      });
-    }) as unknown as typeof fetch;
-
-    const response = await GET(new Request("http://example.test/card.png"), {
-      params: Promise.resolve({
-        slug: "edge-smoke-dusk",
-        sceneId: "alliance-cut%3A1%3Aember",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("image/png");
-    expect(response.headers.get("cache-control")).toContain("s-maxage=86400");
-    expect(JSON.stringify(requestedHeaders)).not.toContain("Authorization");
-  });
-
-  it("renders a generic png for missing scenes without exposing diagnostics", async () => {
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) =>
-      new Response(JSON.stringify(String(url).includes("/api/game-entries/") ? {id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"} : mainCutFixture()), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })) as unknown as typeof fetch;
-
-    const response = await GET(new Request("http://example.test/card.png"), {
-      params: Promise.resolve({
-        slug: "edge-smoke-dusk",
-        sceneId: "missing-scene",
-      }),
-    });
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("content-type")).toContain("image/png");
-  });
-
-  it("does not cache transient card image failures", async () => {
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    globalThis.fetch = (async () =>
-      new Response("Unavailable", { status: 503 })) as unknown as typeof fetch;
-
-    const response = await GET(new Request("http://example.test/card.png"), {
-      params: Promise.resolve({
-        slug: "edge-smoke-dusk",
-        sceneId: "alliance-cut%3A1%3Aember",
-      }),
-    });
-
-    expect(response.status).toBe(503);
-    expect(response.headers.get("content-type")).toContain("image/png");
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  });
-
-  it("returns a retryable static png when the render queue is saturated", async () => {
-    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
-    let releaseFirst!: () => void;
-    let markFirstStarted!: () => void;
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
-    let apiRequests = 0;
-    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
-      const url = input instanceof Request ? input.url : input.toString();
-      if(url.includes("/api/game-entries/")) return Response.json({id:"game-id",slug:"edge-smoke-dusk",gameKind:"influence"});
-      if (url.includes("/postgame/highlights")) {
-        apiRequests += 1;
-        if (apiRequests === 1) {
-          markFirstStarted();
-          await firstGate;
-        }
-        return Response.json(mainCutFixture());
-      }
-      return new Response(Bun.file(join(import.meta.dir, "../../public/house-highlights/generated/betrayal-vote.jpg")), {
-        status: 200,
-        headers: { "Content-Type": "image/jpeg" },
-      });
-    }) as unknown as typeof fetch;
-
-    const request = (sceneId: string) => GET(new Request(`http://example.test/${sceneId}.png`), {
-      params: Promise.resolve({ slug: "edge-smoke-dusk", sceneId }),
-    });
-    const active = request("active-scene");
-    await firstStarted;
-    const queued = Array.from({ length: 10 }, (_, index) => request(`queued-scene-${index + 1}`));
-    for (let index = 0; index < queued.length; index += 1) await Promise.resolve();
-    const overloaded = await request("overloaded-scene");
-
-    expect(overloaded.status).toBe(503);
-    expect(overloaded.headers.get("content-type")).toBe("image/png");
-    expect(overloaded.headers.get("cache-control")).toBe("no-store");
-    expect(overloaded.headers.get("retry-after")).toBe("5");
-    expect((await overloaded.arrayBuffer()).byteLength).toBeGreaterThan(0);
-
-    releaseFirst();
-    await Promise.all([active, ...queued]);
-  });
+test("coalesces same renders, bounds queued work, and recovers after failure", async () => {
+  const queue = createCardImageRenderQueue<string>({ maxQueued: 1 });
+  let release!: () => void;
+  const gate = new Promise<void>(r => { release = r; });
+  const first = queue.run("a", async () => { await gate; return "a"; });
+  const same = queue.run("a", async () => "wrong");
+  const second = queue.run("b", async () => "b");
+  await expect(queue.run("c", async () => "c")).rejects.toBeInstanceOf(CardImageRenderOverloadedError);
+  release();
+  expect(await Promise.all([first, same, second])).toEqual(["a", "a", "b"]);
+  await expect(queue.run("failure", async () => { throw Error("failed"); })).rejects.toThrow();
+  expect(await queue.run("failure", async () => "recovered")).toBe("recovered");
 });
-
-function mainCutFixture(): HouseHighlightsResponse {
-  return {
-    ok: true,
-    schemaVersion: 3,
-    game: {
-      id: "game-edge-smoke-dusk",
-      slug: "edge-smoke-dusk",
-      status: "completed",
-      trackType: "custom",
-      playerCount: 8,
-      roundCount: 5,
-    },
-    highlights: {
-      schemaVersion: 3,
-      state: "main_cut",
-      eligibility: {
-        status: "eligible",
-        reason: null,
-        allianceReceiptCount: 2,
-      },
-      thesis: "This was the game where the pact collapsed one vote too late.",
-      cut: {
-        kind: "main",
-        title: "House Cut",
-        thesis: "This was the game where the pact collapsed one vote too late.",
-        shareCaption: "The pact collapsed one vote too late.",
-        scenes: [],
-      },
-      scenes: [{
-        id: "alliance-cut:1:ember",
-        title: "Ember was cut from inside the pact",
-        category: "betrayal",
-        involvedAgents: [
-          { id: "ember", name: "Ember" },
-          { id: "nova", name: "Nova" },
-        ],
-        houseHook: "Nova helped bury Ember.",
-        setup: "Ember shared a named alliance before the vote turned.",
-        conflict: "The pressure point came from inside the public record.",
-        payoff: "Ember was eliminated in round 1.",
-        receipts: [{
-          id: "round:1:eliminated:ember",
-          tier: "vote_record",
-          label: "Round 1 elimination",
-          description: "Ember was eliminated in round 1.",
-          factRefs: ["round:1:eliminated:ember"],
-        }],
-        deepLink: {
-          surface: "results",
-          label: "Open round result",
-          round: 1,
-          anchor: "round-1",
-        },
-        visualBrief: houseHighlightVisualBriefFixture({
-          visualType: "betrayal_vote",
-          templateLabel: "Betrayal vote",
-          primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "/api/uploads/local?key=avatars/ember.png" }],
-          secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
-          backdrop: "abstract_vote_board",
-        }),
-        visualCard: houseHighlightVisualCardFixture({
-          template: "hero_vote_action",
-          title: "Ember was cut from inside the pact",
-          eyebrow: "Betrayal vote",
-          primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "/api/uploads/local?key=avatars/ember.png" }],
-          secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
-          backdrop: "abstract_vote_board",
-          facts: [
-            "Nova voted against Ember in Round 1.",
-            "Ember was eliminated in Round 1.",
-          ],
-        }),
-      }],
-      noCutReason: null,
-      fallbackLinks: [],
-    },
-  };
-}

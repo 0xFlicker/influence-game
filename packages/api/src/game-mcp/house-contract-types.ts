@@ -10,6 +10,8 @@ import type {
   searchGameMcpRules,
   listGameMcpArchetypes,
 } from "./rules.js";
+import type { HouseCutsResponse } from "@influence/engine/house-cuts/publication";
+export type HouseCutsRead = HouseEnvelope<HouseCutsResponse | HouseFailure>;
 export interface HouseFailure {
   schemaVersion: 1;
   status:

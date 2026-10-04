@@ -1,3 +1,4 @@
+import { queueHouseCuts } from "./house-cut-queue.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
@@ -174,7 +175,10 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
       await tx.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event });
       await tx.update(schema.gameRunOwners).set({ lastPersistedEventSequence: event.sequence,
         ...(next.outcome ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
-      if (next.outcome) await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
+      if (next.outcome) {
+        await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
+        await queueHouseCuts(tx, gameId);
+      }
     }),
   };
 }

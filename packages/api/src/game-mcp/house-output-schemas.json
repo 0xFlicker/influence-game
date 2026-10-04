@@ -1191,6 +1191,40 @@
             "properties": {
               "tool": {
                 "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
                 "const": "read_game_results"
               },
               "arguments": {
@@ -5159,6 +5193,40 @@
             "properties": {
               "tool": {
                 "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
                 "const": "read_game_results"
               },
               "arguments": {
@@ -5753,6 +5821,40 @@
               },
               "arguments": {
                 "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
               }
             },
             "additionalProperties": false,
@@ -8524,6 +8626,429 @@
     },
     "$schema": "http://json-schema.org/draft-07/schema#"
   },
+  "HouseCutsRead": {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "game": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "influence",
+                  "werewolf"
+                ],
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "slug"
+            ]
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "failed",
+              "not_prepared",
+              "pending",
+              "ready"
+            ],
+            "type": "string"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HouseCutsPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "audience",
+          "game",
+          "publication",
+          "status"
+        ]
+      },
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "status": {
+            "enum": [
+              "entry_too_large",
+              "invalid_cursor",
+              "invalid_input",
+              "not_accessible",
+              "not_completed",
+              "not_started",
+              "unavailable",
+              "unsupported_game_kind"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "schemaVersion",
+          "status"
+        ]
+      }
+    ],
+    "definitions": {
+      "HouseCutsPublication": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "cuts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PublishedHouseCut"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "audience",
+          "cuts",
+          "version"
+        ]
+      },
+      "PublishedHouseCut": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "payoff": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quotes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "text"
+              ]
+            }
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "sourceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayHref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "angle",
+          "context",
+          "id",
+          "participants",
+          "payoff",
+          "quotes",
+          "replayHref",
+          "sourceRefs",
+          "title"
+        ]
+      },
+      "HouseFollowUp": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseInspectionInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_thinking"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_results"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "get_rules"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameKind"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          }
+        ]
+      },
+      "HouseInspectionInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "current",
+              "replay"
+            ],
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "gameIdOrSlug"
+        ]
+      },
+      "HouseThinkingInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "audience",
+          "gameIdOrSlug",
+          "position"
+        ]
+      }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
   "HouseCatalogRead": {
     "anyOf": [
       {
@@ -8656,6 +9181,40 @@
               },
               "arguments": {
                 "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
               }
             },
             "additionalProperties": false,
@@ -8956,6 +9515,40 @@
               },
               "arguments": {
                 "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
               }
             },
             "additionalProperties": false,
@@ -9286,6 +9879,40 @@
             "properties": {
               "tool": {
                 "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
                 "const": "read_game_results"
               },
               "arguments": {
@@ -9533,6 +10160,40 @@
               },
               "arguments": {
                 "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
               }
             },
             "additionalProperties": false,

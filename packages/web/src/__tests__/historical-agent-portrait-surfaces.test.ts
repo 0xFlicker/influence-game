@@ -33,17 +33,6 @@ describe("historical agent portrait surfaces", () => {
     }
   });
 
-  it("maps House Highlights agents into historical players with current-agent records", () => {
-    const cardSource = source("house-highlights-card.tsx");
-    const modelSource = source("house-highlights-model.ts");
-
-    expect(cardSource).toContain("GamePlayerAvatarPreview");
-    expect(cardSource).not.toContain("resolveHighlightAvatarUrl");
-    expect(modelSource).toContain("currentAgent: agent.currentAgent");
-    expect(modelSource).toContain("name: agent.name");
-    expect(modelSource).toContain("persona: agent.persona");
-  });
-
   it("keeps replay portrait triggers from advancing click-to-continue playback", () => {
     const replaySource = source("dramatic-replay-viewer.tsx");
 

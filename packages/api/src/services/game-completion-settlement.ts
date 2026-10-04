@@ -1,3 +1,4 @@
+import { queueHouseCuts } from "./house-cut-queue.js";
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Phase } from "@influence/engine";
@@ -1167,6 +1168,7 @@ export async function settleCapturedGameCompletion(
         );
       }
 
+      await queueHouseCuts(tx, gameId);
       await releaseHeldTerminalPublications(tx, {
         gameId,
         ownerEpoch: context.source === "runner"

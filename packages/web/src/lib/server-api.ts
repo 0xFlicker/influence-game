@@ -149,3 +149,7 @@ export function getServerPublicPlayerProfile(
     { cache: "no-store" },
   );
 }
+
+export function getServerHouseCuts(slug: string, audience?: string): Promise<import("@influence/engine/house-cuts/publication").HouseCutsResponse> {
+  return serverApiFetch(`/api/games/${gamePathSegment(slug)}/cuts${audience ? `?audience=${encodeURIComponent(audience)}` : ""}`, { cache: "no-store" });
+}

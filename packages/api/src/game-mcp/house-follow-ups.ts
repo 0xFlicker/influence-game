@@ -12,6 +12,7 @@ import type {
 export type HouseFollowUp =
   | { tool: "read_game"; arguments: HouseInspectionInput }
   | { tool: "read_game_thinking"; arguments: HouseThinkingInput }
+  | { tool: "read_game_cuts"; arguments: { gameIdOrSlug: string; audience?: "public" | "mystery" | "omniscient" } }
   | { tool: "read_game_results"; arguments: { gameIdOrSlug: string } }
   | { tool: "get_rules"; arguments: { gameKind: "influence" | "werewolf" } };
 
@@ -50,7 +51,7 @@ export function houseFollowUps(name: string, value: unknown): HouseFollowUp[] {
         arguments: { gameIdOrSlug, audience: page.audience, view: "current" },
       });
     if (page.capabilities.results)
-      followUps.push({
+      followUps.push({ tool: "read_game_cuts", arguments: { gameIdOrSlug, audience: page.audience } }, {
         tool: "read_game_results",
         arguments: { gameIdOrSlug },
       });

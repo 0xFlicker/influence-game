@@ -2,6 +2,7 @@ import {guardInfluenceInspection} from "../services/house-game-kind-guard.js";
 import {thinkingFollowUp} from "./house-follow-ups.js";
 import type {HouseThinkingRead} from "./house-contract-types.js";
 import { UnsupportedHouseGameError } from "../services/house-game-kind-guard.js";
+import { readHouseCuts } from "../services/house-cut-publication.js";
 import { houseContent, houseInputSchemas, houseOutputSchemas, isHouseTool, validateHouseInput } from "./house-contracts.js";
 import { HouseInspectionError, type HouseCollection } from "../services/house-game-access.js";
 import { readHouseGame, readHouseGameThinking, readHouseInspectionResults, type HouseInspectionInput, type HouseThinkingInput } from "../services/house-game-inspection.js";
@@ -343,6 +344,10 @@ export class ProductionGameMcpJsonRpcServer {
           if(name === "list_games") value=await this.readModel.listGames(auth,optionalNumber(args,"limit"),args.collection as HouseCollection|undefined,args.gameKind as "influence"|"werewolf"|undefined);
           else if(name === "read_game") value=await readHouseGame(this.requireManagementDb(),args as unknown as HouseInspectionInput);
           else if(name === "read_game_thinking") value=await readHouseGameThinking(this.requireManagementDb(),args as unknown as HouseThinkingInput);
+          else if(name === "read_game_cuts") {
+            value = await readHouseCuts(this.requireManagementDb(), requiredString(args,"gameIdOrSlug"), optionalString(args,"audience"));
+            if (!value) throw new HouseInspectionError("not_accessible", "Game or Cut audience is unavailable");
+          }
           else if(name === "read_game_results") value=await readHouseInspectionResults(this.requireManagementDb(),requiredString(args,"gameIdOrSlug"));
           else if(name === "get_rules") value=getGameMcpRules(args.gameKind as "influence"|"werewolf");
           else if(name === "search_rules") value=searchGameMcpRules({gameKind:args.gameKind as "influence"|"werewolf",query:requiredString(args,"query"),limit:optionalNumber(args,"limit")});
@@ -787,8 +792,9 @@ function productionGameMcpTools(
       readOnlyHint: true,
       appMeta: includeProducerVariant ? undefined : createInfluenceMcpAppToolMeta(),
     }),
-    ...(["read_game","read_game_results","read_game_thinking"] as const).map(name=>tool({
+    ...(["read_game","read_game_results","read_game_thinking","read_game_cuts"] as const).map(name=>tool({
       name, description:name === "read_game" ? "Read a House game. Current view includes the latest ending; replay pages preserve the selected audience prefix. Supply nextCursor to drain pinned history, then pollCursor to follow new entries."
+        : name === "read_game_cuts" ? "Read published House Cuts and replay links. Werewolf defaults to Mystery; omniscient explicitly includes spoilers. Public and linked Unlisted games are readable. Never starts generation."
         : name === "read_game_results" ? "Read completed House results. This explicitly reveals the ending."
         : "Explicitly read spectator thinking. Werewolf requires omniscient and position [cursor]. Influence requires public, actorId and position [eventSequence, transcriptSequence], returning at most eight recent cards. No raw reasoning or private strategy.",
       inputSchema:houseInputSchemas[name],outputSchema:houseOutputSchemas[name],scopes:gameReadScopes,readOnlyHint:true,

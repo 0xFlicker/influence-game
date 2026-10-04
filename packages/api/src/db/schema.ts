@@ -3819,3 +3819,21 @@ export const servicePrincipals = pgTable("service_principals", {
   purpose: text("purpose").notNull().default("free_queue"),
   enabled: boolean("enabled").notNull().default(true),
 }, table => [check("service_principals_purpose_check", sql`${table.purpose} = 'free_queue'`)]);
+
+
+/** Bounded automatic editorial jobs. Public reads expose only the publication. */
+export const houseCutJobs = pgTable("house_cut_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  audience: text("audience").$type<"public" | "mystery" | "omniscient">().notNull(),
+  status: text("status").$type<"queued" | "running" | "ready" | "failed">().notNull().default("queued"),
+  source: jsonb("source").$type<import("@influence/engine/house-cuts/source").CutSource>(),
+  journal: jsonb("journal").$type<import("@influence/engine/house-cuts/trial").CutTrialJournal>(),
+  publication: jsonb("publication").$type<import("@influence/engine/house-cuts/publication").HouseCutsPublication>(),
+  leaseToken: uuid("lease_token"), leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  failure: text("failure"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique("house_cut_game_audience").on(t.gameId, t.audience),
+  check("house_cut_audience", sql`${t.audience} IN ('public','mystery','omniscient')`),
+  check("house_cut_status", sql`${t.status} IN ('queued','running','ready','failed')`)]);

@@ -11,7 +11,7 @@ const WerewolfResults = dynamic(() => import("./werewolf/werewolf-results").then
 const WerewolfEntry = dynamic(() => import("./werewolf/werewolf-entry").then(m => m.WerewolfEntry));
 const EpisodeLanding = dynamic(() => import("@/app/games/episode-landing").then(m => m.EpisodeLanding));
 const GameViewer = dynamic(() => import("@/app/games/[slug]/game-viewer").then(m => m.GameViewer));
-const Highlights = dynamic(() => import("@/app/games/[slug]/highlights/house-highlights-client").then(m => m.HouseHighlightsClient));
+const Highlights = dynamic(() => import("@/app/games/[slug]/highlights/house-cuts-client").then(m => m.HouseCutsClient));
 
 export interface HouseGameEntryProps {
   slug: string;
@@ -48,8 +48,9 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
     ) : <p role="status">Opening the House…</p>}</GameSiteEntry>;
   }
 
+  if (props.mode === "highlights") return <GameSiteEntry><Highlights slug={identity.slug} selectedId={props.scene} audience={Array.isArray(props.audience) ? props.audience[0] : props.audience} /></GameSiteEntry>;
   if (identity.gameKind === "werewolf") {
-    if (props.mode === "highlights" || props.startSequence !== undefined) {
+    if (props.startSequence !== undefined) {
       return <GameSiteEntry><h1>Game page not found</h1></GameSiteEntry>;
     }
     if (props.mode === "results") return <GameSiteEntry><WerewolfResults key={identity.id} slug={identity.slug} /></GameSiteEntry>;
@@ -65,9 +66,6 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
 
   if (props.mode === "entry") {
     return <GameSiteEntry><EpisodeLanding key={identity.id} slug={identity.slug} initialGame={props.initialGame} /></GameSiteEntry>;
-  }
-  if (props.mode === "highlights") {
-    return <GameSiteEntry><Highlights gameSlug={identity.slug} selectedSceneId={props.scene ?? null} /></GameSiteEntry>;
   }
   return <GameViewer
     key={identity.id}

@@ -65,6 +65,8 @@ Working increments:
 
 **Done when:** operators can find a scene, understand its coverage and version, follow work without staying on the originating panel, and preview/seek without causing generation or publication. Missing panels retain usable imagery and existing fallbacks.
 
+**Deferred editorial tooling:** optionally browse all House Cut candidates and swap, reject, edit or regenerate selections. These are new studio capabilities to evaluate later, not existing Influence behavior or prerequisites for W4. Normal House Cuts generation, selection and publication remain automatic.
+
 **Questions for its planning:** what is the first useful browsing unit—scene, event or asset; which actions belong in the inspector; what review states need filters; how do game-specific events become presentation cues; what job types support cancellation or reconciliation? Do not block A1 on these questions.
 
 ## A3 — readable operational details
@@ -223,7 +225,7 @@ Scoped plan: [W3 — House postgame review and Werewolf owner learning](../plans
 
 ### W4 — House Cuts: a more expansive editorial eye
 
-Scoped draft: [W4 — Shared House Cuts and editorial discovery](../plans/2026-10-04-001-feat-house-cuts-editorial-discovery.md). Start with an evidence-to-candidate-to-sample-card prototype and human review packet; integrate the approved approach into shared House publication and sharing afterward. W3 broader coaching calibration remains pending and does not block W4.
+Scoped plan (approved; real-game editorial trials completed, integration pending): [W4 — Shared House Cuts and editorial discovery](../plans/2026-10-04-001-feat-house-cuts-editorial-discovery.md). Start with an evidence-to-candidate-to-sample-card prototype and human review packet; integrate the approved approach into shared House publication and sharing afterward. W3 broader coaching calibration remains pending and does not block W4.
 
 House Cuts are the shareable cards of interesting moments, with enough context to work outside the full replay. Both games use the same House gallery, card, share and editorial workflows, supplied by their game modules. The user wants discovery to be less mechanical. This is a shared editorial improvement for both games, with Werewolf as a new source, not merely a second list of hard-coded event triggers.
 
@@ -237,13 +239,15 @@ Proposed selection flow to explore in the scoped plan:
 4. Select a varied, concise set rather than several cards about the same vote. Allow a striking standalone exchange without forcing every card into the existing setup/conflict/payoff or alliance/jury template. Keep meaningful empty/thin results instead of inventing drama.
 5. Publish cards with clear character identity, readable dialogue/framing, game identity, share image and deep link to the moment in the correct audience. Omniscient cuts and Mystery-safe cuts must remain distinguishable in imagery, captions, metadata and destination—not just a toggle on the landing page.
 
-Prototype selection against real completed Influence and Werewolf games before committing to an algorithm. Compare candidate coverage, human editorial preference, repetition, quote/context fidelity, spoilers and model cost. Keep selection/edit versions and producer override/approval separate from game truth. Generation must be an explicit recorded job, not a paid side effect of loading Results or scrubbing.
+Prototype selection against real completed Influence and Werewolf games before committing to an algorithm. Compare candidate coverage, human editorial preference, repetition, quote/context fidelity, spoilers and model cost. Keep source/editorial versions separate from game truth. After approval of the editorial method, completed-game processing automatically generates, selects and publishes Cuts through the existing House experience. Generation must be recorded work, not a paid side effect of loading Results or scrubbing. W4 targets Influence parity; candidate-management controls belong to future A2 exploration.
 
 **Human approval gate — selection algorithms and analysis.** Before adopting the House Cut selection/analysis approach as a production default, prepare a concrete review packet: the candidate-discovery and ranking method, prompts/schemas and relevant versions, representative game analyses, selected and rejected moments with reasons, source evidence, example finished cards, spoiler behavior, and cost/coverage findings. Include dialogue-led moments as well as mechanical events from both games. The human reviews whether the analysis is insightful and faithful, whether the selection is interesting and varied, and what it systematically misses.
 
-Exploration and prototypes produce the reviewable material; they do not imply approval. Record explicit human approval of the identified approach/version and examples before operational rollout. Material changes to selection algorithms or analytical prompts return through this gate. This design/quality gate is separate from the existing approval/publication of individual Cuts; neither substitutes for the other. Automated factual validation remains necessary but cannot approve editorial quality on the human’s behalf.
+Exploration and prototypes produce the reviewable material; they do not imply approval. Record explicit human approval of the identified approach/version and examples before operational rollout. Material changes to selection algorithms or analytical prompts return through this gate. This design/quality gate applies to the method, not each generated Cut. Existing Influence has no required per-Cut approval workflow; W4 must not introduce one. Automated factual validation remains necessary but cannot approve editorial quality on the human’s behalf.
 
 **Inspect when planning:** `packages/engine/src/postgame-highlights/{build,candidates,selection,types,visual-briefs}.ts`, `packages/api/src/services/postgame-highlights.ts`; `packages/web/src/app/games/[slug]/highlights/`, `components/house-highlights-{card,view,model}.tsx`. Current candidates primarily derive from structured Influence analysis, alliances, jury and vote events; this is exactly the expansion being requested.
+
+Implementation checkpoint (2026-10-04): shared automatic Cuts generation, final selection, persisted publication, game gallery, share images and read-only MCP are implemented. Completion queues one bounded job per audience; no historical backfill or per-Cut approval interface. `hazy-ruby-sand` has real local publications. Broader cross-game editorial calibration and Influence private-room evidence remain open. Existing Influence trailer snapshots retain their V1 input until W5; episode naming was not silently added to W4. See the [W4 integration checkpoint](../plans/2026-10-04-001-feat-house-cuts-editorial-discovery.md#automatic-publication-checkpoint--2026-10-04).
 
 ### W5 — trailer and release assets
 

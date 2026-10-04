@@ -30,6 +30,7 @@ export const houseInputSchemas = {
     },
     ["gameIdOrSlug"],
   ),
+  read_game_cuts: object({ gameIdOrSlug: string, audience }, ["gameIdOrSlug"]),
   read_game_results: object({ gameIdOrSlug: string }, ["gameIdOrSlug"]),
   read_game_thinking: object(
     {
@@ -62,6 +63,7 @@ export const houseOutputSchemas = {
   list_games: schemas.HouseCatalogRead,
   read_game: schemas.HouseGameRead,
   read_game_results: schemas.HouseResultsRead,
+  read_game_cuts: schemas.HouseCutsRead,
   read_game_thinking: schemas.HouseThinkingRead,
   get_rules: schemas.HouseRulesRead,
   search_rules: schemas.HouseRulesSearchRead,

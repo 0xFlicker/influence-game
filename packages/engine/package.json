@@ -41,7 +41,16 @@
     "./game-availability": "./src/game-availability.ts",
     "./fixtures/werewolf-results": "./src/fixtures/werewolf-results.ts",
     "./werewolf/results-contract": "./src/werewolf/results-contract.ts",
-    "./game-links": "./src/game-links.ts"
+    "./game-links": "./src/game-links.ts",
+    "./house-cuts/fixtures": "./src/house-cuts/fixtures.ts",
+    "./house-cuts/editorial": "./src/house-cuts/editorial.ts",
+    "./house-cuts/source": "./src/house-cuts/source.ts",
+    "./house-cuts/werewolf-source": "./src/house-cuts/werewolf-source.ts",
+    "./house-cuts/influence-source": "./src/house-cuts/influence-source.ts",
+    "./house-cuts/review-html": "./src/house-cuts/review-html.ts",
+    "./house-cuts/publication": "./src/house-cuts/publication.ts",
+    "./house-cuts/selection": "./src/house-cuts/selection.ts",
+    "./house-cuts/trial": "./src/house-cuts/trial.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

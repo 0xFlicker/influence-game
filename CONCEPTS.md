@@ -545,6 +545,14 @@ The public-by-URL postgame review surface for completed games. Its authoritative
 
 A compact LLM-facing read model for completed-game analysis. It composes completed-results facts, revealed round facts, player rows, jury ledger, vote-pattern hints, diagnostics, and optional producer evidence into token-efficient MCP/API payloads. Its player-safe form is rebuilt from canonical facts and must not include raw events, source pointers, private traces, prompts, private reasoning, or hidden strategy artifacts. V2 postgame payloads start with a deterministic `executiveSummary` of at most five derived text facts, then expose round summaries, highlighted eliminations, derived vote cohorts, game momentum, jury narrative, player summaries, turning points, and diagnostics. Every derived object carries derivation confidence; confidence describes the derivation, not the canonical fact.
 
+## House Cuts
+
+Audience-specific, shareable editorial moments selected from completed-game evidence. A game adapter produces a snapshot of permitted canonical facts, attributed dialogue and game-frozen cast identity. Strict discovery proposes candidates; final selection reads the full permitted context and chooses zero to five distinct moments, without a minimum quota. Quotes and references are validated; editorial interpretation is never authoritative game state.
+
+After human approval of the method, completion queues automatic generation and publication. Public reads never spend provider credits. Influence uses Public evidence; Werewolf has independent Mystery and Omniscient publications. Thinking, raw reasoning and owner strategy are excluded. Published cards expose selected text, attributed quotes, canonical references and replay links; internal candidates and attempt receipts remain private. See `docs/plans/2026-10-04-001-feat-house-cuts-editorial-discovery.md`.
+
+The following V1 Highlights terms remain relevant to the existing Influence trailer compiler and historical render inputs. The shared House Cuts gallery now uses the audience-specific publication above.
+
 ## House Highlights artifact
 
 A public-by-URL, spoiler-forward postgame editorial artifact generated for every newly completed game and any supported existing game that is backfilled. It may contain a main House Cut, a mini-highlight pack, or an honest no-cut state. The artifact explains what The House found worth watching without replacing completed results or full replay.

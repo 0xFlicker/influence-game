@@ -87,6 +87,7 @@ const SHARED_GAME_READ_TOOLS = [
   "list_games",
   "read_game",
   "read_game_results",
+  "read_game_cuts",
   "read_game_thinking",
   "get_rules",
   "search_rules",

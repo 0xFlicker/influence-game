@@ -1,3 +1,4 @@
+import { startHouseCutWorker } from "./services/house-cut-worker.js";
 import { isViewerGame, viewerGameAvailable } from "./services/game-visibility.js";
 import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
 import { createGameEntryRoutes } from "./routes/game-entries.js";
@@ -439,6 +440,7 @@ async function finishBackgroundRuntimeStartup(
   const providerHealthProbeRuntime = activationFence
     ? null
     : await startProviderHealthProbeRuntime(db);
+  const houseCutWorker = gameExecutionWorker ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
@@ -499,6 +501,7 @@ async function finishBackgroundRuntimeStartup(
   return {
     async stop() {
       stopping = true;
+      await houseCutWorker?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
