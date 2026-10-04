@@ -2963,9 +2963,10 @@ export interface AdminOwnerLearningFailureDiagnostic {
 
 export interface AdminOwnerLearningReviewSummary {
   id: string;
+  gameKind: "influence" | "werewolf";
   owner: { userId: string; displayName: string | null; handle: string | null };
   agent: { profileId: string; name: string };
-  reviewedRevision: { id: string; ordinal: number };
+  reviewedRevision: { id: string; ordinal: number | null };
   track: "evidence_rich" | "strategy_health_check";
   status: OwnerLearningAnalysisStatus;
   stage: OwnerLearningStage;
@@ -2999,6 +3000,7 @@ export interface AdminOwnerLearningReviewList {
 
 export interface AdminOwnerLearningReviewDetail {
   id: string;
+  gameKind: "influence" | "werewolf";
   owner: AdminOwnerLearningReviewSummary["owner"];
   agent: AdminOwnerLearningReviewSummary["agent"];
   reviewedRevision: AdminOwnerLearningReviewSummary["reviewedRevision"];

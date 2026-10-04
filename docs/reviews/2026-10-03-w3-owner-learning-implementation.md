@@ -53,3 +53,11 @@ WR-04 is intentionally pending: operator-selected real games and budget, paid `g
 A deployed acceptance pass, populated migration rehearsal and real MCP-host owner flow remain release/operator checks. Long-game snapshot sizes and eligibility latency should be measured during calibration; the current implementation preserves exact observations and bounds model context, not arbitrary-length owner read payloads.
 
 Reusable integration knowledge and the next-game checklist are in [House owner learning across game kinds](../solutions/architecture-patterns/house-owner-learning-across-game-kinds.md). House Cuts, trailers, music/art exploration and production-studio refactoring remain separate roadmap work.
+
+## Follow-up — admin review ledger integration
+
+A completed Werewolf review exposed a missed admin read-path join: requiring an Influence analytical revision excluded Werewolf reviews entirely. Changed that join to an optional Influence-only lookup, carried game kind through list/detail DTOs, and labeled the Werewolf strategy identity without a revision ordinal. Existing reviews appear without data repair or another provider call.
+
+Verification: the corrected service read the operator's exact completed review from the local development database, including all four calls, and found it in the ledger list. The four focused PostgreSQL admin tests pass, including new running/no-change Werewolf list/detail/accounting coverage and existing Influence/authorization checks. Provider-free baseline: 2,213 pass, 5 skips, 0 failures. Full PostgreSQL baseline on disposable `influence_w3_ledger_test`: 1,853 pass, 0 failures across 158 files. The disposable database was removed after validation. Typecheck and lint pass. The browser session was signed out, so authenticated browser acceptance is not claimed. No paid calls or development-data mutations were performed.
+
+The architecture learning and next-game checklist now explicitly include operator read models, identity joins, diagnostic receipts and aggregate accounting.

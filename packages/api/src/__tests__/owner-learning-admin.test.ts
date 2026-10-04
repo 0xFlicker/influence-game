@@ -23,6 +23,8 @@ import {
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
 } from "./owner-learning-test-utils.js";
+import { playedWerewolfReview } from "./owner-learning-werewolf-test-utils.js";
+import { startOwnerLearningReview } from "../services/owner-learning-review.js";
 import { setupTestDB } from "./test-utils.js";
 
 beforeAll(() => {
@@ -30,6 +32,48 @@ beforeAll(() => {
 });
 
 describe("owner learning admin ledger", () => {
+  test("includes Werewolf reviews without Influence revisions in list, detail and totals", async () => {
+    const db = await setupTestDB();
+    const fixture = await playedWerewolfReview(db);
+    const started = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId, agentProfileId: fixture.villager.agentProfileId!,
+      gameIds: [fixture.game.id], idempotencyKey: "admin-werewolf",
+    });
+    const reviewId = started.reviewId!;
+    const [stored] = await db.select().from(schema.agentLearningReviews).where(eq(schema.agentLearningReviews.id, reviewId));
+    expect(stored!.reviewedRevisionId).toStartWith("werewolf-review-v1:");
+    expect(await db.select().from(schema.agentRevisions).where(eq(schema.agentRevisions.id, stored!.reviewedRevisionId))).toHaveLength(0);
+    await db.insert(schema.agentLearningReviewCalls).values({
+      id: randomUUID(), reviewId, ordinal: 1, state: "succeeded", stage: "scanning_narratives",
+      inputPolicyHash: "admin-werewolf-call",
+      validatedCheckpoint: {
+        version: 1, logicalCallCount: 1, diveCount: 0, selectedMomentIds: [],
+        nextMomentCursor: 0, provisionalThemes: [], validatedFindings: [],
+        lastCompletedStage: "scanning_narratives", promptHash: "sha256:prompt",
+        schemaHash: "sha256:schema", completion: null,
+      },
+      costSource: "estimated", estimatedCostMicrousd: 725,
+    });
+    for (const analysisStatus of ["running", "no_change"] as const) {
+      await db.update(schema.agentLearningReviews).set({ analysisStatus,
+        stage: analysisStatus === "running" ? "scanning_narratives" : "complete",
+        completedAt: analysisStatus === "running" ? null : new Date().toISOString(),
+        result: analysisStatus === "running" ? null : {
+          diagnosis: "No demonstrated strategy defect.", analysisTrack: "evidence_rich",
+          recommendations: [], noChange: { rationale: "Gather more evidence." },
+        },
+      }).where(eq(schema.agentLearningReviews.id, reviewId));
+      const detail = await getAdminOwnerLearningReview(db, reviewId);
+      expect(detail).toMatchObject({ gameKind: "werewolf", reviewedRevision: { id: stored!.reviewedRevisionId, ordinal: null }, lifecycle: { status: analysisStatus } });
+      expect(detail!.calls).toHaveLength(1);
+      const list = await listAdminOwnerLearningReviews(db, { status: analysisStatus });
+      expect(list.reviews.map(review => review.id)).toEqual([reviewId]);
+      expect(list.reviews[0]!.gameKind).toBe("werewolf");
+      expect(list.analytics.reviewCount).toBe(1);
+      expect(list.analytics.cost.estimatedMicrousd).toBe(725);
+    }
+  });
+
   test("aggregates operational calls, provider diagnostics, and user action", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -169,6 +213,8 @@ describe("owner learning admin ledger", () => {
 
     const detail = await getAdminOwnerLearningReview(db, reviewId);
     expect(detail).not.toBeNull();
+    expect(detail!.gameKind).toBe("influence");
+    expect(detail!.reviewedRevision.ordinal).toBeGreaterThan(0);
     expect(detail!.acceptance).toBe("accepted");
     expect(detail!.application).toEqual({ appliedAt: "2026-08-04T04:00:00.000Z" });
     expect(detail!.tokens).toEqual({

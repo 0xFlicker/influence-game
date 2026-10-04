@@ -239,7 +239,8 @@ function ReviewLedgerRow({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="truncate text-sm font-medium text-text-primary">{review.agent.name}</span>
-            <span className="rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] text-text-muted">r{review.reviewedRevision.ordinal}</span>
+            <span className="rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] text-text-muted">{review.gameKind === "werewolf" ? "Werewolf" : "Influence"}</span>
+            {review.reviewedRevision.ordinal !== null && <span className="font-mono text-[9px] text-text-muted">r{review.reviewedRevision.ordinal}</span>}
           </div>
           <p className="mt-1 truncate text-xs text-text-muted">{review.owner.displayName ?? review.owner.handle ?? review.owner.userId}</p>
           {review.failure && <p className="mt-1 truncate font-mono text-[9px] text-amber-100/70">{review.failure.safeFailureCode} · {review.failure.phase ?? "legacy"} · {review.failure.evidence.state}</p>}
@@ -271,7 +272,8 @@ function ReviewDetail({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
           <dl className="mt-3 space-y-2 text-xs">
             <InlineFact label="Review" value={detail.id} mono />
             <InlineFact label="Profile" value={detail.agent.profileId} mono />
-            <InlineFact label="Revision" value={`${detail.reviewedRevision.id} · r${detail.reviewedRevision.ordinal}`} mono />
+            <InlineFact label="Game" value={detail.gameKind === "werewolf" ? "Werewolf" : "Influence"} />
+            <InlineFact label={detail.gameKind === "werewolf" ? "Strategy identity" : "Revision"} value={detail.reviewedRevision.ordinal === null ? detail.reviewedRevision.id : `${detail.reviewedRevision.id} · r${detail.reviewedRevision.ordinal}`} mono />
             <InlineFact label="Model" value={detail.policy.model} mono />
             <InlineFact label="Reviewer" value={detail.policy.reviewer} mono />
             <InlineFact label="Eligibility" value={detail.policy.eligibility} mono />

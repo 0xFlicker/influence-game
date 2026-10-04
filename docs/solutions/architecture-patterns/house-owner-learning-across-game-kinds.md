@@ -28,6 +28,14 @@ The persisted review/evidence discriminator is explicit. Migration 0107 normaliz
 7. **Model changes include persistence policy.** Use `OWNER_LEARNING_MODEL_ID` in request construction and input fingerprints. A stale hardcoded model in hashing can make a durable request disagree with its provider call. Version the prompt/schema/provider policy so old checkpoints cannot silently continue under new semantics.
 8. **Test apparatus separately from coaching quality.** Scripted legal games cover privacy, Seer/Doctor/pack observations, credit deduplication, exact apply, manual edits and MCP parity. Browser tests use isolated databases and no provider key. Real coaching quality requires an operator-approved packet, model cost budget and human review of both accepted and rejected suggestions.
 
+## W3 follow-up: reviews missing from the admin ledger
+
+A real Werewolf review completed successfully but never appeared in the admin ledger. The worker, owner dashboard and call records were correct. `owner-learning-admin.ts` still used an inner join from the opaque review identity to Influence's `agent_revisions`, silently dropping Werewolf reviews from both list and detail reads and their aggregate totals.
+
+The fix uses an optional, Influence-only revision join. Shared admin responses carry `gameKind`; a revision ordinal is nullable, while the persisted review identity is retained. The ledger labels the game and displays a Werewolf strategy identity without inventing an Influence revision number. No migration, regeneration or paid retry is needed for existing reviews.
+
+**Lesson:** removing a game-specific foreign key is only half the integration. Audit read-model joins, admin diagnostics, aggregate accounting and UI identity labels wherever that identity is consumed. A successful owner/MCP workflow does not establish operator visibility. Regression coverage must exercise running and completed reviews without an Influence revision, list/detail inclusion, call receipts and costs, alongside existing Influence and admin authorization tests.
+
 ## Verification and limits
 
 See [W3 implementation proof](../../reviews/2026-10-03-w3-owner-learning-implementation.md). The shared local test DB had migration history from another branch, so a fresh disposable database verified the full branch migration chain and API baseline. Never repair the operator's DB merely to make a branch test suite run.
@@ -43,5 +51,6 @@ Werewolf evidence persists complete actor observations for auditability. Model r
 - Define sufficiency, bounded context and honest no-change behavior for the game's objectives.
 - Add the strategy target to shared proposal, apply, retry, supersession, moderation and manual-edit paths.
 - Extend existing web/MCP contracts and owner-only source links; reuse common jobs, credit and receipts.
+- Verify operator list/detail queries, diagnostics and totals with a real game-specific identity; audit joins to other games’ revision tables and avoid fabricated revision labels.
 - Prove malformed output, source drift, wrong owner, stale proposal, pending moderation and idempotency.
 - Run provider-free, isolated PostgreSQL and browser checks; then obtain a separate paid calibration budget and quality approval.

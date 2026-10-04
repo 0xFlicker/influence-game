@@ -9,6 +9,7 @@ import {
   type OwnerLearningExecutionPhase,
   type OwnerLearningResolution,
 } from "./owner-learning-contracts.js";
+import type { ReviewGameKind } from "./owner-learning-game.js";
 import type { OwnerLearningEventKind } from "./owner-learning-events.js";
 
 const ADMIN_OWNER_LEARNING_LIMIT = 250;
@@ -131,6 +132,7 @@ export interface AdminOwnerLearningFailureDiagnostic {
 
 export interface AdminOwnerLearningReviewDetail {
   id: string;
+  gameKind: ReviewGameKind;
   owner: {
     userId: string;
     displayName: string | null;
@@ -142,7 +144,7 @@ export interface AdminOwnerLearningReviewDetail {
   };
   reviewedRevision: {
     id: string;
-    ordinal: number;
+    ordinal: number | null;
   };
   policy: {
     eligibility: string;
@@ -186,6 +188,7 @@ export interface AdminOwnerLearningReviewDetail {
 
 export interface AdminOwnerLearningReviewSummary {
   id: string;
+  gameKind: ReviewGameKind;
   owner: AdminOwnerLearningReviewDetail["owner"];
   agent: AdminOwnerLearningReviewDetail["agent"];
   reviewedRevision: AdminOwnerLearningReviewDetail["reviewedRevision"];
@@ -332,6 +335,7 @@ async function loadBaseReviews(
 ) {
   const query = db.select({
     id: schema.agentLearningReviews.id,
+    gameKind: schema.agentLearningReviews.gameKind,
     ownerUserId: schema.agentLearningReviews.ownerUserId,
     ownerDisplayName: schema.users.displayName,
     ownerHandle: schema.users.handle,
@@ -367,7 +371,10 @@ async function loadBaseReviews(
   }).from(schema.agentLearningReviews)
     .innerJoin(schema.users, eq(schema.agentLearningReviews.ownerUserId, schema.users.id))
     .innerJoin(schema.agentProfiles, eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id))
-    .innerJoin(schema.agentRevisions, eq(schema.agentLearningReviews.reviewedRevisionId, schema.agentRevisions.id))
+    .leftJoin(schema.agentRevisions, and(
+      eq(schema.agentLearningReviews.gameKind, "influence"),
+      eq(schema.agentLearningReviews.reviewedRevisionId, schema.agentRevisions.id),
+    ))
     .leftJoin(
       schema.agentLearningReviewApplications,
       eq(schema.agentLearningReviewApplications.reviewId, schema.agentLearningReviews.id),
@@ -542,6 +549,7 @@ function toDetail(input: {
 
   return {
     id: input.review.id,
+    gameKind: input.review.gameKind,
     owner: {
       userId: input.review.ownerUserId,
       displayName: input.review.ownerDisplayName,
@@ -728,6 +736,7 @@ function aggregateCost(calls: AdminOwnerLearningCall[]): AdminOwnerLearningCostT
 function toSummary(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearningReviewSummary {
   return {
     id: detail.id,
+    gameKind: detail.gameKind,
     owner: detail.owner,
     agent: detail.agent,
     reviewedRevision: detail.reviewedRevision,
