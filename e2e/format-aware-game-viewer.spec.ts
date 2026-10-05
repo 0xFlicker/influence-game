@@ -899,25 +899,27 @@ test.describe("format-aware game viewer", () => {
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });
 
-  test("Empowered deciding vote gets a full-body speech beat before elimination", async ({ page }, testInfo) => {
+  test("Empowered choice shows the pool and marks the selected nominee before elimination", async ({ page }, testInfo) => {
     const slug = "deciding-vote-beat";
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed" });
     await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { atlas: "/deciding-body.svg" } } }));
     await page.route("**/deciding-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/></svg>' }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "⏸ Pause");
-    const next = () => page.getByRole("button", { name: "Next", exact: true }).click();
-    const tie = page.locator('[data-format-cue="format_tiebreak"]');
-    for (let i = 0; i < 30 && !await tie.count(); i++) await next();
-    await expect(tie).toContainText("Atlas must break the tie");
-    await expect(tie).toContainText("Tied: Lyra · Echo");
+    const next = () => page.getByRole("button", { name: "Next scene", exact: true }).click();
+    const pool = page.locator('[data-nominee-selection]');
+    for (let i = 0; i < 30 && !await pool.count(); i++) await next();
+    await expect(pool).toContainText("Atlas chooses who leaves");
+    await expect(page.getByRole("button", {name:"Inspect Echo",exact:true})).toContainText("In");
+    await expect(pool.locator('[data-nominee]')).toHaveCount(2);
+    await expect(pool.locator('[data-selected="true"]')).toHaveCount(0);
+    await expect(pool.locator('img[alt="Atlas"]')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("nominee-pool.png") });
     await next();
-    await assertSoloBallot(page, "Atlas", "Echo");
-    const solo = page.locator('[data-solo-image="full-body"]');
-    await expect(solo).toBeVisible();
-    await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
-    await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toContainText("Deciding vote · Vote to eliminate");
-    await page.screenshot({ path: testInfo.outputPath("deciding-vote.png") });
+    await expect(pool.locator('[data-nominee="echo"]')).toHaveAttribute("data-eliminated", "true");
+    await expect(pool.locator('[data-nominee="lyra"]')).toHaveAttribute("data-eliminated", "false");
+    await page.setViewportSize({width:390,height:844});
+    await page.screenshot({ path: testInfo.outputPath("deciding-vote-mobile.png") });
     await next();
     await expect(page.locator('[data-format-cue="format_elimination"]')).toContainText("Echo is eliminated");
   });

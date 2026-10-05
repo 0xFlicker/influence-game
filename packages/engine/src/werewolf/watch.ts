@@ -10,6 +10,7 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
+  const playback: Array<{cursor: number; steps: number}> = [];
   let sceneId = "introduction", chapterId = "introduction", packAttempt = 1;
   for (const frame of walkWerewolfHistory(events, audience)) {
     const { event, before, entry } = frame;
@@ -31,6 +32,7 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
         const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
         navigation.push({ cursor, chapterId, sceneId, label });
       }
+      if (isWerewolfPlayable(entry)) playback.push({cursor, steps: entry.kind === "vote" && entry.result.ballots.length > 0 ? entry.result.ballots.length + 2 : 1});
       if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
       const roomId = entry.day === 0 ? null : entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack" ? "mingle-1" : "lobby";
       const staging = before ?? state;
@@ -40,7 +42,7 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
   }
   if (!state) throw new Error("Werewolf replay is empty");
   const players: WerewolfWatchIdentity[] = state.players.map(p => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, personality: p.personality, backstory: p.backstory }));
-  return { gameId: state.gameId, rulesVersion: state.config.rulesVersion, latestCursor: cursor, fromCursor, throughCursor: moments.at(-1)?.cursor ?? Math.min(cursor, fromCursor - 1), players, moments, navigation };
+  return { gameId: state.gameId, rulesVersion: state.config.rulesVersion, latestCursor: cursor, fromCursor, throughCursor: moments.at(-1)?.cursor ?? Math.min(cursor, fromCursor - 1), players, moments, navigation, playback };
 }
 
 

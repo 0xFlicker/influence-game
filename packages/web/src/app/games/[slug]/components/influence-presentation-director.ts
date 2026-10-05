@@ -1,5 +1,6 @@
 "use client";
 
+import {voteSceneIdentity} from "./vote-ledger-model";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
 import type { PresentationCue } from "./types";
@@ -15,6 +16,7 @@ interface RetainedMotionControl { pause(): void; play(): void; complete(): void;
 export const influencePresentationPolicy: WatchPolicy<PresentationCue> = {
   position: cue => cue.canonicalSequence,
   speech: speechBoundaries,
+  scrubAtMs: cue => cue.kind === "format_deciding_vote" ? 2000 : voteSceneIdentity(cue) && !cue.voteSummary ? SOLO_READ_START_MS : cue.voteSummary ? 0 : speechBoundaries(cue)?.showAtMs ?? 0,
   isCatchUp: cue => cue.source !== "format" && Boolean(cue.liveCatchUp),
   acceptAtWatermark: (cue, watermark) => cue.source !== "format" && cue.canonicalSequence === watermark,
   reconcile: retainActiveHouseBridge,
@@ -216,7 +218,7 @@ function usePrefersReducedMotion(): boolean {
 }
 
 function speechBoundaries(cue: PresentationCue | null) {
-  if (!cue?.speechPresentation) return null;
+  if (!cue?.speechPresentation || voteSceneIdentity(cue)) return null;
   const solo = cue.speechPresentation === "solo";
   const hideAtMs = cue.baseDurationMs - (solo ? SOLO_EXIT_MS : SCENE_EXIT_HOLD_MS + VISUAL_SPEECH_FADE_MS);
   return {

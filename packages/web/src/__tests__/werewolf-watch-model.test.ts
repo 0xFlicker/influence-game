@@ -2,7 +2,7 @@ import {expect, test} from "bun:test";
 import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
 import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 import type {WerewolfWatchMoment} from "../../../engine/src/werewolf/watch-contract";
-import {werewolfMomentCues, consumedSilentTail} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfMomentCues, werewolfScrubStops, consumedSilentTail} from "../components/games/werewolf/werewolf-watch-model";
 
 const players = Array.from({length: 6}, (_, index) => ({id: `p${index}`, name: `Player ${index}`, personality: "Careful", backstory: "", strategy: "", avatarUrl: null}));
 const projection = projectWerewolfWatch([startWerewolf("silent-tail", players, werewolfConfig("one_wolf", 1), "seed")], "mystery");
@@ -28,13 +28,50 @@ test("Werewolf checkpoints reveal each accepted ballot, collect abstentions last
       {voterId:"p2",targetId:null,unavailable:true},{voterId:"p3",targetId:"p2",unavailable:false}],
   }}};
   const cues = werewolfMomentCues(moment);
-  expect(cues).toHaveLength(5);
-  expect(new Set(cues.map(c=>c.key)).size).toBe(5);
-  expect(cues.map(c=>c.moment.cursor)).toEqual([20,20,20,20,20]);
-  expect(cues.slice(0,-1).map(c=>c.ballot!.current.voterId)).toEqual(["p1","p3","p2","p0"]);
-  expect(cues.slice(0,-1).map(c=>c.ballot!.votes.length)).toEqual([1,2,3,4]);
+  expect(cues).toHaveLength(6);
+  expect(new Set(cues.map(c=>c.key)).size).toBe(6);
+  expect(cues.map(c=>c.moment.cursor)).toEqual([20,20,20,20,20,20]);
+  expect(cues.slice(0,-2).map(c=>c.ballot!.current.voterId)).toEqual(["p1","p3","p2","p0"]);
+  expect(cues.slice(0,-2).map(c=>c.ballot!.votes.length)).toEqual([1,2,3,4]);
   expect(cues[2]!.ballot!.current.choice).toBe("unavailable");
   expect(cues[3]!.ballot!.current.choice).toBe("abstain");
-  expect(cues[4]!.ballot).toBeUndefined();
+  expect(cues[4]!.ballot!.complete).toBe(true);
+  expect(cues[4]!.ballot!.votes).toHaveLength(4);
+  expect(cues[4]!.ballot!.eligibility?.ids).toEqual([]);
+  expect(cues[5]!.ballot).toBeUndefined();
   expect(werewolfMomentCues(moment)).toEqual(cues);
+});
+
+
+test("global scrub stops match cue expansion across bounded audience windows", async () => {
+  const {werewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const events = await werewolfResultsFixture("village", "scrub-projection");
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const first = projectWerewolfWatch(events, audience, 1, 1);
+    const stops = werewolfScrubStops(first.playback);
+    const expected: Array<{cursor: number; step: number}> = [];
+    for (let cursor = 1; cursor <= first.latestCursor; cursor++) {
+      const window = projectWerewolfWatch(events, audience, cursor, 1);
+      expect(window.playback).toEqual(first.playback);
+      const moment = window.moments[0]!;
+      if (first.playback.some(entry => entry.cursor === cursor)) {
+        expected.push(...werewolfMomentCues(moment).map((_, step) => ({cursor, step})));
+      } else expect(["phase", "speech", "discussion"]).toContain(moment.entry.kind);
+    }
+    expect(stops).toEqual(expected);
+  }
+  expect(projectWerewolfWatch(events,"mystery").playback.length).toBeLessThan(projectWerewolfWatch(events,"omniscient").playback.length);
+});
+
+test("completed Werewolf tallies use the recorded threshold or plurality result", () => {
+  for (const [voteMode, requiredVotes, eliminatedId, expected] of [
+    ["majority", 3, "p2", ["p2"]], ["majority", 4, null, []],
+    ["plurality", null, "p2", ["p2"]], ["plurality", null, null, []],
+  ] as const) {
+    const moment: WerewolfWatchMoment = {...template, cursor:20, entry:{kind:"vote",day:1,result:{
+      thread:1,voteMode,requiredVotes,dayEnded:eliminatedId!==null,eliminatedId,totals:{p2:3,p3:1},
+      ballots:[{voterId:"p0",targetId:"p2",unavailable:false}],
+    }}};
+    expect(werewolfMomentCues(moment).at(-2)?.ballot?.eligibility?.ids).toEqual([...expected]);
+  }
 });

@@ -3,12 +3,13 @@ import type {WatchPolicy} from "@/components/watch/watch-director";
 import {replayMoment} from "./replay-moment";
 import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "@/app/games/[slug]/components/scene-speech-timing";
 import {VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
-import {soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
+import {SOLO_READ_START_MS, soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
 import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; ballot?: VoteLedgerState }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
+  scrubAtMs: cue => cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.showAtMs ?? 0,
   isCatchUp: () => false,
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
@@ -44,7 +45,15 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
     moment,
     ballot: {title: "Day vote", votes: votes.slice(0,index + 1), current, total: votes.length, polarity: false},
   }));
-  return [...reveals, result];
+  const last = reveals.at(-1);
+  const vote = moment.entry.result;
+  const eligible = vote.voteMode === "majority"
+    ? Object.keys(vote.totals).filter(id => vote.requiredVotes !== null && vote.totals[id]! >= vote.requiredVotes)
+    : vote.eliminatedId ? [vote.eliminatedId] : [];
+  const summary = last ? {...last, key: `${key}:tally`, baseDurationMs: 3200,
+    ballot: {...last.ballot!, complete: true, eligibility: {ids: eligible,
+      label: vote.voteMode === "majority" ? `Majority required: ${vote.requiredVotes} votes` : "Unique highest count required · ties spare everyone"}}} : null;
+  return [...reveals, ...(summary ? [summary] : []), result];
 
 }
 export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"], cursor: number, direction: -1 | 1, kind: "scene" | "chapter") {
@@ -59,4 +68,8 @@ export function consumedSilentTail(windows: readonly Pick<WerewolfWatchWindow, "
   let cursor = after;
   while (moments.has(cursor + 1) && !isWerewolfPlayable(moments.get(cursor + 1)!.entry)) cursor++;
   return cursor > after ? moments.get(cursor)! : null;
+}
+
+export function werewolfScrubStops(playback: WerewolfWatchWindow["playback"]) {
+  return playback.flatMap(({cursor, steps}) => Array.from({length: steps}, (_, step) => ({cursor, step})));
 }

@@ -41,3 +41,14 @@ Measure both speech and thinking before visibility changes, using the stage font
 ## Replay music
 
 The shared player now owns optional music transport and device sound preferences; a game module selects its score from current audience-visible moments. See [shared replay music transport](shared-replay-music-transport.md) for the adapter contract, autoplay constraints, scrub semantics and new-game checklist. Influence remains silent until a score is selected. Mute and volume stay in the main control bar at all widths.
+
+
+## Ballot stops and the deciding choice (2026-10-05)
+
+A source cursor is not a scrub position: one Werewolf checkpoint contains several ballots. The audience-filtered watch projection now includes a compact `playback` index of source cursors and subcue counts. Every bounded window carries the same complete index. The slider addresses these presentation stops, while share links and scene navigation retain source cursors. The client maps a stop to its source window and subcue; arrow stepping and direct seeks use the same policy-owned readable landing time. Paused seeks stay paused and playing seeks resume.
+
+Both adapters append a separate completed-tally cue after the final receipt. It never contributes a duplicate vote. The final ledger highlights the canonical rule-compatible pool, including eligible zero-vote candidates. Werewolf uses the recorded majority threshold or resolved plurality result. Influence uses the validated format resolution, with scoring metadata only for the explanatory label; it never reconstructs nominations from transcript prose.
+
+Influence presents the recorded nominee pool before the deciding target. Existing fullbody art and portrait fallbacks supply the scene; the shared clock drives red selection, crossing-out and dimming. Direct seeking lands at a readable decided state; reduced motion shows the state without movement. Cast status stays on the preceding canonical frame until the elimination cue, avoiding an early OUT badge during the choice.
+
+Scene Previous/Next intentionally skip the whole ballot group. Arrow keys and the slider visit individual ballots plus the completed tally. Ordinary dialogue retains its existing thought/speech reveal and dismissal steps; this change does not collapse those reading controls into chapter navigation.

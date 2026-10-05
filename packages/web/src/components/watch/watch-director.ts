@@ -5,6 +5,8 @@ export interface SpeechBoundaries { showAtMs: number; readAtMs: number; hideAtMs
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
   speech(cue: C | null): SpeechBoundaries | null;
+  /** Readable landing point shared by direct seeks and arrow-key cue steps. */
+  scrubAtMs?(cue: C): number;
   isCatchUp(cue: C): boolean;
   acceptAtWatermark(cue: C, watermark: number): boolean;
   reconcile(cues: C[], active: C | null): C[];
@@ -481,7 +483,7 @@ export class PresentationDirector<C extends WatchCue> {
     this.animation.complete();
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.positionWithinCue(this.thought ? 0 : this.speechBoundaries()?.showAtMs ?? 0);
+    this.positionWithinCue(this.thought ? 0 : this.policy.scrubAtMs?.(this.state.cues[cursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0);
   }
 
   reconnect(cues: readonly C[]): void {
@@ -545,7 +547,7 @@ export class PresentationDirector<C extends WatchCue> {
     }
     this.apply({ type: "set_cursor", cursor: nextCursor });
     this.exitReadingPositionMs = null;
-    this.positionWithinCue(manual ? this.speechBoundaries()?.showAtMs ?? 0 : 0);
+    this.positionWithinCue(manual ? this.policy.scrubAtMs?.(this.state.cues[nextCursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0 : 0);
   }
 
   private activeDurationMs(): number {

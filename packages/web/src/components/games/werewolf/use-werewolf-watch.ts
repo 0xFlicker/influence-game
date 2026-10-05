@@ -1,12 +1,12 @@
 "use client";
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
 import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import {ApiError} from "@/lib/api";
 import {getWerewolfWatch} from "@/lib/werewolf-api";
 import {useWatchDirector} from "@/components/watch/use-watch-director";
 import {werewolfMusic} from "./werewolf-music";
-import {consumedSilentTail, werewolfCues, werewolfWatchPolicy} from "./werewolf-watch-model";
+import {consumedSilentTail, werewolfCues, werewolfMomentCues, werewolfScrubStops, werewolfWatchPolicy} from "./werewolf-watch-model";
 
 /** One mounted session per game/audience. Cached head data is never the active snapshot. */
 export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number) {
@@ -35,7 +35,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     for (const key of keys.slice(3)) windows.current.delete(key);
     setData(value); setRevision(n => n + 1);
   }, [director]);
-  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false) => {
+  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false, step = 0) => {
     playIntent.current = play;
     awaitingInitialCue.current = initial;
     target.current = position;
@@ -57,7 +57,8 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         const selected = previous ? cues.findLastIndex(cue => cue.moment.cursor <= next) : cues.findIndex(cue => cue.moment.cursor >= next);
         if (selected >= 0) {
           awaitingInitialCue.current = false;
-          director.load(cues); director.seek(selected); setTail(null);
+          const offset = Math.min(step, cues.filter(cue => cue.moment.cursor === cues[selected]!.moment.cursor).length - 1);
+          director.load(cues); director.seek(selected + offset); setTail(null);
           // Tail is always a scheduler holding state, even for terminal games.
           director.setFollowTail(true);
           if (playIntent.current) director.play();
@@ -130,6 +131,10 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [activeCursor, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek]);
   const buffered = [...windows.current.values()];
   const active = holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
+  const scrubStops = useMemo(() => werewolfScrubStops(data?.playback ?? []), [data?.playback]);
+  const activeStep = activeCue ? werewolfMomentCues(activeCue.moment).findIndex(cue => cue.key === activeCue.key) : 0;
+  const exactStop = scrubStops.findIndex(stop => stop.cursor === active?.cursor && stop.step === Math.max(0, activeStep));
+  const scrubPosition = exactStop >= 0 ? exactStop : Math.max(0, scrubStops.findLastIndex(stop => stop.cursor <= activeCursor));
   const continueAtEnd = werewolfMusic(active)?.continueAtEnd === true;
   useEffect(() => {
     // Preserve user play intent while the victory score finishes over the final frame.
@@ -137,7 +142,8 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [continueAtEnd, preparing, holding, data, activeCursor, director]);
   const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
   void revision;
-  return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision,
+  return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision, scrubPosition, scrubCount: scrubStops.length,
+    seekStop: (position: number) => {const stop = scrubStops[position - 1]; if (stop) return seek(stop.cursor, playIntent.current, false, false, stop.step);},
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
     previous: () => {

@@ -85,3 +85,16 @@ test("manual speech dismissal also fades and removes thinking", () => {
  director.manualAdvance();clock.tick(150);expect(director.getThinkingFrame()?.opacity).toBeCloseTo(.5);
  clock.tick(150);expect(director.getThinkingFrame()).toBeNull();
 });
+
+
+test("arrow steps and direct seeks land on the same readable ballot state, including the final tally", () => {
+ const clock = new Clock();
+ const director = new PresentationDirector({clock, policy: {...policy, scrubAtMs: cue => cue.key === "tally" ? 0 : 1250}});
+ director.load([{key:"vote1",cursor:8,baseDurationMs:3200},{key:"vote2",cursor:8,baseDurationMs:3200},{key:"tally",cursor:8,baseDurationMs:3200}]);
+ director.seek(0);expect(director.getElapsedBaseMs()).toBe(1250);
+ director.manualAdvance();expect(director.getSnapshot().activeKey).toBe("vote2");expect(director.getElapsedBaseMs()).toBe(1250);
+ director.seek(1);expect(director.getElapsedBaseMs()).toBe(1250);
+ director.manualAdvance();expect(director.getSnapshot().activeKey).toBe("tally");expect(director.getElapsedBaseMs()).toBe(0);
+ director.seek(2);expect(director.getElapsedBaseMs()).toBe(0);expect(director.getSnapshot().isPlaying).toBe(false);
+ director.dispose();
+});

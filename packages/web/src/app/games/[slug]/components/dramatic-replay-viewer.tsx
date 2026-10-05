@@ -518,7 +518,7 @@ function DramaticReplayTheater({
 
   const isTwoNamesPresentation = formatCue?.after.activeFormatId === "two_names";
   const usesFullHeightContent = fullscreen || formatCue?.kind === "two_names_plea" || visual.beat !== null;
-  const isSoloPresentation = visual.beat?.kind === "portrait";
+  const isSoloPresentation = visual.beat?.kind === "portrait" || visual.beat?.kind === "nominee-selection";
   const isRoomPresentation = visual.beat?.kind === "scene" || visual.beat?.kind === "portrait-room" || visual.beat?.kind === "safety-bounce" || visual.beat?.kind === "winner";
 
   const canonicalReplayFrame = useMemo(() => {
@@ -527,12 +527,15 @@ function DramaticReplayTheater({
     if (canonicalSequence === null || canonicalSequence === undefined) {
       return replayFrames[0] ?? null;
     }
+    // A committed resolution expands into votes, pool and choice before the exit.
+    // Keep the cast on its preceding canonical frame until that exit is presented.
+    const beforeExit = activeCue?.source === "format" && ["format_roll_call", "format_aggregate", "format_tiebreak", "format_deciding_vote"].includes(activeCue.kind);
     for (let index = replayFrames.length - 1; index >= 0; index -= 1) {
       const frame = replayFrames[index]!;
-      if (frame.sequence <= canonicalSequence) return frame;
+      if (beforeExit ? frame.sequence < canonicalSequence : frame.sequence <= canonicalSequence) return frame;
     }
     return replayFrames[0] ?? null;
-  }, [activeCue?.canonicalSequence, isFormatGame, replayFrames]);
+  }, [activeCue?.canonicalSequence, activeCue?.kind, activeCue?.source, isFormatGame, replayFrames]);
 
   // Classic replay retains its frozen transcript parser. Format replay status
   // comes only from the canonical replay-frame snapshot at the active cue.
@@ -574,12 +577,12 @@ function DramaticReplayTheater({
     onPlaybackStateChange({
       round: scene.round,
       phase: scene.phase,
-      canonicalSequence: activeCue?.canonicalSequence ?? null,
+      canonicalSequence: canonicalReplayFrame?.sequence ?? activeCue?.canonicalSequence ?? null,
       formatSnapshot: presentedFormatSnapshot,
       players: replayPlayers,
       visibleMessages: allVisibleMessages,
     });
-  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, presentedFormatSnapshot, replayPlayers, scene]);
+  }, [activeCue?.canonicalSequence, canonicalReplayFrame, allVisibleMessages, onPlaybackStateChange, presentedFormatSnapshot, replayPlayers, scene]);
 
   const advanceMessage = useCallback(() => {
     director.manualAdvance();

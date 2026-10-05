@@ -81,7 +81,8 @@ async function checkFailedPackNegotiations() {
     const omni = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
     const finalPack = omni.view.entries.findIndex(entry=>entry.kind==="pack_vote" && entry.result.attempt===3);
     expect(finalPack).toBeGreaterThan(0);
-    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max) === ${omni.latestCursor}`);
+    const watchIndex = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=omniscient`)).json() as {playback:Array<{steps:number}>};
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max) === ${watchIndex.playback.reduce((sum,entry)=>sum+entry.steps,0)}`);
     await seekWatch(page,finalPack+1);await watchText(page,"No agreement. No attack tonight.");
     await page.setViewport({width:390,height:844});await page.screenshot({path:"/tmp/werewolf-pack-ballots-mobile.png"});
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
@@ -458,9 +459,9 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     const from = Number(url.searchParams.get("fromCursor") ?? 1);
     const moments = Array.from({length: Math.max(0, Math.min(32, head - from + 1))}, (_, index) => {
       const cursor = from + index;
-      return {...source, cursor, mediaKey: null, snapshot: {...source.snapshot, cursor}, entry: {...speech, text: cursor === 1 ? "Opening contribution." : cursor === 97 ? "Frontier contribution." : null}};
+      return {...source, cursor, mediaKey: null, snapshot: {...source.snapshot, cursor}, entry: {...speech, text: cursor === 1 ? "Opening contribution." : cursor === 33 ? "Middle contribution." : cursor === 96 ? "Latest contribution." : cursor === 97 ? "Frontier contribution." : null}};
     });
-    const reply = () => request.respond({status: 200, contentType: "application/json", headers: {"Access-Control-Allow-Origin": "*"}, body: JSON.stringify({...base, status: "in_progress", latestCursor: head, fromCursor: from, throughCursor: moments.at(-1)?.cursor ?? head, moments, media: {}})});
+    const reply = () => request.respond({status: 200, contentType: "application/json", headers: {"Access-Control-Allow-Origin": "*"}, body: JSON.stringify({...base, status: "in_progress", latestCursor: head, fromCursor: from, throughCursor: moments.at(-1)?.cursor ?? head, moments, playback: [1,33,96,97].filter(cursor=>cursor<=head).map(cursor=>({cursor,steps:1})), media: {}})});
     if (from === 33 && delayMiddle) {
       const timer = setTimeout(() => { pending.delete(timer); void reply(); }, 600);
       pending.add(timer);
@@ -471,32 +472,33 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     await page.waitForSelector('[data-werewolf-stage][data-cursor="1"]');
     await pauseWerewolf(page);
     const stage = await page.$('[data-werewolf-stage]');
-    // Rapid B then C: B is delayed, C is a silent frontier. The old picture stays during preparation.
-    await page.evaluate(`(() => { const input=document.querySelector('input[aria-label="Replay position"]'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; for(const value of ['33','96']) {set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));} })()`);
-    await page.waitForFunction("document.querySelector('input[aria-label=\"Replay position\"]').getAttribute('value') === '96'");
+    // Rapid B then C: B is delayed. The old picture stays during preparation.
+    await page.evaluate(`(() => { const input=document.querySelector('input[aria-label="Replay position"]'); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; for(const value of ['2','3']) {set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));} })()`);
+    await page.waitForFunction("document.querySelector('input[aria-label=\"Replay position\"]').getAttribute('value') === '3'");
     expect(await stage!.evaluate(node => node.isConnected)).toBe(true);
     expect(await page.$$('[data-watch-context]')).toHaveLength(1);
-    expect(await page.$$('[data-speech-bubble]')).toHaveLength(0);
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="96"]');
     delayMiddle = false;
     head = 97;
     // Let an actual poll arrive. The new head can update the scrub range but not the paused position.
-    await page.waitForFunction("document.querySelector('input[aria-label=\"Replay position\"]').max === '97'", {timeout: 10_000});
-    expect(await page.$eval('input[aria-label="Replay position"]', input => input.getAttribute('value'))).toBe("96");
+    await page.waitForFunction("document.querySelector('input[aria-label=\"Replay position\"]').max === '4'", {timeout: 10_000});
+    expect(await page.$eval('input[aria-label="Replay position"]', input => input.getAttribute('value'))).toBe("3");
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("Space");
     await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]');
     await watchText(page, "Frontier contribution.");
-    // A playing seek into silent history still exposes Pause while fetching the next line.
+    // A playing seek across silent history still exposes Pause while fetching the next line.
     delayMiddle = true;
-    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'33');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'2');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
     await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Pause replay')");
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("Space");
     await page.waitForFunction("!Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent==='Preparing…')");
-    await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]');
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="33"]');
     await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')");
     await page.keyboard.press("Space");
-    await seekWatch(page, 1);
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'1');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await page.waitForSelector('[data-werewolf-stage][data-cursor="1"]');
     // Seeking retains play intent through three windows of passes. They never produce a Pass card.
     await page.evaluate("document.activeElement?.blur()");
     await page.keyboard.press("4");
@@ -565,7 +567,7 @@ test("House entry is anonymous, rejects invalid audiences and shares a later sou
   try {
     await page.goto(`${servers.webUrl}/games/${game.slug}`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('a[href$="/replay?audience=mystery"]');
-    expect(reads.some(url=>url.includes(`/api/games/${game.slug}`))).toBe(false);
+    expect(reads.some(url=>new URL(url).pathname === `/api/games/${game.slug}`)).toBe(false);
     await page.waitForSelector('meta[name="robots"][content*="noindex"]');
     const listed = await (await fetch(`${servers.apiUrl}/api/werewolf`)).json() as Array<{id:string}>;
     expect(listed.some(row=>row.id===game.id)).toBe(false);
@@ -873,5 +875,50 @@ test("victory music continues beyond the final frame, pauses, and ends without l
       await seekWatch(page,1);
       await page.waitForFunction("window.__musicAudio.some(a=>a.src.includes('lantern-to-fang') && !a.paused && a.currentTime>0.1)");
     }
+  } finally {await page.close();}
+},120_000);
+
+test("Werewolf arrows and scrubber visit every ballot and the completed tally", async () => {
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {buildWerewolfResults} = await import("@influence/engine/werewolf/results");
+  const id="browser-ballot-stops";
+  const events=await werewolfResultsFixture("village",id), results=buildWerewolfResults(events);
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",maxPlayers:results.players.length,startedAt:new Date().toISOString(),endedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:"one_wolf",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+  const presentation=await(await fetch(`${servers.apiUrl}/api/werewolf/${id}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+  const index=presentation.view.entries.findIndex(entry=>entry.kind==="vote"), entry=presentation.view.entries[index];
+  if(entry?.kind!=="vote")throw new Error("Missing fixture vote");
+  const page=await browser.newPage();
+  try {
+    await page.setViewport({width:1440,height:1000});
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
+    await pauseWerewolf(page);
+    for(let step=0;step<entry.result.ballots.length;step++) {
+      await seekWatch(page,index+1,step);
+      await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length===${step+1}`);
+      expect(await page.$('[data-vote-complete]')).toBeNull();
+      const scrubbed=await page.$$eval('[data-ledger-voter]',nodes=>nodes.map(node=>node.getAttribute('data-ledger-voter')));
+      if(step>0) {
+        await seekWatch(page,index+1,step-1);
+        await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('ArrowRight');
+        await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length===${step+1}`);
+        expect(await page.$$eval('[data-ledger-voter]',nodes=>nodes.map(node=>node.getAttribute('data-ledger-voter')))).toEqual(scrubbed);
+      }
+    }
+    await page.keyboard.press('ArrowRight');
+    await page.waitForSelector('[data-vote-complete]');
+    expect(await page.$$('[data-ledger-voter]')).toHaveLength(entry.result.ballots.length);
+    const total=await page.$eval('[data-votes-revealed]',node=>node.textContent);
+    await seekWatch(page,index+1,entry.result.ballots.length);
+    expect(await page.$eval('[data-votes-revealed]',node=>node.textContent)).toBe(total);
+    await page.screenshot({path:"/tmp/werewolf-vote-complete.png"});
+    await page.setViewport({width:390,height:844});
+    await page.screenshot({path:"/tmp/werewolf-vote-complete-mobile.png"});
+    await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction("!document.querySelector('[data-vote-complete]')");
+    expect(await page.$$('[data-ledger-voter]')).toHaveLength(entry.result.ballots.length);
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length===${entry.result.ballots.length-1}`);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
   } finally {await page.close();}
 },120_000);

@@ -7,7 +7,8 @@ import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/
 import { paceVisualBallots } from "../app/games/[slug]/components/visual-watch-model";
 import { findCueForAdjacentScene } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { voteLedgerForCue, voteLedgerRows } from "../app/games/[slug]/components/vote-ledger-model";
-import { VotePresentation } from "../app/games/[slug]/components/vote-presentation";
+import { VoteLedger, VotePresentation } from "../app/games/[slug]/components/vote-presentation";
+import {NomineeSelection, type NomineeSelectionBeat} from "../app/games/[slug]/components/nominee-selection";
 import { votePresentationTiming } from "../app/games/[slug]/components/vote-presentation-timing";
 import { soloPresentationDurationMs, SOLO_EXIT_MS, SOLO_READ_START_MS } from "../app/games/[slug]/components/solo-presentation-timing";
 
@@ -38,7 +39,8 @@ test("format ledger exposes only the current prefix, and rewinding removes futur
   expect(third.votes).toHaveLength(3);
   expect(voteLedgerRows(first.votes).reduce((sum, row) => sum + row.votes.length, 0)).toBe(1);
   expect(voteLedgerForCue(cues, start)).toEqual(first);
-  expect(voteLedgerForCue(cues, start + first.total)).toBeNull();
+  expect(voteLedgerForCue(cues, start + first.total)).toMatchObject({complete:true, total:first.total});
+  expect(voteLedgerForCue(cues, start + first.total + 1)).toBeNull();
   expect(voteLedgerRows([{ voterId: "a", targetId: "b", choice: "save" }, { voterId: "c", targetId: "b", choice: "exit" }]))
     .toMatchObject([{ targetId: "b", saves: 1, exits: 1 }]);
 });
@@ -58,9 +60,9 @@ test("scene Prev/Next skips the entire roll call while every ballot remains in t
   const { cues } = fixture("two_names_declined");
   for (const first of [cues.findIndex(cue => cue.source === "format" && cue.visualBallot), cues.findIndex(cue => cue.source === "format" && cue.kind === "format_roll_call")]) {
     const count = voteLedgerForCue(cues, first)!.total;
-    expect(findCueForAdjacentScene(cues, first, 1)).toBe(first + count);
-    expect(findCueForAdjacentScene(cues, first + count - 1, 1)).toBe(first + count);
-    expect(findCueForAdjacentScene(cues, first + count, -1)).toBe(first);
+    expect(findCueForAdjacentScene(cues, first, 1)).toBe(first + count + 1);
+    expect(findCueForAdjacentScene(cues, first + count - 1, 1)).toBe(first + count + 1);
+    expect(findCueForAdjacentScene(cues, first + count + 1, -1)).toBe(first);
     expect(cues.slice(first, first + count)).toHaveLength(count);
   }
 });
@@ -96,4 +98,26 @@ test("Hear more and unavailable receipts stay distinct and never become speech",
   expect(html).toContain("Unavailable");
   expect(html).not.toContain("data-speech-bubble");
   expect(voteLedgerRows(votes)).toHaveLength(2);
+});
+
+
+test("eligible zero-vote candidates stay visible without inventing receipts", () => {
+  const html = renderToString(<VoteLedger title="Even Votes" votes={[{voterId:"a",targetId:"b",choice:"exit"}]} total={1}
+    roster={[{id:"a",name:"Ada"},{id:"b",name:"Ben"}]} eligibility={{ids:["a"],label:"Highest even count"}} />);
+  expect(html).toContain('data-vote-target="a" data-vote-eligible="true"');
+  expect(html).toContain('data-running-total="a" class="max-w-full shrink-0 break-words text-amber-100">0');
+  expect((html.match(/data-ledger-voter=/g) ?? []).length).toBe(1);
+});
+
+
+test("nominee selection uses elapsed playback time, supports rewind and reduced motion without body art", () => {
+  const player: GamePlayer = {id:"a",name:"Ada",persona:"observer",status:"alive",shielded:false};
+  const beat: NomineeSelectionBeat = {kind:"nominee-selection",chooser:player,nominees:[player,{...player,id:"b",name:"Ben"}],selectedId:"b"};
+  const render = (elapsedMs:number,reducedMotion=false) => renderToString(<NomineeSelection beat={beat} elapsedMs={elapsedMs} reducedMotion={reducedMotion} />);
+  expect(render(0)).not.toContain('data-selected="true"');
+  expect(render(700)).toContain('data-selected="true" data-eliminated="false"');
+  expect(render(2000)).toContain('data-selected="true" data-eliminated="true"');
+  expect(render(0)).not.toContain('data-selected="true"');
+  expect(render(0,true)).toContain('data-selected="true" data-eliminated="true"');
+  expect(renderToString(<NomineeSelection beat={{...beat,selectedId:null}} elapsedMs={9000} />)).not.toContain('data-selected="true"');
 });

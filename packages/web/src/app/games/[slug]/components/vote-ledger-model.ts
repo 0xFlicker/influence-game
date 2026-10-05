@@ -1,4 +1,4 @@
-import { displayNameForFormat } from "@influence/engine/format-rules";
+import { displayNameForFormat, getFormatRegistration } from "@influence/engine/format-rules";
 import type { PresentationCue } from "./types";
 
 export interface RevealedVote {
@@ -8,6 +8,8 @@ export interface RevealedVote {
 }
 export interface VoteLedgerState {
   title: string;
+  complete?: boolean;
+  eligibility?: {ids: string[]; label: string};
   votes: RevealedVote[];
   current: RevealedVote;
   total: number;
@@ -40,16 +42,16 @@ export function voteLedgerForCue(cues: readonly PresentationCue[], cursor: numbe
   if (!cue) return null;
   const current = receipt(cue), group = voteSceneIdentity(cue);
   if (!current || !group) return null;
-  const votes = cues.slice(0, cursor + 1).filter(entry => voteSceneIdentity(entry) === group).flatMap(entry => {
+  const votes = cues.slice(0, cursor + 1).filter(entry => !entry.voteSummary && voteSceneIdentity(entry) === group).flatMap(entry => {
     const accepted = receipt(entry);
     return accepted ? [accepted] : [];
   });
   const total = cue.source === "format" && cue.kind === "format_roll_call" ? cue.rollCallCount
-    : cues.filter(entry => voteSceneIdentity(entry) === group).length;
+    : cues.filter(entry => !entry.voteSummary && voteSceneIdentity(entry) === group).length;
   const title = cue.source === "format" && cue.visualBallot ? cue.visualBallot.revote ? "Empower revote" : "Empower vote"
     : cue.source === "format" && cue.after.activeFormatId ? displayNameForFormat(cue.after.activeFormatId)
       : current.choice === "winner" ? "Jury vote" : "Elimination vote";
-  return { title, votes, current, total, polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate" };
+  return { title, votes, current, total, complete: cue.voteSummary, eligibility: cue.voteSummary ? voteEligibility(cues, cursor) : undefined, polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate" };
 }
 
 export function voteLedgerRows(votes: readonly RevealedVote[]) {
@@ -63,4 +65,25 @@ export function voteLedgerRows(votes: readonly RevealedVote[]) {
     rows.set(key, row);
   }
   return [...rows.values()];
+}
+
+/** The compiler already validated the canonical resolution; never reconstruct its pool from prose. */
+function voteEligibility(cues: readonly PresentationCue[], cursor: number): VoteLedgerState["eligibility"] {
+  const cue = cues[cursor];
+  if (cue?.source !== "format") return undefined;
+  if (cue.visualBallot && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie")) {
+    const highest = Math.max(...Object.values(cue.counts));
+    return {ids: Object.keys(cue.counts).filter(id => cue.counts[id] === highest), label: "Highest count · eligible for power"};
+  }
+  const result = cues.slice(cursor + 1).find(next => next.source === "format" && next.canonicalSequence === cue.canonicalSequence && next.kind === "format_aggregate");
+  if (result?.source !== "format" || result.kind !== "format_aggregate") return undefined;
+  const resolution = result.resolution;
+  const registration = getFormatRegistration(resolution.formatId);
+  const scoring = registration.capability === "sealed_elim" ? registration.presentation.scoring : null;
+  const allOdd = scoring === "highest_even" && resolution.aggregate.capability === "sealed_elim" && Object.values(resolution.aggregate.totals).every(n => n % 2 !== 0);
+  const label = allOdd ? "All totals are odd · empowered choice" : scoring === "highest_even" ? "Highest even count · eligible for exit"
+    : scoring === "fewest_positive" ? "Fewest positive votes · eligible for exit"
+    : resolution.aggregate.capability === "sealed_polarity" ? "Lowest net score · eligible for exit"
+    : scoring === "highest_total" ? "Highest count · eligible for exit" : "Eligible for exit";
+  return {ids: resolution.tiedPlayerIds.length ? resolution.tiedPlayerIds : [resolution.eliminatedId], label};
 }
