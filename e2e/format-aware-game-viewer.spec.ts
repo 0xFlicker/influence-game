@@ -1094,9 +1094,8 @@ test.describe("format-aware game viewer", () => {
         await page.goto(viewerUrl(`/games/${slug}/replay`));
         // The local Next dev badge otherwise covers the mobile playback dock.
         await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
-        const next = async () => page.getByRole("button", { name: mobile ? "Next scene" : "Next", exact: true }).click();
-        const nextDialogueStep = async () => page.getByRole("button", { name: "Next dialogue step", exact: true }).click();
+        await pauseAutoplay(page, "Pause replay");
+        const next = async () => page.getByRole("button", { name: "Next scene", exact: true }).click();
         const seek = async (kind: string) => {
           const stage = page.locator(`[data-format-cue="${kind}"]`);
           for (let i = 0; i < 30; i++) {
@@ -1111,11 +1110,11 @@ test.describe("format-aware game viewer", () => {
         await expect(initial).toContainText("Atlas nominates:");
         // Re-enter while playing: exercise animation completion, then seek back while paused.
         await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
-        await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
+        await page.getByRole("button", { name: "Play replay", exact: true }).click();
         await expect(initial).toBeVisible({ timeout: 8_000 });
         await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
         await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
-        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
+        await pauseAutoplay(page, "Pause replay");
         await page.screenshot({ path: testInfo.outputPath("nominees.png") });
         if (scenarioId === "two_names_used_tie") {
           const removed = await seek("two_names_override_removed");
@@ -1143,37 +1142,35 @@ test.describe("format-aware game viewer", () => {
           return rect.bottom <= stage.bottom && rect.top >= stage.top
             && rect.height > 40 && element.scrollHeight <= element.clientHeight + 1;
         })).toBe(true);
-        await expect(page.getByRole("button", { name: mobile ? "Next scene" : "Next", exact: true })).toBeInViewport();
+        await expect(page.getByRole("button", { name: "Next scene", exact: true })).toBeInViewport();
         await page.screenshot({ path: testInfo.outputPath("long-plea.png") });
-        const sealing = await seek("two_names_ballots_sealing");
-        await expect(sealing.locator("[data-nominee-id]")).toHaveCount(2);
-        await expect(sealing).not.toContainText("Exit votes");
-        await expect(sealing.getByLabel("1 of 2 ballots sealed", { exact: true })).toBeVisible();
-        await next();
-        await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
-        await page.clock.pauseAt(new Date(Date.now() + 1000));
-        await nextDialogueStep();
         const firstBallot = page.getByRole("region", { name: `Ballot: ${scenarioId === "two_names_used_tie" ? "Lyra" : "Rex"}`, exact: true });
+        // Two pleas lead straight to the shared ballot presentation, with no
+        // synthetic collection card between the plea and the first receipt.
+        await next();
+        await expect(page.locator('[data-format-cue="two_names_plea"]')).toContainText("No plea was received");
+        await next();
         await expect(firstBallot).toBeVisible();
-        // Manual speech steps reveal, hide, then leave the portrait. Wait for
-        // each fade before another keypress instead of racing through ballots.
-        await playbackKey(page, "ArrowRight");
-        await page.clock.runFor(300);
-        await expect(firstBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(page.getByText(/Ballots sealed/)).toHaveCount(0);
         await expect(firstBallot.getByRole("blockquote")).toHaveText(first);
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+        if (mobile) {
+          await expect.poll(() => firstBallot.evaluate(element => {
+            const stage = element.getBoundingClientRect();
+            const bubble = element.querySelector('[data-speech-bubble]')!.getBoundingClientRect();
+            const tail = element.querySelector('[data-speech-bubble] > [aria-hidden]')!.getBoundingClientRect();
+            return Math.abs(bubble.left + bubble.width / 2 - stage.left - stage.width / 2) < 1
+              && tail.left >= bubble.left && tail.right <= bubble.right;
+          })).toBe(true);
+          await page.screenshot({ path: testInfo.outputPath("centered-ballot.png") });
+        }
         await playbackKey(page, "ArrowRight");
-        await page.clock.runFor(300);
-        await expect(firstBallot.getByRole("blockquote")).toHaveCount(0);
-        await playbackKey(page, "ArrowRight");
-        await page.clock.runFor(2100);
         const secondBallot = page.getByRole("region", { name: "Ballot: Nova", exact: true });
         await expect(secondBallot).toBeVisible();
-        await expect(secondBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
         await expect(secondBallot.getByRole("blockquote")).toHaveText(scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+        await playbackKey(page, "ArrowRight");
+        await expect(page.locator("[data-vote-complete]")).toBeVisible();
+        await expect(page.locator("[data-votes-revealed]")).toHaveText("2 / 2 votes shown");
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
         await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();

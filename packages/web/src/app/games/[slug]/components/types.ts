@@ -115,7 +115,6 @@ export interface TwoNamesPresentationSnapshot {
   finalistPlayerIds: [string, string] | null;
   completedMingleWindows: Array<"initial_names" | "final_names">;
   pleaCount: number;
-  ballotsSealed: number;
 }
 
 export type FormatResolutionPresentation =
@@ -224,11 +223,6 @@ export type FormatPresentationCue =
       ordinal: 0 | 1;
       status: "accepted" | "absent";
       text: string | null;
-    })
-  | (FormatPresentationCueBase & {
-      kind: "two_names_ballots_sealing";
-      sealedCount: number;
-      eligibleCount: number;
     })
   | (FormatPresentationCueBase & {
       kind: "safety_bounce_pointer";

@@ -80,8 +80,11 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", compact);
   const thoughtFit = useBubbleTypography(frame, thought?.text ?? "", thoughtBox, "thought", compact);
   const fittedThought = {...thoughtBox, width:thoughtFit.typography?.width ?? thoughtBox.width, height:thoughtFit.typography?.height ?? thoughtBox.height};
-  const bubble = {...speechBox, width:speechFit.typography?.width ?? speechBox.width, height:speechFit.typography?.height ?? speechBox.height,
+  const fittedSpeechWidth = speechFit.typography?.width ?? speechBox.width;
+  const bubble = {...speechBox, width:fittedSpeechWidth, height:speechFit.typography?.height ?? speechBox.height,
+    left:speechBox.left + (geometry.beside ? 0 : (speechBox.width - fittedSpeechWidth) / 2),
     top:thoughtLayout && !fullBody ? Math.max(fittedThought.top + fittedThought.height + 16, speechBox.top - (thoughtBox.height - fittedThought.height)) : speechBox.top};
+  const tailLeft = Math.max(16, Math.min(bubble.width - 16, geometry.bubble.left + geometry.tailLeft - bubble.left));
   return <section ref={frame} aria-label={`${beat.purpose}: ${player.name}`} data-solo-image={fullBody ? "full-body" : "portrait"}
     className="relative min-h-0 w-full flex-1 overflow-hidden bg-black">
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
@@ -101,7 +104,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       <blockquote className="flex min-h-0 flex-1 flex-col">
         {staticSpeech ? <p className="break-words" style={{fontSize:speechFit.typography?.fontSize,lineHeight:1.4}}>{speech.text}</p> : <TimedSpeech text={speech.text} elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs} typography={speechFit.typography} />}
       </blockquote>
-      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.beside ? "-left-2 top-1/2 border-l border-b" : geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={geometry.beside ? undefined : { left: geometry.tailLeft - 8 }} />
+      <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black ${geometry.beside ? "-left-2 top-1/2 border-l border-b" : geometry.above ? "-bottom-2 border-r border-b" : "-top-2 border-l border-t"}`} style={geometry.beside ? undefined : { left: tailLeft - 8 }} />
     </div>}
     {thoughtLayout && <ThoughtBubble box={fittedThought} head={thoughtLayout.head} typography={thoughtFit.typography} padding={thoughtFit.padding} />}
   </section>;

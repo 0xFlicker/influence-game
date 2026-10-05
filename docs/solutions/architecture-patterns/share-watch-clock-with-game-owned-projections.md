@@ -36,7 +36,7 @@ Thinking-first retains the thought through the entire spoken line and uses the s
 
 ## Message-wide bubble fitting
 
-Measure both speech and thinking before visibility changes, using the stage font and viewport budget. `fitBubbleText` chooses bounded type, then paginates at the readable minimum when necessary and fixes the bubble to its tallest page. `TimedSpeech` consumes these measured pages without a second sizing pass. Do not fit only the currently visible page: that would move the shape on every page change. Font-ready and viewport changes may refit; playback time cannot. Keep padding and borders in the measurement budget.
+Measure both speech and thinking before visibility changes, using the stage font and viewport budget. `fitBubbleText` chooses bounded type, then paginates at the readable minimum when necessary and fixes the bubble to its tallest page. `TimedSpeech` consumes these measured pages without a second sizing pass. When fitting narrows a stacked speech bubble, recenter its final width and recompute the pointer relative to that fitted frame. Do not fit only the currently visible page: that would move the shape on every page change. Font-ready and viewport changes may refit; playback time cannot. Keep padding and borders in the measurement budget.
 
 ## Replay music
 
@@ -52,3 +52,5 @@ Both adapters append a separate completed-tally cue after the final receipt. It 
 Influence presents the recorded nominee pool before the deciding target. Existing fullbody art and portrait fallbacks supply the scene; the shared clock drives red selection, crossing-out and dimming. Direct seeking lands at a readable decided state; reduced motion shows the state without movement. Cast status stays on the preceding canonical frame until the elimination cue, avoiding an early OUT badge during the choice.
 
 Scene Previous/Next intentionally skip the whole ballot group. Arrow keys and the slider visit individual ballots plus the completed tally. Ordinary dialogue retains its existing thought/speech reveal and dismissal steps; this change does not collapse those reading controls into chapter navigation.
+
+Two Names uses this same ballot presentation directly after final pleas. Accepted sealed ballots create no synthetic collection cues or per-voter pauses; their canonical resolution supplies the roll call and tally.
