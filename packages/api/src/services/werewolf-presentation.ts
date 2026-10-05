@@ -42,12 +42,14 @@ async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicatio
 }
 function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging) {
   // Introductions use frozen individual art, including games with old lobby renders.
-  if (frame.roomId === null) return { scene: null, permitted: new Set<string>() };
+  if (frame.roomId === null || audience === "mystery" && frame.purpose !== "village") return { scene: null, permitted: new Set<string>() };
   const root = `/api/werewolf/${encodeURIComponent(gameId)}`;
   const query = `audience=${audience}&cursor=${cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const mediaUrl = (asset: string) => `${root}/media/${encodeURIComponent(asset)}?${query}`;
   // Membership must match exactly: never substitute a future or pre-death cast.
-  const eligible = rows.filter(row => row.scene.roomId === frame.roomId && row.scene.boundarySequence <= frame.boundary);
+  const eligible = rows.filter(row => row.scene.roomId === frame.roomId && row.scene.boundarySequence <= frame.boundary
+    && (frame.purpose === "hunt" ? row.version.plan.direction?.purpose === "werewolf-hunt"
+      : !row.version.plan.direction || row.version.plan.direction.purpose === `werewolf-${frame.purpose}`));
   const latest = eligible.filter((row, index) => eligible.findIndex(other => other.scene.id === row.scene.id) === index);
   const selected = latest.find(row => row.version.plan.cast.length === frame.participantIds.length && row.version.plan.cast.every(p => frame.participantIds.includes(p.id)));
   const permitted = new Set<string>();
@@ -88,7 +90,7 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
       if (scene && mediaKey && !media[mediaKey]) media[mediaKey] = scene;
       bindings.set(binding, mediaKey);
     }
-    return { ...moment, mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
+    return { ...moment, ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
   });
   return { ...projection, slug: game.slug, status: game.status, audience, publicationCutoff, moments, media,
     players: projection.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) };

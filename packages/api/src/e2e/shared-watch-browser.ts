@@ -7,6 +7,7 @@ export async function seekWatch(page:Page,cursor:number,step=0){
  const stops=window.playback.flatMap(entry=>Array.from({length:entry.steps},(_,step)=>({cursor:entry.cursor,step})));
  const position=stops.findIndex(stop=>stop.cursor>=cursor && (stop.cursor!==cursor || stop.step===step))+1;
  if(position<1)throw new Error(`No playback stop for ${cursor}:${step}`);
+ await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.max) === ${stops.length}`);
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
  await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
 }

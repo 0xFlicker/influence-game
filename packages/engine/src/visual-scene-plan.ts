@@ -9,6 +9,8 @@ export interface VisualCastMember {
   portraitFallback?: boolean;
   headRectangle?: import("./character-portrait").HeadRectangle;
   performanceInstructions: string;
+  /** Immutable derivative intent/provenance; original game references stay unchanged. */
+  variant?: { kind: "werewolf"; sourceArtifactId: string; revision: string; generation: string; resolved?: boolean };
 }
 export interface VisualPlacement {
   playerId: string;
@@ -16,7 +18,15 @@ export interface VisualPlacement {
   position: string;
   role: "participant" | "addressing" | "finalist" | "juror";
 }
+export interface VisualSceneDirection {
+  purpose: "werewolf-village" | "werewolf-pack" | "werewolf-hunt";
+  revision: string;
+  style: string;
+  roomName: string;
+  roomDirection: string;
+}
 export interface VisualScenePlan {
+  direction?: VisualSceneDirection;
   version: 1;
   roomId: VisualRoomId;
   roomVersion: number;
@@ -104,6 +114,7 @@ export function planVisualScene(input: {
 /** Cues inform the next necessary render but cannot make a scene dirty themselves. */
 export function sameVisualArrangement(left: VisualScenePlan, right: VisualScenePlan): boolean {
   const normalized = (plan: VisualScenePlan) => JSON.stringify({
+    direction: plan.direction,
     roomId: plan.roomId, roomVersion: plan.roomVersion, backgroundArtifactId: plan.backgroundArtifactId,
     cast: [...plan.cast].sort((a, b) => a.id.localeCompare(b.id))
       .map((member) => [member.id, member.name, member.referenceArtifactId, member.performanceInstructions]),

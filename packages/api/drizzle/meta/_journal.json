@@ -764,6 +764,20 @@
       "when": 1791072000000,
       "tag": "0108_house_cuts",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1791244800000,
+      "tag": "0109_visual_character_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791244800001,
+      "tag": "0110_immutable_visual_character_variants",
+      "breakpoints": true
     }
   ]
 }

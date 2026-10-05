@@ -3531,6 +3531,19 @@ export const visualArtifacts = pgTable("visual_artifacts", {
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [unique("visual_artifacts_content_unique").on(table.gameId, table.contentHash)]);
 
+/** Verified character derivatives. Original match-frozen cast is never overwritten. */
+export const visualCharacterVariants = pgTable("visual_character_variants", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull(),
+  sourceArtifactId: text("source_artifact_id").notNull().references(() => visualArtifacts.id),
+  artifactId: text("artifact_id").notNull().references(() => visualArtifacts.id),
+  revision: text("revision").notNull(),
+  generation: text("generation").notNull(),
+  head: jsonb("head").notNull().$type<import("@influence/engine/character-portrait").HeadRectangle>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, table => [unique("visual_character_variants_identity_unique").on(table.gameId, table.playerId, table.sourceArtifactId, table.revision, table.generation)]);
+
 export const visualScenes = pgTable("visual_scenes", {
   id: text("id").primaryKey(),
   gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),

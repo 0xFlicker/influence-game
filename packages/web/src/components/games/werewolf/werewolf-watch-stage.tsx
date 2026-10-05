@@ -1,4 +1,6 @@
 "use client";
+import {WerewolfRoleStage} from "./werewolf-role-stage";
+import {WerewolfHuntStage} from "./werewolf-hunt-stage";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {useCallback, useEffect, useLayoutEffect, useState} from "react";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
@@ -14,7 +16,7 @@ import {replayMoment} from "./replay-moment";
 export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel, navigationRevision = 0}: {cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: PresentationDirector<WerewolfWatchCue>; holding: boolean; status?: string; contextLabel?: string; navigationRevision?: number}) {
   const moment = cue ? replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]}) : null;
   return <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black" data-werewolf-stage data-cursor={cue?.moment.cursor} data-elapsed={Math.floor(elapsed)} onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button,a,input,select,summary")) director.manualAdvance();}}>
-    <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60" data-watch-context>{contextLabel ?? moment?.title ?? "The village"}</div>
+    <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60" data-watch-context>{cue?.nightAction ? `Night ${cue.moment.snapshot.day} · ${cue.nightAction.kind === "hunt" ? "The hunt" : cue.nightAction.kind === "protect" ? "Doctor" : "Seer"}` : contextLabel ?? moment?.title ?? "The village"}</div>
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {cue && moment && (!holding || cue.moment.entry.kind === "result") ? <SceneContent key={scene ? `${scene.id}:${scene.version}` : "portrait"} navigationRevision={navigationRevision} cue={cue} moment={moment} scene={scene} elapsed={elapsed} reduced={reduced} director={director} /> : <WatchWaiting label={status === "in_progress" ? "Waiting for the next scene…" : status === "suspended" ? "Game paused. Waiting for the House…" : holding ? "End of available conversation" : "Preparing the village…"} />}
     </div>
@@ -24,7 +26,7 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
   const shot = scene?.shots ? selectVisualShot(scene.shots, moment.actor?.id) : null;
   const covered = Boolean(scene && moment.actor && (shot ? shot.visibleParticipantIds.includes(moment.actor.id) : scene.anchors.some(anchor => anchor.playerId === moment.actor?.id && anchor.confidence === "clear")));
   const readinessKey = `${cue.key}:${shot?.imageUrl ?? scene?.imageUrl ?? moment.actor?.avatarUrl ?? "none"}`;
-  const initialReady = !covered && !moment.actor?.avatarUrl;
+  const initialReady = cue.nightAction ? cue.nightAction.kind !== "hunt" || !scene : !covered && !moment.actor?.avatarUrl;
   const [readiness, setReadiness] = useState({key: readinessKey, ready: initialReady, timedOut: false});
   if (readiness.key !== readinessKey) setReadiness({key: readinessKey, ready: initialReady, timedOut: false});
   const ready = readiness.key === readinessKey ? readiness.ready : initialReady;
@@ -47,6 +49,8 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
     player: {...actor, name: `${actor.name}${cue.moment.snapshot.audience === "omniscient" && actor.role ? ` · ${actor.role}` : ""}`, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
+  if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady} />;
+  if (cue.nightAction) return <WerewolfRoleStage action={cue.nightAction} players={cue.moment.snapshot.players} />;
   if (cue.ballot && beat) return <VotePresentation beat={beat} ledger={cue.ballot}
     roster={cue.moment.snapshot.players.map(p => ({id:p.id, name:p.name, persona:"", avatarUrl:p.avatarUrl ?? undefined}))}
     elapsedMs={elapsed} readingElapsedMs={director.getSpeechElapsedBaseMs()} reducedMotion={reduced}

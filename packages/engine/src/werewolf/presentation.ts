@@ -1,3 +1,4 @@
+import { werewolfVisualStaging } from "./visual-staging";
 import { applyWerewolfEvent } from "./rules";
 import { projectWerewolfView, type WerewolfAudience, type WerewolfView } from "./observation";
 import type { WerewolfEvent, WerewolfState } from "./types";
@@ -15,7 +16,7 @@ export interface WerewolfPresentation {
 export function projectWerewolfPresentation(events: readonly WerewolfEvent[], audience: WerewolfAudience, cursor?: number) {
   if (cursor !== undefined && (!Number.isSafeInteger(cursor) || cursor < 1)) throw new Error("Invalid replay position");
   let state: WerewolfState | null = null;
-  let selected: { view: WerewolfView; boundary: number; roomId: "lobby" | "mingle-1" | null; participantIds: string[] } | null = null;
+  let selected: { view: WerewolfView; staging: ReturnType<typeof werewolfVisualStaging> } | null = null;
   let latestCursor = 0;
   for (const event of events) {
     const before: WerewolfState | null = state;
@@ -28,11 +29,8 @@ export function projectWerewolfPresentation(events: readonly WerewolfEvent[], au
     latestCursor = view.cursor;
     if (selected && cursor !== undefined && latestCursor > cursor) continue;
     const entry = view.entries.at(-1)!;
-    const roomId = entry.day === 0 ? null : entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack" ? "mingle-1" : "lobby";
-    const staging = before ?? state;
-    selected = { view, roomId, boundary: event.sequence - 1,
-      participantIds: roomId === null ? [] : staging.aliveIds.filter(id => roomId === "lobby" || staging.roles[id] === "werewolf") };
+    selected = { view, staging: werewolfVisualStaging(before ?? state, event, entry) };
   }
   if (!selected) throw new Error("Werewolf replay is empty");
-  return { ...selected, latestCursor };
+  return { view: selected.view, ...selected.staging, latestCursor };
 }

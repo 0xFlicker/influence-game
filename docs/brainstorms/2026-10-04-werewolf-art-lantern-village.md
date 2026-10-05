@@ -77,3 +77,20 @@ Production art brief:
 - Reuse the selected art direction in automatic production and producer regeneration. Existing published scenes are not replaced by recording this choice.
 
 Night locations, wolf forms, transitions and music still need their own concrete studies. The room-layout selection does not imply those later assets have been approved or tested.
+
+## Night background studies — 2026-10-05
+
+The operator accepted the direction of a ruined stone cellar for pack meetings and a moonlit timber-village lane for hunts. Wolf forms must retain the source character's rendering style, including nonrealistic/anime/illustrated styles, as well as recognizable clothing and identity. A shared setting does not require realistic redesigns of stylized characters.
+
+Built-in image generation produced two empty background studies:
+- [Pack cellar](../../.renders/werewolf-art/lantern-village-night-v1/pack-cellar.png): two camera-facing chairs, low table, broken masonry and restrained lantern/moonlight.
+- [Moonlit lane](../../.renders/werewolf-art/lantern-village-night-v1/moonlit-lane.png): open foreground and separated middle-distance target space.
+- [Exact prompts](../../.renders/werewolf-art/lantern-village-night-v1/prompts.json).
+
+These are review candidates, not approved production defaults. Validate populated one-/two-wolf compositions, target face scale, localization and mobile framing before adoption. No game assets or published scenes were replaced.
+
+## Night-background feedback — 2026-10-05
+
+The operator selected the v1 moonlit alleyway. Populated composition, identification and responsive framing still need validation before production adoption.
+
+The v1 cellar chairs were rejected as artificial-looking. The [revised cellar](../../.renders/werewolf-art/lantern-village-night-v2/pack-cellar.png) replaces them with worn stone seats built into the masonry and a low rough stone slab, retaining the camera-facing positions and existing lighting. The operator approved this v2 cellar. Together with the selected v1 alleyway, it is the chosen night-background direction for W6; populated composition and player validation remain. [Exact edit prompt](../../.renders/werewolf-art/lantern-village-night-v2/prompt.json). Built-in image generation was used; no published assets changed.

@@ -6,13 +6,14 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
 import { readWerewolfProduction, WEREWOLF_AUTO_PUBLISHER } from "../services/werewolf-production.js";
-import { createWerewolfVisualPreparation } from "../services/werewolf-visual-runtime.js";
+import { createWerewolfVisualPreparation as createPreparation } from "../services/werewolf-visual-runtime.js";
 import { acceptVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readWerewolfWatch, readWerewolfPresentation } from "../services/werewolf-presentation.js";
+const createWerewolfVisualPreparation = (...[db, gameId, owner, signal, render]: Parameters<typeof createPreparation>) => createPreparation(db, gameId, owner, signal, render, async (_db, _game, plan) => plan);
 let db: DrizzleDB;
 beforeEach(async()=>{db=await setupTestDB();await db.insert(schema.users).values({id:"owner"});});
-async function fixture() {
-  const game=await createWerewolfGame(db,"owner",{preset:"two_wolves",maxDays:1,agentProfileIds:[]});
+async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
+  const game=await createWerewolfGame(db,"owner",{preset,maxDays:1,agentProfileIds:[]});
   const claim=await claimWerewolfGame(db,game.id);
   if(!claim.ok)throw new Error(claim.error);
   const store=createWerewolfStore(db,game.id,claim.claim.ownerEpoch);
@@ -95,7 +96,7 @@ test("missing renderer continues with character art and does not retry each spee
   expect(await db.select().from(schema.visualMediaPublications).where(eq(schema.visualMediaPublications.gameId,f.game.id))).toHaveLength(0);
 });
 
-async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_talk" | "open_thread") {
+async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_talk" | "open_thread" | "attack") {
   for (let n=0;n<100;n++) {
     const state=replayWerewolf(await f.store.read()), step=nextWerewolfStep(state);
     if(step.kind==="action" && step.request.action===action)return;
@@ -142,4 +143,20 @@ for (const protectedTarget of [true,false]) test(`first daytime lobby uses ${pro
       expect(intro.presentation.scene).toBeNull();expect(intro.permitted.size).toBe(0);
     }
   }
+});
+
+
+test("a lone wolf prepares a form before targeting without creating a meeting scene", async () => {
+  const f = await fixture("one_wolf");
+  await advanceTo(f, "attack");
+  const state = replayWerewolf(await f.store.read()), step = nextWerewolfStep(state);
+  if (step.kind !== "action") throw new Error("Expected attack");
+  const forms: string[][] = [];
+  const prepare = createPreparation(db, f.game.id, f.epoch, f.controller.signal,
+    async () => { throw new Error("Must not render a lone-wolf meeting"); },
+    async (_db, _game, plan) => { forms.push(plan.cast.map(member => member.id)); return plan; });
+  await prepare(state, step.request);
+  await prepare(state, step.request);
+  expect(forms).toEqual([[step.request.actorId]]);
+  expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
 });

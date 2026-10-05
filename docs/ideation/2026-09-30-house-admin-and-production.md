@@ -290,6 +290,10 @@ Schedule this as a whole creative working session when selected, rather than cho
 
 ### W6 — finish the night’s visual identity
 
+Local implementation checkpoint (2026-10-05): existing-game regeneration and automatic preparation now share approved location art and reusable match-frozen wolf forms. Canonical hunts appear in Producer, including doctor saves and lone-wolf nights; Omniscient gets hunt/outcome scrub stops. Provider-free, PostgreSQL and browser proofs are recorded in the focused plan. Transformation, outcome animation and generated-art acceptance remain open; no paid Hazy regeneration has run.
+
+Focused draft: [W6 — Werewolf night production and playback](../plans/2026-10-05-003-feat-werewolf-night-production.md). Sequence: complete no-image choreography, match-frozen wolf forms, shared night production/repair, then concrete art and sound acceptance.
+
 Adjacent shared-player slice: [House replay music — Werewolf first](../plans/2026-10-05-002-feat-house-replay-music.md) is implemented locally after W5, with mute and volume always in the playback bar. The selected four Suno themes supply introductions, daytime and outcomes; pack use is an audition proposal, and night/dawn treatment remains open. Operator listening and physical-device acceptance remain; W6 numbering is unchanged.
 
 Carry forward [the night-production brainstorm](../brainstorms/2026-10-01-werewolf-night-production-and-playback.md): reusable match-specific wolf-form character assets, dark pack meeting for two wolves, lone-wolf skip to the resolved hunt/outcome, distant stalking composition and a restrained graphic claw accent only on confirmed elimination. Protection/no agreement needs its own nonlethal outcome. Omniscient can see the pack; Mystery must not receive identifying private art or target metadata.

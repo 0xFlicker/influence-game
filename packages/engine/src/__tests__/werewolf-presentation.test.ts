@@ -20,14 +20,14 @@ for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: compl
       expect(JSON.stringify(frame)).not.toContain("SECRET STRATEGY");
       expect(JSON.stringify(frame)).not.toContain("SECRET REASON");
       if (audience === "mystery") {
-        expect(frame.roomId).toBe(frame.view.entries.at(-1)!.day === 0 ? null : "lobby");
+        expect(frame.roomId).toBe(frame.view.entries.at(-1)!.day === 0 || frame.view.entries.at(-1)!.kind === "night" ? null : "lobby");
         expect(JSON.stringify(frame)).not.toContain("SECRET PACK");
         if (frame.view.phase !== "complete") expect(frame.view.players.every(p => !p.role)).toBe(true);
       } else if (frame.roomId === "mingle-1") expect(frame.participantIds.every(id => state.roles[id] === "werewolf")).toBe(true);
       const entry = frame.view.entries.at(-1)!;
       const eliminated = entry.kind === "night" ? entry.killedId : entry.kind === "vote" ? entry.result.eliminatedId : null;
       if (eliminated) {
-        expect(frame.participantIds).toContain(eliminated);
+        if (entry.kind !== "night" || audience === "omniscient") expect(frame.participantIds).toContain(eliminated);
         expect(frame.view.players.find(p => p.id === eliminated)?.alive).toBe(false);
       }
     }

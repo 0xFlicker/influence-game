@@ -1,3 +1,4 @@
+import { planWerewolfProduction } from "./werewolf-production-plan.js";
 import { freezeWerewolfReferences, readWerewolfProduction, WerewolfReferenceError } from "./werewolf-production.js";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
@@ -150,7 +151,8 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
   if (!selected || selected.previewHash !== input.previewHash) throw new ReplayVisualError("Scene evidence changed. Refresh the scene list before rendering.", "stale_preview");
   const { cast } = await freezeReplayReferences(db, gameId, selected.participants);
   const [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
-  const plan = planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
+  const [gameKind] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  const plan = gameKind?.kind === "werewolf" ? await planWerewolfProduction(db, gameId, selected.roomId, selected.boundarySequence) : planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
     cast, roles: selected.roles, allianceGroups: selected.allianceGroups, cues: selected.cues });
   const scene = await db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");

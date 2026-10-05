@@ -2,7 +2,7 @@ import {expect, test} from "bun:test";
 import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
 import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 import type {WerewolfWatchMoment} from "../../../engine/src/werewolf/watch-contract";
-import {werewolfMomentCues, werewolfScrubStops, consumedSilentTail} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfDoctorSave, werewolfMomentCues, werewolfScrubStops, consumedSilentTail} from "../components/games/werewolf/werewolf-watch-model";
 
 const players = Array.from({length: 6}, (_, index) => ({id: `p${index}`, name: `Player ${index}`, personality: "Careful", backstory: "", strategy: "", avatarUrl: null}));
 const projection = projectWerewolfWatch([startWerewolf("silent-tail", players, werewolfConfig("one_wolf", 1), "seed")], "mystery");
@@ -73,5 +73,36 @@ test("completed Werewolf tallies use the recorded threshold or plurality result"
       ballots:[{voterId:"p0",targetId:"p2",unavailable:false}],
     }}};
     expect(werewolfMomentCues(moment).at(-2)?.ballot?.eligibility?.ids).toEqual([...expected]);
+  }
+});
+
+for (const scenario of ["saved", "disagreement", "wolves"] as const) test(`${scenario}: night cues retain pre-dawn players and match every scrub stop`, async () => {
+  const {werewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const first = projectWerewolfWatch(await werewolfResultsFixture(scenario), "omniscient", 1, 64);
+  for (const moment of first.moments.filter(moment=>moment.night)) {
+    const cues = werewolfMomentCues(moment);
+    expect(cues.map(cue=>cue.nightAction?.kind)).toEqual([...moment.night!.actions.map(action=>action.kind),undefined]);
+    expect(new Set(cues.map(cue=>cue.key)).size).toBe(cues.length);
+    expect(first.playback.find(stop=>stop.cursor===moment.cursor)?.steps).toBe(cues.length);
+    expect(cues.slice(0,-1).every(cue=>cue.moment.snapshot === moment.night!.before)).toBe(true);
+    expect(cues.at(-1)!.moment.snapshot).toBe(moment.snapshot);
+    expect(werewolfMomentCues(moment)).toEqual(cues);
+  }
+});
+
+for (const scenario of ["saved", "disagreement", "wolves", "village"] as const) test(`${scenario}: a doctor-save callout requires a prevented attack`, async () => {
+  const {werewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const events = await werewolfResultsFixture(scenario);
+  for(const audience of ["mystery", "omniscient"] as const) {
+    const first = projectWerewolfWatch(events, audience);
+    const nights = Array.from({length:first.latestCursor},(_,index)=>projectWerewolfWatch(events,audience,index+1,1).moments[0]!).filter(moment=>moment.entry.kind === "night");
+    for(const moment of nights) {
+      const save = werewolfDoctorSave(moment);
+      if(scenario === "saved" && audience === "omniscient") {
+        expect(save).not.toBeNull();
+        expect(save!.doctor.role).toBe("doctor");
+        expect(save!.target.id).toBe(moment.entry.kind === "night" ? moment.entry.attackTargetId! : "");
+      } else expect(save).toBeNull();
+    }
   }
 });

@@ -1,5 +1,6 @@
+import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
 import { and, asc, eq } from "drizzle-orm";
-import { applyWerewolfEvent, replayWerewolf } from "@influence/engine/werewolf";
+import { replayWerewolf } from "@influence/engine/werewolf";
 import type { FrozenVisualProfile } from "@influence/engine/visual-mode";
 import type { VisualCastMember } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -73,35 +74,27 @@ export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
     readVisualMedia(db, gameId), readVisualRenderAccounting(db, gameId), werewolfReferences(db, gameId),
   ]);
-  let state = replayWerewolf([events[0]!]);
-  const prior = new Map<string, string>();
-  const scenes = [];
-  for (const event of events.slice(1)) {
-    if (event.type === "werewolf.action_accepted" && ["pack_talk", "open_thread", "discuss"].includes(event.payload.action)) {
-      const decision = event.payload.decision;
-      const roomId = event.payload.action === "pack_talk" ? "mingle-1" as const : "lobby" as const;
-      const ids = state.aliveIds.filter(id => roomId === "lobby" || state.roles[id] === "werewolf");
-      const signature = JSON.stringify(ids);
-      if (decision.kind !== "target" && prior.get(roomId) !== signature) {
-        prior.set(roomId, signature);
-        const boundarySequence = event.sequence - 1;
-        const scene = stored.find(row => row.roomId === roomId && row.boundarySequence === boundarySequence);
-        const participants = ids.map(id => ({ id, name: state.players.find(player => player.id === id)!.name }));
-        const data = { sceneId: scene?.id ?? null, roomId, round: state.day, boundarySequence, afterDialogueSequence: boundarySequence,
-          participants, roles: {}, allianceGroups: [], cues: decision.cue ? [{ playerId: event.payload.actorId, cue: decision.cue }] : [] };
-        const published = media.publications.find(p => p.sceneId === scene?.id && p.audience === "public");
-        const version = media.versions.find(v => v.sceneId === scene?.id);
-        const shots = version?.shots ?? scene?.shots;
-        const covered = new Set(shots ? [...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds) : (version?.localization.anchors ?? scene?.anchors ?? []).filter(a => a.confidence === "clear").map(a => a.playerId));
-        scenes.push({ ...data, key: sha256StableJson({ gameId, roomId, boundarySequence }),
-          previewHash: sha256StableJson({ ...data, sceneId: undefined }), roomName: roomId === "lobby" ? "Village lobby" : "Private pack room",
-          audience: roomId === "lobby" ? "public" : "pack", available: Boolean(published), originalFailed: scene?.status === "failed",
-          coverage: participants.map(p => ({ ...p, verified: covered.has(p.id), fallback: refs.find(ref => ref.profile.id === p.id)?.kind ?? "missing" })),
-          panelCount: shots?.groups.length ?? 0 });
-      }
-    }
-    state = applyWerewolfEvent(state, event);
-  }
+  const state = replayWerewolf(events);
+  const scenes = werewolfSceneInventory(events).map(descriptor => {
+    const { roomId, boundarySequence, purpose } = descriptor;
+    const scene = stored.filter(row => row.roomId === roomId && row.boundarySequence <= boundarySequence
+      && (purpose !== "hunt" || row.plan.direction?.purpose === "werewolf-hunt")
+      && row.plan.cast.length === descriptor.participantIds.length && row.plan.cast.every(p => descriptor.participantIds.includes(p.id))).at(-1);
+    const participants = descriptor.participantIds.map(id => ({ id, name: state.players.find(player => player.id === id)!.name }));
+    const data = { sceneId: scene?.id ?? null, roomId, round: descriptor.day, boundarySequence, afterDialogueSequence: boundarySequence,
+      participants, roles: {}, allianceGroups: [], cues: [] };
+    const published = media.publications.find(p => p.sceneId === scene?.id && p.audience === "public");
+    const version = media.versions.find(v => v.sceneId === scene?.id);
+    const shots = version?.shots ?? scene?.shots;
+    const covered = new Set(shots ? [...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds)
+      : (version?.localization.anchors ?? scene?.anchors ?? []).filter(a => a.confidence === "clear").map(a => a.playerId));
+    return { ...data, purpose, wolfIds: descriptor.wolfIds, key: sha256StableJson({ gameId, roomId, boundarySequence }),
+      previewHash: sha256StableJson({ ...data, sceneId: undefined, descriptor }),
+      roomName: purpose === "village" ? "Village round table" : purpose === "pack" ? "Private pack cellar" : "Moonlit hunt",
+      audience: purpose === "village" ? "public" : "pack", available: Boolean(published), originalFailed: scene?.status === "failed",
+      coverage: participants.map(p => ({ ...p, verified: covered.has(p.id), fallback: refs.find(ref => ref.profile.id === p.id)?.kind ?? "missing" })),
+      panelCount: shots?.groups.length ?? 0 };
+  });
   return { gameId, slug, scenes, media, attempts: accounting.attempts,
     warnings: refs.filter(ref => ref.kind === "missing").map(ref => `No frozen reference for ${ref.profile.name}. Production cannot substitute their current profile.`) };
 }

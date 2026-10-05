@@ -319,7 +319,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.select('select', 'activity');
     await text(page, "Game activity"); await text(page, "A short contribution");
     await page.select('select', 'production');
-    await text(page, "Village lobby"); await text(page, "Private pack room"); await page.waitForSelector('[aria-label="Character coverage"]');
+    await text(page, "Village round table"); await text(page, "Private pack cellar"); await text(page, "Moonlit hunt"); await page.waitForSelector('[aria-label="Character coverage"]');
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
     await page.click("[data-workspace-section] button[aria-expanded]");
@@ -922,3 +922,67 @@ test("Werewolf arrows and scrubber visit every ballot and the completed tally", 
     expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
   } finally {await page.close();}
 },120_000);
+
+test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscient", async () => {
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const id = "browser-night-staging", events = await werewolfResultsFixture("saved", id);
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",maxPlayers:8,startedAt:new Date().toISOString(),endedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:"two_wolves",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const omni = (await readWerewolfPresentation(database.db,id,"omniscient")).presentation;
+  const cursor = omni.view.entries.findIndex(entry => entry.kind === "night") + 1;
+  expect(cursor).toBeGreaterThan(0);
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
+    await pauseWerewolf(page);
+    await seekWatch(page,cursor,0);
+    await page.waitForSelector('[data-night-role="protect"]');
+    await watchText(page,"protects themself");
+    await page.setViewport({width:390,height:844});
+    expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+    await page.screenshot({path:"/tmp/werewolf-doctor-mobile.png"});
+    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.waitForSelector('[data-night-role="investigate"]');
+    const seer = await page.$eval('[data-night-role]',element=>element.textContent);
+    const nightEntry = omni.view.entries[cursor-1]!;
+    if(nightEntry.kind !== "night" || !nightEntry.investigation) throw new Error("Fixture needs an investigation");
+    expect(await page.$eval('[data-investigation-result]',element=>element.textContent)).toContain(nightEntry.investigation.isWolf ? "Werewolf" : "Not a werewolf");
+    await page.waitForFunction("Array.from(document.querySelectorAll('[data-night-role] img')).every(image => image.complete)");
+    const stageFits = await page.$eval('[data-night-role]',element => element.scrollHeight <= element.clientHeight + 1);
+    expect(stageFits).toBe(true);
+    await page.screenshot({path:"/tmp/werewolf-seer-mobile.png"});
+    await seekWatch(page,cursor,0); await seekWatch(page,cursor,1);
+    expect(await page.$eval('[data-night-role]',element=>element.textContent)).toBe(seer);
+    await page.setViewport({width:1440,height:1000});
+    await page.screenshot({path:"/tmp/werewolf-seer-wide.png"});
+    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.waitForSelector('[data-night-hunt]');
+    await watchText(page,"was saved by the Doctor.");
+    expect(await page.$eval('[data-doctor-save]',element=>element.textContent)).toContain("Doctor");
+    expect(await page.$eval("[data-watch-context]",element=>element.textContent)).toContain("The hunt");
+    await page.setViewport({width:390,height:844});
+    expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+    const saveFits = await page.$eval('[data-doctor-save]',element => { const card=element.getBoundingClientRect(), stage=element.closest('[data-night-hunt]')!.getBoundingClientRect(); return card.bottom <= stage.bottom && card.left >= stage.left && card.right <= stage.right; });
+    expect(saveFits).toBe(true);
+    await page.screenshot({path:"/tmp/werewolf-hunt-mobile.png"});
+    await page.evaluate("document.activeElement?.blur()"); await page.keyboard.press("ArrowRight");
+    await page.waitForFunction("!document.querySelector('[data-night-hunt]')");
+    const outcome = await page.$eval('[data-werewolf-stage]',element=>element.textContent);
+    await seekWatch(page,cursor,2); await page.waitForSelector('[data-night-hunt]');
+    await seekWatch(page,cursor,3);
+    expect(await page.$eval('[data-werewolf-stage]',element=>element.textContent)).toBe(outcome);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    const mystery = (await readWerewolfPresentation(database.db,id,"mystery")).presentation;
+    const dawn = mystery.view.entries.findIndex(entry=>entry.kind==="night")+1;
+    const mysteryWindow = await (await fetch(`${servers.apiUrl}/api/werewolf/${id}/watch?audience=mystery&fromCursor=${dawn}&limit=1`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+    expect(mysteryWindow.moments[0]!.night).toBeUndefined();
+    expect(mysteryWindow.moments[0]!.entry).not.toHaveProperty("protectedId");
+    expect(mysteryWindow.moments[0]!.entry).not.toHaveProperty("investigation");
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
+    await pauseWerewolf(page); await seekWatch(page,dawn);
+    expect(await page.$('[data-night-hunt]')).toBeNull();
+    expect(await page.$('[data-night-role]')).toBeNull();
+    expect(await page.$('[data-doctor-save]')).toBeNull();
+    expect(await page.$eval('[data-werewolf-stage]',element=>element.textContent)).not.toContain("Tonight’s target");
+  } finally { await page.close(); }
+}, 60_000);

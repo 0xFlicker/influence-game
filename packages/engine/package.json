@@ -51,7 +51,8 @@
     "./house-cuts/publication": "./src/house-cuts/publication.ts",
     "./house-cuts/selection": "./src/house-cuts/selection.ts",
     "./house-cuts/trial": "./src/house-cuts/trial.ts",
-    "./postgame-media/werewolf-trailer-manifest": "./src/postgame-media/werewolf-trailer-manifest.ts"
+    "./postgame-media/werewolf-trailer-manifest": "./src/postgame-media/werewolf-trailer-manifest.ts",
+    "./werewolf/visual-scenes": "./src/werewolf/visual-scenes.ts"
   },
   "scripts": {
     "simulate:werewolf": "bun run src/werewolf/simulate.ts",

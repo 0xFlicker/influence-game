@@ -1,7 +1,7 @@
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
-import { runWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, replayWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 import { renewGameRunOwner } from "./game-ownership.js";
@@ -48,15 +48,29 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   }, 30_000);
   heartbeat.unref();
   const store = createWerewolfStore(db, gameId, ownerEpoch);
+  let recoverVisuals = async () => {};
   if (config.visualMode === true) {
     const prepareTurn = store.prepare!;
     const prepareScene = createWerewolfVisualPreparation(db, gameId, ownerEpoch, controller.signal);
+    recoverVisuals = async () => {
+      const events = await store.read();
+      const last = events.at(-1);
+      // A reload after committing night resolution must still prepare its scene.
+      if (last?.type === "werewolf.night_resolved")
+        await prepareScene.night(replayWerewolf(events.slice(0, -1)), last, replayWerewolf(events));
+    };
+    const append = store.append;
+    store.append = async event => {
+      const before = event.type === "werewolf.night_resolved" ? replayWerewolf(await store.read()) : null;
+      await append(event);
+      if (before) await prepareScene.night(before, event, replayWerewolf(await store.read()));
+    };
     store.prepare = async (state, request, sequence) => {
       await prepareTurn(state, request, sequence);
       await prepareScene(state, request);
     };
   }
-  const promise = runWerewolf(store, agent, controller.signal)
+  const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
     .then(() => {})
     .catch(async (error) => {
       if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);

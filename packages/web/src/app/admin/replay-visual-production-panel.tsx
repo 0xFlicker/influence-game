@@ -10,7 +10,7 @@ import { SceneRepairPanel, isActiveMediaJob, type MediaRecords, type MediaAttemp
 export type Inventory = {
   gameId: string; slug: string; warnings: string[];
   scenes: Array<{ key: string; previewHash: string; sceneId: string | null; roomName: string; round: number | null;
-    boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean; coverage?: Array<{ id: string; name: string; verified: boolean; fallback: string }>; panelCount?: number }>;
+    purpose?: "village" | "pack" | "hunt"; wolfIds?: string[]; boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean; coverage?: Array<{ id: string; name: string; verified: boolean; fallback: string }>; panelCount?: number }>;
   media: MediaRecords;
   attempts: Array<MediaAttempt & { provider: string; model: string }>;
 };
@@ -78,7 +78,7 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
       {scene.coverage && <ul className="grid gap-2 text-sm sm:grid-cols-2" aria-label="Character coverage">{scene.coverage.map(person => <li key={person.id}>{person.name}: {person.verified ? "Verified panel" : person.fallback === "missing" ? "Reference unavailable" : `${person.fallback.replaceAll("_", " ")} fallback`}</li>)}</ul>}
       {werewolf && scene.sceneId && <div><button type="button" className="cursor-pointer py-3" aria-expanded={previewScene === scene.sceneId} onClick={() => setPreviewScene(current => current === scene.sceneId ? null : scene.sceneId)}>Preview character framing · {scene.panelCount ?? 0} panels</button>{previewScene === scene.sceneId && <WerewolfScenePreview key={`${scene.sceneId}:${data?.media.versions.length}`} gameId={gameId} sceneId={scene.sceneId} />}</div>}
       {!scene.sceneId ? <button className={button} disabled={busy || unknown || controlPending || Boolean(activeJob)} onClick={() => void renderScene(scene)}>Render missing image</button>
-        : <SceneRepairPanel gameId={gameId} sceneId={scene.sceneId} publicationAudience="viewers" requirePublication={werewolf} originalFailed={scene.originalFailed} media={data!.media} attempts={data!.attempts}
+        : <SceneRepairPanel wolfForms={Boolean(scene.wolfIds?.length)} gameId={gameId} sceneId={scene.sceneId} publicationAudience="viewers" requirePublication={werewolf} originalFailed={scene.originalFailed} media={data!.media} attempts={data!.attempts}
           canOperate={!busy && !unknown} apiPrefix={root} renderLabel={data!.media.versions.some(version => version.sceneId === scene.sceneId) ? "Regenerate scene" : "Render missing image"} renderDisabled={controlPending || Boolean(activeJob)} refresh={refresh} refreshError={error}
           onOpen={(url, label) => setImage({ url, label })} />}
     </article>)}

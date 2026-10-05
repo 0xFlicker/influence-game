@@ -93,7 +93,7 @@ test("pack and lobby production use canonical membership and publish privately t
   const bytes = await sharp({ create: { width: 640, height: 360, channels: 3, background: "#292d22" } }).png().toBuffer();
   const artifact = await storeVisualArtifact(db, g.id, bytes);
   const anchors = job.plan.cast.map((p, i) => ({ playerId: p.id, label: i + 1, head: { x: .2 + i * .3, y: .2, width: .1, height: .1 }, confidence: "clear" as const }));
-  await executeVisualMediaJob(db, job, new AbortController().signal, async () => ({ imageArtifactId: artifact, localization: { count: 2, verifiedParticipantIds: job.plan.cast.map(p => p.id), anchors } }));
+  await executeVisualMediaJob(db, job, new AbortController().signal, async () => ({ imageArtifactId: artifact, localization: { count: 2, verifiedParticipantIds: job.plan.cast.map(p => p.id), anchors } }), async (_db, _game, plan) => plan);
   const version = (await readVisualMedia(db, g.id)).versions[0]!;
   expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "private", sceneId: job.sceneId, expectedVersion: version.version, versionId: version.id, expectedPublication: 0, requestId: "publish-pack" })).accepted).toBe(true);
   const events = await readWerewolfEvents(db, g.id);
@@ -250,4 +250,46 @@ test("watch windows are bounded, private by audience and pinned to public media"
   for(const query of ["limit=65","limit=0","fromCursor=-1","fromCursor=1.5","audience=wolf","publishedBefore=bad"]){expect((await app.request(`/api/werewolf/${g.id}/watch?${query}`)).status).toBe(400);}
   await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,g.id));
   expect((await app.request(`/api/werewolf/${g.id}/watch`)).status).toBe(404);
+});
+
+test("Werewolf regeneration replans approved locations and wolf forms without changing existing publication", async () => {
+  const g = await game();
+  const originalEvents = await readWerewolfEvents(db, g.id);
+  const inventory = await readReplayVisualProduction(db, g.id);
+  const pack = inventory.scenes.find(scene => scene.roomId === "mingle-1")!;
+  const hunt = inventory.scenes.find(scene => scene.roomId === "mingle-2")!;
+  expect(hunt.participants).toHaveLength(3);
+  await renderMissingReplayScene(db, g.id, "producer", { key: pack.key, previewHash: pack.previewHash, requestId: "pack-v1" });
+  const job = (await claimVisualMediaJob(db, "worker"))!;
+  expect(job.plan.direction?.purpose).toBe("werewolf-pack");
+  expect(job.plan.cast.every(member => member.variant?.kind === "werewolf")).toBe(true);
+  await db.update(schema.visualRepairJobs).set({ status: "failed", owner: null, leaseUntil: null }).where(eq(schema.visualRepairJobs.id, job.id));
+  const result = await controlVisualMedia(db, g.id, "producer", { action: "regenerate", regenerateForms: true, sceneId: job.sceneId, expectedVersion: 1, requestId: "new-forms" });
+  expect(result.accepted).toBe(true);
+  const [replacement] = await db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, result.jobId!));
+  expect(replacement!.plan.cast.every(member => member.variant?.generation === "new-forms")).toBe(true);
+  expect((await readVisualMedia(db, g.id)).publications).toHaveLength(0);
+  expect(await readWerewolfEvents(db, g.id)).toEqual(originalEvents);
+  // The new hunt comes from recorded night choices; it is not an invented pack conversation.
+  await db.update(schema.visualRepairJobs).set({ status: "failed" }).where(eq(schema.visualRepairJobs.id, result.jobId!));
+  await renderMissingReplayScene(db, g.id, "producer", { key: hunt.key, previewHash: hunt.previewHash, requestId: "hunt-v1" });
+  const huntJob = (await claimVisualMediaJob(db, "worker"))!;
+  expect(huntJob.plan.direction?.purpose).toBe("werewolf-hunt");
+  expect(huntJob.plan.cast.filter(member => member.variant)).toHaveLength(2);
+  expect(huntJob.plan.cast.filter(member => !member.variant)).toHaveLength(1);
+  const image = await storeVisualArtifact(db, g.id, await sharp({ create: { width: 640, height: 360, channels: 3, background: "#123345" } }).png().toBuffer());
+  await executeVisualMediaJob(db, huntJob, new AbortController().signal, async () => ({ imageArtifactId: image,
+    localization: { count: 3, verifiedParticipantIds: huntJob.plan.cast.map(member => member.id), anchors: [] } }), async (_db, _game, plan) => plan);
+  const ready = (await readVisualMedia(db, g.id)).versions.find(version => version.id === huntJob.id)!;
+  expect(ready).toBeDefined();
+  await controlVisualMedia(db, g.id, "producer", { action: "publish", audience: "public", sceneId: huntJob.sceneId, expectedVersion: 1,
+    versionId: ready.id, expectedPublication: 0, requestId: "publish-hunt" });
+  const projection = await readWerewolfPresentation(db, g.id, "omniscient");
+  const nightCursor = projection.presentation.view.entries.findIndex(entry => entry.kind === "night") + 1;
+  const night = (await readWerewolfPresentation(db, g.id, "omniscient", nightCursor)).presentation;
+  expect(night.scene?.roomId).toBe("mingle-2");
+  const api = createWerewolfRoutes(db);
+  expect((await api.request(night.scene!.imageUrl)).status).toBe(200);
+  expect((await api.request(night.scene!.imageUrl.replace("audience=omniscient", "audience=mystery"))).status).toBe(404);
+  expect((await api.request(night.scene!.imageUrl.replace(`cursor=${nightCursor}`, "cursor=1"))).status).toBe(404);
 });
