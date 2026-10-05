@@ -304,5 +304,6 @@ guarantee.
 
 This application change does not configure secrets, expose staging networking,
 provision AWS, switch release transport or disable the local production worker.
-The separate renderer stack and generation-aware host release adapter are required
+The separate [falsefloor/infra](https://github.com/falsefloor/infra) renderer stack
+and generation-aware `linode-iac` host release adapter are required
 before remote cutover. Live AWS state and a disposable real render remain unverified.

@@ -5,7 +5,7 @@ import { schema } from "../db/index.js";
 import { annotateVisualScene, VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import sharp from "sharp";
-import { VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type StoredVisualShot, type VisualShotPresentation } from "@influence/engine/visual-mode";
+import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS, type StoredVisualShot, type VisualShotPresentation } from "@influence/engine/visual-mode";
 import { visualRenderGroups } from "@influence/engine/visual-scene-plan";
 import type { DrizzleDB } from "../db/index.js";
 import { localizeDurableVisualScene, renderDurableVisualImage } from "./visual-render-journal.js";
@@ -42,6 +42,7 @@ export async function renderPlannedVisualScene(db: DrizzleDB, scene: StoredVisua
 export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualScene, signal?: AbortSignal, beforeDispatch?: VisualBoundaryGuard, options: {
   renderContext?: { style: string; roomName: string; roomDirection: string };
   allowMissing?: boolean;
+  sourcePanels?: StoredVisualShot[];
   operationPrefix?: string; reusePrefix?: string; jobId?: string;
   onStep?: (step: string) => Promise<void>; onImage?: (id: string) => Promise<void>;
 } = {}) {
@@ -52,12 +53,12 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     const reuse = (suffix: string) => options.reusePrefix ? `${options.reusePrefix}:${suffix}` : undefined;
     const background = plan.backgroundArtifactId ? await readVisualArtifact(db, gameId, plan.backgroundArtifactId) : null;
     const references = await Promise.all(plan.cast.map(async (member) => ({ member, image: await readVisualArtifact(db, gameId, member.referenceArtifactId) })));
-    const localize = (image: Buffer, members: typeof references, suffix: string) => localizeDurableVisualScene(db, {
+    const localize = (image: Buffer, members: typeof references, suffix: string, allowMissing = options.allowMissing) => localizeDurableVisualScene(db, {
       gameId, sceneId: scene.id, repairJobId: options.jobId, onStep: options.onStep,
-      operationKey: `${renderKey}:${suffix}:${VISUAL_LOCALIZATION_VERSION}${options.allowMissing ? ":partial-v1" : ""}`,
-      reuseOperationKey: reuse(`${suffix}:${VISUAL_LOCALIZATION_VERSION}${options.allowMissing ? ":partial-v1" : ""}`), scene: image,
+      operationKey: `${renderKey}:${suffix}:${VISUAL_LOCALIZATION_VERSION}${allowMissing ? ":partial-v1" : ""}`,
+      reuseOperationKey: reuse(`${suffix}:${VISUAL_LOCALIZATION_VERSION}${allowMissing ? ":partial-v1" : ""}`), scene: image,
       references: members.map(({ member, image }) => ({ image, players: [{ id: member.id, name: member.name }] })),
-      allowMissing: options.allowMissing && members.length > 0, apiKey, signal, beforeDispatch,
+      allowMissing: allowMissing && members.length > 0, apiKey, signal, beforeDispatch,
     });
     const shot = async (image: Buffer, ids: string[], localization: Awaited<ReturnType<typeof localize>>): Promise<StoredVisualShot> => ({
       imageArtifactId: await storeVisualArtifact(db, gameId, image),
@@ -69,12 +70,18 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     if (scene.repairMode === "verify" && scene.candidateArtifactId) {
       finalImage = await readVisualArtifact(db, gameId, scene.candidateArtifactId);
     } else {
-    const groups = visualRenderGroups(plan);
+    const groups = options.sourcePanels ? [] : visualRenderGroups(plan);
 
     const room = VISUAL_ROOMS[plan.roomId];
     const common = `${options.renderContext?.style ?? VISUAL_HOUSE_STYLE}\nSetting: ${options.renderContext?.roomName ?? room.name}. ${options.renderContext?.roomDirection ?? room.direction}\nPreserve the supplied room's architecture, furniture and materials. These contestants are playing a social-strategy game; use believable conversational staging, some seated and some standing as directed. Match each character's face, hair, clothing and body to their reference. Keep every face clearly visible to the camera in a front or three-quarter view, including seated people. Nobody may face away, hide behind another person, or have their face obscured by hair or furniture. No extra people.`;
     const sectionImages: Buffer[] = [];
     const sectionMembers: Array<typeof references> = [];
+    if (options.sourcePanels) {
+      if (options.sourcePanels.length < 2) throw new Error("Harmonization requires at least two saved panels");
+      for (const panel of options.sourcePanels) assertVisualShot(panel, plan.cast.map(m => m.id));
+      await options.onStep?.("loading saved panels");
+      sectionImages.push(...await Promise.all(options.sourcePanels.map(panel => readVisualArtifact(db, gameId, panel.imageArtifactId))));
+    }
     for (const [index, group] of groups.entries()) {
       const members = group.map((placement) => {
         const reference = references.find((entry) => entry.member.id === placement.playerId);
@@ -89,7 +96,7 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
       sectionImages.push(rendered.image);
       sectionMembers.push(members);
     }
-    if (!groups.length) {
+    if (!groups.length && !options.sourcePanels) {
       await options.onStep?.("empty-room");
       const rendered = await renderDurableVisualImage(db, { gameId, sceneId: scene.id, repairJobId: options.jobId, operationKey: `${renderKey}:empty-room`, reuseOperationKey: reuse("empty-room"), allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
         request: { width: 1536, height: 864, references: background ? [background] : [], prompt: `${common}\nShow the empty room in widescreen. Exactly zero people, including reflections. No labels or text.` } });
@@ -103,12 +110,11 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
         left: Math.floor(index * 1536 / sectionImages.length), top: 0,
       })));
       const assembly = await sharp({ create: { width: 1536, height: 864, channels: 3, background: "#e5ded0" } }).composite(panels).png().toBuffer();
-      // Keep exact panel pixels. A generative stitch can change identities.
       finalImage = assembly;
     }
     await options.onImage?.(await storeVisualArtifact(db, gameId, finalImage));
-    const playable: StoredVisualShot[] = [];
-    for (const [index, image] of sectionImages.entries()) {
+    const playable: StoredVisualShot[] = [...(options.sourcePanels ?? [])];
+    if (!options.sourcePanels) for (const [index, image] of sectionImages.entries()) {
       const members = sectionMembers[index] ?? [];
       try {
         const localized = await localize(image, members, `section-localization:${index}`);
@@ -125,12 +131,38 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     if (!playable.length) throw new VisualIdentityFailure("No usable group shot survived verification");
     shots = { mode: playable.length === 1 && groups.length <= 1 ? "scene" : "groups", overview: null, groups: playable };
     if (shots.mode === "scene") shots.overview = playable[0]!;
+    // Originals remain reviewable/playable even when the optional composite is rejected.
+    if (sectionImages.length > 1 && playable.length === sectionImages.length) {
+      await options.onStep?.("harmonizing");
+      const harmonized = await renderDurableVisualImage(db, {
+        gameId, sceneId: scene.id, repairJobId: options.jobId,
+        operationKey: `${renderKey}:harmonization:v1`, reuseOperationKey: reuse("harmonization:v1"),
+        allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
+        request: { width: 1536, height: 864, references: [finalImage, ...sectionImages],
+          prompt: `${common}\nHarmonize these conversation panels into one continuous widescreen room. The first reference is their ordered assembly; the remaining references are the original panels. Preserve every character exactly once, including their face, clothing and relative position. Unify lighting, perspective, furniture and background across the seams. Keep all ${references.length} faces visible with headroom. Do not add, duplicate, replace or remove any person. No borders, labels or text.` },
+      });
+      await options.onImage?.(await storeVisualArtifact(db, gameId, harmonized.image));
+      await options.onStep?.("verifying harmonization");
+      try {
+        // A composite must verify the entire cast, even when individual panels allow missing people.
+        const localized = await localize(harmonized.image, references, "harmonization-localization:v1", false);
+        shots.overview = await shot(harmonized.image, references.map(r => r.member.id), localized);
+        shots.mode = "scene";
+      } catch (error) {
+        signal?.throwIfAborted();
+        await beforeDispatch?.();
+        if (!(error instanceof VisualIdentityFailure)) throw error;
+        await recordVisualOperationEvent(db, gameId, `${renderKey}:rejected-harmonization:v1`, {
+          sceneId: scene.id, kind: "failure", outcome: "failed", message: "Harmonized image rejected; retaining verified original panels",
+        }, visualFailureEvidence(error, "identity"));
+      }
+    }
     }
     const imageArtifactId = shots ? (shots.overview ?? shots.groups[0])!.imageArtifactId : await storeVisualArtifact(db, gameId, finalImage);
     if (!shots) await options.onImage?.(imageArtifactId);
     await options.onStep?.("verifying");
     if (shots) {
-      const visible = [...new Set(shots.groups.flatMap(s => s.visibleParticipantIds))];
+      const visible = shots.overview?.visibleParticipantIds ?? [...new Set(shots.groups.flatMap(s => s.visibleParticipantIds))];
       return { imageArtifactId, shots, localization: { count: visible.length, anchors: shots.mode === "scene" ? shots.overview!.anchors : [], verifiedParticipantIds: visible } };
     }
     const localization = await localize(finalImage, references, "localization");

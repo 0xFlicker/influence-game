@@ -184,7 +184,7 @@ test("Producer uses the same rows, preserves lost-request controls, reviews and 
     await page.waitForFunction("document.body.innerText.includes('Viewer version: v2 · Publication 1')");
     const viewer = await (await api.fetch(new Request(`http://127.0.0.1:${api.port}/api/games/${gameId}/visual`))).json() as { enabled: boolean; scenes: unknown[] };
     expect(viewer.enabled).toBe(true); expect(viewer.scenes).toHaveLength(1);
-    await page.goto(`${webUrl}/admin/users`, { waitUntil: "networkidle0" });
+    await page.goto(`${webUrl}/admin/users`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction("document.body.innerText.includes('Access denied.')");
   } catch (error) {
     await page.screenshot({ path: temporaryPath("replay-production-browser-failure.png"), fullPage: true });

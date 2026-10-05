@@ -44,6 +44,8 @@ Inputs:
 
 Method: merge duplicate candidates across plans, brainstorms, ideation, statefulness notes, and solution docs; preserve concrete source evidence; remove already-landed/product-feature/process-only items; rank the remaining work by current product value.
 
+Explicit product follow-up: R35 is retained here at the user’s request even though it extends an existing player capability.
+
 Five-question gate:
 
 1. Is this still true?
@@ -62,6 +64,19 @@ Status legend:
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
 ## Ready Backlog
+
+### R35. Share the current replay moment across House game players
+
+- Status: `ready`
+- Priority: **high** — explicit product request, 2026-10-02; retained after the W0 planning simplification.
+- Placement: focused follow-up immediately after common House routing (W0). Can be pulled into W0 if implementation proves small; do not wait for full Results, MCP, House Cuts or Production studio work.
+- Current evidence: Influence has `gameReplaySequenceHref` and `/games/[slug]/replay/[sequence]` starting at a canonical event sequence. This is partial infrastructure, not proof of a shared player share action. On `codex/werewolf` at `62c7a54e`, Werewolf's page accepts only audience, its watch hook initially seeks cursor 1, and `components/watch/watch-transport.tsx` has no share-current-moment action. The Werewolf files currently live under `app/werewolf/` and move under game modules in W0. Recheck paths on implementation.
+- Product outcome: from either player, choose **Share this moment** and send a House replay URL that opens at that contribution/action rather than the beginning. Copy-link and supported native sharing use one shared action; private links confer no access. Reuse the existing share/copy behavior in `postgame-media-player.tsx` where appropriate.
+- Implementation boundary: each game module supplies a typed stable source position for the active presented moment. Influence event sequence and Werewolf audience-local cursor must never be interchanged or derived from the transient cue-array index. The common player owns the action and feedback. Resolve the initial target before displaying/autoplaying the scene; preserve device preferences and avoid an initial flash of the beginning.
+- Audience and persistence: Werewolf links bind Mystery/Omniscient explicitly. Never default an ambiguous link into Omniscient or expose pack/thinking data to Mystery. Changing audience must not reuse the other audience's cursor. Links survive refresh and append-only live updates. Start with the selected contribution/action, not character-by-character speech progress or wall-clock timestamps. Opening a link uses permitted published media; exact historical image/version reproduction is a separate requirement, not a prerequisite.
+- Validation path: share/open round trips for both games from paused and playing states, later fetch windows, resolved votes and the live frontier; reject invalid/cross-audience locations; no future-fact flash on load; public links work signed out, private/hidden games remain protected. Browser tests must assert the actual opened moment and access boundary, not only the generated URL. Test clipboard/native-share failure feedback without modifying playback intent.
+- Relationship: W1 Results and W2 MCP consume this same moment-link contract once implemented. W4 cards can link to it; do not build independent URL schemes in those slices.
+
 
 Near-term order: R34 nullable-field policy. R23 is closed with occasional repetition accepted; R31 runtime verification and R20 required-check configuration are complete. R27/R28/R29 require verification audits before new implementation. Historical numbering is retained for stable references.
 
@@ -320,11 +335,12 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ### W13. Postgame media scale-out and runtime portability
 
-- Status: `future`
+- Status: `in-progress`; application and AWS/release drafts, no live cutover.
 - Consolidates: former W13 queue infrastructure and W16 render-worker portability.
-- Signal: the first production trailer worker deliberately uses API polling and database leases from one Docker Compose worker on Linode. The manifest and lease protocol are portable, but the deployment is intentionally single-host and single-replica.
-- Promotion trigger: multiple render hosts, autoscaling, managed-job execution, materially higher completion volume, or evidence that polling and lease recovery are no longer sufficient.
-- Suggested slice if promoted: adapt the existing immutable manifest and claim/heartbeat/finalize protocol to the chosen queue/runtime. Do not move rendering into API or web request containers.
+- Implemented in the application draft: PostgreSQL-authoritative jobs with atomic wake outbox, authenticated wake retries and expired-lease repair, exact generation/digest claim admission, drain fencing and retired-epoch tombstones, finite remote batches/quiet exit. Local Compose polling remains the default; active leases still heartbeat, upload and finalize during drain.
+- Repository ownership: [falsefloor/infra](https://github.com/falsefloor/infra) owns renderer AWS resources and deployment IAM; `influence-game` owns the worker/API contract; `linode-iac` owns host release handoff and rollback. The renderer keeps its immutable image in the existing three-image release family.
+- Remaining proof: review and validate the independent AWS controller and full host lifecycle adapter together, then explicitly authorize a disposable render proving machine-authenticated networking, uncertain-launch recovery, drain/rollback and zero idle tasks. No live AWS state, production memory relief, measured cold start or production cutover is claimed by the application tests. The roughly one-to-two-minute cold-start delay is acceptable.
+- Deferred: image generation/visual repair offload and gateway polling optimization. Rendering stays outside API/web request containers.
 
 ### W14. Postgame media version retention
 
