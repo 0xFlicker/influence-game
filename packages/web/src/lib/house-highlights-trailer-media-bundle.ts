@@ -15,12 +15,15 @@ import {
   HouseHighlightsTrailerMusicUnavailableError,
   musicMuxArgsFor,
   selectHouseHighlightsTrailerMusicVariant,
+  selectWerewolfTrailerMusic,
   type HouseHighlightsTrailerMusicSelection,
 } from "./house-highlights-trailer-audio";
 
 const WEB_ROOT = resolve(import.meta.dir, "../..");
 const REPO_ROOT = resolve(WEB_ROOT, "../..");
 export const DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR = resolve(REPO_ROOT, "music/house-highlights-variants");
+
+export const DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR = resolve(REPO_ROOT, "music/werewolf");
 
 export type HouseHighlightsTrailerBundleArtifactName = "video" | "poster" | "captions" | "metadata" | "timeline";
 
@@ -74,18 +77,10 @@ export async function renderHouseHighlightsTrailerMediaBundle(input: {
   remotionOptions?: HouseHighlightsRemotionMediaOptions;
   onStage?: (stage: "rendering" | "composing") => Promise<void> | void;
 }): Promise<HouseHighlightsTrailerMediaBundle> {
-  const musicDir = input.musicDir ?? DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR;
-  const filenames = await readdir(musicDir).catch((error) => {
-    throw new HouseHighlightsTrailerMusicUnavailableError(
-      { houseCuts: input.manifest.scenelets.length, players: input.manifest.cast.length, trailerDurationSeconds: input.manifest.cueSheet.totalDurationSeconds },
-      `Prepared House Highlights trailer music is unavailable: ${error instanceof Error ? error.message : "music directory unreadable"}.`,
-    );
-  });
-  const music = selectHouseHighlightsTrailerMusicVariant({
-    houseCuts: input.manifest.scenelets.length,
-    players: input.manifest.cast.length,
-    trailerDurationSeconds: input.manifest.cueSheet.totalDurationSeconds,
-  }, filenames, musicDir);
+  const musicDir = input.musicDir ?? (input.manifest.kind === "werewolf" ? DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR : DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR);
+  const music = input.manifest.kind === "werewolf"
+    ? await selectWerewolfTrailerMusic(input.manifest.cueSheet.totalDurationSeconds, musicDir)
+    : await selectInfluenceMusic(input.manifest, musicDir);
   const outputDir = resolve(input.outputDir);
   await mkdir(outputDir, { recursive: true });
   const workDir = await mkdtemp(join(input.temporaryRoot ?? tmpdir(), "influence-house-highlights-"));
@@ -140,6 +135,7 @@ export async function writeHouseHighlightsTrailerPlaybackMetadata(input: {
   urls: { videoUrl: string; posterUrl: string; captionsUrl: string };
 }): Promise<HouseHighlightsTrailerBundleArtifact> {
   const metadata = createHouseHighlightsTrailerPlaybackMetadata({
+    gameKind: input.bundle.manifest.kind,
     durationMs: input.bundle.durationMs,
     dimensions: input.bundle.dimensions,
     renderVersion: input.renderVersion,
@@ -155,6 +151,7 @@ export async function writeHouseHighlightsTrailerPlaybackMetadata(input: {
 }
 
 export function createHouseHighlightsTrailerPlaybackMetadata(input: {
+  gameKind: "influence" | "werewolf";
   durationMs: number;
   dimensions: { width: number; height: number };
   renderVersion: string;
@@ -166,8 +163,8 @@ export function createHouseHighlightsTrailerPlaybackMetadata(input: {
     version: 1,
     durationMs: input.durationMs,
     dimensions: input.dimensions,
-    title: "House Highlights",
-    description: "A completed Influence game, told through the House.",
+    title: input.gameKind === "werewolf" ? "Werewolf at The House" : "House Highlights",
+    description: input.gameKind === "werewolf" ? "A village of familiar faces. Wolves among them. Who will you trust?" : "A completed Influence game, told through the House.",
     videoUrl: input.urls.videoUrl,
     posterUrl: input.urls.posterUrl,
     captionsUrl: input.urls.captionsUrl,
@@ -202,6 +199,7 @@ export function timelineForManifest(
     mediaType: HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
     game: manifest.game,
     cueSheet: manifest.cueSheet,
+    ...(manifest.kind === "werewolf" ? { provenance: manifest.story } : {}),
     posterFrame,
     music: {
       filename: music.filename,
@@ -214,6 +212,12 @@ export function timelineForManifest(
 }
 
 function captionLinesForSegment(manifest: HouseHighlightsTrailerManifest, id: string, kind: string): string[] {
+  if (manifest.kind === "werewolf") {
+    if (kind === "cast_roster") return [manifest.story.title, "The village: " + manifest.cast.map(p => p.name).join(", ") + ".", manifest.story.description];
+    if (kind === "end_card") return ["Who will you trust?", "Watch Werewolf at The House."];
+    const quote = manifest.story.quotes.find(q => q.id === id);
+    return quote ? [`${manifest.cast.find(p => p.id === quote.speakerId)!.name}: ${quote.text}`] : [];
+  }
   if (kind === "cast_roster") return ["House Highlights. The room: " + manifest.cast.map((agent) => agent.name).join(", ") + "."];
   if (kind === "scenelet") {
     const scenelet = manifest.scenelets.find((scene) => `scenelet:${scene.id}` === id);
@@ -286,3 +290,17 @@ export function remotionMediaOptions(env: Record<string, string | undefined> = p
 function safeOutputBasename(value: string): string { return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "house-highlights-trailer"; }
 function vttTime(seconds: number): string { const ms = Math.max(0, Math.round(seconds * 1_000)); const hours = Math.floor(ms / 3_600_000); const minutes = Math.floor((ms % 3_600_000) / 60_000); const secs = Math.floor((ms % 60_000) / 1_000); return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}.${String(ms % 1_000).padStart(3, "0")}`; }
 function run(command: string, args: string[]): Promise<void> { return new Promise((resolvePromise, reject) => { const child = spawn(command, args, { stdio: "ignore" }); child.on("error", (error) => reject(new Error(`${command} failed to start: ${error.message}`))); child.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`))); }); }
+
+async function selectInfluenceMusic(manifest: Extract<HouseHighlightsTrailerManifest, { kind: "influence" }>, musicDir: string) {
+  const filenames = await readdir(musicDir).catch((error) => {
+    throw new HouseHighlightsTrailerMusicUnavailableError(
+      { houseCuts: manifest.scenelets.length, players: manifest.cast.length, trailerDurationSeconds: manifest.cueSheet.totalDurationSeconds },
+      `Prepared House Highlights trailer music is unavailable: ${error instanceof Error ? error.message : "music directory unreadable"}.`,
+    );
+  });
+  return selectHouseHighlightsTrailerMusicVariant({
+    houseCuts: manifest.scenelets.length,
+    players: manifest.cast.length,
+    trailerDurationSeconds: manifest.cueSheet.totalDurationSeconds,
+  }, filenames, musicDir);
+}

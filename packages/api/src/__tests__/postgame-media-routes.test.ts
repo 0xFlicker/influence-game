@@ -11,7 +11,7 @@ import {
   EDGE_SMOKE_DUSK_GAME_ID,
   EDGE_SMOKE_DUSK_PLAYERS,
   hashHouseHighlightsTrailerManifest,
-  type HouseHighlightsTrailerManifest,
+  type InfluenceTrailerManifest,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -529,7 +529,7 @@ async function insertQueuedMedia(db: DrizzleDB, suffix: string): Promise<string>
     attemptNumber: 1,
     renderInputSnapshot: manifest,
     renderInputSnapshotHash: hashHouseHighlightsTrailerManifest(manifest),
-    renderInputSnapshotVersion: 1,
+    renderInputSnapshotVersion: 2,
     rendererVersion: "remotion-v1",
     timingContractVersion: manifest.timingContractVersion,
     musicAssetId: "golden-verdict-max",
@@ -562,11 +562,11 @@ function artifactFixture(gameId: string, artifactVersion: string) {
   };
 }
 
-function manifestFixture(gameId: string): HouseHighlightsTrailerManifest {
+function manifestFixture(gameId: string): InfluenceTrailerManifest {
   const winner = { id: "winner", name: "Mira Solari", initials: "MS", avatarUrl: "/avatars/personas/strategic.png", placement: 1, status: "winner" as const };
   const runnerUp = { id: "runner-up", name: "Orion Vale", initials: "OV", avatarUrl: "/avatars/personas/honest.png", placement: 2, status: "finalist" as const };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2, kind: "influence",
     mediaType: "house_highlights_trailer",
     timingContractVersion: "house-highlights-trailer-timing-v1",
     game: { id: gameId, slug: "fixture", status: "completed" },

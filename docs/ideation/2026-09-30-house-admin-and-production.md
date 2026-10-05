@@ -251,6 +251,10 @@ Implementation checkpoint (2026-10-04): shared automatic Cuts generation, final 
 
 ### W5 — trailer and release assets
 
+2026-10-05 checkpoint: the operator approved the sample, opening-only selection policy and Suno score. Shared automatic rendering/publication, game-page delivery and repair are implemented and locally verified; deployment remains separate. The real `hazy-ruby-sand` preview is a 9-second cast/premise teaser because no published Cut fits the opening-only policy. See the focused plan for artifacts and proof boundaries.
+
+Focused plan: [W5 — Werewolf trailers and release assets](../plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). First acceptance case: one local `hazy-ruby-sand` teaser using the supplied Suno trailer source from its beginning, trimmed to picture. Full source music, the finished sample and automated trailer policy are approved. Replay music is a subsequent slice.
+
 - Turn the selected editorial material into a short episode trailer with Werewolf-specific framing and faction stakes. Do not assume the Influence jury/winner ending or copy a chronological recap into a teaser.
 - Reuse the existing render manifest, media worker, storage, job/cost receipts, repair and publication path. Add the Werewolf facts/material adapter; keep cinematic timing and reusable visual treatments in the media/presentation layer.
 - Plan title, cover/poster, trailer destination and share metadata together. Decide spoiler policy before selection: a teaser and a full-spoiler recap may use the same source material differently. A published trailer must not expose hidden material through its preview image or captions accidentally.
@@ -266,7 +270,7 @@ Implementation checkpoint (2026-10-04): shared automatic Cuts generation, final 
 
 **Human approval gate — trailer approach, analysis and music.** Present the selection/story analysis, proposed edit/pacing rules, a representative storyboard or rough cut, new music candidates auditioned to picture, and a finished sample. Obtain explicit human approval of the trailer approach and selected score/version before treating them as production defaults or publishing the release. Record requested changes and approved artifacts. Material changes to the trailer’s analytical/editing approach or replacement music require renewed review; renderer checks alone do not satisfy this gate.
 
-**Inspect when planning:** `packages/engine/src/postgame-media/house-highlights-trailer-manifest.ts`; API `services/postgame-media*.ts` (coordinator currently selects Influence); web `remotion/house-highlights-trailer/`, `scripts/render-house-highlights-media-worker.ts`, `app/admin/admin-postgame-media.tsx`; [media pipeline learnings](../solutions/architecture-patterns/house-highlights-postgame-media-pipeline.md).
+**Inspect when planning:** `packages/engine/src/postgame-media/house-highlights-trailer-manifest.ts`; API `services/postgame-media*.ts` (shared coordinator dispatches Influence and Werewolf); web `remotion/house-highlights-trailer/`, `scripts/render-house-highlights-media-worker.ts`, `app/admin/admin-postgame-media.tsx`; [media pipeline learnings](../solutions/architecture-patterns/house-highlights-postgame-media-pipeline.md).
 
 ### W9 — dedicated Werewolf art style exploration
 

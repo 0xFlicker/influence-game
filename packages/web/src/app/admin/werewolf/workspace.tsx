@@ -6,6 +6,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { werewolfReportEntry } from "@influence/engine/werewolf/report";
 import { apiFetch, type AdminGameCostSummary, type AdminGameCostDetail } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
+import { AdminPostgameMediaPanel } from "../admin-postgame-media";
 import { ReplayVisualProductionPanel, type Inventory } from "../replay-visual-production-panel";
 import { adminReadOptions, useAdminRead, useAdminSession, accessDenied } from "../admin-session";
 import { CostEvidence } from "../cost-evidence";
@@ -52,6 +54,8 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   const valid = suffix === "" || sections.includes(suffix as Section);
   const route = (suffix || "overview") as Section;
   const session = useAdminSession(), client = useQueryClient();
+  const { isAdmin, hasPermission } = usePermissions();
+  const [trailerOpen, setTrailerOpen] = useState(false);
   const { data, error, denied, refresh } = useAdminRead<Detail>(`${root}/${gameId}`, 10_000);
   const [displayed, setDisplayed] = useState<Section>(route);
   const [pending, setPending] = useState<Section | null>(null), [navigationError, setNavigationError] = useState<string | null>(null);
@@ -153,7 +157,16 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           </>}
           {displayed === "activity" && <Activity gameId={data.id} currentCursor={data.snapshot.cursor} />}
           {displayed === "costs" && <GameCosts gameId={data.id} />}
-          {displayed === "production" && <><section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" ? <p className={styles.empty}>Scene production becomes available when this game completes.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
+          {displayed === "production" && <>
+            {isAdmin && data.status === "completed" && <section className={styles.surface}>
+              <h2 tabIndex={-1}>Trailer &amp; poster</h2>
+              <p>Check render progress, inspect failures, or retry a trailer after repairing its assets.</p>
+              <div className={styles.actions}><button onClick={() => setTrailerOpen(true)}>Trailer &amp; poster</button></div>
+              {trailerOpen && <AdminPostgameMediaPanel key={data.id} game={data}
+                canManage={hasPermission("manage_postgame_media") || hasPermission("manage_roles")}
+                onClose={() => setTrailerOpen(false)} />}
+            </section>}
+            <section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" ? <p className={styles.empty}>Scene production becomes available when this game completes.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
         </div>
       </div>
     </>}{children}

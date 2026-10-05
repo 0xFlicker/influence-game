@@ -1,6 +1,7 @@
+import { validateWerewolfTrailerManifest, type WerewolfTrailerManifest } from "./werewolf-trailer-manifest";
 import type { HouseHighlightVisualCardFactKind } from "../postgame-highlights/types";
 
-export const HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION = 1 as const;
+export const HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION = 2 as const;
 export const HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE = "house_highlights_trailer" as const;
 export const HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION =
   "house-highlights-trailer-timing-v1" as const;
@@ -89,7 +90,10 @@ export interface HouseHighlightsTrailerCueSheet {
   };
 }
 
-export interface HouseHighlightsTrailerManifest {
+export type HouseHighlightsTrailerManifest = InfluenceTrailerManifest | WerewolfTrailerManifest;
+
+export interface InfluenceTrailerManifest {
+  kind: "influence";
   schemaVersion: typeof HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION;
   mediaType: typeof HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE;
   timingContractVersion: typeof HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION;
@@ -263,6 +267,7 @@ const CUE_KINDS = new Set<HouseHighlightsTrailerCueSegmentKind>([
 export function validateHouseHighlightsTrailerManifest(
   value: unknown,
 ): HouseHighlightsTrailerManifestValidationResult {
+  if (isRecord(value) && value.kind === "werewolf") return validateWerewolfTrailerManifest(value);
   const errors: string[] = [];
   const manifest = recordAt(value, "manifest", errors);
   if (!manifest) return { ok: false, errors };
@@ -279,6 +284,7 @@ export function validateHouseHighlightsTrailerManifest(
     );
   }
 
+  if (manifest.kind !== "influence") errors.push("kind must be influence or werewolf");
   validateGame(manifest.game, errors);
   positiveInteger(manifest.frameRate, "frameRate", errors);
   positiveInteger(manifest.width, "width", errors);
@@ -317,7 +323,7 @@ export function serializeHouseHighlightsTrailerManifest(
 
 export function buildHouseHighlightsTrailerManifest(
   input: HouseHighlightsTrailerManifestBuildInput,
-): HouseHighlightsTrailerManifest {
+): InfluenceTrailerManifest {
   const { highlightsResponse, resultsResponse } = input;
   const results = resultsResponse.results;
   if (resultsResponse.game.status !== "completed") {
@@ -363,6 +369,7 @@ export function buildHouseHighlightsTrailerManifest(
 
   return {
     schemaVersion: HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION,
+    kind: "influence",
     mediaType: HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
     timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
     game: {
@@ -400,7 +407,7 @@ export function buildHouseHighlightsTrailerCueSheet(params: {
     cursor = pushCueSegment(segments, cursor, `player_result:${result.agent.id}`, "player_result", result.agent.name, HOUSE_HIGHLIGHTS_TRAILER_PLAYER_RESULT_SECONDS);
   }
   return {
-    schemaVersion: HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION,
+    schemaVersion: 1,
     timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
     frameRate: HOUSE_HIGHLIGHTS_TRAILER_FPS,
     totalFrames: cursor,
@@ -679,8 +686,8 @@ function validatePlayerResult(value: unknown, path: string, errors: string[]): v
 function validateCueSheet(value: unknown, frameRate: unknown, errors: string[]): void {
   const cueSheet = recordAt(value, "cueSheet", errors);
   if (!cueSheet) return;
-  if (cueSheet.schemaVersion !== HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION) {
-    errors.push(`cueSheet.schemaVersion must be ${HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION}`);
+  if (cueSheet.schemaVersion !== 1) {
+    errors.push("cueSheet.schemaVersion must be 1");
   }
   if (cueSheet.timingContractVersion !== HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION) {
     errors.push(

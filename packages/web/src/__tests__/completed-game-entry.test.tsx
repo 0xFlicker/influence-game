@@ -67,6 +67,8 @@ describe("CompletedGameEntry", () => {
     expect(html).toContain("House Highlights");
     expect(html).toContain('controls=""');
     expect(html).toContain('preload="metadata"');
+    expect(html).toContain('crossorigin="anonymous"');
+    expect(html).toContain('playsInline=""');
     expect(html).toContain('poster="https://media.example.test/postgame/v3/poster.jpg"');
     expect(html).toContain('src="https://media.example.test/postgame/v3/trailer.mp4"');
     expect(html).toContain('src="https://media.example.test/postgame/v3/captions.vtt"');
@@ -284,6 +286,27 @@ describe("CompletedGameEntry", () => {
     const html = renderToString(<PostgameMediaPlayer gameId={gameId} media={readyMedia()} />);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('aria-label="Share trailer"');
+  });
+
+
+  it("uses the shared trailer metadata for Werewolf without fetching Influence detail", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    const media = readyMedia();
+    media.preview = { title: "Werewolf at The House", description: "Who will you trust?" };
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
+      calls.push(String(url));
+      return Response.json(String(url).includes("/api/game-entries/")
+        ? { id: "wolf-game", slug: "wolf-game", gameKind: "werewolf", visibility: "unlisted" } : media);
+    }) as typeof fetch;
+    try {
+      const metadata = await generateMetadata({ params: Promise.resolve({ slug: "wolf-game" }) });
+      expect(metadata.title).toBe("Werewolf at The House");
+      expect(metadata.alternates?.canonical).toBe("/games/wolf-game");
+      expect(metadata.openGraph?.images).toEqual([{ url: media.poster.url, alt: media.poster.altText }]);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toEndWith("/api/games/wolf-game/postgame/media");
+    } finally { globalThis.fetch = originalFetch; }
   });
 
   it("uses stored ready media for spoiler-safe social metadata and falls back safely", async () => {

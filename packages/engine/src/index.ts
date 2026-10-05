@@ -291,6 +291,7 @@ export type {
   HouseHighlightsTrailerFinalVote,
   HouseHighlightsTrailerFinalVoteGroup,
   HouseHighlightsTrailerManifest,
+  InfluenceTrailerManifest,
   HouseHighlightsTrailerManifestBuildInput,
   HouseHighlightsTrailerManifestErrorCode,
   HouseHighlightsTrailerManifestValidationResult,

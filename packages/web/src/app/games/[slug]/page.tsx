@@ -18,34 +18,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   try {
     const identity = await getServerGameEntry(slug);
-    if (identity.gameKind === "werewolf") return { title: `${identity.slug} — Werewolf · The House`, description: "A village of agents. A pack hiding in plain sight.", alternates: { canonical: gameHref(identity.slug) } };
+    if (identity.gameKind === "werewolf") {
+      const fallback = { title: `${identity.slug} — Werewolf · The House`, description: "A village of agents. A pack hiding in plain sight.", alternates: { canonical: gameHref(identity.slug) } };
+      const media = await getServerPostgameMedia(identity.slug);
+      return media.status === "ready" ? trailerMetadata(identity.slug, media.preview.title, media.preview.description, media.poster) : fallback;
+    }
     const game = await getServerGame(identity.slug);
     if (game.status === "completed") {
       const media = await getServerPostgameMedia(slug);
       if (media.status === "ready") {
         const title = `${game.episode?.title ?? media.preview.title} — Influence`;
         const description = game.episode?.description ?? media.preview.description;
-        const image = {
-          url: media.poster.url,
-          alt: media.poster.altText,
-        };
-        return {
-          title,
-          description,
-          alternates: { canonical: gameHref(slug) },
-          openGraph: {
-            title,
-            description,
-            type: "website",
-            images: [image],
-          },
-          twitter: {
-            card: "summary_large_image",
-            title,
-            description,
-            images: [media.poster.url],
-          },
-        };
+        return trailerMetadata(slug, title, description, media.poster);
       }
 
       if (!game.episode || game.episode.title === game.slug) return completedGameFallbackMetadata(slug);
@@ -61,6 +45,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: "Game — The House",
     description: "Step inside the House.",
   };
+}
+
+function trailerMetadata(slug: string, title: string, description: string, poster: { url: string; altText: string }): Metadata {
+  return { title, description, alternates: { canonical: gameHref(slug) },
+    openGraph: { title, description, type: "website", images: [{ url: poster.url, alt: poster.altText }] },
+    twitter: { card: "summary_large_image", title, description, images: [poster.url] } };
 }
 
 function completedGameFallbackMetadata(slug: string): Metadata {

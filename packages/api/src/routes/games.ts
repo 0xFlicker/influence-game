@@ -61,7 +61,6 @@ import {
   type PostgameReadStatus,
 } from "../services/postgame-analysis.js";
 import { getPostgameHighlights } from "../services/postgame-highlights.js";
-import { getPublicPostgameMedia } from "../services/postgame-media.js";
 import {
   buildFallbackGameWatchStateSummary,
   getGameWatchStateSummaryReadsByGameIds,
@@ -1007,17 +1006,6 @@ export function createGameRoutes(db: DrizzleDB) {
     const result = await getPostgameHighlights(db, c.req.param("id"));
     if (!result.ok) return postgameErrorResponse(c, result);
     return c.json(result);
-  });
-
-  // GET /api/games/:id/postgame/media — spoiler-safe postgame trailer state
-  app.get("/api/games/:id/postgame/media", async (c) => {
-    const idOrSlug = c.req.param("id");
-    const game = (await db.select({ id: schema.games.id })
-      .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
-      .limit(1))[0];
-    if (!game) return c.json({ error: "Game not found" }, 404);
-    return c.json(await getPublicPostgameMedia(db, game.id));
   });
 
   // -------------------------------------------------------------------------

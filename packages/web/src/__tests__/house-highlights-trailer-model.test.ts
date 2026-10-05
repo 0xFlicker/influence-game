@@ -193,7 +193,8 @@ describe("house highlights trailer model", () => {
     });
 
     expect(manifest).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      kind: "influence",
       game: {
         id: "game-edge-smoke-dusk",
         slug: "edge-smoke-dusk",

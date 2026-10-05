@@ -34,7 +34,8 @@ registerRoot(function RemotionRoot() {
 });
 
 const demoManifest: HouseHighlightsTrailerCompositionProps["manifest"] = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  kind: "influence",
   mediaType: "house_highlights_trailer",
   timingContractVersion: TIMING_CONTRACT_VERSION,
   game: {

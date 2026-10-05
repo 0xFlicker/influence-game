@@ -119,7 +119,7 @@ type LoadedHouseHighlightsResult =
   | PostgameHighlightsFailure;
 
 export async function getPostgameHighlights(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   idOrSlug: string,
 ): Promise<PostgameHighlightsResult> {
   const loaded = await loadHouseHighlights(db, idOrSlug);
@@ -137,7 +137,7 @@ export async function getPostgameHighlights(
 }
 
 export async function getPostgameHighlightsDiagnostics(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   idOrSlug: string,
 ): Promise<PostgameHighlightsDiagnosticsResult> {
   const loaded = await loadHouseHighlights(db, idOrSlug);
@@ -509,7 +509,7 @@ function normalizeCardFactText(text: string): string {
 }
 
 async function loadHouseHighlights(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   idOrSlug: string,
 ): Promise<LoadedHouseHighlightsResult> {
   const analysis = await getPostgameAnalysis(db, idOrSlug, {
@@ -620,7 +620,7 @@ interface HistoricalPlayerIdentity {
 type PlayerIdentityIndex = ReadonlyMap<string, HistoricalPlayerIdentity>;
 
 async function loadPlayerIdentityIndex(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   gameId: string,
 ): Promise<PlayerIdentityIndex> {
   const rows = await db

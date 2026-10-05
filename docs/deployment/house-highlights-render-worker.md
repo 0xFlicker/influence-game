@@ -124,7 +124,17 @@ bun run dev:api
 bun run dev:render-worker
 ```
 
+The dev service supplies `.renders/render-worker/drain-ack.json` in the checkout
+for local drain control (including Ctrl-C). `POSTGAME_MEDIA_DRAIN_ACK_FILE` can
+override it. Run one dev render worker per checkout; simultaneous workers need
+separate control directories. The deployed poll command still requires an
+explicit control path; its handoff contract is unchanged.
+
 Queue a completed game from **Admin -> Game History -> Trailer -> Backfill**.
+Werewolf game workspaces also expose **Production -> Trailer & poster** using
+the same diagnostics and actions. Failed jobs show **Retry trailer**; restarting
+the worker does not requeue terminal failures. Repair the missing assets, enter
+a reason, then retry.
 The authenticated API equivalent is:
 
 ```sh
@@ -238,3 +248,27 @@ aliases only. Rollback restores the prior immutable three-image family;
 queued/leased jobs remain API-owned and can be reclaimed after their lease
 expires. Production handoff additionally binds drain intent and acknowledgement
 to the current worker generation before enabling candidate claims.
+
+
+## W5 shared Werewolf delivery
+
+Render input schema is now **2**, with required `kind: influence | werewolf`. Influence retains its existing cue timing and prepared music matrix. The Werewolf branch consumes an approved, strictly allowlisted opening-only teaser snapshot and hash-verified full Suno score. The shared coordinator queues completed visible Werewolf games after Mystery Cuts settle; empty/failed editorial work permits a cast-only teaser. The operator approved the sample, policy and score on 2026-10-05. `Dockerfile.render-worker` packages `music/werewolf/trailer-v1.wav`; worker health checks and renders verify its hash. No separate Werewolf worker or queue.
+
+Deploy API snapshot producers and workers together. Old active schema-1 input snapshots are rejected by the new parser and require an explicit rerender; no permissive migration/fallback is provided. Already-published immutable bundles remain readable without parsing old input manifests. A local MP4 does not prove claim/upload/finalize or deployed playback.
+
+Local review command (from repository root):
+
+```sh
+bun scripts/preview-werewolf-trailer.ts --game hazy-ruby-sand \
+  --output .renders/werewolf-trailer/w5-v1 \
+  --music-dir .renders/werewolf-music/suno-picks-v1
+```
+
+`--snapshot-only` freezes read-only canonical/publication input. `--from-snapshot FILE` renders that exact story without reloading the game. `--portrait-dir DIR` explicitly serves only the snapshot's named local portraits when the application API is stopped; it neither restores nor copies profile files. Local receipts pin source/policy/publication/music hashes. These commands do not create media jobs, upload or publish.
+
+
+Both games use the same media endpoint, public player, share metadata and existing admin backfill/rerender actions. Automatic startup reconciliation includes both kinds; the Cuts worker also reconciles after Mystery publication or terminal failure. Per-game transaction locks serialize automatic/operator enqueue requests. A failed replacement retains the prior ready bundle. Hidden games cannot claim/publish new media, and the media endpoint independently checks visibility before returning any URLs. Existing immutable public objects cannot be revoked by hiding a game; this is the existing storage boundary, not private storage.
+
+Old schema-1 jobs become an actionable `render_input` failure at claim rather than being silently skipped. Request a fresh render from the existing producer/admin control after deploying the coordinated API/web/worker release. `waiting_music` similarly uses the existing rerender recovery once the exact score is installed. Do not copy a `.renders` path into worker configuration.
+
+Local W5 proof and remaining deployment boundaries are recorded in the [focused plan](../plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). No external upload or deployed-image smoke is implied by local tests.

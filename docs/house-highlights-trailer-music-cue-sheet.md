@@ -2,7 +2,7 @@
 
 Generated from the current trailer timing contract on 2026-07-08.
 
-## Fixed Timing Contract
+## Influence fixed timing contract
 
 - Roster intro: `0.0-5.0` (`5.0s`)
 - Each House Cut: `4.0s`
@@ -124,3 +124,12 @@ and render QA. Viewers receive the MP4, spoiler-safe roster poster, VTT captions
 and safe playback metadata only. Run `bun run render-worker:health` to validate
 the full prepared matrix and `bun run render-worker:smoke` to claim and complete
 one intentionally queued local game.
+
+
+## Werewolf local teaser score (W5)
+
+Werewolf uses one full Suno source rather than this Influence duration matrix. Asset ID `werewolf-suno-trailer-v1`, source `trailer-v1.wav`, duration 177.96s, 48kHz stereo PCM16. Source SHA-256: `bc6967a8e1ca3769e43ae5b1a5c4f4440e7f0f12ff1036d48cb1b5acd53c01b5`.
+
+The picture determines length: five seconds of cast, zero to three attributed quotations (4–10 seconds each based on reading time), then a four-second invitation. Start the source at 0:00, trim to picture, and apply the existing bounded three-second end fade. No 45-second limit, loop, stretch, remix or new generation. Verify source identity before rendering; missing, changed or too-short music raises `waiting_music`.
+
+Local source: `.renders/werewolf-music/suno-picks-v1/trailer-v1.wav`. This is not a deployment path. Worker asset packaging and automated Werewolf delivery are pending the finished-sample gate in [W5](plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). Existing Influence music selection remains unchanged.

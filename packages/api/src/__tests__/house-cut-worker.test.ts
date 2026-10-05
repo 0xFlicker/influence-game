@@ -49,6 +49,9 @@ test("workers claim serially and publish only after validation, keeping audience
     expect(JSON.stringify(result)).not.toMatch(/journal|leaseToken|sourceHash|PRIVATE_|failure/);
   }
   expect(await runHouseCutJob(db, generate)).toBe(false);
+  const [media] = await db.select().from(schema.gamePostgameMedia).where(eq(schema.gamePostgameMedia.gameId, id));
+  expect(media?.status).toBe("queued");
+  expect(media?.musicAssetId).toBe("werewolf-suno-trailer-v1");
 });
 test("hidden and cross-audience reads fail; linked Unlisted works without generation", async () => {
   const { id, slug } = await fixture();

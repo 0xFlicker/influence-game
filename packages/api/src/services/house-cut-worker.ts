@@ -5,6 +5,7 @@ import { loadHouseCutSource } from "./house-cut-source.js";
 import { isViewerGame } from "./game-visibility.js";
 import { createCutTrialRuntimes, newCutTrialJournal, runAutomaticCutTrial, type CutTrialJournal } from "@influence/engine/house-cuts/trial";
 import { publishCutSelection } from "@influence/engine/house-cuts/publication";
+import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 const table = schema.houseCutJobs;
 type Generate = typeof runAutomaticCutTrial;
 
@@ -45,6 +46,10 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
   } catch (error) {
     await db.update(table).set({ status: "failed", failure: error instanceof Error ? error.message : "House Cuts failed", leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
     console.error("[house-cuts] Job failed", { gameId: job.gameId, audience: job.audience });
+  }
+  if (job.audience === "mystery") {
+    try { await reconcilePostgameMediaForGame(db, job.gameId); }
+    catch (error) { console.error("[postgame-media] Reconciliation deferred after House Cuts", { gameId: job.gameId, error: error instanceof Error ? error.message : "unknown" }); }
   }
   return true;
 }

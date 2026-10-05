@@ -6,9 +6,11 @@ import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifes
 import {
   HouseHighlightsTrailerMusicUnavailableError,
   selectHouseHighlightsTrailerMusicVariant,
+  selectWerewolfTrailerMusic,
 } from "../lib/house-highlights-trailer-audio";
 import {
   DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR,
+  DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR,
   remotionMediaOptions,
   renderHouseHighlightsTrailerMediaBundle,
   writeHouseHighlightsTrailerPlaybackMetadata,
@@ -348,6 +350,7 @@ export function withWorkerReachableAssetUrls(
     ...value,
     avatarUrl: rewriteWorkerAssetUrl(value.avatarUrl, apiBaseUrl, reachableHost, rewriteLoopbackHosts),
   });
+  if (manifest.kind === "werewolf") return { ...manifest, cast: manifest.cast.map(agent) };
   return {
     ...manifest,
     cast: manifest.cast.map(agent),
@@ -413,7 +416,7 @@ export async function checkHouseHighlightsMediaWorkerHealth(
   const runCommand = dependencies.runCommand ?? runCommandQuietly;
   await runCommand("ffmpeg", ["-version"]);
   await runCommand(browserExecutable, ["--version"]);
-  await (dependencies.verifyMusic ?? assertPreparedHouseHighlightsTrailerMusicMatrix)();
+  await (dependencies.verifyMusic ?? assertPreparedTrailerMusic)();
   await (dependencies.verifyTemporarySpace ?? assertHouseHighlightsMediaWorkerTemporarySpace)(config.temporaryRoot, config.minimumFreeBytes);
   const response = await fetchWithTimeout(
     dependencies.fetchImpl ?? fetch,
@@ -425,6 +428,11 @@ export async function checkHouseHighlightsMediaWorkerHealth(
   if (!response.ok) throw new Error(`worker_health_api_${response.status}`);
   const body = await response.json().catch(() => null) as { status?: unknown } | null;
   if (body?.status !== "ok") throw new Error("worker_health_api_invalid_response");
+}
+
+export async function assertPreparedTrailerMusic() {
+  await assertPreparedHouseHighlightsTrailerMusicMatrix();
+  await selectWerewolfTrailerMusic(9, DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR);
 }
 
 export async function assertPreparedHouseHighlightsTrailerMusicMatrix(
@@ -523,9 +531,9 @@ function artifactMetadata(claim: WorkerClaim, bundle: Awaited<ReturnType<typeof 
   const captions = artifactRecord(targetFor(targets, "captions"), bundle.artifacts.captions);
   const metadata = artifactRecord(targetFor(targets, "metadata"), metadataArtifact);
   return {
-    preview: { title: "House Highlights", description: "A completed Influence game, told through the House." },
+    preview: claim.manifest.kind === "werewolf" ? { title: claim.manifest.story.title, description: claim.manifest.story.description } : { title: "House Highlights", description: "A completed Influence game, told through the House." },
     video: { ...video, width: bundle.dimensions.width, height: bundle.dimensions.height },
-    poster: { ...poster, altText: "House Highlights cast roster" },
+    poster: { ...poster, altText: claim.manifest.kind === "werewolf" ? "The Werewolf cast at The House" : "House Highlights cast roster" },
     captions: { ...captions, language: "en", label: "English" },
     manifest: metadata,
     storage: claim.storage,

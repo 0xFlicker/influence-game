@@ -579,7 +579,7 @@ A reusable non-factual atmosphere asset behind a House Highlights Visual Card or
 
 ## House Highlights Trailer
 
-A locally or durably rendered motion presentation of a completed game's House Highlights artifact. A trailer uses the selected House Highlights scenes plus completed-results facts to show a cast parade, selected House Cut scenelets, the final vote, and the winner reveal. It is a presentation layer, not a new factual source or scene-selection system.
+A locally or durably rendered motion presentation of a completed game. Influence uses selected Highlights and completed-results facts for cast, scenelets, final vote and winner. The W5 Werewolf local teaser instead uses normal cast identities and attributed public opening quotations, with no confirmed roles or outcome. Each game owns its story policy; the House shares validated manifests, rendering, music muxing and bundle artifacts. Werewolf automatic delivery remains pending sample approval. A trailer is presentation, not a new factual source.
 
 ## Postgame media bundle
 
@@ -834,3 +834,5 @@ roles or authenticate as human administrators.
 A protocol-neutral read of a visible Public or Unlisted game, dispatched by game kind. Public discovery is distinct from known-link access and from private owner/producer evidence. The deployed MCP adds authenticated grant checks without requiring participation for spectator data. Default discovery contains no ending spoilers; current view and completed results can.
 
 Werewolf inspection positions count audience-visible source entries, including silent entries. Mystery and Omniscient positions are not interchangeable. Influence canonical event and transcript entry positions remain separate; dialogue never becomes authoritative board state. A replay page pins its source head and projects its board at the delivered prefix. Thinking is an explicit spectator artifact with its own cutoff, not native provider reasoning or a private strategy read.
+
+Werewolf trailers share House postgame delivery after the approved opening-only teaser policy (`werewolf-opening-quotes-v1`). Mystery Cuts settling is an input boundary, not a per-trailer approval gate. Empty/failed settled Cuts produce cast/premise only; pending Cuts wait. Source music is pinned in the render snapshot and packaged with the worker.

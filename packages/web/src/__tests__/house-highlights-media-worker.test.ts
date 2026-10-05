@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
+import { parseHouseHighlightsTrailerManifest, type InfluenceTrailerManifest } from "@influence/engine";
 import {
   createHouseHighlightsTrailerPlaybackMetadata,
   renderHouseHighlightsTrailerMediaBundle,
@@ -82,6 +82,7 @@ describe("House Highlights media worker bundle", () => {
       renderer: fakeRenderer(),
     });
 
+    if (manifest.kind !== "influence") throw new Error("Expected Influence fixture");
     expect(bundle.music.behavior).toBe("trim_and_fade");
     expect(bundle.posterFrame).toBeGreaterThan(manifest.cueSheet.segments[0]!.startFrame);
     expect(bundle.posterFrame).toBeLessThan(manifest.cueSheet.segments[0]!.endFrame);
@@ -97,6 +98,7 @@ describe("House Highlights media worker bundle", () => {
     expect(bundle.artifacts.poster.byteLength).toBe(6);
     expect(bundle.artifacts.poster.sha256).toBe("sha256:293b9207228b7854bc3ccb2959ebea1583e066d41983124a5b381d6fdf6575f8");
     const metadata = createHouseHighlightsTrailerPlaybackMetadata({
+      gameKind: "influence",
       durationMs: bundle.durationMs,
       dimensions: bundle.dimensions,
       renderVersion: "rv_fixture",
@@ -439,6 +441,7 @@ describe("House Highlights media worker bundle", () => {
     const rewritten = withWorkerReachableAssetUrls(manifest, "http://host.docker.internal:3002");
 
     expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    if (rewritten.kind !== "influence") throw new Error("Expected Influence fixture");
     expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
     expect(rewritten.cast[1]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=pfp%2Fbob.png");
     expect(manifest.cast[0]!.avatarUrl).toStartWith("http://127.0.0.1:3000/");
@@ -500,14 +503,14 @@ function fakeRenderer(overrides: Partial<HouseHighlightsTrailerRenderer> = {}): 
   };
 }
 
-function manifestFixture(): HouseHighlightsTrailerManifest {
+function manifestFixture(): InfluenceTrailerManifest {
   const agent = (id: string, name: string, placement: number, status: "winner" | "finalist" | "eliminated") => ({ id, name, initials: name[0]!, avatarUrl: `/avatars/${id}.png`, placement, status });
   const alice = agent("alice", "Alice", 1, "winner");
   const bob = agent("bob", "Bob", 2, "finalist");
   const cara = agent("cara", "Cara", 3, "eliminated");
   const dax = agent("dax", "Dax", 4, "eliminated");
   return {
-    schemaVersion: 1, mediaType: "house_highlights_trailer", timingContractVersion: "house-highlights-trailer-timing-v1",
+    schemaVersion: 2, kind: "influence", mediaType: "house_highlights_trailer", timingContractVersion: "house-highlights-trailer-timing-v1",
     game: { id: "fixture", slug: "fixture", status: "completed" }, frameRate: 30, width: 1920, height: 1080,
     cast: [alice, bob, cara, dax], scenelets: [],
     finalVote: { finalists: [alice, bob], groups: [{ finalist: alice, votes: 2, jurors: [cara, dax] }, { finalist: bob, votes: 0, jurors: [] }], voteLabel: "2-0", winner: alice },
@@ -520,6 +523,6 @@ function manifestFixture(): HouseHighlightsTrailerManifest {
   };
 }
 
-function cue(id: string, kind: HouseHighlightsTrailerManifest["cueSheet"]["segments"][number]["kind"], label: string, startFrame: number, endFrame: number) {
+function cue(id: string, kind: InfluenceTrailerManifest["cueSheet"]["segments"][number]["kind"], label: string, startFrame: number, endFrame: number) {
   return { id, kind, label, startFrame, endFrame, startSeconds: startFrame / 30, endSeconds: endFrame / 30, durationSeconds: (endFrame - startFrame) / 30 };
 }

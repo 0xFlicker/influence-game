@@ -19,7 +19,7 @@ import { getPersistedGameProjection } from "./game-projection-read-model.js";
 const DEFAULT_AGENT_GAME_LIMIT = 20;
 const MAX_AGENT_GAME_LIMIT = 100;
 
-type PostgameDB = DrizzleDB;
+type PostgameDB = Pick<DrizzleDB, "select">;
 
 export type PostgameReadStatus =
   | "not_found"

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   hashHouseHighlightsTrailerManifest,
-  type HouseHighlightsTrailerManifest,
+  type InfluenceTrailerManifest,
 } from "@influence/engine";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -107,7 +107,7 @@ describe("private avatar storage rotation", () => {
       attemptNumber: 1,
       renderInputSnapshot: snapshot,
       renderInputSnapshotHash: hashHouseHighlightsTrailerManifest(snapshot),
-      renderInputSnapshotVersion: 1,
+      renderInputSnapshotVersion: 2,
       rendererVersion: "test-renderer",
       timingContractVersion: "test-v1",
       musicAssetId: "test-music",
@@ -176,7 +176,7 @@ describe("private avatar storage rotation", () => {
         signedUploadUrl: referenced.newPublicUrl,
       },
     });
-    const repointedSnapshot = media!.renderInputSnapshot as HouseHighlightsTrailerManifest;
+    const repointedSnapshot = media!.renderInputSnapshot as InfluenceTrailerManifest;
     expect(repointedSnapshot.cast[0]?.avatarUrl).toBe(referenced.newPublicUrl!);
     expect(JSON.stringify(repointedSnapshot)).not.toContain(OLD_KEY);
     expect(JSON.stringify(repointedSnapshot)).not.toContain(OLD_URL);
@@ -266,7 +266,7 @@ describe("private avatar storage rotation", () => {
   });
 });
 
-function manifestFixture(): HouseHighlightsTrailerManifest {
+function manifestFixture(): InfluenceTrailerManifest {
   const winner = {
     id: "winner",
     name: "Mira Solari",
@@ -284,7 +284,7 @@ function manifestFixture(): HouseHighlightsTrailerManifest {
     status: "finalist" as const,
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2, kind: "influence",
     mediaType: "house_highlights_trailer",
     timingContractVersion: "house-highlights-trailer-timing-v1",
     game: { id: "rotation-game", slug: "rotation-game", status: "completed" },

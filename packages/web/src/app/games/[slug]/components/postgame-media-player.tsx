@@ -135,6 +135,8 @@ export function PostgameMediaPlayer({
         className="block aspect-video w-full bg-black"
         controls
         preload="metadata"
+        crossOrigin="anonymous"
+        playsInline
         poster={media.poster.url}
         aria-label={`${media.preview.title} trailer`}
       >

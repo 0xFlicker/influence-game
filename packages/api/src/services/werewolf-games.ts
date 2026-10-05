@@ -1,3 +1,4 @@
+import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { queueHouseCuts } from "./house-cut-queue.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -178,6 +179,7 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
       if (next.outcome) {
         await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
         await queueHouseCuts(tx, gameId);
+        await ensureWaitingPostgameMediaRow(tx, gameId);
       }
     }),
   };
