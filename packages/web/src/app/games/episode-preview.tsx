@@ -60,7 +60,7 @@ export function EpisodeTrailer({ preview, autoplay, onEnded }: { preview: Episod
   if (media.status !== "ready") return null;
   return <div className="episode-video">
     <video ref={video} playsInline controls muted={muted} preload="metadata" poster={media.poster.url} aria-label={`${preview.episode.title} trailer`} onEnded={onEnded} onError={onEnded} onVolumeChange={e => { setMuted(e.currentTarget.muted); if (document.activeElement === e.currentTarget) rememberEpisodeSound(!e.currentTarget.muted); }}>
-      <source src={media.video.url} type={media.video.contentType} /><track kind="captions" src={media.captions.url} srcLang={media.captions.language} label={media.captions.label} default />
+      <source src={media.video.url} type={media.video.contentType} /><track kind="captions" src={media.captions.url} srcLang={media.captions.language} label={media.captions.label} />
     </video>
     <div className="episode-video-controls"><button type="button" onClick={() => { const p = video.current; if (!p) return; const enabled = p.muted; rememberEpisodeSound(enabled); p.muted = !enabled; setMuted(p.muted); }}>{muted ? "Sound on" : "Sound off"}</button>
     {blocked && <button type="button" onClick={() => { if (video.current) void playEpisodeVideo(video.current).then(ok => setBlocked(!ok)); }}>Play trailer</button>}

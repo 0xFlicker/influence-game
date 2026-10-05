@@ -146,7 +146,6 @@ export function PostgameMediaPlayer({
           src={media.captions.url}
           srcLang={media.captions.language}
           label={media.captions.label}
-          default
         />
         Your browser does not support video playback.
       </video>

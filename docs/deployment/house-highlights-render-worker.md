@@ -272,3 +272,5 @@ Both games use the same media endpoint, public player, share metadata and existi
 Old schema-1 jobs become an actionable `render_input` failure at claim rather than being silently skipped. Request a fresh render from the existing producer/admin control after deploying the coordinated API/web/worker release. `waiting_music` similarly uses the existing rerender recovery once the exact score is installed. Do not copy a `.renders` path into worker configuration.
 
 Local W5 proof and remaining deployment boundaries are recorded in the [focused plan](../plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). No external upload or deployed-image smoke is implied by local tests.
+
+Trailer captions are available through the native CC menu but are off by default in both the completed-game player and episode previews.
