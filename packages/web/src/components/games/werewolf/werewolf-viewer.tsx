@@ -6,6 +6,8 @@ import {GamePlayerAvatarPreview} from "@/components/game-player-avatar-preview";
 import {WatchShell, ShellHeader} from "@/components/watch/watch-shell";
 import {CastRail, MobileContextPanel} from "@/components/watch/watch-cast";
 import {WatchInspector, InspectorSection} from "@/components/watch/watch-inspector";
+import {useWatchMusic} from "@/components/watch/use-watch-music";
+import {werewolfMusic} from "./werewolf-music";
 import {WatchTransport} from "@/components/watch/watch-transport";
 import {usePlayerFullscreen} from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
@@ -47,10 +49,14 @@ function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {sl
   const selectedId = selected ?? players[0]?.id;
   const identity = data?.players.find(player => player.id === selectedId);
   const person = players.find(player => player.id === selectedId);
-  const seek = (position: number) => { void watch.seek(position); };
+  const music = useWatchMusic({navigationRevision:watch.navigationRevision, section: werewolfMusic(active), playing: watch.follow,
+    muted: preferences.musicMuted, volume: preferences.musicVolume, preparing: watch.preparing,
+    holding: watch.holding, live: data?.status === "in_progress"});
+  const toggle = () => {if (watch.follow) music.suspend(); else if (!preferences.musicMuted) music.unlock(); watch.toggle();};
+  const seek = (position: number) => { music.suspend(); void watch.seek(position); };
   const adjacent = (direction: -1 | 1, kind: "scene" | "chapter") => seek(adjacentWerewolfPosition(data?.navigation ?? [], cursor, direction, kind));
-  const back = watch.previous;
-  useWatchKeyboard({toggle: watch.toggle, advance: () => director.manualAdvance(), back, previousChapter: () => adjacent(-1,"scene"), nextChapter: () => adjacent(1,"scene"), speed: value => director.setSpeed(value)});
+  const back = () => {music.suspend(); watch.previous();};
+  useWatchKeyboard({toggle, advance: () => director.manualAdvance(), back, previousChapter: () => adjacent(-1,"scene"), nextChapter: () => adjacent(1,"scene"), speed: value => director.setSpeed(value)});
   const contribution = cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}) : null;
   const performer = contribution?.spoken ? contribution.actor : undefined;
   const thinkingCursor = cue?.moment.cursor;
@@ -85,8 +91,8 @@ function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {sl
         </WatchThinking>
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
         {active?.entry.kind === "result" && <Link className="self-center rounded-lg border border-white/20 px-4 py-2 text-sm text-white" href={gameResultsHref(slug)}>View final results</Link>}
-        <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-3 py-2">
-          <WatchTransport shareHref={active ? werewolfMomentHref(slug,audience,active.cursor) : undefined} fullscreen={fullscreen.fullscreen} fullscreenButton={fullscreen.button} toggleFullscreen={fullscreen.toggle} fullscreenError={fullscreen.error} isPlaying={watch.follow} togglePlay={watch.toggle} speed={snapshot.speed} onSpeed={value => director.setSpeed(value)} goToBeginning={() => seek(1)} goToPrevScene={() => adjacent(-1,"scene")} onSeek={seek} goToNextScene={() => adjacent(1,"scene")} goToEnd={() => data?.status === "in_progress" ? watch.goLive() : seek(data?.latestCursor ?? 1)} live={data?.status === "in_progress"} cursor={cursor - 1} count={data?.latestCursor ?? 1} settings={<div className="flex flex-col items-start gap-3 text-sm text-white/80">
+        <div data-replay-controls className="shrink-0 border-t border-white/5 bg-black/70 px-1 py-2 sm:px-3">
+          <WatchTransport shareHref={active ? werewolfMomentHref(slug,audience,active.cursor) : undefined} fullscreen={fullscreen.fullscreen} fullscreenButton={fullscreen.button} toggleFullscreen={fullscreen.toggle} fullscreenError={fullscreen.error} isPlaying={watch.follow} togglePlay={toggle} music={{muted:preferences.musicMuted, volume:preferences.musicVolume, status:music.status, onMute:() => {if (music.status === "blocked" || music.status === "unavailable") music.unlock(); else {preferences.setMusicMuted(!preferences.musicMuted); music.unlock();}}, onVolume:preferences.setMusicVolume, retry:music.unlock}} onScrubStart={music.beginScrub} onScrubEnd={music.endScrub} speed={snapshot.speed} onSpeed={value => director.setSpeed(value)} goToBeginning={() => {music.restart(); seek(1);}} goToPrevScene={() => adjacent(-1,"scene")} onSeek={seek} goToNextScene={() => adjacent(1,"scene")} goToEnd={() => {music.suspend(); if (data?.status === "in_progress") watch.goLive(); else seek(data?.latestCursor ?? 1);}} live={data?.status === "in_progress"} cursor={cursor - 1} count={data?.latestCursor ?? 1} settings={<div className="flex flex-col items-start gap-3 text-sm text-white/80">
         <span className="text-xs text-white/50" aria-label="Viewing mode">Viewing mode: {audience === "omniscient" ? "Omniscient" : "Mystery"}</span>
         {data?.status === "completed" && <Link href={gameResultsHref(slug)}>View results · Spoilers</Link>}
         <button onClick={() => setTranscript(value => !value)}>Transcript</button>

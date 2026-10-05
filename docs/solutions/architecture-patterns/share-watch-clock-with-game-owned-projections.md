@@ -37,3 +37,7 @@ Thinking-first retains the thought through the entire spoken line and uses the s
 ## Message-wide bubble fitting
 
 Measure both speech and thinking before visibility changes, using the stage font and viewport budget. `fitBubbleText` chooses bounded type, then paginates at the readable minimum when necessary and fixes the bubble to its tallest page. `TimedSpeech` consumes these measured pages without a second sizing pass. Do not fit only the currently visible page: that would move the shape on every page change. Font-ready and viewport changes may refit; playback time cannot. Keep padding and borders in the measurement budget.
+
+## Replay music
+
+The shared player now owns optional music transport and device sound preferences; a game module selects its score from current audience-visible moments. See [shared replay music transport](shared-replay-music-transport.md) for the adapter contract, autoplay constraints, scrub semantics and new-game checklist. Influence remains silent until a score is selected. Mute and volume stay in the main control bar at all widths.

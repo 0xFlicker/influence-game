@@ -20,7 +20,7 @@ test("game viewers share both saved choices across mounts while production is se
  expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({ready:true,thinking:true,thinkingOrder:"speech-first"});
  expect(renderHook(()=>useWatchPreferences("production")).result.current).toMatchObject({ready:true,thinking:true,thinkingOrder:"thinking-first"});
 });
-for(const value of ["broken",'{}','{"thinking":"true","thinkingOrder":"speech-first"}','{"thinking":true,"thinkingOrder":"unknown"}'])test(`invalid preference safely resets: ${value}`,()=>{
+for(const value of ["broken",'{}'])test(`invalid preference safely resets: ${value}`,()=>{
  dom.localStorage.setItem(watchPreferenceKey("viewer"),value);
  expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({ready:true,thinking:false,thinkingOrder:"thinking-first"});
 });
@@ -40,4 +40,19 @@ test("blocked storage keeps both controls usable for the session",()=>{
   expect(view.result.current).toMatchObject({ready:true,thinking:true,thinkingOrder:"speech-first"});
   expect(warn).toHaveBeenCalled();
  } finally {warn.mockRestore();}
+});
+
+test("music preferences preserve independent valid fields and synchronize scopes",()=>{
+ dom.localStorage.setItem(watchPreferenceKey("viewer"),JSON.stringify({thinking:true,thinkingOrder:"unknown",musicMuted:"false",musicVolume:12}));
+ const first=renderHook(()=>useWatchPreferences()), second=renderHook(()=>useWatchPreferences()), production=renderHook(()=>useWatchPreferences("production"));
+ expect(first.result.current).toMatchObject({thinking:true,thinkingOrder:"thinking-first",musicMuted:true,musicVolume:1});
+ act(()=>{first.result.current.setMusicMuted(false);first.result.current.setMusicVolume(0.42);});
+ expect(second.result.current).toMatchObject({musicMuted:false,musicVolume:0.42});
+ expect(production.result.current).toMatchObject({musicMuted:true,musicVolume:0.3});
+ first.unmount();
+ expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({thinking:true,musicMuted:false,musicVolume:0.42});
+});
+test("thinking-only saved preferences keep their choices and default to silent music",()=>{
+ dom.localStorage.setItem(watchPreferenceKey("viewer"),JSON.stringify({thinking:true,thinkingOrder:"speech-first"}));
+ expect(renderHook(()=>useWatchPreferences()).result.current).toMatchObject({thinking:true,thinkingOrder:"speech-first",musicMuted:true,musicVolume:0.3});
 });

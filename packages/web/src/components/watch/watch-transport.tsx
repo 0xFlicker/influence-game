@@ -2,18 +2,22 @@
 import {ShareMoment} from "./share-moment";
 import {useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
+import type {MusicStatus} from "./watch-music";
 import type {ThinkingOrder} from "./watch-director";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
 interface WatchTransportProps {
  fullscreen: boolean; fullscreenButton: RefObject<HTMLButtonElement | null>; toggleFullscreen: () => void | Promise<void>; fullscreenError: string | null;
+ music?: {muted: boolean; volume: number; status: MusicStatus; onMute: () => void; onVolume: (volume: number) => void; retry: () => void};
+ onScrubStart?: () => void; onScrubEnd?: () => void;
  shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void; goToNextScene: () => void; goToEnd: () => void;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void; order: ThinkingOrder; onOrderChange: (order: ThinkingOrder) => void}; live: boolean; cursor: number; count: number;
 }
-export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref}: WatchTransportProps) {
+export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
- const capacity = width >= 1280 ? 3 : width >= 1020 ? 2 : width >= 780 ? 1 : 0;
+ const available = width - (music ? 140 : 0);
+ const capacity = available >= 1280 ? 3 : available >= 1020 ? 2 : available >= 780 ? 1 : 0;
  useLayoutEffect(() => {
   const element = transport.current;
   if (!element) return;
@@ -39,7 +43,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
  const thinkingControl = thinking && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-white/80"><input type="checkbox" checked={thinking.enabled} onChange={event => thinking.onChange(event.target.checked)} />Show thinking</label>;
  const orderControl = thinking && <label className="flex items-center gap-2 whitespace-nowrap text-xs text-white/60">Order<select aria-label="Thinking order" className="h-9 rounded-lg border border-white/20 bg-zinc-900 px-2 text-white/80" value={thinking.order} onChange={event => thinking.onOrderChange(event.target.value as ThinkingOrder)}><option value="thinking-first">Thinking first</option><option value="speech-first">Speech first</option></select></label>;
  return <>
-  <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
+  <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-0 sm:gap-1" onClick={event => event.stopPropagation()}>
     <button type="button" aria-label={isPlaying ? "Pause replay" : "Play replay"} title={isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={togglePlay} className={button}>
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">{isPlaying ? <path d="M6 4h4v16H6zm8 0h4v16h-4z" /> : <path d="m6 3 15 9-15 9z" />}</svg>
       <span className={width >= 520 ? "text-xs" : "hidden"}>{isPlaying ? "Pause" : "Play"}</span>
@@ -50,12 +54,18 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
     <button type="button" aria-label="Next scene" title="Next (])" disabled={cursor >= count - 1} onClick={goToNextScene} className={button}>
       <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h3v16h-3zM4 4v16l12-8z" /></svg><span className={width >= 520 ? "text-xs" : "hidden"}>Next</span>
     </button>
-    <span className="min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" aria-label="Replay position count">{count ? cursor + 1 : 0}/{count}</span>
+    <span className={width >= 360 ? "min-w-0 truncate px-1 text-[10px] tabular-nums text-white/50" : "sr-only"} aria-label="Replay position count">{count ? cursor + 1 : 0}/{count}</span>
     <div className="min-w-0 flex-1" />
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
     {capacity >= 2 && <div className="mr-3 shrink-0">{thinkingControl}</div>}
     {capacity >= 3 && <div className="mr-3 shrink-0">{orderControl}</div>}
-    {live && <button type="button" aria-label="Go live" title="Go live" onClick={goToEnd} className={`${button} text-[10px] uppercase tracking-wider`}><span className="size-1.5 rounded-full bg-red-400" aria-hidden="true" />Live</button>}
+    {music && <div data-music-controls className="flex shrink-0 items-center gap-0 sm:gap-1">
+      <button type="button" className={button} onClick={music.onMute} aria-pressed={!music.muted} aria-label={music.status === "blocked" ? "Enable music" : music.status === "unavailable" ? "Music unavailable. Retry" : music.muted ? "Turn music on" : "Mute music"} title={music.status === "blocked" ? "Enable music" : "Music"}>
+        <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4 6 8H3v8h3l5 4Z" />{music.muted || music.status === "blocked" || music.status === "unavailable" ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>
+      </button>
+      <input aria-label="Music volume" type="range" min="0" max="100" step="1" value={Math.round(music.volume * 100)} onChange={event => music.onVolume(Number(event.target.value)/100)} className="h-10 w-[50px] cursor-pointer accent-white sm:w-20" />
+    </div>}
+    {live && width >= 520 && <button type="button" aria-label="Go live" title="Go live" onClick={goToEnd} className={`${button} text-[10px] uppercase tracking-wider`}><span className="size-1.5 rounded-full bg-red-400" aria-hidden="true" /><span className={width >= 520 ? "" : "sr-only"}>Live</span></button>}
     <button {...getReferenceProps()} ref={referenceRef} type="button" aria-label="Player settings" title="Player settings" aria-expanded={open} onClick={event => {setPortalRoot(event.currentTarget.closest<HTMLElement>('[data-player-fullscreen="true"]') ?? undefined);setOpen(value => !value);}} className={button}>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m10 3-1 3-3 1-2 3 2 2-1 3 2 3 3-1 2 3 3-1 1-3 3-1 1-3-2-2 1-3-3-2-3 1-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
     </button>
@@ -64,12 +74,15 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
     </button>
   </div>
   <input aria-label="Replay position" type="range" min={1} max={Math.max(1,count)} value={Math.min(Math.max(1,cursor + 1),Math.max(1,count))} disabled={count === 0}
+    onPointerDown={event => {event.currentTarget.setPointerCapture(event.pointerId); onScrubStart?.();}} onPointerUp={onScrubEnd} onPointerCancel={onScrubEnd} onLostPointerCapture={onScrubEnd} onBlur={onScrubEnd}
     onChange={event => onSeek(Number(event.target.value))} onClick={event => event.stopPropagation()} className="mt-1 block h-4 w-full cursor-pointer accent-white disabled:cursor-default" />
   {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
   {open && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={context} modal={false} returnFocus={settingsButton}>
       <div {...getFloatingProps()} onClick={event => event.stopPropagation()} ref={setFloating} tabIndex={-1} role="dialog" aria-label="Player settings" style={floatingStyles} className="z-[200] w-[min(22rem,85vw)] overflow-y-auto rounded-xl border border-white/25 bg-zinc-950 p-5 text-sm text-white shadow-2xl">
         <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Player settings</h2><button type="button" aria-label="Close settings" onClick={() => {setOpen(false);settingsButton.current?.focus();}} className="px-2 text-white/70">✕</button></div>
+        {music?.status === "unavailable" && <p role="status" className="mb-4 text-amber-200">Music unavailable · <button type="button" onClick={music.retry}>Retry</button></p>}
+        {music?.status === "loading" && <p role="status" className="mb-4 text-white/60">Loading music…</p>}
         {header}
         {shareHref && <div className="mb-4"><ShareMoment key={shareHref} href={shareHref} /></div>}
         {settings && <div className="mb-4 border-b border-white/10 pb-4" onClick={event => {if (event.target instanceof Element && event.target.closest("button")) setOpen(false);}}>{settings}</div>}

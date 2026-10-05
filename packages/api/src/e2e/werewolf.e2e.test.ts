@@ -535,7 +535,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
     await page.select('[role="dialog"] select','thinking-first');
     await page.click('[role="dialog"] input[type="checkbox"]');
     let saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
-    expect(JSON.parse(saved as string)).toEqual({thinking:false,thinkingOrder:"thinking-first"});
+    expect(JSON.parse(saved as string)).toMatchObject({thinking:false,thinkingOrder:"thinking-first"});
     await page.reload({waitUntil:"domcontentloaded"});
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
@@ -722,3 +722,156 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
     await page.screenshot({path:"/tmp/house-mcp-influence-moment.png"});
   } finally {await page.close();}
 },90_000);
+
+
+test("House replay music follows transport, remembers volume and stays visible on mobile", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  const claim=await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+    if(request.action==="open_thread")return {kind:"opening",text:"Let us compare the accounts carefully before we decide who should leave the village today.",cue:null,recipientIds:[]};
+    return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind about anyone in this village.",cue:null};
+  }});
+  const page=await browser.newPage();const errors:string[]=[];
+  page.on("pageerror",error=>errors.push(String(error)));
+  try {
+    await page.evaluateOnNewDocument(`(() => {
+      window.__musicAudio=[]; window.__musicContexts=[];
+      const OriginalAudio=window.Audio, OriginalContext=window.AudioContext;
+      window.Audio=class extends OriginalAudio {constructor(...args){super(...args);window.__musicAudio.push(this);}};
+      window.AudioContext=class extends OriginalContext {constructor(...args){super(...args);window.__musicContexts.push(this);}};
+    })()`);
+    await page.setViewport({width:1440,height:1000});
+    await page.goto(servers.webUrl!,{waitUntil:"domcontentloaded"});
+    await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
+    const url=`${servers.webUrl}/games/${game.slug}/replay?audience=mystery`;
+    await page.goto(url,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-werewolf-stage][data-cursor]');
+    expect(await page.evaluate("window.__musicAudio.length")).toBe(0);
+    await page.click('button[aria-label="Turn music on"]');
+    await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
+    expect(await page.evaluate("window.__musicContexts.filter(c=>c.state!=='closed').length")).toBe(1);
+    expect(await page.evaluate("window.__musicAudio.length")).toBe(2);
+    await pauseWerewolf(page);
+    await page.waitForFunction("window.__musicAudio.every(a=>a.paused)");
+    const before=await page.evaluate("Math.max(...window.__musicAudio.map(a=>a.currentTime))") as number;
+    await seekWatch(page,3);
+    expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+    expect(await page.evaluate("Math.max(...window.__musicAudio.map(a=>a.currentTime))")).toBeCloseTo(before,1);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForFunction(`window.__musicAudio.some(a=>!a.paused && a.currentTime>${before + 0.1})`);
+    await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('4');
+    expect(await page.evaluate("window.__musicAudio.every(a=>a.playbackRate===1)")).toBe(true);
+    await page.keyboard.press('2');
+    // Exercise a real decoded full-source loop without waiting three minutes.
+    await page.evaluate("window.__musicAudio.find(a=>!a.paused).currentTime=window.__musicAudio.find(a=>!a.paused).duration-0.5");
+    await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1 && a.currentTime<3)");
+    await page.click('button[aria-label="Mute music"]');
+    expect(await page.evaluate("window.__musicAudio.some(a=>!a.paused)")).toBe(true);
+    await page.click('button[aria-label="Turn music on"]');
+    await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Music volume"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"42");input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
+    await page.waitForFunction("JSON.parse(localStorage.getItem('house:watch:viewer:v1')).musicVolume===0.42");
+    await pauseWerewolf(page);
+    const presentation=await(await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+    const daytime=presentation.view.entries.findIndex(entry=>entry.kind==="discussion");
+    expect(daytime).toBeGreaterThan(0);
+    await seekWatch(page,daytime+1);
+    await page.waitForFunction("window.__musicAudio.some(a=>a.src.includes('the-circle-closes') && a.currentTime===0)");
+    expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForFunction("window.__musicAudio.some(a=>a.src.includes('the-circle-closes') && !a.paused && a.currentTime>0.1)");
+    await page.click('button[aria-label="Enter fullscreen"]');
+    await page.waitForSelector('[data-player-fullscreen]');
+    expect(await page.evaluate("window.__musicAudio.length")).toBe(2);
+    await page.click('button[aria-label="Exit fullscreen"]');
+    await page.waitForSelector('button[aria-label="Enter fullscreen"]');
+    await page.setViewport({width:320,height:800});
+    await page.screenshot({path:"/tmp/werewolf-music-320.png"});
+    expect(await page.$eval('input[aria-label="Music volume"]',node=>{const box=node.getBoundingClientRect();return box.width>=50 && box.left>=0 && box.right<=node.ownerDocument.defaultView!.innerWidth && !node.closest('[role="dialog"]');})).toBe(true);
+    expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+    expect(await page.evaluate(`(() => {const node=document.querySelector('[data-watch-transport]'), right=node.getBoundingClientRect().right;return Array.from(node.querySelectorAll('button,input')).every(control=>control.getBoundingClientRect().right<=right+1);})()`)).toBe(true);
+    await page.screenshot({path:"/tmp/werewolf-music-mobile.png"});
+    const slider=await page.$('input[aria-label="Replay position"]'), box=await slider!.boundingBox();
+    await page.mouse.move(box!.x+box!.width/2,box!.y+box!.height/2);await page.mouse.down();
+    await page.waitForFunction("window.__musicAudio.every(a=>a.paused)");
+    await page.mouse.move(box!.x+box!.width/3,box!.y+box!.height/2);await page.mouse.up();
+    await page.waitForSelector('button[aria-label="Pause replay"]');
+    await page.click('button[aria-label="Player settings"]');
+    await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Restart replay').click()");
+    await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime<3)");
+    await page.reload({waitUntil:"domcontentloaded"});
+    await page.waitForSelector('input[aria-label="Music volume"]');
+    expect(await page.evaluate(`document.querySelector('input[aria-label="Music volume"]').value`)).toBe("42");
+    // Real default autoplay policy may allow or block: either must keep the replay usable.
+    await page.waitForFunction(`window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1) || document.querySelector('button[aria-label="Enable music"]')`);
+    if(await page.$('button[aria-label="Enable music"]')) await page.click('button[aria-label="Enable music"]');
+    await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
+    // A real HTTP failure leaves visual playback running and can be explicitly retried.
+    let failMusic=true;
+    await page.setCacheEnabled(false);await page.setRequestInterception(true);
+    page.on("request",request=>{if(failMusic && new URL(request.url()).pathname.endsWith(".mp3"))void request.respond({status:404,body:"Missing music fixture"});else void request.continue();});
+    await page.click('button[aria-label="Player settings"]');
+    await page.evaluate("Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent==='Restart replay').click()");
+    await page.waitForSelector('button[aria-label="Music unavailable. Retry"]');
+    expect(await page.$('button[aria-label="Pause replay"]')).not.toBeNull();
+    failMusic=false;await page.click('button[aria-label="Music unavailable. Retry"]');
+    await page.waitForFunction("window.__musicAudio.some(a=>!a.paused && a.currentTime>0.1)");
+    await page.evaluate("window.__oldMusic=window.__musicAudio;Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));");
+    await page.waitForFunction("window.__musicAudio.every(a=>a.paused)");
+    await page.waitForSelector('button[aria-label="Play replay"]');
+    await page.evaluate("delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));");
+    expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+    expect(errors).toEqual([]);
+  } finally {await page.close();}
+},120_000);
+
+
+test("victory music continues beyond the final frame, pauses, and ends without looping", async () => {
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {buildWerewolfResults} = await import("@influence/engine/werewolf/results");
+  const page = await browser.newPage();
+  try {
+    await page.evaluateOnNewDocument(`(() => {
+      window.__musicAudio=[];
+      const OriginalAudio=window.Audio;
+      window.Audio=class extends OriginalAudio {constructor(...args){super(...args);window.__musicAudio.push(this);}};
+    })()`);
+    for (const scenario of ["village", "wolves", "disagreement"] as const) {
+      const id = `browser-music-ending-${scenario}`;
+      const events = await werewolfResultsFixture(scenario,id);
+      const results = buildWerewolfResults(events);
+      await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",maxPlayers:results.players.length,startedAt:new Date().toISOString(),endedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:scenario === "village" ? "one_wolf" : "two_wolves",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+      await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+      await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});
+      await page.waitForSelector('[data-werewolf-stage][data-cursor]');
+      await pauseWerewolf(page);
+      const presentation = await(await fetch(`${servers.apiUrl}/api/werewolf/${id}/presentation?audience=mystery`)).json() as WerewolfPresentation;
+      const resultCursor = presentation.view.entries.findIndex(entry=>entry.kind==="result") + 1;
+      expect(resultCursor).toBeGreaterThan(0);
+      await seekWatch(page,resultCursor);
+      if (await page.$('button[aria-label="Turn music on"]')) await page.click('button[aria-label="Turn music on"]');
+      if (await page.$('button[aria-label="Enable music"]')) await page.click('button[aria-label="Enable music"]');
+      expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+      await page.click('button[aria-label="Play replay"]');
+      if (scenario === "disagreement") {
+        await page.waitForSelector('button[aria-label="Play replay"]');
+        expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+        continue;
+      }
+      const track = scenario === "village" ? "lanterns-still-burning" : "wolves-at-the-festival";
+      // Cross the actual 4.2s visual ending: music must still advance, not merely retain a src.
+      await page.waitForFunction(`window.__musicAudio.some(a=>a.src.includes('${track}') && !a.paused && a.currentTime>6)`);
+      expect(await page.$('button[aria-label="Pause replay"]')).not.toBeNull();
+      await pauseWerewolf(page);
+      await page.waitForFunction("window.__musicAudio.every(a=>a.paused)");
+      const time = await page.evaluate(`window.__musicAudio.find(a=>a.src.includes('${track}')).currentTime`) as number;
+      await page.click('button[aria-label="Play replay"]');
+      await page.waitForFunction(`window.__musicAudio.some(a=>a.src.includes('${track}') && !a.paused && a.currentTime>${time+0.2})`);
+      // Skip to the genuine decoded media EOF; one-shot victories must never restart.
+      await page.evaluate(`(() => {const a=window.__musicAudio.find(a=>a.src.includes('${track}'));a.currentTime=a.duration-0.2;})()`);
+      await page.waitForFunction(`window.__musicAudio.some(a=>a.src.includes('${track}') && a.ended)`);
+      expect(await page.evaluate("window.__musicAudio.every(a=>a.paused)")).toBe(true);
+      await seekWatch(page,1);
+      await page.waitForFunction("window.__musicAudio.some(a=>a.src.includes('lantern-to-fang') && !a.paused && a.currentTime>0.1)");
+    }
+  } finally {await page.close();}
+},120_000);

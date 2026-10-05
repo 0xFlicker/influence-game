@@ -146,7 +146,9 @@ Use deterministic fixtures for game states unavailable in recent history. Run `b
 
 ## Next slice: music inside the shared player
 
-After the trailer path works, separately implement continuous replay music: Lantern to Fang for introductions, The Circle Closes for daytime, Wolves at the Festival for approved wolf moments/outcomes, and Lanterns Still Burning for village victory. Night/dawn/draw treatment still needs explicit mapping; do not imply all phases already have approved music. Start tracks from the front, keep one transport across speaker/thinking changes, use canonical audience-visible boundaries, and integrate mute/volume/pause/seek behavior with device preferences. This is intentionally outside W5 trailer acceptance.
+Implemented locally: [House replay music — Werewolf first](2026-10-05-002-feat-house-replay-music.md). Covers saved sound preferences, audible autoplay, phase selection, transitions, scrubbing, pause/resume, full-source looping and packaged delivery.
+
+The adjacent replay-music implementation now supplies: Lantern to Fang for introductions, The Circle Closes for daytime, Wolves at the Festival for approved wolf moments/outcomes, and Lanterns Still Burning for village victory. Night/dawn/draw treatment still needs explicit mapping; do not imply all phases already have approved music. Start tracks from the front, keep one transport across speaker/thinking changes, use canonical audience-visible boundaries, and integrate mute/volume/pause/seek behavior with device preferences. This is intentionally outside W5 trailer acceptance.
 
 
 ## WT-01/02 checkpoint — 2026-10-05

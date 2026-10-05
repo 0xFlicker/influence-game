@@ -5,6 +5,7 @@ import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contrac
 import {ApiError} from "@/lib/api";
 import {getWerewolfWatch} from "@/lib/werewolf-api";
 import {useWatchDirector} from "@/components/watch/use-watch-director";
+import {werewolfMusic} from "./werewolf-music";
 import {consumedSilentTail, werewolfCues, werewolfWatchPolicy} from "./werewolf-watch-model";
 
 /** One mounted session per game/audience. Cached head data is never the active snapshot. */
@@ -129,9 +130,11 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [activeCursor, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek]);
   const buffered = [...windows.current.values()];
   const active = holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
+  const continueAtEnd = werewolfMusic(active)?.continueAtEnd === true;
   useEffect(() => {
-    if (!preparing && holding && data && data.status !== "in_progress" && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
-  }, [preparing, holding, data, activeCursor, director]);
+    // Preserve user play intent while the victory score finishes over the final frame.
+    if (!continueAtEnd && !preparing && holding && data && data.status !== "in_progress" && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
+  }, [continueAtEnd, preparing, holding, data, activeCursor, director]);
   const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
   void revision;
   return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision,
