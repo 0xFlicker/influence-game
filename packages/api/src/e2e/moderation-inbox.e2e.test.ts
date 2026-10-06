@@ -41,10 +41,20 @@ afterAll(async () => {
   ]);
 }, 60000);
 async function text(page: Page, value: string) {
-  await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`, { timeout: 20000 });
+  try {
+    await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`, { timeout: 20000 });
+  } catch (error) {
+    console.error("Missing text", value, await page.evaluate("document.body.innerText"));
+    throw error;
+  }
 }
 async function click(page: Page, label: string) {
-  await page.waitForFunction(`Array.from(document.querySelectorAll("button")).some(b => b.textContent?.trim() === ${JSON.stringify(label)} && !b.disabled)`);
+  try {
+    await page.waitForFunction(`Array.from(document.querySelectorAll("button")).some(b => b.textContent?.trim() === ${JSON.stringify(label)} && !b.disabled)`);
+  } catch (error) {
+    console.error("Missing button", label, await page.evaluate("document.body.innerText"));
+    throw error;
+  }
   await page.evaluate(`Array.from(document.querySelectorAll("button")).find(b => b.textContent?.trim() === ${JSON.stringify(label)})?.click()`);
 }
 test("moderator claims, previews and rejects; owner recovers a held correction after reload", async () => {
@@ -56,6 +66,7 @@ test("moderator claims, previews and rejects; owner recovers a held correction a
     await click(page, "Take next");
     await text(page, "Your claim:");
     expect(await page.$('a[href^="/admin/inference"]')).toBeNull();
+    await page.waitForSelector("textarea:not([disabled])");
     await page.type("textarea", "Remove this submitted revision");
     await click(page, "Reject — remove revision");
     await text(page, "Character will be unavailable for future games.");
@@ -89,6 +100,7 @@ test("pass is admin-only, and a revoked moderator loses access without changing 
   const page = await createAuthenticatedPage(browser, moderator.jwt, `${servers.webUrl}/moderation`, { privateKey: moderator.wallet.privateKey });
   try {
     await text(page, "Review Character"); await click(page, "Take next"); await text(page, "Your claim:");
+    await page.waitForSelector("textarea:not([disabled])");
     await page.type("textarea", "Needs admin judgement"); await click(page, "Pass to admin"); await text(page, "Passed to admin review.");
     const response = await fetch(`${servers.apiUrl}/api/moderation/queue?route=escalated`, { headers: { Authorization: `Bearer ${moderator.jwt}` } });
     expect(response.status).toBe(404);

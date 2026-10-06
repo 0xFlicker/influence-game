@@ -1,5 +1,5 @@
 import {afterEach,beforeEach,expect,test} from "bun:test";
-import {cleanup,fireEvent,render,waitFor} from "@testing-library/react";
+import {act,cleanup,fireEvent,render,waitFor} from "@testing-library/react";
 import {Window} from "happy-dom";
 import {adminTestWrapper} from "./admin-test-wrapper";
 import {ImageReviewEditor} from "../app/admin/games/[id]/visual/image-review-editor";
@@ -15,7 +15,7 @@ beforeEach(()=>{
  dom.HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};
  setApiBase("");
 });
-afterEach(()=>{cleanup();dom.close();globalThis.fetch=originalFetch;for(const name of names){const descriptor=saved.get(name);if(descriptor)Object.defineProperty(globalThis,name,descriptor);else Reflect.deleteProperty(globalThis,name);}});
+afterEach(async()=>{await act(async()=>{cleanup();});dom.close();globalThis.fetch=originalFetch;for(const name of names){const descriptor=saved.get(name);if(descriptor)Object.defineProperty(globalThis,name,descriptor);else Reflect.deleteProperty(globalThis,name);}});
 test("draft selections survive unmount, release the modal and require explicit discard after source revision changes",async()=>{
  let revision=1;
  const fetcher=async(url:string)=>Response.json(url.includes("/evidence/")?{imageUrl:"data:image/png;base64,AA=="}:{expectedRevision:revision,planHash:"plan",players:[{id:"p",name:"Player"}],sources:[{id:"source",kind:"artifact",imageId:"immutable",label:"Saved group",participantIds:["p"],anchors:[],pointers:[]}]});

@@ -101,7 +101,8 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await text(page, "Paused for visuals");
       console.info("W7A: repair boundary");
       await page.setViewport({ width: 390, height: 844 });
-      expect(await page.evaluate(`document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
+      // Resizing triggers responsive layout; measure after it has settled.
+      await page.waitForFunction("document.documentElement.scrollWidth <= innerWidth");
       await click(page, "Resume game");
       await text(page, "Review and publish the required scene");
       await click(page, "Render missing image");

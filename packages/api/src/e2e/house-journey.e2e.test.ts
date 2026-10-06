@@ -48,7 +48,12 @@ afterAll(async () => {
   ]); } finally { if(savedSecret === undefined)delete process.env.JWT_SECRET;else process.env.JWT_SECRET=savedSecret; if(savedRole === undefined)delete process.env.INFLUENCE_API_ROLE;else process.env.INFLUENCE_API_ROLE=savedRole; }
 },60000);
 async function text(page:Page,value:string) {
-  await page.waitForFunction(`document.body.innerText.toLowerCase().includes(${JSON.stringify(value.toLowerCase())})`,{polling:100,timeout:30000});
+  try {
+    await page.waitForFunction(`document.body.innerText.toLowerCase().includes(${JSON.stringify(value.toLowerCase())})`,{polling:100,timeout:30000});
+  } catch (error) {
+    console.error("Missing text", value, await page.evaluate("document.body.innerText"));
+    throw error;
+  }
 }
 test("old/new House cards, title search, stable links and responsive art",async()=>{
   const page=await browser.newPage();

@@ -68,6 +68,8 @@ See [implementation evidence and remaining boundaries](../../reviews/2026-10-02-
 - Ballot keyboard steps now visit one readable vote at a time, then a complete ledger. Do not retain the old reveal/hide double-step; ties proceed to the nominee selection presentation. Await shell status updates after the player publishes a new canonical frame.
 - Browser contexts with async route handlers must wait for `unrouteAll({ behavior: "wait" })` before closing. Otherwise navigation can leave a mocked request in flight and fail the next test during teardown.
 - React DOM tests must await the rendered async outcome, then flush unmount with async `act` before removing browser globals. Counting a fetch call alone can finish before queued React work reads `window`.
+- Mystery mode intentionally omits unknown-role labels. Assert their absence rather than waiting for the removed copy. Wait for enabled form inputs before typing and responsive layout before measuring overflow; browser timing and native select widths differ on Linux. Keep selects constrained to their container.
+- `INFLUENCE_E2E_RESULTS_DIR` takes precedence over story-specific local log paths, so CI can upload all API/web service logs when a story fails.
 - For editorial cursor assertions, read bounded replay windows once rather than rebuilding the complete history for every evidence row. Keep slower full-match simulations on an explicit bounded timeout rather than increasing the entire suite's timeout.
 
 ## Creation options follow active behavior

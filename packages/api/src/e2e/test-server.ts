@@ -96,7 +96,7 @@ export async function startTestServers(
   const adminAddress = opts.adminAddress ?? "0xe2eadmin0000000000000000000000000000dead";
   const publicIdentityLaunchCutoff =
     opts.publicIdentityLaunchCutoff ?? "2026-07-01T00:00:00.000Z";
-  const configuredLogRoot = opts.logDirectory ?? process.env.INFLUENCE_E2E_RESULTS_DIR;
+  const configuredLogRoot = process.env.INFLUENCE_E2E_RESULTS_DIR ?? opts.logDirectory;
   const logDirectory = configuredLogRoot
     ? path.resolve(configuredLogRoot, `services-${apiPort}-${webPort ?? "api-only"}`)
     : null;
