@@ -26,13 +26,13 @@ import Link from "next/link";
 import {gameResultsHref, werewolfMomentHref} from "@/lib/game-links";
 import {replayMoment} from "./replay-moment";
 
-export function WerewolfViewer({slug, audience, preferenceScope = "viewer", startCursor}: {slug: string; audience: WerewolfAudience; preferenceScope?: WatchPreferenceScope; startCursor?: number}) {
+export function WerewolfViewer({slug, title, audience, preferenceScope = "viewer", startCursor}: {slug: string; title?: string; audience: WerewolfAudience; preferenceScope?: WatchPreferenceScope; startCursor?: number}) {
   const preferences = useWatchPreferences(preferenceScope);
   const [publication] = useState(() => new Date().toISOString());
   if (!preferences.ready) return <WatchWaiting label="Preparing the player…" />;
-  return <WerewolfSession startCursor={startCursor} preferences={preferences} key={`${slug}:${audience}`} slug={slug} audience={audience} cutoff={publication} />;
+  return <WerewolfSession startCursor={startCursor} preferences={preferences} key={`${slug}:${audience}`} slug={slug} title={title} audience={audience} cutoff={publication} />;
 }
-function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {slug: string; audience: WerewolfAudience; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>; startCursor?:number}) {
+function WerewolfSession({slug, title, audience, cutoff, preferences, startCursor}: {slug: string; title?: string; audience: WerewolfAudience; cutoff: string; preferences: ReturnType<typeof useWatchPreferences>; startCursor?:number}) {
   const watch = useWerewolfWatch(slug, audience, cutoff, startCursor);
   const {director, snapshot, data, active} = watch;
   const frame = useRef<HTMLDivElement>(null);
@@ -73,10 +73,10 @@ function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {sl
   const cast = {counts: {totalPlayers: players.length}, phaseLabel: active ? `Day ${active.snapshot.day} · ${active.snapshot.phase}` : "Preparing", players: players.map(player => {
     const frozen = data?.players.find(p => p.id === player.id);
     const avatar = {name: player.name, avatarUrl: frozen?.avatarUrl ?? undefined, personaKey: player.personaKey ?? undefined, persona: player.personaKey ?? ""};
-    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: <span className="text-[10px] text-white/45">{player.role ?? "Role unknown"}</span>};
+    return {id: player.id, name: player.name, isSelected: player.id === selectedId, statusLabel: player.alive ? "Alive" : "Out", statusClass: player.alive ? "border border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border border-rose-400/20 bg-rose-400/10 text-rose-200", portrait: <GamePlayerAvatarPreview player={avatar} size="8" />, smallPortrait: <GamePlayerAvatarPreview player={avatar} size="6" />, tags: player.role ? <span className="text-[10px] text-white/45">{player.role}</span> : null};
   })};
-  const header = {matchTitle: slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.visualPaused ? "Paused for visuals" : data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
-  const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role ?? "Role unknown"} · {person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
+  const header = {matchTitle: title ?? slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.visualPaused ? "Paused for visuals" : data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
+  const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role && <>{person.role} · </>}{person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
     {id:"overview", label:"Overview", content:<InspectorSection title="Character" section={{cards: identity ? [{id:identity.id,title:identity.personaKey ?? identity.name,meta:person?.role ?? "",body:[identity.personality,identity.backstory].filter(Boolean).join("\n\n")}] : [],reason:"Choose a player."}} />},
     ...(audience === "omniscient" && thinking ? [{id:"thinking",label:"Thinking",content: active && selectedId ? <WerewolfThinking gameId={active.snapshot.gameId} cursor={cursor} players={players} actorId={selectedId} /> : null}] : []),
     {id:"strategy",label:"Strategy",content:<InspectorSection title="Strategy" section={{cards:[],reason:"No public strategy notes have been captured for this player yet."}} />},

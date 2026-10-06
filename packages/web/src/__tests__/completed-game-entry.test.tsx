@@ -289,7 +289,7 @@ describe("CompletedGameEntry", () => {
   });
 
 
-  it("uses the shared trailer metadata for Werewolf without fetching Influence detail", async () => {
+  it("uses saved Werewolf episode copy and existing trailer art without fetching Influence detail", async () => {
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];
     const media = readyMedia();
@@ -297,15 +297,16 @@ describe("CompletedGameEntry", () => {
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
       calls.push(String(url));
       return Response.json(String(url).includes("/api/game-entries/")
-        ? { id: "wolf-game", slug: "wolf-game", gameKind: "werewolf", visibility: "unlisted" } : media);
+        ? { id: "wolf-game", slug: "wolf-game", gameKind: "werewolf", visibility: "unlisted" } : { episode: { title: "Lanterns and Lies", description: "Six strangers gather." }, media });
     }) as typeof fetch;
     try {
       const metadata = await generateMetadata({ params: Promise.resolve({ slug: "wolf-game" }) });
-      expect(metadata.title).toBe("Werewolf at The House");
+      expect(metadata.title).toBe("Lanterns and Lies — Werewolf · The House");
+      expect(metadata.description).toBe("Six strangers gather.");
       expect(metadata.alternates?.canonical).toBe("/games/wolf-game");
       expect(metadata.openGraph?.images).toEqual([{ url: media.poster.url, alt: media.poster.altText }]);
       expect(calls).toHaveLength(2);
-      expect(calls[1]).toEndWith("/api/games/wolf-game/postgame/media");
+      expect(calls[1]).toEndWith("/api/games/wolf-game/episode");
     } finally { globalThis.fetch = originalFetch; }
   });
 

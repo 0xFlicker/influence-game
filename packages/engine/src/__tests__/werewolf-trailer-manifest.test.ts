@@ -34,6 +34,20 @@ describe("Werewolf House trailer", () => {
     const changed = structuredClone(manifest); changed.story.publicationVersion = "published-v2";
     expect(hashHouseHighlightsTrailerManifest(changed)).not.toBe(hashHouseHighlightsTrailerManifest(manifest));
   });
+  test("freezes saved episode copy while preserving the stable slug", async () => {
+    const input = await fixture();
+    const episode = { title: "Lanterns and Lies", description: "Six strangers gather at the village table." };
+    const manifest = buildWerewolfTrailerManifest({ ...input, episode });
+    episode.title = "Later operator edit";
+    expect(manifest.story.title).toBe("Lanterns and Lies");
+    expect(manifest.story.description).toBe(episode.description);
+    expect(manifest.game.slug).toBe(input.slug);
+    expect(parseHouseHighlightsTrailerManifest(manifest)).toEqual(manifest);
+    expect(buildWerewolfTrailerManifest(input).story.title).toBe(input.slug);
+    for (const copy of [{ title: "", description: "Valid" }, { title: "x".repeat(91), description: "Valid" }, { title: "Valid", description: "x".repeat(281) }]) {
+      expect(() => buildWerewolfTrailerManifest({ ...input, episode: copy })).toThrow();
+    }
+  });
   test("does not use a safe quote from a Cut with unsafe or unresolved evidence", async () => {
     const f = await fixture("saved");
     const unsafe = f.frames.find(frame=>frame.entry?.kind === "night")!;

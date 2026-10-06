@@ -50,6 +50,7 @@ export function buildWerewolfTrailerManifest(input: {
   events: readonly WerewolfEvent[];
   slug: string;
   cuts: HouseCutsResponse;
+  episode?: { title: string; description: string };
 }): WerewolfTrailerManifest {
   const eligible = new Map<string, { speakerId: string; text: string }>();
   let last;
@@ -97,7 +98,7 @@ export function buildWerewolfTrailerManifest(input: {
   const manifest: WerewolfTrailerManifest = {
     schemaVersion: 2, kind: "werewolf", mediaType: "house_highlights_trailer", timingContractVersion: TIMING,
     game: { id: last.gameId, slug: input.slug, status: "completed" }, frameRate: 30, width: 1920, height: 1080, cast,
-    story: { title: "Werewolf at The House", description: "A village of familiar faces. Wolves among them. Who will you trust?",
+    story: { title: input.episode?.title ?? input.slug, description: input.episode?.description ?? "A village of familiar faces. Wolves among them. Who will you trust?",
       audience: "mystery", policyVersion: WEREWOLF_TRAILER_POLICY, sourceHash,
       publicationVersion: input.cuts.publication?.version ?? null, editorialStatus: input.cuts.status,
       musicAssetId: WEREWOLF_TRAILER_MUSIC.id, musicSha256: WEREWOLF_TRAILER_MUSIC.sha256, quotes },
@@ -141,7 +142,8 @@ export function validateWerewolfTrailerManifest(value: unknown): { ok: boolean; 
       ids.add(id);
     }
     const story = object(m.story,["title","description","audience","policyVersion","sourceHash","publicationVersion","editorialStatus","musicAssetId","musicSha256","quotes"]);
-    if (story.title !== "Werewolf at The House" || story.description !== "A village of familiar faces. Wolves among them. Who will you trust?") throw new Error("Invalid teaser copy");
+    // Copy comes from the saved pregame episode presentation, never postgame outcome prose.
+    if (text(story.title).length > 90 || text(story.description).length > 280) throw new Error("Invalid teaser copy");
     if (story.audience !== "mystery" || story.policyVersion !== WEREWOLF_TRAILER_POLICY || story.musicAssetId !== WEREWOLF_TRAILER_MUSIC.id || story.musicSha256 !== WEREWOLF_TRAILER_MUSIC.sha256) throw new Error("Invalid trailer policy or music");
     if (!/^[a-f0-9]{64}$/.test(text(story.sourceHash))) throw new Error("Invalid source hash");
     if (story.publicationVersion !== null) text(story.publicationVersion);

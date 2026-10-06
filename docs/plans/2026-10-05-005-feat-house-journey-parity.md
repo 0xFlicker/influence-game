@@ -1,7 +1,7 @@
 ---
 title: "W7B — House journey parity, Werewolf cards and episode naming"
 date: 2026-10-05
-status: planned
+status: in-progress
 ---
 
 # W7B — House journey parity, Werewolf cards and episode naming
@@ -71,3 +71,12 @@ Tests: provider-free component/contracts, PostgreSQL job/lock/permissions/source
 ## Out of scope
 
 New seasons/ratings/scheduling, private games, outcome-derived episode naming, automatic retroactive media replacement, new per-Cut approval UI, additional roles, and a producer studio redesign. W6 sound and physical-device checks remain separate follow-ups.
+
+## Implementation checkpoint — 2026-10-05
+
+- B1 implemented: shipped clean Lantern Village art in shared cards, live entry and trailer fallback. Explicit covers survive; old games require no regeneration. Inspected real Hazy/wild-lemon-sun cards and isolated desktop/mobile fixtures.
+- B2 read integration implemented: frozen public Werewolf cast, saved title/teaser in listing/search/entry/replay/results/metadata and new trailer manifests. Shared episode routes now precede the Influence-only guard. Reads do not generate copy.
+- B2 generation/start queue and producer backfill UI remain pending. Automatic approval review rejected enabling paid naming and cast-personality export without specific authorization; an explicit bounded authorization question is pending. No paid naming/backfill ran.
+- B3 audit captured in [House journey parity ledger](../audits/2026-10-05-house-journey-parity.md). Public profile/history and admin-only discovery are concrete open gaps, not claimed as parity. W7A producer/sysop discovery already includes completed Werewolf and visual-suspended games.
+
+W7B is not complete until naming lifecycle/backfill and the recorded journey gaps are resolved or explicitly deferred. Existing rendered trailers, posters and Cuts are unchanged.

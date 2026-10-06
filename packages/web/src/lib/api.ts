@@ -1101,7 +1101,7 @@ export interface WerewolfCompletedResultsResponse {
   ok: true;
   gameKind: "werewolf";
   schemaVersion: 1;
-  game: { id: string; slug: string; status: GameStatus; completedAt: string | null };
+  game: { id: string; slug: string; status: GameStatus; completedAt: string | null; episode?: EpisodePresentation };
   results: import("@influence/engine/werewolf/results-contract").WerewolfResults & {
     players: Array<import("@influence/engine/werewolf/results-contract").WerewolfResultPlayer & { avatarUrl: string }>;
   };

@@ -1,3 +1,4 @@
+import { readEpisodePresentations } from "./episode-presentation.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, storedGameVisibility } from "./game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -108,7 +109,8 @@ export async function readWerewolfLobby(db: DrizzleDB, id: string, includeHidden
     if (!game || (!includeHidden && !isViewerGame(game))) throw new WerewolfGameError("Game not found", 404);
     const config = JSON.parse(game.config);
     const players = game.status === "waiting" ? await readWerewolfCastingPlayers(tx, game.id) : [];
-    return { id: game.id, slug: game.slug, visibility: storedGameVisibility(game.config), status: game.status, started: game.startedAt !== null, playerCount: game.maxPlayers, modelLabel: modelLabelFromConfig(config), preset: config.preset as WerewolfPreset, players };
+    const episode = (await readEpisodePresentations(tx, [game])).get(game.id)!;
+    return { episode, id: game.id, slug: game.slug, visibility: storedGameVisibility(game.config), status: game.status, started: game.startedAt !== null, playerCount: game.maxPlayers, modelLabel: modelLabelFromConfig(config), preset: config.preset as WerewolfPreset, players };
   });
 }
 

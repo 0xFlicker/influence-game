@@ -1,10 +1,14 @@
+import { createGameRoutes } from "../routes/games.js";
+import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
+import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { insertGame } from "./durable-run-test-utils.js";
-import { decodeEpisodeCopy, queueEpisodeCopy, readEpisodePresentations, runEpisodeJob } from "../services/episode-presentation.js";
+import { decodeEpisodeCopy, queueEpisodeCopy, readEpisodePresentations, readEpisodePreview, runEpisodeJob } from "../services/episode-presentation.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createEpisodeRoutes } from "../routes/episodes.js";
@@ -115,6 +119,39 @@ describe("episode presentation", () => {
     let called = false;
     await runEpisodeJob(db, async () => { called = true; return { title: "Duplicate", description: "Duplicate" }; });
     expect(called).toBe(false);
+  });
+
+  test("Werewolf packaging uses the original public cast and never creates Influence rows or reads private scenes", async () => {
+    const id = crypto.randomUUID(), slug = "lantern-test";
+    const events = await werewolfResultsFixture("village", id);
+    await db.insert(schema.games).values({id, slug, gameKind:"werewolf", status:"completed", startedAt:new Date().toISOString(), config:JSON.stringify({visibility:"public",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]})});
+    await db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id,id));
+    const preview = await readEpisodePreview(db,game!);
+    const opening = events[0]!;
+    if (opening.type !== "werewolf.started") throw Error("Missing opening");
+    expect(preview.episode.cast.map(p=>p.name)).toEqual(opening.payload.players.map(p=>p.name));
+    expect(preview.episode.title).toBe(slug);
+    expect(preview.episode.coverUrl).toBeNull();
+    expect(preview.frames.every(f=>f.kind !== "scene")).toBe(true);
+    const text=JSON.stringify(preview);
+    for (const secret of ["SECRET_SEED","SECRET_STRATEGY","SECRET_PACK","SECRET_THINKING","roles","personality"]) expect(text).not.toContain(secret);
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+    expect(await db.select().from(schema.gameEpisodePresentations)).toHaveLength(0);
+    // Copy is presentation; direct links retain the slug. Reads neither queue nor generate.
+    await db.insert(schema.gameEpisodePresentations).values({gameId:id,title:"Lanterns and Lies",description:"Six contrasting voices gather in the village.",status:"ready",locked:true});
+    const app=createWerewolfRoutes(db), episodes=createGameRoutes(db);
+    const listed=await (await app.request('/api/werewolf')).json();
+    expect(listed).toEqual(expect.arrayContaining([expect.objectContaining({slug,episode:expect.objectContaining({title:"Lanterns and Lies"})})]));
+    for (const visibility of ["public","unlisted"]) {
+      await db.update(schema.games).set({config:JSON.stringify({visibility,providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]})}).where(eq(schema.games.id,id));
+      expect((await episodes.request(`/api/games/${slug}/episode`)).status).toBe(200);
+      expect(await (await app.request(`/api/werewolf/${slug}/lobby`)).json()).toMatchObject({episode:{title:"Lanterns and Lies"}});
+    }
+    expect(await (await app.request('/api/werewolf')).json()).toEqual([]);
+    await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,id));
+    expect((await episodes.request(`/api/games/${slug}/episode`)).status).toBe(404);
+    expect((await app.request(`/api/werewolf/${slug}/lobby`)).status).toBe(404);
   });
 
 });

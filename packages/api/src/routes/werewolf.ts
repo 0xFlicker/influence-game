@@ -1,3 +1,4 @@
+import { readEpisodePresentations } from "../services/episode-presentation.js";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { Hono } from "hono";
@@ -66,12 +67,13 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     if (!enabledGameKinds().includes("werewolf")) return c.json([]);
     c.header("Cache-Control", "private, no-store");
     const rows = await db.select({ id: schema.games.id, slug: schema.games.slug, status: schema.games.status,
-      playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
+      gameKind: schema.games.gameKind, seasonId: schema.games.seasonId, playerCount: schema.games.maxPlayers, config: schema.games.config, createdAt: schema.games.createdAt }).from(schema.games)
       .where(and(eq(schema.games.gameKind, "werewolf"), publicGameFilter())).orderBy(desc(schema.games.createdAt)).limit(100);
     const seats = rows.length ? await db.select({ gameId: schema.werewolfLobbySeats.gameId, total: count() }).from(schema.werewolfLobbySeats)
       .where(inArray(schema.werewolfLobbySeats.gameId, rows.map(game => game.id))).groupBy(schema.werewolfLobbySeats.gameId) : [];
     const joined = new Map(seats.map(row => [row.gameId, row.total]));
-    return c.json(rows.map(({ config, ...game }) => ({ ...game, gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) })));
+    const episodes = await readEpisodePresentations(db, rows);
+    return c.json(rows.map(({ config, ...game }) => ({ ...game, episode: episodes.get(game.id), gameKind: "werewolf", joinedPlayers: game.status === "waiting" ? joined.get(game.id) ?? 0 : game.playerCount, modelLabel: modelLabelFromConfig(JSON.parse(config)) })));
   });
   for (const route of ["/api/werewolf/:id/presentation", "/api/werewolf/:id/media/:asset", "/api/werewolf/:id/characters/:player"]) {
     app.get(route, async c => {

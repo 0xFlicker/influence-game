@@ -1,3 +1,4 @@
+import { readEpisodePresentations } from "./episode-presentation.js";
 import { asc, eq, or } from "drizzle-orm";
 import { buildWerewolfResults } from "@influence/engine/werewolf/results";
 import type { DrizzleDB } from "../db/index.js";
@@ -25,7 +26,7 @@ export async function readHouseGameResults(db: DrizzleDB, idOrSlug: string) {
       // Frozen character URLs use the existing audience/position-guarded image endpoint.
       const players = results.players.map(player=>({...player,avatarUrl:`/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(player.id)}?audience=omniscient&cursor=${results.source.cursor}`}));
       return {ok:true as const,gameKind:"werewolf" as const,schemaVersion:1 as const,
-        game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt},results:{...results,players}};
+        game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:(await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players}};
     } catch (error) {
       console.error(`[werewolf-results] Invalid completed history for ${game.id}:`,error);
       return {ok:false as const,status:"unavailable" as const,error:"Results are unavailable for this game. Try again later."};

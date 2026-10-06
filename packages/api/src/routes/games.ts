@@ -124,6 +124,7 @@ function publicErrorInfo(
 export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
   app.route("/", createGameResultsRoutes(db));
+  app.route("/", createEpisodeRoutes(db));
 
   // Influence endpoints must never interpret another game through its defaults.
   app.use("/api/games/*", async (c, next) => {
@@ -1126,7 +1127,6 @@ export function createGameRoutes(db: DrizzleDB) {
   });
 
   app.route("/", createVisualRoutes(db));
-  app.route("/", createEpisodeRoutes(db));
   return app;
 }
 

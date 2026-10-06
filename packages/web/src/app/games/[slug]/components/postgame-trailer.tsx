@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { getPostgameMedia, type PublicPostgameMediaResponse } from "@/lib/api";
 import { PostgameMediaPlayer } from "./postgame-media-player";
 
 /** Shared optional trailer surface. Publication can arrive while the game entry is open. */
-export function PostgameTrailer({ gameId, initialMedia }: { gameId: string; initialMedia?: PublicPostgameMediaResponse }) {
+export function PostgameTrailer({ gameId, initialMedia, fallback }: { gameId: string; initialMedia?: PublicPostgameMediaResponse; fallback?: ReactNode }) {
   const [media, setMedia] = useState(initialMedia);
   const [loading, setLoading] = useState(initialMedia === undefined);
   const [failed, setFailed] = useState(false);
@@ -28,6 +28,7 @@ export function PostgameTrailer({ gameId, initialMedia }: { gameId: string; init
   }, [gameId, initialMedia, retry]);
   if (media?.status === "ready") return <PostgameMediaPlayer gameId={gameId} media={media} />;
   return <>
+    {fallback}
     {media && !failed ? <PostgameMediaState status={media.status} /> : <PostgameMediaUnavailable loading={loading} />}
     {failed && <button className="mt-2 text-sm underline" onClick={() => { setLoading(true); setFailed(false); setRetry(value => value + 1); }}>Check again</button>}
   </>;

@@ -6,7 +6,12 @@ import {
   getServerGameEntry,
   getServerGame,
   getServerPostgameMedia,
+  serverApiFetch,
+  resolveServerApiUrl,
 } from "@/lib/server-api";
+
+import type { EpisodePreview } from "@/lib/api";
+import { WEREWOLF_CARD_ART } from "@/lib/game-art";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -19,9 +24,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   try {
     const identity = await getServerGameEntry(slug);
     if (identity.gameKind === "werewolf") {
-      const fallback = { title: `${identity.slug} — Werewolf · The House`, description: "A village of agents. A pack hiding in plain sight.", alternates: { canonical: gameHref(identity.slug) } };
-      const media = await getServerPostgameMedia(identity.slug);
-      return media.status === "ready" ? trailerMetadata(identity.slug, media.preview.title, media.preview.description, media.poster) : fallback;
+      const { episode, media } = await serverApiFetch<EpisodePreview>(`/api/games/${encodeURIComponent(identity.id)}/episode`, { cache: "no-store" });
+      const title = `${episode.title} — Werewolf · The House`;
+      const fallback = trailerMetadata(identity.slug, title, episode.description, {url: episode.coverUrl ? resolveServerApiUrl(episode.coverUrl) : WEREWOLF_CARD_ART, altText: "Lanterns light a medieval village at dusk"});
+      return media.status === "ready" ? trailerMetadata(identity.slug, title, episode.description, media.poster) : fallback;
     }
     const game = await getServerGame(identity.slug);
     if (game.status === "completed") {

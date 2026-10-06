@@ -16,10 +16,14 @@ async function fixture() {
 }
 test("snapshot supports Public/Unlisted, freezes source, and cannot queue jobs or export private state",async()=>{
   const f=await fixture();
+  await db.insert(schema.gameEpisodePresentations).values({gameId:f.id,title:"Lanterns and Lies",description:"Six strangers gather around the village table.",status:"ready",locked:true});
   for(const visibility of ["public","unlisted"]){
     await db.update(schema.games).set({config:JSON.stringify({visibility})}).where(eq(schema.games.id,f.id));
     const m=await loadWerewolfTrailerSnapshot(db,f.slug);
     expect(m.cast).toHaveLength(8);expect(m.story.audience).toBe("mystery");
+    expect(m.story.title).toBe("Lanterns and Lies");
+    expect(m.story.description).toBe("Six strangers gather around the village table.");
+    expect(m.game.slug).toBe(f.slug);
     expect(JSON.stringify(m)).not.toMatch(/SECRET_|roles|protectedId|attackTargetId|winnerIds/);
   }
   expect(await db.select().from(schema.gamePostgameMedia)).toHaveLength(0);

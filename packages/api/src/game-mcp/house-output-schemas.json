@@ -169,9 +169,6 @@
                       }
                     ]
                   },
-                  "audience": {
-                    "$ref": "#/definitions/WerewolfAudience"
-                  },
                   "discussion": {
                     "anyOf": [
                       {
@@ -228,6 +225,9 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "audience": {
+                    "$ref": "#/definitions/WerewolfAudience"
                   },
                   "rulesVersion": {
                     "type": "number",
@@ -387,9 +387,6 @@
                         }
                       ]
                     },
-                    "audience": {
-                      "$ref": "#/definitions/WerewolfAudience"
-                    },
                     "discussion": {
                       "anyOf": [
                         {
@@ -446,6 +443,9 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "audience": {
+                      "$ref": "#/definitions/WerewolfAudience"
                     },
                     "rulesVersion": {
                       "type": "number",
@@ -5639,11 +5639,15 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "episode": {
+                        "$ref": "#/definitions/EpisodePresentation"
                       }
                     },
                     "additionalProperties": false,
                     "required": [
                       "completedAt",
+                      "episode",
                       "id",
                       "slug",
                       "status"
@@ -8340,6 +8344,99 @@
           "groupKey",
           "player",
           "signature"
+        ]
+      },
+      "EpisodePresentation": {
+        "type": "object",
+        "properties": {
+          "episodeNumber": {
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "cast": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/EpisodeCast"
+            }
+          },
+          "coverUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "enum": [
+              "failed",
+              "generating",
+              "queued",
+              "ready",
+              "unrequested"
+            ],
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "frameOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "cast",
+          "coverUrl",
+          "description",
+          "episodeNumber",
+          "frameOrder",
+          "locked",
+          "revision",
+          "status",
+          "title"
+        ]
+      },
+      "EpisodeCast": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "personaKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "avatarUrl",
+          "id",
+          "name",
+          "personaKey"
         ]
       },
       "WerewolfRole": {

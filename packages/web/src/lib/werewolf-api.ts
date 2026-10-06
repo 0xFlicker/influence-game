@@ -3,8 +3,9 @@ import { apiFetch, resolveApiUrl, type GameStatus, type SavedAgent } from "./api
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { WerewolfPreset } from "@influence/engine/werewolf/types";
 
-export interface WerewolfGameSummary { gameKind: "werewolf"; id: string; slug: string; status: GameStatus; playerCount: number; joinedPlayers: number; modelLabel: string; createdAt: string }
+export interface WerewolfGameSummary { episode?: import("./api").EpisodePresentation; gameKind: "werewolf"; id: string; slug: string; status: GameStatus; playerCount: number; joinedPlayers: number; modelLabel: string; createdAt: string }
 export interface WerewolfLobbyData {
+  episode?: import("./api").EpisodePresentation;
   id: string; slug: string; visibility: import("./api").GameVisibility; status: GameStatus; started: boolean; playerCount: number; modelLabel: string; preset: WerewolfPreset;
   players: Array<{ id: string; agentProfileId: string; ownerPublicId: string; name: string; avatarUrl: string | null; personaKey: SavedAgent["personaKey"]; available: boolean }>;
 }

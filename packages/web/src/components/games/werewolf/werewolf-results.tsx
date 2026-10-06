@@ -33,7 +33,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
   return <article className={styles.results} data-testid="werewolf-results">
     <Link className="text-sm text-white/65" href={gameHref(slug)}>← Back to game</Link>
     <GameBanner gameId={game.id} />
-    <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.slug} · Day {results.day} · {results.players.length} players</p></>}
+    <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.episode?.title ?? game.slug} · Day {results.day} · {results.players.length} players</p></>}
       actions={<><Link className="influence-button-primary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug)}>Watch from the beginning</Link><Link className="influence-button-secondary rounded-lg px-4 py-2 text-sm" href={werewolfMomentHref(slug,"omniscient",results.source.cursor)}>Watch the ending · Omniscient</Link></>} />
     <OwnerLearningActivation enabled contextGameId={game.id} />
     <div className={styles.layout}>

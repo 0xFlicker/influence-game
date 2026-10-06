@@ -9,7 +9,8 @@ import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import { GameSiteEntry } from "../game-site-entry";
 import { GameEpisode } from "../game-episode";
 import { PostgameTrailer } from "@/app/games/[slug]/components/postgame-trailer";
-import { EpisodeArtwork } from "@/app/games/episode-preview";
+import { WerewolfArtwork } from "./werewolf-artwork";
+import "@/app/games/werewolf-game-card.css";
 import { gameReplayHref, gameResultsHref, gameHighlightsHref } from "@/lib/game-links";
 import { CastingHero } from "@/components/casting/casting-hero";
 import { AgentSelector } from "@/components/casting/agent-selector";
@@ -27,10 +28,10 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
   if (!game) return <main className="mx-auto max-w-6xl p-8"><Link href="/games">← All games</Link>{query.error ? <p role="alert" className="mt-6">{query.error.message} <button onClick={() => void query.refetch()}>Try again</button></p> : <p role="status" className="mt-6">Opening the village…</p>}</main>;
   if (game.status === "waiting") { const waiting = <><WerewolfWaitingGame game={game} refresh={async () => { const result = await query.refetch(); if (result.error) throw result.error; }} />{query.error && <p role="alert">Cast refresh failed. {query.error.message}</p>}</>; return replay && audience ? <GameSiteEntry>{waiting}</GameSiteEntry> : waiting; }
   if (game.status === "cancelled" && !game.started) return <main className="mx-auto max-w-3xl p-8"><Link href="/games">← All games</Link><h1 className="mt-8 text-3xl">This game was stopped.</h1></main>;
-  if (replay && audience) return <WerewolfViewer key={`${slug}:${audience}:${startCursor ?? 1}`} slug={slug} audience={audience} startCursor={startCursor} />;
-  if (!replay) return <GameEpisode eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.slug}
-    description="A village of agents. A pack hiding in plain sight. Choose how much of the story you want to know."
-    media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} /> : <EpisodeArtwork title={game.slug} active={false} frames={game.players.length ? [{ id: "cast", kind: "cast", label: "Meet the village", players: game.players.map(p => ({id:p.id,name:p.name,avatarUrl:p.avatarUrl,personaKey:p.personaKey})) }] : [{id:"house",kind:"house",label:"The House presents",text:"Who will you trust?"}]} />}
+  if (replay && audience) return <WerewolfViewer key={`${slug}:${audience}:${startCursor ?? 1}`} slug={slug} title={game.episode?.title} audience={audience} startCursor={startCursor} />;
+  if (!replay) return <GameEpisode eyebrow={`The House / Werewolf · ${game.status === "in_progress" ? "Live" : game.status}`} title={game.episode?.title ?? game.slug}
+    description={game.episode?.description ?? "A village of agents. A pack hiding in plain sight. Choose how much of the story you want to know."}
+    media={game.status === "completed" ? <PostgameTrailer key={game.slug} gameId={game.slug} fallback={<WerewolfArtwork coverUrl={game.episode?.coverUrl} />} /> : <WerewolfArtwork coverUrl={game.episode?.coverUrl} />}
     actions={<><Link className="influence-button-primary" href={gameReplayHref(game.slug, undefined, "mystery")}>Watch Mystery</Link><Link className="influence-button-secondary" href={gameReplayHref(game.slug, undefined, "omniscient")}>Watch Omniscient</Link>{game.status === "completed" && <Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>View results · Spoilers</Link>}{game.status === "completed" && <Link className="influence-button-secondary" href={gameHighlightsHref(game.slug)}>House Cuts</Link>}</>}
     information={<p>{game.playerCount} players · {game.modelLabel}</p>} />;
   return <section className="mx-auto flex min-h-[80dvh] max-w-3xl flex-col justify-center px-6 py-12">

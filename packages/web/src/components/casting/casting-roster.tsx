@@ -6,7 +6,7 @@ export function CastingRoster({ eyebrow, description, empty, children, invitatio
   </section>;
 }
 export function CastCard({name,src,index,eyebrow,detail,onInspect,action}: {name:string;src:string;index:number;eyebrow:string;detail:ReactNode;onInspect?:()=>void;action?:ReactNode}) {
-  const content = <><Image src={src} alt={`Portrait of ${name}`} fill sizes="(max-width: 639px) 45vw, (max-width: 1023px) 30vw, 240px" unoptimized />
+  const content = <><Image className="pre-show-cast-image" src={src} alt={`Portrait of ${name}`} fill sizes="(max-width: 639px) 45vw, (max-width: 1023px) 30vw, 240px" unoptimized />
     <span className="pre-show-cast-number" aria-hidden="true">{String(index+1).padStart(2,"0")}</span>
     <span className="pre-show-cast-copy"><span>{eyebrow}</span><strong>{name}</strong><span className="pre-show-cast-record">{detail}</span></span></>;
   return <article className="pre-show-cast-card">{onInspect ? <button type="button" className="absolute inset-0 text-left" aria-label={`Meet ${name}`} onClick={onInspect}>{content}</button> : content}{action}</article>;

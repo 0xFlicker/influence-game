@@ -42,10 +42,10 @@
 .pre-show-cast-heading > p { color: #aaa397; font-size: .75rem; }
 .pre-show-cast-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; }
 .pre-show-cast-card { position: relative; isolation: isolate; aspect-ratio: 3 / 4; overflow: hidden; border: 1px solid #dfbe8025; border-radius: .45rem; background: #19151c; text-align: left; }
-.pre-show-cast-card > img { object-fit: cover; transition: transform 500ms, filter 500ms; filter: saturate(.8) contrast(1.08); }
-.pre-show-cast-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #09070c30 0%, transparent 35%, #100b16a6 65%, #100b16fa 100%); z-index: 1; }
+.pre-show-cast-image { object-fit: cover; transition: transform 500ms, filter 500ms; filter: saturate(.8) contrast(1.08); }
+.pre-show-cast-card::after { pointer-events: none; content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #09070c30 0%, transparent 35%, #100b16a6 65%, #100b16fa 100%); z-index: 1; }
 .pre-show-cast-card:hover { border-color: #dfbe8077; transform: translateY(-4px); }
-.pre-show-cast-card:hover > img { transform: scale(1.06); filter: saturate(1) contrast(1.08); }
+.pre-show-cast-card:hover .pre-show-cast-image { transform: scale(1.06); filter: saturate(1) contrast(1.08); }
 .pre-show-cast-number { position: absolute; top: .8rem; left: .85rem; z-index: 2; font-size: .65rem; letter-spacing: .16em; color: #fff2d8; text-shadow: 0 1px 8px #000; }
 .pre-show-cast-copy { position: absolute; bottom: 0; inset-inline: 0; z-index: 2; padding: 1rem; }
 .pre-show-cast-copy > span:first-child { display: block; color: #dcc291; font-size: .6rem; letter-spacing: .12em; text-transform: uppercase; }
@@ -104,8 +104,8 @@
   .pre-show-empty h3 { font-size: 1.2rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pre-show *, .pre-show-cast-card > img { transition: none; }
-  .pre-show-cast-card:hover, .pre-show-cast-card:hover > img, .pre-show-join:hover { transform: none; }
+  .pre-show *, .pre-show-cast-image { transition: none; }
+  .pre-show-cast-card:hover, .pre-show-cast-card:hover .pre-show-cast-image, .pre-show-join:hover { transform: none; }
 }
 
 /* The venue and House mark are shared; Werewolf stages the hall at night. */

@@ -333,7 +333,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
     && (filters.status === "all" || game.status === filters.status)
     && (filters.category === "all" || filters.category === "custom")
     && (!collection || collection.kind === "public")
-    && `werewolf ${game.slug} ${game.modelLabel}`.toLowerCase().includes(searchQuery))
+    && `werewolf ${game.slug} ${game.modelLabel} ${game.episode?.title ?? ""} ${game.episode?.description ?? ""} ${(game.episode?.cast ?? []).map(player => player.name).join(" ")}`.toLowerCase().includes(searchQuery))
     .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
