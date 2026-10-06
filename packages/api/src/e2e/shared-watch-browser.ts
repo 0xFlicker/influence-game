@@ -32,7 +32,9 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await page.click('button[aria-label="Player settings"]');await watchText(page,"Viewing mode: Mystery");await page.click('button[aria-label="Close settings"]');
  expect(await page.$$('a[href="/get-mcp"]')).toHaveLength(1);expect(await page.$$('[data-watch-context]')).toHaveLength(1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  const first=await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor'))),stage=await page.$('[data-werewolf-stage]');
- await page.evaluate("document.activeElement?.blur()");await page.keyboard.press("ArrowRight");await page.waitForSelector('[data-speech-bubble]');
+ // Scrub stops already land on readable dialogue; an extra arrow dismisses it.
+ await seekWatch(page, first);
+ await page.waitForFunction("Array.from(document.querySelectorAll('[data-speech-bubble]')).some(e => Number(getComputedStyle(e).opacity) === 1 && e.textContent.trim().length > 0)");
  expect(await page.$eval('[data-speech-bubble]',e=>e.textContent?.trim())).not.toBe("Pass");
  await page.screenshot({path:"/tmp/shared-watch-desktop.png"});
  await page.click('button[aria-label="Enter fullscreen"]');await page.waitForSelector('[data-player-fullscreen]');
@@ -67,7 +69,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  const omni=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
  await seekWatch(page,omni.latestCursor);await watchText(page,"Game complete");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();expect(await page.evaluate("document.body.innerText.includes('Show thinking')")).toBe(false);
- await page.setViewport({width:390,height:844});await page.evaluate("document.activeElement?.blur()");await page.keyboard.press('ArrowRight');await page.waitForSelector('[data-speech-bubble]');
+ await page.setViewport({width:390,height:844});await seekWatch(page,1);await page.waitForSelector('[data-speech-bubble]');
  expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);await page.screenshot({path:"/tmp/shared-watch-mobile.png"});
  const inspectors=await page.$$('button[aria-label^="Inspect "]');for(const button of inspectors){if(await button.boundingBox()){await button.click();break;}}await watchText(page,"Close player info");expect(errors).toEqual([]);
  console.log(`Shared watch proof: ${requests.length} bounded window reads; desktop/mobile, seek, fixed audience sessions, fullscreen and pause checked.`);
@@ -77,7 +79,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
 export async function checkConsecutiveReplies(page: Page, count = 4) {
   const visible = "Array.from(document.querySelectorAll('[data-speech-bubble]')).some(e => Number(getComputedStyle(e).opacity) === 1 && e.textContent.trim().length > 0)";
   await page.evaluate("document.activeElement?.blur()");
-  await page.keyboard.press('ArrowRight');
+  // seekWatch lands at the readable stop, not the old empty lead-in.
   await page.waitForFunction(visible);
   for (let index = 0; index < count; index++) {
     const cursor = await page.$eval('[data-werewolf-stage]', element => Number(element.getAttribute('data-cursor')));
