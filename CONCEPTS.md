@@ -836,3 +836,7 @@ A protocol-neutral read of a visible Public or Unlisted game, dispatched by game
 Werewolf inspection positions count audience-visible source entries, including silent entries. Mystery and Omniscient positions are not interchangeable. Influence canonical event and transcript entry positions remain separate; dialogue never becomes authoritative board state. A replay page pins its source head and projects its board at the delivered prefix. Thinking is an explicit spectator artifact with its own cutoff, not native provider reasoning or a private strategy read.
 
 Werewolf trailers share House postgame delivery after the approved opening-only teaser policy (`werewolf-opening-quotes-v1`). Mystery Cuts settling is an input boundary, not a per-trailer approval gate. Empty/failed settled Cuts produce cast/premise only; pending Cuts wait. Source music is pinned in the render snapshot and packaged with the worker.
+
+## Visual-owned pause
+
+A durable suspension caused by the explicit **Require visuals** policy. It preserves the game's accepted boundary and names the missing scene or character form. Production repair and publication do not resume execution; an authorized operator explicitly resumes the unchanged boundary. Influence owns its turn cursor and Werewolf owns its canonical event head; shared policy and media services do not translate one game's authority into the other's.

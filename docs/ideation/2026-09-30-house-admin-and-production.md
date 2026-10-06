@@ -290,7 +290,7 @@ Schedule this as a whole creative working session when selected, rather than cho
 
 ### W6 — finish the night’s visual identity
 
-Local implementation checkpoint (2026-10-05): existing-game regeneration and automatic preparation now share approved location art and reusable match-frozen wolf forms. Canonical hunts appear in Producer, including doctor saves and lone-wolf nights; Omniscient gets hunt/outcome scrub stops. Provider-free, PostgreSQL and browser proofs are recorded in the focused plan. The operator has tested and approved the populated night and pack scenes. Deterministic wolf entrances, published-form fallback and canonical death accents are implemented locally; motion acceptance and night/dawn sound/device checks remain.
+Local implementation checkpoint (2026-10-05): existing-game regeneration and automatic preparation now share approved location art and reusable match-frozen wolf forms. Canonical hunts appear in Producer, including doctor saves and lone-wolf nights; Omniscient gets hunt/outcome scrub stops. Provider-free, PostgreSQL and browser proofs are recorded in the focused plan. The operator has tested and approved the populated night and pack scenes. Deterministic wolf entrances, published-form fallback and canonical death accents are implemented locally; the operator accepted the corrected solo-wolf motion/navigation on 2026-10-05. Night/dawn sound and physical-device checks remain.
 
 Focused draft: [W6 — Werewolf night production and playback](../plans/2026-10-05-003-feat-werewolf-night-production.md). Sequence: complete no-image choreography, match-frozen wolf forms, shared night production/repair, then concrete art and sound acceptance.
 
@@ -301,6 +301,10 @@ Carry forward [the night-production brainstorm](../brainstorms/2026-10-01-werewo
 Keep the same choreography usable with frozen character art and a dark backdrop when generated images are absent. Add automatic preparation and producer repair through existing services. Harmonization, retained scene mounts, deterministic wolf transformation and night-outcome accents are implemented. This work can proceed independently of the full studio redesign. Use the human-selected W9 art direction for final artwork and share assets with trailers where appropriate.
 
 ### W7 — close the surrounding House gaps
+
+W7A is implemented and locally verified: shared visual policy, durable Werewolf pause, Production repair, explicit resume and live-player recovery. See its plan for test evidence and migration 0111. W7B remains pending.
+
+Focused plans (2026-10-05): [W7A — visual failure policy and Werewolf recovery](../plans/2026-10-05-004-feat-werewolf-visual-failure-policy.md) and [W7B — House journey parity, cards and naming](../plans/2026-10-05-005-feat-house-journey-parity.md). The operator approved both directions. Source inspection confirms the selected village card design is still a study, while live Werewolf cards use a blue gradient/generic House frame. Episode naming remains Influence-only and Werewolf cards display the slug. These are implementation gaps for both new and existing games: reusable styling can apply to all games, while completed-game copy needs an explicit backfill after the shared naming adapter lands. Existing published scene/trailer/Cut assets are not replaced by styling or naming changes.
 
 **Creation cleanup (2026-10-02):** removed creation-time Speed-run/Live and Timing presets, the unused engine timer configuration and unused server event pacer. Keep Influence max rounds and Werewolf max days. Existing House player preferences own playback; do not reintroduce pacing choices at game creation.
 

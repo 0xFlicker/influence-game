@@ -778,6 +778,13 @@
       "when": 1791244800001,
       "tag": "0110_immutable_visual_character_variants",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791244800002,
+      "tag": "0111_werewolf_visual_recovery",
+      "breakpoints": true
     }
   ]
 }

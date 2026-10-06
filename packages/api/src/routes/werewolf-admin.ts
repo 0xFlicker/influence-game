@@ -1,3 +1,4 @@
+import { werewolfVisualPause } from "../services/werewolf-visual-policy.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
@@ -49,7 +50,7 @@ export function createWerewolfAdminRoutes(db: DrizzleDB) {
     if (!game.startedAt) return c.json({ error: "This game has not started. Open its Werewolf casting lobby.", href: `/games/${encodeURIComponent(game.slug)}` }, 409);
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
     const roles = c.get("userRoles") ?? [], permissions = c.get("userPermissions") ?? [];
-    return c.json({ id: game.id, slug: game.slug, status: game.status, hidden: Boolean(game.hiddenAt), createdAt: game.createdAt, endedAt: game.endedAt,
+    return c.json({ id: game.id, slug: game.slug, status: game.status, visualPaused: Boolean(werewolfVisualPause(JSON.parse(game.config))), hidden: Boolean(game.hiddenAt), createdAt: game.createdAt, endedAt: game.endedAt,
       snapshot: (() => { const view = projectWerewolfView(state, "omniscient"); return { rulesVersion: view.rulesVersion, day: view.day, phase: view.phase, cursor: view.cursor, players: view.players, outcome: view.outcome }; })(),
       capabilities: { stop: game.status === "in_progress" && permissions.includes("stop_game"), visibility: permissions.includes("hide_game"), production: roles.some(role => role === "producer" || role === "sysop") } });
   });

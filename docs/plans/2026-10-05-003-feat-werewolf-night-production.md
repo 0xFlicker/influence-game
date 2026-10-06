@@ -41,7 +41,9 @@ Published wolf references are audience/cursor/cutoff guarded and reused in origi
 
 **Solo-night navigation follow-up:** Transformation eligibility now resets on each canonical night boundary, so a surviving lone wolf transforms before its hunt even after appearing with the pack on an earlier night. Previous/Next carries the source cursor and substep through Doctor, Seer, hunt and dawn, using the same action list as arrows and the slider. Direct Hazy browser verification reached Marlow’s night-two entrance at replay step 93 and continued into the already-published solo alley image; no regeneration or publication was needed. The focused browser journey covers this two-to-one wolf transition, published-image loading and backward navigation. Provider-free baseline: 2,291 passed, five skipped. The full PostgreSQL suite passed all 1,878 tests against a fresh disposable database, which was removed afterward. The final focused browser journey passed 14 assertions; typecheck/lint and diff checks passed.
 
-**Still open:** operator acceptance of this new motion treatment, night/dawn sound direction and physical-device checks. This is not W6 completion.
+**Operator acceptance (2026-10-05):** the corrected nightly/solo transformation and navigation were accepted after confirming the Hazy hunt at beat 93.
+
+**Still open:** night/dawn sound direction and physical-device checks. This is not W6 completion.
 
 ## Current implementation, verified 2026-10-05
 

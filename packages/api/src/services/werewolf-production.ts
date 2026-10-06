@@ -1,3 +1,5 @@
+import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
+import { visualFailurePolicy } from "./visual-policy.js";
 import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
 import { and, asc, eq } from "drizzle-orm";
 import { replayWerewolf } from "@influence/engine/werewolf";
@@ -75,7 +77,14 @@ export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug
     readVisualMedia(db, gameId), readVisualRenderAccounting(db, gameId), werewolfReferences(db, gameId),
   ]);
   const state = replayWerewolf(events);
-  const scenes = werewolfSceneInventory(events).map(descriptor => {
+  const pause = await readWerewolfVisualPause(db, gameId);
+  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+  const descriptors = pause ? [] : werewolfSceneInventory(events);
+  if (pause?.work.kind === "scene") {
+    const pending = pause.work.descriptor;
+    if (!descriptors.some(d => d.roomId === pending.roomId && d.boundarySequence === pending.boundarySequence)) descriptors.push(pending);
+  }
+  const scenes = descriptors.map(descriptor => {
     const { roomId, boundarySequence, purpose } = descriptor;
     const scene = stored.filter(row => row.roomId === roomId && row.boundarySequence <= boundarySequence
       && (purpose !== "hunt" || row.plan.direction?.purpose === "werewolf-hunt")
@@ -96,6 +105,9 @@ export async function readWerewolfProduction(db: DrizzleDB, gameId: string, slug
       panelCount: shots?.groups.length ?? 0 };
   });
   return { gameId, slug, scenes, media, attempts: accounting.attempts,
+    recovery: pause ? { pauseId: pause.id, reason: pause.reason, kind: pause.work.kind,
+      playerName: pause.work.kind === "form" ? state.players.find(p => pause.work.kind === "form" && p.id === pause.work.playerId)?.name : undefined,
+      policy: visualFailurePolicy(JSON.parse(game!.config)) } : null,
     warnings: refs.filter(ref => ref.kind === "missing").map(ref => `No frozen reference for ${ref.profile.name}. Production cannot substitute their current profile.`) };
 }
 

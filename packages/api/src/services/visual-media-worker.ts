@@ -35,10 +35,27 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
   };
   try {
     await guard();
-    const [original] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, job.sceneId));
+    if (job.mode === "forms") {
+      const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+      const formGuard: VisualBoundaryGuard = async tx => {
+        if (tx) await tx.select().from(schema.games).where(eq(schema.games.id,job.gameId)).for("update");
+        await guard(tx);
+        const pause = await readWerewolfVisualPause(tx ?? db, job.gameId);
+        if (pause?.id !== job.reusePrefix) throw new Error("Wolf-form repair is no longer current");
+      };
+      await resolveVariants(db, job.gameId, job.plan, { signal, guard: formGuard, jobId: job.id });
+      await db.transaction(async tx => {
+        await formGuard(tx);
+        await tx.update(jobs).set({ status: "ready", step: "wolf form ready", finishedAt: now(), leaseUntil: null, owner: null }).where(eq(jobs.id, job.id));
+      });
+      return;
+    }
+    if (!job.sceneId) throw new Error("Scene repair requires a scene");
+    const sceneId = job.sceneId;
+    const [original] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, sceneId));
     if (!original) throw new Error("Scene missing");
     const onStep = async (step: string) => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); };
-    const plan = await resolveVariants(db, job.gameId, job.plan, { signal, guard, sceneId: job.sceneId, jobId: job.id, onStep });
+    const plan = await resolveVariants(db, job.gameId, job.plan, { signal, guard, sceneId, jobId: job.id, onStep });
     const scene: StoredVisualScene = { ...original, plan, status: "preparing", candidateArtifactId: job.sourceImageId, repairMode: job.sourceImageId ? "verify" : "regenerate" };
     const result = await render(db, scene, signal, guard, { jobId: job.id, renderContext: job.renderContext, operationPrefix: `media:${job.id}`, reusePrefix: job.reusePrefix ?? undefined,
       onStep: async step => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); },
@@ -54,7 +71,7 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
     const annotatedArtifactId = await storeVisualArtifact(db, job.gameId, await annotateVisualScene(await readVisualArtifact(db, job.gameId, result.imageArtifactId), result.localization.anchors));
     await db.transaction(async tx => {
       await guard(tx);
-      await tx.insert(schema.visualMediaVersions).values({ id: job.id, jobId: job.id, gameId: job.gameId, sceneId: job.sceneId, version: job.version,
+      await tx.insert(schema.visualMediaVersions).values({ id: job.id, jobId: job.id, gameId: job.gameId, sceneId, version: job.version,
         plan, imageArtifactId: result.imageArtifactId, annotatedArtifactId, localization: result.localization, shots: result.shots, verificationVersion: VISUAL_LOCALIZATION_VERSION, createdAt: now() });
       await tx.update(jobs).set({ status: "ready", step: "ready for review", finishedAt: now(), leaseUntil: null, owner: null }).where(eq(jobs.id, job.id));
     });

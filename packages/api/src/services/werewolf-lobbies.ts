@@ -16,7 +16,7 @@ import { hasEligibleAgentContent } from "./agent-content-eligibility.js";
 import { freezeWerewolfRoster, validateWerewolfModels, WerewolfGameError } from "./werewolf-games.js";
 
 type Tx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
-export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { visibility?: unknown; preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean }) {
+export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: { visibility?: unknown; preset: WerewolfPreset; providerManifest?: unknown; maxDays?: number; setup?: WerewolfSetup; personaPool?: unknown; fillStrategy?: unknown; visualMode?: boolean; visualFailurePolicy?: unknown }) {
   let visibility;
   try { visibility = parseGameVisibility(input.visibility); } catch { throw new WerewolfGameError("Game visibility must be public or unlisted", 400); }
   if (!enabledGameKinds().includes("werewolf")) throw new WerewolfGameError("Werewolf creation is unavailable.", 403);
@@ -24,13 +24,14 @@ export async function createWerewolfLobby(db: DrizzleDB, userId: string, input: 
   try { rules = werewolfConfig(input.preset, input.maxDays ?? 10, input.setup); }
   catch (error) { throw new WerewolfGameError(error instanceof Error ? error.message : "Invalid village configuration", 400); }
   const casting = normalizeWerewolfCasting(input);
+  if (input.visualFailurePolicy !== undefined && input.visualFailurePolicy !== "best_effort" && input.visualFailurePolicy !== "require_visuals") throw new WerewolfGameError("Invalid visual failure policy", 400);
   if (input.visualMode !== undefined && typeof input.visualMode !== "boolean") throw new WerewolfGameError("Visual Mode must be on or off", 400);
   const providerManifest = validateWerewolfModels(input.providerManifest);
   const id = randomUUID();
   const slug = await generateUniqueSlug(async candidate => (await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, candidate))).length > 0);
   const count = rules.setup?.playerCount ?? WEREWOLF_PRESETS[input.preset].players;
   await db.insert(schema.games).values({ id, slug, gameKind: "werewolf", gameKernel: null, createdById: userId, status: "waiting", trackType: "custom", minPlayers: count, maxPlayers: count,
-    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility }) });
+    config: JSON.stringify({ preset: input.preset, setup: rules.setup, ...casting, visualMode: input.visualMode ?? false, visualFailurePolicy: input.visualFailurePolicy ?? "best_effort", maxDays: rules.maxDays, rulesVersion: rules.rulesVersion, providerManifest, serviceTier: "flex", visibility }) });
   return { id, slug };
 }
 

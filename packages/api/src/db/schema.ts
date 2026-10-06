@@ -3669,8 +3669,8 @@ export const agentProfileLifecycleActions = pgTable("agent_profile_lifecycle_act
 /** Media jobs never own or advance a game turn. */
 export const visualRepairJobs = pgTable("visual_repair_jobs", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
-  sceneId: text("scene_id").notNull().references(() => visualScenes.id), version: integer("version").notNull(),
-  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue" | "review">(),
+  sceneId: text("scene_id").references(() => visualScenes.id), version: integer("version").notNull(),
+  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue" | "review" | "forms">(),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
   renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
   candidateArtifactId: text("candidate_artifact_id"),
@@ -3679,7 +3679,7 @@ export const visualRepairJobs = pgTable("visual_repair_jobs", {
   step: text("step").notNull().default("queued"), failure: text("failure"),
   owner: text("owner"), leaseUntil: text("lease_until"), fallbackUsed: boolean("fallback_used").notNull().default(false),
   createdAt: text("created_at").notNull(), startedAt: text("started_at"), finishedAt: text("finished_at"),
-}, (t) => [unique("visual_repair_version_unique").on(t.sceneId, t.version),
+}, (t) => [check("visual_repair_jobs_mode_check",sql`${t.mode} IN ('regenerate','verify','continue','review','forms')`), check("visual_repair_job_target", sql`(${t.mode} = 'forms' AND ${t.sceneId} IS NULL) OR (${t.mode} <> 'forms' AND ${t.sceneId} IS NOT NULL)`), unique("visual_repair_version_unique").on(t.sceneId, t.version),
   uniqueIndex("visual_repair_active_unique").on(t.sceneId).where(sql`${t.status} IN ('queued','rendering','verifying')`)]);
 
 export const visualMediaVersions = pgTable("visual_media_versions", {

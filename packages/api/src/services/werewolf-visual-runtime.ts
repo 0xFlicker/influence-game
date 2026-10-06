@@ -1,3 +1,5 @@
+import { WerewolfVisualBlocked, pauseWerewolfForVisuals, readPublishedWerewolfRepair, type WerewolfVisualWork } from "./werewolf-visual-policy.js";
+import { visualFailurePolicy } from "./visual-policy.js";
 import { randomUUID } from "node:crypto";
 import { desc, eq, sql } from "drizzle-orm";
 import { werewolfConversationScene, werewolfHuntScene, werewolfSceneSignature, type WerewolfSceneDescriptor } from "@influence/engine/werewolf/visual-scenes";
@@ -30,6 +32,15 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
     };
     return tx => tx ? check(tx) : db.transaction(check);
   };
+  const required = async () => {
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+    return visualFailurePolicy(JSON.parse(game!.config)) === "require_visuals";
+  };
+  const failed = async (state: WerewolfState, work: WerewolfVisualWork, error: unknown) => {
+    await boundary(state)();
+    const failure = new WerewolfVisualBlocked(gameId, ownerEpoch, state.sequence, work, error instanceof Error ? error.message : "Visual preparation failed");
+    if (await pauseWerewolfForVisuals(db, failure, signal)) throw failure;
+  };
   const prepare = async (state: WerewolfState, descriptor: WerewolfSceneDescriptor) => {
     const { roomId, participantIds: ids } = descriptor;
     const key = werewolfSceneSignature(descriptor);
@@ -37,6 +48,11 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
     const guard = boundary(state);
     await guard();
     try {
+      if (await readPublishedWerewolfRepair(db, gameId, descriptor)) {
+        await guard();
+        prepared.add(key);
+        return;
+      }
       const previous = await readCurrentVisualScene(db, gameId, roomId);
       const unchanged = previous && previous.plan.direction?.purpose === `werewolf-${descriptor.purpose}`
         && previous.plan.cast.length === ids.length && previous.plan.cast.every(p => ids.includes(p.id));
@@ -49,7 +65,8 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
         scene = await prepareVisualScene(db, { gameId, boundarySequence: descriptor.boundarySequence, afterDialogueSequence: descriptor.boundarySequence, plan, assertBoundary: guard });
       }
       if (!scene) throw new Error("Werewolf scene preparation did not produce a plan");
-      const accepted = await render(db, scene, guard);
+      const accepted = await render(db, scene, guard, undefined, !await required());
+      if (!accepted) throw new Error("Required scene has no verified imagery");
       await guard();
       if (accepted) await db.transaction(async tx => {
         await guard(tx);
@@ -62,6 +79,7 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
       prepared.add(key);
     } catch (error) {
       // Cancellation, stop and owner loss must never become a successful fallback.
+      await failed(state, { kind: "scene", descriptor }, error);
       await guard();
       await recordVisualOperationEvent(db, gameId, `werewolf-visual:${state.sequence}:${roomId}:fallback`,
         { boundarySequence: state.sequence, kind: "presentation", outcome: "portraits", message: "Scene preparation failed. Continuing with frozen character art." }, visualFailureEvidence(error, "internal"));
@@ -84,6 +102,7 @@ export function createWerewolfVisualPreparation(db: DrizzleDB, gameId: string, o
         const cast = await werewolfVariantCast(db, gameId, [player.id], original.cast);
         await resolveVariants(db, gameId, planVisualScene({ roomId: "mingle-1", backgroundArtifactId: null, cast }), { signal, guard });
       } catch (error) {
+        await failed(state, { kind: "form", playerId: request.actorId }, error);
         await guard();
         await recordVisualOperationEvent(db, gameId, `werewolf-form:${state.sequence}:fallback`,
           { boundarySequence: state.sequence, kind: "presentation", outcome: "portraits", message: "Wolf form preparation failed. Continuing with frozen character art." }, visualFailureEvidence(error, "internal"));

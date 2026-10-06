@@ -104,7 +104,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         const nextStart = currentStart + 32;
         const nearEnd = activeCursor >= currentStart + 23 || director.getSnapshot().waitingAtTail || !director.getActiveCue();
         const from = nearEnd && latestCursor >= nextStart ? nextStart : currentStart;
-        if (status !== "in_progress" && (windows.current.has(from) || !nearEnd)) return;
+        if (status !== "in_progress" && status !== "suspended" && (windows.current.has(from) || !nearEnd)) return;
         const value = await getWerewolfWatch(slug, audience, from, controller.signal, cutoff);
         if (controller.signal.aborted || intent.current !== generation) return;
         commitWindow(value, activeCursor);
@@ -126,7 +126,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
       finally { busy = false; }
     };
     void refresh();
-    const timer = status === "in_progress" ? setInterval(() => { void refresh(); }, 3000) : null;
+    const timer = (status === "in_progress" || status === "suspended") ? setInterval(() => { void refresh(); }, 3000) : null;
     return () => { controller.abort(); if (timer) clearInterval(timer); };
   }, [activeCursor, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek]);
   const buffered = [...windows.current.values()];
@@ -138,7 +138,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   const continueAtEnd = werewolfMusic(active)?.continueAtEnd === true;
   useEffect(() => {
     // Preserve user play intent while the victory score finishes over the final frame.
-    if (!continueAtEnd && !preparing && holding && data && data.status !== "in_progress" && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
+    if (!continueAtEnd && !preparing && holding && data && data.status !== "in_progress" && !data.visualPaused && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
   }, [continueAtEnd, preparing, holding, data, activeCursor, director]);
   const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
   void revision;

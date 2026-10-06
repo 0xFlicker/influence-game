@@ -1,3 +1,4 @@
+import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
 import { createLlmProviderRuntimesFromEnv, resolveProviderManifestFromGameConfig } from "@influence/engine";
@@ -73,6 +74,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
     .then(() => {})
     .catch(async (error) => {
+      if (error instanceof WerewolfVisualBlocked) return;
       if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);
       try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !controller.signal.aborted && !heartbeatFailure); }
       catch (releaseError) { console.error(`[werewolf] Owner release failed for ${gameId}; lease expiry will fence recovery`, releaseError); }

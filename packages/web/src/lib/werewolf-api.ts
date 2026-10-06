@@ -13,7 +13,7 @@ export interface CreateWerewolfParams {
   visibility: import("./api").GameVisibility;
   preset: WerewolfPreset; setup: import("@influence/engine/werewolf/types").WerewolfSetup;
   maxDays: number; providerManifest: import("./api").GameProviderManifestEntry[];
-  personaPool: import("./api").PersonaKey[]; fillStrategy: "balanced" | "random"; visualMode: boolean;
+  personaPool: import("./api").PersonaKey[]; fillStrategy: "balanced" | "random"; visualMode: boolean; visualFailurePolicy?: "best_effort" | "require_visuals";
 }
 export const createWerewolfLobby = (params: CreateWerewolfParams) =>
   apiFetch<{ id: string; slug: string }>("/api/werewolf/lobbies", { method: "POST", body: JSON.stringify(params) });

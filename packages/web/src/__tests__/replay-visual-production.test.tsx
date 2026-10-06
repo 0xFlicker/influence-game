@@ -1,3 +1,4 @@
+import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
 import { adminTestWrapper } from "./admin-test-wrapper";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render as baseRender, waitFor } from "@testing-library/react";
@@ -168,4 +169,19 @@ test("unknown reconciliation retains its draft across navigation and reads a rec
   fireEvent.click(view.getByText("Check reconciliation receipt"));
   await waitFor(() => expect(view.queryByText("Record reconciliation") === null).toBe(true));
   expect(posts).toBe(1);
+});
+
+
+test("a reconciled wolf-form charge permits an explicit new repair", async () => {
+  const data = {...inventory(), scenes:[], recovery:{pauseId:"pause",kind:"form",playerName:"Arden",reason:"Wolf form failed",policy:"require_visuals"}};
+  data.media.jobs = [{...job("needs_reconciliation"),sceneId:null,reusePrefix:"pause"}];
+  data.attempts = [{id:"attempt",operationKey:"wolf-form:fixture",status:"needs_reconciliation",costMicrousd:null,provider:"openai",model:"fixture"}];
+  respond(async () => Response.json(data));
+  const auth = {ready:true,authenticated:false,account:null,hydrationError:false} as InfluenceAuthState;
+  const view = render(<InfluenceAuthContext.Provider value={auth}><ReplayVisualProductionPanel gameId="game" onLocked={()=>{}} werewolf /></InfluenceAuthContext.Provider>);
+  await waitFor(()=>expect((view.getByText("Repair wolf form") as HTMLButtonElement).disabled).toBe(true));
+  data.attempts[0] = {...data.attempts[0]!,status:"reconciled",costMicrousd:0};
+  fireEvent.click(view.getByText("Refresh scenes"));
+  await waitFor(()=>expect((view.getByText("Repair wolf form") as HTMLButtonElement).disabled).toBe(false));
+  expect(view.queryByText("Resume game")).toBeNull();
 });

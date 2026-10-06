@@ -1,4 +1,5 @@
 "use client";
+import { VisualFailurePolicyControl } from "../../../visual-failure-policy-control";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, resolveApiUrl } from "@/lib/api";
@@ -95,10 +96,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
     {!data ? !readError && !error && <p role="status">Loading visual records…</p> : <>
       <section aria-label="Visual policy" className="space-y-3 rounded-xl border border-white/15 p-5">
         <p>Game: {data.gameStatus} · Assets: {data.assets?.status ?? "Not prepared"}</p>
-        <label className="block">Failure policy <select aria-label="Visual failure policy" value={data.policy} disabled={!canOperate || busy} className="ml-3 rounded bg-neutral-900 p-2" onChange={(event) => void control({ action: "policy", policy: event.target.value }, "Policy saved. It applies at visual preparation boundaries.")}>
-          <option value="best_effort">Best effort — continue with portraits</option><option value="require_visuals">Require visuals — pause for repair</option>
-        </select></label>
-        <p className="text-sm text-white/60">Both policies retain provider errors, verification evidence, timing and costs. Changing policy does not automatically resume a paused game.</p>
+        <VisualFailurePolicyControl value={data.policy} disabled={!canOperate || busy} onChange={policy => void control({action:"policy",policy},"Policy saved. It applies at visual preparation boundaries.")} />
         {data.pause && <div className="space-y-3 border-t border-white/15 pt-3"><p className="text-amber-200">Paused at boundary {data.pause.boundarySequence}: {data.pause.reason}</p>
           {canOperate && <div className="flex flex-wrap gap-3">{data.assets?.status !== "ready" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_assets" }, "Asset repair prepared. Resume when ready to run it.")}>Prepare game recovery</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "resume" }, "Resume queued for the game worker at the committed boundary.")}>Resume game</button></div>}
           <p className="text-sm text-white/60">Prepare game recovery below, then resume. Independent media repairs do not repair agent execution. Repairs may incur provider charges. Reconcile uncertain attempts first. To continue with portraits, select Best effort and resume.</p>

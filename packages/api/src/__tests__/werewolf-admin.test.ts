@@ -95,7 +95,7 @@ test("pack and lobby production use canonical membership and publish privately t
   const anchors = job.plan.cast.map((p, i) => ({ playerId: p.id, label: i + 1, head: { x: .2 + i * .3, y: .2, width: .1, height: .1 }, confidence: "clear" as const }));
   await executeVisualMediaJob(db, job, new AbortController().signal, async () => ({ imageArtifactId: artifact, localization: { count: 2, verifiedParticipantIds: job.plan.cast.map(p => p.id), anchors } }), async (_db, _game, plan) => plan);
   const version = (await readVisualMedia(db, g.id)).versions[0]!;
-  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "private", sceneId: job.sceneId, expectedVersion: version.version, versionId: version.id, expectedPublication: 0, requestId: "publish-pack" })).accepted).toBe(true);
+  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "private", sceneId: job.sceneId!, expectedVersion: version.version, versionId: version.id, expectedPublication: 0, requestId: "publish-pack" })).accepted).toBe(true);
   const events = await readWerewolfEvents(db, g.id);
   const omni = projectWerewolfView(replayWerewolf(events), "omniscient");
   const packCursor = omni.entries.findIndex(e => e.kind === "speech" && e.audience === "pack") + 1;
@@ -104,7 +104,7 @@ test("pack and lobby production use canonical membership and publish privately t
   const publicReplay = createWerewolfRoutes(db);
   const mediaPath = `/api/werewolf/${g.id}/media/${artifact}`;
   expect((await publicReplay.request(`${mediaPath}?audience=omniscient&cursor=${packCursor}`)).status).toBe(404);
-  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "public", sceneId: job.sceneId, expectedVersion: version.version, versionId: version.id, expectedPublication: 1, requestId: "publish-public-pack" })).accepted).toBe(true);
+  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "public", sceneId: job.sceneId!, expectedVersion: version.version, versionId: version.id, expectedPublication: 1, requestId: "publish-public-pack" })).accepted).toBe(true);
   const frame = (await readWerewolfPresentation(db, g.id, "omniscient", packCursor)).presentation;
   expect(frame.scene?.version).toBe(version.version);
   expect((await readWerewolfPresentation(db, g.id, "omniscient", packCursor, "2000-01-01T00:00:00.000Z")).presentation.scene).toBeNull();
@@ -120,7 +120,7 @@ test("pack and lobby production use canonical membership and publish privately t
   const [candidate] = await db.insert(schema.visualMediaVersions).values({ ...version, id: `${version.id}-candidate`, version: version.version + 1, imageArtifactId: candidateImage, createdAt: new Date().toISOString() }).returning();
   expect((await readWerewolfPresentation(db, g.id, "omniscient", packCursor)).presentation.scene?.version).toBe(version.version);
   expect((await publicReplay.request(`/api/werewolf/${g.id}/media/${candidateImage}?audience=omniscient&cursor=${packCursor}`)).status).toBe(404);
-  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "public", sceneId: job.sceneId, expectedVersion: job.version, versionId: candidate!.id, expectedPublication: 2, requestId: "publish-new-public-pack" })).accepted).toBe(true);
+  expect((await controlVisualMedia(db, g.id, "user-producer", { action: "publish", audience: "public", sceneId: job.sceneId!, expectedVersion: job.version, versionId: candidate!.id, expectedPublication: 2, requestId: "publish-new-public-pack" })).accepted).toBe(true);
   expect((await readWerewolfPresentation(db, g.id, "omniscient", packCursor)).presentation.scene?.version).toBe(candidate!.version);
   expect((await readWerewolfPresentation(db, g.id, "omniscient", packCursor, frame.publicationCutoff)).presentation.scene?.version).toBe(version.version);
   expect((await publicReplay.request(frame.scene!.imageUrl)).status).toBe(200);
@@ -128,13 +128,13 @@ test("pack and lobby production use canonical membership and publish privately t
   expect((await publicReplay.request(`${mediaPath}?audience=omniscient&cursor=${packCursor}`)).status).toBe(404);
   expect((await publicReplay.request(`/api/werewolf/${g.id}/presentation`)).status).toBe(404);
   await db.update(schema.games).set({ hiddenAt: null }).where(eq(schema.games.id, g.id));
-  const preview = await readWerewolfScenePreview(db, g.id, job.sceneId); expect(preview?.players).toHaveLength(2); expect(preview?.scene.imageUrl).toStartWith("data:image/png;base64,");
+  const preview = await readWerewolfScenePreview(db, g.id, job.sceneId!); expect(preview?.players).toHaveLength(2); expect(preview?.scene.imageUrl).toStartWith("data:image/png;base64,");
   const publicApi = createVisualRoutes(db);
   expect((await publicApi.request(`/api/games/${g.id}/visual`)).status).toBe(404);
   expect((await publicApi.request(`/api/games/${g.id}/visual/artifacts/${artifact}`)).status).toBe(404);
   expect(await readViewerMedia(db, g.id)).toEqual({ publicationSnapshot: {}, bindings: {}, scenes: [] });
   expect((await publicApi.request(`/api/admin/games/${g.id}/visual/media`, { method: "POST", headers, body: "{}" })).status).toBe(409);
-  const path = `/api/admin/production/games/${g.id}/visual/scenes/${job.sceneId}/preview`;
+  const path = `/api/admin/production/games/${g.id}/visual/scenes/${job.sceneId!}/preview`;
   expect((await app.request(path)).status).toBe(401); expect((await app.request(path, { headers })).status).toBe(200);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "producer"));
   expect((await app.request(path, { headers })).status).toBe(403);
@@ -264,7 +264,7 @@ test("Werewolf regeneration replans approved locations and wolf forms without ch
   expect(job.plan.direction?.purpose).toBe("werewolf-pack");
   expect(job.plan.cast.every(member => member.variant?.kind === "werewolf")).toBe(true);
   await db.update(schema.visualRepairJobs).set({ status: "failed", owner: null, leaseUntil: null }).where(eq(schema.visualRepairJobs.id, job.id));
-  const result = await controlVisualMedia(db, g.id, "producer", { action: "regenerate", regenerateForms: true, sceneId: job.sceneId, expectedVersion: 1, requestId: "new-forms" });
+  const result = await controlVisualMedia(db, g.id, "producer", { action: "regenerate", regenerateForms: true, sceneId: job.sceneId!, expectedVersion: 1, requestId: "new-forms" });
   expect(result.accepted).toBe(true);
   const [replacement] = await db.select().from(schema.visualRepairJobs).where(eq(schema.visualRepairJobs.id, result.jobId!));
   expect(replacement!.plan.cast.every(member => member.variant?.generation === "new-forms")).toBe(true);
@@ -282,7 +282,7 @@ test("Werewolf regeneration replans approved locations and wolf forms without ch
     localization: { count: 3, verifiedParticipantIds: huntJob.plan.cast.map(member => member.id), anchors: [] } }), async (_db, _game, plan) => plan);
   const ready = (await readVisualMedia(db, g.id)).versions.find(version => version.id === huntJob.id)!;
   expect(ready).toBeDefined();
-  await controlVisualMedia(db, g.id, "producer", { action: "publish", audience: "public", sceneId: huntJob.sceneId, expectedVersion: 1,
+  await controlVisualMedia(db, g.id, "producer", { action: "publish", audience: "public", sceneId: huntJob.sceneId!, expectedVersion: 1,
     versionId: ready.id, expectedPublication: 0, requestId: "publish-hunt" });
   const projection = await readWerewolfPresentation(db, g.id, "omniscient");
   const nightCursor = projection.presentation.view.entries.findIndex(entry => entry.kind === "night") + 1;

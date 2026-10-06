@@ -121,7 +121,8 @@ Open **Games → Werewolf** at `/admin/werewolf`. The persistent House administr
 | List, overview, activity, costs | `view_admin`, Producer or Sysop | Running, stopped, completed and hidden games |
 | Hide / restore public discovery | `hide_game` | Any current Werewolf game |
 | Stop | `stop_game` | In-progress games; retains history, cannot resume |
-| Inspect / generate / repair / publish images | Producer or Sysop | Completed games |
+| Inspect / generate / repair / publish images | Producer or Sysop | Completed games, or the exact boundary paused for visuals |
+| Change visual failure policy / resume visual pause | `start_game` plus Production access | Visual-owned suspension; explicit resume only |
 
 `GET /api/admin/werewolf`, `GET /api/admin/werewolf/:id`, `GET /api/admin/werewolf/:id/activity`, `GET /api/admin/werewolf/:id/costs` and `PATCH /api/admin/werewolf/:id/visibility` enforce current database permissions, including revocation. Stop reuses `POST /api/werewolf/:id/stop`; no Influence recovery, settlement or ratings controls are borrowed. Hiding excludes the game from public lists and direct spectator API reads, while retaining admin access. It does not delete records or revoke images someone already saved.
 
@@ -140,6 +141,16 @@ Production derives village, private pack and hunt membership from canonical Were
 The existing production endpoints under `/api/admin/production/games/:id/visual` provide one-at-a-time jobs, immutable versions, source-image review, repair, receipts and explicit publication. Character references come from the game's captured content revision and content-addressed bytes, never an edited current profile. A missing captured full-body image may use its captured portrait. Built-in House characters use bundled portraits. Missing custom references are named and reject generation; no automatic replacement is generated.
 
 Use **Preview character framing** to select a speaker. It reuses the lobby renderer for verified source panels, including three or more saved panels, and uses a neutral individual full-body/portrait fallback for an uncovered character. The renderer still presents one focused image, with at most two main image layers during a transition and blurred surroundings. **Correct images** keeps good panels and their character mapping without requiring stitching.
+
+### Required visuals and recovery
+
+Create-game Visual Mode offers **Best effort** (default) and **Require visuals**, using the shared House policy field. Missing historical configuration stays Best effort. Require visuals stops before a conversation decision if its required scene or wolf form is unavailable. Hunt preparation happens after the accepted night result and before completion, so even a game-ending night can pause safely without repeating the night.
+
+Open **Admin → Production → Repair visuals**, or the Werewolf game's Production section. The saved pause identifies the exact required work and reason. A missing scene appears even if generation failed before creating a scene row. Render or regenerate it, review and **Publish for viewers**, then explicitly **Resume game**. A lone wolf uses **Repair wolf form** without inventing a pack meeting; the worker verifies and saves that derivative for reuse. Policy changes and publication never resume execution by themselves. To continue with original character art, select Best effort and then Resume. An active repair must finish first.
+
+Production requires Producer or Sysop access; changing policy and resuming additionally requires `start_game`. Ordinary errors, stopped games and hidden-game permissions are unchanged. The public player displays a visual-repair pause and continues polling; its existing session receives the exact repair selected on resume. Private pack/hunt media still follows audience restrictions. Accepted decisions and historical scenes are not rewritten.
+
+Apply `0111_werewolf_visual_recovery.sql` before running this version. It adds form-only work to the existing media queue with an explicit target constraint. Provider attempts, costs and uncertain outcomes retain their original journal; regeneration is explicit and does not clear unresolved charges. See [W7A recovery learnings](solutions/architecture-patterns/werewolf-visual-recovery-at-canonical-boundaries.md).
 
 ### Public visual replay
 

@@ -51,6 +51,12 @@ export async function setVisualFailurePolicy(db: DrizzleDB, gameId: string, poli
 
 /** Returns the unchanged committed cursor to the existing worker adoption path. */
 export async function resumeVisualGame(db: DrizzleDB, gameId: string, operatorId: string): Promise<void> {
+  const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  if (game?.kind === "werewolf") {
+    const { resumeWerewolfVisualGame } = await import("./werewolf-visual-policy.js");
+    return resumeWerewolfVisualGame(db, gameId, operatorId);
+  }
+
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence.game-turn'), hashtext(${gameId}))`);
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");

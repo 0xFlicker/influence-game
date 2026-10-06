@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { ImageReviewEditor } from "./image-review-editor";
 
 export interface MediaJob {
-  id: string; sceneId: string; version: number; status: string; step: string; failure: string | null;
+  id: string; sceneId: string | null; reusePrefix?: string | null; version: number; status: string; step: string; failure: string | null;
   candidateArtifactId: string | null; sourceImageId: string | null; createdAt: string; startedAt: string | null; finishedAt: string | null;
 }
 interface MediaVersion {

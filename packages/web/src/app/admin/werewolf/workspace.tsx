@@ -17,7 +17,7 @@ type Section = "overview" | "production" | "costs" | "activity";
 const sections: Section[] = ["overview", "production", "costs", "activity"];
 const root = "/api/admin/werewolf";
 type Row = { id: string; slug: string; status: string; createdAt: string; playerCount: number; hidden: boolean; progress: { day: number; phase: string } | null; error: string | null; cost: AdminGameCostSummary | null; production: { active: number; failed: number } };
-export type Detail = { id: string; slug: string; status: string; hidden: boolean; createdAt: string; endedAt: string | null; snapshot: Pick<WerewolfView, "rulesVersion" | "day" | "phase" | "cursor" | "players" | "outcome">; capabilities: { stop: boolean; visibility: boolean; production: boolean } };
+export type Detail = { id: string; slug: string; status: string; visualPaused?: boolean; hidden: boolean; createdAt: string; endedAt: string | null; snapshot: Pick<WerewolfView, "rulesVersion" | "day" | "phase" | "cursor" | "players" | "outcome">; capabilities: { stop: boolean; visibility: boolean; production: boolean } };
 type Costs = { gameplay: AdminGameCostDetail; production: { knownCostMicrousd: number; unpricedAttempts: number; uncertainAttempts: number; attempts: Array<{ id: string; provider: string; model: string; status: string; costMicrousd: number | null }> } };
 const money = (value: number) => `$${(value / 1_000_000).toFixed(4)}`;
 const title = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).replaceAll("_", " ");
@@ -81,7 +81,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
     const id = summary?.id ?? gameId;
     if (next === "costs") await client.fetchQuery(adminReadOptions<Costs>(session, `${root}/${id}/costs`));
     if (next === "activity") await client.fetchQuery(adminReadOptions<WerewolfView>(session, `${root}/${id}/activity`));
-    if (next === "production" && summary?.capabilities.production && summary.status === "completed") {
+    if (next === "production" && summary?.capabilities.production && (summary.status === "completed" || summary.visualPaused)) {
       try { await client.fetchQuery(adminReadOptions<Inventory>(session, `/api/admin/production/games/${id}/visual`)); }
       catch (cause) { if (!accessDenied(cause)) throw cause; void refresh(); }
     }
@@ -166,7 +166,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
                 canManage={hasPermission("manage_postgame_media") || hasPermission("manage_roles")}
                 onClose={() => setTrailerOpen(false)} />}
             </section>}
-            <section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" ? <p className={styles.empty}>Scene production becomes available when this game completes.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
+            <section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" && !data.visualPaused ? <p className={styles.empty}>Scene production becomes available when this game completes or pauses for visual repair.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
         </div>
       </div>
     </>}{children}

@@ -29,10 +29,14 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
       if (scene) {
         const { planWerewolfProduction } = await import("./werewolf-production-plan.js");
         regeneratedPlan = await planWerewolfProduction(db, gameId, scene.roomId, scene.boundarySequence, input.regenerateForms ? input.requestId : undefined);
+        const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+        if (await readWerewolfVisualPause(db,gameId)) regeneratedPlan = {...regeneratedPlan,cast:regeneratedPlan.cast.map(member => member.variant && !member.variant.resolved ? {...member,variant:{...member.variant,generation:input.requestId}} : member)};
+
       }
     }
   }
   return db.transaction(async tx => {
+    const [execution] = await tx.select().from(schema.games).where(eq(schema.games.id,gameId)).for("update");
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('visual-media'), hashtext(${gameId}))`);
     const hash = sha256StableJson(input);
     const [prior] = await tx.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
@@ -48,6 +52,13 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
     try {
       const [scene] = await tx.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.id, input.sceneId), eq(schema.visualScenes.gameId, gameId))).for("update");
       if (!scene) return reject("scene_missing", "Scene not found");
+      if (execution?.gameKind === "werewolf" && execution.status !== "completed") {
+        const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+        const pause = await readWerewolfVisualPause(tx,gameId);
+        const d = pause?.work.kind === "scene" ? pause.work.descriptor : null;
+        if (!d || scene.roomId !== d.roomId || scene.boundarySequence > d.boundarySequence || scene.plan.direction?.purpose !== `werewolf-${d.purpose}` || scene.plan.cast.length !== d.participantIds.length || scene.plan.cast.some(p => !d.participantIds.includes(p.id)))
+          return reject("visual_boundary_changed","Only the paused visual boundary can be repaired");
+      }
       if (input.action === "regenerate" && input.regenerateForms && !regeneratedPlan?.cast.some(member => member.variant))
         return reject("wolf_forms_not_supported", "This scene has no wolf forms to regenerate");
       await captureOriginalMediaVersion(tx, scene);

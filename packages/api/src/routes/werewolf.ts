@@ -46,7 +46,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
   app.post("/api/werewolf/lobbies", requireAuth(db), requirePermission("create_game"), async c => {
     const input = await c.req.json().catch(() => null);
     if (!input || typeof input !== "object" || Array.isArray(input)
-      || Object.keys(input).some(key => !["visibility", "preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode"].includes(key))
+      || Object.keys(input).some(key => !["visibility", "preset", "providerManifest", "maxDays", "setup", "personaPool", "fillStrategy", "visualMode", "visualFailurePolicy"].includes(key))
       || !["one_wolf", "two_wolves"].includes(input.preset)
       || (input.maxDays !== undefined && (!Number.isInteger(input.maxDays) || input.maxDays < 1 || input.maxDays > 20))) return c.json({ error: "Choose a Werewolf preset and a day limit from 1 to 20." }, 400);
     return c.json(await createWerewolfLobby(db, c.get("user").id, input), 201);

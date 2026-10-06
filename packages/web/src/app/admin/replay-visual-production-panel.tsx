@@ -1,4 +1,6 @@
 "use client";
+import { usePermissions } from "@/hooks/use-permissions";
+import { VisualFailurePolicyControl } from "./visual-failure-policy-control";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAdminRead, useAdminSession, useAdminValue, useAdminPending, type Operation } from "./admin-session";
 import { WerewolfScenePreview } from "./werewolf/scene-preview";
@@ -9,6 +11,7 @@ import { SceneRepairPanel, isActiveMediaJob, type MediaRecords, type MediaAttemp
 
 export type Inventory = {
   gameId: string; slug: string; warnings: string[];
+  recovery?: {pauseId:string; reason:string; kind:"scene" | "form"; playerName?:string; policy:"best_effort" | "require_visuals"} | null;
   scenes: Array<{ key: string; previewHash: string; sceneId: string | null; roomName: string; round: number | null;
     purpose?: "village" | "pack" | "hunt"; wolfIds?: string[]; boundarySequence: number; participants: Array<{ id: string; name: string }>; available: boolean; originalFailed: boolean; coverage?: Array<{ id: string; name: string; verified: boolean; fallback: string }>; panelCount?: number }>;
   media: MediaRecords;
@@ -33,13 +36,14 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
   const waitingForJob = Boolean(acceptedJob && !data?.media.jobs.some(job => job.id === acceptedJob));
   const busy = operation?.phase === "submitting" || waitingForJob, unknown = operation?.phase === "unknown";
   const controlPending = useAdminPending(`operation:${resource}/media`);
+  const recoveryPending = useAdminPending(`operation:${resource}/recovery`);
   const mutationError = operation?.phase === "rejected" || unknown ? operation.error : null;
   const feedback = operation?.phase === "accepted" ? (operation.result as { message?: string } | undefined)?.message : null;
   const [showPublished, setShowPublished] = useAdminValue(`ui:${resource}:showPublished`, werewolf);
   const [previewScene, setPreviewScene] = useAdminValue<string | null>(`ui:${resource}:preview`, null);
   const [image, setImage] = useState<{ url: string; label: string } | null>(null);
   const refresh = useCallback(async () => { await refetch(); }, [refetch]);
-  useEffect(() => { onLocked(busy || unknown || controlPending); }, [onLocked, busy, unknown, controlPending]);
+  useEffect(() => { onLocked(busy || unknown || controlPending || recoveryPending); }, [onLocked, busy, unknown, controlPending, recoveryPending]);
   useEffect(() => {
     if (!denied) return;
     session.clearMatching(key => (key.startsWith("operation:") || key.startsWith("draft:") || key.startsWith("ui:")) && key.includes(`${root}/${gameId}/`));
@@ -64,6 +68,7 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
   if (denied) return <p role="alert">Production access is no longer available. {error} <button className={button} onClick={() => void refresh()}>Check access again</button></p>;
   const visible = data?.scenes.filter(scene => showPublished || !scene.available) ?? [];
   return <div className="space-y-4">
+    {data?.recovery && <VisualRecovery gameId={gameId} data={data} refresh={refresh} />}
     <div className="flex flex-wrap items-center gap-4"><button className={button} disabled={operation?.phase === "submitting"} onClick={() => void refresh()}>Refresh scenes</button><label className="flex items-center gap-2 text-sm text-white/70"><input type="checkbox" checked={showPublished} onChange={event => setShowPublished(event.target.checked)} />Show available images</label>
       {data && <span className="text-sm text-white/60">{data.scenes.filter(scene => !scene.available).length} scenes need images or publication</span>}</div>
     {error && <p role="alert" className="text-sm text-red-300">{error}</p>}{mutationError && <p role="alert" className="text-sm text-red-300">{mutationError}</p>}{feedback && <p role="status" className="text-sm text-green-200">{feedback}</p>}
@@ -94,6 +99,37 @@ function ReplayScenes({ gameId, onLocked, werewolf = false }: { gameId: string; 
     </section>}
     {image && <ImagePreview image={image} onClose={() => setImage(null)} />}
   </div>;
+}
+
+function VisualRecovery({ gameId, data, refresh }: {gameId:string; data:Inventory; refresh:()=>Promise<void>}) {
+  const session = useAdminSession(), client = useQueryClient();
+  const {hasPermission} = usePermissions();
+  const resource = `${root}/${gameId}/visual`, key = `operation:${resource}/recovery`;
+  const [operation] = useAdminValue<Operation | undefined>(key,undefined);
+  const recovery = data.recovery!;
+  const uncertainForm = data.attempts.some(attempt => attempt.operationKey.startsWith("wolf-form:") && ["pending", "needs_reconciliation"].includes(attempt.status));
+  const formJob = data.media.jobs.filter(job => job.sceneId === null && job.reusePrefix === recovery.pauseId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+  const busy = operation?.phase === "submitting" || data.media.jobs.some(isActiveMediaJob);
+  const unknown = operation?.phase === "unknown";
+  async function act(action: "policy" | "resume" | "forms", policy?: "best_effort" | "require_visuals") {
+    const body = unknown ? operation.body : action === "forms" ? {pauseId:recovery.pauseId,requestId:crypto.randomUUID()} : action === "policy" ? {action,policy} : {action};
+    try {
+      await session.execute(key,`${resource}/${action === "forms" ? "forms" : "control"}`,body);
+      await client.invalidateQueries({queryKey:["admin",session.scope,`/api/admin/werewolf/${gameId}`]});
+      if (action !== "resume") await refresh();
+    } catch { /* Admin session retains rejection and uncertain request state. */ }
+  }
+  return <section aria-label="Visual recovery" className="space-y-3 rounded-lg border border-amber-300/40 p-4">
+    <h3 className="font-semibold">Paused for visuals</h3><p className="text-sm text-amber-100">{recovery.reason}</p>
+    <VisualFailurePolicyControl value={recovery.policy} disabled={busy || unknown || !hasPermission("start_game")} onChange={policy => void act("policy",policy)} />
+    {recovery.kind === "form" ? <><p>Wolf form for {recovery.playerName}</p>
+      {formJob && <p role="status">{formJob.step} · {formJob.status}{formJob.failure ? `: ${formJob.failure}` : ""}</p>}
+      <button className={button} disabled={busy || unknown || formJob?.status === "ready" || uncertainForm} onClick={()=>void act("forms")}>Repair wolf form</button>
+      <p className="text-sm text-white/60">This creates a verified reusable form. Provider charges may apply.</p></> : <p className="text-sm text-white/60">Repair and publish the scene below, then resume. To continue with portraits, choose Best effort and resume.</p>}
+    {hasPermission("start_game") && <button className={button} disabled={busy || unknown} onClick={()=>void act("resume")}>Resume game</button>}
+    {operation?.error && <p role="alert" className="text-red-300">{operation.error}</p>}
+    {unknown && <button className={button} onClick={()=>void act("pauseId" in operation.body ? "forms" : operation.body.action === "resume" ? "resume" : "policy")}>Check saved request</button>}
+  </section>;
 }
 
 function ReconcileAttempt({ gameId, attemptId, refresh }: { gameId: string; attemptId: string; refresh: () => Promise<void> }) {

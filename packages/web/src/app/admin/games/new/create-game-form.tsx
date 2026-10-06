@@ -849,7 +849,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       };
       if (isWerewolf) {
         const { slug } = await createWerewolfLobby({ preset: village.wolves === 1 ? "one_wolf" : "two_wolves", setup: village, maxDays,
-          visibility: form.visibility, providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode });
+          visibility: form.visibility, providerManifest: params.providerManifest!, personaPool: form.personaPool, fillStrategy: form.fillStrategy, visualMode: form.visualMode, visualFailurePolicy: form.visualFailurePolicy });
         router.push(`/games/${slug}`);
       } else {
         const { slug } = await createGame(params);
@@ -995,7 +995,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
       <SectionCard title="Game Mode">
         <label className="mb-5 flex items-start gap-3">
           <input type="checkbox" checked={form.visualMode} onChange={(event) => set("visualMode", event.target.checked)} className="mt-1" />
-          <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Failed scenes fall back to character art; Production can inspect and repair them." : "Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>
+          <span>Visual Mode<span className="block text-sm text-white/50">{isWerewolf ? "Automatically generate village and private pack scenes during play. Uses the House image pipeline and adds image-generation cost and preparation time. Choose whether failed visuals use character art or pause for repair in Production." : "Generated rooms, agent image context and performance cues. Models without image support are automatically skipped. Adds image-generation cost and scene preparation time. Portraits and speech bubbles are available in every game. Fixed when the game is created."}</span></span>
         </label>
         {skippedModels.length > 0 && <p role="status" className="mb-4 text-sm text-white/55">
           Skipped for this game: {skippedModels.map(entry => models.find(model => model.catalogId === entry.catalogId)?.displayName ?? entry.catalogId).join(", ")}. You can change or remove these slots. Turning off Visual Mode restores them.
@@ -1003,7 +1003,7 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
         {needsImageModels && effectiveProviderRoute[0] && <p className="mb-4 text-sm text-white/55">
           {visualDefault ? "Using " : "Visual Primary: "}{models.find(model => model.catalogId === effectiveProviderRoute[0]!.catalogId)?.displayName ?? effectiveProviderRoute[0].catalogId}{visualDefault ? " as Primary because the selected models do not support images." : "."}
         </p>}
-        {needsImageModels && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
+        {form.visualMode && <RadioGroup label="Visual failure policy" value={form.visualFailurePolicy}
           options={[{ value: "best_effort" as const, label: "Best effort", sublabel: "Continue with portraits when rendering fails" }, { value: "require_visuals" as const, label: "Require visuals", sublabel: "Pause for admin repair if required visuals are unavailable" }]}
           onChange={(value) => set("visualFailurePolicy", value as FormState["visualFailurePolicy"])} />}
       </SectionCard>

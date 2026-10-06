@@ -1,3 +1,4 @@
+import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
 import type { VisualScenePlan } from "@influence/engine/visual-scene-plan";
 import { type DrizzleDB } from "../db/index.js";
@@ -8,7 +9,10 @@ import { planWerewolfScene } from "./werewolf-scene-plan.js";
 /** Rebuild from accepted facts at the selected boundary, not the old generic render plan. */
 export async function planWerewolfProduction(db: DrizzleDB, gameId: string, roomId: VisualScenePlan["roomId"], boundary: number, regenerateForms?: string) {
   const events = await readWerewolfEvents(db, gameId);
-  const descriptor = werewolfSceneInventory(events).find(scene => scene.roomId === roomId && scene.boundarySequence === boundary);
+  const pause = await readWerewolfVisualPause(db, gameId);
+  const descriptors = werewolfSceneInventory(events);
+  if (pause?.work.kind === "scene") descriptors.push(pause.work.descriptor);
+  const descriptor = descriptors.find(scene => scene.roomId === roomId && scene.boundarySequence === boundary);
   if (!descriptor) throw new Error("This image is not a recorded Werewolf scene. Refresh the production inventory.");
   // The created event is authoritative for match identities, even when no artwork was prepared.
   const created = events[0];

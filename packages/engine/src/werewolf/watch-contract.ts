@@ -21,7 +21,7 @@ export interface WerewolfWatchMoment {
 }
 export interface WerewolfWatchIndex { cursor: number; step: number; chapterId: string; sceneId: string; label: string }
 export interface WerewolfWatchWindow {
-  gameId: string; slug: string; status: string; audience: WerewolfAudience; rulesVersion: 7;
+  gameId: string; slug: string; status: string; visualPaused?: boolean; audience: WerewolfAudience; rulesVersion: 7;
   publicationCutoff: string; latestCursor: number; fromCursor: number; throughCursor: number;
   players: WerewolfWatchIdentity[]; moments: WerewolfWatchMoment[]; navigation: WerewolfWatchIndex[];
   /** Compact audience-local scrub index; steps expand ballots and permitted night actions before their outcomes. */

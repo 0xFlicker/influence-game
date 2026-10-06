@@ -1,3 +1,4 @@
+import { VisualImageFailure } from "./visual-image-provider.js";
 import { VisualIdentityFailure } from "@influence/engine/visual-localization";
 import { recordVisualOperationEvent, visualFailureEvidence } from "./visual-diagnostics.js";
 import { and, eq } from "drizzle-orm";
@@ -128,16 +129,16 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
     // Originals remain reviewable/playable even when the optional composite is rejected.
     if (sectionImages.length > 1 && playable.length === sectionImages.length) {
       await options.onStep?.("harmonizing");
-      const harmonized = await renderDurableVisualImage(db, {
-        gameId, sceneId: scene.id, repairJobId: options.jobId,
-        operationKey: `${renderKey}:harmonization:v1`, reuseOperationKey: reuse("harmonization:v1"),
-        allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
-        request: { width: 1536, height: 864, references: [finalImage, ...sectionImages],
-          prompt: `${common}\nHarmonize these conversation panels into one continuous widescreen room. The first reference is their ordered assembly; the remaining references are the original panels. Preserve every character exactly once, including their face, clothing and relative position. Unify lighting, perspective, furniture and background across the seams. Keep all ${references.length} faces visible with headroom. Do not add, duplicate, replace or remove any person. No borders, labels or text.` },
-      });
-      await options.onImage?.(await storeVisualArtifact(db, gameId, harmonized.image));
-      await options.onStep?.("verifying harmonization");
       try {
+        const harmonized = await renderDurableVisualImage(db, {
+          gameId, sceneId: scene.id, repairJobId: options.jobId,
+          operationKey: `${renderKey}:harmonization:v1`, reuseOperationKey: reuse("harmonization:v1"),
+          allowFallback: options.jobId ? true : scene.renderRevision === 0, signal, beforeDispatch,
+          request: { width: 1536, height: 864, references: [finalImage, ...sectionImages],
+            prompt: `${common}\nHarmonize these conversation panels into one continuous widescreen room. The first reference is their ordered assembly; the remaining references are the original panels. Preserve every character exactly once, including their face, clothing and relative position. Unify lighting, perspective, furniture and background across the seams. Keep all ${references.length} faces visible with headroom. Do not add, duplicate, replace or remove any person. No borders, labels or text.` },
+        });
+        await options.onImage?.(await storeVisualArtifact(db, gameId, harmonized.image));
+        await options.onStep?.("verifying harmonization");
         // A composite must verify the entire cast, even when individual panels allow missing people.
         const localized = await localize(harmonized.image, references, "harmonization-localization:v1", false);
         shots.overview = await shot(harmonized.image, references.map(r => r.member.id), localized);
@@ -145,10 +146,10 @@ export async function renderVisualCandidate(db: DrizzleDB, scene: StoredVisualSc
       } catch (error) {
         signal?.throwIfAborted();
         await beforeDispatch?.();
-        if (!(error instanceof VisualIdentityFailure)) throw error;
+        if (!(error instanceof VisualIdentityFailure) && !(error instanceof VisualImageFailure)) throw error;
         await recordVisualOperationEvent(db, gameId, `${renderKey}:rejected-harmonization:v1`, {
           sceneId: scene.id, kind: "failure", outcome: "failed", message: "Harmonized image rejected; retaining verified original panels",
-        }, visualFailureEvidence(error, "identity"));
+        }, visualFailureEvidence(error, error instanceof VisualIdentityFailure ? "identity" : "response"));
       }
     }
     }

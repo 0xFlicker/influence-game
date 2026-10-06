@@ -578,7 +578,7 @@ export interface AdminGameSummary extends GameSummary {
 }
 
 export type ProductionGameSummary = Pick<AdminGameSummary,
-  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel">;
+  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel"> & {gameKind?: "influence" | "werewolf"};
 
 export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
 

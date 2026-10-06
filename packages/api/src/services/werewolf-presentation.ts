@@ -1,5 +1,6 @@
+import { werewolfVisualPause } from "./werewolf-visual-policy.js";
 import { isViewerGame } from "./game-visibility.js";
-import { and, desc, eq, isNull, lte, or } from "drizzle-orm";
+import { inArray, and, desc, eq, isNull, lte, or } from "drizzle-orm";
 import { projectWerewolfPresentation, type WerewolfPresentation } from "@influence/engine/werewolf/presentation";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import type { StoredVisualShot, VisualShot } from "@influence/engine/visual-mode";
@@ -32,9 +33,12 @@ export async function readWerewolfCharacter(db: DrizzleDB, gameId: string, playe
 }
 
 async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicationCutoff: string) {
+  const [game] = await db.select({config:schema.games.config}).from(schema.games).where(eq(schema.games.id,gameId));
+  const recoveryIds: string[] = game ? JSON.parse(game.config).visualRecoveryPublications ?? [] : [];
+
   return await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
     .from(schema.visualScenes)
-    .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), or(lte(schema.visualMediaPublications.createdAt, publicationCutoff), and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
+    .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), or(inArray(schema.visualMediaPublications.id,recoveryIds), lte(schema.visualMediaPublications.createdAt, publicationCutoff), and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
     .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
     .where(and(eq(schema.visualScenes.gameId, gameId)))
     .orderBy(desc(schema.visualScenes.boundarySequence), desc(schema.visualMediaPublications.revision));
@@ -108,6 +112,6 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
     const {mediaKey, wolfForms} = bound;
     return { ...moment, ...(Object.keys(wolfForms).length ? {wolfForms} : {}), ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
   });
-  return { ...projection, slug: game.slug, status: game.status, audience, publicationCutoff, moments, media,
+  return { ...projection, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(JSON.parse(game.config))), audience, publicationCutoff, moments, media,
     players: projection.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) };
 }
