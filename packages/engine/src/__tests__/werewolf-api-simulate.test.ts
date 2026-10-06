@@ -155,7 +155,7 @@ describe("Werewolf API simulation", () => {
     const args = runArgs();
     await expect(runWerewolfApiSimulation(args, { log: () => {} })).rejects.toThrow("503");
     expect(calls).toBe(1);
-    expect(await readFile(args.out, "utf8")).toContain("Check http://localhost:3001/games?game=werewolf before launching again");
+    expect(await readFile(args.out, "utf8")).toContain("Check http://localhost:3001/games/type/werewolf before launching again");
     const { initial } = await fixture();
     globalThis.fetch = Object.assign(async () => Response.json({ slug: "report-slug", status: "suspended", view: projectWerewolfView(initial, "mystery") }), { preconnect: originalFetch.preconnect });
     await expect(runWerewolfApiSimulation(runArgs(["--game", "report-slug"]), { log: () => {} })).rejects.toThrow("suspended");

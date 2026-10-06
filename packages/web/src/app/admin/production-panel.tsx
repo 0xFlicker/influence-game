@@ -42,7 +42,7 @@ export function ProductionPanel() {
   useEffect(() => { void refresh(); }, [refresh]);
   const visible = filterAdminGames(games, filters);
   // The submitted set is always intersected with the current filters.
-  const selectedVisible = visible.filter(g => selected.includes(g.id) && g.gameKind !== "werewolf");
+  const selectedVisible = visible.filter(g => selected.includes(g.id));
   const changeSelection = (ids: string[]) => { setSelected(ids); setReview(null); setMessage(null); };
   async function reviewBatch() {
     setPending(true); setError(null);
@@ -68,7 +68,7 @@ export function ProductionPanel() {
       <AdminGameFilterBar filters={filters} hiddenCount={games.filter(g => g.hidden).length} onChange={next => { setFilters(next); changeSelection([]); setReplayGameId(null); }} />
       {canManage && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-white/15 p-4">
         <span role="status">{visible.length} matching · {selectedVisible.length} selected</span>
-        <button className="rounded border border-white/20 px-3 py-2 text-sm disabled:opacity-35" disabled={!visible.length || visible.length > 50} onClick={() => changeSelection(visible.filter(g=>g.gameKind !== "werewolf").map(g => g.id))}>Select all {visible.length} matching</button>
+        <button className="rounded border border-white/20 px-3 py-2 text-sm disabled:opacity-35" disabled={!visible.length || visible.length > 50} onClick={() => changeSelection(visible.map(g => g.id))}>Select all {visible.length} matching</button>
         <button className="rounded border border-white/20 px-3 py-2 text-sm disabled:opacity-35" disabled={!selected.length} onClick={() => changeSelection([])}>Clear selection</button>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={regenerate} onChange={e => { setRegenerate(e.target.checked); setReview(null); }} /> Replace existing titles</label>
         <button className="influence-button-primary rounded px-3 py-2" disabled={!selectedVisible.length || selectedVisible.length > 50} onClick={() => void reviewBatch()}>Review {selectedVisible.length} selected</button>
@@ -83,9 +83,9 @@ export function ProductionPanel() {
       </div>}
     </fieldset>
       {loading ? <p role="status">Loading production…</p> : <div className="space-y-2">{visible.map(game => <article key={game.id} aria-label={`Production for ${game.slug}`} className="flex flex-wrap items-center gap-4 rounded-lg border border-white/10 p-4">
-        {canManage && game.gameKind !== "werewolf" && <input type="checkbox" aria-label={`Select ${game.slug}`} checked={selected.includes(game.id)} disabled={pending || (!selected.includes(game.id) && selected.length >= 50)} onChange={e => changeSelection(e.target.checked ? [...selected, game.id] : selected.filter(id => id !== game.id))} />}
+        {canManage && <input type="checkbox" aria-label={`Select ${game.slug}`} checked={selected.includes(game.id)} disabled={pending || (!selected.includes(game.id) && selected.length >= 50)} onChange={e => changeSelection(e.target.checked ? [...selected, game.id] : selected.filter(id => id !== game.id))} />}
         <div className="min-w-0 flex-1"><h2 className="font-medium">{game.episode?.title ?? game.slug}</h2><p className="text-xs text-white/50">{game.slug} · {game.season?.name ?? "Custom"} · {game.status} · Naming: {game.episode?.status ?? "unrequested"}{game.episode?.locked ? " · Protected" : ""}</p></div>
-        {canManage && game.gameKind !== "werewolf" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setEditing(game.id)}>Edit episode</button>}
+        {canManage && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setEditing(game.id)}>Edit episode</button>}
         {isAdmin && game.gameKind !== "werewolf" && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setMediaGame(game)}>Trailer & poster</button>}
         {canRenderImages && game.gameKind !== "werewolf" && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked}
           aria-expanded={replayGameId === game.id} aria-controls={`replay-images-${game.id}`} onClick={() => setReplayGameId(current => current === game.id ? null : game.id)}>

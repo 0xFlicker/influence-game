@@ -66,6 +66,7 @@ describe("atomic game owner claim and roster freeze", () => {
 
     const [updated, owner] = await Promise.all([update, start]);
     expect(owner.ok).toBeTrue();
+    expect(await fixture.db.select().from(schema.gameEpisodePresentations)).toMatchObject([{ gameId: fixture.gameId, status: "queued" }]);
     const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
     expect(JSON.parse(seat.persona).personality).toBe("Update wins before freeze.");
     expect(updated.receipt.waitingSeats.games[0]?.effectiveRevisionId).toBe(seat.agentRevisionId!);

@@ -45,10 +45,14 @@ export function createEpisodeRoutes(db: DrizzleDB) {
     let body: { gameIds?: unknown; regenerate?: unknown; preview?: unknown };
     try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!body || !Array.isArray(body.gameIds) || body.gameIds.length < 1 || body.gameIds.length > 50 || body.gameIds.some(id => typeof id !== "string") || typeof body.regenerate !== "boolean" || typeof body.preview !== "boolean") return c.json({ error: "Select 1–50 games and specify regenerate and preview" }, 400);
-    const games = await db.select({ id: schema.games.id, title: schema.gameEpisodePresentations.title, locked: schema.gameEpisodePresentations.locked, status: schema.gameEpisodePresentations.status }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id)).where(inArray(schema.games.id, body.gameIds as string[]));
-    const selected = games.filter(g => !g.locked && (body.regenerate || (!g.title && g.status !== "queued" && g.status !== "generating")));
-    if (!body.preview) for (const g of selected) await queueEpisodeCopy(db, g.id, true);
-    return c.json({ gameIds: selected.map(g => g.id), calls: selected.length, skipped: games.length - selected.length, queued: !body.preview });
+    const ids = [...new Set(body.gameIds as string[])];
+    const games = await db.select({ id: schema.games.id, gameStatus: schema.games.status, hiddenAt: schema.games.hiddenAt, title: schema.gameEpisodePresentations.title, locked: schema.gameEpisodePresentations.locked, status: schema.gameEpisodePresentations.status }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id)).where(inArray(schema.games.id, ids));
+    const selected = games.filter(g => !g.hiddenAt && g.gameStatus !== "waiting" && !g.locked && g.status !== "queued" && g.status !== "generating" && (body.regenerate || !g.title));
+    const submitted: string[] = [];
+    for (const g of selected) {
+      if (body.preview || await queueEpisodeCopy(db, g.id, body.regenerate)) submitted.push(g.id);
+    }
+    return c.json({ gameIds: submitted, calls: submitted.length, skipped: ids.length - submitted.length, queued: !body.preview });
   });
   return app;
 }

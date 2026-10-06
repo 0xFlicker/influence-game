@@ -154,4 +154,68 @@ describe("episode presentation", () => {
     expect((await app.request(`/api/werewolf/${slug}/lobby`)).status).toBe(404);
   });
 
+  test("Werewolf naming sends only the frozen names and personalities with its own premise", async () => {
+    const id = crypto.randomUUID();
+    const events = await werewolfResultsFixture("village", id);
+    await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", config: "{}" });
+    await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+    const opening = events[0]!;
+    if (opening.type !== "werewolf.started") throw Error("Missing opening");
+    await queueEpisodeCopy(db, id);
+    let calls = 0;
+    await runEpisodeJob(db, async (cast, _signal, kind) => {
+      calls++;
+      expect(kind).toBe("werewolf");
+      expect(cast).toEqual(opening.payload.players.map(p => ({ name: p.name, personality: p.personality })));
+      expect(JSON.stringify(cast)).not.toContain("SECRET_");
+      return { title: "Company by Candlelight", description: "Contrasting personalities gather beneath the village lanterns." };
+    });
+    await runEpisodeJob(db, async () => { throw Error("Must not repeat a completed job"); });
+    expect(calls).toBe(1);
+    const [row] = await db.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, id));
+    expect(row).toMatchObject({ status: "ready", title: "Company by Candlelight" });
+    expect(await db.select().from(schema.gamePlayers)).toHaveLength(0);
+  });
+
+  test("repeated queue requests preserve active work and edits made after a preview", async () => {
+    const id = await fixture();
+    expect(await queueEpisodeCopy(db, id, true)).toBe(false);
+    await runEpisodeJob(db, async () => {
+      expect(await queueEpisodeCopy(db, id, true)).toBe(false);
+      return { title: "Finished", description: "Finished copy." };
+    });
+    expect(await queueEpisodeCopy(db, id)).toBe(false);
+    await db.update(schema.gameEpisodePresentations).set({ locked: true }).where(eq(schema.gameEpisodePresentations.gameId, id));
+    expect(await queueEpisodeCopy(db, id, true)).toBe(false);
+  });
+
+  test("Werewolf backfill previews explicit eligible IDs and queues each once", async () => {
+    const ids = Array.from({ length: 4 }, () => crypto.randomUUID());
+    await db.insert(schema.games).values(ids.map((id, i) => ({ id, slug: id, config: "{}", gameKind: "werewolf" as const, status: i === 1 ? "waiting" as const : "completed" as const, hiddenAt: i === 2 ? new Date().toISOString() : null })));
+    await db.insert(schema.gameEpisodePresentations).values({ gameId: ids[3]!, title: "Protected", locked: true, status: "ready" });
+    await seedRBAC(db);
+    const userId = crypto.randomUUID();
+    await db.insert(schema.users).values({ id: userId });
+    const [role] = await db.select().from(schema.roles).where(eq(schema.roles.name, "admin"));
+    await db.insert(schema.userRoles).values({ userId, roleId: role!.id, grantedBy: "test" });
+    const token = await createSessionToken(userId, { roles: ["admin"], permissions: ["view_admin", "manage_postgame_media"] });
+    const app = createEpisodeRoutes(db);
+    const request = (preview: boolean) => app.request("/api/admin/episodes/backfill", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ gameIds: [...ids, ids[0]], regenerate: true, preview }) });
+    expect(await (await request(true)).json()).toMatchObject({ gameIds: [ids[0]], calls: 1, skipped: 3, queued: false });
+    expect(await db.select().from(schema.gameEpisodePresentations)).toHaveLength(1);
+    expect(await (await request(false)).json()).toMatchObject({ gameIds: [ids[0]], calls: 1, queued: true });
+    expect(await (await request(false)).json()).toMatchObject({ calls: 0, skipped: 4 });
+  });
+
+  test("missing canonical Werewolf cast fails without a provider call", async () => {
+    const id = crypto.randomUUID();
+    await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", config: "{}" });
+    await queueEpisodeCopy(db, id);
+    let called = false;
+    await runEpisodeJob(db, async () => { called = true; return { title: "Wrong", description: "Wrong" }; });
+    expect(called).toBe(false);
+    const [row] = await db.select().from(schema.gameEpisodePresentations).where(eq(schema.gameEpisodePresentations.gameId, id));
+    expect(row).toMatchObject({ status: "failed", title: null, failure: "Invalid frozen Werewolf cast" });
+  });
+
 });

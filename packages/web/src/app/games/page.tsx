@@ -7,9 +7,7 @@ export const metadata = {
   title: `Games - ${HOUSE_VENUE.name}`,
 };
 
-export default async function GamesPage({ searchParams }: { searchParams: Promise<{ game?: string }> }) {
-  const { game } = await searchParams;
-  const initialKind = game === "werewolf" || game === "influence" ? game : "all";
+export default function GamesPage() {
   return (
     <div className="influence-page min-h-screen flex flex-col">
       <Nav />
@@ -23,7 +21,7 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
         </p>
 
         <Link href="/games/new" className="mb-6 inline-block rounded-lg border border-white/20 px-4 py-2 text-sm">Create game →</Link>
-        <GamesBrowser includeWerewolf initialKind={initialKind} />
+        <GamesBrowser includeWerewolf />
       </main>
     </div>
   );

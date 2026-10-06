@@ -94,7 +94,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
         body: JSON.stringify({ visibility: args.visibility, preset: args.preset, agentProfileIds: args.agentProfileIds, providerManifest: args.providerManifest, maxDays: args.maxDays }),
       });
       game = created.id;
-      if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /games?game=werewolf before launching again.");
+      if (!game || !created.slug) throw new Error("Invalid Werewolf creation response; check /games/type/werewolf before launching again.");
       watchUrl = new URL(`/games/${encodeURIComponent(created.slug)}/replay?audience=${args.audience}`, args.webUrl).href;
       emit(`Started ${created.slug}: ${WEREWOLF_PRESETS[args.preset].players} players, up to ${args.maxDays} days.`);
       emit(`Model: ${args.providerManifest.map((selection) => `${selection.catalogId} (${selection.reasoningPolicy})`).join(", ")}.`);
@@ -172,7 +172,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
   } catch (error) {
     emit(`Report stopped: ${error instanceof Error ? error.message : String(error)}`);
     if (game) emit(`Resume report: ${resume(game)}`);
-    else if (creationRequested) emit(`Check ${args.webUrl}/games?game=werewolf before launching again; the creation request may have reached the server.`);
+    else if (creationRequested) emit(`Check ${args.webUrl}/games/type/werewolf before launching again; the creation request may have reached the server.`);
     await flush();
     throw error;
   }

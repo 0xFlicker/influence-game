@@ -1,3 +1,4 @@
+import { queueEpisodeCopy } from "./episode-presentation.js";
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { queueHouseCuts } from "./house-cut-queue.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
@@ -110,6 +111,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
       startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
+    await queueEpisodeCopy(tx, gameId);
   });
   return { id: gameId, slug };
 }

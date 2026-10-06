@@ -23,3 +23,13 @@ W7B adds Werewolf read adapters to the existing House episode presentation. Reus
 8. Audit the complete journey without conflating surfaces. Werewolf owner-review selection exists, but public competition history is still Influence-only. Production discovery also differs between producer/sysop and admin-only access. Record these as concrete gaps rather than claiming parity from one working page.
 
 For a third game, add its canonical initial public cast adapter and safe default art/premise; preserve shared presentation storage, House routes and controls. A new plugin registry or parallel episode job system is unnecessary.
+
+## Collection navigation — 2026-10-06
+
+Game-type shelves open `/games/type/[kind]` through the shared collection page, alongside `/games/public` and `/games/season/[seasonSlug]`. The collection scope comes directly from the route. Previously, Werewolf's query parameter was copied into a `useState` initializer; Next preserved the mounted browser during navigation, so the URL changed without updating the shelf until reload. Keep transient toolbar filters local, but derive fixed collection scope from props. Browser coverage must click View all from the shelf and exercise Back, not merely load the destination URL.
+
+## Naming lifecycle follow-through — 2026-10-06
+
+Queue the shared naming job in the transaction that freezes the cast and starts the game. Polling for unnamed running games loses fast completions and makes game-kind omissions easy. The worker consumes the durable queue after restart, and historical games enter only through explicit producer selection. Each game supplies an allowlisted initial cast and premise; never send the entire canonical player object to the provider.
+
+An upsert rechecks protection, existing copy and active job status atomically. Batch previews are estimates, not authorization to bypass changed state. Return the actual queued IDs after the mutation. Keep generation completion fenced by revision and lease so manual edits win. A missing canonical opening is a visible failure, not permission to reconstruct identity from current profiles or transcript text.

@@ -8,6 +8,8 @@ import { werewolfReportEntry } from "@influence/engine/werewolf/report";
 import { apiFetch, type AdminGameCostSummary, type AdminGameCostDetail } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { AdminPostgameMediaPanel } from "../admin-postgame-media";
+import { EpisodeEditor } from "../episode-editor";
+import "../../games/episodes.css";
 import { ReplayVisualProductionPanel, type Inventory } from "../replay-visual-production-panel";
 import { adminReadOptions, useAdminRead, useAdminSession, accessDenied } from "../admin-session";
 import { CostEvidence } from "../cost-evidence";
@@ -37,7 +39,7 @@ export function GameList() {
       <label>Visibility<select value={visibility} onChange={e => change("visibility", e.target.value)}>{["visible", "hidden", "all"].map(v => <option key={v} value={v}>{title(v)}</option>)}</select></label></div>
     {error && <Notice>{error}</Notice>}
     {!data && !error && <p role="status" className={styles.empty}>Loading Werewolf games…</p>}
-    {rows?.length === 0 && <p className={styles.empty}>No games match these filters. <Link href="/games?game=werewolf">Browse Werewolf games</Link></p>}
+    {rows?.length === 0 && <p className={styles.empty}>No games match these filters. <Link href="/games/type/werewolf">Browse Werewolf games</Link></p>}
     <div className={styles.list}>{rows?.map(game => <article key={game.id} className={styles.row}>
       <div><p className={styles.eyebrow}>{title(game.status)}{game.hidden ? " · Hidden" : ""}</p><h2>{game.slug}</h2><p>{game.playerCount} players · {game.status === "waiting" ? "Casting open" : game.progress ? `Day ${game.progress.day} · ${title(game.progress.phase)}` : "State unavailable"}</p>{game.error && <p className={styles.warning}>{game.error}</p>}</div>
       <div><span className={styles.small}>Gameplay cost</span><strong className={styles.number}>{game.cost?.state === "actual" ? money(game.cost.actualCostMicrousd) : game.cost?.state === "estimated" ? `~${money(game.cost.estimatedCostMicrousd)}` : "N/C"}</strong><span className={styles.small}>{game.cost?.callCount ?? 0} recorded calls</span></div>
@@ -56,6 +58,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   const session = useAdminSession(), client = useQueryClient();
   const { isAdmin, hasPermission } = usePermissions();
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const [episodeOpen, setEpisodeOpen] = useState(false);
   const { data, error, denied, refresh } = useAdminRead<Detail>(`${root}/${gameId}`, 10_000);
   const [displayed, setDisplayed] = useState<Section>(route);
   const [pending, setPending] = useState<Section | null>(null), [navigationError, setNavigationError] = useState<string | null>(null);
@@ -158,6 +161,12 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           {displayed === "activity" && <Activity gameId={data.id} currentCursor={data.snapshot.cursor} />}
           {displayed === "costs" && <GameCosts gameId={data.id} />}
           {displayed === "production" && <>
+            {(hasPermission("manage_postgame_media") || hasPermission("manage_roles")) && <section className={styles.surface}>
+              <h2 tabIndex={-1}>Episode title &amp; description</h2>
+              <p>The House names new games automatically. Generate a name for this game, edit its description, or protect your changes.</p>
+              <div className={styles.actions}><button onClick={() => setEpisodeOpen(true)}>Edit episode</button></div>
+              {episodeOpen && <EpisodeEditor key={data.id} gameId={data.id} onClose={() => setEpisodeOpen(false)} onSaved={async () => { await refresh(); }} />}
+            </section>}
             {isAdmin && data.status === "completed" && <section className={styles.surface}>
               <h2 tabIndex={-1}>Trailer &amp; poster</h2>
               <p>Check render progress, inspect failures, or retry a trailer after repairing its assets.</p>

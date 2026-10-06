@@ -42,7 +42,18 @@ test("old/new House cards, title search, stable links and responsive art",async(
   try {
     for(const width of [1440,390]) {
       await page.setViewport({width,height:1000});
-      await page.goto(`${servers.webUrl}/games?game=werewolf`,{waitUntil:"domcontentloaded"});
+      await page.goto(`${servers.webUrl}/games`,{waitUntil:"domcontentloaded"});
+      const viewAll = 'section[aria-label="Werewolf"] a[href="/games/type/werewolf"]';
+      await page.waitForSelector(viewAll);
+      await page.click(viewAll);
+      await text(page,"Werewolf games");
+      expect(new URL(page.url()).pathname).toBe('/games/type/werewolf');
+      await page.waitForSelector('section[aria-label="Werewolf"] .episode-grid');
+      expect(await page.$('section[aria-label="Werewolf"] .episode-rail')).toBeNull();
+      await page.goBack({waitUntil:"domcontentloaded"});
+      await page.waitForSelector(viewAll);
+      await page.click(viewAll);
+      await text(page,"Werewolf games");
       await text(page,"Lanterns and Lies");
       await page.waitForFunction(`Array.from(document.querySelectorAll('.werewolf-artwork img.episode-scene')).length === 4 && Array.from(document.querySelectorAll('.werewolf-artwork img.episode-scene')).every(img=>img.complete && img.naturalWidth > 0)`);
       expect(await page.evaluate(`document.documentElement.scrollWidth <= innerWidth`)).toBe(true);

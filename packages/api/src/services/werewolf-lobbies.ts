@@ -1,4 +1,4 @@
-import { readEpisodePresentations } from "./episode-presentation.js";
+import { queueEpisodeCopy, readEpisodePresentations } from "./episode-presentation.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, storedGameVisibility } from "./game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
@@ -98,6 +98,7 @@ export async function startWerewolfLobby(db: DrizzleDB, id: string) {
     const event = startWerewolf(game.id, players, rules, randomUUID());
     await tx.insert(schema.werewolfEvents).values({ gameId: game.id, sequence: event.sequence, event });
     await tx.update(schema.games).set({ status: "in_progress", startedAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));
+    await queueEpisodeCopy(tx, game.id);
     return { id: game.id, slug: game.slug };
   });
 }

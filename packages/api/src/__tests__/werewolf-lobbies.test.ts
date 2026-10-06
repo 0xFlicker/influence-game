@@ -25,6 +25,7 @@ async function profile(id: string, userId = "owner", name = id) {
 test("a saved lobby has durable public seats but no roles, game events, or worker claim", async () => {
   const game = await create();
   await profile("agent");
+  expect(await db.select().from(schema.gameEpisodePresentations)).toHaveLength(0);
   const first = await joinWerewolfLobby(db, game.slug, "owner", "agent");
   expect(await joinWerewolfLobby(db, game.id, "owner", "agent")).toEqual(first);
   const lobby = await readWerewolfLobby(db, game.slug);
@@ -70,6 +71,7 @@ test("start freezes the latest approved strategy for every owner, assigns roles 
   await updateOwnedAgentProfile(db, { userId: "guest" }, agent.id, { werewolfStrategyStyle: "LATEST_STRATEGY", submissionId: randomUUID(), expectedContentRevisionId: agent.contentRevisionId });
   const starts = await Promise.allSettled([startWerewolfLobby(db, game.id), startWerewolfLobby(db, game.id)]);
   expect(starts.filter(result => result.status === "fulfilled")).toHaveLength(1);
+  expect(await db.select().from(schema.gameEpisodePresentations)).toMatchObject([{ gameId: game.id, status: "queued" }]);
   const events = await readWerewolfEvents(db, game.id);
   expect(events).toHaveLength(1);
   const state = replayWerewolf(events);

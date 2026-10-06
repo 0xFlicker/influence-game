@@ -1,3 +1,4 @@
+import { queueEpisodeCopy } from "./episode-presentation.js";
 import { releaseWerewolfOwner } from "./werewolf-games.js";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -691,6 +692,8 @@ async function transitionWaitingGameToInProgress(
         "Game start state changed while the roster was freezing.",
         "invalid_state",
       );
+
+      await queueEpisodeCopy(tx, gameId);
 
       if (options.owner) {
         await tx.insert(schema.gameRunOwners)
