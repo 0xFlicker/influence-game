@@ -986,3 +986,113 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     expect(await page.$eval('[data-werewolf-stage]',element=>element.textContent)).not.toContain("Tonight’s target");
   } finally { await page.close(); }
 }, 60_000);
+
+test("published wolf forms transform each night including a lone survivor and night deaths have a seek-safe claw outcome", async () => {
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {werewolfSceneInventory} = await import("@influence/engine/werewolf/visual-scenes");
+  const {projectWerewolfWatch} = await import("@influence/engine/werewolf/watch");
+  const {isWerewolfPlayable} = await import("@influence/engine/werewolf/watch-contract");
+  const {planWerewolfProduction} = await import("../services/werewolf-production-plan.js");
+  const {prepareVisualScene} = await import("../services/visual-scene-store.js");
+  const id="browser-night-motion",events=await werewolfResultsFixture("wolves",id);
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",maxPlayers:8,startedAt:new Date().toISOString(),endedAt:new Date().toISOString(),config:JSON.stringify({visibility:"unlisted",preset:"two_wolves",providerManifest:[{catalogId:"openai:gpt-6-luna"}]})});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+  const descriptor=werewolfSceneInventory(events).find(scene=>scene.purpose === "pack")!;
+  const plan=await planWerewolfProduction(database.db,id,descriptor.roomId,descriptor.boundarySequence);
+  const formIds:string[]=[];
+  for (const [index,member] of plan.cast.entries()) {
+    const bytes=await sharp(Buffer.from(`<svg width="400" height="600"><rect width="400" height="600" fill="${index ? '#334859' : '#57434c'}"/><text x="20" y="300" fill="white" font-size="40">Wolf ${index+1}</text></svg>`)).png().toBuffer();
+    const artifact=await storeVisualArtifact(database.db,id,bytes);formIds.push(artifact);
+    member.referenceArtifactId=artifact;member.variant={...member.variant!,resolved:true};
+  }
+  const scene=await prepareVisualScene(database.db,{gameId:id,boundarySequence:descriptor.boundarySequence,plan});
+  await database.db.insert(schema.visualMediaVersions).values({id,gameId:id,sceneId:scene.id,version:1,plan,imageArtifactId:formIds[0]!,annotatedArtifactId:formIds[0]!,localization:{count:2,verifiedParticipantIds:plan.cast.map(member=>member.id),anchors:[]},verificationVersion:"fixture",createdAt:"2026-01-01T00:00:00.000Z"});
+  await database.db.insert(schema.visualMediaPublications).values({id,gameId:id,sceneId:scene.id,versionId:id,revision:1,operatorId:admin.userId,createdAt:"2026-01-01T00:00:00.000Z"});
+  const soloDescriptor=werewolfSceneInventory(events).find(scene=>scene.purpose === "hunt" && scene.wolfIds.length === 1)!;
+  const soloPlan=await planWerewolfProduction(database.db,id,soloDescriptor.roomId,soloDescriptor.boundarySequence);
+  for(const member of soloPlan.cast) if(member.variant?.kind === "werewolf") {
+    member.referenceArtifactId=plan.cast.find(wolf=>wolf.id===member.id)!.referenceArtifactId;
+    member.variant={...member.variant,resolved:true};
+  }
+  const soloImage=await storeVisualArtifact(database.db,id,await sharp(Buffer.from('<svg width="800" height="450"><rect width="800" height="450" fill="#18322a"/><text x="60" y="220" fill="white" font-size="40">Published lone-wolf hunt</text></svg>')).png().toBuffer());
+  const soloScene=await prepareVisualScene(database.db,{gameId:id,boundarySequence:soloDescriptor.boundarySequence,plan:soloPlan});
+  await database.db.insert(schema.visualMediaVersions).values({id:`${id}-solo`,gameId:id,sceneId:soloScene.id,version:1,plan:soloPlan,imageArtifactId:soloImage,annotatedArtifactId:soloImage,localization:{count:2,verifiedParticipantIds:soloPlan.cast.map(member=>member.id),anchors:[]},verificationVersion:"fixture",createdAt:"2026-01-01T00:00:00.000Z"});
+  await database.db.insert(schema.visualMediaPublications).values({id:`${id}-solo`,gameId:id,sceneId:soloScene.id,versionId:`${id}-solo`,revision:1,operatorId:admin.userId,createdAt:"2026-01-01T00:00:00.000Z"});
+  const projection=projectWerewolfWatch(events,"omniscient",1,64);
+  const soloNight=Array.from({length:projection.latestCursor},(_,i)=>projectWerewolfWatch(events,"omniscient",i+1,1).moments[0]!).find(moment=>moment.night?.actions.some(action=>action.kind === "hunt" && action.wolfIds.length === 1))!;
+  const entrance=projection.moments.find(moment=>moment.transformWolfIds)!;
+  const previous=projection.moments.findLast(moment=>moment.cursor<entrance.cursor&&isWerewolfPlayable(moment.entry))!;
+  const death=projection.moments.find(moment=>moment.entry.kind === "night" && moment.entry.killedId)!;
+  const page=await browser.newPage();
+  const errors:string[]=[];page.on("pageerror",error=>errors.push(String(error)));
+  try {
+    await page.setViewport({width:1440,height:1000});
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=omniscient&cursor=${previous.cursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-wolf-transformation]');
+    await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]').dataset.elapsed)>850");
+    await pauseWerewolf(page);
+    const pose=await page.$$eval('[data-wolf-id]',nodes=>nodes.map(node=>({form:node.getAttribute('data-wolf-form'),style:node.querySelector('[style]')?.getAttribute('style')})));
+    await page.screenshot({path:"/tmp/werewolf-transform-wide.png"});
+    await page.setViewport({width:390,height:844});
+    expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+    await page.screenshot({path:"/tmp/werewolf-transform-mobile.png"});
+    expect(await page.$$eval('[data-wolf-id]',nodes=>nodes.map(node=>({form:node.getAttribute('data-wolf-form'),style:node.querySelector('[style]')?.getAttribute('style')})))).toEqual(pose);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForFunction("!document.querySelector('[data-wolf-transformation]')");
+    await pauseWerewolf(page);
+    await seekWatch(page,previous.cursor);
+    await seekWatch(page,entrance.cursor);
+    expect(await page.$('[data-wolf-transformation]')).not.toBeNull();
+    expect(await page.$eval('[data-werewolf-stage]',node=>Number(node.getAttribute('data-elapsed')))).toBe(0);
+    // Next and Previous land on the same entrance as the timeline while preserving pause.
+    await page.click('button[aria-label="Next scene"]');
+    await page.waitForFunction("!document.querySelector('[data-wolf-transformation]')");
+    await page.click('button[aria-label="Previous room or scene"]');
+    await page.waitForSelector('[data-wolf-transformation]');
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    await page.click('button[aria-label="Previous room or scene"]');
+    await page.waitForFunction("!document.querySelector('[data-wolf-transformation]')");
+    await page.click('button[aria-label="Next scene"]');
+    await page.waitForSelector('[data-wolf-transformation]');
+    expect(await page.$eval('[data-werewolf-stage]',node=>Number(node.getAttribute('data-elapsed')))).toBe(0);
+    await page.screenshot({path:"/tmp/werewolf-after-transform-seek.png"});
+    await page.click('button[aria-label="Play replay"]');
+    await watchText(page,"SECRET_PACK");
+    await pauseWerewolf(page);
+    await seekWatch(page,death.cursor,death.night!.actions.length-1);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForSelector('[data-night-elimination]');
+    await pauseWerewolf(page);
+    expect(await page.$('[data-doctor-save]')).toBeNull();
+    await seekWatch(page,death.cursor,death.night!.actions.length-1);
+    await seekWatch(page,death.cursor,death.night!.actions.length);
+    await page.waitForFunction("Number(document.querySelector('[data-night-claw]').style.opacity)===0");
+    await page.screenshot({path:"/tmp/werewolf-night-outcome-mobile.png"});
+    await seekWatch(page,soloNight.cursor,0);
+    for(let step=0;step<soloNight.night!.actions.length-1;step++) {
+      await page.waitForSelector('[data-night-role]');
+      await page.click('button[aria-label="Next scene"]');
+    }
+    await page.waitForSelector('[data-wolf-transformation]');
+    expect(await page.$$('[data-wolf-id]')).toHaveLength(1);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForSelector('[data-night-hunt]');
+    await pauseWerewolf(page);
+    expect(await page.$eval('[data-night-hunt] img',image=>image.getAttribute('src'))).toContain(encodeURIComponent(soloImage));
+    await page.waitForFunction("document.querySelector('[data-night-hunt] img')?.naturalWidth>0");
+    await page.screenshot({path:"/tmp/werewolf-lone-hunt.png"});
+    await page.click('button[aria-label="Next scene"]');
+    await page.waitForSelector('[data-night-elimination]');
+    await page.click('button[aria-label="Previous room or scene"]');
+    await page.waitForSelector('[data-wolf-transformation]');
+    expect(await page.$$('[data-wolf-id]')).toHaveLength(1);
+    await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=omniscient&cursor=${previous.cursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-wolf-transformation]');await pauseWerewolf(page);
+    expect(await page.evaluate("Array.from(document.querySelectorAll('[data-wolf-id] [style]')).filter(node=>node.style.transform).every(node=>node.style.transform === 'translateY(0px) rotate(0deg) scale(1)')")).toBe(true);
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery`,{waitUntil:"domcontentloaded"});await pauseWerewolf(page);
+    expect(await page.$('[data-wolf-transformation]')).toBeNull();
+    expect(errors).toEqual([]);
+  } finally {await page.close();}
+},90_000);

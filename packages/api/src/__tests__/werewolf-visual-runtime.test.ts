@@ -28,6 +28,9 @@ const agent:WerewolfAgent={async decide({request}){
 
 test("automatic scenes publish once, recover without another render, and respect Mystery pack boundaries",async()=>{
   const f=await fixture();let renders=0;
+  const form = await storeVisualArtifact(db,f.game.id,await sharp({create:{width:80,height:120,channels:3,background:"#cc8855"}}).png().toBuffer());
+  const unpublishedForm = await storeVisualArtifact(db,f.game.id,await sharp({create:{width:80,height:120,channels:3,background:"#557799"}}).png().toBuffer());
+  const resolveForms: NonNullable<Parameters<typeof createPreparation>[5]> = async (_db,_game,plan) => ({...plan,cast:plan.cast.map(member=>member.variant?.kind === "werewolf" ? {...member,referenceArtifactId:form,variant:{...member.variant,resolved:true}} : member)});
   const render:NonNullable<Parameters<typeof createWerewolfVisualPreparation>[4]>=async(db,scene,guard)=>{
     if(scene.status==="ready")return scene;
     renders++;
@@ -35,7 +38,7 @@ test("automatic scenes publish once, recover without another render, and respect
     const id=await storeVisualArtifact(db,f.game.id,image);
     return acceptVisualScene(db,{sceneId:scene.id,planHash:scene.planHash,imageArtifactId:id,anchors:[],verifiedParticipantIds:scene.plan.cast.map(p=>p.id),assertBoundary:guard});
   };
-  let prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,render);
+  let prepare=createPreparation(db,f.game.id,f.epoch,f.controller.signal,render,resolveForms);
   const original=f.store.prepare!;
   f.store.prepare=async(state,request,sequence)=>{await original(state,request,sequence);await prepare(state,request);};
   await advanceWerewolf(f.store,agent);
@@ -47,7 +50,7 @@ test("automatic scenes publish once, recover without another render, and respect
   const state=replayWerewolf(await f.store.read()),step=nextWerewolfStep(state);
   if(step.kind!=="action")throw new Error("Expected next pack contribution");
   // A restarted process reuses the same pack scene.
-  prepare=createWerewolfVisualPreparation(db,f.game.id,f.epoch,f.controller.signal,render);
+  prepare=createPreparation(db,f.game.id,f.epoch,f.controller.signal,render,resolveForms);
   await prepare(state,step.request);
   expect(renders).toBe(1);
   await advanceTo(f, "open_thread");
@@ -71,6 +74,26 @@ test("automatic scenes publish once, recover without another render, and respect
   const routes=(await import("../routes/werewolf.js")).createWerewolfRoutes(db);
   const pack=Object.values(omni.media).find(s=>s.roomId==="mingle-1")!;
   expect((await routes.request(pack.imageUrl.replace("audience=omniscient","audience=mystery"))).status).toBe(404);
+  const formUrl=Object.values(omni.moments.find(moment=>moment.wolfForms)?.wolfForms ?? {})[0]!;
+  expect(formUrl).toBeTruthy();
+  const huntMoment=omni.moments.find(moment=>moment.night?.actions.some(action=>action.kind === "hunt"))!;
+  expect(Object.values(huntMoment.wolfForms ?? {})).toHaveLength(2);
+  expect((await routes.request(Object.values(huntMoment.wolfForms!)[0]!)).status).toBe(200);
+  expect(JSON.stringify(mystery)).not.toContain("wolfForms");
+  expect((await routes.request(formUrl)).status).toBe(200);
+  expect((await routes.request(formUrl.replace("audience=omniscient","audience=mystery"))).status).toBe(404);
+  expect((await routes.request(formUrl.replace(/cursor=\d+/,"cursor=1"))).status).toBe(404);
+  expect((await routes.request(formUrl.replace(form,unpublishedForm))).status).toBe(404);
+  const other=await fixture();
+  expect((await routes.request(formUrl.replace(f.game.id,other.game.id))).status).toBe(404);
+  // A future manual replacement is invisible to this session, including its form bytes.
+  const packVersion=(await db.select().from(schema.visualMediaVersions)).find(version=>version.plan.roomId === "mingle-1")!;
+  const futureId=crypto.randomUUID();
+  await db.insert(schema.visualMediaVersions).values({...packVersion,id:futureId,version:1,plan:{...packVersion.plan,cast:packVersion.plan.cast.map(member=>({...member,referenceArtifactId:unpublishedForm}))}});
+  await db.insert(schema.visualMediaPublications).values({id:futureId,gameId:f.game.id,sceneId:packVersion.sceneId,versionId:futureId,revision:2,operatorId:"owner",createdAt:"2100-01-01T00:00:00.000Z"});
+  expect((await routes.request(formUrl.replace(form,unpublishedForm))).status).toBe(404);
+  expect((await routes.request(formUrl)).status).toBe(200);
+
 });
 
 test("aborted preparation cannot publish or commit a fallback contribution",async()=>{

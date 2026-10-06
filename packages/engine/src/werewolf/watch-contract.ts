@@ -12,10 +12,14 @@ export interface WerewolfWatchMoment {
   chapterId: string;
   sceneId: string;
   mediaKey: string | null;
+  /** First eligible pack/hunt appearance each night, calculated across complete history. */
+  transformWolfIds?: string[];
+  /** Only verified forms from the audience-permitted published scene. */
+  wolfForms?: Record<string, string>;
   /** Omniscient-only staging before the resolved night outcome. */
   night?: { actions: WerewolfNightAction[]; before: Omit<WerewolfView, "entries"> };
 }
-export interface WerewolfWatchIndex { cursor: number; chapterId: string; sceneId: string; label: string }
+export interface WerewolfWatchIndex { cursor: number; step: number; chapterId: string; sceneId: string; label: string }
 export interface WerewolfWatchWindow {
   gameId: string; slug: string; status: string; audience: WerewolfAudience; rulesVersion: 7;
   publicationCutoff: string; latestCursor: number; fromCursor: number; throughCursor: number;

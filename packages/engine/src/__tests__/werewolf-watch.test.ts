@@ -72,3 +72,21 @@ test("disabled doctor and seer roles produce no fabricated role actions", async 
   expect(night.night!.actions.map(action=>action.kind)).toEqual(["hunt"]);
 });
 function playersForNight() { return Array.from({length:6},(_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"",backstory:"",strategy:"",avatarUrl:null})); }
+
+for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: nightly wolf appearance is stable across bounded windows and absent from Mystery`, async () => {
+  const players = Array.from({length:preset === "one_wolf" ? 6 : 8},(_,i)=>({id:`w${i}`,name:`Wolf fixture ${i}`,personality:"careful",backstory:"",strategy:"",avatarUrl:null}));
+  const events = [startWerewolf("transformation", players, werewolfConfig(preset,2),"transform")];
+  await runWerewolf({read:async()=>structuredClone(events),append:async event=>{events.push(event);}}, {async decide({request}) {
+    if(request.action === "open_thread") return {kind:"opening",text:null,cue:null,recipientIds:[]};
+    return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"} : {kind:"speech",text:"The pack should compare targets.",cue:null};
+  }});
+  const first = projectWerewolfWatch(events,"omniscient");
+  const moments = Array.from({length:first.latestCursor},(_,i)=>projectWerewolfWatch(events,"omniscient",i+1,1).moments[0]!);
+  const entrances = moments.filter(moment=>moment.transformWolfIds);
+  const nightsWithWolves = new Set(moments.filter(moment=>moment.entry.kind === "night" && moment.night?.actions.some(action=>action.kind === "hunt")).map(moment=>moment.entry.day));
+  expect(entrances.map(moment=>moment.entry.day)).toEqual([...nightsWithWolves]);
+  expect(entrances[0]!.transformWolfIds).toHaveLength(preset === "one_wolf" ? 1 : 2);
+  expect(entrances[0]!.entry.kind).toBe(preset === "one_wolf" ? "night" : "speech");
+  expect(projectWerewolfWatch(events,"omniscient",entrances[0]!.cursor,32).moments[0]!.transformWolfIds).toEqual(entrances[0]!.transformWolfIds);
+  expect(JSON.stringify(projectWerewolfWatch(events,"mystery",1,64))).not.toContain("transformWolfIds");
+});

@@ -12,6 +12,7 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
   const playback: Array<{cursor: number; steps: number}> = [];
+  const introducedWolves = new Set<string>();
   let sceneId = "introduction", chapterId = "introduction", packAttempt = 1;
   for (const frame of walkWerewolfHistory(events, audience)) {
     const { event, before, entry } = frame;
@@ -21,7 +22,7 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
       chapterId = entry.kind === "result" ? "ending" : entry.day === 0 ? "introduction" : `cycle:${entry.day}`;
       if (entry.kind === "phase") {
         if (entry.phase === "introduction") { sceneId = "introduction"; chapterId = "introduction"; }
-        if (entry.phase === "night") { packAttempt = 1; sceneId = `cycle:${entry.day}:pack:1`; }
+        if (entry.phase === "night") { introducedWolves.clear(); packAttempt = 1; sceneId = `cycle:${entry.day}:pack:1`; }
       } else if (entry.kind === "discussion") sceneId = `${chapterId}:thread:${entry.contribution.thread}`;
       else if (entry.kind === "vote") sceneId = `${chapterId}:checkpoint:${entry.result.thread}`;
       else if (entry.kind === "speech" && entry.audience === "pack") sceneId = `${chapterId}:pack:${packAttempt}`;
@@ -29,16 +30,25 @@ export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience:
       else if (entry.kind === "night") sceneId = `${chapterId}:dawn`;
       else if (entry.kind === "result") sceneId = "ending";
       else if (entry.kind === "speech") { chapterId = "introduction"; sceneId = "introduction"; }
-      if (isWerewolfPlayable(entry) && navigation.at(-1)?.sceneId !== sceneId) {
-        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
-        navigation.push({ cursor, chapterId, sceneId, label });
-      }
       const staging = before ?? state;
       const nightActions = resolvedNightActions(staging, entry, audience);
+      if (isWerewolfPlayable(entry) && navigation.at(-1)?.sceneId !== sceneId) {
+        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
+        for (const [step, action] of nightActions.entries()) {
+          const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : "Hunt";
+          navigation.push({cursor, step, chapterId, sceneId: `${chapterId}:${action.kind}`, label: `Night ${entry.day} · ${roleLabel}`});
+        }
+        navigation.push({ cursor, step: nightActions.length, chapterId, sceneId, label });
+      }
       if (isWerewolfPlayable(entry)) playback.push({cursor, steps: entry.kind === "vote" && entry.result.ballots.length > 0 ? entry.result.ballots.length + 2 : 1 + nightActions.length});
+      const firstPackSpeech = entry.kind === "speech" && entry.audience === "pack" && isWerewolfPlayable(entry);
+      const hunt = nightActions.find(action => action.kind === "hunt");
+      const appearingWolves = audience === "omniscient" ? firstPackSpeech ? staging.aliveIds.filter(id => staging.roles[id] === "werewolf") : hunt?.wolfIds ?? [] : [];
+      const transformWolfIds = appearingWolves.filter(id => !introducedWolves.has(id));
+      for (const id of transformWolfIds) introducedWolves.add(id);
       if (cursor < fromCursor || cursor >= fromCursor + limit) continue;
       const visualStaging = werewolfVisualStaging(staging, event, entry);
-      moments.push({ cursor, entry, snapshot: projectWerewolfSnapshot(state, audience, cursor), chapterId, sceneId, mediaKey: null,
+      moments.push({ cursor, entry, ...(transformWolfIds.length ? { transformWolfIds } : {}), snapshot: projectWerewolfSnapshot(state, audience, cursor), chapterId, sceneId, mediaKey: null,
         ...(nightActions.length ? { night: { actions: nightActions, before: projectWerewolfSnapshot(staging, audience, cursor) } } : {}), staging: visualStaging });
     }
   }

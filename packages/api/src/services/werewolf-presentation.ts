@@ -42,7 +42,7 @@ async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicatio
 }
 function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging) {
   // Introductions use frozen individual art, including games with old lobby renders.
-  if (frame.roomId === null || audience === "mystery" && frame.purpose !== "village") return { scene: null, permitted: new Set<string>() };
+  if (frame.roomId === null || audience === "mystery" && frame.purpose !== "village") return { scene: null, permitted: new Set<string>(), wolfForms: {} as Record<string, string> };
   const root = `/api/werewolf/${encodeURIComponent(gameId)}`;
   const query = `audience=${audience}&cursor=${cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const mediaUrl = (asset: string) => `${root}/media/${encodeURIComponent(asset)}?${query}`;
@@ -53,6 +53,20 @@ function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScen
   const latest = eligible.filter((row, index) => eligible.findIndex(other => other.scene.id === row.scene.id) === index);
   const selected = latest.find(row => row.version.plan.cast.length === frame.participantIds.length && row.version.plan.cast.every(p => frame.participantIds.includes(p.id)));
   const permitted = new Set<string>();
+  const wolfForms: Record<string, string> = {};
+  if (audience === "omniscient" && (frame.purpose === "pack" || frame.purpose === "hunt")) {
+    // A missing hunt composite can still reuse forms from an earlier published pack.
+    // Prefer the selected composition's forms, then the latest permitted version per scene.
+    const earlier = rows.filter(row => row.scene.boundarySequence <= frame.boundary);
+    const published = earlier.filter((row, index) => earlier.findIndex(other => other.scene.id === row.scene.id) === index);
+    for (const row of [...(selected ? [selected] : []), ...published]) {
+      if (!["werewolf-pack", "werewolf-hunt"].includes(row.version.plan.direction?.purpose ?? "")) continue;
+      for (const member of row.version.plan.cast) if (frame.participantIds.includes(member.id) && !wolfForms[member.id] && member.variant?.kind === "werewolf" && member.variant.resolved) {
+        permitted.add(member.referenceArtifactId);
+        wolfForms[member.id] = mediaUrl(member.referenceArtifactId);
+      }
+    }
+  }
   const convert = (shot: StoredVisualShot): VisualShot => {
     permitted.add(shot.imageArtifactId);
     return { imageUrl: mediaUrl(shot.imageArtifactId), annotatedImageUrl: "", participantIds: shot.participantIds, visibleParticipantIds: shot.visibleParticipantIds, anchors: shot.anchors, pointers: shot.pointers };
@@ -66,7 +80,7 @@ function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScen
       anchors: version.localization.anchors,
       ...(version.shots ? { shots: { mode: version.shots.mode, groups: version.shots.groups.map(convert), overview: version.shots.overview ? convert(version.shots.overview) : null } } : {}) };
   }
-  return { scene, permitted };
+  return { scene, permitted, wolfForms };
 }
 
 /** Bounded browser projection. No history prefixes, raw journals or private staging coordinates escape. */
@@ -78,19 +92,21 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const references = await werewolfReferences(db, game.id);
   const media: WerewolfWatchWindow["media"] = {};
-  const bindings = new Map<string, string | null>();
+  const bindings = new Map<string, {mediaKey: string | null; wolfForms: Record<string, string>}>();
   const portrait = (playerId: string) => `/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(playerId)}?audience=${audience}&cursor=1&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const body = (id: string) => references.find(ref => ref.profile.id === id)?.kind === "full_body" ? `${portrait(id)}&image=body` : null;
   const moments = projection.moments.map(({staging, ...moment}) => {
     const binding = JSON.stringify(staging);
-    let mediaKey = bindings.get(binding);
-    if (mediaKey === undefined) {
-      const {scene} = bindWerewolfScene(rows, game.id, audience, moment.cursor, publicationCutoff, staging);
-      mediaKey = scene ? `${scene.id}:${scene.version}` : null;
+    let bound = bindings.get(binding);
+    if (!bound) {
+      const {scene, wolfForms} = bindWerewolfScene(rows, game.id, audience, moment.cursor, publicationCutoff, staging);
+      const mediaKey = scene ? `${scene.id}:${scene.version}` : null;
       if (scene && mediaKey && !media[mediaKey]) media[mediaKey] = scene;
-      bindings.set(binding, mediaKey);
+      bound = {mediaKey, wolfForms};
+      bindings.set(binding, bound);
     }
-    return { ...moment, ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
+    const {mediaKey, wolfForms} = bound;
+    return { ...moment, ...(Object.keys(wolfForms).length ? {wolfForms} : {}), ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
   });
   return { ...projection, slug: game.slug, status: game.status, audience, publicationCutoff, moments, media,
     players: projection.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) };

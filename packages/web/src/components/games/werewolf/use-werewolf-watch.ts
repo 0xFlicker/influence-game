@@ -142,7 +142,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   }, [continueAtEnd, preparing, holding, data, activeCursor, director]);
   const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
   void revision;
-  return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision, scrubPosition, scrubCount: scrubStops.length,
+  return {...clock, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition, scrubCount: scrubStops.length,
     seekStop: (position: number) => {const stop = scrubStops[position - 1]; if (stop) return seek(stop.cursor, playIntent.current, false, false, stop.step);},
     retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
     toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },

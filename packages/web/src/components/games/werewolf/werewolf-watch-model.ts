@@ -6,10 +6,11 @@ import {VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 import {SOLO_READ_START_MS, soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
 import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
-export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; nightAction?: WerewolfNightAction; ballot?: VoteLedgerState }
+import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS, NIGHT_CLAW_MS} from "./werewolf-night-motion";
+export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; ballot?: VoteLedgerState }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
-  scrubAtMs: cue => cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.showAtMs ?? 0,
+  scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && cue.moment.entry.killedId ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
   isCatchUp: () => false,
   acceptAtWatermark: () => false,
   reconcile: cues => cues,
@@ -17,7 +18,8 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
     if (cue?.ballot) return null;
     if (!cue || !["speech", "discussion"].includes(cue.moment.entry.kind)) return null;
     const hideAtMs = cue.baseDurationMs - SCENE_EXIT_HOLD_MS - VISUAL_SPEECH_FADE_MS;
-    return {showAtMs: SCENE_SPEECH_START_MS, readAtMs: SCENE_READ_START_MS, hideAtMs, hiddenAtMs: hideAtMs + VISUAL_SPEECH_FADE_MS};
+    const lead = cue.transformation?.durationMs ?? 0;
+    return {showAtMs: lead + SCENE_SPEECH_START_MS, readAtMs: lead + SCENE_READ_START_MS, hideAtMs, hiddenAtMs: hideAtMs + VISUAL_SPEECH_FADE_MS};
   },
 };
 export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfWatchCue[] {
@@ -34,11 +36,17 @@ export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfW
 export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCue[] {
   const key = `${moment.snapshot.gameId}:${moment.snapshot.audience}:${moment.cursor}`;
   const result: WerewolfWatchCue = {key, baseDurationMs: replayMoment({...moment.snapshot, entries: [moment.entry]}).duration, moment};
+  const wolfIds = moment.transformWolfIds ?? [];
+  const transform = (cue: WerewolfWatchCue): WerewolfWatchCue => {
+    if (!wolfIds.some(id => moment.wolfForms?.[id])) return cue;
+    const durationMs = WOLF_TRANSFORM_MS + (wolfIds.length - 1) * WOLF_STAGGER_MS;
+    return {...cue, baseDurationMs: cue.baseDurationMs + durationMs, transformation: {wolfIds, durationMs}};
+  };
   if (moment.night) return [...moment.night.actions.map((nightAction): WerewolfWatchCue => ({ ...result,
     key: `${key}:${nightAction.kind}`, baseDurationMs: 5000, nightAction,
     moment: { ...moment, snapshot: moment.night!.before },
-  })), result];
-  if (moment.entry.kind !== "vote") return [result];
+  })).map(cue => cue.nightAction?.kind === "hunt" ? transform(cue) : cue), result];
+  if (moment.entry.kind !== "vote") return [transform(result)];
   const rank = (ballot: {targetId: string | null; unavailable: boolean}) => ballot.targetId ? 0 : ballot.unavailable ? 1 : 2;
   const ballots = [...moment.entry.result.ballots].sort((a,b) => rank(a) - rank(b));
   const votes: RevealedVote[] = ballots.map(b => ({voterId:b.voterId, targetId:b.targetId,
@@ -60,10 +68,11 @@ export function werewolfMomentCues(moment: WerewolfWatchMoment): WerewolfWatchCu
   return [...reveals, ...(summary ? [summary] : []), result];
 
 }
-export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"], cursor: number, direction: -1 | 1, kind: "scene" | "chapter") {
+export function adjacentWerewolfPosition(index: WerewolfWatchWindow["navigation"], cursor: number, direction: -1 | 1, kind: "scene" | "chapter", step = 0) {
   const entries = kind === "scene" ? index : index.filter((entry, i) => !i || entry.chapterId !== index[i-1]?.chapterId);
-  const current = entries.findLastIndex(entry => entry.cursor <= cursor);
-  return entries[current + direction]?.cursor ?? cursor;
+  const current = entries.findLastIndex(entry => entry.cursor < cursor || entry.cursor === cursor && entry.step <= step);
+  const target = entries[current + direction];
+  return target ? {cursor: target.cursor, step: target.step} : {cursor, step};
 }
 
 /** Advance only over a contiguous, loaded silent prefix; never skip an unloaded window. */

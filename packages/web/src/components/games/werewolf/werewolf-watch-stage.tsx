@@ -1,4 +1,6 @@
 "use client";
+import {WerewolfTransformationStage} from "./werewolf-transformation-stage";
+import {WerewolfNightOutcome} from "./werewolf-night-outcome";
 import {WerewolfRoleStage} from "./werewolf-role-stage";
 import {WerewolfHuntStage} from "./werewolf-hunt-stage";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
@@ -26,7 +28,7 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
   const shot = scene?.shots ? selectVisualShot(scene.shots, moment.actor?.id) : null;
   const covered = Boolean(scene && moment.actor && (shot ? shot.visibleParticipantIds.includes(moment.actor.id) : scene.anchors.some(anchor => anchor.playerId === moment.actor?.id && anchor.confidence === "clear")));
   const readinessKey = `${cue.key}:${shot?.imageUrl ?? scene?.imageUrl ?? moment.actor?.avatarUrl ?? "none"}`;
-  const initialReady = cue.nightAction ? cue.nightAction.kind !== "hunt" || !scene : !covered && !moment.actor?.avatarUrl;
+  const initialReady = !cue.nightAction && cue.moment.entry.kind === "night" ? true : cue.transformation && elapsed < cue.transformation.durationMs ? false : cue.nightAction ? cue.nightAction.kind !== "hunt" || !scene : !covered && !moment.actor?.avatarUrl;
   const [readiness, setReadiness] = useState({key: readinessKey, ready: initialReady, timedOut: false});
   if (readiness.key !== readinessKey) setReadiness({key: readinessKey, ready: initialReady, timedOut: false});
   const ready = readiness.key === readinessKey ? readiness.ready : initialReady;
@@ -41,7 +43,12 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
     return () => clearTimeout(timer);
   }, [readinessKey, ready]);
   const visual = !cue.ballot && covered && scene && !timedOut;
-  const actor = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.voterId) : moment.actor;
+  const sourceActor = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.voterId) : moment.actor;
+  const actor = sourceActor && moment.pack && cue.moment.wolfForms?.[sourceActor.id]
+    ? {...sourceActor, fullBodyReferenceUrl: cue.moment.wolfForms[sourceActor.id]} : sourceActor;
+  const lead = cue.transformation?.durationMs ?? 0;
+  const sceneElapsed = Math.max(0, elapsed - lead);
+  const readingElapsed = Math.max(0, director.getSpeechElapsedBaseMs() - lead);
   const text = cue.ballot ? cue.moment.snapshot.players.find(p => p.id === cue.ballot?.current.targetId)?.name ?? "" : moment.text;
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
     kind:"portrait", purpose: cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
@@ -49,14 +56,16 @@ function SceneContent({cue, moment, scene, elapsed, reduced, director, navigatio
     player: {...actor, name: `${actor.name}${cue.moment.snapshot.audience === "omniscient" && actor.role ? ` · ${actor.role}` : ""}`, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
+  if (cue.transformation && elapsed < lead) return <WerewolfTransformationStage cue={cue} elapsed={elapsed} reduced={reduced} onReady={onReady} />;
+  if (!cue.nightAction && cue.moment.entry.kind === "night" && cue.moment.entry.killedId) return <WerewolfNightOutcome cue={cue} elapsed={elapsed} reduced={reduced} />;
   if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady} />;
   if (cue.nightAction) return <WerewolfRoleStage action={cue.nightAction} players={cue.moment.snapshot.players} />;
   if (cue.ballot && beat) return <VotePresentation beat={beat} ledger={cue.ballot}
     roster={cue.moment.snapshot.players.map(p => ({id:p.id, name:p.name, persona:"", avatarUrl:p.avatarUrl ?? undefined}))}
-    elapsedMs={elapsed} readingElapsedMs={director.getSpeechElapsedBaseMs()} reducedMotion={reduced}
+    elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced}
     paused={!director.getSnapshot().isPlaying} silent={cue.ballot.current.targetId === null} onImageReady={() => onReady(true)} />;
   return <>
-    {visual ? <VisualSceneView paused={!director.getSnapshot().isPlaying} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={elapsed} readingElapsedMs={director.getSpeechElapsedBaseMs()} reducedMotion={reduced} onReadyChange={onReady} /> : beat ? <SoloPresentation beat={beat} elapsedMs={elapsed} readingElapsedMs={director.getSpeechElapsedBaseMs()}
+    {visual ? <VisualSceneView paused={!director.getSnapshot().isPlaying} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} onReadyChange={onReady} /> : beat ? <SoloPresentation beat={beat} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed}
       speechPresentation="scene" reducedMotion={reduced} hideSpeech={!moment.spoken} onImageReady={() => onReady(true)} /> : <div className="flex-1 bg-black" />}
 
     {!moment.spoken && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 mx-auto max-h-[80%] max-w-xl overflow-y-auto rounded-xl border border-white/15 bg-black/90 p-5 text-center">

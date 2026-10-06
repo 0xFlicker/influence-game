@@ -24,8 +24,7 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
         {[hunt.wolfIds, [hunt.targetId]].map((ids, group) => <div key={group} className="flex flex-1 flex-wrap justify-center gap-3">{ids.map(id => {
           const player = players.find(p => p.id === id)!;
           return <figure key={id} className={`min-w-0 max-w-56 flex-1 text-center ${group === 1 && save ? "rounded-xl border border-emerald-200/40 bg-emerald-950/25 p-2" : ""}`}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- frozen cast reference */}
-            {(player.fullBodyReferenceUrl || player.avatarUrl) && <img src={player.fullBodyReferenceUrl ?? player.avatarUrl!} alt={player.name} className="max-h-[38cqh] w-full object-contain" />}
+            <HuntPortrait player={player} wolfUrl={group === 0 ? cue.moment.wolfForms?.[id] : undefined} />
             <figcaption className="mt-3 text-sm text-white">{player.name}<span className="block text-xs text-white/50">{group === 0 ? "The pack" : save ? "Saved tonight" : "Tonight’s target"}</span></figcaption>
           </figure>;
         })}</div>)}
@@ -42,4 +41,11 @@ export function WerewolfHuntStage({ cue, scene, onReady }: { cue: WerewolfWatchC
       </div>
     </aside> : <p className="shrink-0 text-center text-sm text-white/75">Night falls over the village</p>}
   </div>;
+}
+
+function HuntPortrait({player, wolfUrl}: {player: {name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null}; wolfUrl?: string}) {
+  const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
+  const source = [wolfUrl, player.fullBodyReferenceUrl, player.avatarUrl].find(url => url && !failed.has(url));
+  // The caption remains when all available pictures fail.
+  return source ? <img src={source} alt={player.name} className="max-h-[38cqh] w-full object-contain" onError={() => setFailed(previous => new Set(previous).add(source))} /> : null; // eslint-disable-line @next/next/no-img-element
 }

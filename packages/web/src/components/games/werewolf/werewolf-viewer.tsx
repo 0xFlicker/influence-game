@@ -54,7 +54,10 @@ function WerewolfSession({slug, audience, cutoff, preferences, startCursor}: {sl
     holding: watch.holding, live: data?.status === "in_progress"});
   const toggle = () => {if (watch.follow) music.suspend(); else if (!preferences.musicMuted) music.unlock(); watch.toggle();};
   const seek = (position: number) => { music.suspend(); void watch.seek(position); };
-  const adjacent = (direction: -1 | 1, kind: "scene" | "chapter") => seek(adjacentWerewolfPosition(data?.navigation ?? [], cursor, direction, kind));
+  const adjacent = (direction: -1 | 1, kind: "scene" | "chapter") => {
+    const target = adjacentWerewolfPosition(data?.navigation ?? [], cursor, direction, kind, watch.activeStep);
+    music.suspend(); void watch.seek(target.cursor, undefined, false, false, target.step);
+  };
   const back = () => {music.suspend(); watch.previous();};
   useWatchKeyboard({toggle, advance: () => director.manualAdvance(), back, previousChapter: () => adjacent(-1,"scene"), nextChapter: () => adjacent(1,"scene"), speed: value => director.setSpeed(value)});
   const contribution = cue ? replayMoment({...cue.moment.snapshot, entries:[cue.moment.entry]}) : null;
