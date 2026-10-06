@@ -32,3 +32,5 @@ Generated group images are independent media. Do not generatively stitch them ba
 
 
 2026-10-02 update: optional harmonization is restored for new multi-panel renders and Producer regenerations. Strictly verify the complete cast before selecting the composite as the playable scene, retain all verified source panels in the version, and retain group playback on composite identity rejection. The legacy version comparison displays both the composite and individual panels. This does not relax provider uncertainty or owner/lease fences.
+
+2026-10-03 update: **Harmonize existing panels** binds a selected immutable media version to a durable repair job. The renderer assembles its exact clean panels and runs only composite generation and whole-cast verification. Preserve the original panel metadata, including producer pointers, and carry the same source-version binding through continuations and restart recovery. Never convert a missing source into regeneration. Check source eligibility and artifact ownership before queueing, keep uncertain provider attempts blocked pending reconciliation, and publish only through the existing explicit publication action.

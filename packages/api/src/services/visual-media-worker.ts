@@ -54,11 +54,14 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
     const sceneId = job.sceneId;
     const [original] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, sceneId));
     if (!original) throw new Error("Scene missing");
+    const [source] = job.sourceVersionId ? await db.select().from(schema.visualMediaVersions).where(and(eq(schema.visualMediaVersions.id, job.sourceVersionId), eq(schema.visualMediaVersions.gameId, job.gameId), eq(schema.visualMediaVersions.sceneId, job.sceneId))) : [];
+    if ((job.mode === "harmonize" || job.sourceVersionId) && (!source?.shots || source.shots.mode === "portraits" || source.shots.groups.length < 2)) throw new Error("Saved harmonization panels are unavailable");
     const onStep = async (step: string) => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); };
-    const plan = await resolveVariants(db, job.gameId, job.plan, { signal, guard, sceneId, jobId: job.id, onStep });
+    const plan = source ? job.plan : await resolveVariants(db, job.gameId, job.plan, { signal, guard, sceneId, jobId: job.id, onStep });
     const scene: StoredVisualScene = { ...original, plan, status: "preparing", candidateArtifactId: job.sourceImageId, repairMode: job.sourceImageId ? "verify" : "regenerate" };
     const result = await render(db, scene, signal, guard, { jobId: job.id, renderContext: job.renderContext, operationPrefix: `media:${job.id}`, reusePrefix: job.reusePrefix ?? undefined,
-      onStep: async step => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); },
+      sourcePanels: source?.shots?.groups,
+      onStep,
       onImage: async candidateArtifactId => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ candidateArtifactId }).where(eq(jobs.id, job.id)); }); },
     });
     const receipts = await mediaAttempts(db, `media:${job.id}`, job.gameId);

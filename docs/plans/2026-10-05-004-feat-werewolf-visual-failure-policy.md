@@ -65,7 +65,7 @@ No new producer studio, game plugin framework, gameplay timing knobs, music fail
 
 ## Implementation and local proof — 2026-10-05
 
-A1–A3 are implemented. Creation persists the shared policy; Werewolf owns its exact canonical pause boundary. Production supports a missing pending scene and a standalone verified wolf form, with explicit resume and reuse of published repairs. Common Production lists visual pauses. The live player reports the pause and receives the selected repair on resume. Migration `0111_werewolf_visual_recovery.sql` extends the existing queue for form-only work.
+A1–A3 are implemented. Creation persists the shared policy; Werewolf owns its exact canonical pause boundary. Production supports a missing pending scene and a standalone verified wolf form, with explicit resume and reuse of published repairs. Common Production lists visual pauses. The live player reports the pause and receives the selected repair on resume. Migration `0112_werewolf_visual_recovery.sql` extends the existing queue for form-only work.
 
 Validation used deterministic providers and isolated databases, with no paid calls:
 

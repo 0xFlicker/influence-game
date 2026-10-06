@@ -109,7 +109,7 @@ export function createVisualRoutes(db: DrizzleDB) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return invalid("Invalid media request");
     const b = value as Record<string, unknown>;
     if (typeof b.requestId !== "string" || !b.requestId.trim() || b.requestId.length > 200 || typeof b.sceneId !== "string" || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0
-      || !(b.action === "review" || b.action === "regenerate" || b.action === "verify" && typeof b.sourceVersionId === "string" || b.action === "continue" && (b.sourceJobId === undefined || typeof b.sourceJobId === "string") || b.action === "publish" && typeof b.versionId === "string" && Number.isSafeInteger(b.expectedPublication) && Number(b.expectedPublication) >= 0)) return invalid("Invalid media control fields");
+      || !(b.action === "review" || b.action === "regenerate" || (b.action === "verify" || b.action === "harmonize") && typeof b.sourceVersionId === "string" && Boolean(b.sourceVersionId.trim()) || b.action === "continue" && (b.sourceJobId === undefined || typeof b.sourceJobId === "string") || b.action === "publish" && typeof b.versionId === "string" && Number.isSafeInteger(b.expectedPublication) && Number(b.expectedPublication) >= 0)) return invalid("Invalid media control fields");
     if (b.action === "review") { try { b.review = decodeVisualShotReview(b.review); } catch (error) { return invalid(error instanceof Error ? error.message : "Invalid review"); } }
     const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, b as MediaControl);
     return c.json({ ...receipt, ...(!receipt.accepted && { error: receipt.message }) }, receipt.accepted ? 200 : 409);

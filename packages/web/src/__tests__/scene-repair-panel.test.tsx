@@ -151,3 +151,34 @@ test("reviews every retained panel alongside the harmonized scene in clean and n
   fireEvent.click(mounted.getByLabelText("Numbered annotations"));
   await waitFor(() => expect(mounted.getByAltText("Candidate v1 · Panel 3 annotations").getAttribute("src")).toBe("/images/right-numbered"));
 });
+
+test("harmonization binds the selected panels and deduplicates clicks without publishing", async () => {
+  const writes: Record<string, unknown>[] = [];
+  let finish: ((value: Response) => void) | undefined;
+  respond(async (_, init) => {
+    if (init?.method === "POST") { writes.push(JSON.parse(String(init.body))); return new Promise(resolve => { finish = resolve; }); }
+    return Response.json({ imageUrl: "data:image/png;base64,AAAA" });
+  });
+  const shot = (id: string) => ({ imageArtifactId: id, annotatedArtifactId: id, participantIds: [], visibleParticipantIds: [], anchors: [], pointers: [] });
+  const version = (n: number): MediaRecords["versions"][number] => ({ id: `v${n}`, sceneId: "scene", version: n, imageArtifactId: `left${n}`, annotatedArtifactId: `left${n}`, verificationVersion: "test", localization: { count: 0, anchors: [] },
+    shots: { mode: "groups", overview: null, groups: [shot(`left${n}`), shot(`right${n}`)] } });
+  const media = { ...empty(), jobs: [job("ready")], versions: [version(1), version(0)] };
+  const mounted = render(<SceneRepairPanel {...props(media)} apiPrefix="/api/admin/production/games" />);
+  fireEvent.click(mounted.getByText("Versions and review"));
+  fireEvent.change(mounted.getByLabelText("Candidate version"), { target: { value: "v0" } });
+  expect(writes).toEqual([]);
+  fireEvent.click(mounted.getByText("Harmonize existing panels")); fireEvent.click(mounted.getByText("Harmonize existing panels"));
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ action: "harmonize", sourceVersionId: "v0", expectedVersion: 1 });
+  await act(async () => finish!(Response.json({ accepted: true, code: "queued", message: "Saved panels queued for harmonization", jobId: "new-job" })));
+  expect(mounted.getByText("Saved panels queued for harmonization")).not.toBeNull();
+  await act(async () => mounted.rerender(<SceneRepairPanel {...props({ ...media, jobs: [job("rendering")] })} />));
+  expect((mounted.getByText("Harmonize existing panels") as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => mounted.rerender(<SceneRepairPanel {...props(media)} canOperate={false} />));
+  expect(mounted.queryByText("Harmonize existing panels")).toBeNull();
+  for (const shots of [{ mode: "portraits" as const, overview: null, groups: [shot("a"), shot("b")] }, { mode: "groups" as const, overview: null, groups: [shot("a")] }]) {
+    await act(async () => mounted.rerender(<SceneRepairPanel {...props({ ...media, versions: [{ ...version(0), shots }] })} />));
+    expect(mounted.queryByText("Harmonize existing panels")).toBeNull();
+  }
+  expect(writes).toHaveLength(1);
+});

@@ -3670,11 +3670,12 @@ export const agentProfileLifecycleActions = pgTable("agent_profile_lifecycle_act
 export const visualRepairJobs = pgTable("visual_repair_jobs", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
   sceneId: text("scene_id").references(() => visualScenes.id), version: integer("version").notNull(),
-  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "verify" | "continue" | "review" | "forms">(),
+  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "harmonize" | "verify" | "continue" | "review" | "forms">(),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
   renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
   candidateArtifactId: text("candidate_artifact_id"),
   sourceImageId: text("source_image_id"), reusePrefix: text("reuse_prefix"),
+  sourceVersionId: text("source_version_id").references((): AnyPgColumn => visualMediaVersions.id),
   status: text("status").notNull().$type<"queued" | "rendering" | "verifying" | "ready" | "failed" | "needs_reconciliation">(),
   step: text("step").notNull().default("queued"), failure: text("failure"),
   owner: text("owner"), leaseUntil: text("lease_until"), fallbackUsed: boolean("fallback_used").notNull().default(false),
