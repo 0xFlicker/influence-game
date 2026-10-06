@@ -36,8 +36,14 @@ const batch = (w: CutWindow = window): CutProposalBatch => ({ sourceHash: w.sour
   expect(JSON.stringify(omni)).toContain("agree on a target quietly");
   expect(JSON.stringify(omni)).not.toMatch(/PRIVATE_THINKING|PRIVATE_STRATEGY/);
   expect(mystery.hash).not.toBe(omni.hash);
+  // Read replay windows once instead of replaying the full match for every fact.
+  const moments = new Map<number, ReturnType<typeof projectWerewolfWatch>["moments"][number]>();
+  const lastCursor = Math.max(...mystery.evidence.map(e => e.position));
+  for (let cursor = 1; cursor <= lastCursor; cursor += 64) {
+    for (const moment of projectWerewolfWatch(events, "mystery", cursor, 64).moments) moments.set(moment.cursor, moment);
+  }
   for (const e of mystery.evidence) {
-    const moment = projectWerewolfWatch(events, "mystery", e.position, 1).moments[0]!;
+    const moment = moments.get(e.position)!;
     expect(moment.cursor).toBe(e.position);
     expect(e.replayHref).toBe(`/games/fixture/replay?audience=mystery&cursor=${e.position}`);
     if (e.content.kind === "dialogue" && moment.entry.kind === "discussion") expect(e.content.text).toBe(moment.entry.contribution.text!);

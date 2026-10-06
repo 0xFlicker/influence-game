@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { fileURLToPath } from "node:url";
 import { InfluenceAuthContext, type InfluenceAuthState } from "../hooks/use-auth";
@@ -14,8 +14,10 @@ beforeEach(() => {
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] });
   setApiBase("");
 });
-afterEach(() => {
-  cleanup(); dom.close(); globalThis.fetch = originalFetch;
+afterEach(async () => {
+  // Flush pending React work before removing the browser globals it reads.
+  await act(async () => { cleanup(); });
+  dom.close(); globalThis.fetch = originalFetch;
   for (const key of globals) { const descriptor = saved.get(key); if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
 });
 
@@ -50,6 +52,7 @@ test("Werewolf is selectable for explicit naming preview and queue in shared Pro
   await waitFor(() => expect(view.getByRole("button", { name: "Queue 1 episodes" })).toBeTruthy());
   expect(writes).toEqual([{ gameIds: ["wolf"], regenerate: false, preview: true }]);
   fireEvent.click(view.getByRole("button", { name: "Queue 1 episodes" }));
-  await waitFor(() => expect(writes).toHaveLength(2));
+  await waitFor(() => expect(view.getByText("1 episodes queued. 0 skipped because their state changed.")).toBeTruthy());
+  expect(writes).toHaveLength(2);
   expect(writes[1]).toEqual({ gameIds: ["wolf"], regenerate: false, preview: false });
 });

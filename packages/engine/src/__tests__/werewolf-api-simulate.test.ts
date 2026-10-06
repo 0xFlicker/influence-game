@@ -146,7 +146,7 @@ describe("Werewolf API simulation", () => {
     expect(publicReport).not.toContain("failed to agree");
     expect(publicReport).not.toContain("Doctor protected");
     expect(publicReport).toContain("Night 1: Everyone survived.");
-  });
+  }, 15_000); // Full match with all three failed pack ballots; allow slower CI CPUs.
 
   test("a failed creation is not retried and a stopped game is not presented as a completed result", async () => {
     process.env.INFLUENCE_API_SESSION_TOKEN = "test-session";

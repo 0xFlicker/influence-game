@@ -61,6 +61,15 @@ Do not run the two browser harnesses concurrently in one checkout: both currentl
 
 See [implementation evidence and remaining boundaries](../../reviews/2026-10-02-house-game-entry-implementation.md).
 
+### CI regression checks after shared-player changes
+
+- Browser fixtures that invent a game must also stub `/api/game-entries/:slug`. Mocking only the game detail endpoint now leaves the House router at “Game not found”; do not bypass identity resolution in production to make a fixture work.
+- Exercise current accessible transport controls: `Next scene`, `Play replay`, `Pause replay`, and `Player settings` → `Restart replay`. Old removed-button locators can consume the browser lane's entire timeout without testing playback.
+- Ballot keyboard steps now visit one readable vote at a time, then a complete ledger. Do not retain the old reveal/hide double-step; ties proceed to the nominee selection presentation. Await shell status updates after the player publishes a new canonical frame.
+- Browser contexts with async route handlers must wait for `unrouteAll({ behavior: "wait" })` before closing. Otherwise navigation can leave a mocked request in flight and fail the next test during teardown.
+- React DOM tests must await the rendered async outcome, then flush unmount with async `act` before removing browser globals. Counting a fetch call alone can finish before queued React work reads `window`.
+- For editorial cursor assertions, read bounded replay windows once rather than rebuilding the complete history for every evidence row. Keep slower full-match simulations on an explicit bounded timeout rather than increasing the entire suite's timeout.
+
 ## Creation options follow active behavior
 
 On 2026-10-02 the creation-time `viewerMode` and `timingPreset` options were removed, along with unused phase timers and the unconnected server event pacer. Trace a setting to its runtime consumer before copying it into another game. The House player already owns playback preferences; game configuration retains actual game-length limits. Visibility and visual-failure policy are shared product contracts, but parity requires authorization and durable runtime behavior as well as identical form controls. Track those remaining contracts in W7 of the integration roadmap.

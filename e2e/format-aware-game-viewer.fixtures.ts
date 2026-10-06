@@ -169,6 +169,7 @@ export async function installDeterministicCompletedClassicGame(
     if (url.pathname.endsWith("/results")) {
       await fulfillJson(route, {
         ok: true,
+        gameKind: "influence",
         schemaVersion: 2,
         game: {
           id: fixture.game.id,

@@ -97,7 +97,7 @@ jobs:
       - name: Install Chromium
         run: bunx playwright install --with-deps chromium
       - name: Run hermetic format viewer story
-        run: bun run test:e2e:format-viewer
+        run: bun run test:e2e:format-viewer --reporter=line
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v6

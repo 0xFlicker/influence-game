@@ -70,6 +70,7 @@ test.describe("local public player identity", () => {
           const response = await route.fetch();
           await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } });
         });
+        await page.route("**/api/game-entries/preshow-fixture", route => route.fulfill({ json: { id: "preshow-fixture", slug: "preshow-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/preshow-fixture", route => failRefresh ? route.fulfill({ status: 503, json: { error: "Refresh temporarily unavailable" } }) : route.fulfill({ json: game }));
         await page.route("**/api/games/preshow-fixture/episode", route => route.fulfill({ status: 404, json: { error: "No episode yet" } }));
         await page.route("**/api/games/preshow-fixture/join", async route => {
@@ -131,7 +132,7 @@ test.describe("local public player identity", () => {
         game = { ...game, status: "in_progress", currentRound: 1, currentPhase: "LOBBY" };
         await expect(page.getByTestId("match-watch-shell")).toBeVisible({ timeout: 12_000 });
         await expect(preShow).toHaveCount(0);
-      } finally { await context.close(); }
+      } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
 
@@ -149,6 +150,7 @@ test.describe("local public player identity", () => {
       try {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions } }); });
         await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
+        await page.route("**/api/game-entries/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: "2026-09-26" } }));
         await page.route("**/api/games/control-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
         for (const action of ["start", "stop", "hide"]) await page.route(`**/api/games/control-fixture/${action}`, route => { actions.push(action); return route.fulfill(fail ? { status: 409, json: { error: "Please try again" } } : { json: { status: "ok" } }); });
@@ -182,7 +184,7 @@ test.describe("local public player identity", () => {
         ]);
         await expect(page).toHaveURL(`${servers.webUrl}/games`);
         expect(actions).toEqual(["start", "start", "stop", "hide"]);
-      } finally { await context.close(); }
+      } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
 
@@ -206,6 +208,7 @@ test.describe("local public player identity", () => {
         await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), roles } }); });
         await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
         await page.route("**/api/agent-profiles", route => listFails ? route.fulfill({ status: 503, json: { error: "Please retry" } }) : route.fulfill({ json: agents }));
+        await page.route("**/api/game-entries/selector-fixture", route => route.fulfill({ json: { id: "selector-fixture", slug: "selector-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/selector-fixture", route => route.fulfill({ json: game }));
         await page.route("**/api/games/selector-fixture/episode", route => route.fulfill({ status: 404, json: { error: "Not ready" } }));
         await page.route("**/api/games/selector-fixture/join", async route => {
@@ -278,7 +281,7 @@ test.describe("local public player identity", () => {
         await page.goto(`${servers.webUrl}/games/selector-fixture`, { waitUntil: "networkidle" });
         await spotlight.click();
         await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=selector-fixture$/);
-      } finally { await context.close(); }
+      } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
 
@@ -299,6 +302,7 @@ test.describe("local public player identity", () => {
         await page.route("**/api/games", route => route.fulfill({ json: [game] }));
         await page.route("**/api/games/episode-fixture/episode", route => route.fulfill({ json: preview }));
         await page.route("**/api/games/quiet-sage-room/episode", route => route.fulfill({ json: preview }));
+        await page.route("**/api/game-entries/quiet-sage-room", route => route.fulfill({ json: { id: "episode-fixture", slug: "quiet-sage-room", gameKind: "influence" } }));
         await page.route("**/api/games/quiet-sage-room", route => route.fulfill({ json: game }));
         await page.goto(`${servers.webUrl}/games`, { waitUntil: "networkidle" });
         const card = page.getByTestId("episode-card");
@@ -340,7 +344,7 @@ test.describe("local public player identity", () => {
           await expect(page.locator("video")).toBeVisible();
           await expect(page.locator("video")).not.toHaveAttribute("data-play-called", "true");
         }
-      } finally { await context.close(); }
+      } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
 
@@ -358,10 +362,12 @@ test.describe("local public player identity", () => {
     try {
       await page.route("**/api/auth/me", async route => {
         const response = await route.fetch();
-        await route.fulfill({ json: { ...await response.json(), isAdmin: true, roles: ["admin"], permissions: ["view_admin", "manage_postgame_media"] } });
+        await route.fulfill({ json: { ...await response.json(), isAdmin: true, roles: ["admin", "producer"], permissions: ["view_admin", "manage_postgame_media"] } });
       });
       await page.route("**/api/games", route => route.fulfill({ json: games }));
       await page.route("**/api/admin/games", route => route.fulfill({ json: games }));
+      await page.route("**/api/admin/production/games", route => route.fulfill({ json: [] }));
+      await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
       await page.route("**/api/admin/episodes/backfill", route => {
         const body = route.request().postDataJSON(); batches.push(body);
         return route.fulfill({ json: { gameIds: body.gameIds, calls: body.gameIds.length, skipped: 0, queued: !body.preview } });
@@ -394,7 +400,7 @@ test.describe("local public player identity", () => {
       await page.getByRole("button", { name: "Queue 1 episodes" }).click();
       await expect(page.getByText("1 episodes queued. 0 skipped because their state changed.")).toBeVisible();
       expect(batches[1]).toEqual({ gameIds: ["production-1"], regenerate: false, preview: false });
-    } finally { await context.close(); }
+    } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
   });
 
   test("uses ordinary sign-in copy without making Privy an onboarding step", async ({ page }) => {
@@ -423,7 +429,7 @@ test.describe("local public player identity", () => {
       .toBeVisible();
     await expect(page.getByRole("heading", { name: "Quartz E2E", level: 3 }))
       .toBeVisible();
-    await expect(page.getByText("No games yet", { exact: true }))
+    await expect(page.getByText("No Influence games yet", { exact: true }))
       .toBeVisible();
     await expect(page.locator('link[rel="canonical"]'))
       .toHaveAttribute("href", new RegExp(`/profile/${fixture.handle}$`));
@@ -579,7 +585,7 @@ test.describe("local public player identity", () => {
       const page = await context.newPage();
       await page.setViewportSize(viewport);
       const sourceUrl = `${servers.webUrl}/creation-fixture.svg`;
-      const character = { name: "Mira Vale", gender: "female", personaKey: "diplomat", personality: "A warm diplomat with a long memory and a secret fear of betrayal. She listens carefully, records promises, and tests trust through small favors.", backstory: "An exiled ambassador building a new coalition.", strategyStyle: "Build trust before asking for a decisive vote.", performanceInstructions: "Quiet, precise gestures.", visualDesign: "A blue dragon in a gold coat.", introQuips: ["A promise is a beginning.", "I remember our deal.", "Tea before betrayal?"] };
+      const character = { name: "Mira Vale", gender: "female", personaKey: "diplomat", personality: "A warm diplomat with a long memory and a secret fear of betrayal. She listens carefully, records promises, and tests trust through small favors.", backstory: "An exiled ambassador building a new coalition.", strategyStyle: "Build trust before asking for a decisive vote.", werewolfStrategyStyle: "Compare public claims before choosing a suspect.", performanceInstructions: "Quiet, precise gestures.", visualDesign: "A blue dragon in a gold coat.", introQuips: ["A promise is a beginning.", "I remember our deal.", "Tea before betrayal?"] };
       const imageReady = Promise.withResolvers<void>();
       let generated = 0;
       let imageRequests = 0;
@@ -722,8 +728,8 @@ test.describe("local public player identity", () => {
           expect(Number(exported?.["width"])).toBeGreaterThan(0.6);
         }
         await expect(page.getByRole("button", { name: "Create Agent", exact: true })).toBeEnabled();
-        await page.getByRole("button", { name: "Read Strategy", exact: true }).click();
-        await page.getByRole("dialog", { name: "Strategy", exact: true }).getByRole("button", { name: "Edit Strategy", exact: true }).click();
+        await page.getByRole("button", { name: "Read Influence strategy", exact: true }).click();
+        await page.getByRole("dialog", { name: "Influence strategy", exact: true }).getByRole("button", { name: "Edit Influence strategy", exact: true }).click();
         await composer.fill("Be more patient with allies");
         await page.getByRole("button", { name: "Send", exact: true }).click();
         await expect(page.getByRole("button", { name: "Yes, that feels right" })).toBeVisible();
@@ -736,7 +742,7 @@ test.describe("local public player identity", () => {
         await page.getByRole("button", { name: "Advanced create", exact: true }).click();
         await expect(page.locator("#agent-personality")).toHaveValue("A suspicious diplomat who verifies every promise.");
         await expect(page.locator("#agent-name")).toHaveValue("Mira Vale");
-      } finally { await context.close(); }
+      } finally { imageReady.resolve(); await page.unrouteAll({ behavior: "wait" }); await context.close(); }
     }
   });
 
