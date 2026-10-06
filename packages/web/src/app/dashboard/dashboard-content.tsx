@@ -1,4 +1,5 @@
 "use client";
+import { DashboardHistory } from "./dashboard-history";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -41,7 +42,7 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
           </h2>
           <p className="influence-copy mt-2 max-w-2xl text-sm leading-6">
             {hasHistory
-              ? "Use your Influence history from an AI coding client without granting maintainer access or internal inspection."
+              ? "Use your House game history from an AI coding client without granting maintainer access or internal inspection."
               : "Join or complete an Influence game, then let an AI coding client read the games tied to your account."}
           </p>
         </div>
@@ -287,7 +288,8 @@ export function DashboardContent() {
             />
           </div>
         </div>
-        <McpSetupCard hasHistory={control.stats.gamesPlayed > 0} />
+        <DashboardHistory entries={history} loading={historyLoading} error={historyError}/>
+        <McpSetupCard hasHistory={history.length > 0} />
       </div>
     </>
   );

@@ -1,3 +1,4 @@
+import { participationOutcome } from "@/lib/participation";
 import type { FreeQueueStatus, GameSummary, PlayerGameResult, SavedAgent } from "@/lib/api";
 import { gameHref } from "@/lib/game-identity";
 
@@ -145,7 +146,7 @@ function choosePrimaryAction(input: {
     return {
       kind: "replay",
       label: "Review latest game",
-      description: `${input.latestResult.agentName} placed ${input.latestResult.placement} of ${input.latestResult.totalPlayers}.`,
+      description: `${input.latestResult.agentName} · ${participationOutcome(input.latestResult)}`,
       href: resultHref(input.latestResult),
     };
   }
@@ -196,13 +197,14 @@ export function buildDashboardMissionControl({
   const joinableGame = relevantGames.find((game) => game.status === "waiting") ?? null;
   const latestResult = latestCompletedResult(history);
   const queueSummary = buildQueueSummary(queueStatus);
-  const wins = history.filter((result) => result.winner).length;
+  const influence = history.filter(result => result.gameKind === "influence" && result.result && result.result.outcome !== "unknown");
+  const wins = influence.filter(result => result.result?.outcome === "win").length;
 
   return {
     stats: {
-      gamesPlayed: history.length,
+      gamesPlayed: influence.length,
       wins,
-      winRate: history.length > 0 ? Math.round((wins / history.length) * 100) : 0,
+      winRate: influence.length > 0 ? Math.round((wins / influence.length) * 100) : 0,
       agentCount: agents.length,
       openGames: games.filter((game) => game.status === "waiting").length,
       liveGames: games.filter((game) => game.status === "in_progress").length,

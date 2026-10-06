@@ -1740,8 +1740,8 @@ describe("Game REST API", () => {
       expect(body[0]).toMatchObject({
         gameId: completedGameId,
         agentName: "Atlas Vale",
-        rounds: 3,
-        winner: true,
+        gameKind: "influence",
+        result: { rounds: 3, outcome: "win" },
       });
     });
   });

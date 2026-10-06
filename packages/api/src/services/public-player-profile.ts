@@ -1,8 +1,9 @@
+import type { HouseParticipation, ParticipationFilter } from "@influence/engine/house-participation";
+import { readHouseParticipation } from "./house-participation.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
   getPublicPlayerCompetitionFacts,
   type PublicAgentPreview,
-  type PublicCompetitionResult,
 } from "./public-agent-preview.js";
 import {
   resolvePublicPlayer,
@@ -41,7 +42,7 @@ export interface PublicPlayerProfile {
     wins: number;
     winRate: number;
   };
-  recentResults: PublicCompetitionResult[];
+  recentResults: HouseParticipation[];
   agents: PublicAgentPreview[];
 }
 
@@ -64,13 +65,15 @@ export const PUBLIC_PLAYER_NOT_FOUND = {
 export async function getPublicPlayerProfile(
   db: DrizzleDB,
   identifier: string,
+  gameKind: ParticipationFilter = "all",
 ): Promise<PublicPlayerProfileEnvelope> {
   const player = await resolvePublicPlayer(db, identifier);
   if (!player) return PUBLIC_PLAYER_NOT_FOUND;
 
-  const [competition, currentSeasonDashboard] = await Promise.all([
+  const [competition, currentSeasonDashboard, recentResults] = await Promise.all([
     getPublicPlayerCompetitionFacts(db, player.internalUserId),
     getCurrentPublicSeasonDashboard(db),
+    readHouseParticipation(db, player.internalUserId, { publicOnly: true, gameKind, limit: 5 }),
   ]);
   const architectStanding = currentSeasonDashboard?.architectStandings
     .find((standing) => standing.owner?.publicId === player.identity.publicId) ?? null;
@@ -118,7 +121,7 @@ export async function getPublicPlayerProfile(
         wins: player.career.wins,
         winRate: gamesPlayed > 0 ? player.career.wins / gamesPlayed : 0,
       },
-      recentResults: competition.recentResults,
+      recentResults,
       agents: competition.agents,
     },
   };

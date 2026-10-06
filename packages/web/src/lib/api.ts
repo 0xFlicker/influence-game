@@ -1,3 +1,4 @@
+import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
  * Influence API client.
@@ -226,14 +227,6 @@ export interface PublicPlayerIdentityRef {
   displayName: string;
 }
 
-export interface PublicCompetitionResult {
-  gameSlug: string;
-  agentName: string;
-  placement: number;
-  lobbySize: number;
-  totalPoints: number;
-  earnedAt: string;
-}
 
 export interface PublicAgentPreview {
   name: string;
@@ -284,7 +277,7 @@ export interface PublicPlayerProfile {
     wins: number;
     winRate: number;
   };
-  recentResults: PublicCompetitionResult[];
+  recentResults: HouseParticipation[];
   agents: PublicAgentPreview[];
 }
 
@@ -1993,19 +1986,7 @@ export async function adminRefillInviteCodes(minCodes: number, minAgeDays?: numb
 
 export type JoinGameConfig = { agentProfileId: string };
 
-export interface PlayerGameResult {
-  gameId: string;
-  gameSlug: string;
-  agentName: string;
-  persona: PersonaKey;
-  placement: number;
-  totalPlayers: number;
-  eliminated: boolean;
-  winner: boolean;
-  rounds: number;
-  completedAt: string;
-  modelLabel: string;
-}
+export type PlayerGameResult = HouseParticipation;
 
 // ---------------------------------------------------------------------------
 // Player API calls

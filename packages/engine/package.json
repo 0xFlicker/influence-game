@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {
+    "./house-participation": "./src/house-participation.ts",
     "./werewolf": "./src/werewolf/index.ts",
     "./werewolf/strategy": "./src/werewolf/strategy.ts",
     "./werewolf/types": "./src/werewolf/types.ts",

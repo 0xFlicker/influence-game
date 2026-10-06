@@ -143,9 +143,10 @@ export function getServerPostgameMedia(
 
 export function getServerPublicPlayerProfile(
   identifier: string,
+  gameKind: "all" | "influence" | "werewolf" = "all",
 ): Promise<PublicPlayerProfileEnvelope> {
   return serverApiFetch(
-    `/api/players/${encodeURIComponent(identifier)}`,
+    `/api/players/${encodeURIComponent(identifier)}?game=${gameKind}`,
     { cache: "no-store" },
   );
 }

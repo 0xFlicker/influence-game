@@ -1,3 +1,4 @@
+import { readHouseParticipation } from "../services/house-participation.js";
 import { createGameResultsRoutes } from "./game-results.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes } from "./episodes.js";
@@ -21,7 +22,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
 
 import { createVisualRoutes } from "./visual.js";
 import { Hono, type Context } from "hono";
-import { eq, inArray, asc, or, and, isNull, ne } from "drizzle-orm";
+import { eq, inArray, asc, or, and, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -858,57 +859,7 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/player/games", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const playerRecords = await db
-      .select()
-      .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.userId, user.id));
-
-    if (playerRecords.length === 0) {
-      return c.json([]);
-    }
-
-    const results = (await Promise.all(playerRecords
-      .map(async (playerRecord) => {
-        const game = (await db
-          .select()
-          .from(schema.games)
-          .where(and(eq(schema.games.id, playerRecord.gameId), isNull(schema.games.hiddenAt))))[0];
-        if (!game || !isViewerGame(game)) return null;
-        if (game.status !== "completed" || !game.endedAt) return null;
-
-        const config = JSON.parse(game.config);
-        const persona = JSON.parse(playerRecord.persona);
-
-        const allPlayers = await db
-          .select()
-          .from(schema.gamePlayers)
-          .where(eq(schema.gamePlayers.gameId, game.id));
-        const totalPlayers = allPlayers.length;
-
-        const result = (await db
-          .select()
-          .from(schema.gameResults)
-          .where(eq(schema.gameResults.gameId, game.id)))[0];
-
-        const isWinner = result?.winnerId === playerRecord.id;
-
-        return {
-          gameId: game.id,
-          gameSlug: game.slug,
-          agentName: persona.name ?? "Unknown",
-          persona: persona.personaKey ?? "strategic",
-          placement: isWinner ? 1 : totalPlayers,
-          totalPlayers,
-          eliminated: game.status === "completed" && !isWinner,
-          winner: isWinner,
-          rounds: result?.roundsPlayed ?? 0,
-          completedAt: game.endedAt ?? game.createdAt,
-          modelLabel: modelLabelFromConfig(config),
-        };
-      })))
-      .filter(Boolean);
-
-    return c.json(results);
+    return c.json(await readHouseParticipation(db, user.id));
   });
 
   // -------------------------------------------------------------------------

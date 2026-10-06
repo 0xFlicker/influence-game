@@ -840,3 +840,9 @@ Werewolf trailers share House postgame delivery after the approved opening-only 
 ## Visual-owned pause
 
 A durable suspension caused by the explicit **Require visuals** policy. It preserves the game's accepted boundary and names the missing scene or character form. Production repair and publication do not resume execution; an authorized operator explicitly resumes the unchanged boundary. Influence owns its turn cursor and Werewolf owns its canonical event head; shared policy and media services do not translate one game's authority into the other's.
+
+## House participation history
+
+A chronological record of completed owned seats across game kinds, independent of competition eligibility. One account can have several participations in a game, including opposing Werewolf factions. History preserves the frozen character identity and saved episode title. Public profiles discover only Public, nonhidden games; owners also see their own Unlisted participation. These are outcome-bearing surfaces, labeled Results · Spoilers.
+
+Influence history uses its completed-results projection for placement and eligible competition receipts for points. A missing historical placement remains unknown. Werewolf history uses canonical faction outcomes: an eliminated member of the winning faction still won, and survival is a separate fact. Missing or invalid terminal evidence displays Result unavailable. History reads never award scores. Influence account ELO, career counters, agent competition ratings and championship standings remain Influence-only; there is no combined House rating or Werewolf scoring policy.

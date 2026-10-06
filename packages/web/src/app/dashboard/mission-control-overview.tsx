@@ -118,11 +118,11 @@ export function MissionControlOverview({
         </div>
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-text-primary">{stats.gamesPlayed}</p>
-          <p className="influence-copy-muted text-xs">Games played</p>
+          <p className="influence-copy-muted text-xs">Influence participations</p>
         </div>
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-yellow-400">{stats.wins}</p>
-          <p className="influence-copy-muted text-xs">Wins</p>
+          <p className="influence-copy-muted text-xs">Influence wins</p>
         </div>
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-text-primary">{stats.liveGames + stats.openGames}</p>

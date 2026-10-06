@@ -808,7 +808,7 @@ function productionGameMcpTools(
     }),
     tool({
       name: "read_player_profile",
-      description: "Read one anonymous public player résumé and agent roster by handle or public UUID.",
+      description: "Read one anonymous public player profile by handle or public UUID: mixed House participation history, Influence competitive records, and agent roster.",
       inputSchema: PUBLIC_PLAYER_PROFILE_TOOL_INPUT_SCHEMA,
       scopes: gameReadScopes,
       readOnlyHint: true,

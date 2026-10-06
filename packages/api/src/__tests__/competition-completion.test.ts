@@ -18,6 +18,19 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 describe("competition completion", () => {
+  test("Werewolf never receives Influence season receipts even if misrouted with a season and seats", async () => {
+    const {db,gameId} = await createRatedFixture({duplicateNames:true});
+    await db.update(schema.games).set({gameKind:"werewolf"}).where(eq(schema.games.id,gameId));
+    const snapshot = async () => ({
+      ratings:await db.select().from(schema.agentCompetitionRatings),
+      profiles:await db.select().from(schema.agentProfiles),
+      receipts:await db.select().from(schema.competitionReceipts),
+      users:await db.select().from(schema.users),
+    });
+    const before=await snapshot();
+    expect(await completeCompetitionGame(db,{gameId,winnerId:"atlas",roundsPlayed:1,earnedAt:"2026-10-06T00:00:00.000Z"})).toMatchObject({processed:false,rated:false,receiptCount:0});
+    expect(await snapshot()).toEqual(before);
+  });
   test("writes exactly-once receipts, private evidence, ratings, and career counters", async () => {
     const fixture = await createRatedFixture({ duplicateNames: true });
     const first = await completeCompetitionGame(fixture.db, {

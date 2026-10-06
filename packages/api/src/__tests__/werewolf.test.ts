@@ -1,3 +1,5 @@
+import { completeCompetitionGame } from "../services/competition-completion.js";
+import { readHouseParticipation } from "../services/house-participation.js";
 import {readHouseGameThinking} from "../services/house-game-inspection.js";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -102,7 +104,17 @@ describe("Werewolf House integration", () => {
   });
 
   test("shared startup adopts the Werewolf log and commits faction completion without Influence settlement", async () => {
-    const game = await create();
+    await db.insert(schema.agentProfiles).values({id:"history-owner-agent",userId:ownerId,name:"My wolf",personality:"Patient"});
+    const game = await create(["history-owner-agent"]);
+    const scoreState = async () => ({
+      users: await db.select().from(schema.users),
+      agents: await db.select({id:schema.agentProfiles.id,gamesPlayed:schema.agentProfiles.gamesPlayed,gamesWon:schema.agentProfiles.gamesWon}).from(schema.agentProfiles),
+      ratings: await db.select().from(schema.agentCompetitionRatings),
+      receipts: await db.select().from(schema.competitionReceipts),
+      seasons: await db.select().from(schema.seasons),
+      ratingEvents: await db.select().from(schema.competitionRatingEvents),
+    });
+    const scoresBefore = await scoreState();
     await advanceWerewolf(game.store, scripted);
     await releaseWerewolfOwner(db, game.id, game.ownerEpoch);
     const startup = await adoptInProgressDurableGamesOnStartup(db, { start: async ({ gameId, ownerEpoch, executionState }) => {
@@ -112,6 +124,13 @@ describe("Werewolf House integration", () => {
     expect(startup.adopted).toEqual([game.id]);
     const state = replayWerewolf(await readWerewolfEvents(db, game.id));
     expect(state.outcome).not.toBeNull();
+    expect(await scoreState()).toEqual(scoresBefore);
+    // A terminal replay/adoption attempt and read surfaces cannot settle Influence scores.
+    await runWerewolf(game.store, scripted);
+    await readHouseParticipation(db, ownerId);
+    await readHouseParticipation(db, ownerId, {publicOnly:true,limit:5});
+    expect(await completeCompetitionGame(db, {gameId:game.id,winnerId:null,roundsPlayed:state.day,earnedAt:new Date().toISOString()})).toMatchObject({processed:false,rated:false,receiptCount:0});
+    expect(await scoreState()).toEqual(scoresBefore);
     expect((await db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]?.status).toBe("completed");
     expect(await db.select().from(schema.gameResults)).toEqual([]);
     expect(await db.select().from(schema.gameCompletionSettlements)).toEqual([]);

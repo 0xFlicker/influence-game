@@ -1,5 +1,5 @@
 import { publicGameFilter } from "./game-visibility.js";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { eligibleAgentContent } from "./agent-content-eligibility.js";
@@ -13,17 +13,7 @@ import {
   type PublicPlayerIdentityRef,
 } from "./public-player-identity.js";
 
-const PUBLIC_RECENT_RESULT_LIMIT = 5;
 type PublicAgentPreviewDB = Pick<DrizzleDB, "select">;
-
-export interface PublicCompetitionResult {
-  gameSlug: string;
-  agentName: string;
-  placement: number;
-  lobbySize: number;
-  totalPoints: number;
-  earnedAt: string;
-}
 
 export interface PublicAgentPreview {
   name: string;
@@ -49,7 +39,6 @@ export interface PublicReplayAgentPreview extends PublicAgentPreview {
 
 export interface PublicPlayerCompetitionFacts {
   agents: PublicAgentPreview[];
-  recentResults: PublicCompetitionResult[];
 }
 
 interface PublicAgentProfileRow {
@@ -156,52 +145,12 @@ export async function getPublicPlayerCompetitionFacts(
     );
 
   if (profiles.length === 0) {
-    return { agents: [], recentResults: [] };
+    return { agents: [] };
   }
 
   const profileIds = profiles.map((profile) => profile.id);
-  const publicReceiptFilter = and(
-    eq(schema.competitionReceipts.ownerId, internalUserId),
-    inArray(schema.competitionReceipts.agentProfileId, profileIds),
-    eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
-    eq(schema.games.gameKind, "influence"),
-      eq(schema.games.status, "completed"),
-    eq(schema.games.trackType, "free"),
-    publicGameFilter(),
-  );
-
-  const [aggregateByAgent, recentResults] = await Promise.all([
-    getPublicAgentCompetitionAggregates(db, profileIds, internalUserId),
-    db.select({
-      gameSlug: schema.games.slug,
-      agentName: schema.competitionReceipts.agentNameSnapshot,
-      placement: schema.competitionReceipts.placement,
-      lobbySize: schema.competitionReceipts.lobbySize,
-      totalPoints: schema.competitionReceipts.totalPoints,
-      earnedAt: schema.competitionReceipts.earnedAt,
-    }).from(schema.competitionReceipts)
-      .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id))
-      .where(publicReceiptFilter)
-      .orderBy(
-        desc(schema.competitionReceipts.earnedAt),
-        desc(schema.competitionReceipts.id),
-      )
-      .limit(PUBLIC_RECENT_RESULT_LIMIT),
-  ]);
-
-  return {
-    agents: profiles.map((profile) => (
-      buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id))
-    )),
-    recentResults: recentResults.map((receipt) => ({
-      gameSlug: receipt.gameSlug,
-      agentName: receipt.agentName,
-      placement: receipt.placement!,
-      lobbySize: receipt.lobbySize,
-      totalPoints: receipt.totalPoints,
-      earnedAt: receipt.earnedAt,
-    })),
-  };
+  const aggregateByAgent = await getPublicAgentCompetitionAggregates(db, profileIds, internalUserId);
+  return { agents: profiles.map(profile => buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id))) };
 }
 
 async function getPublicAgentCompetitionAggregates(

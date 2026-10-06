@@ -7,7 +7,9 @@ export function createPublicPlayerRoutes(db: DrizzleDB) {
 
   app.get("/api/players/:identifier", async (c) => {
     c.header("Cache-Control", "no-store");
-    const result = await getPublicPlayerProfile(db, c.req.param("identifier"));
+    const kind = c.req.query("game") ?? "all";
+    if (kind !== "all" && kind !== "influence" && kind !== "werewolf") return c.json({ error: "Invalid game type" }, 400);
+    const result = await getPublicPlayerProfile(db, c.req.param("identifier"), kind);
     return result.status === "found"
       ? c.json(result)
       : c.json(result, 404);

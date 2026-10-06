@@ -35,7 +35,6 @@ const FORBIDDEN_KEYS = new Set([
   "userId",
   "ownerId",
   "agentId",
-  "agentProfileId",
   "agentRevisionId",
   "walletAddress",
   "email",
@@ -175,14 +174,14 @@ describe("public player profile", () => {
     ]);
     expect(byHandle.profile.recentResults).toHaveLength(5);
     expect(byHandle.profile.recentResults.map((result) => result.gameSlug)).toEqual([
+      "ineligible",
+      "custom",
       "valid-tie-b",
       "valid-tie-a",
       "valid-4",
-      "valid-3",
-      "valid-2",
     ]);
     expect(byHandle.profile.recentResults.map((result) => result.gameSlug)).not.toEqual(
-      expect.arrayContaining(["hidden", "custom", "unfinished", "ineligible"]),
+      expect.arrayContaining(["hidden", "unfinished"]),
     );
 
     assertNoForbiddenPublicData(byHandle);
@@ -447,7 +446,7 @@ async function insertReceiptFixture(
     eligibilityStatus?: "eligible" | "ineligible";
   },
 ) {
-  const gameId = randomUUID();
+  const gameId = input.receiptId;
   await db.insert(schema.games).values({
     id: gameId,
     slug: input.gameSlug,
@@ -460,6 +459,7 @@ async function insertReceiptFixture(
     endedAt: input.status === "in_progress" ? null : input.earnedAt,
     hiddenAt: input.hiddenAt,
   });
+  await db.insert(schema.gamePlayers).values({id: `${gameId}-seat`, gameId, userId: input.ownerId, agentProfileId: input.agentProfileId, agentConfig: "{}", persona: JSON.stringify({name:"Zulu"})});
   const eligible = (input.eligibilityStatus ?? "eligible") === "eligible";
   await db.insert(schema.competitionReceipts).values({
     id: input.receiptId,

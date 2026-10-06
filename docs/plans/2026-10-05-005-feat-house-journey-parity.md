@@ -52,7 +52,7 @@ Historical rollout: preview explicit selected completed IDs and estimated call c
 Maintain a parity ledger with surface, shared owner, each game’s data adapter, expected difference, evidence and outstanding work. Follow actual journeys rather than relying on text searches:
 
 - Discover → create/configure → cast/join/start → choose audience → watch → finish → results → inspect/review/Cuts/share → return to the agent or another game.
-- Dashboard, public profile and history show Werewolf participation and faction outcomes, including dead members of the winning faction. Do not count these as Influence ratings/career wins.
+- Dashboard, public profile and history mix both games chronologically, with game-specific outcomes including dead members of a winning Werewolf faction. Leaderboards, ratings, points and aggregate win rates remain game-scoped. Follow-through: [shared participation history plan](2026-10-06-001-feat-house-participation-history.md).
 - Game cards, titles/descriptions/covers, social previews and share links resolve the same episode identity. Direct Unlisted links work anonymously; Unlisted is excluded from discovery; hidden games remain unavailable.
 - Production lists both game kinds, routes to the existing House workspace and exposes repair/retry/publication/cost state with the correct permissions. W7A adds visual-owned suspended games; do not remove completed-game repair.
 - Stop/hide, paused execution, failed scene/trailer/Cut jobs, stale preview/publication conflicts and retry recovery are truthful from user and operator entry points.
@@ -77,9 +77,9 @@ New seasons/ratings/scheduling, private games, outcome-derived episode naming, a
 - B1 implemented: shipped clean Lantern Village art in shared cards, live entry and trailer fallback. Explicit covers survive; old games require no regeneration. Inspected real Hazy/wild-lemon-sun cards and isolated desktop/mobile fixtures.
 - B2 read integration implemented: frozen public Werewolf cast, saved title/teaser in listing/search/entry/replay/results/metadata and new trailer manifests. Shared episode routes now precede the Influence-only guard. Reads do not generate copy.
 - B2 completed on 2026-10-06: both games queue naming transactionally with their frozen cast at start. The shared worker uses a game-specific premise and strict copy schema. Werewolf sends only original cast names and bounded personalities, never roles, strategies or night evidence. The operator explicitly authorized this automatic OpenAI `gpt-6-luna` payload (900 output tokens, 45-second request timeout). Shared Production selection/backfill and the per-game Werewolf episode editor are enabled. No real historical backfill or paid naming trial ran during implementation.
-- B3 audit captured in [House journey parity ledger](../audits/2026-10-05-house-journey-parity.md). Public profile/history and admin-only discovery are concrete open gaps, not claimed as parity. W7A producer/sysop discovery already includes completed Werewolf and visual-suspended games.
+- B3 audit captured in [House journey parity ledger](../audits/2026-10-05-house-journey-parity.md). Public profile/history completed on 2026-10-06 through the shared participation plan, with mixed chronology and isolated Influence scoring. Admin-only discovery remains a concrete open gap. W7A producer/sysop discovery already includes completed Werewolf and visual-suspended games.
 
-W7B still requires the recorded profile/history and discovery gaps to be resolved or explicitly deferred. Existing rendered trailers, posters and Cuts are unchanged.
+W7B still requires the recorded admin-only discovery gap to be resolved or explicitly deferred. Existing rendered trailers, posters and Cuts are unchanged.
 
 ## B2 operational behavior — 2026-10-06
 

@@ -98,10 +98,9 @@ const profileFixture: PublicPlayerProfile = {
     {
       gameSlug: "edge-smoke-dusk",
       agentName: "Atlas",
-      placement: 1,
-      lobbySize: 8,
-      totalPoints: 95,
-      earnedAt: "2026-07-15T12:00:00.000Z",
+      gameKind: "influence", gameId: "game", playerId: "seat", agentProfileId: null, gameTitle: "edge-smoke-dusk", totalPlayers: 8,
+      result: { outcome: "win", placement: 1, totalPoints: 95, eliminated: false, rounds: 6 },
+      completedAt: "2026-07-15T12:00:00.000Z",
     },
   ],
   agents: [
@@ -143,9 +142,9 @@ describe("public player profile", () => {
     const html = renderToString(<PublicPlayerProfileView profile={profileFixture} />);
 
     const identityIndex = html.indexOf("Flick");
-    const seasonIndex = html.indexOf("Current season");
-    const careerIndex = html.indexOf("Career");
-    const resultsIndex = html.indexOf("Recent results");
+    const seasonIndex = html.indexOf("Influence season");
+    const careerIndex = html.indexOf("Influence competitive record");
+    const resultsIndex = html.indexOf("Game history");
     const rosterIndex = html.indexOf("Agent roster");
 
     expect(identityIndex).toBeGreaterThanOrEqual(0);
@@ -159,7 +158,7 @@ describe("public player profile", () => {
     expect(html).toContain("Agent Champion");
     expect(html).toContain("Atlas");
     expect(html).toContain("Zeta");
-    expect(html).toContain("No games yet");
+    expect(html).toContain("No Influence games yet");
     expect(html).toContain('aria-label="View Atlas portrait and stats"');
     expect(html).toContain('aria-label="View Zeta portrait and stats"');
     expect(html).toContain("w-12 h-12");
@@ -189,8 +188,8 @@ describe("public player profile", () => {
     );
 
     expect(html).toContain("No current season is active.");
-    expect(html).toContain("No public results yet.");
-    expect(html).toContain("No career games yet.");
+    expect(html).toContain("No completed games in this history yet.");
+    expect(html).toContain("No Influence career games yet.");
     expect(html).toContain("Zeta");
   });
 
@@ -218,7 +217,7 @@ describe("public player profile", () => {
         .toBe("summary");
       expect(html).toContain("Flick");
       expect(requestedUrls.every((url) => url.endsWith(
-        `/api/players/${profileFixture.identity.publicId}`,
+        `/api/players/${profileFixture.identity.publicId}?game=all`,
       ))).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
@@ -251,7 +250,7 @@ describe("public player profile", () => {
   it("maps only API 404 responses to the route not-found boundary", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
-      const status = String(url).endsWith("/api/players/missing-player")
+      const status = String(url).includes("/api/players/missing-player")
         ? 404
         : 503;
       return new Response("Unavailable", { status });
