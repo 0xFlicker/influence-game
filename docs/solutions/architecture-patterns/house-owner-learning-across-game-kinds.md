@@ -48,6 +48,14 @@ A real Werewolf review finished its scan and one investigation, then failed on t
 
 Finality comes from the workflow stage as well as the budget boundary. Every `drafting_recommendations` invocation now uses the strict final-result schema and `finalResultRequired: true`, including calls two and three. The fourth call still requires a result regardless of stage. Tests cover early completion with zero/one investigation, legitimate no-change results and rejection of missing final results. Do not fabricate a completed review from provisional findings or replay paid calls to paper over a contract error; saved failures retain their original evidence and retry accounting.
 
+## Release policy for review revision identities
+
+Migration `0108_house_owner_learning.sql` removes four review-only foreign keys to `agent_revisions`: evidence, reviewed revision, and the prior/resulting revisions on applications. Werewolf strategy identities are not Influence rating revisions. The migration preserves the existing identity columns, rows, owner/game relationships and rating constraints; it adds the game discriminator and strategy snapshot. Keeping those four foreign keys would prevent Werewolf reviews and applications from being stored.
+
+The release checker normally rejects constraint removal. Its exception for this migration is pinned to both the filename and the complete SQL SHA-256, and applies only to the constraint-removal rule. Editing that SQL requires another review; appending an unrelated drop, changing its target or using another filename still fails. Other destructive-change checks remain active. Do not broadly allow foreign-key drops or disguise them as replacement checks. The migration SQL and applied database history are unchanged by this checker fix.
+
+Run the release-policy CLI against the complete PR migration diff as well as the database tests: successful PostgreSQL execution alone does not prove release-policy acceptance. The migration policy regression suite includes every Werewolf integration migration and negative cases for the pinned exception.
+
 ## Verification and limits
 
 See [W3 implementation proof](../../reviews/2026-10-03-w3-owner-learning-implementation.md). The shared local test DB had migration history from another branch, so a fresh disposable database verified the full branch migration chain and API baseline. Never repair the operator's DB merely to make a branch test suite run.

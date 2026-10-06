@@ -70,6 +70,14 @@ const RELEASE_SAFE_BIGINT_WIDENING = new RegExp(
   "i",
 );
 
+// This reviewed migration removes only Influence-specific review revision FKs;
+// Werewolf review identities are not Influence rating revisions. Existing rows,
+// columns and rating constraints remain intact. Pin the entire SQL file so any
+// edit or additional constraint removal requires a fresh policy review.
+const REVIEWED_CONSTRAINT_REMOVAL_MIGRATIONS = new Map([
+  ["0108_house_owner_learning.sql", "518ef175bb2cd547d7a5ca5c5b282025d578cd8e404439f54cbcd5f95b543ae6"],
+]);
+
 export function resolveMigrationsFolder(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -145,6 +153,8 @@ export function inspectReleaseMigrationSql(
       continue;
     }
     if (rule.rule === "drop-constraint") {
+      if (REVIEWED_CONSTRAINT_REMOVAL_MIGRATIONS.get(path.basename(file))
+        === createHash("sha256").update(sql).digest("hex")) continue;
       const drops = [
         ...policyInput.matchAll(
           /\bDROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))/gi,
