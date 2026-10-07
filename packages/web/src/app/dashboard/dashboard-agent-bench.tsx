@@ -1,3 +1,4 @@
+import { ParticipationRow } from "@/components/participation-history";
 import Link from "next/link";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import type { PlayerGameResult, SavedAgent } from "@/lib/api";
@@ -12,16 +13,6 @@ interface DashboardRecentResultProps {
   result: PlayerGameResult | null;
   loading: boolean;
   error: string | null;
-}
-
-function resultHref(result: PlayerGameResult): string {
-  return `/games/${result.gameSlug}`;
-}
-
-function placementText(result: PlayerGameResult): string {
-  if (result.winner) return "Winner";
-  const suffix = result.placement === 2 ? "nd" : result.placement === 3 ? "rd" : "th";
-  return `${result.placement}${suffix} of ${result.totalPlayers}`;
 }
 
 export function DashboardRecentResult({ result, loading, error }: DashboardRecentResultProps) {
@@ -44,16 +35,7 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
           {error}
         </div>
       ) : result ? (
-        <div className="influence-panel-muted rounded-lg p-4">
-          <p className="text-lg font-semibold text-text-primary">{result.gameSlug}</p>
-          <p className="influence-copy mt-1 text-sm">
-            {result.agentName} finished {placementText(result)} after {result.rounds} rounds.
-          </p>
-          <p className="influence-copy-muted mt-1 text-xs">{result.modelLabel}</p>
-          <Link href={resultHref(result)} className="influence-button-secondary mt-4 inline-flex rounded-lg px-4 py-2 text-xs font-medium">
-            Replay
-          </Link>
-        </div>
+        <ParticipationRow entry={result}/>
       ) : (
         <div className="influence-empty-state rounded-lg p-6 text-center text-sm">
           No completed games yet.
@@ -120,7 +102,7 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
                 <p className="truncate text-sm font-medium text-text-primary">{agent.name}</p>
                 <p className="truncate influence-copy-muted text-xs">
                   {agent.gamesPlayed > 0
-                    ? `${agent.gamesWon}W / ${agent.gamesPlayed - agent.gamesWon}L`
+                    ? `Influence · ${agent.gamesWon}W / ${agent.gamesPlayed - agent.gamesWon}L`
                     : agent.backstory ?? "Ready for a first game"}
                 </p>
               </div>

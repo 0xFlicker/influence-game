@@ -9,6 +9,11 @@ import type {
   TranscriptEntry,
 } from "./api";
 
+import type { GameEntryIdentity } from "./game-entry";
+export function getServerGameEntry(key: string): Promise<GameEntryIdentity> {
+  return serverApiFetch(`/api/game-entries/${gamePathSegment(key)}`, { cache: "no-store" });
+}
+
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;
 
 export class ServerApiError extends Error {
@@ -138,9 +143,14 @@ export function getServerPostgameMedia(
 
 export function getServerPublicPlayerProfile(
   identifier: string,
+  gameKind: "all" | "influence" | "werewolf" = "all",
 ): Promise<PublicPlayerProfileEnvelope> {
   return serverApiFetch(
-    `/api/players/${encodeURIComponent(identifier)}`,
+    `/api/players/${encodeURIComponent(identifier)}?game=${gameKind}`,
     { cache: "no-store" },
   );
+}
+
+export function getServerHouseCuts(slug: string, audience?: string): Promise<import("@influence/engine/house-cuts/publication").HouseCutsResponse> {
+  return serverApiFetch(`/api/games/${gamePathSegment(slug)}/cuts${audience ? `?audience=${encodeURIComponent(audience)}` : ""}`, { cache: "no-store" });
 }

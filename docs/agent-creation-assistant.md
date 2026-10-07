@@ -9,8 +9,8 @@ it does not open authentication.
 
 An anonymous browser gets one successful House text message. A single strict
 structured provider attempt returns `{reply, profile}`: questions can receive a
-grounded answer with `profile: null`, and character ideas can produce all eight
-character cards. There is no image generation or Agent saving in this endpoint.
+grounded answer with `profile: null`, and character ideas can produce all nine
+character cards, including separate Influence and Werewolf strategies. There is no image generation or Agent saving in this endpoint.
 Approval remains a local action. Asking for another message, an image, Advanced
 create, or a server save opens account creation. The authentication modal uses
 the House hall, gold mark, and muted purple surfaces. Free accounts keep the
@@ -115,8 +115,7 @@ villainous characters are not grounds for ending a conversation.
 The guided router receives the current draft; guided and Advanced editors and
 profile generation share a compact general rules and strategy primer in
 `packages/api/src/services/agent-creation-game-primer.ts`. It summarizes the
-standard round, the distinct ballot rules, endgame and jury, alliance
-limits, and useful character tradeoffs. It describes no live game state or
+Influence standard rounds, ballot rules, endgame, jury and alliance limits, plus Werewolf role knowledge, day/night rules, faction victory and character tradeoffs. Identity and visuals are shared; strategyStyle is Influence only and werewolfStrategyStyle is Werewolf only. New profiles receive suggestions for both games, and blank Werewolf notes use a previewable archetype-specific default frozen at game start. It describes no live game state or
 guaranteed format, and prompt writers should keep it aligned with the canonical
 format catalog and public rules when those rules change.
 
@@ -134,8 +133,7 @@ interactive character creation uses Standard instead.
 ## Advanced edit and incomplete profiles
 
 The Workshop sends incomplete drafts to inference; missing gender or archetype
-does not block an assistant turn. Any authorized edit includes empty character
-fields in the structured profile writer's selection. Gender and archetype come
+does not block an assistant turn. Strategy-only edits select only the requested game block, even if shared fields or the other strategy are blank. Other character edits include missing shared details in the structured profile writer's selection; unselected game strategy blocks stay unchanged. Text-only strategy edits do not read existing image files. Gender and archetype come
 from validated enum fields in its response, never from application parsing of
 character prose. A missing archetype is sent as missing rather than silently
 replaced with Strategist.

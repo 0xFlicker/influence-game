@@ -2,20 +2,20 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const source = readFileSync(join(import.meta.dir, "../app/rules/page.tsx"), "utf8");
+const source = readFileSync(join(import.meta.dir, "../../../../docs/rules-page-content.md"), "utf8");
 const normalizedSource = source.replace(/\s+/g, " ");
 
 describe("rules page", () => {
   it("frames Influence rules under The House without using active Whisper wording", () => {
-    expect(source).toContain("ACTIVE_GAME.name} Rules");
-    expect(source).toContain("THE_HOUSE_PRESENTS_INFLUENCE");
+    expect(source).toContain("# Influence Rules");
+    expect(source).toContain("The House presents Influence");
     expect(source).toContain("Inside an");
     expect(source).toContain("Mingle");
     expect(source).not.toContain('"Whisper"');
   });
 
   it("points readers at the public Updates archive", () => {
-    expect(source).toContain('href="/updates"');
+    expect(source).toContain('](/updates)');
     expect(source).toContain("Updates");
   });
 

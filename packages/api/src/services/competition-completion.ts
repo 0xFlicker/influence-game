@@ -62,7 +62,7 @@ export async function completeCompetitionGameInTransaction(
   const game = (await tx.select().from(schema.games)
     .where(eq(schema.games.id, input.gameId)).limit(1))[0];
   if (!game) throw new Error(`Competition game ${input.gameId} not found`);
-  if (!game.seasonId) {
+  if (game.gameKind !== "influence" || !game.seasonId) {
     return {
       processed: false,
       rated: false,

@@ -96,7 +96,7 @@ export async function startTestServers(
   const adminAddress = opts.adminAddress ?? "0xe2eadmin0000000000000000000000000000dead";
   const publicIdentityLaunchCutoff =
     opts.publicIdentityLaunchCutoff ?? "2026-07-01T00:00:00.000Z";
-  const configuredLogRoot = opts.logDirectory ?? process.env.INFLUENCE_E2E_RESULTS_DIR;
+  const configuredLogRoot = process.env.INFLUENCE_E2E_RESULTS_DIR ?? opts.logDirectory;
   const logDirectory = configuredLogRoot
     ? path.resolve(configuredLogRoot, `services-${apiPort}-${webPort ?? "api-only"}`)
     : null;
@@ -142,9 +142,10 @@ export async function startTestServers(
   let webLogs: ProcessLogCapture | null = null;
 
   if (!opts.skipWeb && webPort != null) {
+    const productionWeb = process.env.INFLUENCE_E2E_WEB_MODE === "production";
     const webEnv: Record<string, string> = {
       ...process.env as Record<string, string>,
-      NODE_ENV: "development",
+      NODE_ENV: productionWeb ? "production" : "development",
       PORT: String(webPort),
       API_URL: apiUrl,
       API_BACKEND_URL: apiUrl,
@@ -154,8 +155,13 @@ export async function startTestServers(
       NEXT_PUBLIC_E2E_AUTH: "true",
     };
 
+    if (productionWeb) {
+      const build = Bun.spawn(["bun", "run", "build"], {cwd:path.join(WORKSPACE_ROOT,"packages/web"),env:webEnv,stdout:"inherit",stderr:"inherit"});
+      const built = await build.exited;
+      if (built !== 0) { await terminateProcess(apiProcess,"api"); await persistProcessLogs([apiLogs],logDirectory); throw new Error(`Production web build failed (${built})`); }
+    }
     webProcess = Bun.spawn(
-      ["bun", "run", "dev", "--hostname", "127.0.0.1"],
+      productionWeb ? ["bun", "run", "start"] : ["bun", "run", "dev", "--hostname", "127.0.0.1"],
       {
         cwd: path.join(WORKSPACE_ROOT, "packages/web"),
         env: webEnv,

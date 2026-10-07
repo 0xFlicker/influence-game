@@ -14,7 +14,7 @@ let clarification: string;
 let fetchCalls: number;
 let generated: string[];
 let appearances: string[];
-const profile: CharacterChatProfile = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.", backstory: "An exiled ambassador.", strategyStyle: "Build trust.", performanceInstructions: "Quiet gestures.", visualDesign: "Blue coat." };
+const profile: CharacterChatProfile = { name: "Mira Vale", personaKey: "diplomat", gender: "female", personality: "A warm diplomat who keeps receipts.", backstory: "An exiled ambassador.", strategyStyle: "Build trust.", werewolfStrategyStyle: "Compare claims.", performanceInstructions: "Quiet gestures.", visualDesign: "Blue coat." };
 beforeEach(() => {
   dom = new Window({ url: "http://localhost" });
   for (const key of globalKeys) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
@@ -36,7 +36,7 @@ function mount(withIngredients = false, hasImage = false, headRequired = false) 
 test("the empty creator gives a visual starting point and a labeled composer", () => {
   const view = mount(true);
   expect(view.getByText("Your character starts here.")).toBeTruthy();
-  expect(view.getByText(/players build trust, vie for empowerment/)).toBeTruthy();
+  expect(view.getByText(/separate strategy notes for each game/)).toBeTruthy();
   expect(view.container.querySelector('img[src="/logo.png"]')).toBeTruthy();
   expect(view.getByText("Your response").getAttribute("for")).toBe("agent-creation-message");
   expect(view.getByLabelText("Message the character assistant").classList.contains("agent-creation-composer")).toBe(true);
@@ -67,8 +67,8 @@ test("the House mark and composer stay in place through a clarification", async 
   await waitFor(() => expect(view.getByText(/Empowerment can choose the format/)).toBeTruthy());
   expect(view.getByText("Your character starts here.")).toBeTruthy();
   const log = view.getByRole("log", { name: "Character creation conversation" });
-  expect(log.textContent).toContain("In Influence, players build trust");
-  expect(log.textContent?.indexOf("In Influence, players build trust")).toBeLessThan(log.textContent?.indexOf("What is empowerment?") ?? 0);
+  expect(log.textContent).toContain("Your character can play Influence and Werewolf");
+  expect(log.textContent?.indexOf("Your character can play Influence and Werewolf")).toBeLessThan(log.textContent?.indexOf("What is empowerment?") ?? 0);
   expect(log.textContent?.indexOf("What is empowerment?")).toBeLessThan(log.textContent?.indexOf("Empowerment can choose") ?? 0);
   expect(generated).toHaveLength(0);
   expect(appearances).toHaveLength(0);
@@ -197,8 +197,8 @@ test("gender tags allow multiple selections and suggestions return only on shuff
 for (const typed of [false, true]) test(`approval after text refinement preserves completed images (${typed ? "typed" : "button"})`, async () => {
   const view = mount(false, true);
   command = "revise_character";
-  fireEvent.click(view.getByRole("button", { name: "Read Strategy" }));
-  fireEvent.click(view.getByRole("button", { name: "Edit Strategy" }));
+  fireEvent.click(view.getByRole("button", { name: "Read Influence strategy" }));
+  fireEvent.click(view.getByRole("button", { name: "Edit Influence strategy" }));
   fireEvent.input(view.getByLabelText("Message the character assistant"), { target: { value: "Make them more patient" } });
   await act(async () => fireEvent.click(view.getByRole("button", { name: "Send" })));
   await waitFor(() => {

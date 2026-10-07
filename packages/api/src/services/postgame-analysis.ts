@@ -19,7 +19,7 @@ import { getPersistedGameProjection } from "./game-projection-read-model.js";
 const DEFAULT_AGENT_GAME_LIMIT = 20;
 const MAX_AGENT_GAME_LIMIT = 100;
 
-type PostgameDB = DrizzleDB;
+type PostgameDB = Pick<DrizzleDB, "select">;
 
 export type PostgameReadStatus =
   | "not_found"
@@ -517,7 +517,8 @@ async function loadAgentGameCandidates(
   const visibleGameIds = input.visibleGameIds;
   if (visibleGameIds && visibleGameIds.length === 0) return [];
   const conditions = [
-    eq(schema.games.status, "completed"),
+    eq(schema.games.gameKind, "influence"),
+      eq(schema.games.status, "completed"),
     ...(visibleGameIds ? [inArray(schema.games.id, [...visibleGameIds])] : []),
   ];
   if (input.agentId) {
@@ -562,6 +563,7 @@ async function loadAgentGameCandidates(
     .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
     .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
     .where(and(
+      eq(schema.games.gameKind, "influence"),
       eq(schema.games.status, "completed"),
       ...(visibleGameIds ? [inArray(schema.games.id, [...visibleGameIds])] : []),
       sql`lower((${schema.gamePlayers.persona})::jsonb ->> 'name') = ${normalize(input.agentName)}`,

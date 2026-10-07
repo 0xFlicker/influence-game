@@ -77,15 +77,6 @@ console.log(`Seeded ${Object.keys(userIds).length} users`);
 
 const gameId = randomUUID();
 const defaultConfig = {
-  timers: {
-    introduction: 30000,
-    lobby: 30000,
-    mingle: 45000,
-    rumor: 30000,
-    vote: 20000,
-    power: 15000,
-    council: 20000,
-  },
   maxRounds: 10,
   minPlayers: MIN_NEW_GAME_PLAYERS,
   maxPlayers: 12,

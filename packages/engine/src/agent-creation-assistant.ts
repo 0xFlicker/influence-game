@@ -30,13 +30,17 @@ export function decodeCreationTurn(content: string, stage: CreationStage): Creat
   return { command: value.command as CreationCommand, reply: value.reply.trim() };
 }
 
-export const CHARACTER_FIELDS = ["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "performanceInstructions", "visualDesign"] as const;
+export const CHARACTER_FIELDS = ["name", "personaKey", "gender", "personality", "backstory", "strategyStyle", "werewolfStrategyStyle", "performanceInstructions", "visualDesign"] as const;
 export type CharacterField = typeof CHARACTER_FIELDS[number];
 export const VISUAL_FIELDS: CharacterField[] = ["performanceInstructions", "visualDesign"];
 export type CharacterDraftContext = Record<CharacterField, string> & { hasFullBody: boolean };
 export type CharacterEditCommand = { tool: "update_character" | "update_visuals"; fields: CharacterField[] } | { tool: "clarify"; message: string };
 export function characterEditFields(profile: Partial<Record<CharacterField, string | null>>, selected: CharacterField[]): CharacterField[] {
-  return CHARACTER_FIELDS.filter(field => selected.includes(field) || !profile[field]?.trim());
+  // Game tactics are independent, optional owner notes. Editing one must not
+  // silently fill another game's notes or change shared character details.
+  const strategyFields: CharacterField[] = ["strategyStyle", "werewolfStrategyStyle"];
+  if (selected.length && selected.every(field => strategyFields.includes(field))) return [...selected];
+  return CHARACTER_FIELDS.filter(field => selected.includes(field) || (!strategyFields.includes(field) && !profile[field]?.trim()));
 }
 export function decodeCharacterEditTool(name: string, args: string): CharacterEditCommand {
   const value: unknown = JSON.parse(args);

@@ -88,6 +88,8 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
 // Deterministic persona details
 // ---------------------------------------------------------------------------
 
+export const HOUSE_PERSONA_KEYS = Object.keys(DEFAULT_BLURBS) as Personality[];
+
 export function getHousePersonaDetails(archetype: Personality): {
   personalityBlurb: string;
   strategyHints: string;

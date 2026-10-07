@@ -1,3 +1,5 @@
+import {werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {houseInputSchemas,validateHouseInput,type HouseToolName} from "../game-mcp/house-contracts.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
@@ -601,6 +603,50 @@ describe("/mcp Streamable HTTP route", () => {
     beforeEach(async () => {
       db = await setupTestDB();
       await seedRBAC(db);
+    });
+
+    test("real House MCP route discovers both games and reads a known Unlisted slug without ownership", async () => {
+      const issued = await issueMcpAccessToken(db, {walletAddress:"0xmcphttp00000000000000000000000000000402"});
+      const events = await werewolfResultsFixture("village","mcp-wolf");
+      await db.insert(schema.games).values([
+        {id:"mcp-wolf",slug:"mcp-wolf-slug",gameKind:"werewolf",status:"completed",startedAt:new Date().toISOString(),config:'{"visibility":"unlisted"}'},
+        {id:"mcp-public-wolf",slug:"mcp-public-wolf",gameKind:"werewolf",config:'{}'},
+        {id:"mcp-influence",slug:"mcp-influence",config:'{}'},
+      ]);
+      await db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:event.gameId,sequence:event.sequence,event})));
+      const app = createMcpRoutes(db,{auditLogger:()=>undefined,ownerLearningConnectionRecorder:async()=>undefined});
+      const server = Bun.serve({port:0,hostname:"127.0.0.1",fetch:app.fetch});
+      const rpc = async (method:string,params?:unknown) => {
+        const response = await fetch(`http://127.0.0.1:${server.port}/mcp`, {method:"POST",headers:jsonHeaders({Authorization:`Bearer ${issued.accessToken}`}),body:JSON.stringify({jsonrpc:"2.0",id:"house",method,params})});
+        expect(response.status).toBe(200);
+        const body = await response.json() as {error?:unknown;result:Record<string,unknown>};
+        expect(body.error).toBeUndefined();return body.result;
+      };
+      try {
+        await rpc("initialize",{protocolVersion:"2025-06-18",capabilities:{},clientInfo:{name:"House test",version:"1"}});
+        const inventory = await rpc("tools/list");
+        const tools = inventory.tools as Array<{name:string;securitySchemes:unknown;_meta:{securitySchemes:unknown};annotations:{readOnlyHint:boolean}}>;
+        for (const name of Object.keys(houseInputSchemas)) {
+          const tool = tools.find(tool => tool.name === name)!;
+          expect(tool).toBeDefined();expect(tool.annotations.readOnlyHint).toBe(true);expect(tool.securitySchemes).toEqual(tool._meta.securitySchemes);
+        }
+        const listed = await rpc("tools/call",{name:"list_games",arguments:{}});
+        expect((listed.structuredContent as {games:Array<{id:string}>}).games.map(game => game.id).sort()).toEqual(["mcp-influence","mcp-public-wolf"]);
+        const read = await rpc("tools/call",{name:"read_game",arguments:{gameIdOrSlug:"mcp-wolf-slug",view:"replay",limit:1}});
+        const page = read.structuredContent as {gameKind:string;nextCursor:string;followUps:Array<{tool:HouseToolName;arguments:Record<string,unknown>}>};
+        expect(page.gameKind).toBe("werewolf");expect(JSON.stringify(page)).not.toContain('"role"');
+        for (const next of page.followUps) {validateHouseInput(next.tool,next.arguments);expect(tools.some(tool => tool.name === next.tool)).toBe(true);}
+        const continuation = page.followUps.find(next => next.arguments.cursor === page.nextCursor)!;
+        expect((await rpc("tools/call",{name:continuation.tool,arguments:continuation.arguments})).isError).toBeUndefined();
+        const invalid = await rpc("tools/call",{name:"read_game",arguments:{gameIdOrSlug:"mcp-wolf",limit:-1}});
+        expect(invalid.structuredContent).toMatchObject({status:"invalid_input"});
+        const hidden = await db.update(schema.games).set({hiddenAt:new Date().toISOString()}).where(eq(schema.games.id,"mcp-wolf"));
+        void hidden;
+        for (const gameIdOrSlug of ["mcp-wolf","missing"]) expect((await rpc("tools/call",{name:"read_game",arguments:{gameIdOrSlug}})).structuredContent).toMatchObject({status:"not_accessible"});
+        await db.update(schema.mcpOauthAccessTokens).set({revokedAt:new Date().toISOString()}).where(eq(schema.mcpOauthAccessTokens.tokenHash,hashOpaqueSecret(issued.accessToken)));
+        const denied = await fetch(`http://127.0.0.1:${server.port}/mcp`,{method:"POST",headers:jsonHeaders({Authorization:`Bearer ${issued.accessToken}`}),body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"read_game",arguments:{gameIdOrSlug:"mcp-influence"}}})});
+        expect(denied.status).toBe(401);
+      } finally { server.stop(true); }
     });
 
     test("dispatches requests with an active MCP access token", async () => {

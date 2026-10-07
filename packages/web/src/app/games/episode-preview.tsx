@@ -1,5 +1,6 @@
 "use client";
 
+import { GameCard } from "@/components/games/game-card";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -59,7 +60,7 @@ export function EpisodeTrailer({ preview, autoplay, onEnded }: { preview: Episod
   if (media.status !== "ready") return null;
   return <div className="episode-video">
     <video ref={video} playsInline controls muted={muted} preload="metadata" poster={media.poster.url} aria-label={`${preview.episode.title} trailer`} onEnded={onEnded} onError={onEnded} onVolumeChange={e => { setMuted(e.currentTarget.muted); if (document.activeElement === e.currentTarget) rememberEpisodeSound(!e.currentTarget.muted); }}>
-      <source src={media.video.url} type={media.video.contentType} /><track kind="captions" src={media.captions.url} srcLang={media.captions.language} label={media.captions.label} default />
+      <source src={media.video.url} type={media.video.contentType} /><track kind="captions" src={media.captions.url} srcLang={media.captions.language} label={media.captions.label} />
     </video>
     <div className="episode-video-controls"><button type="button" onClick={() => { const p = video.current; if (!p) return; const enabled = p.muted; rememberEpisodeSound(enabled); p.muted = !enabled; setMuted(p.muted); }}>{muted ? "Sound on" : "Sound off"}</button>
     {blocked && <button type="button" onClick={() => { if (video.current) void playEpisodeVideo(video.current).then(ok => setBlocked(!ok)); }}>Play trailer</button>}
@@ -99,21 +100,15 @@ export function EpisodeCard({ game, actions }: { game: GameSummary; actions: Rea
   }, [expanded]);
   const frames = preview?.frames.length ? preview.frames : episodeFallbackFrames(game);
   const label = game.status === "in_progress" ? "Live" : game.status === "waiting" ? "Open seats" : game.status === "completed" ? "Completed" : game.visualPaused ? "Paused" : game.status === "cancelled" ? "Cancelled" : "Failed";
-  const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "private" ? "Your private game" : "Public game";
+  const subtitle = game.season ? `${game.season.name}${game.episode?.episodeNumber ? ` · Episode ${game.episode.episodeNumber}` : ""}` : game.visibility === "unlisted" ? "Unlisted game" : "Public game";
   const links = <><Link className="influence-button-primary" href={gameReplayHref(game.slug)}>{game.status === "in_progress" ? "Watch live" : "Watch Replay"} ↗</Link><Link className="influence-button-secondary" href={gameResultsHref(game.slug)}>Details</Link></>;
   return <>
-    <article ref={card} className="episode-card" data-testid="episode-card" onMouseEnter={() => { if (matchMedia("(hover: hover) and (pointer: fine)").matches) { window.dispatchEvent(new CustomEvent("episode:preview", { detail: game.id })); setActive(true); load(); } }} onMouseLeave={() => setActive(false)}>
-      <Link className="episode-card-link" aria-label={`Open ${title}`} href={gameHref(game.slug)} onClick={e => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        if (matchMedia("(hover: none), (pointer: coarse)").matches) { e.preventDefault(); load(); setEnded(false); setExpanded(true); }
-        else requestEpisodePlayback(game.slug);
-      }}>
-        <EpisodeArtwork frames={frames} active={active} title={title} />
-        <span className={`episode-status episode-status-${game.status}`}>{label}</span>
-        <div className="episode-copy"><div className="episode-eyebrow">{subtitle}</div><h2>{title}</h2><p>{game.episode?.description ?? "Meet the cast. Step inside the House."}</p><span className="episode-meta">{game.playerCount} Agents · {game.modelLabel}</span></div>
-      </Link>
-      <div className="episode-desktop-actions">{game.status !== "waiting" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>}{actions}</div>
-    </article>
+    <GameCard ref={card} data-testid="episode-card" title={title} href={gameHref(game.slug)} status={game.status} statusLabel={label} eyebrow={subtitle}
+      description={game.episode?.description ?? "Meet the cast. Step inside the House."} meta={<>{game.playerCount} Agents · {game.modelLabel}</>}
+      artwork={<EpisodeArtwork frames={frames} active={active} title={title} />}
+      actions={<>{game.status !== "waiting" ? links : <Link className="influence-button-primary" href={gameHref(game.slug)}>Join game</Link>}{actions}</>}
+      onMouseEnter={() => { if (matchMedia("(hover: hover) and (pointer: fine)").matches) { window.dispatchEvent(new CustomEvent("episode:preview", {detail:game.id}));setActive(true);load(); } }} onMouseLeave={() => setActive(false)}
+      onOpen={e => {if(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)return;if(matchMedia("(hover: none), (pointer: coarse)").matches){e.preventDefault();load();setEnded(false);setExpanded(true);}else requestEpisodePlayback(game.slug);}} />
     {expanded && <dialog ref={dialog} className="episode-modal" aria-label={title} onCancel={() => setExpanded(false)} onClose={() => setExpanded(false)}>
       <header><span className="episode-eyebrow">{subtitle}</span><button autoFocus type="button" onClick={() => setExpanded(false)}>Close ×</button></header>
       <div className="episode-modal-media">{preview?.media.status === "ready" && !ended ? <EpisodeTrailer preview={preview} autoplay onEnded={() => setEnded(true)} /> : <EpisodeArtwork frames={frames} active title={title} />}</div>

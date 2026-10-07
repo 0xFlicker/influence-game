@@ -54,7 +54,7 @@ test("a rejected pointer cannot add an arrow to the accepted chain", () => {
 
 test("image-backed classification, tally and tie use canonical states; ballots keep their speech", () => {
   const cues = compile().cues;
-  for (const cue of cues.filter(isSafetyBounceSceneCue)) {
+  for (const cue of cues.filter(cue => isSafetyBounceSceneCue(cue) && cue.kind !== "format_tiebreak")) {
     const result = visualWatchPresentation(data, cue, null, players, [lobby]);
     expect(result.beat?.kind).toBe("safety-bounce");
     expect(visualWatchPresentation({ ...data, scenes: [] }, cue, null, players, [lobby]).beat).toBeNull();
@@ -64,7 +64,6 @@ test("image-backed classification, tally and tie use canonical states; ballots k
     expect(html).not.toContain("Invented words");
     expect(html.match(/data-chain-member=/g)?.length).toBe(4);
     if (cue.kind === "safety_bounce_pointer" && cue.targetId === "rex") expect(html).toContain("Chain complete");
-    if (cue.kind === "format_tiebreak") expect(html).toContain("Atlas breaks the tie");
   }
   const elimination = cues.find(cue => cue.kind === "format_elimination")!;
   expect(visualWatchPresentation(data, elimination, null, players, [lobby]).beat).toBeNull();

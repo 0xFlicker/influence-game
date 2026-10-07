@@ -1481,8 +1481,7 @@ describe("admin route RBAC", () => {
             reasoningPolicy: "action-policy",
           },
         ],
-        visibility: "private",
-        viewerMode: "speedrun",
+        visibility: "unlisted",
       },
     });
 

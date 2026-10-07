@@ -662,7 +662,7 @@ function WhisperRoomSealed({
         <p className="text-xs text-white/30 italic">
           {messageCount === 0
             ? room.playerNames.length < 2 ? "No backchannel conversation in this room." : "Private conversation in progress..."
-            : `${messageCount} message${messageCount !== 1 ? "s" : ""} exchanged — revealed after voting`}
+            : `${messageCount} message${messageCount !== 1 ? "s" : ""} exchanged — available after voting`}
         </p>
       </div>
     </div>
@@ -734,7 +734,7 @@ export function WhisperRoomDM({
             </span>
           )}
           <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80">
-            Revealed
+            Open to view
           </span>
           {focused && onClose && (
             <button

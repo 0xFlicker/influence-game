@@ -6,11 +6,18 @@ export function createWatchIntelligenceRoutes(db: DrizzleDB) {
   const app = new Hono();
 
   app.get("/api/games/:idOrSlug/watch-intelligence", async (c) => {
+    for (const key of ["throughEventSequence", "throughTranscriptSequence"]) {
+      const raw = c.req.query(key);
+      if (raw !== undefined && (raw.trim() === "" || !Number.isSafeInteger(Number(raw)) || Number(raw) < 0)) return c.json({error:"Invalid replay cutoff"},400);
+    }
+    c.header("Cache-Control", "private, no-store");
     const result = await getPublicWatchIntelligence(db, {
       gameIdOrSlug: c.req.param("idOrSlug"),
       actorPlayerId: optionalQuery(c.req.query("actorPlayerId")),
       round: parseNonNegativeInt(c.req.query("round")),
       phase: optionalQuery(c.req.query("phase")),
+      throughEventSequence: parseNonNegativeInt(c.req.query("throughEventSequence")),
+      throughTranscriptSequence: parseNonNegativeInt(c.req.query("throughTranscriptSequence")),
       limit: parseNonNegativeInt(c.req.query("limit")),
     });
 

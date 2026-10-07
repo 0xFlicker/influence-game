@@ -1,3 +1,7 @@
+import { readWerewolfVisualPause, queueWerewolfFormRepair } from "../services/werewolf-visual-policy.js";
+import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
+import { requirePermission } from "../middleware/auth.js";
+import { readWerewolfScenePreview } from "../services/werewolf-production.js";
 import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
@@ -30,6 +34,32 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
   app.use(`${root}/*`, requireAuth(db), producer);
   app.get(`${root}/games`, async c => c.json(await listReplayVisualGames(db)));
   app.get(`${root}/games/:id/visual`, async c => c.json(await readReplayVisualProduction(db, c.req.param("id"))));
+  app.get(`${root}/games/:id/visual/scenes/:scene/preview`, async c => {
+    const [game] = await db.select().from(schema.games).where(and(eq(schema.games.id, c.req.param("id")), eq(schema.games.gameKind, "werewolf")));
+    if (!game) return c.json({ error: "Werewolf game not found" }, 404);
+    const preview = await readWerewolfScenePreview(db, game.id, c.req.param("scene"));
+    return preview ? c.json(preview) : c.json({ error: "Scene not found" }, 404);
+  });
+  app.post(`${root}/games/:id/visual/control`, requirePermission("start_game"), async c => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({error:"Invalid JSON"},400); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({error:"Invalid visual control"},400);
+    const value = body as Record<string, unknown>;
+    try {
+      if (value.action === "policy" && Object.keys(value).length === 2 && (value.policy === "best_effort" || value.policy === "require_visuals")) await setVisualFailurePolicy(db,c.req.param("id"),value.policy,c.get("user").id);
+      else if (value.action === "resume" && Object.keys(value).length === 1) await resumeVisualGame(db,c.req.param("id"),c.get("user").id);
+      else return c.json({error:"Invalid visual control"},400);
+      return c.json({accepted:true});
+    } catch(error) { return c.json({error:error instanceof Error ? error.message : "Visual control failed"},409); }
+  });
+  app.post(`${root}/games/:id/visual/forms`, async c => {
+    let body: unknown;
+    try { body = await c.req.json(); } catch { return c.json({error:"Invalid JSON"},400); }
+    const value = body as Record<string, unknown> | null;
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length !== 2 || typeof value.pauseId !== "string" || typeof value.requestId !== "string" || !value.requestId.trim() || value.requestId.length > 200) return c.json({error:"Pause and request IDs required"},400);
+    try { return c.json({accepted:true,...await queueWerewolfFormRepair(db,c.req.param("id"),c.get("user").id,value.pauseId,value.requestId)}); }
+    catch(error) { return c.json({error:error instanceof Error ? error.message : "Wolf form repair failed"},409); }
+  });
   app.post(`${root}/games/:id/visual/missing`, async c => {
     let value: unknown;
     try { value = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
@@ -46,7 +76,7 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     if (!control) return c.json({ error: "Invalid scene media control" }, 400);
     const [game] = await db.select({ status: schema.games.status }).from(schema.games).where(eq(schema.games.id, c.req.param("id")));
     if (!game) return c.json({ error: "Game not found" }, 404);
-    if (game.status !== "completed") return c.json({ error: "Replay image production requires a completed game" }, 409);
+    if (game.status !== "completed" && !await readWerewolfVisualPause(db, c.req.param("id"))) return c.json({ error: "Replay image production requires a completed game" }, 409);
     const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, control, { oneAtATime: true });
     return c.json({ ...receipt, ...(!receipt.accepted && { error: receipt.message }) }, receipt.accepted ? 200 : 409);
   });
@@ -99,8 +129,10 @@ function decodeReplayMediaControl(value: unknown): MediaControl | null {
   else if (b.action === "continue") { if (b.sourceJobId !== undefined && !string("sourceJobId")) return null; fields.push("sourceJobId"); }
   else if (b.action === "publish") {
     if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;
-    fields.push("versionId", "expectedPublication");
-  } else if (b.action !== "regenerate") return null;
+    if (b.audience !== undefined && b.audience !== "public" && b.audience !== "private") return null;
+    fields.push("versionId", "expectedPublication", "audience");
+  } else if (b.action === "regenerate") { if (b.regenerateForms !== undefined && typeof b.regenerateForms !== "boolean") return null; fields.push("regenerateForms"); }
+  else return null;
   if (Object.keys(b).some(key => !fields.includes(key))) return null;
   return b as MediaControl;
 }

@@ -19,13 +19,17 @@ import {
   type SavedAgent,
   type UpdateAgentParams,
 } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { getGameEntry } from "@/lib/game-entry";
+import { gameHref } from "@/lib/game-links";
+import { getWerewolfLobby, joinWerewolfLobby } from "@/lib/werewolf-api";
 import { AgentForm } from "./agent-form";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
 export type AgentCreateFlow = "manage" | "join_game" | "daily_free";
 
-export function AgentCreateRulesLink() {
-  return <> <Link href="/rules" className="influence-link">Read the Rules</Link> before setting their strategy.</>;
+export function AgentCreateRulesLink({ werewolf = false }: { werewolf?: boolean } = {}) {
+  return <> <Link href={werewolf ? "/rules?game=werewolf" : "/rules"} className="influence-link">Read the Rules</Link> before setting their strategy.</>;
 }
 
 export function AgentCreateContent({
@@ -36,7 +40,8 @@ export function AgentCreateContent({
   gameId?: string;
 }) {
   const router = useRouter();
-  const { authenticated } = useAuth();
+  const { authenticated, ready, account } = useAuth();
+  const target = useQuery({queryKey:["agent-create-target",gameId,account?.publicId],queryFn:({signal}) => getGameEntry(gameId!,signal),enabled:flow === "join_game" && !!gameId && ready,retry:false});
   const [mode, setMode] = useState<"assistant" | "advanced">("assistant");
   const createdAgentId = useRef<string | null>(null);
   const createBaseline = useRef<AgentProfileWriteParams | null>(null);
@@ -45,6 +50,7 @@ export function AgentCreateContent({
     params: AgentProfileWriteParams,
     { creationRequestId }: { creationRequestId: string },
   ) {
+    const identity = flow === "join_game" && gameId ? await getGameEntry(gameId) : null;
     const createParams: CreateAgentParams = { ...params, creationRequestId };
     const continuationKey = `influence:agent-create-continuation:${creationRequestId}`;
     const baselineKey = `influence:agent-create-baseline:${creationRequestId}`;
@@ -65,7 +71,7 @@ export function AgentCreateContent({
     }
     agent ??= await getAgentByCreationRequestId(creationRequestId);
 
-    let joinTarget: Awaited<ReturnType<typeof getGame>> | null = null;
+    let joinTarget: { slug: string; status: string } | null = null;
     if (agent) {
       const baseline = createBaseline.current ?? readCreateBaseline(baselineKey);
       if (!baseline) {
@@ -83,7 +89,7 @@ export function AgentCreateContent({
     } else {
       if (flow === "join_game") {
         if (!gameId) throw new Error("The game to join is no longer available.");
-        joinTarget = await getGame(gameId);
+        joinTarget = identity?.gameKind === "werewolf" ? await getWerewolfLobby(gameId) : await getGame(gameId);
         if (joinTarget.status !== "waiting") {
           throw new Error("This game is no longer accepting players.");
         }
@@ -98,12 +104,13 @@ export function AgentCreateContent({
     writeEditorStorage(baselineKey, JSON.stringify(params));
     createdAgentId.current = agent.id;
     writeEditorStorage(continuationKey, agent.id);
-    if (flow === "join_game" && gameId) {
-      await joinGame(gameId, { agentProfileId: agent.id });
-      const joinedGame = joinTarget ?? await getGame(gameId);
+    if ((flow === "join_game") && gameId) {
+      if (identity?.gameKind === "werewolf") await joinWerewolfLobby(gameId, agent.id);
+      else await joinGame(gameId, { agentProfileId: agent.id });
+      const joinedGame = joinTarget ?? (identity?.gameKind === "werewolf" ? await getWerewolfLobby(gameId) : await getGame(gameId));
       removeEditorStorage(continuationKey);
       removeEditorStorage(baselineKey);
-      router.replace(`/games/${encodeURIComponent(joinedGame.slug)}`);
+      router.replace(gameHref(joinedGame.slug));
       return;
     }
     if (flow === "daily_free") {
@@ -124,7 +131,7 @@ export function AgentCreateContent({
         title: "Create an Agent and join",
         description: "Build a saved competitor, then enter the selected game.",
         submitLabel: "Create & join",
-        cancelPath: gameId ? `/dashboard?joinGameId=${encodeURIComponent(gameId)}` : "/dashboard",
+        cancelPath: gameId ? gameHref(target.data?.slug ?? gameId) : "/games",
       }
     : flow === "daily_free"
       ? {
@@ -150,9 +157,10 @@ export function AgentCreateContent({
         </nav>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl">{context.title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
-          {context.description}<AgentCreateRulesLink />
+          {context.description}<AgentCreateRulesLink werewolf={target.data?.gameKind === "werewolf"} />
         </p>
       </header>
+      {target.error && <p role="alert">Could not load the game to join. {target.error.message}</p>}
       <AgentForm
         publicPreview
         guided={mode === "assistant"}
@@ -192,7 +200,7 @@ export function buildRecoveredUpdate(
   remote: SavedAgent,
 ): UpdateAgentParams {
   const update: UpdateAgentParams = {};
-  const fields = ["name", "personality", "backstory", "strategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl", "visualDesign", "portraitCrop", "headPosition"] as const;
+  const fields = ["name", "personality", "backstory", "strategyStyle", "werewolfStrategyStyle", "personaKey", "gender", "avatarUrl", "performanceInstructions", "fullBodyReferenceUrl", "visualDesign", "portraitCrop", "headPosition"] as const;
   for (const field of fields) {
     const baseValue = comparableValue(baseline[field], field);
     const localValue = comparableValue(local[field], field);

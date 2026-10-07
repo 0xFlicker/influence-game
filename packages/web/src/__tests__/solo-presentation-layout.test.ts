@@ -1,25 +1,27 @@
 import { expect, test } from "bun:test";
-import { FULL_BODY_HEAD_REGION_BOTTOM, layoutSoloPresentation } from "../app/games/[slug]/components/solo-presentation-layout";
-
-test("standing character fills the player height with side letterboxing on wide screens", () => {
-  const { image, bubble } = layoutSoloPresentation(1280, 800, 1024, 1536, true, 140, 220);
-  expect(image.height).toBe(800);
-  expect(image.top).toBe(0);
-  expect(image.width).toBeCloseTo(800 * 2 / 3);
-  expect(image.left).toBeCloseTo((1280 - image.width) / 2);
-  expect(bubble.top).toBe(800 * FULL_BODY_HEAD_REGION_BOTTOM + 16);
-  expect(bubble.left + bubble.width / 2).toBe(640);
-});
-
-test.each([{ width: 390, height: 844 }, { width: 844, height: 390 }])("rotation preserves image height and keeps speech below the head and above controls: %j", ({ width, height }) => {
-  const { image, bubble } = layoutSoloPresentation(width, height, 1024, 1536, true, 140, 1400);
-  expect(image.height).toBe(height);
-  expect(image.top).toBe(0);
-  expect(bubble.top).toBeGreaterThan(height * FULL_BODY_HEAD_REGION_BOTTOM);
-  expect(bubble.top + bubble.height).toBeLessThanOrEqual(height - 140);
-  expect(bubble.left).toBeGreaterThanOrEqual(12);
-  expect(bubble.left + bubble.width).toBeLessThanOrEqual(width - 12);
-  if (width < image.width) expect(image.left).toBeLessThan(0);
+import { layoutSoloPresentation } from "../app/games/[slug]/components/solo-presentation-layout";
+import type {SceneFrame} from "../app/games/[slug]/components/visual-scene-layout";
+const overlaps = (a: SceneFrame, b: SceneFrame) => a.left < b.left+b.width && b.left < a.left+a.width && a.top < b.top+b.height && b.top < a.top+a.height;
+for (const [width,height] of [[1280,800],[390,844],[844,390],[590,280]]) {
+  for (const thinking of [false,true]) {
+    test(`full-body art, bubbles and ledger have separate space: ${width}x${height}, thinking=${thinking}`, () => {
+      const layout = layoutSoloPresentation(width!,height!,1024,1536,true,110,308,{x:.4,y:.85,width:.15,height:.12},thinking);
+      const boxes = [layout.image,layout.bubble,...(layout.thought ? [layout.thought] : [])];
+      for (const box of boxes) {
+        expect(box.width).toBeGreaterThan(0); expect(box.height).toBeGreaterThan(0);
+        expect(box.left).toBeGreaterThanOrEqual(0); expect(box.top).toBeGreaterThanOrEqual(0);
+        expect(box.left+box.width).toBeLessThanOrEqual(width!);
+        expect(box.top+box.height).toBeLessThanOrEqual(height!-110);
+      }
+      for (let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) expect(overlaps(boxes[i]!,boxes[j]!)).toBe(false);
+      expect(layout.image.width/layout.image.height).toBeCloseTo(2/3);
+    });
+  }
+}
+test("silent ballots keep their whole character above the ledger", () => {
+  const {image} = layoutSoloPresentation(390,640,1024,1536,true,180,308,undefined,false,false);
+  expect(image.top+image.height).toBeLessThanOrEqual(460);
+  expect(image.left+image.width/2).toBeCloseTo(195);
 });
 
 test("landscape portrait fallback centers a substantial portrait next to readable speech", () => {
@@ -49,22 +51,4 @@ test("mobile portraits and their paged speech are centered above fullscreen cont
   expect(image.top).toBeGreaterThan(12);
   expect(bubble.top).toBeGreaterThan(image.top + image.height);
   expect(bubble.top + bubble.height).toBeLessThanOrEqual(704);
-});
-
-test("confirmed edge head controls framing and speech on a narrow screen", () => {
-  const head = { x: .8, y: .12, width: .15, height: .12 };
-  const { image, bubble, tailLeft } = layoutSoloPresentation(390, 844, 1024, 1536, true, 140, 220, head);
-  const headX = image.left + image.width * (head.x + head.width / 2);
-  expect(headX).toBeGreaterThan(0);
-  expect(headX).toBeLessThan(390);
-  expect(bubble.top).toBeCloseTo(844 * .24 + 16);
-  expect(bubble.left + tailLeft).toBeCloseTo(headX);
-});
-
-test.each([.65, .85])("low confirmed heads put speech above the face and controls: %s", y => {
-  const head = { x: .4, y, width: .15, height: .12 };
-  const { image, bubble, above } = layoutSoloPresentation(844, 390, 1024, 1536, true, 140, 220, head);
-  expect(above).toBe(true);
-  expect(bubble.top + bubble.height).toBeLessThan(image.height * head.y);
-  expect(bubble.top + bubble.height).toBeLessThan(390 - 140);
 });

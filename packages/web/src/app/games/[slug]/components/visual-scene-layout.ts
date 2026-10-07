@@ -41,7 +41,7 @@ export function placeSceneBubble(width: number, height: number, image: SceneFram
   const aboveSpace = Math.max(0, top - gap - margin);
   const belowSpace = Math.max(0, height - bottom - gap - margin);
   // Header, padding and the pagination footer must leave at least one complete line.
-  const preferredHeight = Math.min(Math.max(speechHeight, 128), 220, height * .45);
+  const preferredHeight = Math.min(Math.max(speechHeight, 128), 220, Math.max(128, height * .45));
   const below = !head || (aboveSpace < preferredHeight && belowSpace > aboveSpace);
   const available = head ? (below ? belowSpace : aboveSpace) : height - margin * 2;
   const bubbleHeight = Math.max(0, Math.min(preferredHeight, available));

@@ -1,0 +1,35 @@
+import {afterEach,beforeEach,expect,test} from "bun:test";
+import {act,cleanup,fireEvent,render,waitFor} from "@testing-library/react";
+import {Window} from "happy-dom";
+import {adminTestWrapper} from "./admin-test-wrapper";
+import {ImageReviewEditor} from "../app/admin/games/[id]/visual/image-review-editor";
+import {setApiBase} from "../lib/api";
+const originalFetch=globalThis.fetch;
+const names=["window","document","navigator","localStorage","HTMLElement","Node","Event"] as const;
+const saved=new Map(names.map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
+let dom:Window;
+beforeEach(()=>{
+ dom=new Window({url:"http://localhost"});
+ for(const name of names)Object.defineProperty(globalThis,name,{configurable:true,value:dom[name]});
+ dom.HTMLDialogElement.prototype.showModal=function(){this.setAttribute("open","");};
+ dom.HTMLDialogElement.prototype.close=function(){this.removeAttribute("open");};
+ setApiBase("");
+});
+afterEach(async()=>{await act(async()=>{cleanup();});dom.close();globalThis.fetch=originalFetch;for(const name of names){const descriptor=saved.get(name);if(descriptor)Object.defineProperty(globalThis,name,descriptor);else Reflect.deleteProperty(globalThis,name);}});
+test("draft selections survive unmount, release the modal and require explicit discard after source revision changes",async()=>{
+ let revision=1;
+ const fetcher=async(url:string)=>Response.json(url.includes("/evidence/")?{imageUrl:"data:image/png;base64,AA=="}:{expectedRevision:revision,planHash:"plan",players:[{id:"p",name:"Player"}],sources:[{id:"source",kind:"artifact",imageId:"immutable",label:"Saved group",participantIds:["p"],anchors:[],pointers:[]}]});
+ globalThis.fetch=Object.assign(fetcher,{preconnect:originalFetch.preconnect}) as typeof fetch;
+ const editor=<ImageReviewEditor gameId="g" sceneId="s" apiPrefix="/api/admin/production/games" disabled={false} onSave={()=>{}} onClose={()=>{}}/>;
+ const view=render(editor,{wrapper:adminTestWrapper()});
+ await waitFor(()=>expect(view.getByText("Use as group shot")).not.toBeNull());
+ fireEvent.click(view.getByText("Use as group shot"));
+ expect((view.getByText("Save reviewed version") as HTMLButtonElement).disabled).toBe(false);
+ view.rerender(<p>Other page</p>);expect(dom.document.body.style.overflow).not.toBe("hidden");
+ revision=2;view.rerender(editor);
+ await waitFor(()=>expect(view.getByText(/This draft belongs to an earlier image revision/)).not.toBeNull());
+ expect(view.getByText(/1 selected pictures/)).not.toBeNull();
+ expect((view.getByText("Save reviewed version") as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(view.getByText("Discard older draft"));expect(view.queryByText(/This draft belongs/)).toBeNull();
+ expect(view.getByText(/0 selected pictures/)).not.toBeNull();
+});

@@ -530,15 +530,6 @@ async function createGameInDB(
     maxRounds: 10,
     minPlayers: 5,
     maxPlayers: playerCount,
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
   };
 
   await db.insert(schema.games)
@@ -606,7 +597,6 @@ describe("Game lifecycle integration", () => {
         maxRounds: 6,
         modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         visibility: "public",
-        viewerMode: "speedrun",
       },
     });
     const ownerEpoch = await insertOwner(db, gameId);

@@ -15,8 +15,7 @@ type TwoNamesCue = Extract<FormatPresentationCue, {
     | "two_names_override_declined"
     | "two_names_override_removed"
     | "two_names_replacement"
-    | "two_names_plea"
-    | "two_names_ballots_sealing";
+    | "two_names_plea";
 }>;
 
 export function TwoNamesStage({
@@ -29,7 +28,6 @@ export function TwoNamesStage({
   currentStateEntry: boolean;
 }) {
   const facts = cue.after.twoNames;
-  const finalistIds = facts?.finalistPlayerIds ?? facts?.initialNomineeIds;
   const showEmpoweredAnchor = cue.kind !== "two_names_empowered_intro";
   const showOverrideAnchor = Boolean(facts?.overrideHolderId)
     && cue.kind !== "two_names_override_draw"
@@ -115,18 +113,6 @@ export function TwoNamesStage({
           <Plea cue={cue} roster={roster} />
         ) : null}
 
-        {cue.kind === "two_names_ballots_sealing" && finalistIds ? (
-          <div className="w-full text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#ff7b91]">Exit voting begins</p>
-            <div className="mt-8"><DossierPair ids={finalistIds} roster={roster} /></div>
-            <p className="mt-4 text-xs text-white/55">Ballots sealed · {cue.sealedCount} of {cue.eligibleCount}</p>
-            <div className="mt-3 flex items-center justify-center gap-2" aria-label={`${cue.sealedCount} of ${cue.eligibleCount} ballots sealed`}>
-              {Array.from({ length: cue.eligibleCount }, (_, index) => (
-                <span key={index} className={`h-2 w-2 rounded-full ${index < cue.sealedCount ? "bg-[#f5f1ea]" : "bg-white/15"}`} />
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
     </section>
   );

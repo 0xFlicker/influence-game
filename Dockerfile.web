@@ -16,6 +16,7 @@ FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock bunfig.toml tsconfig.json ./
 COPY packages/web/ packages/web/
+COPY docs/rules-page-content.md docs/werewolf-rules-page-content.md docs/
 COPY packages/engine/ packages/engine/
 COPY packages/prompt-lab-protocol/ packages/prompt-lab-protocol/
 # Workspace resolution
@@ -32,6 +33,8 @@ ENV DOCKER_BUILD=1
 # The web container listens on :3000; server rendering must call the API service,
 # not recurse through the web container's browser-facing fallback.
 ENV API_BACKEND_URL=http://api:3001
+ARG NEXT_PUBLIC_ENABLED_GAMES=influence,werewolf
+ENV NEXT_PUBLIC_ENABLED_GAMES=${NEXT_PUBLIC_ENABLED_GAMES}
 ARG PRIVY_APP_ID
 ENV PRIVY_APP_ID=${PRIVY_APP_ID}
 ARG GIT_SHA=unknown
@@ -61,6 +64,7 @@ ENV MANAGED_AUTH_MODE=disabled
 COPY --from=build /app/packages/web/.next/standalone ./
 COPY --from=build /app/packages/web/.next/static ./packages/web/.next/static
 COPY --from=build /app/packages/web/public ./packages/web/public
+COPY --from=build /app/docs ./docs
 
 EXPOSE 3000
 

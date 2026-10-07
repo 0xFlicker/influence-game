@@ -355,3 +355,23 @@ test("harmonization strictly verifies all identities even under best effort", as
   expect(ready.shots?.overview?.visibleParticipantIds).toHaveLength(6);
   expect(ready.shots?.mode).toBe("scene");
 });
+
+
+test("optional harmonization provider failure retains verified panels and its receipt", async () => {
+  const mock = globalThis.fetch;
+  const planned = await scene(6);
+  const groups = visualRenderGroups(planned.plan).length;
+  globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url).includes("/v1/images/") && imageCalls >= groups) {
+      imageCalls += 1;
+      return Response.json({error:"Fixture rejection"}, {status:400});
+    }
+    return mock(url, init);
+  }, {preconnect:originalFetch.preconnect});
+  const ready = await renderPlannedVisualScene(db, planned);
+  expect(ready.status).toBe("ready");
+  expect(ready.shots?.mode).toBe("groups");
+  expect(ready.shots?.groups.flatMap(shot=>shot.visibleParticipantIds)).toHaveLength(6);
+  expect(imageCalls).toBe(groups + 1);
+  expect((await db.select().from(schema.visualRenderAttempts)).some(attempt=>attempt.receipt?.status===400)).toBe(true);
+});

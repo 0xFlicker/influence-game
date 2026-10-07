@@ -25,8 +25,8 @@ export const OWNER_LEARNING_PROVIDER_INSTRUCTIONS = [
   "Use only server-issued moment and evidence handles. Never invent a source or claim an elimination pattern proves causation.",
   "Separate observed evidence, strategic interpretation, and proposed prompt guidance in every finding.",
   "Select no more than three moments for deeper review, and select a moment only when its local context could change the diagnosis.",
-  "Recommendations must improve strategyStyle guidance for this social voting game, not propose code, tooling, latency, or execution fixes.",
-  "When proposing a change, return the complete replacement strategyStyle and identify the exact current guidance being corrected.",
+  "Recommendations must improve the reviewed game strategy guidance, not propose code, tooling, latency, or execution fixes.",
+  "When proposing a change, return the complete replacement strategy for the reviewed game and identify the exact current guidance being corrected.",
   "Return finalResult as null only while callBudget.finalResultRequired is false and the evidence does not yet support a diagnosis.",
   "When callBudget.finalResultRequired is true, return a complete finalResult and prefer an explicit no-change result over a weak recommendation.",
 ].join("\n");
@@ -128,6 +128,7 @@ export function buildBudgetedOwnerLearningProviderInput(input: {
   evidence: OwnerLearningEvidenceProjection;
   responseSchema: Record<string, unknown>;
 }): OwnerLearningProviderContext {
+  if (input.evidence.games.some(game => "werewolf" in game.canonicalFacts)) return buildWerewolfProviderInput(input);
   const catalog = buildOwnerLearningProviderHandleCatalog(input.evidence);
   const visibleHandles = new Set<string>();
   const turn = compactNonEvidenceTurn(input.turn, catalog, visibleHandles);
@@ -233,7 +234,7 @@ function ownerLearningProviderRequestSerializedChars(
   responseSchema: Record<string, unknown>,
 ): number {
   return stableJson({
-    model: "gpt-5.6-luna",
+    model: "gpt-6-luna",
     instructions: OWNER_LEARNING_PROVIDER_INSTRUCTIONS,
     input: `<owner_learning_data>\n${stableJson(input)}\n</owner_learning_data>`,
     reasoning: { effort: "low" },
@@ -597,6 +598,7 @@ function compactMoment(
 }
 
 function compactCanonicalFacts(facts: OwnerLearningCanonicalGameFacts): Record<string, unknown> {
+  if ("werewolf" in facts) return { game: facts.game, result: facts.reviewedPlayer, laterOutcome: facts.werewolf.laterOutcome };
   const omittedActionCount = canonicalActionArrays(facts)
     .reduce((count, entries) => count + Math.max(0, entries.length - MAX_ACTION_ENTRIES), 0);
   return {
@@ -659,6 +661,7 @@ function compactCanonicalFacts(facts: OwnerLearningCanonicalGameFacts): Record<s
 }
 
 function compactCanonicalSummary(facts: OwnerLearningCanonicalGameFacts): Record<string, unknown> {
+  if ("werewolf" in facts) return compactCanonicalFacts(facts);
   return {
     game: {
       slug: truncateString(facts.game.slug, MAX_LABEL_CHARS),
@@ -680,6 +683,7 @@ function compactCanonicalSummary(facts: OwnerLearningCanonicalGameFacts): Record
 }
 
 function canonicalActionArrays(facts: OwnerLearningCanonicalGameFacts): unknown[][] {
+  if ("werewolf" in facts) return [facts.werewolf.decisions];
   return [
     facts.actionsByAgent.votesCastByRound,
     facts.actionsByAgent.formatBallotsCastByRound,
@@ -1021,4 +1025,66 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+/** Werewolf context preserves decision-time knowledge instead of using Influence round/action slots. */
+function buildWerewolfProviderInput(input: {
+  stage: OwnerLearningStage; turn: Record<string, unknown>; evidence: OwnerLearningEvidenceProjection;
+  responseSchema: Record<string, unknown>;
+}): OwnerLearningProviderContext {
+  const catalog = buildOwnerLearningProviderHandleCatalog(input.evidence);
+  const visibleHandles = new Set<string>();
+  const turn = compactNonEvidenceTurn(input.turn, catalog, visibleHandles);
+  const bundle = recordValue(input.turn.momentBundle);
+  const selectedMoment = recordValue(bundle?.moment)?.id;
+  const games = input.evidence.games.map(game => {
+    const facts = game.canonicalFacts;
+    if (!("werewolf" in facts)) throw new Error("A review cannot mix game kinds");
+    const alias = catalog.gameAliasById.get(game.gameId)!;
+    // Use the catalog's actual issued summary reference rather than minting a second handle.
+    const summary = [...catalog.evidenceRefByHandle].find(([, ref]) => ref.gameId === game.gameId && ref.kind === "game_summary");
+    if (!summary) throw new Error("Review summary handle is missing");
+    visibleHandles.add(summary[0]);
+    const decisions = facts.werewolf.decisions.flatMap(decision => {
+      const moment = game.candidateMoments.find(m => m.sourceCoordinate === `werewolf:${decision.sequence}`);
+      if (!moment || (selectedMoment && selectedMoment !== moment.id)) return [];
+      const handle = catalog.momentHandleById.get(moment.id)!;
+      const observation = decision.knownAtDecision;
+      // Investigations retain the complete current thread, or the current night's
+      // public context. Scan samples are explicitly incomplete; role knowledge stays exact.
+      const thread = observation.turnReminder?.thread ?? observation.board.discussion?.thread;
+      const relevantEntries = observation.board.entries.filter(entry => entry.day === decision.day
+        && (entry.kind !== "discussion" || thread == null || entry.contribution.thread === thread));
+      const keptEntries = selectedMoment ? relevantEntries : observation.board.entries.slice(-3);
+      const packEntries = selectedMoment ? observation.packDiscussion.filter(entry => entry.day === decision.day) : observation.packDiscussion.slice(-3);
+      return [{ handle, day: decision.day, phase: decision.phase, action: decision.action,
+        thinking: decision.thinking,
+        knownAtDecision: { ...observation,
+          board: { ...observation.board, entries: keptEntries },
+          packDiscussion: packEntries,
+        },
+        omittedPublicEntries: observation.board.entries.length - keptEntries.length,
+        omittedPackEntries: observation.packDiscussion.length - packEntries.length,
+      }];
+    });
+    return { alias, summaryHandle: summary[0], game: facts.game, result: facts.reviewedPlayer,
+      runtime: facts.werewolf.runtime, laterOutcome: facts.werewolf.laterOutcome, publicOutcomes: facts.werewolf.publicOutcomes, cast: facts.werewolf.cast,
+      decisions, omittedDecisionCount: facts.werewolf.decisions.length - decisions.length };
+  });
+  turn.evidence = { instructions: input.evidence.reviewInput.instructions, games };
+  const providerInput = { protocol: OWNER_LEARNING_PROVIDER_PROTOCOL, gameKind: "werewolf", stage: input.stage, turn };
+  let estimatedTokens = estimateOwnerLearningProviderCallTokens(providerInput, input.responseSchema);
+  // Evenly thin dense scans, preserving coverage across the whole game. A
+  // selected investigation never silently loses its thread to fit the budget.
+  let removalOffset = 1;
+  while (estimatedTokens > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+    const largest = [...games].sort((a, b) => b.decisions.length - a.decisions.length)[0];
+    if (!largest || largest.decisions.length <= 2 || selectedMoment) throw new Error("Werewolf review context exceeds the configured input budget");
+    largest.decisions.splice(removalOffset % (largest.decisions.length - 2) + 1, 1);
+    removalOffset += 2;
+    largest.omittedDecisionCount++;
+    estimatedTokens = estimateOwnerLearningProviderCallTokens(providerInput, input.responseSchema);
+  }
+  for (const game of games) for (const decision of game.decisions) visibleHandles.add(decision.handle);
+  return { input: providerInput, catalog, visibleHandles, estimatedTokens };
 }

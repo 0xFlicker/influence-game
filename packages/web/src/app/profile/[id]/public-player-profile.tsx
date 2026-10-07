@@ -1,23 +1,21 @@
+import Link from "next/link";
+import type { ParticipationFilter } from "@influence/engine/house-participation";
+import { ParticipationRows, participationFilters } from "@/components/participation-history";
+import { playerProfileHref } from "@/lib/player-profile-links";
 import type { ReactNode } from "react";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import type {
   PublicAgentPreview,
-  PublicCompetitionResult,
   PublicPlayerProfile,
 } from "@/lib/api";
 import { PublicProfileShareButton } from "./public-profile-share-button";
 
-const resultDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
 export function PublicPlayerProfileView({
   profile,
+  gameKind = "all",
 }: {
   profile: PublicPlayerProfile;
+  gameKind?: ParticipationFilter;
 }) {
   const { identity } = profile;
 
@@ -48,7 +46,11 @@ export function PublicPlayerProfileView({
 
       <CurrentSeasonSection profile={profile} />
       <CareerSection profile={profile} />
-      <RecentResultsSection results={profile.recentResults} />
+      <section className="influence-panel min-w-0 rounded-xl p-5">
+        <h2 className="influence-section-title">Game history</h2><p className="text-xs influence-copy-muted">Results · Spoilers</p>
+        <nav className="mt-3 flex flex-wrap gap-2" aria-label="History game type">{participationFilters.map(f => <Link key={f.kind} scroll={false} aria-current={f.kind === gameKind ? "page" : undefined} className={`${f.kind === gameKind ? "influence-button-primary" : "influence-button-secondary"} rounded px-3 py-2 text-sm`} href={`${playerProfileHref(profile.identity)}${f.kind === "all" ? "" : `?game=${f.kind}`}`}>{f.label}</Link>)}</nav>
+        <ParticipationRows entries={profile.recentResults}/>
+      </section>
       <AgentRosterSection agents={profile.agents} />
     </div>
   );
@@ -68,7 +70,7 @@ function CurrentSeasonSection({
     >
       <SectionHeading
         id="profile-current-season"
-        eyebrow="Current season"
+        eyebrow="Influence season"
         title={currentSeason?.season.name ?? "Architect standing"}
       />
 
@@ -134,7 +136,7 @@ function CareerSection({ profile }: { profile: PublicPlayerProfile }) {
       <SectionHeading
         id="profile-career"
         eyebrow="Career"
-        title="Competitive record"
+        title="Influence competitive record"
       />
       <dl className="mt-5 grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-5">
         <Metric label="Rating" value={career.rating} />
@@ -145,59 +147,9 @@ function CareerSection({ profile }: { profile: PublicPlayerProfile }) {
       </dl>
       {career.gamesPlayed === 0 ? (
         <p className="influence-copy-muted mt-4 text-sm">
-          No career games yet.
+          No Influence career games yet.
         </p>
       ) : null}
-    </section>
-  );
-}
-
-function RecentResultsSection({
-  results,
-}: {
-  results: PublicCompetitionResult[];
-}) {
-  return (
-    <section
-      aria-labelledby="profile-recent-results"
-      className="influence-panel min-w-0 overflow-hidden rounded-xl p-5 sm:p-6"
-    >
-      <SectionHeading
-        id="profile-recent-results"
-        eyebrow="Recent results"
-        title="Latest public finishes"
-      />
-      {results.length === 0 ? (
-        <EmptyState>No public results yet.</EmptyState>
-      ) : (
-        <ol className="mt-5 min-w-0 space-y-3">
-          {results.map((result) => (
-            <li
-              key={`${result.gameSlug}:${result.agentName}:${result.earnedAt}`}
-              className="influence-panel-muted min-w-0 overflow-hidden rounded-lg p-4"
-            >
-              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-text-primary">
-                    {result.agentName}
-                  </p>
-                  <p className="influence-copy-muted mt-1 break-all text-xs">
-                    {result.gameSlug} · {formatResultDate(result.earnedAt)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                  <span className="font-semibold text-text-primary">
-                    #{result.placement} of {result.lobbySize}
-                  </span>
-                  <span className="influence-copy-muted">
-                    {result.totalPoints} pts
-                  </span>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
     </section>
   );
 }
@@ -255,16 +207,16 @@ function AgentRosterSection({ agents }: { agents: PublicAgentPreview[] }) {
               {agent.competition.gamesPlayed === 0 ? (
                 <div className="influence-panel-muted mt-4 rounded-lg p-4">
                   <p className="text-sm font-medium text-text-primary">
-                    No games yet
+                    No Influence games yet
                   </p>
                   <p className="influence-copy-muted mt-1 text-xs">
-                    This agent has no public competitive record.
+                    This agent has no public Influence competitive record.
                   </p>
                 </div>
               ) : (
                 <dl className="mt-4 grid min-w-0 grid-cols-3 gap-3">
                   <Metric
-                    label="Games"
+                    label="Influence games"
                     value={agent.competition.gamesPlayed}
                   />
                   <Metric
@@ -350,11 +302,4 @@ function formatHundredths(value: number): string {
 
 function formatWinRate(value: number): string {
   return `${Math.round(value * 100)}%`;
-}
-
-function formatResultDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : resultDateFormatter.format(date);
 }

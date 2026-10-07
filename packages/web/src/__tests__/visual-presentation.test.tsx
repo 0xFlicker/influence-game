@@ -6,6 +6,7 @@ import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import { soloPresentationDurationMs, SOLO_READ_START_MS, SOLO_EXIT_MS, SOLO_SPEECH_FADE_MS } from "../app/games/[slug]/components/solo-presentation-timing";
 import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS } from "../app/games/[slug]/components/scene-speech-timing";
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
+import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
 import { portraitRoomSeats } from "../app/games/[slug]/components/portrait-room";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
@@ -272,4 +273,13 @@ test("group shots follow the speaker and a missing character keeps portrait spee
   const nextBeat: VisualPresentationBeat = { kind: "scene", sceneId: scene.id, roomId: scene.roomId, speech: { ...speech, id: "next-speaker" } };
   view.rerender(<VisualPresentationFrame beat={nextBeat} rooms={[establishing]} elapsedMs={0} reducedMotion />);
   expect(view.getByAltText("Current conversation scene").getAttribute("src")).toBe("/group.png");
+});
+
+
+test("silent character focus selects their panel without inventing a speech bubble", () => {
+  const shot = (playerId: string) => ({ imageUrl: `/${playerId}.png`, annotatedImageUrl: "", participantIds: [playerId], visibleParticipantIds: [playerId], pointers: [], anchors: [{ playerId, label: 1, head: { x: .5, y: .3, width: .1, height: .1 }, confidence: "clear" as const }] });
+  const scene = { ...rooms[0]!, shots: { mode: "groups" as const, overview: null, groups: [shot("p1"), shot("p2")] } };
+  const view = render(<VisualSceneView scene={scene} speech={null} focusPlayerId="p2" elapsedMs={1000} reducedMotion />);
+  expect(view.container.querySelector('[data-speech-bubble]')).toBeNull();
+  expect(Array.from(view.container.querySelectorAll("img")).some(image => image.getAttribute("src") === "/p2.png")).toBe(true);
 });

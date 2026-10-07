@@ -6,7 +6,7 @@ export function CollectionPage({ collection, title }: { collection: GameCollecti
   return <div className="influence-page min-h-screen flex flex-col"><Nav />
     <main className="flex-1 px-6 py-10 max-w-[1480px] mx-auto w-full">
       <h1 className="influence-phase-title text-3xl font-bold mb-8">{title}</h1>
-      <GamesBrowser collection={collection} />
+      <GamesBrowser collection={collection} includeWerewolf={collection.kind === "game" && collection.game === "werewolf"} />
     </main>
   </div>;
 }

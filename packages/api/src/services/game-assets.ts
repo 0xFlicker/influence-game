@@ -4,7 +4,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { getPermissionsForUser } from "../db/rbac.js";
 import type { GameAssetActor } from "../middleware/game-asset-auth.js";
 import { requireAssetManager } from "../middleware/game-asset-auth.js";
-import { visibleEpisodeGames } from "../routes/episodes.js";
+import { isViewerGame } from "./game-visibility.js";
 import { GameAssetError, type GameAssetStorage, type NormalizedGameImage } from "./game-asset-storage.js";
 
 type Asset = typeof schema.gameAssets.$inferSelect;
@@ -42,7 +42,7 @@ export class GameAssetsService {
     const [game] = await this.db.select().from(schema.games).where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))).limit(1);
     if (!game) return notFound();
     if (management) { requireAssetManager(actor); return game; }
-    if (game.hiddenAt || !(await visibleEpisodeGames(this.db, [game], actor?.id, actor?.permissions)).length) return notFound();
+    if (!isViewerGame(game)) return notFound();
     return game;
   }
   async read(gameId: string, assetId: string): Promise<Asset> {

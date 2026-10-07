@@ -339,9 +339,14 @@ test("harmonizes selected saved panels once, preserves their pixels and metadata
   expect(receipt).toMatchObject({ accepted: true, version: 1 });
   expect(await send(input)).toEqual(receipt);
   expect(calls).toEqual([]);
-  const job = await run();
+  const claimed = await claimVisualMediaJob(db, "saved-panel-worker");
+  expect(claimed).not.toBeNull();
+  const job = claimed!;
+  await executeVisualMediaJob(db, job!, new AbortController().signal, renderVisualCandidate, async () => {
+    throw new Error("Saved-panel harmonization must not regenerate character variants");
+  });
   expect(job).toMatchObject({ mode: "harmonize", sourceVersionId: source.id, sourceImageId: null });
-  const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job.id)!;
+  const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job!.id)!;
   expect(media.jobs[0]!.status).toBe("ready");
   expect(calls).toEqual(["image", "composition", "heads", "identities"]);
   expect(version.shots).toMatchObject({ mode: "scene", groups: source.groups });
@@ -430,4 +435,15 @@ test.each(["admin", "producer"])("%s media endpoint authorizes and validates the
   const receipt = await result.json();
   expect(await (await app.request(url, { method: "POST", headers, body: JSON.stringify(input) })).json()).toEqual(receipt);
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(1); expect(calls).toEqual([]);
+});
+
+test("explicit saved-panel harmonization reports an image-provider failure", async () => {
+  const source = await acceptedPanels();
+  await send({ action: "harmonize", sourceVersionId: source.id });
+  fail = "first-image";
+  await run();
+  const media = await readVisualMedia(db, "media");
+  expect(media.jobs[0]!.status).toBe("failed");
+  expect(media.versions).toHaveLength(1);
+  expect(media.publications).toEqual([]);
 });

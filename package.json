@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "simulate:werewolf": "cd packages/engine && bun run simulate:werewolf",
+    "simulate:werewolf:api": "cd packages/engine && bun run simulate:werewolf:api",
     "test": "bun run test:classification && bun run test:provider-free",
     "test:classification": "bun run scripts/check-test-classification.ts",
     "test:provider-free": "bun test ./packages/engine ./packages/web ./packages/prompt-lab-protocol ./scripts --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",
@@ -43,7 +45,7 @@
     "dev:api:service": "cd packages/api && bun run dev",
     "dev:gateway": "bun run dev:api",
     "dev:web:service": "cd packages/web && bun run dev",
-    "dev:render-worker:service": "cd packages/web && bun run render-worker:poll",
+    "dev:render-worker:service": "cd packages/web && POSTGAME_MEDIA_DRAIN_ACK_FILE=${POSTGAME_MEDIA_DRAIN_ACK_FILE:-../../.renders/render-worker/drain-ack.json} bun run render-worker:poll",
     "trailer:render": "cd packages/web && bun run trailer:render",
     "trailer:music:variants": "bun run scripts/generate-house-highlights-music-variants.ts",
     "render-worker:poll": "cd packages/web && bun run render-worker:poll",

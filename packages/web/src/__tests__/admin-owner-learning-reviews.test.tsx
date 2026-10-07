@@ -61,6 +61,20 @@ describe("admin owner learning reviews", () => {
     expect(html).not.toContain("href=");
   });
 
+  test("renders Werewolf strategy identity without a fabricated revision", () => {
+    const detail = detailFixture();
+    detail.gameKind = "werewolf";
+    detail.reviewedRevision = { id: "werewolf-review-v1:fixture", ordinal: null };
+    const html = renderToString(<AdminOwnerLearningReviewsContent
+      data={listFixture(detail)} expandedId={detail.id} details={{ [detail.id]: detail }}
+      loadingDetailId={null} onToggle={() => {}} />);
+    expect(html).toContain("Werewolf");
+    expect(html).toContain("Strategy identity");
+    expect(html).toContain("werewolf-review-v1:fixture");
+    expect(html).not.toContain("rnull");
+    expect(html).not.toContain("rundefined");
+  });
+
   test("previews complete failure evidence as inert escaped text", async () => {
     const domWindow = new HappyDOMWindow({ url: "http://localhost/admin?tab=reviews" });
     Object.defineProperty(globalThis, "window", { configurable: true, value: domWindow });
@@ -618,6 +632,7 @@ function listFixture(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearning
   return {
     reviews: [{
       id: detail.id,
+      gameKind: detail.gameKind,
       owner: detail.owner,
       agent: detail.agent,
       reviewedRevision: detail.reviewedRevision,
@@ -656,6 +671,7 @@ function detailFixture(
     id,
     owner: { userId: "owner-1", displayName: "Review Owner", handle: "review-owner" },
     agent: { profileId: `agent-${id}`, name: agentName },
+    gameKind: "influence",
     reviewedRevision: { id: "revision-1", ordinal: 2 },
     policy: {
       eligibility: "owner-learning-eligibility-v1",

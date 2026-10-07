@@ -22,6 +22,7 @@ export function publicOwnerLearningPreflight(
         ? "ready" as const
         : "generation_unavailable" as const,
     selection: {
+      gameKind: preflight.selection.gameKind,
       agentProfileId: preflight.selection.agentProfileId,
       agentProfileName: preflight.selection.agentProfileName,
       reviewedRevisionId: preflight.selection.currentRevisionId,

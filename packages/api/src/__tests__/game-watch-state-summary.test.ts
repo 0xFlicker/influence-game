@@ -301,7 +301,6 @@ function gameConfig(overrides: Record<string, unknown> = {}): Record<string, unk
     maxRounds: 10,
     modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
     visibility: "public",
-    viewerMode: "speedrun",
     ...overrides,
   };
 }

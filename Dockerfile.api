@@ -50,6 +50,8 @@ COPY --from=build /app/packages/api/package.json ./
 COPY --from=deps /sharp-runtime/ ./node_modules/
 COPY packages/web/public/avatars/personas/ ./assets/personas/
 ENV INFLUENCE_PERSONA_ASSET_DIR=/app/assets/personas
+COPY packages/api/assets/werewolf/ ./assets/werewolf/
+ENV WEREWOLF_ASSET_DIR=/app/assets/werewolf
 # Provider-free: decode every bundled default and exercise the native image library.
 RUN bun dist/check-visual-runtime.js
 

@@ -1,5 +1,8 @@
 "use client";
 
+import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
+import {ThoughtBubble, useSceneThinking} from "@/components/watch/watch-thinking";
+import {layoutThought} from "@/components/watch/thought-layout";
 import { useLayoutEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
@@ -33,7 +36,6 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
 }) {
   const frame = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [naturalHeight, setNaturalHeight] = useState(180);
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
   useLayoutEffect(() => {
     const element = frame.current;
@@ -51,13 +53,23 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const seats = portraitRoomSeats(beside ? size.width * .5 : size.width, beat.participants.length, speakerIndex);
   const centerX = size.width * (beside ? .72 : .5);
   const diameter = Math.min(seats[0]?.diameter ?? 0, available * (beside ? .44 : .34));
-  const bubbleHeight = Math.max(0, Math.min(300, naturalHeight + 68, beside ? available - 56 : available * .45));
+  const thought = useSceneThinking();
+  const bubbleHeight = Math.max(0, Math.min(300, 248, beside ? available - 56 : available * .45));
   const centerY = beside ? available / 2 : Math.max(diameter / 2 + 44, (available + bubbleHeight) / 2);
   const bubbleTop = beside ? 44 : Math.max(44, centerY - diameter / 2 - bubbleHeight - 24);
   const opacity = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, elapsedMs, false, reducedMotion).speechOpacity
     : sceneSpeechOpacity(beat.speech.text, elapsedMs, reducedMotion);
   const speechTime = speechPresentation === "solo" ? soloPresentationMotion(beat.speech.text, readingElapsedMs).speechElapsedMs
     : readingElapsedMs - SCENE_SPEECH_START_MS;
+  const rawBubble = {left: beside ? 12 : Math.max(12, (size.width - 480) / 2), top: bubbleTop,
+    width: Math.max(0, Math.min(480, beside ? size.width * .43 : size.width - 24)), height: bubbleHeight};
+  const thoughtLayout = thought ? layoutThought(size.width, available, rawBubble, {x:centerX, y:centerY - diameter * .2}) : null;
+  const speechBox = thoughtLayout?.speech ?? rawBubble;
+  const thoughtBox = thoughtLayout?.thought ?? {...speechBox,height:0};
+  const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
+  const thoughtFit = useBubbleTypography(frame, thought?.text ?? "", thoughtBox, "thought", available < 300);
+  const fittedThought = {...thoughtBox,width:thoughtFit.typography?.width ?? thoughtBox.width,height:thoughtFit.typography?.height ?? thoughtBox.height};
+  const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:speechFit.typography?.height ?? speechBox.height};
   return <section ref={frame} aria-label={beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`} data-portrait-room
     className="relative min-h-0 w-full flex-1 overflow-hidden" style={{ perspective: 1200 }}>
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
@@ -80,10 +92,11 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
       </motion.div>;
     })}
     {opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
-      style={{ left: beside ? 12 : Math.max(12, (size.width - 480) / 2), top: bubbleTop, width: Math.max(0, Math.min(480, beside ? size.width * .43 : size.width - 24)), height: bubbleHeight, opacity }}>
-      <p className="mb-2 text-sm font-semibold text-white/70">{beat.speech.speaker}</p>
-      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} onNaturalHeight={setNaturalHeight} className="text-base leading-relaxed" />
+      style={{...bubble, opacity, padding:speechFit.padding}}>
+      <p className={`mb-2 h-5 shrink-0 truncate text-xs font-semibold leading-5 text-white/70 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
+      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className={thoughtLayout && available < 300 ? "text-xs leading-4" : "text-base leading-relaxed"} />
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - bubbleTop - 8 } : undefined} />
     </div>}
+    {thoughtLayout && <ThoughtBubble box={fittedThought} head={thoughtLayout.head} typography={thoughtFit.typography} padding={thoughtFit.padding} />}
   </section>;
 }

@@ -16,15 +16,6 @@ const INITIAL_NOTEBOOK = "PRIVATE NOTEBOOK CANARY: Blair distrusts Ada but still
 const MILESTONE_NOTEBOOK = "PRIVATE NOTEBOOK CANARY: Vote Bomb turned Blair's doubt into an active fracture.";
 
 const CONFIG: GameConfig = {
-  timers: {
-    introduction: 0,
-    lobby: 0,
-    mingle: 0,
-    rumor: 0,
-    vote: 0,
-    power: 0,
-    council: 0,
-  },
   maxRounds: 1,
   minPlayers: 5,
   maxPlayers: 12,

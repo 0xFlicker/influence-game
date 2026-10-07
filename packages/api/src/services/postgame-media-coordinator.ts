@@ -14,9 +14,14 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getCompletedGameResults } from "./completed-game-results.js";
 import { getPostgameHighlights } from "./postgame-highlights.js";
+import { buildStoredWerewolfTrailerSnapshot } from "./werewolf-trailer-snapshot.js";
+import { WerewolfTrailerWaitingError } from "@influence/engine/postgame-media/werewolf-trailer-manifest";
+import { isViewerGame } from "./game-visibility.js";
+
+type MediaDB = Pick<DrizzleDB, "select" | "update" | "insert">;
 
 const MEDIA_TYPE = "house_highlights_trailer" as const;
-const RENDERER_VERSION = "remotion-v1";
+const RENDERER_VERSION = "remotion-v2";
 const DEFAULT_MUSIC_ASSET_ID = "golden-verdict-max";
 const ACTIVE_STATUSES = ["queued", "claimed", "rendering", "composing", "uploading"] as const;
 
@@ -54,6 +59,13 @@ export async function reconcilePostgameMediaForGame(
   db: DrizzleDB,
   gameId: string,
 ): Promise<PostgameMediaCoordinatorResult> {
+  return db.transaction(async tx => {
+    await tx.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.id, gameId)).for("update");
+    return reconcileLocked(tx, gameId);
+  });
+}
+
+async function reconcileLocked(db: MediaDB, gameId: string): Promise<PostgameMediaCoordinatorResult> {
   const game = await loadCompletedGame(db, gameId);
   if (!game) return emptyResult("not_completed", gameId);
 
@@ -115,6 +127,13 @@ export async function requestPostgameMedia(
     source: string;
   },
 ): Promise<PostgameMediaCoordinatorResult> {
+  return db.transaction(async tx => {
+    await tx.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.id, params.gameId)).for("update");
+    return requestLocked(tx, params);
+  });
+}
+
+async function requestLocked(db: MediaDB, params: Parameters<typeof requestPostgameMedia>[1]): Promise<PostgameMediaCoordinatorResult> {
   const game = await loadCompletedGame(db, params.gameId);
   if (!game) {
     await recordPostgameMediaAudit(db, {
@@ -218,6 +237,8 @@ export async function reconcileCompletedPostgameMedia(
       eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE),
     ))
     .where(and(
+      inArray(schema.games.gameKind, ["influence", "werewolf"]),
+      isNull(schema.games.hiddenAt),
       eq(schema.games.status, "completed"),
       or(
         isNull(schema.gamePostgameMedia.gameId),
@@ -239,15 +260,15 @@ export async function reconcileCompletedPostgameMedia(
   return { examined: completedGames.length, queued, waitingInputs };
 }
 
-async function loadCompletedGame(db: DrizzleDB, idOrSlug: string) {
-  const game = (await db.select({ id: schema.games.id, status: schema.games.status })
+async function loadCompletedGame(db: MediaDB, idOrSlug: string) {
+  const game = (await db.select()
     .from(schema.games)
     .where(eq(schema.games.id, idOrSlug))
     .limit(1))[0];
-  return game?.status === "completed" ? game : null;
+  return game?.status === "completed" && isViewerGame(game) ? game : null;
 }
 
-async function loadMediaRow(db: DrizzleDB, gameId: string) {
+async function loadMediaRow(db: MediaDB, gameId: string) {
   return (await db.select().from(schema.gamePostgameMedia).where(mediaWhere(gameId)).limit(1))[0] ?? null;
 }
 
@@ -321,7 +342,7 @@ function queuedValues(
     renderInputSnapshotVersion: snapshot.schemaVersion,
     rendererVersion: RENDERER_VERSION,
     timingContractVersion: snapshot.timingContractVersion,
-    musicAssetId: DEFAULT_MUSIC_ASSET_ID,
+    musicAssetId: snapshot.kind === "werewolf" ? snapshot.story.musicAssetId : DEFAULT_MUSIC_ASSET_ID,
     artifactMetadata: null,
     uploadTargetMetadata: null,
     cueMetadata: null,
@@ -334,9 +355,14 @@ function newArtifactVersion(): string {
 }
 
 async function createSnapshot(
-  db: DrizzleDB,
+  db: MediaDB,
   gameId: string,
 ): Promise<HouseHighlightsTrailerManifest | null> {
+  const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  if (game?.kind === "werewolf") {
+    try { return await buildStoredWerewolfTrailerSnapshot(db, gameId); }
+    catch (error) { if (error instanceof WerewolfTrailerWaitingError) return null; throw error; }
+  }
   const [resultsResponse, highlightsResponse, avatarRows] = await Promise.all([
     getCompletedGameResults(db, gameId),
     getPostgameHighlights(db, gameId),
@@ -370,7 +396,7 @@ async function createSnapshot(
 }
 
 async function recordPostgameMediaAudit(
-  db: DrizzleDB,
+  db: MediaDB,
   params: {
     gameId: string;
     actorUserId: string;

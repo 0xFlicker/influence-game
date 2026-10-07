@@ -1,0 +1,15 @@
+.werewolf-library-card {
+  background: #15120f;
+  border-color: #b79a6455;
+}
+.werewolf-library-card:hover { border-color: #d7b471a0; box-shadow: 0 18px 55px #0005; }
+.werewolf-artwork { background: #15120f; }
+.werewolf-artwork .episode-scene { object-position: center 40%; }
+.werewolf-artwork-shade { position: absolute; inset: 0; background: linear-gradient(0deg, #15120f 0%, transparent 45%); }
+.werewolf-house-mark { position: absolute; top: 20px; right: 20px; object-fit: contain; }
+.werewolf-library-card .episode-eyebrow { color: #ddbf87; }
+.werewolf-library-card .episode-copy { position: relative; padding-top: 8px; }
+.werewolf-library-card .episode-copy h2 { text-wrap: balance; }
+.werewolf-library-card .episode-desktop-actions { border-color: #b79a6430; }
+.werewolf-library-card .influence-button-primary { background: #d9b979; color: #21180c; }
+.werewolf-library-card .episode-status { background: #211a12e8; color: #f5e4c2; border-color: #c5a56966; }

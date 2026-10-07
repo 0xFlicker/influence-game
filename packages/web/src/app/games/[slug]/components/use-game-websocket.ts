@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  getAuthToken,
   type GameStatus,
   type WsGameEvent,
   type WsPublicationEvent,
@@ -141,15 +140,11 @@ export function useGameWebSocket(
     function connect() {
       if (cancelled) return;
 
-      const token = getAuthToken();
       const url = new URL(`${WS_BASE}/ws/games/${gameLocator}`);
       url.searchParams.set(
         "afterPublicationSequence",
         String(publicationBuffer.cursor),
       );
-      if (token) {
-        url.searchParams.set("token", token);
-      }
       catchUp.begin();
       const ws = new WebSocket(url.toString());
       wsRef.current = ws;
@@ -160,8 +155,9 @@ export function useGameWebSocket(
         // The connection is ready only after its catch-up snapshot arrives.
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (cancelled) return;
+        if (event.code === 1008) { setStatus("unavailable"); return; }
         // Add ±10% jitter to avoid thundering herd when multiple viewers reconnect
         const jitter = retryDelay * 0.1 * (Math.random() * 2 - 1);
         const delay = retryDelay + jitter;

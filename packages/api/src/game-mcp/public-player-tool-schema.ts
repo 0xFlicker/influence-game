@@ -63,17 +63,37 @@ const agentSchema = closedObject(
   },
 );
 
-const resultSchema = closedObject(
-  ["gameSlug", "agentName", "placement", "lobbySize", "totalPoints", "earnedAt"],
-  {
-    gameSlug: { type: "string" },
-    agentName: { type: "string" },
-    placement: { type: "number" },
-    lobbySize: { type: "number" },
-    totalPoints: { type: "number" },
-    earnedAt: { type: "string" },
-  },
-);
+const participationIdentity = {
+  gameId: { type: "string" },
+  gameSlug: { type: "string" },
+  gameTitle: { type: "string" },
+  playerId: { type: "string" },
+  agentProfileId: nullableStringSchema,
+  agentName: { type: "string" },
+  totalPlayers: { type: "number" },
+  completedAt: { type: "string" },
+};
+const nullableNumberSchema = { anyOf: [{type:"number"}, {type:"null"}] };
+const influenceResult = {
+  outcome: {type:"string",enum:["win","loss","unknown"]},
+  placement: nullableNumberSchema,
+  eliminated: {anyOf:[{type:"boolean"},{type:"null"}]},
+  rounds: {type:"number"},
+  totalPoints: nullableNumberSchema,
+};
+const werewolfResult = {
+  outcome: {type:"string",enum:["win","loss","draw"]},
+  faction: {type:"string",enum:["village","wolves"]},
+  alive: {type:"boolean"},
+  eliminationDay: nullableNumberSchema,
+  days: {type:"number"},
+};
+const resultSchema = {
+  anyOf: Object.entries({influence:influenceResult, werewolf:werewolfResult}).map(([kind,fields]) => closedObject(
+    [...Object.keys(participationIdentity), "gameKind", "result"],
+    {...participationIdentity, gameKind:{type:"string",const:kind}, result:{anyOf:[closedObject(Object.keys(fields),fields),{type:"null"}]}},
+  )),
+};
 
 const contributionSchema = closedObject(
   ["agentName", "sourcePoints", "weightPercent", "weightedPointsHundredths"],
@@ -300,17 +320,25 @@ function assertCurrentSeason(value: unknown): void {
 
 function assertResult(value: unknown, index: number): void {
   const path = `profile.recentResults[${index}]`;
-  const result = exactObject(
-    value,
-    ["gameSlug", "agentName", "placement", "lobbySize", "totalPoints", "earnedAt"],
-    path,
-  );
-  stringValue(result.gameSlug, `${path}.gameSlug`);
-  stringValue(result.agentName, `${path}.agentName`);
-  numberValue(result.placement, `${path}.placement`);
-  numberValue(result.lobbySize, `${path}.lobbySize`);
-  numberValue(result.totalPoints, `${path}.totalPoints`);
-  stringValue(result.earnedAt, `${path}.earnedAt`);
+  const entry = exactObject(value, [...Object.keys(participationIdentity), "gameKind", "result"], path);
+  for (const field of ["gameId", "gameSlug", "gameTitle", "playerId", "agentName", "completedAt"]) stringValue(entry[field], `${path}.${field}`);
+  nullableString(entry.agentProfileId, `${path}.agentProfileId`);
+  numberValue(entry.totalPlayers, `${path}.totalPlayers`);
+  enumValue(entry.gameKind, ["influence","werewolf"], `${path}.gameKind`);
+  if (entry.result === null) return;
+  const wolf = entry.gameKind === "werewolf";
+  const result = exactObject(entry.result, Object.keys(wolf ? werewolfResult : influenceResult), `${path}.result`);
+  enumValue(result.outcome, wolf ? ["win","loss","draw"] : ["win","loss","unknown"], `${path}.result.outcome`);
+  if (wolf) {
+    enumValue(result.faction, ["village","wolves"], `${path}.result.faction`);
+    booleanValue(result.alive, `${path}.result.alive`);
+    numberValue(result.days, `${path}.result.days`);
+    if (result.eliminationDay !== null) numberValue(result.eliminationDay, `${path}.result.eliminationDay`);
+  } else {
+    numberValue(result.rounds, `${path}.result.rounds`);
+    if (result.eliminated !== null) booleanValue(result.eliminated, `${path}.result.eliminated`);
+    for (const field of ["placement", "totalPoints"]) if (result[field] !== null) numberValue(result[field], `${path}.result.${field}`);
+  }
 }
 
 function assertAgent(value: unknown, index: number): void {

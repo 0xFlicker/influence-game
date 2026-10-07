@@ -12,17 +12,19 @@ import { PublicPlayerProfileView } from "./public-player-profile";
 
 interface Props {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ game?: string }>;
 }
 
-const getCachedPublicPlayerProfile = cache(async (identifier: string) => (
-  getServerPublicPlayerProfile(identifier)
+const getCachedPublicPlayerProfile = cache(async (identifier: string, kind: "all" | "influence" | "werewolf") => (
+  getServerPublicPlayerProfile(identifier, kind)
 ));
 
 async function getProfileOrNotFound(
   identifier: string,
+  kind: "all" | "influence" | "werewolf" = "all",
 ): Promise<PublicPlayerProfile> {
   try {
-    const envelope = await getCachedPublicPlayerProfile(identifier);
+    const envelope = await getCachedPublicPlayerProfile(identifier, kind);
     if (envelope.status === "not_found") notFound();
     return envelope.profile;
   } catch (error) {
@@ -33,13 +35,14 @@ async function getProfileOrNotFound(
   }
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { id } = await params;
-  const profile = await getProfileOrNotFound(id);
+  const game = (await searchParams)?.game;
+  const profile = await getProfileOrNotFound(id, game === "influence" || game === "werewolf" ? game : "all");
   const canonical = playerProfileHref(profile.identity);
-  const title = `${profile.identity.displayName} — Influence`;
+  const title = `${profile.identity.displayName} — The House`;
   const description =
-    `View ${profile.identity.displayName}'s current season standing, career record, recent results, and agent roster on Influence.`;
+    `View ${profile.identity.displayName}'s current season standing, career record, House game history, and agent roster.`;
 
   return {
     title,
@@ -59,15 +62,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function PublicPlayerProfilePage({ params }: Props) {
+export default async function PublicPlayerProfilePage({ params, searchParams }: Props) {
   const { id } = await params;
-  const profile = await getProfileOrNotFound(id);
+  const game = (await searchParams)?.game;
+  const kind = game === "influence" || game === "werewolf" ? game : "all";
+  const profile = await getProfileOrNotFound(id, kind);
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden">
       <Nav />
       <main className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10">
-        <PublicPlayerProfileView profile={profile} />
+        <PublicPlayerProfileView profile={profile} gameKind={kind} />
       </main>
     </div>
   );

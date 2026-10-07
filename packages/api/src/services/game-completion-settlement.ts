@@ -1,3 +1,4 @@
+import { queueHouseCuts } from "./house-cut-queue.js";
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Phase } from "@influence/engine";
@@ -674,15 +675,15 @@ export async function captureGameCompletionSettlement(
   return db.transaction(async (tx) => {
     // The game row is the lifecycle mutex shared with stop/void. Once capture
     // holds it, cancellation cannot cross the one-way sealed boundary.
-    const game = (await tx.select({ status: schema.games.status })
+    const game = (await tx.select({ status: schema.games.status, gameKind: schema.games.gameKind })
       .from(schema.games)
       .where(eq(schema.games.id, input.gameId))
       .for("update")
       .limit(1))[0];
-    if (game?.status !== "in_progress") {
+    if (game?.gameKind !== "influence" || game.status !== "in_progress") {
       throw new GameCompletionSettlementCaptureError(
         "game_not_in_progress",
-        `Completion game ${input.gameId} is not in progress`,
+        `Completion game ${input.gameId} is not an in-progress Influence game`,
       );
     }
 
@@ -915,6 +916,7 @@ export async function settleCapturedGameCompletion(
 
       const game = (await tx.select({
         status: schema.games.status,
+        gameKind: schema.games.gameKind,
         trackType: schema.games.trackType,
         seasonId: schema.games.seasonId,
         config: schema.games.config,
@@ -922,10 +924,10 @@ export async function settleCapturedGameCompletion(
         .where(eq(schema.games.id, gameId))
         .for("update")
         .limit(1))[0];
-      if (!game) {
+      if (!game || game.gameKind !== "influence") {
         throw new DeterministicSettlementError(
           "completion_game_state_conflict",
-          `Completion game ${gameId} no longer exists`,
+          `Completion game ${gameId} is missing or is not Influence`,
         );
       }
 
@@ -1167,6 +1169,7 @@ export async function settleCapturedGameCompletion(
         );
       }
 
+      await queueHouseCuts(tx, gameId);
       await releaseHeldTerminalPublications(tx, {
         gameId,
         ownerEpoch: context.source === "runner"

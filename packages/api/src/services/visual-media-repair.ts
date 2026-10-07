@@ -1,7 +1,7 @@
 import { decodeVisualShotReview, saveReviewedShots, type VisualShotReview } from "./visual-shot-review.js";
 import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
@@ -10,8 +10,8 @@ import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
-  { action: "review"; review: VisualShotReview } | { action: "regenerate" } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
-  { action: "publish"; versionId: string; expectedPublication: number }
+  { action: "review"; review: VisualShotReview } | { action: "regenerate"; regenerateForms?: boolean } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
+  { action: "publish"; versionId: string; expectedPublication: number; audience?: "public" | "private" }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
 const reject = (code: string, message: string): never => { throw new Rejected(code, message); };
@@ -19,7 +19,24 @@ const active = (status: string) => ["queued", "rendering", "verifying"].includes
 
 /** A receipt survives retries and all authorized rejections, without touching game execution. */
 export async function controlVisualMedia(db: DrizzleDB, gameId: string, operatorId: string, input: MediaControl, options: { oneAtATime?: boolean } = {}): Promise<typeof schema.visualMediaRequests.$inferSelect.receipt> {
+  // Preparation copies immutable references only; paid work stays in the queued worker.
+  let regeneratedPlan: import("@influence/engine/visual-scene-plan").VisualScenePlan | undefined;
+  if (input.action === "regenerate") {
+    const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+    const [prior] = await db.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
+    if (!prior && game?.kind === "werewolf") {
+      const [scene] = await db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.id, input.sceneId)));
+      if (scene) {
+        const { planWerewolfProduction } = await import("./werewolf-production-plan.js");
+        regeneratedPlan = await planWerewolfProduction(db, gameId, scene.roomId, scene.boundarySequence, input.regenerateForms ? input.requestId : undefined);
+        const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+        if (await readWerewolfVisualPause(db,gameId)) regeneratedPlan = {...regeneratedPlan,cast:regeneratedPlan.cast.map(member => member.variant && !member.variant.resolved ? {...member,variant:{...member.variant,generation:input.requestId}} : member)};
+
+      }
+    }
+  }
   return db.transaction(async tx => {
+    const [execution] = await tx.select().from(schema.games).where(eq(schema.games.id,gameId)).for("update");
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('visual-media'), hashtext(${gameId}))`);
     const hash = sha256StableJson(input);
     const [prior] = await tx.select().from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId), eq(schema.visualMediaRequests.operatorId, operatorId), eq(schema.visualMediaRequests.requestId, input.requestId)));
@@ -35,6 +52,15 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
     try {
       const [scene] = await tx.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.id, input.sceneId), eq(schema.visualScenes.gameId, gameId))).for("update");
       if (!scene) return reject("scene_missing", "Scene not found");
+      if (execution?.gameKind === "werewolf" && execution.status !== "completed") {
+        const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+        const pause = await readWerewolfVisualPause(tx,gameId);
+        const d = pause?.work.kind === "scene" ? pause.work.descriptor : null;
+        if (!d || scene.roomId !== d.roomId || scene.boundarySequence > d.boundarySequence || scene.plan.direction?.purpose !== `werewolf-${d.purpose}` || scene.plan.cast.length !== d.participantIds.length || scene.plan.cast.some(p => !d.participantIds.includes(p.id)))
+          return reject("visual_boundary_changed","Only the paused visual boundary can be repaired");
+      }
+      if (input.action === "regenerate" && input.regenerateForms && !regeneratedPlan?.cast.some(member => member.variant))
+        return reject("wolf_forms_not_supported", "This scene has no wolf forms to regenerate");
       await captureOriginalMediaVersion(tx, scene);
       const history = await tx.select().from(jobs).where(eq(jobs.sceneId, scene.id)).orderBy(desc(jobs.version));
       if ((history[0]?.version ?? 0) !== input.expectedVersion) return reject("stale_version", "Scene versions changed; refresh before trying again");
@@ -43,9 +69,13 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         if (!version) return reject("unverified", "Choose a verified version");
         const [last] = await tx.select().from(publications).where(eq(publications.sceneId, scene.id)).orderBy(desc(publications.revision)).limit(1);
         if ((last?.revision ?? 0) !== input.expectedPublication) return reject("publication_conflict", "Published version changed; refresh first");
+        const [game] = await tx.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+        if (game?.kind === "werewolf" && !input.audience) return reject("audience_required", "Choose public viewers or private production explicitly");
+        if (game?.kind !== "werewolf" && input.audience === "private") return reject("audience_not_supported", "Private publication is only supported for Werewolf production");
+        const audience = input.audience ?? "public";
         const id = randomUUID();
-        await tx.insert(publications).values({ id, gameId, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
-        receipt = { accepted: true, code: "published", message: "Published for new viewer sessions", publicationId: id };
+        await tx.insert(publications).values({ id, gameId, audience, sceneId: scene.id, versionId: version.id, revision: input.expectedPublication + 1, operatorId, createdAt: new Date().toISOString() });
+        receipt = { accepted: true, code: "published", message: audience === "private" ? "Published to private Werewolf production. Public playback is unchanged." : "Published for new viewer sessions", publicationId: id };
       } else if (input.action === "review") {
         if (history.some(j => active(j.status))) return reject("already_pending", "Wait for the active repair before saving a review");
         let shots;
@@ -55,12 +85,20 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         const [previous] = await tx.select({ image: versions.imageArtifactId }).from(versions).where(eq(versions.sceneId, scene.id)).limit(1);
         const imageArtifactId = image?.imageArtifactId ?? scene.imageArtifactId ?? scene.candidateArtifactId ?? previous?.image ?? scene.plan.backgroundArtifactId;
         if (!imageArtifactId) return reject("image_missing", "Scene background is unavailable");
+        // Keep the reference provenance of reviewed candidate pixels, not the original generic plan.
+        const candidates = await tx.select().from(versions).where(eq(versions.sceneId, scene.id)).orderBy(desc(versions.version));
+        const reviewed = [...shots.groups, ...(shots.overview ? [shots.overview] : [])];
+        const plans = reviewed.map(shot => candidates.find(candidate => [candidate.imageArtifactId,
+          ...(candidate.shots?.groups.map(group => group.imageArtifactId) ?? []), candidate.shots?.overview?.imageArtifactId].includes(shot.imageArtifactId))?.plan ?? scene.plan);
+        const plan = plans[0] ?? scene.plan;
+        if (plans.some(source => sha256StableJson({ cast: source.cast, direction: source.direction }) !== sha256StableJson({ cast: plan.cast, direction: plan.direction })))
+          return reject("mixed_references", "Choose pictures using the same character forms and location before saving this review");
         const id = randomUUID(), version = input.expectedVersion + 1, createdAt = new Date().toISOString();
-        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: "review", plan: scene.plan,
-          renderContext: { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction },
+        await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: "review", plan,
+          renderContext: plan.direction ?? { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction },
           status: "ready", step: "producer reviewed", createdAt, finishedAt: createdAt });
         const visible = [...new Set([...shots.groups, ...(shots.overview ? [shots.overview] : [])].flatMap(s => s.visibleParticipantIds))];
-        await tx.insert(versions).values({ id, gameId, sceneId: scene.id, jobId: id, version, plan: scene.plan, imageArtifactId,
+        await tx.insert(versions).values({ id, gameId, sceneId: scene.id, jobId: id, version, plan, imageArtifactId,
           annotatedArtifactId: image?.annotatedArtifactId ?? imageArtifactId, shots,
           localization: { count: visible.length, verifiedParticipantIds: visible, anchors: shots.mode === "scene" ? image!.anchors : [] },
           verificationVersion: "producer-review-v1", createdAt });
@@ -76,7 +114,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           .where(and(eq(schema.visualRenderOperations.sceneId, scene.id), sql`${schema.visualRenderAttempts.reconciliation} IS NULL AND (${schema.visualRenderAttempts.receipt} IS NULL OR ${schema.visualRenderAttempts.receipt}->>'chargeUncertain' = 'true')`));
         if (uncertain.length) return reject("needs_reconciliation", `Reconcile ${uncertain.length} uncertain paid attempt(s) before requesting another render`);
         let renderContext = { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction };
-        let plan = scene.plan, sourceImageId: string | null = null, sourceVersionId: string | null = null, reusePrefix: string | null = null;
+        let plan = regeneratedPlan ?? scene.plan, sourceImageId: string | null = null, sourceVersionId: string | null = null, reusePrefix: string | null = null;
         if (input.action === "harmonize") {
           const [source] = await tx.select().from(versions).where(and(eq(versions.id, input.sourceVersionId), eq(versions.sceneId, scene.id), eq(versions.gameId, gameId)));
           if (!source) return reject("source_missing", "Image version not found for this scene");
@@ -104,6 +142,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
           plan = source?.plan ?? scene.plan; sourceImageId = source?.sourceImageId ?? null;
           sourceVersionId = source?.sourceVersionId ?? null;
         }
+        if (plan.direction) renderContext = plan.direction;
         const id = randomUUID(), version = input.expectedVersion + 1;
         await tx.insert(jobs).values({ id, gameId, sceneId: scene.id, version, operatorId, mode: input.action, plan, renderContext, sourceImageId, sourceVersionId, reusePrefix, status: "queued", createdAt: new Date().toISOString() });
         receipt = { accepted: true, code: "queued", message: sourceVersionId ? `Version ${version} queued to harmonize saved panels. Review and publish when ready.` : `Version ${version} queued for rendering`, jobId: id, versionId: id, version };
@@ -118,7 +157,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
 }
 
 /** Preserve the current accepted gameplay version without changing its source record. */
-async function captureOriginalMediaVersion(tx: VisualTransaction, scene: typeof schema.visualScenes.$inferSelect) {
+export async function captureOriginalMediaVersion(tx: VisualTransaction, scene: typeof schema.visualScenes.$inferSelect) {
   if (scene.status !== "ready" || !scene.imageArtifactId || !scene.annotatedArtifactId) return;
   await tx.insert(versions).values(originalVersion(scene)).onConflictDoNothing();
 }
@@ -145,6 +184,6 @@ export async function readVisualMedia(db: DrizzleDB, gameId: string) {
 export async function mediaAttempts(tx: DrizzleDB | VisualTransaction, prefix: string, gameId: string) {
   return tx.select({ attempt: schema.visualRenderAttempts, operation: schema.visualRenderOperations }).from(schema.visualRenderAttempts)
     .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
-    .where(and(eq(schema.visualRenderOperations.gameId, gameId), like(schema.visualRenderOperations.operationKey, `${prefix}:%`)));
+    .where(and(eq(schema.visualRenderOperations.gameId, gameId), sql`(${schema.visualRenderOperations.operationKey} LIKE ${`${prefix}:%`} OR ${schema.visualRenderOperations.repairJobId} = ${prefix.startsWith("media:") ? prefix.slice(6) : ""})`));
 }
 export { VISUAL_LOCALIZATION_VERSION };

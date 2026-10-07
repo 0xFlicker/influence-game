@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
 import { GamePreShow } from "./components/game-pre-show";
+import { GameSiteEntry } from "@/components/games/game-site-entry";
 
 import type {
   SpectacleMessagePhase,
@@ -130,8 +131,6 @@ export function GameViewer({
   const currentPhaseRef = useRef<PhaseKey>(
     (initialGame?.watchState?.currentPhase ?? initialGame?.currentPhase ?? "INIT") as PhaseKey,
   );
-  // Speedrun flag — derive early so useEffects can use it as dependency
-  const isSpeedrun = game?.viewerMode === "speedrun";
   // Diary Room tab state (desktop toggle)
   const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
   const [newDiaryCount, setNewDiaryCount] = useState(0);
@@ -456,15 +455,9 @@ export function GameViewer({
     }
   }, [replayIndex, isReplay]);
 
-  // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
+  // Drain reveal queue — release one message every 1.5s
   useEffect(() => {
     if (revealQueue.length === 0 || isReplay) return;
-
-    if (isSpeedrun) {
-      setRevealShown((s) => [...s, ...revealQueue]);
-      setRevealQueue([]);
-      return;
-    }
 
     const HOLD_MS = 1500;
     const timer = setTimeout(() => {
@@ -490,7 +483,7 @@ export function GameViewer({
     }, HOLD_MS);
 
     return () => clearTimeout(timer);
-  }, [revealQueue, isReplay, isSpeedrun]);
+  }, [revealQueue, isReplay]);
 
   // Spectacle queue drain — take next message when current finishes
   useEffect(() => {
@@ -516,7 +509,7 @@ export function GameViewer({
       !spectacleCurrent.fromPlayerId || spectacleCurrent.scope === "system";
 
     if (spectaclePhase === "typing") {
-      if (isSystem || isSpeedrun) {
+      if (isSystem) {
         setSpectaclePhase("revealing");
         return;
       }
@@ -528,12 +521,10 @@ export function GameViewer({
     }
 
     if (spectaclePhase === "done") {
-      const holdMs = isSpeedrun
-        ? 100
-        : Math.max(
-            POST_REVEAL_BASE_MS,
-            spectacleCurrent.text.length * POST_REVEAL_PER_CHAR_MS,
-          );
+      const holdMs = Math.max(
+        POST_REVEAL_BASE_MS,
+        spectacleCurrent.text.length * POST_REVEAL_PER_CHAR_MS,
+      );
       const timer = setTimeout(() => {
         setSpectacleCurrent(null);
       }, holdMs);
@@ -544,7 +535,6 @@ export function GameViewer({
     spectacleCurrent,
     spectaclePhase,
     isReplay,
-    isSpeedrun,
   ]);
 
   const handleWsEvent = useCallback(
@@ -827,6 +817,8 @@ export function GameViewer({
       ? "live"
       : wsStatus;
 
+  if (wsStatus === "unavailable") return <div role="alert">Game no longer available.</div>;
+
   // Loading / error states
   if (loadError) {
     return (
@@ -993,7 +985,7 @@ export function GameViewer({
   }
 
   if (game.status === "waiting") {
-    return <GamePreShow game={game} onGameUpdated={setGame} />;
+    return <GameSiteEntry><GamePreShow game={game} onGameUpdated={setGame} /></GameSiteEntry>;
   }
 
   const matchWatchDecision = getMatchWatchRouteDecision(
@@ -1023,7 +1015,7 @@ export function GameViewer({
           presentationHydrationStatus={matchWatchDecision.mode === "live" && !game.visualPaused && wsStatus !== "live"
             ? (wsStatus === "connecting" ? "loading" : "reconnecting")
             : presentationHydration.status}
-          startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}
+          startSequence={startSequence}
         />
         {gamePresentation.incomplete && (
           <div className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-700/50 bg-black/90 p-3 text-xs text-amber-100 shadow-xl">
@@ -1218,7 +1210,6 @@ export function GameViewer({
               players={game.players}
               onRevealComplete={() => setSpectaclePhase("done")}
               queueLength={spectacleQueue.length}
-              speedrun={isSpeedrun}
             />
           )}
 
@@ -1229,7 +1220,6 @@ export function GameViewer({
             empoweredPlayerId={empoweredPlayerId}
             eliminatedRounds={eliminatedRounds}
             recentlyUnshielded={recentlyUnshielded}
-            speedrun={isSpeedrun}
           />
         )}
 
@@ -1468,7 +1458,6 @@ export function GameViewer({
                 players={game.players}
                 onRevealComplete={() => setSpectaclePhase("done")}
                 queueLength={spectacleQueue.length}
-                speedrun={isSpeedrun}
               />
             )}
 
@@ -1501,7 +1490,6 @@ export function GameViewer({
             empoweredPlayerId={empoweredPlayerId}
             eliminatedRounds={eliminatedRounds}
             recentlyUnshielded={recentlyUnshielded}
-            speedrun={isSpeedrun}
           />
         </div>
       </div>

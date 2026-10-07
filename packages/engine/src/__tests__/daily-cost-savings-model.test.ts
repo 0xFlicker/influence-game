@@ -21,15 +21,6 @@ import { Phase, type GameConfig } from "../types";
 import { MockAgent } from "./mock-agent";
 
 const TEST_CONFIG: GameConfig = {
-  timers: {
-    introduction: 0,
-    lobby: 0,
-    mingle: 0,
-    rumor: 0,
-    vote: 0,
-    power: 0,
-    council: 0,
-  },
   maxRounds: 1,
   minPlayers: 5,
   maxPlayers: 12,

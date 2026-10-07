@@ -1,13 +1,8 @@
 import { validHeadRectangle, type HeadRectangle } from "@influence/engine/character-portrait";
 import type { SceneFrame } from "./visual-scene-layout";
 
-/** Only the single-person, upright full-body references use this legacy fallback.
- * It is a conservative head region, not localization evidence for room images.
- */
-export const FULL_BODY_HEAD_REGION_BOTTOM = 0.22;
-
 export function layoutSoloPresentation(width: number, height: number, imageWidth: number, imageHeight: number,
-  fullBody: boolean, controlsInset: number, speechHeight: number, head?: HeadRectangle) {
+  fullBody: boolean, controlsInset: number, speechHeight: number, head?: HeadRectangle, thinking = false, showSpeech = true) {
   const margin = 12;
   if (!fullBody) {
     const available = Math.max(0, height - controlsInset);
@@ -23,26 +18,27 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
     const bubble = { left: beside ? image.left + diameter + 40 : (width - bubbleWidth) / 2,
       top: beside ? Math.max(margin, (available - bubbleHeight) / 2) : image.top + diameter + 24,
       width: bubbleWidth, height: bubbleHeight };
-    return { image, bubble, above: false, beside, tailLeft: bubbleWidth / 2 };
+    return { image, bubble, thought: null, above: false, beside, tailLeft: bubbleWidth / 2 };
   }
   const ratio = imageWidth > 0 && imageHeight > 0 ? imageWidth / imageHeight : 2 / 3;
-  // Fill the player vertically. Wide frames expose the blurred backdrop; narrow frames
-  // trim only the sides, keeping the full height of the standing character.
-  const h = height;
-  const w = h * ratio;
-  const image: SceneFrame = { width: Math.max(0, w), height: Math.max(0, h), left: (width - w) / 2, top: fullBody ? 0 : margin };
-  const bubbleWidth = Math.max(0, Math.min(480, width - margin * 2));
-  const measured = fullBody && validHeadRectangle(head) ? head : null;
-  // Keep a known head on-screen when the portrait-shaped image is wider than the frame.
-  if (measured && image.width > width) image.left = Math.max(width - image.width, Math.min(0, width / 2 - image.width * (measured.x + measured.width / 2)));
-  const headX = measured ? image.left + image.width * (measured.x + measured.width / 2) : width / 2;
-  const below = image.top + image.height * (fullBody ? measured ? measured.y + measured.height : FULL_BODY_HEAD_REGION_BOTTOM : 1) + 16;
-  const upperRoom = measured ? Math.max(0, Math.min(height - controlsInset - margin, image.top + image.height * measured.y - 16) - margin) : 0;
-  const lowerRoom = Math.max(0, height - controlsInset - margin - below);
-  const above = Boolean(measured && lowerRoom < Math.min(speechHeight, 160) && upperRoom > lowerRoom);
-  const bubbleHeight = Math.min(speechHeight, 320, above ? upperRoom : lowerRoom);
-  const top = above ? margin + upperRoom - bubbleHeight : below;
-  const left = Math.max(margin, Math.min(width - margin - bubbleWidth, headX - bubbleWidth / 2));
-  return { image, above, beside: false, tailLeft: Math.max(16, Math.min(bubbleWidth - 16, headX - left)), bubble: { left, top, width: bubbleWidth,
-    height: bubbleHeight } };
+  const available = Math.max(0, height - controlsInset);
+  const gap = 20;
+  const beside = width >= 760 || (width >= 480 && available < 320);
+  const textWidth = Math.max(0, beside ? Math.min(480, width * (thinking ? .3 : .46)) : width - margin * 2);
+  const bubbleHeight = showSpeech ? Math.max(0, Math.min(speechHeight, available * (beside ? .8 : .36))) : 0;
+  // In portrait, the upper area pairs a smaller character with thinking. Speech
+  // owns the full-width lower area. The ledger is outside both regions.
+  const upperHeight = Math.max(0, available - margin * 2 - bubbleHeight - (showSpeech ? gap : 0));
+  const artWidth = Math.max(0, beside ? width - margin * 2 - textWidth * (thinking ? 2 : showSpeech ? 1 : 0) - gap * (thinking ? 2 : showSpeech ? 1 : 0) : thinking ? width * .34 : width - margin * 2);
+  const artHeight = beside ? Math.max(0, available - margin * 2) : upperHeight;
+  const h = Math.min(artHeight, artWidth / ratio), w = h * ratio;
+  const artLeft = beside && thinking ? margin + textWidth + gap : margin;
+  const image: SceneFrame = {left: artLeft + (artWidth - w) / 2, top: margin + (artHeight - h) / 2, width:w, height:h};
+  const bubble = {left: beside ? width - margin - textWidth : margin,
+    top: beside ? (available - bubbleHeight) / 2 : available - margin - bubbleHeight, width:textWidth, height:bubbleHeight};
+  const thought = thinking ? {left:beside ? margin : margin + artWidth + gap, top:margin,
+    width:beside ? textWidth : Math.max(0,width - margin * 2 - artWidth - gap), height:Math.min(220,beside ? available * .65 : upperHeight)} : null;
+  const measured = validHeadRectangle(head) ? head : null;
+  const headX = image.left + image.width * (measured ? measured.x + measured.width / 2 : .5);
+  return {image, bubble, thought, above:false, beside, tailLeft: Math.max(16, Math.min(textWidth - 16, headX - bubble.left))};
 }

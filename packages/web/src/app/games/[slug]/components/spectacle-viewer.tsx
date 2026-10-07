@@ -15,14 +15,12 @@ export function SpectacleMessageSpotlight({
   players,
   onRevealComplete,
   queueLength,
-  speedrun = false,
 }: {
   message: TranscriptEntry | null;
   phase: SpectacleMessagePhase;
   players: GamePlayer[];
   onRevealComplete: () => void;
   queueLength: number;
-  speedrun?: boolean;
 }) {
   if (!message) {
     return (
@@ -94,20 +92,20 @@ export function SpectacleMessageSpotlight({
             {isElimination ? (
               <p className="text-2xl md:text-3xl font-bold text-red-400 tracking-wider">
                 {phase === "revealing" ? (
-                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedrun={speedrun} />
+                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} />
                 ) : message.text}
               </p>
             ) : isSystem ? (
               <p className="text-base md:text-lg text-white/40 italic leading-relaxed">
                 {phase === "revealing" ? (
-                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedrun={speedrun} />
+                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} />
                 ) : message.text}
               </p>
             ) : (
               <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
                 <p className="text-lg md:text-xl leading-relaxed text-white/80">
                   {phase === "revealing" ? (
-                    <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} speedrun={speedrun} />
+                    <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} />
                   ) : message.text}
                 </p>
               </div>

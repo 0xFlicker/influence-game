@@ -1,5 +1,6 @@
+import { adminTestWrapper } from "./admin-test-wrapper";
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as baseRender, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { SceneRepairPanel, type MediaRecords, type MediaAttempt } from "../app/admin/games/[id]/visual/scene-repair-panel";
 import { useVisualWatch } from "../app/games/[slug]/components/use-visual-watch";
@@ -22,7 +23,8 @@ test("one click queues one durable request, shows inline receipt and recovered p
   fireEvent.click(mounted.getByText("Regenerate scene")); fireEvent.click(mounted.getByText("Regenerate scene"));
   expect(requests).toHaveLength(1);
   await act(async () => finish!(Response.json({ accepted: true, code: "queued", message: "Version 1 queued", jobId: "job" })));
-  expect(mounted.getByRole("status").textContent).toContain("Version 1 queued");
+  expect(mounted.getByText(/Version 1 queued/)).not.toBeNull();
+  expect((mounted.getByText("Regenerate scene") as HTMLButtonElement).disabled).toBe(true);
   mounted.rerender(<SceneRepairPanel {...props({ ...empty(), jobs: [job("verifying")] })} />);
   expect((mounted.getByText("Regenerate scene") as HTMLButtonElement).disabled).toBe(true);
   expect(mounted.getByText(/verifying · v1/)).not.toBeNull();
@@ -132,6 +134,8 @@ test.each([false, true])("published media refreshes silently between beats (live
     expect(urls.length).toBe(requestsBeforeUnmount);
   } finally { for (const timer of timers) clearTimeout(timer); globalThis.setTimeout = originalTimeout; warning.mockRestore(); }
 });
+
+function render(ui: React.ReactNode) { return baseRender(ui, { wrapper: adminTestWrapper() }); }
 
 
 test("reviews every retained panel alongside the harmonized scene in clean and numbered modes", async () => {

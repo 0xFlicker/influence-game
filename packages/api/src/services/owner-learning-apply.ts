@@ -1,3 +1,5 @@
+import { readSavedContentAssets } from "./agent-content-submissions.js";
+import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -112,27 +114,31 @@ export async function applyOwnedOwnerLearningReview(
           throw new OwnerLearningApplyError("proposal_mismatch", 409);
         }
         const expectedRecommendationIds = changeRecommendationIds(review.result.recommendations);
-        const currentStrategyStyle = lockedProfile.existing.strategyStyle ?? "";
+        const field = reviewStrategyField(review.gameKind);
+        const currentStrategyStyle = lockedProfile.existing[field] ?? "";
         if (
-          lockedProfile.existing.currentRevisionId !== review.reviewedRevisionId
+          currentReviewIdentity(review.gameKind, lockedProfile.existing) !== review.reviewedRevisionId
+          || review.result.proposal.field !== field
+          || (review.gameKind === "werewolf" && (lockedProfile.existing.moderationRequired || lockedProfile.existing.latestContentRevisionId !== lockedProfile.existing.contentRevisionId))
           || review.result.proposal.before !== currentStrategyStyle
         ) {
           throw new OwnerLearningApplyError("review_revision_conflict", 409);
         }
 
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
-          context: { userId: input.ownerUserId },
+          context: { userId: input.ownerUserId, contentAssets: await readSavedContentAssets(tx, lockedProfile.existing) },
           agentId: review.agentProfileId,
-          input: { strategyStyle: review.result.proposal.after },
+          input: { [field]: review.result.proposal.after },
           locked: lockedProfile,
         });
+        if (mutation.receipt.publication === "held") throw new OwnerLearningApplyError("profile_update_conflict", 409);
         const nowIso = (input.now ?? new Date()).toISOString();
         const application = {
           reviewId: review.id,
           proposalFingerprint,
           sourceRecommendationIds: expectedRecommendationIds,
           priorRevisionId: review.reviewedRevisionId,
-          resultingRevisionId: mutation.profileRevision.revisionId,
+          resultingRevisionId: currentReviewIdentity(review.gameKind, mutation.profile)!,
           priorStrategyStyle: currentStrategyStyle,
           resultingStrategyStyle: review.result.proposal.after,
           mutationReceipt: mutation.receipt as unknown as Record<string, unknown>,
@@ -149,7 +155,7 @@ export async function applyOwnedOwnerLearningReview(
           reviewId: review.id,
           agentProfileId: review.agentProfileId,
           priorRevisionId: review.reviewedRevisionId,
-          resultingRevisionId: mutation.profileRevision.revisionId,
+          resultingRevisionId: currentReviewIdentity(review.gameKind, mutation.profile)!,
           nowIso,
         });
         return applicationRead(application, false);

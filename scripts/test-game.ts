@@ -10,7 +10,6 @@
  *   --web-url <url>       Web base URL for viewer link (default: http://localhost:3001)
  *   --players <n>         Player count (default: 6)
  *   --model <tier>        Model tier: budget|standard|premium (default: budget)
- *   --timing <preset>     Timing preset: fast|standard|slow (default: fast)
  *   --wait                Poll until game starts running
  *   --no-fill             Skip the fill step (create only)
  *   --no-start            Skip the start step (create + fill only)
@@ -37,7 +36,6 @@ const { values: args } = parseArgs({
     "web-url": { type: "string", default: "http://localhost:3001" },
     players: { type: "string", default: "6" },
     model: { type: "string", default: "budget" },
-    timing: { type: "string", default: "fast" },
     wait: { type: "boolean", default: false },
     "no-fill": { type: "boolean", default: false },
     "no-start": { type: "boolean", default: false },
@@ -49,7 +47,6 @@ const API_URL = args["api-url"]!;
 const WEB_URL = args["web-url"]!;
 const PLAYER_COUNT = Number(args.players);
 const MODEL_TIER = args.model!;
-const TIMING_PRESET = args.timing!;
 const WAIT = args.wait!;
 const SKIP_FILL = args["no-fill"]!;
 const SKIP_START = args["no-start"]!;
@@ -145,16 +142,14 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 console.log(`\n🎮 Influence Test Harness`);
 console.log(`   API: ${API_URL}`);
-console.log(`   Players: ${PLAYER_COUNT} | Model: ${MODEL_TIER} | Timing: ${TIMING_PRESET}\n`);
+console.log(`   Players: ${PLAYER_COUNT} | Model: ${MODEL_TIER}\n`);
 
 // Step 1: Create game
 console.log("1. Creating game...");
 const game = await api<{ id: string; slug: string }>("POST", "/api/games", {
   playerCount: PLAYER_COUNT,
   modelTier: MODEL_TIER,
-  timingPreset: TIMING_PRESET,
   slotType: "all_ai",
-  viewerMode: "speedrun",
   visibility: "public",
 });
 console.log(`   Game ${game.slug} created (${game.id})`);

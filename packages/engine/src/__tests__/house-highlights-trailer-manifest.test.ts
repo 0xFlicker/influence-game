@@ -4,7 +4,7 @@ import {
   HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
   parseHouseHighlightsTrailerManifest,
   validateHouseHighlightsTrailerManifest,
-  type HouseHighlightsTrailerManifest,
+  type InfluenceTrailerManifest,
 } from "../postgame-media/house-highlights-trailer-manifest";
 import { hashHouseHighlightsTrailerManifest } from "../postgame-media/house-highlights-trailer-manifest-hash";
 
@@ -55,7 +55,8 @@ describe("House Highlights trailer render-input manifest", () => {
 
   test("produces a stable snapshot hash for equivalent key ordering", () => {
     const manifest = manifestFixture();
-    const reordered: HouseHighlightsTrailerManifest = {
+    const reordered: InfluenceTrailerManifest = {
+      kind: manifest.kind,
       timingContractVersion: manifest.timingContractVersion,
       cueSheet: manifest.cueSheet,
       playerResults: manifest.playerResults,
@@ -78,7 +79,7 @@ describe("House Highlights trailer render-input manifest", () => {
   });
 });
 
-function manifestFixture(): HouseHighlightsTrailerManifest {
+function manifestFixture(): InfluenceTrailerManifest {
   const winner = {
     id: "player-winner",
     name: "Mira Solari",
@@ -97,7 +98,7 @@ function manifestFixture(): HouseHighlightsTrailerManifest {
   };
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2, kind: "influence",
     mediaType: "house_highlights_trailer",
     timingContractVersion: "house-highlights-trailer-timing-v1",
     game: {

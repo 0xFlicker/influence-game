@@ -129,7 +129,7 @@ export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
       ) : (
         <div className="mt-7 space-y-8">
           <section aria-labelledby="season-summary-title">
-            <h2 id="season-summary-title" className="influence-section-title mb-3">Season summary</h2>
+            <h2 id="season-summary-title" className="influence-section-title mb-3">Influence season summary</h2>
             <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border-active bg-border-active sm:grid-cols-4">
               <Metric label="Points" value={analysis.summary.totalPoints.toString()} />
               <Metric label="Wins" value={analysis.summary.wins.toString()} />

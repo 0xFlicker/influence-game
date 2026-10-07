@@ -1,3 +1,4 @@
+import { resolveCharacterVariants } from "./visual-character-variants.js";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -25,7 +26,7 @@ export async function claimVisualMediaJob(db: DrizzleDB, owner: string): Promise
   });
 }
 
-export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: AbortSignal, render: (...args: Parameters<typeof renderVisualCandidate>) => Promise<{ imageArtifactId: string; localization: import("@influence/engine/visual-localization").VisualLocalization; shots?: import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot> }> = renderVisualCandidate) {
+export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: AbortSignal, render: (...args: Parameters<typeof renderVisualCandidate>) => Promise<{ imageArtifactId: string; localization: import("@influence/engine/visual-localization").VisualLocalization; shots?: import("@influence/engine/visual-mode").VisualShotPresentation<import("@influence/engine/visual-mode").StoredVisualShot> }> = renderVisualCandidate, resolveVariants: typeof resolveCharacterVariants = resolveCharacterVariants) {
   const guard: VisualBoundaryGuard = async tx => {
     signal.throwIfAborted();
     const query = (tx ?? db).select().from(jobs).where(and(eq(jobs.id, job.id), eq(jobs.owner, job.owner!), sql`${jobs.leaseUntil}::timestamptz > now() AND ${jobs.status} IN ('rendering','verifying')`));
@@ -34,19 +35,38 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
   };
   try {
     await guard();
-    const [original] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, job.sceneId));
+    if (job.mode === "forms") {
+      const { readWerewolfVisualPause } = await import("./werewolf-visual-policy.js");
+      const formGuard: VisualBoundaryGuard = async tx => {
+        if (tx) await tx.select().from(schema.games).where(eq(schema.games.id,job.gameId)).for("update");
+        await guard(tx);
+        const pause = await readWerewolfVisualPause(tx ?? db, job.gameId);
+        if (pause?.id !== job.reusePrefix) throw new Error("Wolf-form repair is no longer current");
+      };
+      await resolveVariants(db, job.gameId, job.plan, { signal, guard: formGuard, jobId: job.id });
+      await db.transaction(async tx => {
+        await formGuard(tx);
+        await tx.update(jobs).set({ status: "ready", step: "wolf form ready", finishedAt: now(), leaseUntil: null, owner: null }).where(eq(jobs.id, job.id));
+      });
+      return;
+    }
+    if (!job.sceneId) throw new Error("Scene repair requires a scene");
+    const sceneId = job.sceneId;
+    const [original] = await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.id, sceneId));
     if (!original) throw new Error("Scene missing");
     const [source] = job.sourceVersionId ? await db.select().from(schema.visualMediaVersions).where(and(eq(schema.visualMediaVersions.id, job.sourceVersionId), eq(schema.visualMediaVersions.gameId, job.gameId), eq(schema.visualMediaVersions.sceneId, job.sceneId))) : [];
     if ((job.mode === "harmonize" || job.sourceVersionId) && (!source?.shots || source.shots.mode === "portraits" || source.shots.groups.length < 2)) throw new Error("Saved harmonization panels are unavailable");
-    const scene: StoredVisualScene = { ...original, plan: job.plan, status: "preparing", candidateArtifactId: job.sourceImageId, repairMode: job.sourceImageId ? "verify" : "regenerate" };
+    const onStep = async (step: string) => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); };
+    const plan = source ? job.plan : await resolveVariants(db, job.gameId, job.plan, { signal, guard, sceneId, jobId: job.id, onStep });
+    const scene: StoredVisualScene = { ...original, plan, status: "preparing", candidateArtifactId: job.sourceImageId, repairMode: job.sourceImageId ? "verify" : "regenerate" };
     const result = await render(db, scene, signal, guard, { jobId: job.id, renderContext: job.renderContext, operationPrefix: `media:${job.id}`, reusePrefix: job.reusePrefix ?? undefined,
       sourcePanels: source?.shots?.groups,
-      onStep: async step => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ step, status: step.startsWith("verifying") ? "verifying" : "rendering" }).where(eq(jobs.id, job.id)); }); },
+      onStep,
       onImage: async candidateArtifactId => { await db.transaction(async tx => { await guard(tx); await tx.update(jobs).set({ candidateArtifactId }).where(eq(jobs.id, job.id)); }); },
     });
     const receipts = await mediaAttempts(db, `media:${job.id}`, job.gameId);
     if (receipts.some(({ attempt: a }) => !a.reconciliation && (!a.receipt || a.receipt.chargeUncertain))) throw new Error("Reconcile the uncertain provider attempt before continuing this repair");
-    const ids = job.plan.cast.map(m => m.id);
+    const ids = plan.cast.map(m => m.id);
     const verified = result.localization.verifiedParticipantIds;
     if (!result.shots && (result.localization.count !== ids.length || !verified || verified.length !== ids.length || new Set(verified).size !== ids.length || ids.some(id => !verified.includes(id)))) throw new Error("Candidate identities were not verified");
     if (result.shots) for (const shot of [...result.shots.groups, ...(result.shots.overview ? [result.shots.overview] : [])]) assertVisualShot(shot, ids);
@@ -54,8 +74,8 @@ export async function executeVisualMediaJob(db: DrizzleDB, job: Job, signal: Abo
     const annotatedArtifactId = await storeVisualArtifact(db, job.gameId, await annotateVisualScene(await readVisualArtifact(db, job.gameId, result.imageArtifactId), result.localization.anchors));
     await db.transaction(async tx => {
       await guard(tx);
-      await tx.insert(schema.visualMediaVersions).values({ id: job.id, jobId: job.id, gameId: job.gameId, sceneId: job.sceneId, version: job.version,
-        plan: job.plan, imageArtifactId: result.imageArtifactId, annotatedArtifactId, localization: result.localization, shots: result.shots, verificationVersion: VISUAL_LOCALIZATION_VERSION, createdAt: now() });
+      await tx.insert(schema.visualMediaVersions).values({ id: job.id, jobId: job.id, gameId: job.gameId, sceneId, version: job.version,
+        plan, imageArtifactId: result.imageArtifactId, annotatedArtifactId, localization: result.localization, shots: result.shots, verificationVersion: VISUAL_LOCALIZATION_VERSION, createdAt: now() });
       await tx.update(jobs).set({ status: "ready", step: "ready for review", finishedAt: now(), leaseUntil: null, owner: null }).where(eq(jobs.id, job.id));
     });
   } catch (error) {

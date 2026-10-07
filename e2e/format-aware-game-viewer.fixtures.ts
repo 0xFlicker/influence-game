@@ -49,6 +49,7 @@ export async function installDeterministicFormatGame(
     currentDecisions(),
   );
 
+  await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/replay-watch-frames")) {
@@ -118,6 +119,7 @@ export async function installDeterministicClassicGame(
   },
 ): Promise<void> {
   const game = buildDeterministicClassicGame(options);
+  await page.route(`**/api/game-entries/${options.slug}`, route => fulfillJson(route,{id:options.slug,slug:options.slug,gameKind:"influence"}));
   await page.route(gameApiPattern(options.slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/visual")) {
@@ -149,6 +151,7 @@ export async function installDeterministicCompletedClassicGame(
   slug: string,
 ): Promise<void> {
   const fixture = buildDeterministicCompletedClassicGame(slug);
+  await page.route(`**/api/game-entries/${slug}`, route => fulfillJson(route,{id:slug,slug,gameKind:"influence"}));
   await page.route(gameApiPattern(slug), async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/visual")) {
@@ -166,6 +169,7 @@ export async function installDeterministicCompletedClassicGame(
     if (url.pathname.endsWith("/results")) {
       await fulfillJson(route, {
         ok: true,
+        gameKind: "influence",
         schemaVersion: 2,
         game: {
           id: fixture.game.id,
@@ -209,7 +213,6 @@ function buildDeterministicFormatGame(
     players,
     modelTier: "standard",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-07-27T00:00:00.000Z",
     startedAt: "2026-07-27T00:00:01.000Z",
     ...(status === "completed"
@@ -370,7 +373,6 @@ function buildDeterministicCompletedClassicGame(slug: string) {
       players,
       modelTier: "standard",
       visibility: "public",
-      viewerMode: "replay",
       winner: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
       createdAt: "2026-07-27T00:00:00.000Z",
       startedAt: "2026-07-27T00:00:01.000Z",
@@ -421,7 +423,6 @@ function buildDeterministicClassicGame({
     players,
     modelTier: "standard",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-07-27T00:00:00.000Z",
   };
 }

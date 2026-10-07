@@ -108,6 +108,7 @@ export function AdminPostgameMediaPanel({
   }, [onClose]);
 
   const action = useMemo(() => detail ? postgameMediaActionFor(detail) : null, [detail]);
+  const actionLabel = detail?.status === "failed" ? "Retry" : action === "rerender" ? "Rerender" : "Backfill";
   const requiresReadyConfirmation = detail ? postgameMediaRequiresConfirmation(detail) : false;
 
   async function submitAction(): Promise<void> {
@@ -122,7 +123,7 @@ export function AdminPostgameMediaPanel({
     setFeedback(null);
     try {
       const result = await requestAdminPostgameMedia(gameKey, action, reason.trim());
-      setFeedback(`${action === "rerender" ? "Rerender" : "Backfill"} requested (${result.outcome}).`);
+      setFeedback(`${actionLabel} requested (${result.outcome}).`);
       setReason("");
       setConfirming(false);
       load();
@@ -171,7 +172,7 @@ export function AdminPostgameMediaPanel({
 
         {canManage && action ? (
           <section className="mt-6 border-t border-white/10 pt-5">
-            <h3 className="text-sm font-semibold text-white">{action === "rerender" ? "Request rerender" : "Request backfill"}</h3>
+            <h3 className="text-sm font-semibold text-white">{`${actionLabel} trailer`}</h3>
             <label className="mt-3 block text-xs text-white/50" htmlFor="postgame-media-reason">Reason</label>
             <textarea
               id="postgame-media-reason"
@@ -195,7 +196,7 @@ export function AdminPostgameMediaPanel({
               disabled={submitting || reason.trim().length === 0}
               className="mt-3 min-h-10 rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {submitting ? "Requesting..." : confirming ? `Confirm ${action}` : action === "rerender" ? "Rerender trailer" : "Backfill trailer"}
+              {submitting ? "Requesting..." : confirming ? `Confirm ${actionLabel.toLowerCase()}` : `${actionLabel} trailer`}
             </button>
           </section>
         ) : detail && ACTIVE_STATUSES.has(detail.status) ? (

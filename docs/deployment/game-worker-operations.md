@@ -5,6 +5,30 @@ resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
 leases. Render workers remain a separate image/service.
 
+The worker dispatches both Influence and Werewolf by `games.gameKind`. Apply
+the `0105`–`0112` Werewolf migration chain after unchanged main migration
+`0104_visual_panel_harmonization` before deploying the Werewolf implementation.
+Previously migrated development branches require a backup and the
+[migration-journal reconciliation procedure](../werewolf.md#persistence-and-execution),
+not replay of their existing DDL. Werewolf claims
+the same renewable owner leases but recovers its private canonical event log and
+frozen action plans instead of an Influence XState snapshot. Admission closure,
+drain counts, and graceful shutdown include both games. Invalid Werewolf history
+suspends that game without blocking adoption of unrelated games. See
+[Werewolf](../werewolf.md) for local operation and validation boundaries.
+
+Werewolf rules version 7 publishes each daytime contribution before the next
+speaker acts, preserving the seeded opening ring and ordered replies/answers.
+Sealed ballots retain frozen slots and one canonical resolution. Gateway and
+worker must use matching code. Experimental v1–v6 logs remain preserved but are
+rejected on read/resume; start a new v7 game. See the current Werewolf rules.
+
+House Cuts shutdown requeues jobs whose persisted provider attempts are all
+terminal (including a job stopped before dispatch). A new worker reuses accepted
+receipts. An unknown nonterminal paid dispatch remains failed for inspection;
+shutdown never authorizes an automatic paid redispatch or a premature cast-only
+trailer for safely resumable editorial work.
+
 ## Ephemeral PR previews
 
 Ephemeral previews need the same gateway/worker separation. Their IaC deployment

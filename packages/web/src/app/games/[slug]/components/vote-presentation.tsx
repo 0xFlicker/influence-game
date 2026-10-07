@@ -8,16 +8,18 @@ import { SoloPresentation } from "./solo-presentation";
 import { FitPresentation } from "./fit-presentation";
 import { soloPresentationDurationMs } from "./solo-presentation-timing";
 import { voteLedgerRows, type RevealedVote, type VoteLedgerState } from "./vote-ledger-model";
-import { votePresentationTiming } from "./vote-presentation-timing";
+import { SILENT_BALLOT_DURATION_MS, votePresentationTiming } from "./vote-presentation-timing";
 import type { SceneFrame } from "./visual-scene-layout";
 import backdropStyles from "./stage-backdrop.module.css";
 
-export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, ...props }: {
+export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInset = 0, silent = false, onImageReady, ...props }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait" }>;
   ledger: VoteLedgerState;
   roster: readonly FormatPresentationRosterPlayer[];
   elapsedMs: number;
   controlsInset?: number;
+  silent?: boolean;
+  onImageReady?: (source: string | null) => void;
   readingElapsedMs?: number;
   paused?: boolean;
   reducedMotion?: boolean;
@@ -28,8 +30,9 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   const [ledgerLayout, setLedgerLayout] = useState({ scale: 1, top: 0 });
   const [imageSource, setImageSource] = useState<string | null>(null);
   const [flight, setFlight] = useState<{ key: string; source: string; from: SceneFrame; to: SceneFrame } | null>(null);
-  const { revealed, progress } = votePresentationTiming(elapsedMs, soloPresentationDurationMs(beat.speech.text), props.reducedMotion);
-  const canFly = flight?.key === beat.speech.id && imageSource !== null && flight.source === imageSource && !props.reducedMotion;
+  const timing = votePresentationTiming(elapsedMs, silent ? SILENT_BALLOT_DURATION_MS : soloPresentationDurationMs(beat.speech.text), props.reducedMotion);
+  const revealed = ledger.complete || timing.revealed, progress = ledger.complete ? 1 : timing.progress;
+  const canFly = !ledger.complete && flight?.key === beat.speech.id && imageSource !== null && flight.source === imageSource && !props.reducedMotion;
   useLayoutEffect(() => {
     const element = ledgerBox.current;
     if (!element) return;
@@ -70,17 +73,22 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   } : null;
   return <div ref={stage} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-vote-presentation>
     <SoloPresentation {...props} beat={beat} elapsedMs={elapsedMs} controlsInset={controlsInset + ledgerHeight + 24}
-      onImageReady={setImageSource}
-      imageOpacity={canFly && progress > 0 ? 0 : undefined} />
-    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[28%] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-3 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
+      hideSpeech={silent || ledger.complete} staticSpeech onImageReady={source => {setImageSource(source); onImageReady?.(source);}}
+      imageOpacity={ledger.complete || canFly && progress > 0 ? 0 : undefined} />
+    {ledger.complete && <div className="absolute inset-x-6 top-1/3 text-center" data-vote-complete>
+      <p className="text-sm uppercase tracking-widest text-white/60">{ledger.title}</p>
+      <h2 className="mt-2 text-3xl font-semibold text-white">All votes are in</h2>
+      {ledger.eligibility && <p className="mt-3 text-sm text-amber-100">{ledger.eligibility.label}{ledger.eligibility.ids.length === 0 ? " · No one qualifies" : ""}</p>}
+    </div>}
+    <div ref={ledgerBox} className="absolute inset-x-3 z-20 mx-auto h-[clamp(88px,28%,200px)] max-w-6xl overflow-hidden rounded-2xl border border-white/15 bg-black/80 p-2 shadow-2xl backdrop-blur-md sm:inset-x-6" style={{ bottom: controlsInset + 12 }}>
       <FitPresentation enabled onLayoutChange={setLedgerLayout}>
         <VoteLedger title={ledger.title} votes={votes} total={ledger.total} roster={roster}
-          polarity={ledger.polarity}
+          polarity={ledger.polarity} eligibility={ledger.complete ? ledger.eligibility : undefined}
           currentId={revealed ? ledger.current.voterId : undefined} portraitOpacity={canFly ? Math.max(0, (progress - .85) / .15) : 1} />
       </FitPresentation>
     </div>
     {canFly && frame && progress > 0 && progress < 1 && <div aria-hidden="true" data-ballot-collection
-      className="pointer-events-none absolute z-30 overflow-hidden" style={{ ...frame, borderRadius: `${progress * 50}%`, boxShadow: `0 12px 48px rgba(0,0,0,${.3 * progress})` }}>
+      className="pointer-events-none absolute z-30 overflow-hidden" style={{ ...frame, borderRadius: `${flight.source === beat.player.fullBodyReferenceUrl ? progress * 50 : 50}%`, boxShadow: `0 12px 48px rgba(0,0,0,${.3 * progress})` }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- collect the displayed saved art into its ledger headshot */}
       <img src={flight.source} alt="" className={`absolute h-full w-full object-cover ${flight.source === beat.player.fullBodyReferenceUrl ? backdropStyles.featheredBody : ""}`} style={{ opacity: 1 - blend }} />
       {/* eslint-disable-next-line @next/next/no-img-element -- same frozen portrait used by the destination receipt */}
@@ -89,7 +97,7 @@ export function VotePresentation({ beat, ledger, roster, elapsedMs, controlsInse
   </div>;
 }
 
-export function VoteLedger({ title, votes, total, roster, currentId, portraitOpacity = 1, polarity = false }: {
+export function VoteLedger({ title, votes, total, roster, currentId, portraitOpacity = 1, polarity = false, eligibility }: {
   title: string;
   votes: readonly RevealedVote[];
   total: number;
@@ -97,19 +105,23 @@ export function VoteLedger({ title, votes, total, roster, currentId, portraitOpa
   currentId?: string;
   portraitOpacity?: number;
   polarity?: boolean;
+  eligibility?: VoteLedgerState["eligibility"];
 }) {
   const player = (id: string | null) => roster.find(entry => entry.id === id) ?? { id: id ?? "forfeit", name: id ?? "Forfeited", persona: "" };
-  return <section aria-label="Revealed vote ledger" data-vote-ledger>
+  const rows = voteLedgerRows(votes);
+  for (const id of eligibility?.ids ?? []) if (!rows.some(row => row.targetId === id)) rows.push({key:id,targetId:id,votes:[],saves:0,exits:0});
+  return <section aria-label="Vote record" data-vote-ledger>
     <header className="mb-2 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[.16em] text-white/55">
-      <h2 className="min-w-0 truncate">{title}</h2><p className="shrink-0" data-votes-revealed>{votes.length} / {total} revealed</p>
+      <h2 className="min-w-0 truncate">{title}</h2><p className="shrink-0" data-votes-revealed>{votes.length} / {total} votes shown</p>
     </header>
-    {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first reveal</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-      {voteLedgerRows(votes).map(row => {
-        const target = player(row.targetId);
-        return <li key={target.id} data-vote-target={target.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[.035] px-3 py-2">
+    {votes.length === 0 ? <p className="text-xs text-white/45">Waiting for the first vote</p> : <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      {rows.map(row => {
+        const target = row.targetId ? player(row.targetId) : {id: row.key, name: row.key === "abstain" ? "Hear more" : row.key === "unavailable" ? "Unavailable" : "Forfeited", persona: ""};
+        const eligible = Boolean(row.targetId && eligibility?.ids.includes(row.targetId));
+        return <li key={target.id} data-vote-target={target.id} data-vote-eligible={eligible} className={`flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2 ${eligible ? "border-amber-300/70 bg-amber-300/15" : "border-white/10 bg-white/[.035]"}`}>
           {row.targetId && <AgentAvatar {...target} persona={target.persona ?? ""} size="8" />}
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs"><span className="max-w-full truncate font-semibold text-white/90" title={target.name}>{target.name}</span>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs"><span className="max-w-full truncate font-semibold text-white/90" title={target.name}>{target.name}{eligible && <span className="ml-2 text-[10px] font-normal text-amber-200">Eligible</span>}</span>
               <strong data-running-total={target.id} className="max-w-full shrink-0 break-words text-amber-100">{polarity ? `${row.saves} save · ${row.exits} exit · ${row.saves - row.exits} net` : row.votes.length}</strong>
             </div>
             <ul className="mt-1 flex flex-wrap gap-x-2 gap-y-1">

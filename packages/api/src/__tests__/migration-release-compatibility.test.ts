@@ -81,9 +81,38 @@ describe("release migration identity", () => {
     }
     expect(inspectReleaseMigrationFiles(migrations)).toEqual([]);
   });
+
+  test("the Werewolf integration migrations pass the release policy", () => {
+    const migrations = [
+      "0105_werewolf.sql", "0106_visual_publication_audience.sql",
+      "0107_werewolf_lobbies.sql", "0108_house_owner_learning.sql",
+      "0109_house_cuts.sql", "0110_visual_character_variants.sql",
+      "0111_immutable_visual_character_variants.sql", "0112_werewolf_visual_recovery.sql",
+    ].map(file => path.resolve(import.meta.dir, "../../drizzle", file));
+    expect(inspectReleaseMigrationFiles(migrations)).toEqual([]);
+  });
 });
 
 describe("expand-contract release migration policy", () => {
+  test("allows only the exact reviewed House owner-learning constraint removals", () => {
+    const migration = path.resolve(import.meta.dir, "../../drizzle/0108_house_owner_learning.sql");
+    const sql = readFileSync(migration, "utf8");
+    expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
+    for (const [file, content] of [
+      ["unreviewed.sql", sql],
+      [migration, `${sql}\nALTER TABLE games DROP CONSTRAINT games_game_kind_check;`],
+      [migration, sql.replace("agent_learning_reviews DROP CONSTRAINT", "games DROP CONSTRAINT")],
+      [migration, `${sql}\nDROP TABLE games;`],
+    ] as const) {
+      expect(inspectReleaseMigrationSql(file, content)).toContainEqual(
+        expect.objectContaining({ rule: "drop-constraint" }),
+      );
+    }
+    expect(inspectReleaseMigrationSql(migration, `${sql}\nDROP TABLE games;`)).toContainEqual(
+      expect.objectContaining({ rule: "drop-table" }),
+    );
+  });
+
   test("allows additive tables, columns, indexes, and nullable widening", () => {
     expect(
       inspectReleaseMigrationSql(

@@ -11,6 +11,7 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
   return {
     id: "game-1",
     slug: "strategic-sunset",
+    modelLabel: "Test model",
     status: "waiting",
     playerCount: 8,
     currentRound: 0,
@@ -19,9 +20,7 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
     phaseTimeRemaining: null,
     alivePlayers: 3,
     eliminatedPlayers: 0,
-    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-06-21T12:00:00.000Z",
     ...overrides,
   };
@@ -44,19 +43,15 @@ function agent(overrides: Partial<SavedAgent> = {}): SavedAgent {
   };
 }
 
-function result(overrides: Partial<PlayerGameResult> = {}): PlayerGameResult {
+function result(overrides: Partial<Extract<PlayerGameResult, { gameKind: "influence" }>> = {}): PlayerGameResult {
   return {
     gameId: "game-result-1",
     gameSlug: "finished-firelight",
     agentName: "Atlas",
-    persona: "strategic",
-    placement: 2,
+    gameKind: "influence", gameTitle: "finished-firelight", playerId: "seat-1", agentProfileId: null,
+    result: { outcome: "loss", placement: 2, eliminated: true, rounds: 6, totalPoints: null },
     totalPlayers: 8,
-    eliminated: true,
-    winner: false,
-    rounds: 6,
     completedAt: "2026-06-20T14:00:00.000Z",
-    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     ...overrides,
   };
 }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   hashHouseHighlightsTrailerManifest,
-  type HouseHighlightsTrailerManifest,
+  type InfluenceTrailerManifest,
 } from "@influence/engine";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -245,7 +245,7 @@ describe("postgame media read models", () => {
     expect(adminRead).toMatchObject({
       provenance: {
         renderInputSnapshotHash: snapshotHash,
-        renderInputSnapshotVersion: 1,
+        renderInputSnapshotVersion: 2,
         rendererVersion: "remotion-v1",
         timingContractVersion: "house-highlights-trailer-timing-v1",
         musicAssetId: "golden-verdict-max",
@@ -354,7 +354,7 @@ function artifactFixture(version: string): PostgameMediaArtifactMetadata {
   };
 }
 
-function manifestFixture(gameId: string): HouseHighlightsTrailerManifest {
+function manifestFixture(gameId: string): InfluenceTrailerManifest {
   const winner = {
     id: "winner",
     name: "Mira Solari",
@@ -372,7 +372,7 @@ function manifestFixture(gameId: string): HouseHighlightsTrailerManifest {
     status: "finalist" as const,
   };
   return {
-    schemaVersion: 1,
+    schemaVersion: 2, kind: "influence",
     mediaType: "house_highlights_trailer",
     timingContractVersion: "house-highlights-trailer-timing-v1",
     game: { id: gameId, slug: "fixture-game", status: "completed" },

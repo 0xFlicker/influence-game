@@ -50,7 +50,7 @@ describe("durable game terminal settlement", () => {
       .where(eq(schema.games.id, fixture.gameId)))[0]!;
     expect(game.status).toBe("completed");
     expect(game.endedAt).toBe(fixture.finalEvent.timestamp);
-    expect(JSON.parse(game.config)).toMatchObject({ viewerMode: "replay" });
+    expect(JSON.parse(game.config)).not.toHaveProperty("viewerMode");
 
     const settlement = (await db.select().from(schema.gameCompletionSettlements)
       .where(eq(schema.gameCompletionSettlements.gameId, fixture.gameId)))[0]!;
@@ -181,7 +181,7 @@ describe("durable game terminal settlement", () => {
       }, perAction: {} },
       resolvedModel: "gpt-5.6-luna",
       calculatedCost: null,
-      completionConfig: { viewerMode: "replay" },
+      completionConfig: {},
       finishedAt: fixture.finalEvent.timestamp,
     });
     expect(captured).toMatchObject({ created: true, state: "pending" });
@@ -227,8 +227,7 @@ async function createTerminalFixture(
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       },
-      visibility: "private",
-      viewerMode: "speedrun",
+      visibility: "unlisted",
     },
   });
   await db.update(schema.games).set({

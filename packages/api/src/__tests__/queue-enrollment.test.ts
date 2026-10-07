@@ -614,7 +614,6 @@ async function insertGame(
       modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       maxRounds: 10,
       visibility: "public",
-      viewerMode: "speedrun",
     }),
     status: input.status,
     trackType: input.trackType ?? "custom",

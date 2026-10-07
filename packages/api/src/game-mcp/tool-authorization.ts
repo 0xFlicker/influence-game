@@ -85,6 +85,12 @@ export interface GameMcpToolAccessSpec {
 
 const SHARED_GAME_READ_TOOLS = [
   "list_games",
+  "read_game",
+  "read_game_results",
+  "read_game_cuts",
+  "read_game_thinking",
+  "get_rules",
+  "search_rules",
   "list_seasons",
   "read_player_profile",
   "read_season_standings",
@@ -104,8 +110,6 @@ const SHARED_GAME_READ_TOOLS = [
 ] as const;
 
 const GAME_READ_TOOLS = [
-  "get_rules",
-  "search_rules",
   // Match-completeness subject tools (U8): games:read only — no producer-role
   // alternative that would silently widen private lanes.
   "read_match_manifest",

@@ -33,19 +33,14 @@ describe("game lifecycle engine config", () => {
     const config = buildEngineConfigFromGameRecord(
       {
         maxRounds: 11,
-        timers: {
-          introduction: 15_000,
-          mingle: 20_000,
-          whisper: 20_000,
-        },
       },
       4,
       10,
     );
 
     expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
-    expect(config.timers.mingle).toBe(20_000);
-    expect("whisper" in config.timers).toBeFalse();
+    expect(config.maxRounds).toBe(11);
+    expect(config).not.toHaveProperty("timers");
   });
 
   test("does not restore the removed strategic-reflection switch from stored config", () => {

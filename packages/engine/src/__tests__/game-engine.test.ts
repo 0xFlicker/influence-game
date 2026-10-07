@@ -157,15 +157,6 @@ describe("GameState - player management", () => {
 
 describe("Mingle Rooms (current open-room phase)", () => {
   const TEST_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
     maxRounds: 2,
     minPlayers: 5,
     maxPlayers: 12,
@@ -1504,15 +1495,6 @@ describe("GameState - POWER phase", () => {
 
 describe("GameRunner - Lobby turn order", () => {
   const TEST_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
     maxRounds: 1,
     minPlayers: 4,
     maxPlayers: 12,
@@ -1545,15 +1527,6 @@ describe("GameRunner - Lobby turn order", () => {
 
 describe("GameRunner - Power Lobby after vote experiment", () => {
   const BASE_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
     maxRounds: 2,
     minPlayers: 4,
     maxPlayers: 12,
@@ -2277,15 +2250,6 @@ describe("GameState - Jury vote tallying (Judgment)", () => {
 
 describe("Diary Room - interview mechanics", () => {
   const TEST_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
     maxRounds: 2,
     minPlayers: 5,
     maxPlayers: 12,
@@ -2419,15 +2383,6 @@ describe("Diary Room - interview mechanics", () => {
 
 describe("Full game - endgame integration", () => {
   const TEST_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
     maxRounds: 10,
     minPlayers: 5,
     maxPlayers: 12,

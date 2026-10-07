@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
+import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
 import { SoloPresentation } from "./solo-presentation";
-import type { PresentationDirector } from "./format-presentation-director";
+import type { PresentationDirector } from "./influence-presentation-director";
 import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
@@ -21,6 +22,7 @@ import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
+  | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
   | { kind: "portrait-room"; roomNumber: number | null; participants: GamePlayer[]; speech: VisualSpeech }
@@ -86,7 +88,9 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const readingElapsedMs = holdAtTail ? Math.min(readingTime, tailTime) : readingTime;
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
-  if (beat.kind === "winner") {
+  if (beat.kind === "nominee-selection") {
+    content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
+  } else if (beat.kind === "winner") {
     content = <WinnerScene beat={beat} fullscreen={fullscreen} />;
   } else if (beat.kind === "safety-bounce") {
     content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} />;

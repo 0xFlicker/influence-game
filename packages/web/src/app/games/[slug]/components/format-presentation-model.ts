@@ -594,7 +594,6 @@ function applyDecision(input: {
           finalistPlayerIds: null,
           completedMingleWindows: [],
           pleaCount: 0,
-          ballotsSealed: 0,
         },
       };
       cues.push({
@@ -892,24 +891,7 @@ function applyDecision(input: {
         ...snapshot,
         phase,
         canonicalSequence: decision.sequence,
-        twoNames: decision.payload.formatId === "two_names" && snapshot.twoNames
-          ? { ...snapshot.twoNames, ballotsSealed: snapshot.twoNames.ballotsSealed + 1 }
-          : snapshot.twoNames,
       };
-      if (decision.payload.formatId === "two_names" && snapshot.twoNames?.finalistPlayerIds) {
-        const eligibleCount = eligiblePlayerIds.filter((id) =>
-          id !== snapshot.empoweredId && !snapshot.twoNames!.finalistPlayerIds!.includes(id)
-        ).length;
-        cues.push({
-          ...base,
-          key: cueKey(gameId, decision.sequence, "two-names-ballot-sealed"),
-          kind: "two_names_ballots_sealing",
-          baseDurationMs: FIXED_CUE_DURATION_MS.two_names_ballots_sealing,
-          sealedCount: snapshot.twoNames.ballotsSealed,
-          eligibleCount,
-          after: cloneSnapshot(snapshot),
-        });
-      }
       break;
     }
     case "format.ballot_forfeited": {

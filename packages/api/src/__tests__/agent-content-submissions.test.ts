@@ -102,6 +102,59 @@ describe("atomic character content submissions", () => {
     expect(asset!.bytes).toEqual(Buffer.from(bytes));
     expect(await db.select().from(schema.agentModerationReviews)).toHaveLength(3);
   });
+  test("strategy-only tool edits reuse saved images after local uploads disappear", async () => {
+    const sourceUrl = `http://localhost${await contentImageFixture("pfp/offline-body.png")}`;
+    const first = await createOwnedAgentProfile(db, context, { ...initial,
+      avatarUrl: sourceUrl, fullBodyReferenceUrl: sourceUrl, headPosition: await headPositionFixture(sourceUrl),
+      strategyStyle: "Keep Influence strategy", creationRequestId: randomUUID(),
+    });
+    const [before] = await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, first.profile.contentRevisionId!));
+    await rm(directory, { recursive: true, force: true });
+    const saved = await updateOwnedAgent(db, context, { agentId: first.profile.id,
+      werewolfStrategyStyle: "Compare claims as village; coordinate discreetly as wolf.",
+      submissionId: randomUUID(), expectedContentRevisionId: first.profile.contentRevisionId,
+    });
+    const [profile] = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, first.profile.id));
+    const [after] = await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, saved.agent.contentRevisionId!));
+    expect(profile!.werewolfStrategyStyle).toBe("Compare claims as village; coordinate discreetly as wolf.");
+    expect(profile!.strategyStyle).toBe("Keep Influence strategy");
+    expect(profile!.headPosition).toEqual(first.profile.headPosition);
+    expect(after!.snapshot.assets).toEqual(before!.snapshot.assets);
+    expect(after!.parentRevisionId).toBe(before!.id);
+    expect(await db.select().from(schema.agentContentAssets)).toHaveLength(1);
+    // Selecting a missing image is not silently accepted using old evidence.
+    await expect(updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: sourceUrl })).rejects.toThrow("Visual upload is unavailable");
+    await expect(updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: "http://localhost/api/uploads/local?key=pfp%2Fmissing.png" })).rejects.toThrow("Visual upload is unavailable");
+    expect((await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, first.profile.id)))[0]!.contentRevisionId).toBe(saved.agent.contentRevisionId!);
+    await expect(updateOwnedAgentProfile(db, context, first.profile.id, {
+      headPosition: { ...first.profile.headPosition!, sourceHash: "b".repeat(64) },
+    })).rejects.toThrow("source image changed");
+    // Replacing only the portrait must not re-fetch the unchanged missing full body.
+    const portraitUrl = `http://localhost${await contentImageFixture("pfp/new-portrait.png")}`;
+    const replaced = await updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: portraitUrl });
+    expect(replaced.profile.avatarUrl).toBe(portraitUrl);
+    expect(replaced.profile.fullBodyReferenceUrl).toBe(sourceUrl);
+    expect(replaced.profile.headPosition).toEqual(first.profile.headPosition);
+  });
+  test("held strategy corrections reuse the submitted draft's image evidence", async () => {
+    const publishedUrl = `http://localhost${await contentImageFixture("pfp/published.png")}`;
+    const submittedUrl = `http://localhost${await contentImageFixture("pfp/held.png")}`;
+    const first = await createOwnedAgentProfile(db, context, { ...initial, avatarUrl: publishedUrl });
+    await db.update(schema.agentProfiles).set({ moderationRequired: true }).where(eq(schema.agentProfiles.id, first.profile.id));
+    const held = await updateOwnedAgentProfile(db, context, first.profile.id, { avatarUrl: submittedUrl });
+    expect(held.receipt.publication).toBe("held");
+    await rm(directory, { recursive: true, force: true });
+    const changed = await updateOwnedAgentProfile(db, context, first.profile.id, {
+      werewolfStrategyStyle: "Follow the evidence.", expectedContentRevisionId: held.receipt.contentRevisionId,
+    });
+    const [revision] = await db.select().from(schema.agentContentRevisions).where(eq(schema.agentContentRevisions.id, changed.receipt.contentRevisionId!));
+    expect(changed.receipt.publication).toBe("held");
+    expect(changed.profile.avatarUrl).toBe(publishedUrl);
+    expect(changed.profile.werewolfStrategyStyle).toBeNull();
+    expect(revision!.snapshot.avatarUrl).toBe(submittedUrl);
+    expect(revision!.snapshot.werewolfStrategyStyle).toBe("Follow the evidence.");
+    expect(Object.keys(revision!.snapshot.assets as Record<string, string>)).toEqual([submittedUrl]);
+  });
   test("review persistence failure rolls the profile and both revision types back", async () => {
     const first = await create();
     await db.execute(sql`CREATE FUNCTION reject_test_review() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected review write failure'; END $$`);

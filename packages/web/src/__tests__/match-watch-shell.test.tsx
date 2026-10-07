@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
+import { act, cleanup, render } from "@testing-library/react";
+import { Window } from "happy-dom";
+import type { ReactElement } from "react";
 import { Phase } from "@influence/engine";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,10 +28,25 @@ import {
 } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildStoryScenes } from "../app/games/[slug]/components/house-story";
 
-const matchWatchShellSource = readFileSync(
-  join(import.meta.dir, "../app/games/[slug]/components/match-watch-shell.tsx"),
-  "utf8",
-);
+
+// These checks need the mounted theater: it waits for device preferences before
+// starting its director. Keep the server-shell assertions below separate.
+let restoreDOM: (() => Promise<void>) | undefined;
+async function renderPlayer(element: ReactElement) {
+  await restoreDOM?.();
+  restoreDOM = undefined;
+  const dom = new Window({url: "http://localhost"});
+  const keys = ["window", "document", "navigator", "localStorage", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "requestAnimationFrame", "cancelAnimationFrame"] as const;
+  const descriptors = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  for (const key of keys) Object.defineProperty(globalThis, key, {configurable:true, value:key === "window" ? dom : key === "requestAnimationFrame" ? dom.requestAnimationFrame.bind(dom) : key === "cancelAnimationFrame" ? dom.cancelAnimationFrame.bind(dom) : dom[key]});
+  restoreDOM = async () => {await act(async () => {cleanup();});await dom.close();for(const key of keys){const descriptor=descriptors.get(key);if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}};
+  return render(element).container.innerHTML;
+}
+afterEach(async () => {await restoreDOM?.();restoreDOM=undefined;});
+
+const sharedShellSource = readFileSync(join(import.meta.dir, "../components/watch/watch-shell.tsx"), "utf8");
+const inspectorSource = readFileSync(join(import.meta.dir, "../components/watch/watch-inspector.tsx"), "utf8");
+
 
 function game(): GameDetail {
   return {
@@ -57,7 +75,6 @@ function game(): GameDetail {
     ],
     modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
-    viewerMode: "replay",
     createdAt: "2026-06-20T00:00:00.000Z",
   };
 }
@@ -112,11 +129,11 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('href="/profile/arden-voss"');
     expect(html).toContain("Owner: <!-- -->Arden Voss");
     expect(html).toContain('aria-label="View Arden Voss&#x27;s public profile"');
-    expect(matchWatchShellSource).toContain('href="/get-mcp"');
-    expect(matchWatchShellSource).toContain("Cross-examine this game with your AI.");
-    expect(matchWatchShellSource).toContain("Analyze this game");
-    expect(matchWatchShellSource.indexOf("<McpBanner />")).toBeLessThan(
-      matchWatchShellSource.indexOf("<TheaterPanel"),
+    expect(sharedShellSource).toContain('href="/get-mcp"');
+    expect(sharedShellSource).toContain("Cross-examine this game with your AI.");
+    expect(sharedShellSource).toContain("Analyze this game");
+    expect(sharedShellSource.indexOf("<McpBanner />")).toBeLessThan(
+      sharedShellSource.indexOf("{cast}{mobileCast}{theater}"),
     );
   });
 
@@ -152,9 +169,9 @@ describe("MatchWatchShell", () => {
     expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
   });
 
-  it("renders persistent replay watch chrome around the embedded theater", () => {
+  it("renders persistent replay watch chrome around the embedded theater", async () => {
     const currentGame = game();
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[entry()]}
@@ -182,7 +199,8 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Receipts");
     expect(textHtml).toContain("Atlas is still competing in round 1.");
     expect(html).toContain("data-replay-controls");
-    expect(html).toContain("Speed:");
+    expect(html).toContain('aria-label="Player settings"');
+    expect(html).toContain('aria-label="Replay position"');
     expect(html).toContain("Atlas");
     expect(html).toContain("Lyra");
     expect(html).toContain("relative h-full min-h-0 overflow-hidden");
@@ -198,9 +216,9 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('title="Exit"');
   });
 
-  it("uses the portrait theater for nonvisual live games and replays", () => {
+  it("uses the portrait theater for nonvisual live games and replays", async () => {
     for (const live of [false, true]) {
-      const html = renderToString(<MatchWatchShell
+      const html = await renderPlayer(<MatchWatchShell
         game={{ ...game(), visualMode: false, status: live ? "in_progress" : "completed" }}
         messages={[entry({ text: "Can I count on you?", phase: "LOBBY", scope: "public" })]}
         live={live} connStatus={live ? "live" : "replay"}
@@ -331,7 +349,7 @@ describe("MatchWatchShell", () => {
     expect(textHtml).not.toContain("Council");
   });
 
-  it("renders typed format cues inside the deep animation boundary", () => {
+  it("renders typed format cues inside the deep animation boundary", async () => {
     const currentGame = {
       ...game(),
       gameKernel: "format" as const,
@@ -374,7 +392,7 @@ describe("MatchWatchShell", () => {
         },
       },
     };
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[]}
@@ -387,16 +405,18 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-presentation-animation-boundary="true"');
     expect(html).toContain('data-format-cue="format_menu"');
     expect(html).toContain("The House offers two formats");
+    const serverHtml = renderToString(<MatchWatchShell game={currentGame} messages={[]} replayFrames={[menuFrame]} live={false} connStatus="replay" />);
+    expect(serverHtml).toContain("Preparing the player");
     // Server rendering has no director cursor yet; transport pressure must not
     // disclose cast roles before the client reports its staged snapshot.
-    expect(html).not.toContain("Empowered");
-    expect(html).not.toContain("Exposed");
-    expect(html).not.toContain("Shielded");
-    expect(html).not.toContain("Power Play");
-    expect(html).not.toContain("Council");
+    expect(serverHtml).not.toContain("Empowered");
+    expect(serverHtml).not.toContain("Exposed");
+    expect(serverHtml).not.toContain("Shielded");
+    expect(serverHtml).not.toContain("Power Play");
+    expect(serverHtml).not.toContain("Council");
   });
 
-  it("surfaces a live compiler diagnostic without inventing a replacement state", () => {
+  it("surfaces a live compiler diagnostic without inventing a replacement state", async () => {
     const currentGame = {
       ...game(),
       status: "in_progress" as const,
@@ -433,7 +453,7 @@ describe("MatchWatchShell", () => {
       },
     };
 
-    const html = renderToString(
+    const html = await renderPlayer(
       <MatchWatchShell
         game={currentGame}
         messages={[]}
@@ -533,7 +553,7 @@ describe("MatchWatchShell", () => {
       "utf8",
     );
     const presentationDirectorSource = readFileSync(
-      join(import.meta.dir, "../app/games/[slug]/components/format-presentation-director.ts"),
+      join(import.meta.dir, "../app/games/[slug]/components/influence-presentation-director.ts"),
       "utf8",
     );
 
@@ -546,12 +566,12 @@ describe("MatchWatchShell", () => {
   });
 
   it("makes long thinking cards expandable from the inspector", () => {
-    expect(matchWatchShellSource).toContain("COMPACT_THINKING_TEXT_LIMIT");
-    expect(matchWatchShellSource).toContain("expandableCards");
-    expect(matchWatchShellSource).toContain("shouldClamp = expandable");
-    expect(matchWatchShellSource).toContain("aria-expanded={expanded}");
-    expect(matchWatchShellSource).toContain("Show full");
-    expect(matchWatchShellSource).toContain("Show less");
+    expect(inspectorSource).toContain("COMPACT_THINKING_TEXT_LIMIT");
+    expect(inspectorSource).toContain("expandableCards");
+    expect(inspectorSource).toContain("shouldClamp = expandable");
+    expect(inspectorSource).toContain("aria-expanded={expanded}");
+    expect(inspectorSource).toContain("Show full");
+    expect(inspectorSource).toContain("Show less");
   });
 
   it("builds newest-first diary archive entries with paired House questions", () => {
@@ -789,3 +809,10 @@ function watchState(): GameWatchState {
 function withoutReactTextMarkers(html: string): string {
   return html.replaceAll("<!-- -->", "");
 }
+
+it("does not infer a missing Diary cursor from equal timestamps", () => {
+  const earlier = entry({id: 1, entrySequence: 1, timestamp: 100});
+  const later = entry({id: 2, entrySequence: 3, timestamp: 100});
+  expect(buildReplayTranscriptSlice([earlier, later], [entry({id: 99, entrySequence: 2, timestamp: 100})])).toEqual([earlier]);
+  expect(buildReplayTranscriptSlice([earlier, later], [entry({id: 99, timestamp: 100})])).toEqual([]);
+});

@@ -47,7 +47,7 @@ export interface DiaryRoomData {
   entries: Array<{ question: TranscriptEntry; answer: TranscriptEntry | null }>;
 }
 
-export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting";
+export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting" | "unavailable";
 export type WatchConnStatus = ConnStatus | "replay";
 
 export interface GameViewerProps {
@@ -115,7 +115,6 @@ export interface TwoNamesPresentationSnapshot {
   finalistPlayerIds: [string, string] | null;
   completedMingleWindows: Array<"initial_names" | "final_names">;
   pleaCount: number;
-  ballotsSealed: number;
 }
 
 export type FormatResolutionPresentation =
@@ -137,6 +136,8 @@ export interface FormatPresentationSnapshot {
 }
 
 interface SpeechCue {
+  /** A separate, fully collected tally stop after a canonical roll call. */
+  voteSummary?: boolean;
   /** The director stages bubbles independently from the surrounding image. */
   speechPresentation?: "solo" | "scene";
 }
@@ -222,11 +223,6 @@ export type FormatPresentationCue =
       ordinal: 0 | 1;
       status: "accepted" | "absent";
       text: string | null;
-    })
-  | (FormatPresentationCueBase & {
-      kind: "two_names_ballots_sealing";
-      sealedCount: number;
-      eligibleCount: number;
     })
   | (FormatPresentationCueBase & {
       kind: "safety_bounce_pointer";

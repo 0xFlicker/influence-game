@@ -1,3 +1,8 @@
+import { startHouseCutWorker } from "./services/house-cut-worker.js";
+import { isViewerGame, viewerGameAvailable } from "./services/game-visibility.js";
+import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
+import { createGameEntryRoutes } from "./routes/game-entries.js";
+import { createWerewolfRoutes } from "./routes/werewolf.js";
 import { createGameAssetRoutes } from "./routes/game-assets.js";
 import { createAccountInferenceRoutes } from "./routes/account-inference.js";
 import { createModerationRoutes } from "./routes/moderation.js";
@@ -435,6 +440,7 @@ async function finishBackgroundRuntimeStartup(
   const providerHealthProbeRuntime = activationFence
     ? null
     : await startProviderHealthProbeRuntime(db);
+  const houseCutWorker = gameExecutionWorker ? startHouseCutWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const episodeWorker = gameExecutionWorker ? startEpisodeWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const visualMediaWorker = gameExecutionWorker ? startVisualMediaWorker(db, () => runtimeActivation.canClaimWork()) : null;
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
@@ -495,6 +501,7 @@ async function finishBackgroundRuntimeStartup(
   return {
     async stop() {
       stopping = true;
+      await houseCutWorker?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
       if (reconciliationTimer) clearInterval(reconciliationTimer);
@@ -593,6 +600,11 @@ const mcpRoutes = createMcpRoutes(db);
 app.route("/", mcpRoutes);
 
 // Game routes
+app.route("/", createGameEntryRoutes(db));
+app.route("/", createWerewolfRoutes(db));
+app.route("/", createWerewolfAdminRoutes(db));
+// Shared assets enforce their own access policy before the Influence-only game guard.
+app.route("/", createGameAssetRoutes(db));
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
@@ -650,7 +662,6 @@ const uploadRoutes = createUploadRoutes();
 app.route("/", uploadRoutes);
 
 // Profile & leaderboard routes
-app.route("/", createGameAssetRoutes(db));
 
 const profileRoutes = createProfileRoutes(db);
 app.route("/", profileRoutes);
@@ -699,12 +710,15 @@ const server = await listenBeforeRuntimeInitialization({
 
         // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
         const gameRow = (await db
-          .select({ id: schema.games.id, status: schema.games.status })
+          .select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, status: schema.games.status, gameKind: schema.games.gameKind })
           .from(schema.games)
           .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
 
-        if (!gameRow) {
+        if (!gameRow || !isViewerGame(gameRow)) {
           return new Response("Game not found", { status: 404 });
+        }
+        if (gameRow.gameKind === "werewolf") {
+          return new Response("Werewolf uses its audience-scoped HTTP viewer", { status: 409 });
         }
 
         const gameId = gameRow.id;
@@ -776,7 +790,7 @@ const server = await listenBeforeRuntimeInitialization({
       },
     },
   }),
-  onListening: (listeningServer) => setServer(listeningServer),
+  onListening: (listeningServer) => setServer(listeningServer, id => viewerGameAvailable(db, id)),
   initializeRuntime: () => runtimeActivation.initialize(),
   onReady: () => {
     acceptingRequests = true;

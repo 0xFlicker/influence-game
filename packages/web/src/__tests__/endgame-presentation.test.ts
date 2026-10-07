@@ -5,7 +5,7 @@ import { buildEndgamePresentationCues, revealedWinnerCue } from "../app/games/[s
 import { visualWatchPresentation } from "../app/games/[slug]/components/visual-watch-model";
 import { findPresentationCueIndexForSequence } from "../app/games/[slug]/components/presentation-sequence";
 import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/games/[slug]/components/house-story";
-import { createPresentationDirector } from "../app/games/[slug]/components/format-presentation-director";
+import { createPresentationDirector } from "../app/games/[slug]/components/influence-presentation-director";
 import { buildClassicPresentationCues, comparePresentationCues } from "../app/games/[slug]/components/dramatic-replay-viewer";
 
 const players = ["Arden", "Kaiya", "Marnie", "Ione"].map((name) => ({ id: name, name, persona: "strategic", status: "alive" as const, shielded: false }));

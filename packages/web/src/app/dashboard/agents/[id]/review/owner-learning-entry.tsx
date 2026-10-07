@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { WerewolfLearningFacts, werewolfLearningFacts } from "./werewolf-learning-facts";
 import { AgentAvatar } from "@/components/agent-avatar";
 import type {
   OwnerLearningEligibleInputs,
@@ -52,8 +53,8 @@ export function OwnerLearningEntryView({
     return (
       <section className="olm-empty" data-testid="owner-learning-empty">
         <p className="olm-kicker">Agent review</p>
-        <h1>No eligible Daily Free games yet.</h1>
-        <p>Once one of your agents completes ranked play, its accepted game facts can anchor a private strategy review.</p>
+        <h1>No eligible games yet.</h1>
+        <p>Once one of your agents completes Daily Free Influence or a Werewolf game, its accepted game facts can anchor a private strategy review.</p>
         <Link href="/games/free" className="olm-button olm-button-primary">Go to Intake</Link>
       </section>
     );
@@ -64,6 +65,7 @@ export function OwnerLearningEntryView({
     const game = selectedPreflightGame(visiblePreflight, gameId);
     return game ? [canonicalFacts(game.canonicalFacts)] : [];
   });
+  const wolfFacts = visiblePreflight?.evidence.games.map(game => werewolfLearningFacts(game.canonicalFacts)).filter(facts => facts !== null) ?? [];
   const decisions = facts.reduce((total, game) => total + activityRows(game).length, 0);
   const finals = facts.filter((game) =>
     game.reviewedPlayer.won
@@ -104,7 +106,7 @@ export function OwnerLearningEntryView({
           <div>
             <p className="olm-kicker">Agent review</p>
             <h1>{profile.name}</h1>
-            <p>Current analytical revision · {shortRevision(profile.currentRevisionId)}</p>
+            <p>{profile.gameKind === "werewolf" ? "Werewolf strategy" : `Influence strategy · ${shortRevision(profile.currentRevisionId)}`}</p>
           </div>
         </div>
         <span className="olm-credit"><i aria-hidden="true" />{reviewCreditLabel(eligible)}</span>
@@ -169,9 +171,9 @@ export function OwnerLearningEntryView({
 
       <section className="olm-fact-strip" aria-label="Selected game facts">
         <Fact value={String(profile.qualifyingGameCount)} label="Eligible games in this strategy family" />
-        <Fact value={preflightPending ? "…" : String(finals)} label="Final appearances selected" />
-        <Fact value={preflightPending ? "…" : String(pressure)} label="Recorded votes received" />
-        <Fact value={preflightPending ? "…" : String(decisions)} label="Action and counterplay rows" />
+        <Fact value={preflightPending ? "…" : String(profile.gameKind === "werewolf" ? wolfFacts.filter(facts => facts.reviewedPlayer.won).length : finals)} label={profile.gameKind === "werewolf" ? "Faction wins selected" : "Final appearances selected"} />
+        <Fact value={preflightPending ? "…" : String(profile.gameKind === "werewolf" ? wolfFacts.reduce((n, facts) => n + facts.werewolf.missingThinkingCount, 0) : pressure)} label={profile.gameKind === "werewolf" ? "Decisions without recorded thinking" : "Recorded votes received"} />
+        <Fact value={preflightPending ? "…" : String(profile.gameKind === "werewolf" ? wolfFacts.reduce((n, facts) => n + facts.werewolf.decisions.length, 0) : decisions)} label="Recorded decisions" />
       </section>
 
       <section className="olm-section" aria-labelledby="olm-games-title">
@@ -223,6 +225,7 @@ export function OwnerLearningEntryView({
         </section>
       )}
 
+      {wolfFacts.map(facts => <WerewolfLearningFacts key={facts.game.id} facts={facts} />)}
       <McpEntryCallout />
     </div>
   );
@@ -237,9 +240,9 @@ function McpEntryCallout() {
     <aside className="olm-mcp-inline" aria-label="MCP connection">
       <div className="olm-mcp-copy"><span>MCP</span><div>
         <strong>Prefer to improve agents with your own AI?</strong>
-        <p>Connect Influence MCP for deeper questions, authorized game lookup, and agent updates from your assistant.</p>
+        <p>Connect The House MCP for deeper questions, authorized game lookup, and agent updates from your assistant.</p>
       </div></div>
-      <Link href="/get-mcp" className="olm-text-link">Connect Influence MCP →</Link>
+      <Link href="/get-mcp" className="olm-text-link">Connect The House MCP →</Link>
     </aside>
   );
 }
@@ -252,12 +255,12 @@ function startAvailability(
   failed: boolean,
 ): { available: boolean; detail: string; loadingEvidence: boolean } {
   if (selectedGameIds.length === 0) {
-    return { available: false, detail: "Choose at least one Daily Free game.", loadingEvidence: false };
+    return { available: false, detail: "Choose at least one eligible game.", loadingEvidence: false };
   }
   if (eligible.credit.mode === "metered" && eligible.credit.balance === 0 && !eligible.credit.nextAvailableAt) {
     return {
       available: false,
-      detail: "Your next review credit arrives after another Daily Free game.",
+      detail: "Your next review credit arrives after another qualifying game.",
       loadingEvidence: false,
     };
   }

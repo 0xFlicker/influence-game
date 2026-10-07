@@ -1,11 +1,11 @@
 import { sha256StableJson } from "./stable-hash.js";
 
-export const OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION = "owner-learning-eligibility-v2";
+export const OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION = "owner-learning-eligibility-v3";
 export const OWNER_LEARNING_EVIDENCE_VERSION = "owner-learning-evidence-v2";
 export const OWNER_LEARNING_REVIEWER_VERSION = "owner-learning-reviewer-v1";
-export const OWNER_LEARNING_PROMPT_VERSION = "owner-learning-prompt-v2";
-export const OWNER_LEARNING_SCHEMA_VERSION = "owner-learning-result-v2";
-export const OWNER_LEARNING_PROVIDER_POLICY_VERSION = "owner-learning-luna-flex-v3";
+export const OWNER_LEARNING_PROMPT_VERSION = "owner-learning-prompt-v3";
+export const OWNER_LEARNING_SCHEMA_VERSION = "owner-learning-result-v3";
+export const OWNER_LEARNING_PROVIDER_POLICY_VERSION = "owner-learning-luna-flex-v4";
 
 export const OWNER_LEARNING_MAX_GAMES = 3;
 export const OWNER_LEARNING_MAX_RECOMMENDATIONS = 3;
@@ -172,7 +172,7 @@ export interface OwnerLearningRecommendation {
 }
 
 export interface OwnerLearningStrategyProposal {
-  field: "strategyStyle";
+  field: "strategyStyle" | "werewolfStrategyStyle";
   before: string;
   after: string;
 }
@@ -235,6 +235,7 @@ export interface OwnerLearningCheckpoint {
 }
 
 export interface OwnerLearningReviewDTO {
+  gameKind: "influence" | "werewolf";
   id: string;
   agentProfileId: string;
   reviewedRevisionId: string;
@@ -517,7 +518,7 @@ function parseEvidenceRefs(value: unknown, label: string): OwnerLearningEvidence
 
 function parseProposal(value: unknown): OwnerLearningStrategyProposal {
   const input = objectValue(value, "proposal");
-  if (input.field !== "strategyStyle") {
+  if (input.field !== "strategyStyle" && input.field !== "werewolfStrategyStyle") {
     throw new OwnerLearningReviewResultValidationError(
       "owner learning proposal may target only strategyStyle",
     );
@@ -530,7 +531,7 @@ function parseProposal(value: unknown): OwnerLearningStrategyProposal {
   if (before.trim() === after) {
     throw new OwnerLearningReviewResultValidationError("owner learning proposal must change strategyStyle");
   }
-  return { field: "strategyStyle", before, after };
+  return { field: input.field, before, after };
 }
 
 function boundedString(

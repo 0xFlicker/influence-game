@@ -814,7 +814,7 @@ export function FreeGameContent() {
       {/* Championship standings */}
       <section>
         <h2 className="influence-section-title mb-3">
-          Dual Crown Championship
+          Influence Dual Crown Championship
         </h2>
         {seasonError && !seasonLoading ? (
           <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
@@ -832,7 +832,7 @@ export function FreeGameContent() {
 
       <details className="group">
         <summary className="cursor-pointer list-none influence-copy-muted text-xs transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-phase/70">
-          Account free-track ELO <span aria-hidden="true" className="ml-1 group-open:hidden">+</span><span aria-hidden="true" className="ml-1 hidden group-open:inline">−</span>
+          Influence account free-track ELO <span aria-hidden="true" className="ml-1 group-open:hidden">+</span><span aria-hidden="true" className="ml-1 hidden group-open:inline">−</span>
         </summary>
         <div className="mt-3">
           {leaderboardError && !leaderboardLoading ? (

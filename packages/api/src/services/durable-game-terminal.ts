@@ -219,7 +219,7 @@ export async function settleDurableTerminalGame(
     tokenUsage,
     resolvedModel,
     calculatedCost: estimateCostForKnownModel(tokenUsage.total, resolvedModel),
-    completionConfig: { ...gameConfig, viewerMode: "replay" },
+    completionConfig: gameConfig,
     // The canonical commit timestamp, not the time a reloaded process noticed it.
     finishedAt: finalEvent.timestamp,
   });

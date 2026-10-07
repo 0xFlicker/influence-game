@@ -349,7 +349,6 @@ function gameFixture(): AdminGameSummary {
     eliminatedPlayers: 6,
     modelLabel: "OpenAI gpt-5.6-luna · Adaptive",
     visibility: "public",
-    viewerMode: "replay",
     trackType: "custom",
     createdAt: "2026-08-23T11:00:00.000Z",
     completedAt: "2026-08-23T12:05:00.000Z",

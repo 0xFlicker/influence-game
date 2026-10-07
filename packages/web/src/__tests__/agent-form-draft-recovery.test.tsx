@@ -17,7 +17,7 @@ const originalEvent = globalThis.Event;
 const originalInputEvent = globalThis.InputEvent;
 const auth = { account: { id: "user-1" } } as InfluenceAuthState;
 const draftScope = "review:agent-1:review-1";
-const draftKey = `influence:agent-editor:3:user-1:${draftScope}`;
+const draftKey = `influence:agent-editor:4:user-1:${draftScope}`;
 const proposal = "Coordinate one primary vote and one fallback.";
 const draftStrategy = "Delay commitment and preserve three incompatible options.";
 
@@ -37,7 +37,7 @@ beforeEach(() => {
   Object.defineProperty(globalThis, "Event", { configurable: true, value: domWindow.Event });
   Object.defineProperty(globalThis, "InputEvent", { configurable: true, value: domWindow.InputEvent });
   domWindow.sessionStorage.setItem(draftKey, JSON.stringify({
-    version: 3,
+    version: 4,
     savedAt: "2026-08-28T20:00:00.000Z",
     creationRequestId: "11111111-1111-4111-8111-111111111111",
     base: snapshot(proposal),
@@ -67,7 +67,7 @@ describe("AgentForm draft recovery", () => {
     expect(mounted.getByRole("button", { name: "Apply draft" })).not.toBeNull();
     expect(mounted.getByRole("button", { name: "Clear draft" })).not.toBeNull();
 
-    const strategy = mounted.getByRole("textbox", { name: "Strategy" }) as HTMLTextAreaElement;
+    const strategy = mounted.getByRole("textbox", { name: "Influence strategy" }) as HTMLTextAreaElement;
     fireEvent.click(mounted.getByRole("button", { name: "Apply draft" }));
     await waitFor(() => expect(strategy.value).toBe(draftStrategy));
 
@@ -86,7 +86,7 @@ describe("AgentForm draft recovery", () => {
     await waitFor(() => expect(mounted.queryByLabelText("Saved local draft")).toBeNull());
 
     expect(domWindow.sessionStorage.getItem(draftKey)).toBeNull();
-    expect((mounted.getByRole("textbox", { name: "Strategy" }) as HTMLTextAreaElement).value).toBe(proposal);
+    expect((mounted.getByRole("textbox", { name: "Influence strategy" }) as HTMLTextAreaElement).value).toBe(proposal);
   });
 });
 
@@ -121,6 +121,7 @@ function snapshot(strategyStyle: string) {
     backstory: "A careful negotiator.",
     personality: "Calm and precise.",
     strategyStyle,
+    werewolfStrategyStyle: "",
     personaKey: "diplomat",
     gender: "non-binary",
     explicitAvatarUrl: "/avatars/arden.png",
@@ -177,7 +178,7 @@ describe("atomic character draft generation", () => {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
-      return Response.json({ name: "Unwanted rename", personality: "Unwanted personality", backstory: "Unwanted backstory", strategyStyle: "Unwanted strategy", personaKey: "loyalist", gender: "female", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+      return Response.json({ name: "Unwanted rename", personality: "Unwanted personality", backstory: "Unwanted backstory", strategyStyle: "Unwanted strategy", personaKey: "loyalist", gender: "female", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
     }) as unknown as typeof fetch;
     const view = await renderForm(false, async params => { submissions.push(params); }, false, { gender: null, personaKey: null, fullBodyReferenceUrl: "/existing-reference.png" });
     const workshop = view.getByRole("region", { name: "Agent Workshop" });
@@ -281,7 +282,7 @@ describe("atomic character draft generation", () => {
   });
   test.each([false, true])("AI completes every field and both images while preserving the selected reference (text initially empty: %s)", async (emptyText) => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat", introQuips: ["I have a plan.", "Let's make this interesting.", "I keep my promises and my options open."] };
+    const profile = { name: "Arden Vale", backstory: "New history", personality: "Calm", strategyStyle: "Alliance first", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Measured delivery", visualDesign: "A green coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["I have a plan.", "Let's make this interesting.", "I keep my promises and my options open."] };
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["name", "backstory", "personality", "strategyStyle", "personaKey", "gender", "performanceInstructions", "visualDesign"] });
       if (String(url).endsWith("/portrait-crop")) {
@@ -309,21 +310,47 @@ describe("atomic character draft generation", () => {
     const savedProfile = { name: profile.name, backstory: profile.backstory, personality: profile.personality, strategyStyle: profile.strategyStyle, personaKey: profile.personaKey, gender: profile.gender, performanceInstructions: profile.performanceInstructions, visualDesign: profile.visualDesign };
     expect(submissions[0]).toMatchObject({ ...savedProfile, avatarUrl: "/face.png", fullBodyReferenceUrl: "/body.png", portraitCrop: { sourceUrl: "/body.png" } });
   });
-  test("a strategy request fills missing fields without dispatching an image update", async () => {
+  test("a strategy request preserves shared fields without dispatching an image update", async () => {
     domWindow.sessionStorage.removeItem(draftKey);
     const calls: string[] = [];
     globalThis.fetch = (async (url: string) => {
       calls.push(String(url));
       if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["strategyStyle"] });
-      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Form a careful alliance.", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Form a careful alliance.", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
     }) as unknown as typeof fetch;
     const view = await renderForm(false);
     await sendChangeRequest(view, "Make the strategy more cautious.");
     await waitFor(() => expect(view.getByText(/This character still needs a full-body reference/)).toBeTruthy());
     expect(calls).toHaveLength(2);
     expect(calls.some(url => url.endsWith("/visual-reference"))).toBe(false);
-    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("A blue coat");
+    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("");
     expect((view.getByRole("textbox", { name: /Agent name/i }) as HTMLInputElement).value).not.toBe("Unwanted rename");
+  });
+
+  test("Werewolf strategy edits preserve Influence notes and shared details through save", async () => {
+    domWindow.sessionStorage.removeItem(draftKey);
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const submissions: AgentProfileWriteParams[] = [];
+    const notes = "As village, compare claims. As wolf, keep a consistent story.";
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+      if (String(url).endsWith("/edit-assistant")) return Response.json({ tool: "update_character", fields: ["werewolfStrategyStyle"] });
+      return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted history", strategyStyle: "Unwanted Influence rewrite", werewolfStrategyStyle: notes, personaKey: "aggressive", gender: "female", performanceInstructions: "Unwanted performance", visualDesign: "Unwanted appearance", introQuips: ["One", "Two", "Three"] });
+    }) as unknown as typeof fetch;
+    const view = await renderForm(false, async params => { submissions.push(params); });
+    expect(view.getByText("Preview archetype default")).toBeTruthy();
+    await sendChangeRequest(view, "Give this character a cautious Werewolf strategy.");
+    await waitFor(() => expect((view.getByLabelText("Werewolf strategy") as HTMLTextAreaElement).value).toBe(notes));
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.body.context).toMatchObject({ werewolfStrategyStyle: "", strategyStyle: proposal });
+    expect(calls[1]?.body).toMatchObject({ selectedFields: ["werewolfStrategyStyle"], existingProfile: { werewolfStrategyStyle: "", strategyStyle: proposal } });
+    expect((view.getByLabelText("Influence strategy") as HTMLTextAreaElement).value).toBe(proposal);
+    expect((view.getByLabelText("Visual design") as HTMLTextAreaElement).value).toBe("");
+    expect((view.getByLabelText("Character performance") as HTMLTextAreaElement).value).toBe("");
+    expect(view.queryByText("Preview archetype default")).toBeNull();
+    fireEvent.click(view.getByRole("button", { name: "Save strategy update" }));
+    await waitFor(() => expect(submissions).toHaveLength(1));
+    expect(submissions[0]).toMatchObject({ name: "Arden", personality: "Calm and precise.", strategyStyle: proposal, werewolfStrategyStyle: notes, personaKey: "diplomat", gender: "non-binary", avatarUrl: "/avatars/arden.png" });
   });
 
   test("affirming the visual offer routes with context and preserves populated character fields", async () => {
@@ -335,7 +362,7 @@ describe("atomic character draft generation", () => {
       if (String(url).endsWith("/edit-assistant")) { routed = body; return Response.json({ tool: "update_visuals", fields: ["performanceInstructions", "visualDesign"] }); }
       if (String(url).endsWith("/generate")) {
         generated = body;
-        return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Unwanted strategy", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", introQuips: [] });
+        return Response.json({ name: "Unwanted rename", personality: "Unwanted rewrite", backstory: "Unwanted story", strategyStyle: "Unwanted strategy", personaKey: "diplomat", gender: "non-binary", performanceInstructions: "Soft voice", visualDesign: "A blue coat", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: [] });
       }
       return Response.json({ error: "Provider unavailable" }, { status: 503 });
     }) as unknown as typeof fetch;

@@ -1,0 +1,39 @@
+{
+  "provider": "Suno",
+  "sourceSelection": "Operator-selected full tracks; start at 0:00",
+  "processing": "ffmpeg loudnorm I=-20 LUFS, TP=-2 dBTP, LRA=11; MP3 160kbps stereo 48kHz. Originals unchanged.",
+  "tracks": [
+    {
+      "title": "Lantern to Fang",
+      "source": "lantern-to-fang-v1.wav",
+      "sourceSha256": "f31626ecd111ecf6e29e98ab937f73bc2b577ea75c8fd34cb58fbb90f376dfa7",
+      "durationSeconds": 194.08,
+      "file": "lantern-to-fang-v1.mp3",
+      "sha256": "6d04bfd602c5992305981916bb0b6fbabb539a0cdc6abdeccf3c22217d174887"
+    },
+    {
+      "title": "The Circle Closes",
+      "source": "the-circle-closes-v1.wav",
+      "sourceSha256": "edbc1081cfa8a94d02811ba86ab9c7520bacdacf62d14ca9acffa319ecf71ad9",
+      "durationSeconds": 163.52,
+      "file": "the-circle-closes-v1.mp3",
+      "sha256": "6e963933ed0b59e864820499b42dec463921736cb9912055669692138a05d5e5"
+    },
+    {
+      "title": "Wolves at the Festival",
+      "source": "wolves-at-the-festival-v1.wav",
+      "sourceSha256": "74f1c5cb96dbd198dbf5296e03a2d6dd0f6846dd64b4f36f878882c68bb9e895",
+      "durationSeconds": 193.56,
+      "file": "wolves-at-the-festival-v1.mp3",
+      "sha256": "315f6f64b88df1b60bff9289f5ee63b7433fb73e9375ba71e419aec66e6b3505"
+    },
+    {
+      "title": "Lanterns Still Burning",
+      "source": "lanterns-still-burning-v1.wav",
+      "sourceSha256": "b8683aaf553e3969ac53250374569131c5898a7e781df14cf120befe08e36a37",
+      "durationSeconds": 177.68,
+      "file": "lanterns-still-burning-v1.mp3",
+      "sha256": "1c7c48505f64e9172a4840f72cfd09d909e018a2b28b7b75c6dfb779cf56f4cf"
+    }
+  ]
+}

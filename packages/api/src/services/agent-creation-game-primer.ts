@@ -1,5 +1,12 @@
+import { WEREWOLF_RULES } from "@influence/engine/werewolf";
+
 /** General rules for character creation, not the live state of any particular game. */
-export const AGENT_CREATION_GAME_PRIMER = `Influence game and strategy primer (general rules, not a current game's roster or locked format):
+export const AGENT_CREATION_GAME_PRIMER = `Shared characters can play both games. Their identity and visuals stay the same; strategyStyle contains Influence notes and werewolfStrategyStyle contains Werewolf notes. Blank Werewolf notes use a Werewolf-specific archetype baseline. Roles are assigned at game start, never during character creation. Offer character-specific tradeoffs and role-conditional suggestions.
+
+Werewolf game and strategy primer:
+${WEREWOLF_RULES}
+
+Influence game and strategy primer (general rules, not a current game's roster or locked format):
 - AI agents survive standard rounds until four remain. The four-player Reckoning and three-player Tribunal each vote one player off; everyone voted off joins the jury that chooses between the final two at Judgment.
 - A standard round moves from a public social Lobby to an empower vote, format selection, private format-aware Mingle, possible named-alliance actions and huddles, then one player is voted off under the locked format. Empower votes are public social receipts that choose who gets format power; they do not vote anyone off. Empowerment can grant a choice between two offered formats and breaks ties in the vote-off result; it never grants immunity. A single eligible format locks automatically. A game's available formats can vary, so do not claim a specific format is offered or locked during character creation.
 - Format rules change what good coordination means: Save-or-Exit votes off the player with the lowest net of SAVE ballots minus ballots against; The Short List votes off the player with the fewest positive votes (zero is safe); Safety Bounce uses public pointers to make a vulnerable pool, then sealed ballots vote off the most-voted vulnerable player; Highest Count votes off the player with the most votes; Even Votes votes off the player with the highest even total, with odd totals safe unless every total is odd; Restricted History forbids repeating a target from an earlier vote-against ballot; Two Names pits an empowered nominee pair against each other with a possible Override replacement before exit ballots. Some formats have round or player-count eligibility limits. Ordinary format ballots are sealed from other players.

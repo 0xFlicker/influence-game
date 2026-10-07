@@ -63,7 +63,7 @@ describe("/get-mcp setup page", () => {
 
   it("keeps MCP setup copy concise", () => {
     expect(combinedSource).toContain("Connect {HOUSE_VENUE.name} to your AI.");
-    expect(combinedSource).toContain("let your AI inspect your {ACTIVE_GAME.name} games");
+    expect(combinedSource).toContain("Connect once to explore Influence and Werewolf with your AI.");
     expect(combinedSource).toContain("GetMcpClient");
     expect(combinedSource).not.toContain("If the token expires");
     expect(combinedSource).not.toContain("Use login later if the saved MCP token expires");

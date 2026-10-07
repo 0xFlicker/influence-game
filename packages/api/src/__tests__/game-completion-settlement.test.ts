@@ -112,7 +112,6 @@ describe("game completion settlement capture", () => {
         },
         completionConfig: {
           maxRounds: 5,
-          viewerMode: "replay",
           modelSelection: { default: "gpt-5-mini" },
         },
         finishedAt: FINISHED_AT,
@@ -185,6 +184,13 @@ describe("game completion settlement capture", () => {
       },
     });
   }
+
+  test("Werewolf cannot enter Influence completion settlement", async () => {
+    const fixture = await createCaptureFixture();
+    await db.update(schema.games).set({gameKind:"werewolf"}).where(eq(schema.games.id,fixture.gameId));
+    await expect(captureGameCompletionSettlement(db,fixture.input)).rejects.toThrow("not an in-progress Influence game");
+    expect(await db.select().from(schema.gameCompletionSettlements)).toEqual([]);
+  });
 
   test("captures a private v1 envelope at the exact owner and event boundary", async () => {
     const fixture = await createCaptureFixture();

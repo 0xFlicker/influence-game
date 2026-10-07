@@ -1,5 +1,7 @@
 "use client";
 
+import { defaultWerewolfStrategy } from "@influence/engine/werewolf/strategy";
+
 import { characterEditFields, VISUAL_FIELDS, type CharacterEditCommand, type CharacterField } from "@influence/engine/agent-creation-assistant";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,10 +33,11 @@ import { AgentAIEditor } from "./agent-ai-editor";
 import { AgentCreationChat, type CharacterSection } from "./agent-creation-chat";
 import { readEditorStorage, removeEditorStorage, writeEditorStorage } from "./agent-editor-storage";
 
-const DRAFT_VERSION = 3;
+const DRAFT_VERSION = 4;
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export interface StrategyComparison {
+  field?: "strategyStyle" | "werewolfStrategyStyle";
   baseline: string;
   initialWorking: string;
   baselineLabel: string;
@@ -64,6 +67,7 @@ interface EditorSnapshot {
   backstory: string;
   personality: string;
   strategyStyle: string;
+  werewolfStrategyStyle: string;
   performanceInstructions: string;
   fullBodyReferenceUrl: string | null;
   personaKey: PersonaKey | null;
@@ -72,7 +76,7 @@ interface EditorSnapshot {
 }
 
 interface StoredEditorDraft {
-  version: 3;
+  version: 4;
   baseContentRevisionId?: string | null;
   generationDeadline?: number | null;
   uploadPending?: boolean;
@@ -116,6 +120,7 @@ function sameSnapshot(left: EditorSnapshot, right: EditorSnapshot): boolean {
     && left.backstory === right.backstory
     && left.personality === right.personality
     && left.strategyStyle === right.strategyStyle
+    && left.werewolfStrategyStyle === right.werewolfStrategyStyle
     && left.performanceInstructions === right.performanceInstructions
     && left.fullBodyReferenceUrl === right.fullBodyReferenceUrl
     && left.personaKey === right.personaKey
@@ -211,8 +216,11 @@ export function AgentForm({
     };
   }, [guided]);
   const isEditing = Boolean(initial);
-  const showStrategyComparison = showLiveChanges && Boolean(strategyComparison);
-  const initialStrategy = strategyComparison?.initialWorking ?? initial?.strategyStyle ?? "";
+  const comparingWerewolf = strategyComparison?.field === "werewolfStrategyStyle";
+  const showWerewolfComparison = showLiveChanges && comparingWerewolf;
+  const showStrategyComparison = showLiveChanges && Boolean(strategyComparison) && !comparingWerewolf;
+  const initialStrategy = (!comparingWerewolf ? strategyComparison?.initialWorking : undefined) ?? initial?.strategyStyle ?? "";
+  const initialWerewolfStrategy = (comparingWerewolf ? strategyComparison?.initialWorking : undefined) ?? initial?.werewolfStrategyStyle ?? "";
   const initialPersona = initial ? initial.personaKey : "strategic";
   const initialSnapshot = useMemo<EditorSnapshot>(() => ({
     visualDesign: initial?.visualDesign ?? null,
@@ -223,12 +231,13 @@ export function AgentForm({
     backstory: initial?.backstory ?? "",
     personality: initial?.personality ?? "",
     strategyStyle: initialStrategy,
+    werewolfStrategyStyle: initialWerewolfStrategy,
     performanceInstructions: initial?.performanceInstructions ?? "",
     fullBodyReferenceUrl: initial?.fullBodyReferenceUrl ?? null,
     personaKey: initialPersona,
     gender: initial?.gender ?? "",
     explicitAvatarUrl: initial?.avatarUrl ?? undefined,
-  }), [initial, initialPersona, initialStrategy]);
+  }), [initial, initialPersona, initialStrategy, initialWerewolfStrategy]);
 
   const [visualDesign, setVisualDesign] = useState(initialSnapshot.visualDesign);
   const [headPosition, setHeadPosition] = useState(initialSnapshot.headPosition);
@@ -238,6 +247,7 @@ export function AgentForm({
   const [backstory, setBackstory] = useState(initialSnapshot.backstory);
   const [personality, setPersonality] = useState(initialSnapshot.personality);
   const [strategyStyle, setStrategyStyle] = useState(initialSnapshot.strategyStyle);
+  const [werewolfStrategyStyle, setWerewolfStrategyStyle] = useState(initialSnapshot.werewolfStrategyStyle);
   const [performanceInstructions, setPerformanceInstructions] = useState(initialSnapshot.performanceInstructions);
   const [fullBodyReferenceUrl, setFullBodyReferenceUrl] = useState(initialSnapshot.fullBodyReferenceUrl);
   const [referenceBusy, setReferenceBusy] = useState(false);
@@ -327,12 +337,13 @@ export function AgentForm({
     backstory,
     personality,
     strategyStyle,
+    werewolfStrategyStyle,
     performanceInstructions,
     fullBodyReferenceUrl,
     personaKey,
     gender,
     explicitAvatarUrl,
-  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, performanceInstructions, fullBodyReferenceUrl]);
+  }), [visualDesign, portraitCrop, headPosition, headSuggestion, backstory, explicitAvatarUrl, gender, name, personaKey, personality, strategyStyle, werewolfStrategyStyle, performanceInstructions, fullBodyReferenceUrl]);
   const dirty = !sameSnapshot(currentSnapshot, initialSnapshot);
   const anonymousDraftKey = `influence:agent-editor:${DRAFT_VERSION}:anonymous:${draftScope}`;
   const draftStorageKey = draftOwner
@@ -475,6 +486,7 @@ export function AgentForm({
     setBackstory(pendingRestore.current.backstory);
     setPersonality(pendingRestore.current.personality);
     setStrategyStyle(pendingRestore.current.strategyStyle);
+    setWerewolfStrategyStyle(pendingRestore.current.werewolfStrategyStyle);
     setPerformanceInstructions(pendingRestore.current.performanceInstructions);
     setFullBodyReferenceUrl(pendingRestore.current.fullBodyReferenceUrl);
     setPersonaKey(pendingRestore.current.personaKey);
@@ -535,7 +547,7 @@ export function AgentForm({
 
   async function completeMissingDetails() {
     if (generationBusy || uploading || submitting) return;
-    const fields = characterEditFields({ name, personaKey, gender, personality, backstory, strategyStyle, performanceInstructions, visualDesign }, []);
+    const fields = characterEditFields({ name, personaKey, gender, personality, backstory, strategyStyle, werewolfStrategyStyle, performanceInstructions, visualDesign }, []);
     await handleGenerate({
       message: "Complete the missing details from this existing character. Infer missing gender and archetype from the character. Preserve all populated fields and existing images.",
       sections: fields,
@@ -545,7 +557,7 @@ export function AgentForm({
   async function handleAdvancedSend() {
     if (generationBusy || uploading || submitting) return;
     const message = changeRequest.trim() || "Create a character using the selected ingredients.";
-    const context = { name, personaKey: personaKey ?? "", gender, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", hasFullBody: Boolean(fullBodyReferenceUrl) };
+    const context = { name, personaKey: personaKey ?? "", gender, personality, backstory, strategyStyle, werewolfStrategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", hasFullBody: Boolean(fullBodyReferenceUrl) };
     const prompt = assistantNote ?? visualOffer;
     const history = [...editHistory, ...(prompt ? [`assistant: ${prompt}`] : [])].slice(-24).map(line => line.slice(0, 2000));
     const epoch = beginGeneration();
@@ -566,8 +578,8 @@ export function AgentForm({
       if (success) {
         setEditHistory([...history, `user: ${message}`].slice(-22));
         setAssistantNote(images ? "I updated the visual presentation. Review the character images before saving." : !fullBodyReferenceUrl
-          ? "I updated the requested fields and filled missing details. This character still needs a full-body reference. Would you like me to update their visuals?"
-          : "I updated the requested fields and filled missing details. Your existing visuals are unchanged.");
+          ? "I updated the requested fields. This character still needs a full-body reference. Would you like me to update their visuals?"
+          : "I updated the requested fields. Your existing visuals are unchanged.");
       }
     } catch (error) {
       if (epoch === generationEpoch.current) setAiError(error instanceof Error ? error.message : "The assistant could not complete this turn.");
@@ -583,7 +595,7 @@ export function AgentForm({
 
   function applyGeneratedCharacter(result: GeneratePersonalityResult) {
     setName(result.name); setBackstory(result.backstory ?? ""); setPersonality(result.personality);
-    setStrategyStyle(result.strategyStyle ?? ""); setPersonaKey(result.personaKey); setGender(result.gender);
+    setStrategyStyle(result.strategyStyle ?? ""); setWerewolfStrategyStyle(result.werewolfStrategyStyle ?? ""); setPersonaKey(result.personaKey); setGender(result.gender);
     setPerformanceInstructions(result.performanceInstructions); setVisualDesign(result.visualDesign);
     setGenerationQuips(result.introQuips); setAllowAIChoose(false);
   }
@@ -630,13 +642,14 @@ export function AgentForm({
         allowPersonaChange: options ? !options.appearance && (!options.sections?.length || options.sections.includes("personaKey")) : allowAIChoose,
         ...(isEditing ? {} : { creationTraitIds }),
       };
-      if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim()
+      if (name.trim() || backstory.trim() || personality.trim() || strategyStyle.trim() || werewolfStrategyStyle.trim()
         || performanceInstructions.trim() || visualDesign?.trim() || avatarUrl || fullBodyReferenceUrl) {
         params.existingProfile = {
           name: name.trim() || undefined,
           backstory: backstory.trim() || undefined,
           personality: personality.trim() || undefined,
-          strategyStyle: strategyStyle.trim() || undefined,
+          strategyStyle,
+          werewolfStrategyStyle,
           personaKey: personaKey ?? undefined,
           gender: gender || undefined,
           performanceInstructions,
@@ -657,6 +670,7 @@ export function AgentForm({
       if (change("backstory")) setBackstory(result.backstory ?? "");
       if (change("personality")) setPersonality(result.personality);
       if (change("strategyStyle")) setStrategyStyle(result.strategyStyle ?? "");
+      if (change("werewolfStrategyStyle")) setWerewolfStrategyStyle(result.werewolfStrategyStyle ?? "");
       if (change("personaKey")) setPersonaKey(result.personaKey);
       setAllowAIChoose(false);
       if (change("gender")) setGender(result.gender);
@@ -709,12 +723,12 @@ export function AgentForm({
     if (!personality.trim()) errors.personality = "Personality is required.";
     if (!gender) errors.gender = "Select a gender for this Agent.";
     if (strategyComparison?.requireChange
-      && (normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
-        || normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.baseline))) {
-      errors.strategyStyle = "Edit the suggested Strategy before saving this custom update.";
+      && (normalizedStrategy(comparingWerewolf ? werewolfStrategyStyle : strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
+        || normalizedStrategy(comparingWerewolf ? werewolfStrategyStyle : strategyStyle) === normalizedStrategy(strategyComparison.baseline))) {
+      errors[comparingWerewolf ? "werewolfStrategyStyle" : "strategyStyle"] = "Edit the suggested strategy before saving this custom update.";
     }
     setValidationErrors(errors);
-    const firstError = ["name", "gender", "strategyStyle", "personality"].find((field) => errors[field]);
+    const firstError = ["name", "gender", "strategyStyle", "werewolfStrategyStyle", "personality"].find((field) => errors[field]);
     if (firstError) {
       focusField(firstError === "gender" ? "agent-gender-male" : `agent-${firstError}`);
       return;
@@ -728,6 +742,7 @@ export function AgentForm({
         personality: personality.trim(),
         backstory: backstory.trim(),
         strategyStyle: strategyStyle.trim(),
+        werewolfStrategyStyle: werewolfStrategyStyle.trim(),
         performanceInstructions: performanceInstructions.trim(),
         fullBodyReferenceUrl,
         personaKey: personaKey ?? undefined,
@@ -766,8 +781,8 @@ export function AgentForm({
   }
 
   const requiredStrategyChangeMissing = Boolean(strategyComparison?.requireChange
-    && (normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
-      || normalizedStrategy(strategyStyle) === normalizedStrategy(strategyComparison.baseline)));
+    && (normalizedStrategy(comparingWerewolf ? werewolfStrategyStyle : strategyStyle) === normalizedStrategy(strategyComparison.initialWorking)
+      || normalizedStrategy(comparingWerewolf ? werewolfStrategyStyle : strategyStyle) === normalizedStrategy(strategyComparison.baseline)));
   const submitDisabled = submitting
     || generationBusy
     || referenceBusy
@@ -854,7 +869,7 @@ export function AgentForm({
           anonymous={anonymous} anonymousUsed={anonymousUsed}
           onAnonymousMessage={handleAnonymousMessage} onRequireAccount={requestAccount}
           creationTraitIds={creationTraitIds} onCreationTraitIdsChange={setCreationTraitIds}
-          profile={{ name, personality, backstory, strategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
+          profile={{ name, personality, backstory, strategyStyle, werewolfStrategyStyle, performanceInstructions, visualDesign: visualDesign ?? "", personaKey: personaKey ?? "", gender }}
           onGenerate={async (message, sections) => Boolean(await handleGenerate({ message, sections }))}
           onAppearance={async message => Boolean(referenceRequest.current ? await generateReference() : await handleGenerate({ message, appearance: true }))}
           avatarUrl={avatarUrl} busy={generationBusy || uploading} blocked={Boolean(pendingRestore) || submitting || (publicPreview && !authReady)}
@@ -905,15 +920,28 @@ export function AgentForm({
 
         <main className="min-w-0 space-y-6">
           <section className="influence-panel rounded-2xl p-5 sm:p-6">
+            <label htmlFor="agent-werewolfStrategyStyle" className="text-lg font-semibold text-text-primary">Werewolf strategy</label>
+            <p id="werewolf-strategy-help" className="mt-1 mb-4 text-sm leading-6 text-white/50">Use the same character in a different game. Describe how they investigate, bluff, build trust, and adapt to their secret role. Leave blank to use the Werewolf approach for their archetype. Your notes replace that default.</p>
+            {showWerewolfComparison && strategyComparison && <StrategyDiff baseline={strategyComparison.baseline} working={werewolfStrategyStyle} baselineLabel={strategyComparison.baselineLabel} className="mb-4" />}
+            <GrowingTextarea id="agent-werewolfStrategyStyle" value={werewolfStrategyStyle} onChange={(event) => setWerewolfStrategyStyle(event.target.value)} maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-describedby="werewolf-strategy-help" placeholder="Optional notes. Leave blank to use this archetype’s Werewolf default." className="influence-field min-h-40 w-full rounded-xl px-4 py-4 text-base leading-7" />
+            {validationErrors.werewolfStrategyStyle && <p className="text-xs text-red-400" role="alert">{validationErrors.werewolfStrategyStyle}</p>}
+            {showWerewolfComparison && strategyComparison?.requireChange && <p className="mt-2 text-sm text-white/60" aria-live="polite">{requiredStrategyChangeMissing ? "Edit the suggestion to save your own Werewolf strategy." : "Your Werewolf strategy update is ready to save."}</p>}
+            {!werewolfStrategyStyle.trim() && <details className="mt-3 text-sm text-white/60">
+              <summary className="cursor-pointer">Preview archetype default</summary>
+              <p className="mt-2 leading-6">{defaultWerewolfStrategy(personaKey)}</p>
+              <button type="button" onClick={() => setWerewolfStrategyStyle(defaultWerewolfStrategy(personaKey))} className="influence-button-secondary mt-3 min-h-11 rounded-lg px-4">Customize this strategy</button>
+            </details>}
+          </section>
+          <section className="influence-panel rounded-2xl p-5 sm:p-6">
             <div className="mb-4 flex items-end justify-between gap-4">
-              <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
+              <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Influence strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>
             </div>
             <div className={showStrategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
               {showStrategyComparison && strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
               <div className="order-1 xl:order-2">
                 <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${showStrategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
-                {strategyComparison?.requireChange && (
+                {!comparingWerewolf && strategyComparison?.requireChange && (
                   <p className="mt-2 min-h-5 text-xs leading-5 text-white/45" aria-live="polite">
                     {requiredStrategyChangeMissing
                       ? "Edit the suggestion to save a custom Strategy update."

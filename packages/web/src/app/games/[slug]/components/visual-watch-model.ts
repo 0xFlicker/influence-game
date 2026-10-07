@@ -1,3 +1,4 @@
+import {voteSceneIdentity} from "./vote-ledger-model";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import type { GamePlayer, TranscriptEntry } from "@/lib/api";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
@@ -79,6 +80,15 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     return { rooms, beat };
   }
   if (cue?.source === "format") {
+    if (cue.kind === "format_tiebreak" || cue.kind === "format_deciding_vote") {
+      const chooser = players.find(player => player.id === cue.tiebreakerId);
+      const ids = cue.kind === "format_tiebreak" ? cue.tiedPlayerIds : cue.after.resolution?.tiedPlayerIds ?? [];
+      if (chooser && ids.length) return {rooms, beat: {kind: "nominee-selection",
+        chooser: {...chooser, avatarUrl: data.portraits[chooser.id] ?? chooser.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[chooser.id]},
+        nominees: ids.flatMap(id => {const player = players.find(p => p.id === id);return player ? [{...player, avatarUrl: data.portraits[id] ?? player.avatarUrl}] : []}),
+        selectedId: cue.kind === "format_deciding_vote" ? cue.targetId : null,
+      }};
+    }
     if (isSafetyBounceSceneCue(cue)) {
       const lobby = safetyBounceLobbyScene(data, cue, priorMessages);
       if (lobby) return { rooms: [lobby], beat: { kind: "safety-bounce", scene: lobby, cue, roster: players } };
@@ -161,7 +171,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
 
 /** Expand only at the canonical tally reveal, preserving the existing result cue. */
 export function paceVisualBallots(cues: readonly PresentationCue[], players: readonly GamePlayer[]): PresentationCue[] {
-  return cues.flatMap((cue): PresentationCue[] => {
+  const expanded = cues.flatMap((cue): PresentationCue[] => {
     if (cue.source !== "format") return [cue.source === "endgame" && cue.ballot ? { ...cue, speechPresentation: "solo" } : cue];
     if (cue.kind === "empowered_tally" || cue.kind === "empowered_tie") {
       const revote = cue.kind === "empowered_tally" && Boolean(cue.resolutionMethod);
@@ -175,10 +185,18 @@ export function paceVisualBallots(cues: readonly PresentationCue[], players: rea
       });
       return [...portraits, cue];
     }
-    if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea" || cue.kind === "format_deciding_vote") {
+    if (cue.kind === "format_tiebreak" || cue.kind === "format_deciding_vote") return [{...cue, baseDurationMs: cue.kind === "format_tiebreak" ? 3600 : 4400}];
+    if (cue.kind === "format_roll_call" || cue.kind === "two_names_plea") {
       const beat = visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cue, null, players).beat;
       if (beat?.kind === "portrait") return [{ ...cue, speechPresentation: "solo", baseDurationMs: soloPresentationDurationMs(beat.speech.text) }];
     }
     return [cue];
+  });
+  return expanded.flatMap((cue, index) => {
+    const group = voteSceneIdentity(cue);
+    const next = expanded[index + 1];
+    return group && (!next || voteSceneIdentity(next) !== group)
+      ? [cue, {...cue, key: `${cue.key}:tally`, voteSummary: true, baseDurationMs: 3200}]
+      : [cue];
   });
 }

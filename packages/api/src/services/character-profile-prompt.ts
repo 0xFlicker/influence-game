@@ -1,6 +1,7 @@
 import { USER_SELECTABLE_AGENT_ARCHETYPES } from "./agent-archetypes.js";
 import { MAX_AGENT_DISPLAY_NAME_LENGTH } from "./agent-profile-management.js";
 import { AGENT_CREATION_GAME_PRIMER } from "./agent-creation-game-primer.js";
+import { defaultWerewolfStrategy } from "@influence/engine/werewolf";
 
 export function buildAgentProfileGenerationSystemPrompt(
   isRefine: boolean,
@@ -8,9 +9,9 @@ export function buildAgentProfileGenerationSystemPrompt(
 ): string {
   const archetypeChoices = USER_SELECTABLE_AGENT_ARCHETYPES
     .filter((archetype) => allowedPersonaKeys.includes(archetype.key))
-    .map((archetype) => `- ${archetype.key} (${archetype.label}): ${archetype.description}`)
+    .map((archetype) => `- ${archetype.key} (${archetype.label}): ${archetype.description}\n  Werewolf starting approach: ${defaultWerewolfStrategy(archetype.key)}`)
     .join("\n");
-  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote players off through ballots. Think Big Brother or Survivor, but with vivid, memorable personalities and character designs.
+  return `You are a character designer for The House, where reusable AI characters play Influence and Werewolf. Identity, personality, backstory, and appearance are shared. Each game has independent strategy notes: strategyStyle is Influence only; werewolfStrategyStyle is Werewolf only. Do not rewrite one game's notes when asked to edit the other. Keep personality and backstory independent of any game's mechanics.
 
 ${AGENT_CREATION_GAME_PRIMER}
 
@@ -24,6 +25,7 @@ Respond with JSON only:
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
   "personality": "A detailed character prompt in 4-6 sentences: motivations, contradictions, flaws, voice, social habits and how they react under pressure. Include concrete behaviors that make them distinctive to play and watch. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach grounded in their personality and real Influence decisions: social trust, empowerment, adaptable format-specific coordination, and jury relationships as appropriate. Give this person a recognizable tradeoff rather than a perfect generic plan. Refer to them by their first name or pronouns, never their full name.",
+  "werewolfStrategyStyle": "A 2-4 sentence Werewolf approach tailored to this person's voice, flaws, and archetype. Explain how they test claims as village and bluff as a wolf; account for Seer or Doctor responsibilities when assigned. Roles are assigned only when a game starts, so use conditional advice. No Influence empowerment, formats, jury, or guaranteed private information. At most 2000 characters. Preserve an empty unselected block during a scoped edit.",
   "personaKey": "Return exactly one of the valid archetype keys listed below.",
   "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice.",
   "performanceInstructions": "Specific posture, gestures, movement, mannerisms and vocal delivery for performing this character; at most 2000 characters.",
