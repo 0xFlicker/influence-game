@@ -1,5 +1,15 @@
 # Influence Refactor Queue
 
+## Shared presentation-time scrubber — 2026-10-07
+
+- Status: `ready`; explicit product follow-up.
+- Use the replay exporter's shared presentation timing compiler for the Influence and Werewolf browser scrubber. Represent elapsed presentation time instead of equally spaced cue ordinals, including precise positions inside speech, thinking, camera moves, transformations and vote holds.
+- Preserve Previous/Next as meaningful cue stops on the same timeline, including every ballot and the completed tally. Canonical events remain game authority; shared links retain stable source/cue anchors rather than depending on mutable elapsed time.
+- When thinking preferences or timing change, rebuild timing while preserving the active cue and local position. For windowed Werewolf playback, supply a lightweight complete timing index without loading all scene assets; live games append available history without moving a paused viewer.
+- Pictures and future recorded speech should seek from the same sampled position. Keep the current ambient-music seek policy explicit until browser audio transport is integrated; do not imply that replacing the slider alone synchronizes audio.
+- Validate both games with Visual Mode on and off, Mystery/Omniscient privacy, thinking on/off and ordering, paused/playing seeks, cross-window jumps, final tallies, live-tail growth, and frame/audio agreement with export sampling.
+- Seams: shared `watch-transport.tsx` and `watch-director.ts`, `use-werewolf-watch.ts`, `dramatic-replay-viewer.tsx`, and the local replay export timing compiler.
+
 Generated: 2026-06-21
 
 Last audited against `main`: 2026-09-07 (R20 live ruleset verification; R23/R31 staging evidence audit; R34 implementation and local validation)
@@ -232,6 +242,14 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
 ## Future / Watchlist
+
+### Dramatic thinking presentation (2026-10-07)
+
+- Status: `future` — explicitly deferred by the user; retained here as a product follow-up, outside the local replay renderer plan.
+- Direction: when thinking is shown, push into a tight headshot and darken the background outside the head for a dramatic isolated moment, then ease back out to the room shot for speaking.
+- Implementation direction when picked up: use the shared presentation timeline for the close-up, surrounding darkening and return transition, so browser playback and video export use the same treatment. Support existing rectangular character art; do not assume transparent cutouts. Use verified head framing or an intentional portrait fallback.
+- Design work still needed: settle transition timing/easing, the darkening treatment, missing-head-anchor behavior, and how the effect works with both thinking orders and the current thought/speech overlap. This is not a finalized visual design.
+- Validation: pause and seek at each transition, arbitrary-frame rendering, reduced motion, long thoughts and responsive framing. Preserve audience restrictions: Mystery receives no thinking.
 
 ### D1. Additional multi-instance execution and observer scaling
 
