@@ -34,6 +34,7 @@
     "./performance-cue": "./src/performance-cue.ts",
     "./character-portrait": "./src/character-portrait.ts",
     "./werewolf/thinking": "./src/werewolf/thinking.ts",
+    "./werewolf/decisions": "./src/werewolf/decisions.ts",
     "./werewolf/watch-contract": "./src/werewolf/watch-contract.ts",
     "./werewolf/results": "./src/werewolf/results.ts",
     "./werewolf/watch": "./src/werewolf/watch.ts",

@@ -21,7 +21,7 @@ import {usePermissions} from "@/hooks/use-permissions";
 import {useWerewolfWatch} from "./use-werewolf-watch";
 import {adjacentWerewolfPosition} from "./werewolf-watch-model";
 import {WerewolfWatchStage} from "./werewolf-watch-stage";
-import {WerewolfThinking} from "./werewolf-thinking";
+import {WerewolfDecisions} from "./werewolf-decisions";
 import Link from "next/link";
 import {gameResultsHref, werewolfMomentHref} from "@/lib/game-links";
 import {replayMoment} from "./replay-moment";
@@ -78,8 +78,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const header = {matchTitle: title ?? slug, roundLabel: active ? active.chapterId === "introduction" ? "Introductions" : active.chapterId === "ending" ? "Ending" : `Cycle ${active.snapshot.day}` : "Preparing", connectionLabel: data?.visualPaused ? "Paused for visuals" : data?.status === "in_progress" ? watch.follow ? "Following live" : "Live game" : data?.status ?? "Loading", counts: {alivePlayers: players.filter(p => p.alive).length, eliminatedPlayers: players.filter(p => !p.alive).length}};
   const inspect = <WatchInspector hero={identity && <div className="border-b border-white/10 p-4"><h2 className="text-xl text-white/90">{identity.name}</h2><p className="mt-1 text-xs text-white/50">{person?.role && <>{person.role} · </>}{person?.alive ? "Alive" : "Eliminated"}</p></div>} sections={[
     {id:"overview", label:"Overview", content:<InspectorSection title="Character" section={{cards: identity ? [{id:identity.id,title:identity.personaKey ?? identity.name,meta:person?.role ?? "",body:[identity.personality,identity.backstory].filter(Boolean).join("\n\n")}] : [],reason:"Choose a player."}} />},
-    ...(audience === "omniscient" && thinking ? [{id:"thinking",label:"Thinking",content: active && selectedId ? <WerewolfThinking gameId={active.snapshot.gameId} cursor={cursor} players={players} actorId={selectedId} /> : null}] : []),
-    {id:"strategy",label:"Strategy",content:<InspectorSection title="Strategy" section={{cards:[],reason:"No public strategy notes have been captured for this player yet."}} />},
+    {id:"decisions",label:"Decisions",content: active && selectedId ? <WerewolfDecisions gameId={active.snapshot.gameId} slug={slug} audience={audience} cursor={cursor} players={players} actorId={selectedId} onSeek={seek} /> : null},
   ]} />;
   return <WatchShell mode="replay" header={<ShellHeader model={header} gamePath={slug} showResultsCta={false} exitHref="/games" brand="THE HOUSE" />}
     cast={<CastRail model={cast} onSelectPlayer={setSelected} />}
