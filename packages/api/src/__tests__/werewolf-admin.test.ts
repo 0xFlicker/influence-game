@@ -33,11 +33,14 @@ async function operator(role: string, permissions: string[] = []) {
   }
   return { Authorization: `Bearer ${await createSessionToken(id, { roles: [role], permissions })}`, "Content-Type": "application/json" };
 }
-async function game(completed = true, agentProfileIds: string[] = []) {
+async function game(completed = true, agentProfileIds: string[] = [], unprotectedHunt = false) {
   const g = await createWerewolfGame(db, "owner", { preset: "two_wolves", agentProfileIds, maxDays: 1 });
   if (completed) {
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
+    const state = replayWerewolf(await readWerewolfEvents(db, g.id));
+    const wolfId = state.aliveIds.find(id => state.roles[id] === "werewolf")!;
     const agent: WerewolfAgent = { async decide({ request }) {
+      if (unprotectedHunt && request.action === "protect") return { kind: "target", targetId: wolfId, thinking: "PRIVATE_REASON" };
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Leans back", recipientIds: [] };
       if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_REASON" };
       return { kind: "speech", text: request.action === "pack_talk" ? "PRIVATE_PACK" : "Hello village", cue: "Nods" };
@@ -264,7 +267,7 @@ test("watch windows are bounded, private by audience and pinned to public media"
 });
 
 test("Werewolf regeneration replans approved locations and wolf forms without changing existing publication", async () => {
-  const g = await game();
+  const g = await game(true, [], true);
   const originalEvents = await readWerewolfEvents(db, g.id);
   const inventory = await readReplayVisualProduction(db, g.id);
   const pack = inventory.scenes.find(scene => scene.roomId === "mingle-1")!;
@@ -286,6 +289,12 @@ test("Werewolf regeneration replans approved locations and wolf forms without ch
   await renderMissingReplayScene(db, g.id, "producer", { key: hunt.key, previewHash: hunt.previewHash, requestId: "hunt-v1" });
   const huntJob = (await claimVisualMediaJob(db, "worker"))!;
   expect(huntJob.plan.direction?.purpose).toBe("werewolf-hunt");
+  const target = huntJob.plan.cast.find(member => !member.variant)!;
+  expect(huntJob.plan.placements.find(placement => placement.playerId === target.id)?.position).toContain("foreground left");
+  for (const wolf of huntJob.plan.cast.filter(member => member.variant)) {
+    expect(huntJob.plan.placements.find(placement => placement.playerId === wolf.id)?.position).toContain("background right at the far end");
+  }
+  expect(huntJob.plan.direction?.roomDirection).toContain("walking in the same direction behind");
   expect(huntJob.plan.cast.filter(member => member.variant)).toHaveLength(2);
   expect(huntJob.plan.cast.filter(member => !member.variant)).toHaveLength(1);
   const image = await storeVisualArtifact(db, g.id, await sharp({ create: { width: 640, height: 360, channels: 3, background: "#123345" } }).png().toBuffer());

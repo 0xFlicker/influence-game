@@ -183,3 +183,36 @@ test("a lone wolf prepares a form before targeting without creating a meeting sc
   expect(forms).toEqual([[step.request.actorId]]);
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
 });
+
+test("Doctor saves ignore previously published hunt composites while retaining permitted wolf forms", async () => {
+  const { werewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
+  const { planVisualScene } = await import("@influence/engine/visual-scene-plan");
+  const { prepareVisualScene } = await import("../services/visual-scene-store.js");
+  const id = "saved-hunt-publication", events = await werewolfResultsFixture("saved", id);
+  const night = events.find(event => event.type === "werewolf.night_resolved")!;
+  if (night.type !== "werewolf.night_resolved") throw new Error("Missing night");
+  const before = replayWerewolf(events.filter(event => event.sequence < night.sequence));
+  const wolves = before.aliveIds.filter(player => before.roles[player] === "werewolf");
+  await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", startedAt: new Date().toISOString(), config: JSON.stringify({ visibility: "unlisted" }) });
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  const form = await storeVisualArtifact(db, id, await sharp({ create: { width: 80, height: 120, channels: 3, background: "#123456" } }).png().toBuffer());
+  const image = await storeVisualArtifact(db, id, await sharp({ create: { width: 160, height: 90, channels: 3, background: "#654321" } }).png().toBuffer());
+  const plan = planVisualScene({ roomId: "mingle-2", backgroundArtifactId: null,
+    cast: [...wolves, night.payload.attackTargetId!].map(playerId => ({ id: playerId, name: before.players.find(player => player.id === playerId)!.name,
+      referenceArtifactId: form, performanceInstructions: "", ...(wolves.includes(playerId) ? { variant: { kind: "werewolf" as const, sourceArtifactId: form, revision: "wolf-form-v1", generation: "initial", resolved: true } } : {}) })) });
+  plan.direction = { purpose: "werewolf-hunt", revision: "lantern-village-v1", style: "", roomName: "Old hunt", roomDirection: "" };
+  const scene = await prepareVisualScene(db, { gameId: id, boundarySequence: night.sequence - 1, plan });
+  await db.insert(schema.visualMediaVersions).values({ id, gameId: id, sceneId: scene.id, version: 1, plan, imageArtifactId: image, annotatedArtifactId: image,
+    localization: { count: 3, verifiedParticipantIds: plan.cast.map(player => player.id), anchors: [] }, verificationVersion: "fixture", createdAt: "2026-01-01T00:00:00.000Z" });
+  await db.insert(schema.visualMediaPublications).values({ id, gameId: id, sceneId: scene.id, versionId: id, revision: 1, operatorId: "owner", createdAt: "2026-01-01T00:00:00.000Z" });
+  const view = await readWerewolfWatch(db, id, "omniscient", 1, 64);
+  const saved = view.moments.find(moment => moment.entry.kind === "night")!;
+  expect(saved.mediaKey).toBeNull();
+  expect(saved.night!.actions.some(action => action.kind === "protect")).toBe(true);
+  expect(Object.keys(saved.wolfForms!)).toEqual(wolves);
+  const presentation = await readWerewolfPresentation(db, id, "omniscient", saved.cursor, view.publicationCutoff);
+  expect(presentation.presentation.scene).toBeNull();
+  expect(presentation.permitted.has(image)).toBe(false);
+  expect(presentation.permitted.has(form)).toBe(true);
+  expect((await readWerewolfProduction(db, id, id)).scenes.some(scene => scene.roomId === "mingle-2")).toBe(false);
+});

@@ -319,7 +319,10 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.select('select', 'activity');
     await text(page, "Game activity"); await text(page, "A short contribution");
     await page.select('select', 'production');
-    await text(page, "Village round table"); await text(page, "Private pack cellar"); await text(page, "Moonlit hunt"); await page.waitForSelector('[aria-label="Character coverage"]');
+    await text(page, "Village round table"); await text(page, "Private pack cellar");
+    if (inventory.scenes.some(scene => scene.roomId === "mingle-2")) await text(page, "Moonlit hunt");
+    else expect(await page.evaluate("document.body.innerText.includes('Moonlit hunt')")).toBe(false);
+    await page.waitForSelector('[aria-label="Character coverage"]');
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
     await page.click("[data-workspace-section] button[aria-expanded]");
@@ -1098,3 +1101,60 @@ test("published wolf forms transform each night including a lone survivor and ni
     expect(errors).toEqual([]);
   } finally {await page.close();}
 },90_000);
+
+test("Decisions inspector keeps Mystery public and Omniscient thinking independent of stage preferences", async () => {
+  const { replayWerewolf } = await import("@influence/engine/werewolf");
+  const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
+  const claim = await claimWerewolfGame(database.db, game.id);
+  if (!claim.ok) throw new Error(claim.error);
+  const store = createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch);
+  const agent: WerewolfAgent = { async decide({ request }) {
+    if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
+    return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_DECISION_THOUGHT" }
+      : { kind: "speech", text: "Hello village.", cue: null };
+  } };
+  await runWerewolf(store, agent);
+  const state = replayWerewolf(await store.read());
+  const doctor = state.players.find(player => state.roles[player.id] === "doctor")!;
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: 1600, height: 1000 });
+    for (const audience of ["mystery", "omniscient"] as const) {
+      await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=${audience}`, { waitUntil: "domcontentloaded" });
+      await pauseWerewolf(page);
+      await page.evaluate(`(() => {
+        const button = [...document.querySelectorAll("button")].find(button => button.textContent?.includes(${JSON.stringify(doctor.name)}) && button.getBoundingClientRect().width > 0);
+        if (!button) throw new Error("Missing cast player");
+        button.click();
+      })()`);
+      await page.evaluate("[...document.querySelectorAll('[role=\"tab\"]')].find(tab => tab.textContent === 'Decisions').click()");
+      await page.waitForSelector('[aria-label="Player decisions"]');
+      await watchText(page, "No decisions yet.");
+      const view = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=${audience}`)).json() as WerewolfPresentation;
+      await seekWatch(page, view.latestCursor);
+      await page.waitForSelector('[aria-label="Player decisions"] li');
+      const panel = await page.$eval('[aria-label="Player decisions"]', element => element.textContent!);
+      if (audience === "mystery") {
+        expect(panel).not.toMatch(/PRIVATE|Thinking|Night|Protected|Investigated|Targeted/);
+      } else {
+        expect(panel).toContain("Protected");
+        expect(panel).toContain("PRIVATE_DECISION_THOUGHT");
+        expect(await page.$('[data-thinking-bubble]')).toBeNull();
+        const link = await page.$('[aria-label="Player decisions"] a');
+        const href = await link!.evaluate(element => element.getAttribute("href")!);
+        const cursor = Number(new URL(href!, servers.webUrl!).searchParams.get("cursor"));
+        await link!.click();
+        await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) === ${cursor}`);
+        await page.setViewport({ width: 390, height: 844 });
+        await page.evaluate("[...document.querySelectorAll('button')].find(button => button.textContent === 'Player info').click()");
+        await page.waitForSelector('[role="dialog"][aria-label="Player information"]');
+        expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+        await page.screenshot({ path: "/tmp/werewolf-decisions-mobile.png" });
+        await page.setViewport({ width: 1600, height: 1000 });
+      }
+      await seekWatch(page, 1);
+      await watchText(page, "No decisions yet.");
+      expect(await page.$eval('[aria-label="Player decisions"]', element => element.textContent)).not.toContain("PRIVATE_DECISION_THOUGHT");
+    }
+  } finally { await page.close(); }
+}, 120_000);

@@ -63,9 +63,8 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  await seekWatch(page,mystery.latestCursor);await watchText(page,"Game complete");await seekWatch(page,1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(first);
  await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
- expect(await page.$('[aria-label="Player thinking"]')).toBeNull();await page.click('button[aria-label="Player settings"]');await page.click('input[type="checkbox"]');await page.click('button[aria-label="Close settings"]');
- await page.evaluate("Array.from(document.querySelectorAll('[role=\"tab\"]')).find(e=>e.textContent==='Thinking')?.click()");
- await page.waitForSelector('[aria-label="Player thinking"]');
+ await page.evaluate("Array.from(document.querySelectorAll('[role=\"tab\"]')).find(e=>e.textContent==='Decisions')?.click()");
+ await page.waitForSelector('[aria-label="Player decisions"]');
  const omni=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
  await seekWatch(page,omni.latestCursor);await watchText(page,"Game complete");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();expect(await page.evaluate("document.body.innerText.includes('Show thinking')")).toBe(false);

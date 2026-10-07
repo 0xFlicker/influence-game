@@ -8,6 +8,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
+import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
 import { createWerewolfLobby, joinWerewolfLobby, leaveWerewolfLobby, readWerewolfLobby, startWerewolfLobby } from "../services/werewolf-lobbies.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
@@ -112,6 +113,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     if (cutoff !== undefined && (!Number.isFinite(Date.parse(cutoff)) || new Date(cutoff).toISOString() !== cutoff)) return c.json({error: "Invalid publication snapshot"}, 400);
     return c.json(await readWerewolfWatch(db, c.req.param("id"), audience, fromCursor, limit, cutoff));
   });
+  app.get("/api/werewolf/:id/decisions", async c => c.json(await readWerewolfDecisions(db, c.req.param("id"), c.req.query("audience") ?? "mystery", Number(c.req.query("cursor")), c.req.query("actorId") ?? "")));
   app.get("/api/werewolf/:id/thinking", async c => {
     const cursor = Number(c.req.query("cursor"));
     if (!Number.isSafeInteger(cursor) || cursor < 1) return c.json({ error: "Choose a replay position" }, 400);

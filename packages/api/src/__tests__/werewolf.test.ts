@@ -447,3 +447,33 @@ test("thinking requires Omniscient opt-in, respects resolution and rewind, and s
   await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));
   expect((await app.request(`${path}?audience=omniscient&cursor=99999`)).status).toBe(404);
 });
+
+test("decision reads are player-, cursor- and audience-scoped; hidden games remain inaccessible", async () => {
+  const { readWerewolfDecisions } = await import("../services/werewolf-decisions.js");
+  const game = await create();
+  await runWerewolf(game.store, scripted);
+  const state = replayWerewolf(await game.store.read());
+  const app = createWerewolfRoutes(db);
+  const actorId = state.players.find(player => state.roles[player.id] === "doctor")!.id;
+  const path = `/api/werewolf/${game.slug}/decisions`;
+  for (const query of ["", `?actorId=${actorId}`, `?cursor=1`, `?cursor=0&actorId=${actorId}`, `?cursor=1&actorId=${actorId}&audience=bad`]) {
+    expect((await app.request(path + query)).status).toBe(400);
+  }
+  expect((await app.request(`${path}?cursor=1&actorId=missing`)).status).toBe(404);
+  const [stored] = await db.select().from(schema.games).where(eq(schema.games.id, game.id));
+  await db.update(schema.games).set({ config: JSON.stringify({ ...JSON.parse(stored!.config), visibility: "unlisted" }) }).where(eq(schema.games.id, game.id));
+  const response = await app.request(`${path}?cursor=99999&actorId=${actorId}&audience=mystery`);
+  expect(response.status).toBe(200);
+  const mystery = await response.json();
+  expect(JSON.stringify(mystery)).not.toMatch(/thinking|PRIVATE|SECRET|protect|investigate|attack/);
+  const full = await readWerewolfDecisions(db, game.id, "omniscient", 99999, actorId);
+  expect(full.entries.some(entry => entry.action === "protect")).toBe(true);
+  expect(full.entries.every(entry => entry.thinking === "PRIVATE_THINKING")).toBe(true);
+  expect((await readWerewolfDecisions(db, game.id, "omniscient", 1, actorId)).entries).toEqual([]);
+  for (const entry of full.entries) {
+    const before = await readWerewolfDecisions(db, game.id, "omniscient", entry.cursor - 1, actorId);
+    expect(before.entries).toEqual(full.entries.filter(prior => prior.cursor < entry.cursor));
+  }
+  await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, game.id));
+  expect((await app.request(`${path}?cursor=99999&actorId=${actorId}&audience=omniscient`)).status).toBe(404);
+});
