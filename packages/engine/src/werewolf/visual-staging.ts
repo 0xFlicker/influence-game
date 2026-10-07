@@ -8,6 +8,11 @@ export function werewolfVisualStaging(state: WerewolfState, event: WerewolfEvent
   if (entry.kind === "night") {
     // Mystery's entry deliberately has no attackTargetId, even though the event does.
     const hunt = "attackTargetId" in entry ? werewolfHuntScene(state, event) : null;
+    // Saves use character art, but may still reuse published wolf forms.
+    if (!hunt && entry.attackTargetId) return {
+      boundary: event.sequence - 1, roomId: null, purpose: "hunt" as const,
+      participantIds: [...state.aliveIds.filter(id => state.roles[id] === "werewolf"), entry.attackTargetId],
+    };
     return { boundary: event.sequence - 1, roomId: hunt?.roomId ?? null, purpose: hunt?.purpose ?? null, participantIds: hunt?.participantIds ?? [] };
   }
   const pack = entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack";

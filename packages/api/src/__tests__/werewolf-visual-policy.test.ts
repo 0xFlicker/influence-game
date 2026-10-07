@@ -182,7 +182,7 @@ test("producer can inspect and repair but cannot change policy or resume without
   expect((await app.request(root)).status).toBe(401);
 });
 for (const scenario of ["saved", "wolves"] as const)
-  test(`committed ${scenario} night pauses before the next transition and survives process recovery`, async () => {
+  test(`committed ${scenario} night requires a hunt render only for an unprotected attack`, async () => {
     const { werewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
     const id = `night-${scenario}`, events = await werewolfResultsFixture(scenario, id);
     const index = scenario === "wolves" ? events.findLastIndex(event => event.type === "werewolf.night_resolved") : events.findIndex(event => event.type === "werewolf.night_resolved");
@@ -194,6 +194,13 @@ for (const scenario of ["saved", "wolves"] as const)
     if (!claim.ok)
       throw Error(claim.error);
     const prepare = createWerewolfVisualPreparation(db, id, claim.claim.ownerEpoch, new AbortController().signal, async () => null, noForms);
+    if (scenario === "saved") {
+      await prepare.night(before, night, committed);
+      expect(await readWerewolfVisualPause(db, id)).toBeNull();
+      expect(await db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, id))).toHaveLength(0);
+      expect(await readWerewolfEvents(db, id)).toEqual(prefix);
+      return;
+    }
     await expect(prepare.night(before, night, committed)).rejects.toBeInstanceOf(WerewolfVisualBlocked);
     expect((await readWerewolfVisualPause(db, id))?.work).toMatchObject({ kind: "scene", descriptor: { purpose: "hunt", boundarySequence: night.sequence - 1 } });
     expect((await readReplayVisualProduction(db, id)).scenes).toHaveLength(1);

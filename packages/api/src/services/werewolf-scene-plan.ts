@@ -12,7 +12,7 @@ const style = "Rustic medieval Lantern Village, weathered stone and hand-hewn ti
 const locations = {
   village: { file: "round-table.png", roomName: "Village round table", roomDirection: "A rough circular timber table in a rustic village hall. Seat everyone around the far semicircle with the near half open to camera. All faces must remain front or three-quarter facing the camera." },
   pack: { file: "pack-cellar.png", roomName: "Private pack cellar", roomDirection: "Ruined moonlit medieval cellar, rough timber and stone seats built into the wall foundations, with a low worn stone slab. Two separated sitting positions face the camera. Keep the supplied masonry, broken opening and amber lantern. No freestanding matching chairs." },
-  hunt: { file: "moonlit-lane.png", roomName: "Moonlit village lane", roomDirection: "A rustic moonlit village lane. Wolf characters are together at the left edge; the separate other character is far down the lane to the right, looking ahead or concerned. Wide separation with all faces readable in three-quarter view. Quiet atmospheric staging, no physical contact, injury, blood or attack depiction." },
+  hunt: { file: "moonlit-lane.png", roomName: "Moonlit village lane", roomDirection: "A rustic moonlit village lane. The separate non-wolf character is large in the foreground left, walking toward the near end of the alley, looking ahead or concerned. The wolf characters are smaller together in the background right at the far end of the alley, walking in the same direction behind that character. Keep a long clear stretch of alley between them, with all faces readable in front or three-quarter view. Quiet atmospheric staging, no physical contact, injury, blood or attack depiction." },
 } as const;
 
 /** Planning only: copies approved backgrounds, never dispatches a provider. */
@@ -26,7 +26,7 @@ export async function planWerewolfScene(db: DrizzleDB, gameId: string, descripto
   const direction: VisualSceneDirection = { purpose: `werewolf-${descriptor.purpose}`, revision: WEREWOLF_ART_REVISION, style,
     roomName: location.roomName, roomDirection: location.roomDirection };
   return { ...plan, direction, placements: cast.map((member, index) => ({ playerId: member.id, role: "participant", sectionId: plan.placements[index]!.sectionId,
-    position: descriptor.purpose === "hunt" ? member.id === descriptor.targetId ? "far right, well separated down the lane, face visible" : `left edge, wolf position ${index + 1}, face visible`
+    position: descriptor.purpose === "hunt" ? member.id === descriptor.targetId ? "foreground left, large and nearest camera, walking toward the near end of the alley, face visible" : `background right at the far end of the alley, smaller wolf position ${index + 1}, following behind the foreground character with wide separation, face visible`
       : descriptor.purpose === "pack" ? `${index === 0 ? "left" : "right"} built-in masonry seat, facing camera`
       : `far semicircle position ${index + 1} of ${cast.length}, facing camera, near half of table empty` })) };
 }

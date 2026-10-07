@@ -23,9 +23,9 @@ export function werewolfConversationScene(state: WerewolfState, action: Werewolf
   return null;
 }
 
-/** The victim is still alive in this staging prefix. A protected target uses the same scene. */
+/** Stage successful attacks before the victim dies; Doctor saves need no hunt render. */
 export function werewolfHuntScene(before: WerewolfState, event: WerewolfEvent): WerewolfSceneDescriptor | null {
-  if (event.type !== "werewolf.night_resolved" || !event.payload.attackTargetId) return null;
+  if (event.type !== "werewolf.night_resolved" || !event.payload.attackTargetId || event.payload.attackTargetId === event.payload.protectedId) return null;
   const wolfIds = before.aliveIds.filter(id => before.roles[id] === "werewolf");
   const targetId = event.payload.attackTargetId;
   if (!wolfIds.length || !before.aliveIds.includes(targetId) || wolfIds.includes(targetId)) throw new Error("Invalid canonical hunt cast");
@@ -48,7 +48,7 @@ export function werewolfSceneInventory(events: readonly WerewolfEvent[]): Werewo
         ? werewolfConversationScene(state, event.payload.action) : werewolfHuntScene(state, event);
       if (descriptor) {
         const signature = werewolfSceneSignature(descriptor);
-        // Hunts are tied to a resolved night, even if the same target is protected twice.
+        // Hunts are tied to their resolved night.
         if (descriptor.purpose === "hunt" || previous.get(descriptor.purpose) !== signature) scenes.push(descriptor);
         previous.set(descriptor.purpose, signature);
       }

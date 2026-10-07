@@ -319,7 +319,10 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.select('select', 'activity');
     await text(page, "Game activity"); await text(page, "A short contribution");
     await page.select('select', 'production');
-    await text(page, "Village round table"); await text(page, "Private pack cellar"); await text(page, "Moonlit hunt"); await page.waitForSelector('[aria-label="Character coverage"]');
+    await text(page, "Village round table"); await text(page, "Private pack cellar");
+    if (inventory.scenes.some(scene => scene.roomId === "mingle-2")) await text(page, "Moonlit hunt");
+    else expect(await page.evaluate("document.body.innerText.includes('Moonlit hunt')")).toBe(false);
+    await page.waitForSelector('[aria-label="Character coverage"]');
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
     await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
     await page.click("[data-workspace-section] button[aria-expanded]");
