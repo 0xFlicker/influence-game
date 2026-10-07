@@ -1,6 +1,8 @@
+import { getPublicPostgameMedia } from "./postgame-media.js";
 import { readWerewolfCastingPlayers } from "./werewolf-lobbies.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
+  gameHref,
   gameReplayHref,
   gameResultsHref,
   werewolfMomentHref,
@@ -137,6 +139,7 @@ export async function readHouseGame(
         audience,
         view,
         contentTrust: "untrusted_game_authored" as const,
+        trailer: game.status === "completed" ? { ...await getPublicPostgameMedia(tx, game.id), shareHref: gameHref(game.slug) } : null,
       };
       if (game.gameKind === "werewolf" && audience !== "public") {
         const casting = !game.startedAt

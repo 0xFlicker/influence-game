@@ -54,6 +54,10 @@ describe("getPublicWatchIntelligence", () => {
     const body=JSON.stringify(result);
     expect(body).toContain("Earlier accepted thought"); expect(body).toContain("Earlier transcript thought");
     expect(body).not.toContain("FUTURE THOUGHT"); expect(body).not.toContain("FUTURE TRANSCRIPT"); expect(body).not.toContain("UNANCHORED THOUGHT");
+    const transcriptOnly = await getPublicWatchIntelligence(db, {gameIdOrSlug:gameId,actorPlayerId:"atlas",round:1,phase:"VOTE",limit:10,throughTranscriptSequence:1});
+    expect(JSON.stringify(transcriptOnly)).toContain("Earlier transcript thought");
+    expect(JSON.stringify(transcriptOnly)).not.toContain("FUTURE TRANSCRIPT");
+    expect(JSON.stringify(transcriptOnly)).not.toContain("UNANCHORED THOUGHT");
   });
 
   test("returns selected-player thinking and canonical receipts without compact strategy fields", async () => {

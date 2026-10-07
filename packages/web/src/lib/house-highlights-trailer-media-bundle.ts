@@ -135,7 +135,7 @@ export async function writeHouseHighlightsTrailerPlaybackMetadata(input: {
   urls: { videoUrl: string; posterUrl: string; captionsUrl: string };
 }): Promise<HouseHighlightsTrailerBundleArtifact> {
   const metadata = createHouseHighlightsTrailerPlaybackMetadata({
-    gameKind: input.bundle.manifest.kind,
+    preview: input.bundle.manifest.kind === "werewolf" ? input.bundle.manifest.story : { title: "House Highlights", description: "A completed Influence game, told through the House." },
     durationMs: input.bundle.durationMs,
     dimensions: input.bundle.dimensions,
     renderVersion: input.renderVersion,
@@ -151,7 +151,7 @@ export async function writeHouseHighlightsTrailerPlaybackMetadata(input: {
 }
 
 export function createHouseHighlightsTrailerPlaybackMetadata(input: {
-  gameKind: "influence" | "werewolf";
+  preview: { title: string; description: string };
   durationMs: number;
   dimensions: { width: number; height: number };
   renderVersion: string;
@@ -163,8 +163,8 @@ export function createHouseHighlightsTrailerPlaybackMetadata(input: {
     version: 1,
     durationMs: input.durationMs,
     dimensions: input.dimensions,
-    title: input.gameKind === "werewolf" ? "Werewolf at The House" : "House Highlights",
-    description: input.gameKind === "werewolf" ? "A village of familiar faces. Wolves among them. Who will you trust?" : "A completed Influence game, told through the House.",
+    title: input.preview.title,
+    description: input.preview.description,
     videoUrl: input.urls.videoUrl,
     posterUrl: input.urls.posterUrl,
     captionsUrl: input.urls.captionsUrl,

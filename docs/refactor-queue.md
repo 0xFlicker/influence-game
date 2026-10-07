@@ -526,3 +526,14 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
   issuer utility for the deployed cron token; deployed credential inspection and
   rotation require separate authorization. Current code restricts existing
   registered principals to draw/start and supports immediate principal disable.
+
+
+## PR 163 follow-ups — 2026-10-06
+
+### Align the visual repair mode schema with deployed SQL
+
+`packages/api/src/db/schema.ts` still omits `harmonize` from `visual_repair_jobs_mode_check`, although main migration `0104_visual_panel_harmonization` and Werewolf migration `0112_werewolf_visual_recovery` permit it. Align the Drizzle source and verify a generated schema diff does not remove saved-panel harmonization. The current SQL migration chain is authoritative; do not rewrite applied migrations. Deferred explicitly by the operator during PR 163 cleanup.
+
+### Audit shared replay transport and cache consistency
+
+Review Influence WebSocket delivery and Werewolf watch-window polling together: bounded reads, frozen cast metadata, cache invalidation, audience and publication fences, contiguous timeline coverage, and equivalent seek/Previous/timed advancement. PR 163 removes cast-wide binary reads from Werewolf polls and excludes disconnected cached windows from sequential playback. Those fixes are not a complete transport audit. Preserve canonical source coordinates and accepted history; do not infer missing playback from prose or introduce a speculative replacement protocol.

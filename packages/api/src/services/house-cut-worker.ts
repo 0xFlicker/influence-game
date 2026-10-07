@@ -44,6 +44,16 @@ export async function runHouseCutJob(db: DrizzleDB, generate: Generate = runAuto
       if (!rows.length) throw new Error("House Cuts lease lost before publication");
     });
   } catch (error) {
+    // Only persisted terminal attempts are safe to replay. Never redispatch an unknown paid call.
+    if (signal?.aborted) {
+      const requeued = await db.transaction(async tx => {
+        const [current] = await tx.select({ journal: table.journal }).from(table).where(guard).for("update");
+        if (!current || current.journal?.attempts.some(attempt => !attempt.terminal)) return false;
+        await tx.update(table).set({ status: "queued", failure: null, leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
+        return true;
+      });
+      if (requeued) return true;
+    }
     await db.update(table).set({ status: "failed", failure: error instanceof Error ? error.message : "House Cuts failed", leaseToken: null, leaseUntil: null, updatedAt: new Date() }).where(guard);
     console.error("[house-cuts] Job failed", { gameId: job.gameId, audience: job.audience });
   }

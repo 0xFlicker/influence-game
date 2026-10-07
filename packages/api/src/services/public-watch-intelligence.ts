@@ -374,7 +374,8 @@ async function loadTranscriptThinkingCards(
     .from(schema.transcripts)
     .where(and(
       eq(schema.transcripts.gameId, params.gameId),
-      params.throughEventSequence === undefined ? undefined : lte(schema.transcripts.entrySequence, params.throughTranscriptSequence ?? 0),
+      params.throughTranscriptSequence !== undefined ? lte(schema.transcripts.entrySequence, params.throughTranscriptSequence)
+        : params.throughEventSequence !== undefined ? lte(schema.transcripts.entrySequence, 0) : undefined,
       eq(schema.transcripts.fromPlayerId, params.actorPlayerId),
       isNotNull(schema.transcripts.thinking),
       ne(schema.transcripts.scope, "thinking"),

@@ -703,3 +703,15 @@ test("Influence canonical frames and thinking use separate exact cutoffs and the
     }),
   ).rejects.toMatchObject({ code: "invalid_cursor" });
 });
+
+test("read_game includes bounded trailer state without unpublished assets or writes", async () => {
+  const {id} = await wolf();
+  expect((await readHouseGame(db,{gameIdOrSlug:id})).trailer).toMatchObject({status:"not_requested",shareHref:"/games/wolf-slug"});
+  for (const status of ["waiting_inputs","queued","failed"] as const) {
+    await db.insert(schema.gamePostgameMedia).values({gameId:id,mediaType:"house_highlights_trailer",status}).onConflictDoUpdate({target:[schema.gamePostgameMedia.gameId,schema.gamePostgameMedia.mediaType],set:{status}});
+    const page = await readHouseGame(db,{gameIdOrSlug:id});
+    expect(page.trailer).toEqual({schemaVersion:1,mediaType:"house_highlights_trailer",status,shareHref:"/games/wolf-slug"});
+    houseContent("read_game",page);
+  }
+  expect(await db.select().from(schema.houseCutJobs)).toHaveLength(0);
+});

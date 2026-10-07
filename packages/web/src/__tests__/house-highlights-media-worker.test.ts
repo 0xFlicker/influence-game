@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { parseHouseHighlightsTrailerManifest, type InfluenceTrailerManifest } from "@influence/engine";
 import {
   createHouseHighlightsTrailerPlaybackMetadata,
+  writeHouseHighlightsTrailerPlaybackMetadata,
   renderHouseHighlightsTrailerMediaBundle,
   type HouseHighlightsTrailerRenderer,
 } from "../lib/house-highlights-trailer-media-bundle";
@@ -98,7 +99,7 @@ describe("House Highlights media worker bundle", () => {
     expect(bundle.artifacts.poster.byteLength).toBe(6);
     expect(bundle.artifacts.poster.sha256).toBe("sha256:293b9207228b7854bc3ccb2959ebea1583e066d41983124a5b381d6fdf6575f8");
     const metadata = createHouseHighlightsTrailerPlaybackMetadata({
-      gameKind: "influence",
+      preview: { title: "House Highlights", description: "A completed Influence game, told through the House." },
       durationMs: bundle.durationMs,
       dimensions: bundle.dimensions,
       renderVersion: "rv_fixture",
@@ -526,3 +527,21 @@ function manifestFixture(): InfluenceTrailerManifest {
 function cue(id: string, kind: InfluenceTrailerManifest["cueSheet"]["segments"][number]["kind"], label: string, startFrame: number, endFrame: number) {
   return { id, kind, label, startFrame, endFrame, startSeconds: startFrame / 30, endSeconds: endFrame / 30, durationSeconds: (endFrame - startFrame) / 30 };
 }
+
+it("Werewolf playback metadata freezes the same episode copy submitted for publication", async () => {
+  const {buildWerewolfTrailerManifest} = await import("@influence/engine/postgame-media/werewolf-trailer-manifest");
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const events = await werewolfResultsFixture("village");
+  const root = await mkdtemp(join(tmpdir(), "wolf-metadata-"));
+  try {
+    for (const episode of [undefined, {title:"Lanterns and Lies",description:"Six strangers gather by candlelight."}]) {
+      const manifest = buildWerewolfTrailerManifest({events,slug:"hazy-ruby-sand",episode,cuts:{game:{id:events[0]!.gameId,slug:"hazy-ruby-sand",kind:"werewolf"},audience:"mystery",status:"failed",publication:null}});
+      const artifact = {name:"video" as const,path:"unused",contentType:"video/mp4",byteLength:1,sha256:"sha256:fixture"};
+      const outputPath = join(root,"metadata.json");
+      await writeHouseHighlightsTrailerPlaybackMetadata({bundle:{manifest,music:{path:"unused",filename:"unused",variantHouseCuts:0,variantPlayers:8,variantDurationSeconds:9,trailerDurationSeconds:9,behavior:"trim_and_fade"},timeline:{},durationMs:9000,dimensions:{width:1920,height:1080},posterFrame:0,captions:"",artifacts:{video:artifact,poster:{...artifact,name:"poster"},captions:{...artifact,name:"captions"},timeline:{...artifact,name:"timeline"}}},outputPath,renderVersion:"frozen-v1",urls:{videoUrl:"https://example.test/video",posterUrl:"https://example.test/poster",captionsUrl:"https://example.test/captions"}});
+      const metadata = JSON.parse(await readFile(outputPath,"utf8"));
+      expect(metadata.title).toBe(manifest.story.title);
+      expect(metadata.description).toBe(manifest.story.description);
+    }
+  } finally {await rm(root,{recursive:true,force:true});}
+});

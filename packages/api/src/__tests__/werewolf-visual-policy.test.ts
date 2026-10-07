@@ -220,3 +220,21 @@ test("cancellation while reaching the pause transaction leaves the game adoptabl
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id,f.game.id));
   expect(game!.status).toBe("in_progress");
 });
+
+for (const action of ["pack_talk", "attack"] as const) test(`cached ${action} fallback pauses at a later Require visuals boundary without rerendering`, async () => {
+  const f = await fixture(action === "attack" ? "one_wolf" : "two_wolves", "best_effort");
+  const pending = await at(f, action);
+  let calls = 0;
+  const prepare = createWerewolfVisualPreparation(db, f.game.id, f.epoch, new AbortController().signal,
+    async () => { calls++; return null; }, action === "attack" ? async () => { calls++; throw Error("Unavailable form"); } : noForms);
+  await prepare(pending.state, pending.request);
+  expect(calls).toBe(1);
+  await setVisualFailurePolicy(db, f.game.id, "require_visuals", "operator");
+  if (action === "pack_talk") await advanceWerewolf(f.store, agent);
+  const state = replayWerewolf(await f.store.read());
+  const accepted = await f.store.read();
+  await expect(prepare(state, pending.request)).rejects.toBeInstanceOf(WerewolfVisualBlocked);
+  expect(calls).toBe(1);
+  expect((await readWerewolfVisualPause(db, f.game.id))?.boundarySequence).toBe(state.sequence);
+  expect(await f.store.read()).toEqual(accepted);
+});

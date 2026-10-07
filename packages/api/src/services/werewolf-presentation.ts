@@ -8,7 +8,7 @@ import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contrac
 import { projectWerewolfWatch, type WerewolfWatchStaging } from "@influence/engine/werewolf/watch";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readWerewolfEvents, WerewolfGameError } from "./werewolf-games.js";
-import { werewolfReferences, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
+import { werewolfReferenceMetadata, WEREWOLF_AUTO_PUBLISHER } from "./werewolf-production.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 
 /** One audience-safe prefix, plus an exact public version; no producer DTO escapes. */
@@ -16,9 +16,10 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
-  const frame = projectWerewolfPresentation(await readWerewolfEvents(db, game.id), audience, cursor);
+  const events = await readWerewolfEvents(db, game.id);
+  const frame = projectWerewolfPresentation(events, audience, cursor);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
-  const references = await werewolfReferences(db, game.id);
+  const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
   const { scene, permitted } = bindWerewolfScene(rows, game.id, audience, frame.view.cursor, publicationCutoff, frame);
   const root = `/api/werewolf/${encodeURIComponent(game.id)}`;
   const query = `audience=${audience}&cursor=${frame.view.cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
@@ -27,9 +28,15 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   return { presentation, permitted };
 }
 export async function readWerewolfCharacter(db: DrizzleDB, gameId: string, playerId: string, image: "portrait" | "body" = "portrait") {
-  const ref = (await werewolfReferences(db, gameId)).find(ref => ref.profile.id === playerId);
+  const players = (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players.filter(player => player.id === playerId) ?? [];
+  const [ref] = await werewolfReferenceMetadata(db, gameId, players);
   if (!ref) return null;
-  return image === "body" ? (ref.kind === "full_body" ? ref.bytes : null) : ref.portraitBytes ?? (ref.bundled ? await readVisualProfileImage(null, ref.profile) : null);
+  const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
+  if (hash) {
+    const [asset] = await db.select({ bytes: schema.agentContentAssets.bytes }).from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash));
+    return asset?.bytes ?? null;
+  }
+  return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;
 }
 
 async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicationCutoff: string) {
@@ -92,9 +99,10 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const [game] = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "werewolf"), isNull(schema.games.hiddenAt), or(eq(schema.games.id, id), eq(schema.games.slug, id))));
   if (!game || !isViewerGame(game)) throw new WerewolfGameError("Game not found", 404);
   if (!game.startedAt) throw new WerewolfGameError("This game has not started. Open its casting lobby.");
-  const projection = projectWerewolfWatch(await readWerewolfEvents(db, game.id), audience, fromCursor, limit);
+  const events = await readWerewolfEvents(db, game.id);
+  const projection = projectWerewolfWatch(events, audience, fromCursor, limit);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
-  const references = await werewolfReferences(db, game.id);
+  const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
   const media: WerewolfWatchWindow["media"] = {};
   const bindings = new Map<string, {mediaKey: string | null; wolfForms: Record<string, string>}>();
   const portrait = (playerId: string) => `/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(playerId)}?audience=${audience}&cursor=1&publishedBefore=${encodeURIComponent(publicationCutoff)}`;

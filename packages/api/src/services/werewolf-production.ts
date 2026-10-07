@@ -1,8 +1,8 @@
 import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { visualFailurePolicy } from "./visual-policy.js";
 import { werewolfSceneInventory } from "@influence/engine/werewolf/visual-scenes";
-import { and, asc, eq } from "drizzle-orm";
-import { replayWerewolf } from "@influence/engine/werewolf";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { replayWerewolf, type WerewolfPlayer } from "@influence/engine/werewolf";
 import type { FrozenVisualProfile } from "@influence/engine/visual-mode";
 import type { VisualCastMember } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -17,34 +17,45 @@ export const WEREWOLF_AUTO_PUBLISHER = "house:werewolf:auto";
 
 export class WerewolfReferenceError extends Error {}
 
-/** Uses immutable submitted content, never the current editable character profile. */
-export async function werewolfReferences(db: DrizzleDB, gameId: string) {
-  const state = replayWerewolf(await readWerewolfEvents(db, gameId));
-  return Promise.all(state.players.map(async player => {
-    const [revision] = player.contentRevisionId ? await db.select().from(schema.agentContentRevisions)
-      .where(and(eq(schema.agentContentRevisions.id, player.contentRevisionId), eq(schema.agentContentRevisions.agentProfileId, player.agentProfileId ?? ""))) : [];
-    const snapshot = revision?.snapshot;
+/** Frozen cast metadata only: viewer polls never load image bytes or mutable profiles. */
+export async function werewolfReferenceMetadata(db: DrizzleDB, gameId: string, players?: readonly WerewolfPlayer[]) {
+  const cast = players ?? (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players ?? [];
+  const revisionIds = cast.flatMap(player => player.contentRevisionId ? [player.contentRevisionId] : []);
+  const revisions = revisionIds.length ? await db.select().from(schema.agentContentRevisions)
+    .where(inArray(schema.agentContentRevisions.id, revisionIds)) : [];
+  const members = cast.map(player => {
+    const snapshot = revisions.find(revision => revision.id === player.contentRevisionId && revision.agentProfileId === player.agentProfileId)?.snapshot;
     const assets = snapshot?.assets;
-    const avatar = snapshot?.avatarUrl;
-    const avatarHash = typeof avatar === "string" && assets && typeof assets === "object" && !Array.isArray(assets) ? (assets as Record<string, unknown>)[avatar] : null;
-    const [portraitAsset] = typeof avatarHash === "string" ? await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, avatarHash)) : [];
-    let url: string | null = null;
-    let bytes: Buffer | null = null;
-    let kind = "missing";
-    for (const [field, candidateKind] of [["fullBodyReferenceUrl", "full_body"], ["avatarUrl", "portrait"]] as const) {
-      const candidate = snapshot?.[field];
-      const hash = typeof candidate === "string" && assets && typeof assets === "object" && !Array.isArray(assets)
-        ? (assets as Record<string, unknown>)[candidate] : null;
-      const [asset] = typeof hash === "string" ? await db.select().from(schema.agentContentAssets).where(eq(schema.agentContentAssets.hash, hash)) : [];
-      if (asset) { url = candidate as string; bytes = asset.bytes; kind = candidateKind; break; }
-    }
+    const hashFor = (field: string) => {
+      const url = snapshot?.[field];
+      const hash = typeof url === "string" && assets && typeof assets === "object" && !Array.isArray(assets)
+        ? (assets as Record<string, unknown>)[url] : null;
+      return typeof hash === "string" ? hash : null;
+    };
+    return { player, snapshot, bodyHash: hashFor("fullBodyReferenceUrl"), portraitHash: hashFor("avatarUrl") };
+  });
+  const hashes = members.flatMap(member => [member.bodyHash, member.portraitHash].filter((hash): hash is string => hash !== null));
+  const available = new Set(hashes.length ? (await db.select({ hash: schema.agentContentAssets.hash }).from(schema.agentContentAssets)
+    .where(inArray(schema.agentContentAssets.hash, hashes))).map(asset => asset.hash) : []);
+  return members.map(({ player, snapshot, bodyHash, portraitHash }) => {
     const bundled = !player.agentProfileId;
-    if (bundled) kind = "portrait";
+    const body = bodyHash && available.has(bodyHash) ? bodyHash : null;
+    const portrait = portraitHash && available.has(portraitHash) ? portraitHash : null;
+    const kind = bundled ? "portrait" : body ? "full_body" : portrait ? "portrait" : "missing";
     const profile: FrozenVisualProfile = { id: player.id, name: player.name, personaKey: player.personaKey ?? "", avatarUrl: null,
-      fullBodyReferenceUrl: kind === "full_body" ? url : null,
+      fullBodyReferenceUrl: kind === "full_body" ? String(snapshot!.fullBodyReferenceUrl) : null,
       performanceInstructions: typeof snapshot?.performanceInstructions === "string" ? snapshot.performanceInstructions : "" };
-    return { profile, kind, bytes, portraitBytes: portraitAsset?.bytes ?? null, bundled };
-  }));
+    return { profile, kind, bodyHash: body, portraitHash: portrait, bundled };
+  });
+}
+
+/** Production loads immutable submitted bytes; viewer reads use metadata above. */
+export async function werewolfReferences(db: DrizzleDB, gameId: string) {
+  const refs = await werewolfReferenceMetadata(db, gameId);
+  const hashes = refs.flatMap(ref => [ref.bodyHash, ref.portraitHash].filter((hash): hash is string => hash !== null));
+  const assets = hashes.length ? await db.select().from(schema.agentContentAssets).where(inArray(schema.agentContentAssets.hash, hashes)) : [];
+  const bytes = (hash: string | null) => assets.find(asset => asset.hash === hash)?.bytes ?? null;
+  return refs.map(ref => ({ ...ref, bytes: bytes(ref.bodyHash ?? ref.portraitHash), portraitBytes: bytes(ref.portraitHash) }));
 }
 
 export async function freezeWerewolfReferences(db: DrizzleDB, gameId: string, participants: Array<{ id: string; name: string }>) {

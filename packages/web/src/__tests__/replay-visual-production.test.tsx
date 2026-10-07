@@ -16,8 +16,8 @@ beforeEach(() => {
   for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] });
   setApiBase("");
 });
-afterEach(() => {
-  cleanup(); dom.close(); globalThis.fetch = originalFetch;
+afterEach(async () => {
+  await act(async () => cleanup()); dom.close(); globalThis.fetch = originalFetch;
   for (const key of globals) { const descriptor = saved.get(key); if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
 });
 const media = (): MediaRecords => ({ jobs: [], versions: [], requests: [], publications: [] });
@@ -184,4 +184,62 @@ test("a reconciled wolf-form charge permits an explicit new repair", async () =>
   fireEvent.click(view.getByText("Refresh scenes"));
   await waitFor(()=>expect((view.getByText("Repair wolf form") as HTMLButtonElement).disabled).toBe(false));
   expect(view.queryByText("Resume game")).toBeNull();
+});
+
+test("receipt checks are single-flight and cannot unlock a pending replacement POST", async () => {
+  const data = inventory();
+  data.attempts = [{id:"attempt",operationKey:"media:job:section:0",provider:"fixture",model:"fixture",status:"needs_reconciliation",costMicrousd:null}];
+  let posts = 0, reads = 0, finishRead!: (response: Response) => void, finishPost!: (response: Response) => void;
+  respond(async (_url, init) => {
+    if (init?.method === "POST") { posts++; if (posts === 1) throw Error("Receipt lost"); return new Promise(resolve => {finishPost = resolve;}); }
+    reads++; if (reads === 2) return new Promise(resolve => {finishRead = resolve;});
+    return Response.json(data);
+  });
+  const view = render(<ReplayVisualProductionPanel gameId="game" onLocked={()=>{}}/>);
+  await waitFor(()=>expect(view.getByLabelText("Reconciliation evidence")).not.toBeNull());
+  fireEvent.input(view.getByLabelText("Reconciliation evidence"),{target:{value:"Confirmed no charge"}});
+  fireEvent.input(view.getByLabelText("Confirmed cost in dollars"),{target:{value:"0"}});
+  fireEvent.submit(view.getByText("Record reconciliation").closest("form")!);
+  await waitFor(()=>expect(view.getByText("Check reconciliation receipt")).not.toBeNull());
+  fireEvent.click(view.getByText("Check reconciliation receipt"));
+  fireEvent.click(view.getByText("Check reconciliation receipt"));
+  expect(reads).toBe(2);
+  expect((view.getByText("Record reconciliation") as HTMLButtonElement).disabled).toBe(true);
+  await act(async()=>finishRead(Response.json(data)));
+  await waitFor(()=>expect((view.getByText("Record reconciliation") as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.submit(view.getByText("Record reconciliation").closest("form")!);
+  expect(posts).toBe(2);
+  expect((view.getByText("Record reconciliation") as HTMLButtonElement).disabled).toBe(true);
+  await act(async()=>finishPost(Response.json({accepted:true})));
+  expect(view.queryByText("No reconciliation is recorded. Review the evidence before submitting again.")).toBeNull();
+});
+
+test("a receipt read from an old mount cannot replace a newer reconciliation operation", async () => {
+  const data = inventory();
+  data.attempts = [{id:"attempt",operationKey:"media:job:section:0",provider:"fixture",model:"fixture",status:"needs_reconciliation",costMicrousd:null}];
+  let posts=0, reads=0, oldRead!: (response:Response)=>void, newRead!: (response:Response)=>void, post!: (response:Response)=>void;
+  respond(async (_url,init)=>{
+    if(init?.method === "POST") {if(++posts===1)throw Error("Receipt lost");return new Promise(resolve=>{post=resolve;});}
+    if(++reads===2)return new Promise(resolve=>{oldRead=resolve;});
+    if(reads===3)return new Promise(resolve=>{newRead=resolve;});
+    return Response.json(data);
+  });
+  const panel=<ReplayVisualProductionPanel gameId="game" onLocked={()=>{}}/>;
+  const view=render(panel);
+  await waitFor(()=>expect(view.getByLabelText("Reconciliation evidence")).not.toBeNull());
+  fireEvent.input(view.getByLabelText("Reconciliation evidence"),{target:{value:"Confirmed no charge"}});
+  fireEvent.input(view.getByLabelText("Confirmed cost in dollars"),{target:{value:"0"}});
+  fireEvent.submit(view.getByText("Record reconciliation").closest("form")!);
+  await waitFor(()=>expect(view.getByText("Check reconciliation receipt")).not.toBeNull());
+  fireEvent.click(view.getByText("Check reconciliation receipt"));
+  view.rerender(<p>Another panel</p>);view.rerender(panel);
+  await waitFor(()=>expect(view.getByText("Check reconciliation receipt")).not.toBeNull());
+  fireEvent.click(view.getByText("Check reconciliation receipt"));
+  await act(async()=>newRead(Response.json(data)));
+  fireEvent.submit(view.getByText("Record reconciliation").closest("form")!);
+  expect(posts).toBe(2);
+  await act(async()=>oldRead(Response.json(data)));
+  expect((view.getByText("Record reconciliation") as HTMLButtonElement).disabled).toBe(true);
+  await act(async()=>post(Response.json({accepted:true})));
+  expect(view.queryByText("No reconciliation is recorded. Review the evidence before submitting again.")).toBeNull();
 });

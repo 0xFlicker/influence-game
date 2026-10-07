@@ -22,6 +22,19 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
     return {showAtMs: lead + SCENE_SPEECH_START_MS, readAtMs: lead + SCENE_READ_START_MS, hideAtMs, hiddenAtMs: hideAtMs + VISUAL_SPEECH_FADE_MS};
   },
 };
+/** Keep cached seek destinations out of sequential playback until every source row between them is loaded. */
+export function contiguousWerewolfWindows(windows: readonly WerewolfWatchWindow[], cursor: number): WerewolfWatchWindow[] {
+  const sorted = [...windows].sort((a, b) => a.fromCursor - b.fromCursor);
+  let group: WerewolfWatchWindow[] = [], end = 0;
+  for (const window of sorted) {
+    if (group.length && window.fromCursor > end + 1) {
+      if (group[0]!.fromCursor <= cursor && cursor <= end) return group;
+      group = [];
+    }
+    group.push(window); end = Math.max(end, window.throughCursor);
+  }
+  return group.length && group[0]!.fromCursor <= cursor && cursor <= end ? group : [];
+}
 export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfWatchCue[] {
   const moments = new Map<number, WerewolfWatchMoment>();
   for (const window of windows) for (const moment of window.moments) {

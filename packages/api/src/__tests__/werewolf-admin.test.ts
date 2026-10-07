@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 import { runWerewolf, projectWerewolfView, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
@@ -11,7 +11,7 @@ import { createVisualRoutes } from "../routes/visual.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { createWerewolfGame, claimWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
 import { readReplayVisualProduction, renderMissingReplayScene } from "../services/visual-replay-production.js";
-import { readWerewolfScenePreview, werewolfReferences } from "../services/werewolf-production.js";
+import { readWerewolfScenePreview, werewolfReferences, werewolfReferenceMetadata } from "../services/werewolf-production.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { controlVisualMedia, readVisualMedia } from "../services/visual-media-repair.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
@@ -161,6 +161,17 @@ test("production reads captured revision bytes, never a later character edit", a
   const refs = await werewolfReferences(db, g.id);
   const saved = refs.find(r => r.profile.name === "Arden Vale")!;
   expect(saved.portraitBytes).toEqual(portraitBytes);
+  const events = await readWerewolfEvents(db, g.id);
+  const players = events.find(event=>event.type === "werewolf.started")!.payload.players;
+  const select = spyOn(db, "select");
+  try {
+    const metadata = await werewolfReferenceMetadata(db, g.id, players);
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1]).toEqual([{hash:schema.agentContentAssets.hash}]);
+    expect(metadata.find(ref=>ref.profile.id===saved.profile.id)).toMatchObject({kind:"full_body",bodyHash:hash,portraitHash:"portrait-hash"});
+    expect(metadata.every(ref=>!("bytes" in ref) && !("portraitBytes" in ref))).toBe(true);
+  } finally {select.mockRestore();}
+
   expect(await readWerewolfCharacter(db,g.id,saved.profile.id)).toEqual(portraitBytes);
   expect(await readWerewolfCharacter(db,g.id,saved.profile.id,"body")).toEqual(bytes);
   const identity=(await readWerewolfWatch(db,g.id,"mystery",1,10)).players.find(p=>p.id===saved.profile.id)!;

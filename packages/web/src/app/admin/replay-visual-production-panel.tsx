@@ -140,10 +140,15 @@ function ReconcileAttempt({ gameId, attemptId, refresh }: { gameId: string; atte
   const [cost, setCost] = useAdminValue(`draft:${resource}/reconcile:${attemptId}:cost`, "");
   const [readError, setReadError] = useState<string | null>(null);
   const busy = operation?.phase === "submitting", unknown = operation?.phase === "unknown";
+  const checking = useRef(false);
+  const [checkingReceipt, setCheckingReceipt] = useState(false);
   async function checkReceipt() {
+    if (checking.current || operation?.phase !== "unknown" || session.get(key) !== operation) return;
+    const checked = operation;
+    checking.current = true; setCheckingReceipt(true);
     try {
       const saved = await session.read<Inventory>(resource);
-      if (!session.active) return;
+      if (!session.active || session.get(key) !== checked) return;
       const attempt = saved.attempts.find(candidate => candidate.id === attemptId);
       if (attempt?.status === "reconciled") { session.delete(key); await refresh(); }
       else if (attempt?.status === "needs_reconciliation" && operation) {
@@ -151,7 +156,9 @@ function ReconcileAttempt({ gameId, attemptId, refresh }: { gameId: string; atte
         setReadError(null);
       }
       else setReadError("The receipt is not confirmed yet. Refresh and check again before submitting another reconciliation.");
-    } catch (cause) { setReadError(cause instanceof Error ? cause.message : "Could not check receipt"); }
+    } catch (cause) {
+      if (session.active && session.get(key) === checked) setReadError(cause instanceof Error ? cause.message : "Could not check receipt");
+    } finally { checking.current = false; setCheckingReceipt(false); }
   }
   return <form className="mt-3 flex flex-wrap gap-3" onSubmit={async event => {
     event.preventDefault();
@@ -164,7 +171,7 @@ function ReconcileAttempt({ gameId, attemptId, refresh }: { gameId: string; atte
     <input aria-label="Reconciliation evidence" value={note} onInput={event => setNote(event.currentTarget.value)} required maxLength={2000} placeholder="Provider receipt or billing evidence" className="min-w-48 flex-1 rounded bg-white/10 px-3 py-2" />
     <input aria-label="Confirmed cost in dollars" value={cost} onInput={event => setCost(event.currentTarget.value)} required type="number" min="0" step="0.000001" placeholder="USD" className="w-32 rounded bg-white/10 px-3 py-2" />
     <button disabled={busy || unknown} className={button}>Record reconciliation</button>
-    {unknown && <button type="button" className={button} onClick={() => void checkReceipt()}>Check reconciliation receipt</button>}
+    {unknown && <button type="button" className={button} disabled={checkingReceipt} onClick={() => void checkReceipt()}>Check reconciliation receipt</button>}
     {(operation?.error || readError) && <p role="alert" className="w-full text-red-300">{readError ?? operation?.error}</p>}
   </form>;
 }

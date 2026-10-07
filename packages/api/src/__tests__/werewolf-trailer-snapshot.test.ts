@@ -87,6 +87,11 @@ test("Public and Unlisted share publication and repair, preserving the ready bun
     renderDurationMs: 9000, artifacts: artifactFixture(id, claim.artifactVersion) };
   expect(await finalizePostgameMedia(db, request)).toEqual({ ok: true });
   const ready = await getPublicPostgameMedia(db, id); expect(ready.status).toBe("ready");
+  const {readHouseGame} = await import("../services/house-game-inspection.js");
+  const {houseContent} = await import("../game-mcp/house-contracts.js");
+  const page = await readHouseGame(db,{gameIdOrSlug:id});
+  expect(page.trailer).toEqual({...ready,shareHref:"/games/trailer-snapshot-slug"});
+  houseContent("read_game",page);
   expect((await repair(id)).outcome).toBe("queued");
   const replacement = (await claimPostgameMedia(db, "local-test"))!;
   expect(await finalizePostgameMedia(db, request)).toEqual({ ok: false, error: "stale_or_invalid_lease" });

@@ -793,7 +793,7 @@ function productionGameMcpTools(
       appMeta: includeProducerVariant ? undefined : createInfluenceMcpAppToolMeta(),
     }),
     ...(["read_game","read_game_results","read_game_thinking","read_game_cuts"] as const).map(name=>tool({
-      name, description:name === "read_game" ? "Read a House game. Current view includes the latest ending; replay pages preserve the selected audience prefix. Supply nextCursor to drain pinned history, then pollCursor to follow new entries."
+      name, description:name === "read_game" ? "Read a House game, including completed-game trailer status, share destination and published playback metadata when ready. Never starts generation. Current view includes the latest ending; replay pages preserve the selected audience prefix. Supply nextCursor to drain pinned history, then pollCursor to follow new entries."
         : name === "read_game_cuts" ? "Read published House Cuts and replay links. Werewolf defaults to Mystery; omniscient explicitly includes spoilers. Public and linked Unlisted games are readable. Never starts generation."
         : name === "read_game_results" ? "Read completed House results. This explicitly reveals the ending."
         : "Explicitly read spectator thinking. Werewolf requires omniscient and position [cursor]. Influence requires public, actorId and position [eventSequence, transcriptSequence], returning at most eight recent cards. No raw reasoning or private strategy.",

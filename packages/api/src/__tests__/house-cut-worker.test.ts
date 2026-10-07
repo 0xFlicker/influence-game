@@ -138,3 +138,38 @@ test("persisted Influence dialogue uses the same generation and publication path
   expect(result?.publication?.audience).toBe("public");
   expect(await readHouseCuts(db, id, "omniscient")).toBeNull();
 });
+
+for (const phase of ["before-dispatch", "accepted", "unknown"] as const) test(`shutdown preserves only replayable Cuts work: ${phase}`, async () => {
+  const {id} = await fixture(); await queueHouseCuts(db, id);
+  // Exercise one audience so the second worker claim resumes this exact job.
+  await db.delete(schema.houseCutJobs).where(eq(schema.houseCutJobs.audience, "omniscient"));
+  const controller = new AbortController();
+  let jobId = "";
+  await runHouseCutJob(db, async options => {
+    const [running] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.status, "running"));
+    jobId = running!.id;
+    if (phase !== "before-dispatch") {
+      const intent: import("@influence/engine").ProviderAttemptIntent = {
+        coordinate: {actor:{name:"House",role:"house"},action:"cut",semantic:{version:1,kind:"durable_turn",turnId:"cut",subcallSlot:0}},
+        attemptOrdinal:1,attemptId:"fixture",startedAt:new Date().toISOString(),
+        preparedRequest:{transport:"fixture",providerProfileId:"openai",model:"gpt-6-luna",body:{}},
+      };
+      options.journal.attempts.push({windowId:"fixture",reservedUsd:0.1,intent,...(phase === "accepted" ? {terminal:{...intent,completedAt:intent.startedAt,latencyMs:0,outcome:{kind:"usable" as const},disposition:"accepted" as const,acceptedValue:{candidates:[]}}} : {})});
+      await options.save(options.journal);
+    }
+    controller.abort(); controller.signal.throwIfAborted();
+    return generate(options);
+  }, controller.signal);
+  const [stopped] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId));
+  expect(stopped!.status).toBe(phase === "unknown" ? "failed" : "queued");
+  expect(stopped!.leaseToken).toBeNull();
+  expect(stopped!.publication).toBeNull();
+  if (phase !== "unknown") {
+    await runHouseCutJob(db, async options => {
+      expect(options.journal).toEqual(stopped!.journal!);
+      return generate(options);
+    });
+    const [resumed] = await db.select().from(schema.houseCutJobs).where(eq(schema.houseCutJobs.id, jobId));
+    expect(resumed!.status).toBe("ready");
+  }
+});

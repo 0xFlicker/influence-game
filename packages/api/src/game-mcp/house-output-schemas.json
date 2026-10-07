@@ -561,6 +561,166 @@
             "type": "string",
             "const": "untrusted_game_authored"
           },
+          "trailer": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "shareHref": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "const": "house_highlights_trailer"
+                  },
+                  "status": {
+                    "$ref": "#/definitions/Exclude"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "mediaType",
+                  "schemaVersion",
+                  "shareHref",
+                  "status"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "shareHref": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "const": "house_highlights_trailer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "renderVersion": {
+                    "type": "number"
+                  },
+                  "durationSeconds": {
+                    "type": "number"
+                  },
+                  "preview": {
+                    "$ref": "#/definitions/PostgameMediaPreviewMetadata"
+                  },
+                  "video": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "width": {
+                        "type": "number"
+                      },
+                      "height": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "height",
+                      "url",
+                      "width"
+                    ]
+                  },
+                  "poster": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "altText": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "altText",
+                      "contentType",
+                      "url"
+                    ]
+                  },
+                  "captions": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "language": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "label",
+                      "language",
+                      "url"
+                    ]
+                  },
+                  "manifest": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "url"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "captions",
+                  "durationSeconds",
+                  "manifest",
+                  "mediaType",
+                  "poster",
+                  "preview",
+                  "renderVersion",
+                  "schemaVersion",
+                  "shareHref",
+                  "status",
+                  "video"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "followUps": {
             "type": "array",
             "items": {
@@ -582,6 +742,7 @@
           "position",
           "schemaVersion",
           "snapshot",
+          "trailer",
           "view"
         ]
       },
@@ -1123,6 +1284,166 @@
             "type": "string",
             "const": "untrusted_game_authored"
           },
+          "trailer": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "shareHref": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "const": "house_highlights_trailer"
+                  },
+                  "status": {
+                    "$ref": "#/definitions/Exclude"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "mediaType",
+                  "schemaVersion",
+                  "shareHref",
+                  "status"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "shareHref": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "number",
+                    "const": 1
+                  },
+                  "mediaType": {
+                    "type": "string",
+                    "const": "house_highlights_trailer"
+                  },
+                  "status": {
+                    "type": "string",
+                    "const": "ready"
+                  },
+                  "renderVersion": {
+                    "type": "number"
+                  },
+                  "durationSeconds": {
+                    "type": "number"
+                  },
+                  "preview": {
+                    "$ref": "#/definitions/PostgameMediaPreviewMetadata"
+                  },
+                  "video": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "width": {
+                        "type": "number"
+                      },
+                      "height": {
+                        "type": "number"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "height",
+                      "url",
+                      "width"
+                    ]
+                  },
+                  "poster": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "altText": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "altText",
+                      "contentType",
+                      "url"
+                    ]
+                  },
+                  "captions": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      },
+                      "language": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "label",
+                      "language",
+                      "url"
+                    ]
+                  },
+                  "manifest": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "contentType": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "contentType",
+                      "url"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "captions",
+                  "durationSeconds",
+                  "manifest",
+                  "mediaType",
+                  "poster",
+                  "preview",
+                  "renderVersion",
+                  "schemaVersion",
+                  "shareHref",
+                  "status",
+                  "video"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "followUps": {
             "type": "array",
             "items": {
@@ -1145,6 +1466,7 @@
           "position",
           "schemaVersion",
           "snapshot",
+          "trailer",
           "view"
         ]
       }
@@ -1864,6 +2186,33 @@
           "waiting"
         ],
         "type": "string"
+      },
+      "Exclude": {
+        "enum": [
+          "failed",
+          "not_requested",
+          "queued",
+          "rendering",
+          "waiting_inputs",
+          "waiting_music"
+        ],
+        "type": "string"
+      },
+      "PostgameMediaPreviewMetadata": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "description",
+          "title"
+        ]
       },
       "ViewerDecisionEventBase<\"endgame.elimination_resolved\",{stage:\"reckoning\"|\"tribunal\"|\"judgment\"|null;votes:Record<string,string>;juryTiebreakerVotes:Record<string,string>;eliminatedId:string;}>": {
         "description": "Viewer-safe accepted decisions. This is deliberately narrower than a\ncanonical envelope: raw source pointers, visibility, producer evidence, and\ndecision/cognition metadata stay on the canonical event only.",

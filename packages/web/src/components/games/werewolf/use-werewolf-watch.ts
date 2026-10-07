@@ -6,7 +6,7 @@ import {ApiError} from "@/lib/api";
 import {getWerewolfWatch} from "@/lib/werewolf-api";
 import {useWatchDirector} from "@/components/watch/use-watch-director";
 import {werewolfMusic} from "./werewolf-music";
-import {consumedSilentTail, werewolfCues, werewolfMomentCues, werewolfScrubStops, werewolfWatchPolicy} from "./werewolf-watch-model";
+import {contiguousWerewolfWindows, consumedSilentTail, werewolfCues, werewolfMomentCues, werewolfScrubStops, werewolfWatchPolicy} from "./werewolf-watch-model";
 
 /** One mounted session per game/audience. Cached head data is never the active snapshot. */
 export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number) {
@@ -53,7 +53,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         if (initial && startCursor !== undefined && startCursor > window.latestCursor) throw new Error("This replay moment is not available.");
         if (next > window.latestCursor && window.latestCursor > 0) { next = window.latestCursor; continue; }
         commitWindow(window, next);
-        const cues = werewolfCues([...windows.current.values()]);
+        const cues = werewolfCues(contiguousWerewolfWindows([...windows.current.values()], next));
         const selected = previous ? cues.findLastIndex(cue => cue.moment.cursor <= next) : cues.findIndex(cue => cue.moment.cursor >= next);
         if (selected >= 0) {
           awaitingInitialCue.current = false;
@@ -86,7 +86,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
   // Only a playing/following session consumes new silent history. Paused inspectors stay frozen.
   useEffect(() => {
     if (preparing || !holding || !follow || activeCue && !clock.snapshot.isPlaying) return;
-    const consumed = consumedSilentTail([...windows.current.values()], activeCursor);
+    const consumed = consumedSilentTail(contiguousWerewolfWindows([...windows.current.values()], activeCursor), activeCursor);
     if (consumed) setTail(consumed);
   }, [preparing, holding, follow, activeCue, clock.snapshot.isPlaying, activeCursor, revision]);
   const latestCursor = data?.latestCursor, status = data?.status;
@@ -104,15 +104,18 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
         const nextStart = currentStart + 32;
         const nearEnd = activeCursor >= currentStart + 23 || director.getSnapshot().waitingAtTail || !director.getActiveCue();
         const from = nearEnd && latestCursor >= nextStart ? nextStart : currentStart;
-        if (status !== "in_progress" && status !== "suspended" && (windows.current.has(from) || !nearEnd)) return;
-        const value = await getWerewolfWatch(slug, audience, from, controller.signal, cutoff);
+        const terminal = status !== "in_progress" && status !== "suspended";
+        if (terminal && !nearEnd) return;
+        const cached = terminal ? windows.current.get(from) : undefined;
+        const value = cached ?? await getWerewolfWatch(slug, audience, from, controller.signal, cutoff);
         if (controller.signal.aborted || intent.current !== generation) return;
-        commitWindow(value, activeCursor);
-        const cues = werewolfCues([...windows.current.values()]);
+        if (!cached) commitWindow(value, activeCursor);
+        const cues = werewolfCues(contiguousWerewolfWindows([...windows.current.values()], activeCursor));
         if (!director.getActiveCue() && awaitingInitialCue.current && cues.some(cue => cue.moment.cursor >= activeCursor)) {
           void seek(activeCursor, playIntent.current, false, true); return;
         }
-        if (!director.getActiveCue() && follow && cues.some(cue => cue.moment.cursor > activeCursor)) {
+        // The last spoken cue may have fallen outside the cache after a long consumed silent stretch.
+        if (holding && follow && !cues.some(cue => cue.key === director.getActiveCue()?.key) && cues.some(cue => cue.moment.cursor > activeCursor)) {
           void seek(activeCursor + 1, true); return;
         }
         // An empty director can represent a deliberate silent seek. Do not resurrect older speech.
@@ -128,7 +131,7 @@ export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutof
     void refresh();
     const timer = (status === "in_progress" || status === "suspended") ? setInterval(() => { void refresh(); }, 3000) : null;
     return () => { controller.abort(); if (timer) clearInterval(timer); };
-  }, [activeCursor, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek]);
+  }, [activeCursor, holding, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek]);
   const buffered = [...windows.current.values()];
   const active = holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
   const scrubStops = useMemo(() => werewolfScrubStops(data?.playback ?? []), [data?.playback]);

@@ -448,6 +448,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
   const page = await browser.newPage();
   await page.setViewport({width:1440,height:1000});
   let head = 96, delayMiddle = true, reads = 0;
+  const startedAt = performance.now();
   const pending = new Set<ReturnType<typeof setTimeout>>();
   const failures: string[] = [];
   page.on("pageerror", error => failures.push(String(error)));
@@ -505,7 +506,8 @@ test("shared replay fences delayed seeks and crosses silent live windows without
     await page.waitForSelector('[data-werewolf-stage][data-cursor="97"]', {timeout: 25_000});
     expect(await page.$$('[data-watch-context]')).toHaveLength(1);
     expect(failures).toEqual([]);
-    expect(reads).toBeLessThan(30);
+    // Bound navigation/prefetch work separately from the three-second live polls.
+    expect(reads).toBeLessThan(24 + Math.ceil((performance.now() - startedAt) / 3000));
   } catch(error) {
     console.error("Watch race failure", reads, failures, await page.evaluate("document.body.innerText"));
     throw error;
