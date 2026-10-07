@@ -233,6 +233,14 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
 ## Future / Watchlist
 
+### Dramatic thinking presentation (2026-10-07)
+
+- Status: `future` — explicitly deferred by the user; retained here as a product follow-up, outside the local replay renderer plan.
+- Direction: when thinking is shown, push into a tight headshot and darken the background outside the head for a dramatic isolated moment, then ease back out to the room shot for speaking.
+- Implementation direction when picked up: use the shared presentation timeline for the close-up, surrounding darkening and return transition, so browser playback and video export use the same treatment. Support existing rectangular character art; do not assume transparent cutouts. Use verified head framing or an intentional portrait fallback.
+- Design work still needed: settle transition timing/easing, the darkening treatment, missing-head-anchor behavior, and how the effect works with both thinking orders and the current thought/speech overlap. This is not a finalized visual design.
+- Validation: pause and seek at each transition, arbitrary-frame rendering, reduced motion, long thoughts and responsive framing. Preserve audience restrictions: Mystery receives no thinking.
+
 ### D1. Additional multi-instance execution and observer scaling
 
 - Status: `future`
