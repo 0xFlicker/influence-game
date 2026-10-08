@@ -67,7 +67,8 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
   const beat: Extract<VisualPresentationBeat, {kind:"portrait"}> | null = actor ? {
     kind:"portrait", purpose: cue.ballot ? "Ballot" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? "Conversation" : "Farewell",
     caption: cue.ballot ? "Vote to eliminate" : cue.moment.chapterId === "introduction" ? "Introduction" : moment.spoken ? moment.pack ? "Pack conversation" : "Conversation" : "",
-    player: {...actor, name: `${actor.name}${cue.moment.snapshot.audience === "omniscient" && actor.role ? ` · ${actor.role}` : ""}`, persona: ""},
+    roleLabel: cue.moment.snapshot.audience === "omniscient" ? actor.role ?? undefined : undefined,
+    player: {...actor, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
   if (cue.transformation && elapsed < lead) return <WerewolfTransformationStage cue={cue} elapsed={elapsed} reduced={reduced} onReady={onReady ?? ignoreReadiness} />;

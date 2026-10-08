@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { layoutSoloPresentation } from "../app/games/[slug]/components/solo-presentation-layout";
 import type {SceneFrame} from "../app/games/[slug]/components/visual-scene-layout";
 const overlaps = (a: SceneFrame, b: SceneFrame) => a.left < b.left+b.width && b.left < a.left+a.width && a.top < b.top+b.height && b.top < a.top+a.height;
-for (const [width,height] of [[1280,800],[390,844],[844,390],[590,280]]) {
+for (const [width,height] of [[3440,1440],[2560,1080],[1280,800],[390,844],[844,390],[590,280]]) {
   for (const thinking of [false,true]) {
     test(`full-body art, bubbles and ledger have separate space: ${width}x${height}, thinking=${thinking}`, () => {
       const layout = layoutSoloPresentation(width!,height!,1024,1536,true,110,308,{x:.4,y:.85,width:.15,height:.12},thinking);
@@ -18,6 +18,12 @@ for (const [width,height] of [[1280,800],[390,844],[844,390],[590,280]]) {
     });
   }
 }
+for (const thinking of [false, true]) test(`ultrawide speech stays beside the contained portrait, thinking=${thinking}`, () => {
+  const {image, bubble, thought} = layoutSoloPresentation(3440, 1440, 1024, 1536, true, 110, 308, undefined, thinking);
+  expect(bubble.left - (image.left + image.width)).toBeCloseTo(20);
+  if (thought) expect(image.left - (thought.left + thought.width)).toBeCloseTo(20);
+  expect((thought?.left ?? image.left) + bubble.left + bubble.width).toBeCloseTo(3440);
+});
 test("silent ballots keep their whole character above the ledger", () => {
   const {image} = layoutSoloPresentation(390,640,1024,1536,true,180,308,undefined,false,false);
   expect(image.top+image.height).toBeLessThanOrEqual(460);

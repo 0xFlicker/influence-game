@@ -32,11 +32,14 @@ export function layoutSoloPresentation(width: number, height: number, imageWidth
   const artWidth = Math.max(0, beside ? width - margin * 2 - textWidth * (thinking ? 2 : showSpeech ? 1 : 0) - gap * (thinking ? 2 : showSpeech ? 1 : 0) : thinking ? width * .34 : width - margin * 2);
   const artHeight = beside ? Math.max(0, available - margin * 2) : upperHeight;
   const h = Math.min(artHeight, artWidth / ratio), w = h * ratio;
-  const artLeft = beside && thinking ? margin + textWidth + gap : margin;
-  const image: SceneFrame = {left: artLeft + (artWidth - w) / 2, top: margin + (artHeight - h) / 2, width:w, height:h};
-  const bubble = {left: beside ? width - margin - textWidth : margin,
+  // Center the actual contained portrait and its text as one group. The art
+  // column can be much wider than the image on ultrawide screens.
+  const textColumns = thinking ? 2 : showSpeech ? 1 : 0;
+  const groupLeft = (width - w - textColumns * (textWidth + gap)) / 2;
+  const image: SceneFrame = {left: beside ? groupLeft + (thinking ? textWidth + gap : 0) : margin + (artWidth - w) / 2, top: margin + (artHeight - h) / 2, width:w, height:h};
+  const bubble = {left: beside ? image.left + w + gap : margin,
     top: beside ? (available - bubbleHeight) / 2 : available - margin - bubbleHeight, width:textWidth, height:bubbleHeight};
-  const thought = thinking ? {left:beside ? margin : margin + artWidth + gap, top:margin,
+  const thought = thinking ? {left:beside ? groupLeft : margin + artWidth + gap, top:margin,
     width:beside ? textWidth : Math.max(0,width - margin * 2 - artWidth - gap), height:Math.min(220,beside ? available * .65 : upperHeight)} : null;
   const measured = validHeadRectangle(head) ? head : null;
   const headX = image.left + image.width * (measured ? measured.x + measured.width / 2 : .5);

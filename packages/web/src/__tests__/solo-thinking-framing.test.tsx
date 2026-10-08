@@ -5,6 +5,10 @@ import {SoloPresentation} from "../app/games/[slug]/components/solo-presentation
 import type {VisualPresentationBeat} from "../app/games/[slug]/components/visual-presentation";
 import {WatchThinking} from "../components/watch/watch-thinking";
 import {PresentationDirector, type WatchCue} from "../components/watch/watch-director";
+import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
+import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
+import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
+import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 
 const keys = ["window", "document", "navigator", "HTMLElement", "Element", "Node", "Event", "ResizeObserver", "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame"] as const;
 const original = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -31,6 +35,22 @@ const beat: Extract<VisualPresentationBeat,{kind:"portrait"}> = {
   speech:{id:"s",playerId:"p",speaker:"Player",text:"Hello, everyone."},
 };
 const load = async () => null;
+for (const audience of ["mystery", "omniscient"] as const) test(`${audience}: role has its own label only in omniscient speech`, async () => {
+  Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>390},clientHeight:{configurable:true,get:()=>700}});
+  const players = Array.from({length:6}, (_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"Careful",backstory:"",strategy:"",avatarUrl:null}));
+  const template = projectWerewolfWatch([startWerewolf("role-label",players,werewolfConfig("one_wolf",1),"seed")],"omniscient").moments[0]!;
+  const wolf = template.snapshot.players.find(p=>p.role === "werewolf")!;
+  const [cue] = werewolfMomentCues({...template, chapterId:"introduction", snapshot:{...template.snapshot,audience},
+    entry:{kind:"speech",day:0,audience:"public",actorId:wolf.id,text:"Hello, everyone.",cue:null}});
+  const view = render(<WerewolfContentFrame cue={cue!} scene={null} elapsed={1000} reduced />);
+  const bubble = view.container.querySelector("[data-speech-bubble]")!;
+  expect(bubble.textContent).toContain(wolf.name);
+  expect(bubble.textContent).toContain("Introduction");
+  const role = bubble.querySelector("[data-speaker-role]");
+  if (audience === "omniscient") expect(role?.textContent).toBe("werewolf");
+  else {expect(role).toBeNull();expect(bubble.textContent).not.toContain("werewolf");}
+  await act(async () => {});
+});
 for (const speechPresentation of ["solo","scene"] as const) for (const [width,height] of [[1440,900],[390,700],[640,250]]) {
   test(`${speechPresentation}: ${width}x${height} full-body framing stays fixed through empty, thought and speech intervals`, async () => {
     Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>width},clientHeight:{configurable:true,get:()=>height}});

@@ -388,6 +388,8 @@ Werewolf keeps the shared `VisualSceneView` mounted across consecutive speakers 
 
 Werewolf introductions use the shared individual reveal with frozen full-body art or portrait. They do not schedule or bind generated lobby scenes, including in older games with a published introduction lobby. The first daytime thread prepares a lobby for the actual living cast after night resolution. A protected target or a night without an agreed attack can leave the full starting roster; membership comes from canonical living IDs. Influence retains its individual introductions and full-roster round-one lobby.
 
+Individual presentations keep the contained portrait and speech bubble together as a centered group, including on ultrawide screens. Werewolf omniscient speech uses a separate, untruncated role label beside the speaker name, with the action caption on the next line; Mystery omits the role. Bubble pagination reserves space for both header lines.
+
 When Show thinking is enabled, the shared individual presentation reserves its smaller full-body framing throughout the turn, including loading, speech-first delays, and the empty intervals before and after bubbles. Timed thought visibility no longer resizes the character. Turning the option off restores the speech-only composition.
 
 ### Device playback preferences (2026-10-02)

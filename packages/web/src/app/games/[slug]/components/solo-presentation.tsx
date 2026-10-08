@@ -77,7 +77,7 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
   const compact = available < 300 || Boolean(thought && size.width < 760);
   const speechBox = thoughtLayout?.speech ?? geometry.bubble;
   const thoughtBox = thoughtLayout?.thought ?? {...speechBox, height:0};
-  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", compact);
+  const speechFit = useBubbleTypography(frame, speech.text, speechBox, "speech", compact, beat.roleLabel ? 48 : 28);
   const thoughtFit = useBubbleTypography(frame, thought?.text ?? "", thoughtBox, "thought", compact);
   const fittedThought = {...thoughtBox, width:thoughtFit.typography?.width ?? thoughtBox.width, height:thoughtFit.typography?.height ?? thoughtBox.height};
   const fittedSpeechWidth = speechFit.typography?.width ?? speechBox.width;
@@ -100,7 +100,13 @@ export function SoloPresentation({ beat, elapsedMs, readingElapsedMs = elapsedMs
       }}
       className={`absolute max-w-none ${fullBody ? `object-contain ${backdropStyles.featheredBody}` : "rounded-full object-cover shadow-2xl ring-1 ring-white/30"}`} style={{ ...geometry.image, opacity: imageOpacity ?? motion.imageOpacity }} />
     {!hideSpeech && motion.speechOpacity > 0 && <div data-speech-bubble style={{ ...bubble, opacity: motion.speechOpacity, padding:speechFit.padding }} className="absolute flex flex-col rounded-2xl border border-white/25 bg-black/85 shadow-xl">
-      <p className={`mb-2 flex h-5 shrink-0 items-baseline gap-x-2 overflow-hidden text-xs font-semibold leading-5 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}><span className="truncate">{player.name}</span><span className="shrink-0 text-xs font-normal text-white/50">{beat.caption ?? beat.purpose}</span></p>
+      <div className={`mb-2 shrink-0 text-xs leading-5 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>
+        <p className="flex h-5 items-baseline gap-x-2 overflow-hidden font-semibold">
+          <span className="min-w-0 truncate">{player.name}</span>
+          {beat.roleLabel ? <span data-speaker-role className="shrink-0 text-amber-200">{beat.roleLabel}</span> : <span className="shrink-0 font-normal text-white/50">{beat.caption ?? beat.purpose}</span>}
+        </p>
+        {beat.roleLabel && <p className="h-5 text-white/50">{beat.caption ?? beat.purpose}</p>}
+      </div>
       <blockquote className="flex min-h-0 flex-1 flex-col">
         {staticSpeech ? <p className="break-words" style={{fontSize:speechFit.typography?.fontSize,lineHeight:1.4}}>{speech.text}</p> : <TimedSpeech text={speech.text} elapsedMs={speechPresentation === "scene" ? readingElapsedMs - SCENE_SPEECH_START_MS : soloPresentationMotion(speech.text, readingElapsedMs).speechElapsedMs} typography={speechFit.typography} />}
       </blockquote>

@@ -27,7 +27,7 @@ export type VisualPresentationBeat =
   | WinnerSceneBeat
   | { kind: "portrait-room"; roomNumber: number | null; participants: GamePlayer[]; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
-  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 
