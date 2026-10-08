@@ -23,3 +23,11 @@ The shared transport is one responsive row with play/pause, previous/next group,
 Werewolf no longer has a separate control strip above the scene. Settings owns its fixed viewing-mode label, Transcript action, and permission-gated Stop game action. Thinking uses the same adaptive transport controls as Influence.
 
 Compact-control verification: 2,183 provider-free tests passed (5 skipped), and repository typecheck/lint passed. Five browser journeys passed together; the pack audience-switch check timed out once and passed in isolation on rerun. Manual checks confirmed mobile has one 40px control row with no horizontal overflow, fullscreen exposes all three adaptive options, settings retains choices after resizing, Transcript opens inside fullscreen, and Influence scrubbing retains a paused state. Restored only browser-generated Next configuration files after the harness run.
+
+## Browser coverage after the opening sequence (2026-10-08)
+
+Recorded Werewolf cursors and player scrub positions are different coordinates. The opening adds House, title, one stop per cast member, and door stops before the recorded moments. Browser helpers must include that offset when seeking and checking the slider range. A deep link into a later window has no opening until window 1 is loaded, so the helper checks the windows actually requested by that viewer session. Do not derive the offset from the slider's current maximum: that would hide an incorrect range.
+
+Tests of recorded gameplay should explicitly skip the opening instead of waiting for it to finish; its duration grows with the cast. Opening coverage separately checks Mystery role suppression, Omniscient role labels, paused title/cast/door stops, skipping, and Previous returning from the first recorded moment to the door. Delayed-seek tests must keep their requests in recorded play rather than accidentally seeking back into the opening and mistaking the intentional stage switch for a remount regression.
+
+Producer fixtures must select the intended scene preview. The first expandable control can belong to a pack scene with no published panels; it is not necessarily the fixture's village scene.

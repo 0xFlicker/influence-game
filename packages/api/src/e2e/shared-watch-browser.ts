@@ -1,15 +1,33 @@
 import {expect} from "bun:test";
 import type {Page} from "puppeteer";
 import type {WerewolfPresentation} from "@influence/engine/werewolf/presentation";
+/** Recorded cursors exclude the House, title, cast and door opening stops. */
+async function watchStops(page: Page) {
+ const urls = await page.evaluate(() => performance.getEntriesByType("resource").map(entry => entry.name).filter(url => new URL(url).pathname.endsWith("/watch")));
+ const watchUrl = urls.at(-1);
+ if (!watchUrl) throw new Error("Replay has not loaded a watch window");
+ const response = await fetch(watchUrl);
+ if (!response.ok) throw new Error(`Watch window failed: ${response.status}`);
+ const window = await response.json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+ const stops = window.playback.flatMap(entry => Array.from({length: entry.steps}, (_, step) => ({cursor: entry.cursor, step})));
+ // A later-moment deep link has no opening until the first window is loaded.
+ const openingCount = urls.some(url => Number(new URL(url).searchParams.get("fromCursor") ?? 1) === 1) ? window.players.length + 3 : 0;
+ await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.max) === ${openingCount + stops.length}`);
+ return {stops, openingCount};
+}
 export async function seekWatch(page:Page,cursor:number,step=0){
- const watchUrl=await page.evaluate("performance.getEntriesByType('resource').map(e=>e.name).findLast(url=>url.includes('/watch?'))") as string;
- const window=await(await fetch(watchUrl)).json() as {playback:Array<{cursor:number;steps:number}>};
- const stops=window.playback.flatMap(entry=>Array.from({length:entry.steps},(_,step)=>({cursor:entry.cursor,step})));
- const position=stops.findIndex(stop=>stop.cursor>=cursor && (stop.cursor!==cursor || stop.step===step))+1;
- if(position<1)throw new Error(`No playback stop for ${cursor}:${step}`);
- await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]')?.max) === ${stops.length}`);
+ const {stops, openingCount} = await watchStops(page);
+ const index = stops.findIndex(stop=>stop.cursor>=cursor && (stop.cursor!==cursor || stop.step===step));
+ if(index<0)throw new Error(`No playback stop for ${cursor}:${step}`);
+ const position = openingCount + index + 1;
  await page.evaluate(`(() => {const input=document.querySelector('input[aria-label="Replay position"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(String(position))});input.dispatchEvent(new Event("input",{bubbles:true}));input.dispatchEvent(new Event("change",{bubbles:true}));})()`);
  await page.waitForFunction(`Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')) >= ${cursor} && document.querySelector('input[aria-label="Replay position"]')?.value === "${position}" && !Array.from(document.querySelectorAll('[role="status"]')).some(node => node.textContent === "Preparing…")`);
+}
+/** Enter recorded play deliberately; do not wait for a cast-length-dependent opening. */
+export async function skipWerewolfOpening(page: Page) {
+ await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Skip opening')");
+ await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening').click()");
+ await page.waitForSelector('[data-werewolf-stage][data-cursor]');
 }
 /** Playback now opens running; manual-control proofs explicitly pause first. */
 export async function pauseWerewolf(page: Page) {
@@ -27,7 +45,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  // This manual-control scenario starts from a known preference; persistence has its own proof.
  await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
  await page.waitForSelector('a[href$="/replay?audience=mystery"]'); await page.click('a[href$="/replay?audience=mystery"]');
- await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);await watchText(page,"Cross-examine this game with your AI.");
+ await skipWerewolfOpening(page);await pauseWerewolf(page);await watchText(page,"Cross-examine this game with your AI.");
  expect(await page.$('select[aria-label="Spectator mode"]')).toBeNull();
  await page.click('button[aria-label="Player settings"]');await watchText(page,"Viewing mode: Mystery");await page.click('button[aria-label="Close settings"]');
  expect(await page.$$('a[href="/get-mcp"]')).toHaveLength(1);expect(await page.$$('[data-watch-context]')).toHaveLength(1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
@@ -62,7 +80,7 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')")).toBe(true);
  await seekWatch(page,mystery.latestCursor);await watchText(page,"Game complete");await seekWatch(page,1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(first);
- await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
+ await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await skipWerewolfOpening(page);await pauseWerewolf(page);await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
  await page.evaluate("Array.from(document.querySelectorAll('[role=\"tab\"]')).find(e=>e.textContent==='Decisions')?.click()");
  await page.waitForSelector('[aria-label="Player decisions"]');
  const omni=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
