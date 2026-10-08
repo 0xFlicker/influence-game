@@ -245,7 +245,7 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false, collection, includeWerewolf = false }: GamesBrowserProps) {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [werewolfGames, setWerewolfGames] = useState<WerewolfGameSummary[]>([]);
@@ -299,7 +299,7 @@ export function GamesBrowser({ onJoin, compact = false, collection, includeWerew
   }, [includeWerewolf]);
 
   const canFill = hasPermission("fill_game");
-  const canStart = hasPermission("start_game");
+  const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
   const canStop = hasPermission("stop_game");
   const canHide = hasPermission("hide_game");
 

@@ -10,7 +10,7 @@ import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
-  { action: "review"; review: VisualShotReview } | { action: "regenerate"; regenerateForms?: boolean } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
+  { action: "review"; review: VisualShotReview } | { action: "regenerate"; regenerateForms?: boolean; acknowledgeUncertainAttempts?: string[] } | { action: "harmonize" | "verify"; sourceVersionId: string } | { action: "continue"; sourceJobId?: string } |
   { action: "publish"; versionId: string; expectedPublication: number; audience?: "public" | "private" }
 );
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
@@ -112,7 +112,25 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         const uncertain = await tx.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)
           .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
           .where(and(eq(schema.visualRenderOperations.sceneId, scene.id), sql`${schema.visualRenderAttempts.reconciliation} IS NULL AND (${schema.visualRenderAttempts.receipt} IS NULL OR ${schema.visualRenderAttempts.receipt}->>'chargeUncertain' = 'true')`));
-        if (uncertain.length) return reject("needs_reconciliation", `Reconcile ${uncertain.length} uncertain paid attempt(s) before requesting another render`);
+        const acknowledged = input.action === "regenerate" && input.acknowledgeUncertainAttempts !== undefined ? input.acknowledgeUncertainAttempts : [];
+        if (!Array.isArray(acknowledged) || acknowledged.length > 100 || acknowledged.some(id => typeof id !== "string")
+          || new Set(acknowledged).size !== acknowledged.length || acknowledged.some(id => !uncertain.some(attempt => attempt.id === id)))
+          return reject("invalid_attempt_acknowledgement", "Refresh the scene before acknowledging its uncertain requests");
+        // A fresh render can be explicitly authorized without claiming the old
+        // provider bill is settled. The accepted request is the durable receipt.
+        if (uncertain.length) {
+          if (input.action !== "regenerate") return reject("needs_reconciliation", "Reconcile uncertain requests before continuing the old repair");
+          if (scene.status === "preparing" && execution?.status === "in_progress")
+            return reject("already_pending", "The original scene is still rendering. Wait before regenerating.");
+          const acknowledgements = await tx.select({input: schema.visualMediaRequests.input, receipt: schema.visualMediaRequests.receipt})
+            .from(schema.visualMediaRequests).where(and(eq(schema.visualMediaRequests.gameId, gameId),
+              sql`${schema.visualMediaRequests.input}->>'sceneId' = ${scene.id} AND ${schema.visualMediaRequests.input}->>'action' = 'regenerate'`));
+          const authorized = new Set(acknowledgements.filter(row => row.receipt.accepted)
+            .flatMap(row => Array.isArray(row.input.acknowledgeUncertainAttempts) ? row.input.acknowledgeUncertainAttempts as string[] : []));
+          const remaining = uncertain.filter(attempt => !authorized.has(attempt.id));
+          if (remaining.some(attempt => !acknowledged.includes(attempt.id)))
+            return reject("needs_reconciliation", `Previous render cost is uncertain. Confirm Regenerate scene to authorize a fresh render, or reconcile ${remaining.length} provider request(s).`);
+        }
         let renderContext = { style: VISUAL_HOUSE_STYLE, roomName: VISUAL_ROOMS[scene.roomId].name, roomDirection: VISUAL_ROOMS[scene.roomId].direction };
         let plan = regeneratedPlan ?? scene.plan, sourceImageId: string | null = null, sourceVersionId: string | null = null, reusePrefix: string | null = null;
         if (input.action === "harmonize") {

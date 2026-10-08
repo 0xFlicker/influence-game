@@ -182,3 +182,32 @@ test("harmonization binds the selected panels and deduplicates clicks without pu
   }
   expect(writes).toHaveLength(1);
 });
+
+test("regeneration acknowledges uncertain costs only after explicit confirmation; cancellation sends nothing", async () => {
+  const writes: Record<string, unknown>[] = [];
+  respond(async (_, init) => { writes.push(JSON.parse(String(init?.body))); return Response.json({ accepted: true, code: "queued", message: "Queued", jobId: "new-job" }); });
+  const attempt: MediaAttempt = { id: "old-attempt", sceneId: "scene", operationKey: "original-composition", status: "needs_reconciliation", costMicrousd: null, receipt: null, reconciliation: null };
+  const mounted = render(<SceneRepairPanel {...props({...empty(),jobs:[job("ready")]})} attempts={[attempt]} />);
+  fireEvent.click(mounted.getByRole("button", { name: "Regenerate scene" }));
+  expect(mounted.getByRole("dialog", { name: "Regenerate this scene?" }).textContent).toContain("may already have been charged");
+  expect(writes).toHaveLength(0);
+  fireEvent.click(mounted.getByRole("button", { name: "Cancel" }));
+  expect(writes).toHaveLength(0);
+  fireEvent.click(mounted.getByRole("button", { name: "Regenerate scene" }));
+  const dialog = mounted.getByRole("dialog");
+  fireEvent.click(dialog.querySelectorAll("button")[1]!);
+  await waitFor(() => expect(writes).toHaveLength(1));
+  expect(writes[0]).toMatchObject({action:"regenerate",sceneId:"scene",expectedVersion:1,acknowledgeUncertainAttempts:["old-attempt"]});
+  expect(writes.some(write => write.action === "publish" || write.action === "review")).toBe(false);
+});
+
+test("a failed queued render releases controls even when its promised version was never produced", async () => {
+  respond(async () => Response.json({ accepted: true, code: "queued", message: "Queued", jobId: "job", versionId: "job", version: 1 }));
+  const mounted = render(<SceneRepairPanel {...props()} />);
+  fireEvent.click(mounted.getByText("Regenerate scene"));
+  await waitFor(() => expect(mounted.getByText(/Request accepted/)).not.toBeNull());
+  mounted.rerender(<SceneRepairPanel {...props({...empty(),jobs:[job("needs_reconciliation")]})} />);
+  expect(mounted.queryByText(/Request accepted/)).toBeNull();
+  expect((mounted.getByText("Correct images") as HTMLButtonElement).disabled).toBe(false);
+  expect((mounted.getByText("Regenerate scene") as HTMLButtonElement).disabled).toBe(false);
+});

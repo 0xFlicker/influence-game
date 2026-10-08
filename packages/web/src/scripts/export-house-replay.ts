@@ -1,7 +1,8 @@
+import { prepareReplayBundle } from "../lib/replay-export/prepare";
 import { renderReplay } from "../lib/replay-export/render";
 import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { loadReplaySource } from "../lib/replay-export/source";
 import { buildExportCues } from "../lib/replay-export/cues";
 import { compileTiming, parseTimingProfile } from "../lib/replay-export/timing";
@@ -64,7 +65,7 @@ Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
 --reduced-motion        Explicit output motion preference
 --from-cue KEY --until-cue KEY  Inclusive/exclusive range
 --inspect               Prepare the sibling .bundle and print cue IDs
---overwrite             Replace an existing output file
+--overwrite             Replace output; with a slug, freshly prepare its bundle too
 Private reads: set HOUSE_REPLAY_TOKEN in the environment. Never saved.
 Paths are relative to the invoking directory. --bundle uses frozen settings.`);
     return;
@@ -122,158 +123,157 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
         )
           throw new Error(`Asset checksum mismatch: ${asset.path}`);
     } else {
-      if (await Bun.file(join(bundleDir, "manifest.json")).exists())
-        throw new Error(
-          "Prepared bundle already exists; use --bundle or another output path",
-        );
-      const number = (name: "width" | "height" | "fps", fallback: number) =>
-        args[name] === undefined ? fallback : Number(args[name]);
-      const width = number("width", 1920),
-        height = number("height", 1080),
-        fps = number("fps", 30);
-      if (
-        ![width, height].every(
-          (value) =>
-            Number.isSafeInteger(value) &&
-            value >= 128 &&
-            value <= 7680 &&
-            value % 2 === 0,
-        ) ||
-        !Number.isSafeInteger(fps) ||
-        fps < 1 ||
-        fps > 120
-      )
-        throw new Error("Use even dimensions 128–7680 and integer FPS 1–120");
-      if (args.audience && !["mystery", "omniscient"].includes(args.audience))
-        throw new Error("Invalid audience");
-      if (
-        (args.thinking && !["on", "off"].includes(args.thinking)) ||
-        (args.music && !["on", "off"].includes(args.music))
-      )
-        throw new Error("thinking/music must be on or off");
+      manifest = await prepareReplayBundle(bundleDir, !!args.overwrite, async (preparationDir) => {
+        const number = (name: "width" | "height" | "fps", fallback: number) =>
+          args[name] === undefined ? fallback : Number(args[name]);
+        const width = number("width", 1920),
+          height = number("height", 1080),
+          fps = number("fps", 30);
+        if (
+          ![width, height].every(
+            (value) =>
+              Number.isSafeInteger(value) &&
+              value >= 128 &&
+              value <= 7680 &&
+              value % 2 === 0,
+          ) ||
+          !Number.isSafeInteger(fps) ||
+          fps < 1 ||
+          fps > 120
+        )
+          throw new Error("Use even dimensions 128–7680 and integer FPS 1–120");
+        if (args.audience && !["mystery", "omniscient"].includes(args.audience))
+          throw new Error("Invalid audience");
+        if (
+          (args.thinking && !["on", "off"].includes(args.thinking)) ||
+          (args.music && !["on", "off"].includes(args.music))
+        )
+          throw new Error("thinking/music must be on or off");
 
-      const api = new URL(args["api-base-url"] ?? "http://127.0.0.1:3000"),
-        token = process.env.HOUSE_REPLAY_TOKEN;
-      if (api.username || api.password || api.search || api.pathname !== "/")
-        throw new Error("API base must be an origin without credentials");
-      console.log("Loading completed replay…");
-      const read = async <T>(path: string): Promise<T> => {
-        const response = await fetchReplay(
-          new URL(path, api),
-          api,
-          token,
-          AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]),
-        );
-        return (await response.json()) as T;
-      };
-      const source = await loadReplaySource(read, {
-        game: positionals[0]!,
-        audience: args.audience as "mystery" | "omniscient" | undefined,
-        thinking: args.thinking === "on",
-      });
-      let cues = await buildExportCues(
-        source,
-        args.thinking === "on",
-        read,
-      );
-      const assets = new ReplayAssets(
-        bundleDir,
-        join(webRoot, "public"),
-        api,
-        abort.signal,
-        token,
-      );
-      if (args.music === "off")
-        cues = cues.map((cue) => ({ ...cue, music: null }));
-      if (args["speech-manifest"])
-        await attachSpeech(resolveInput(args["speech-manifest"]), cues, assets);
-      console.log(`Preparing media for ${cues.length} cues…`);
-      for (let index = 0; index < cues.length; index++) {
-        try {
-          cues[index] = await assets.freeze(cues[index]!);
-        } catch (error) {
-          throw new Error(
-            `Media preparation failed for cue ${cues[index]!.timing.key}: ${error instanceof Error ? error.message : "unknown asset failure"}`,
+        const api = new URL(args["api-base-url"] ?? "http://127.0.0.1:3000"),
+          token = process.env.HOUSE_REPLAY_TOKEN;
+        if (api.username || api.password || api.search || api.pathname !== "/")
+          throw new Error("API base must be an origin without credentials");
+        console.log("Loading completed replay…");
+        const read = async <T>(path: string): Promise<T> => {
+          const response = await fetchReplay(
+            new URL(path, api),
+            api,
+            token,
+            AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]),
           );
+          return (await response.json()) as T;
+        };
+        const source = await loadReplaySource(read, {
+          game: positionals[0]!,
+          audience: args.audience as "mystery" | "omniscient" | undefined,
+          thinking: args.thinking === "on",
+        });
+        let cues = await buildExportCues(
+          source,
+          args.thinking === "on",
+          read,
+        );
+        const assets = new ReplayAssets(
+          preparationDir,
+          join(webRoot, "public"),
+          api,
+          abort.signal,
+          token,
+        );
+        if (args.music === "off")
+          cues = cues.map((cue) => ({ ...cue, music: null }));
+        if (args["speech-manifest"])
+          await attachSpeech(resolveInput(args["speech-manifest"]), cues, assets);
+        console.log(`Preparing media for ${cues.length} cues…`);
+        for (let index = 0; index < cues.length; index++) {
+          try {
+            cues[index] = await assets.freeze(cues[index]!);
+          } catch (error) {
+            throw new Error(
+              `Media preparation failed for cue ${cues[index]!.timing.key}: ${error instanceof Error ? error.message : "unknown asset failure"}`,
+            );
+          }
         }
-      }
-      const profile = parseTimingProfile(
-        args.timing
-          ? JSON.parse(await readFile(resolveInput(args.timing), "utf8"))
-          : {},
-      );
-      const timeline = compileTiming(
-        cues.map((cue) => cue.timing),
-        profile,
-        fps,
-      );
-      const audio = compileAudio(
-        cues,
-        timeline,
-        assets.table,
-        profile,
-        args.music !== "off",
-        args.volume === undefined ? 0.3 : Number(args.volume),
-      );
-      const game =
-        source.kind === "werewolf"
-          ? {
-              id: source.windows[0]!.gameId,
-              slug: source.windows[0]!.slug,
-              kind: source.kind,
-              audience: source.windows[0]!.audience,
-            }
-          : { id: source.game.id, slug: source.game.slug, kind: source.kind };
-      const staticFiles = await snapshotStageArt(
-        join(webRoot, "public"),
-        bundleDir,
-      );
-      const boundary =
-        source.kind === "werewolf"
-          ? {
-              cursor: source.windows[0]!.latestCursor,
-              publicationCutoff: source.windows[0]!.publicationCutoff,
-            }
-          : {
-              eventSequence: source.frames.at(-1)?.sequence,
-              transcriptCount: source.messages.length,
-              publications: source.visual.publicationSnapshot,
-            };
-      manifest = {
-        schema: "house.replay-export",
-        version: 1,
-        game,
-        width,
-        height,
-        fps,
-        reducedMotion: Boolean(args["reduced-motion"]),
-        thinking: args.thinking === "on",
-        profile,
-        cues,
-        timeline,
-        assets: assets.table,
-        staticFiles,
-        boundary,
-        audio,
-        range: {
-          fromFrame: 0,
-          untilFrame: Math.ceil((audio.durationMs * fps) / 1000),
-        },
-        revision: (
-          await runProcess("git", ["-C", repoRoot, "rev-parse", "HEAD"])
-        ).trim(),
-        dirty: Boolean(
-          (
-            await runProcess("git", ["-C", repoRoot, "status", "--porcelain"])
+        const profile = parseTimingProfile(
+          args.timing
+            ? JSON.parse(await readFile(resolveInput(args.timing), "utf8"))
+            : {},
+        );
+        const timeline = compileTiming(
+          cues.map((cue) => cue.timing),
+          profile,
+          fps,
+        );
+        const audio = compileAudio(
+          cues,
+          timeline,
+          assets.table,
+          profile,
+          args.music !== "off",
+          args.volume === undefined ? 0.3 : Number(args.volume),
+        );
+        const game =
+          source.kind === "werewolf"
+            ? {
+                id: source.windows[0]!.gameId,
+                slug: source.windows[0]!.slug,
+                kind: source.kind,
+                audience: source.windows[0]!.audience,
+              }
+            : { id: source.game.id, slug: source.game.slug, kind: source.kind };
+        const staticFiles = await snapshotStageArt(
+          join(webRoot, "public"),
+          preparationDir,
+        );
+        const boundary =
+          source.kind === "werewolf"
+            ? {
+                cursor: source.windows[0]!.latestCursor,
+                publicationCutoff: source.windows[0]!.publicationCutoff,
+              }
+            : {
+                eventSequence: source.frames.at(-1)?.sequence,
+                transcriptCount: source.messages.length,
+                publications: source.visual.publicationSnapshot,
+              };
+        const prepared: ReplayManifest = {
+          schema: "house.replay-export",
+          version: 1,
+          game,
+          width,
+          height,
+          fps,
+          reducedMotion: Boolean(args["reduced-motion"]),
+          thinking: args.thinking === "on",
+          profile,
+          cues,
+          timeline,
+          assets: assets.table,
+          staticFiles,
+          boundary,
+          audio,
+          range: {
+            fromFrame: 0,
+            untilFrame: Math.ceil((audio.durationMs * fps) / 1000),
+          },
+          revision: (
+            await runProcess("git", ["-C", repoRoot, "rev-parse", "HEAD"])
           ).trim(),
-        ),
-      };
-      validateManifest(manifest);
-      await mkdir(bundleDir, { recursive: true });
-      await writeFile(
-        join(bundleDir, "manifest.json"),
-        JSON.stringify(manifest, null, 2),
-      );
+          dirty: Boolean(
+            (
+              await runProcess("git", ["-C", repoRoot, "status", "--porcelain"])
+            ).trim(),
+          ),
+        };
+        validateManifest(prepared);
+        abort.signal.throwIfAborted();
+        await writeFile(
+          join(preparationDir, "manifest.json"),
+          JSON.stringify(prepared, null, 2),
+        );
+        return prepared;
+      });
     }
     const find = (key: string) => {
       const cue = manifest.timeline.find((cue) => cue.key === key);

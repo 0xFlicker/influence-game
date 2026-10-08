@@ -88,7 +88,7 @@ async function setupApp() {
       },
     ]);
 
-    await grantTestAuthority(db, ADMIN_USER_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"]);
+    await grantTestAuthority(db, ADMIN_USER_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"], "admin");
   const adminToken = await createSessionToken(ADMIN_USER_ID, {
     roles: ["sysop"],
     permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"],
@@ -130,8 +130,9 @@ function authPost(token: string): RequestInit {
 // Tests that deliberately assemble several seats for one owner must grant an
 // actual current role, independently of the signed session's role claims.
 async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<string> {
-  const roleId = randomUUID();
-  await db.insert(schema.roles).values({ id: roleId, name: roleName });
+  const [existing] = await db.select().from(schema.roles).where(eq(schema.roles.name, roleName));
+  const roleId = existing?.id ?? randomUUID();
+  if (!existing) await db.insert(schema.roles).values({ id: roleId, name: roleName });
   await db.insert(schema.userRoles).values({
     userId: testUserIdForWallet("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     roleId,

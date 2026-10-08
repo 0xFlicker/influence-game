@@ -31,6 +31,7 @@ import {
   requireAuth,
   optionalAuth,
   requirePermission,
+  requireRole,
   type AuthEnv,
 } from "../middleware/auth.js";
 import {
@@ -671,7 +672,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/start — start a game (min players met)
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), async (c) => {
+  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), requireRole("gamer", "admin", "sysop"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = (await db

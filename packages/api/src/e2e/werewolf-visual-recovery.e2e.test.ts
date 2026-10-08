@@ -4,7 +4,7 @@ import type { Browser, Page } from "puppeteer";
 import sharp from "sharp";
 import { advanceWerewolf, replayWerewolf, nextWerewolfStep, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema } from "../db/index.js";
-import { startWerewolfLobby } from "../services/werewolf-lobbies.js";
+import { reserveVisualRender, visualImageJournal } from "../services/visual-render-journal.js";
 import { claimWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { createWerewolfVisualPreparation } from "../services/werewolf-visual-runtime.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
@@ -71,7 +71,15 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
     const slug = new URL(page.url()).pathname.split('/')[2]!;
     const db = database.db, [game] = await db.select().from(schema.games).where(eq(schema.games.slug, slug));
     expect(JSON.parse(game!.config).visualFailurePolicy).toBe("require_visuals");
-    await startWerewolfLobby(db, game!.id);
+    await click(page, "Start Werewolf");
+    await text(page, "Fill the village and start?");
+    await click(page, "Cancel");
+    expect((await db.select().from(schema.games).where(eq(schema.games.id, game!.id)))[0]?.status).toBe("waiting");
+    await click(page, "Start Werewolf");
+    await page.waitForSelector('dialog[open]');
+    const started = page.waitForResponse(response => response.url().endsWith(`/api/werewolf/${game!.id}/start`) && response.request().method() === "POST");
+    await page.evaluate("document.querySelector('dialog[open] button:last-child').click()");
+    expect((await started).status()).toBe(200);
     const claim = await claimWerewolfGame(db, game!.id);
     if (!claim.ok)
       throw Error(claim.error);
@@ -107,6 +115,20 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await text(page, "Review and publish the required scene");
       await click(page, "Render missing image");
       await text(page, "queued for rendering");
+      const interrupted = await claimVisualMediaJob(db, 'browser-interrupted-renderer');
+      if (!interrupted) throw Error('Missing first job');
+      const operation = await reserveVisualRender(db, game!.id, `media:${interrupted.id}:composition`, { prompt: "Interrupted fixture", width: 640, height: 360, references: [] }, interrupted.sceneId ?? undefined, interrupted.id);
+      await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture-no-provider" });
+      await db.update(schema.visualRepairJobs).set({status: "needs_reconciliation", leaseUntil: null, finishedAt: new Date().toISOString()}).where(eq(schema.visualRepairJobs.id, interrupted.id));
+      await click(page, "Refresh scenes");
+      await text(page, "Needs reconciliation:");
+      await click(page, "Correct images");
+      await text(page, "Reject and regenerate");
+      await click(page, "Reject and regenerate");
+      await text(page, "may already have been charged");
+      await page.evaluate("Array.from(document.querySelectorAll('dialog[open]')).at(-1).querySelector('button:last-child').click()");
+      await text(page, "Version 2 queued for rendering");
+      expect((await readVisualMedia(db, game!.id)).publications).toHaveLength(0);
       const job = await claimVisualMediaJob(db, 'browser-fake-renderer');
       if (!job)
         throw Error('Missing repair job');

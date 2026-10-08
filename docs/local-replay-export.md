@@ -30,9 +30,16 @@ bun run replay:export -- --bundle ./exports/hazy-ruby-sand.bundle \
 
 Inspection downloads and checks selected media, saves the logical timeline, and lists stable cue keys, canonical source positions, durations and recording identities. The start key is inclusive; the end key is exclusive. Compile the whole replay before selecting a range so entering camera state and music offsets remain the same as the full traversal. A cursor and a playable subcue are different: each ballot and its final tally have separate keys.
 
-A sibling `.bundle` contains the permitted cue payloads, timing, hashed media and built-in stage artwork. The renderer performs a font/image/layout prepass and saves measured speech/thinking typography before encoding. `--bundle` verifies hashes and uses local assets; it does not read the API. Game-loading options cannot be combined with `--bundle`. Choose a new output path to prepare different settings. A prepared bundle can include private Omniscient evidence; keep it local unless deliberately sharing it.
+A sibling `.bundle` contains the permitted cue payloads, timing, hashed media and built-in stage artwork. The renderer performs a font/image/layout prepass and saves measured speech/thinking typography before encoding. `--bundle` verifies hashes and uses local assets; it does not read the API. Game-loading options cannot be combined with `--bundle`. To pick up current presentation code or change settings, supply the game slug with `--overwrite` (or choose a new output path). `--bundle --overwrite` reuses the saved presentation; it does not refresh old cues or timing. A prepared bundle can include private Omniscient evidence; keep it local unless deliberately sharing it.
 
-Existing output files are refused unless `--overwrite` is supplied. Encoding writes to a temporary sibling file; the MP4 becomes visible only after ffprobe verifies its codec, dimensions, duration and expected audio track. A `.mp4.receipt.json` records hashes, revision/dirty marker, settings, duration, size, tool versions and render time. Interrupting the command cleans up rendering processes and temporary output while retaining the prepared bundle.
+Existing output files and prepared bundles are refused unless `--overwrite` is supplied. With a game slug, `--overwrite` downloads current game data and media and rebuilds the sibling `.bundle`, including the opening, thinking camera timing and fresh layout measurements. Preparation happens in a temporary directory; failures preserve the previous bundle and movie. With `--bundle`, `--overwrite` only replaces the output movie. Encoding writes to a temporary sibling file; the MP4 becomes visible only after ffprobe verifies its codec, dimensions, duration and expected audio track. A `.mp4.receipt.json` records hashes, revision/dirty marker, settings, duration, size, tool versions and render time. Interrupting the command cleans up rendering processes and temporary output while retaining the prepared bundle.
+
+To refresh an older export that predates the opening or thinking camera:
+
+```sh
+bun run replay:export -- hazy-ruby-sand --audience omniscient --thinking on \
+  --output ~/Movies/hazy-ruby-sand-omniscient-v2.mp4 --overwrite
+```
 
 ## Presentation timing
 
@@ -86,7 +93,7 @@ Interactive music intentionally retains position on same-section seeks and plays
 
 The authored Werewolf opening is the exception: **Lantern Shadows** and its clip effects are locked to presentation time in both surfaces, including browser speed and seeks. The opening fades out before existing spoken introductions, whose **Lantern to Fang** score is unchanged. Picture videos are muted; extracted effects play once through the audio schedule. `--music off` disables the opening score and effects as well as gameplay music. Reduced motion retains timing and uses posters for its videos.
 
-No new voice generation, synchronized browser speech controls, dramatic thinking camera mode, publishing workflow or renderer worker is included. Existing format rules and the frozen classic presentation parser remain authoritative; transcript prose is never used to infer new game facts.
+No new voice generation, synchronized browser speech controls, publishing workflow or renderer worker is included. Existing format rules and the frozen classic presentation parser remain authoritative; transcript prose is never used to infer new game facts.
 
 ## Local verification
 
@@ -97,7 +104,7 @@ bun run src/scripts/verify-house-replay-export.ts \
   ../../exports/hazy-ruby-sand.bundle ../../.renders/replay-frame-proof
 ```
 
-This opt-in check renders representative frames in forward and reverse order, compares contiguous-frame output, and repeats a frame in a fresh Chromium process. It requires only the frozen local bundle. It writes PNG samples and `proof.json`; it makes no provider or API calls.
+This opt-in check renders representative frames, including portrait/scene thinking entrance, reading and return, in forward and reverse order, compares contiguous-frame output, and repeats a frame in a fresh Chromium process. It requires only the frozen local bundle. It writes PNG samples and `proof.json`; it makes no provider or API calls.
 
 Implementation validation on 2026-10-07:
 
@@ -115,3 +122,5 @@ Implementation validation on 2026-10-07:
 | Recorded-audio proof | 16s and 3s known signals completed; encoded offsets within 60ms including AAC delay and analysis window; excerpt mix/source correlation above 0.999 with an 8-sample codec offset |
 
 The full-game runs establish complete traversal at a smaller verification resolution. Later targeted checks cover frozen layout, transformations, camera motion, nominee selection, winner padding and range audio. They do not claim a full 1080p game was manually watched end to end. The attachment proof uses known test tones, not synthesized voices or a subjective assessment of voice/music quality. Real voice recordings and final viewing/listening remain operator acceptance work.
+
+Refresh validation on 2026-10-08: prepared and then overwrote a fresh `hazy-ruby-sand` Omniscient bundle (117 cues, 9 opening cues, 59 thinking intervals). Twenty rendered samples—including solo and scene thinking focus—matched reverse-order output, three contiguous ranges and a fresh browser. A 45.3-second 640×360/12fps H.264/AAC excerpt includes the opening and first thinking/speech sequence; a decoded MP4 frame confirms the head focus and vignette. The existing full-length movie was left untouched.
