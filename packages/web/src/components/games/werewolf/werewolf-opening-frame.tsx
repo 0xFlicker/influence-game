@@ -35,11 +35,12 @@ export function WerewolfOpeningFrame({cue, elapsedMs, reduced = false, playing =
   const frame = sampleOpening(cue, elapsedMs, reduced);
   const [failedImage, setFailedImage] = useState<string | null>(null);
   const media = {src: shot.videoUrl ?? "", poster: shot.backgroundUrl, timeMs: frame.videoMs, playing, speed};
+  const backgroundTransform = `translate(${frame.panX}%, ${frame.panY}%) scale(${frame.scale})`;
   return <div className={styles.frame} data-werewolf-opening={shot.shot} data-opening-key={cue.key}>
     <div className={styles.picture} style={{opacity: frame.opacity}}>
       {shot.videoUrl && !reduced ? video ? video(media) : <OpeningBrowserVideo key={shot.videoUrl} {...media} /> :
-        <img className={styles.backdrop} src={shot.backgroundUrl} alt="" style={{transform: `translate(${frame.panX}%, ${frame.panY}%) scale(${frame.scale})`}} />}
-      {shot.transitionUrl && <img className={styles.backdrop} src={shot.transitionUrl} alt="" style={{opacity:frame.transitionOpacity}} />}
+        <img className={styles.backdrop} src={shot.backgroundUrl} alt="" style={{transform:backgroundTransform}} />}
+      {shot.transitionUrl && <img className={styles.backdrop} src={shot.transitionUrl} alt="" style={{opacity:frame.transitionOpacity, transform:backgroundTransform}} />}
       {shot.shot !== "door" && <div className={styles.shade} />}
       {shot.shot === "house" && <div className={styles.brand} style={{opacity:frame.textOpacity}}>
         <img src={shot.logoUrl} alt="" className={styles.logo} />

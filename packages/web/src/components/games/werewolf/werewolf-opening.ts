@@ -3,6 +3,8 @@ import type {WatchPolicy} from "../../watch/watch-director";
 import {werewolfWatchPolicy, type WerewolfWatchCue} from "./werewolf-watch-model";
 
 const root = "/visual/werewolf/opening-v1";
+const HOUSE_MS = 5000, TITLE_MS = 3000, CAST_MS = 2500, DOOR_MS = 5300;
+const TITLE_DISSOLVE_MS = 900;
 export const OPENING_ASSETS = {
   logo: "/logo.png", alley: `${root}/alley.jpg`, music: `${root}/lantern-shadows.mp3`,
   lantern: `${root}/lantern.mp4`, lanternPoster: `${root}/lantern.jpg`, lanternEffects: `${root}/lantern-effects.mp3`,
@@ -32,9 +34,9 @@ export function werewolfOpening(window: WerewolfWatchWindow, title?: string): We
       ...(role ? {role} : {})};
   });
   const shots: Array<{duration: number; shot: WerewolfOpeningCue["opening"]["shot"]; player?: OpeningPlayer}> = [
-    {shot: "house", duration: 5000}, {shot: "title", duration: 3000},
-    ...players.map(player => ({shot: "cast" as const, duration: 2500, player})),
-    {shot: "door", duration: 5300},
+    {shot: "house", duration: HOUSE_MS}, {shot: "title", duration: TITLE_MS},
+    ...players.map(player => ({shot: "cast" as const, duration: CAST_MS, player})),
+    {shot: "door", duration: DOOR_MS},
   ];
   const totalMs = shots.reduce((sum, shot) => sum + shot.duration, 0);
   let startMs = 0;
@@ -49,20 +51,24 @@ export function werewolfOpening(window: WerewolfWatchWindow, title?: string): We
   });
 }
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
+const ease = (n: number) => {const p = clamp(n); return p * p * (3 - 2 * p);};
 export function sampleOpening(cue: WerewolfOpeningCue, elapsedMs: number, reduced = false) {
   const t = Math.max(0, Math.min(cue.baseDurationMs, elapsedMs));
   const shot = cue.opening.shot;
   const exit = shot === "door" ? clamp((5000 - t) / 2000) : 1;
-  const dissolve = shot === "house" ? clamp((t - cue.baseDurationMs + 900) / 900) : 0;
-  const transitionOpacity = dissolve * dissolve * (3 - 2 * dissolve);
-  // Settle into the alley during the title, then retain that framing for the cast.
-  const alleyProgress = reduced ? 0 : shot === "title" ? t / cue.baseDurationMs : shot === "cast" ? 1 : 0;
-  const camera = alleyProgress * alleyProgress * (3 - 2 * alleyProgress);
+  const dissolve = shot === "house" ? clamp((t - cue.baseDurationMs + TITLE_DISSOLVE_MS) / TITLE_DISSOLVE_MS) : 0;
+  const transitionOpacity = ease(dissolve);
+  // One continuous pullback spans every cast cue, so larger casts move more slowly.
+  const castDuration = cue.opening.totalMs - HOUSE_MS - TITLE_MS - DOOR_MS;
+  const castElapsed = cue.opening.startMs + t - HOUSE_MS - TITLE_MS;
+  const titleProgress = (cue.opening.startMs + t - HOUSE_MS + TITLE_DISSOLVE_MS) / (TITLE_DISSOLVE_MS + TITLE_MS);
+  const camera = reduced ? 0 : shot === "house" || shot === "title" ? 0.4 + 0.6 * ease(titleProgress) :
+    shot === "cast" ? 1 - ease(castElapsed / castDuration) : 0;
   return {timeMs: cue.opening.startMs + t, videoMs: Math.min(t, 5000),
     opacity: shot === "house" ? clamp(t / 700) : exit,
     transitionOpacity,
     textOpacity: clamp(t / 400) * (1 - transitionOpacity),
-    scale: 1 + camera * 0.12, panX: -camera * 1.5, panY: -camera * 0.5,
+    scale: 1 + camera * 0.25, panX: -camera * 1.5, panY: -camera * 0.5,
     musicGain: clamp((cue.opening.startMs + t) / 700) * clamp((cue.opening.totalMs - 300 - cue.opening.startMs - t) / 2000),
     effectGain: shot === "house" ? 0.7 * clamp(t / 250) * clamp((5000 - t) / 500) : shot === "door" ? 0.4 * clamp(t / 150) * clamp((5000 - t) / 400) : 0};
 }
