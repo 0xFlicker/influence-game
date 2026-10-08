@@ -143,12 +143,13 @@ test.describe("local public player identity", () => {
       await context.addInitScript(token => localStorage.setItem("influence_session", token), fixture.completeJwt);
       const page = await context.newPage();
       let permissions: string[] = [];
+      let roles = ["player"];
       let full = false;
       let fail = true;
       const actions: string[] = [];
       const player: GamePlayer = { id: "cast", name: "Mira", persona: "Social", personaKey: "social", status: "alive", shielded: false };
       try {
-        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions } }); });
+        await page.route("**/api/auth/me", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), permissions, roles } }); });
         await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
         await page.route("**/api/game-entries/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", gameKind: "influence" } }));
         await page.route("**/api/games/control-fixture", route => route.fulfill({ json: { id: "control-fixture", slug: "control-fixture", status: "waiting", playerCount: 1, players: full ? [player] : [], currentRound: 0, maxRounds: 10, currentPhase: "INIT", modelLabel: "Standard", visibility: "public", createdAt: "2026-09-26" } }));
@@ -159,6 +160,9 @@ test.describe("local public player identity", () => {
         permissions = ["start_game", "stop_game", "hide_game"];
         await page.reload({ waitUntil: "networkidle" });
         const start = page.getByRole("button", { name: "Start", exact: true });
+        await expect(start).toHaveCount(0);
+        roles = ["gamer"];
+        await page.reload({ waitUntil: "networkidle" });
         await expect(start).toBeDisabled();
         full = true;
         await page.reload({ waitUntil: "networkidle" });
