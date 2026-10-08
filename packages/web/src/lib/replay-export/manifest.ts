@@ -96,7 +96,7 @@ export function validateManifest(value: ReplayManifest): void {
       throw new Error("Invalid or discontinuous bundle timeline");
     keys.add(time.key);
     boundary = time.endMs;
-    if (cue.picture.kind !== value.game.kind)
+    if (cue.picture.kind !== value.game.kind && !(value.game.kind === "werewolf" && cue.picture.kind === "werewolf-opening"))
       throw new Error("Mixed game kinds in bundle");
     if (value.game.audience === "mystery" && cue.picture.kind === "werewolf") {
       const moment = cue.picture.cue.moment;

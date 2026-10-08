@@ -15,6 +15,8 @@ The API must run the current code: Influence transcript and canonical frame read
 
 Defaults are 1920×1080, 30fps, normal motion, thinking off, and music at 30% when a score exists. Werewolf defaults to Mystery; thinking requires explicit Omniscient. Influence uses its existing spectator projection and rejects `--audience`. Use `--thinking on --thinking-order speech-first` or `thinking-first`, `--music off`, `--volume 0.2`, `--reduced-motion`, and explicit `--width`, `--height`, `--fps` as needed. Dimensions must be even, 128–7680; fps must be an integer, 1–120.
 
+Werewolf exports include the same opening as the webpage player: The House, the episode title, the initial cast, and the closing door. Mystery has no role labels; Omniscient uses the permitted initial roles. The opening freezes actual episode metadata (or “Werewolf” before naming), video, posters, music and extracted sound effects into the bundle. Its `opening` cue keys are presentation identities, not canonical event cursors. Exporting a range beginning at a canonical game cue omits the opening while preserving the full timeline's audio offsets.
+
 ## Inspect and select a range
 
 ```sh
@@ -51,7 +53,7 @@ Pass `--timing ./replay-timing.json`. These settings affect recorded presentatio
 }
 ```
 
-Omitted values retain the existing game timing. Rates above 1 shorten unvoiced reading or thinking; `motionScale` above 1 lengthens motion. `establishingHoldMs` controls the opening hold separately. Unknown fields, invalid numbers and unknown override keys fail. Timing uses milliseconds, with output frame boundaries derived from absolute times rather than accumulated rounded cue lengths.
+Omitted values retain the existing game timing. Rates above 1 shorten unvoiced reading or thinking; `motionScale` above 1 lengthens motion. `establishingHoldMs` controls the establishing interval before a spoken contribution. The Werewolf opening's authored shot durations stay fixed so video and recorded effects remain synchronized; these reading/motion settings do not stretch it. Unknown fields, invalid numbers and unknown override keys fail. Timing uses milliseconds, with output frame boundaries derived from absolute times rather than accumulated rounded cue lengths.
 
 `finish-score` holds the final result until its victory music finishes naturally. This can add several minutes. Unscored or muted endings retain the normal result hold. Alternatively use `"ending": {"holdMs": 5000}` for an additional fixed result hold. Range exports that stop before the result do not acquire the ending hold.
 
@@ -81,6 +83,8 @@ Audio placement is quantized to output frames; source samples are not stretched.
 The browser and exporter share cue adapters, thought insertion, content components, camera interpolation, vote/role/transformation treatments and typography. Export supplies an explicit predecessor and prepared media instead of relying on prior React renders, browser preferences, asynchronous thought reads or loading timeouts. Built-in portrait-room motion uses the presentation clock in both surfaces.
 
 Interactive music intentionally retains position on same-section seeks and plays at 1× when browser replay speed changes. Export instead compiles an uninterrupted soundtrack with explicit repeats, fades and range offsets. This is deliberate; a scrubbed browser session is not the reference soundtrack.
+
+The authored Werewolf opening is the exception: **Lantern Shadows** and its clip effects are locked to presentation time in both surfaces, including browser speed and seeks. The opening fades out before existing spoken introductions, whose **Lantern to Fang** score is unchanged. Picture videos are muted; extracted effects play once through the audio schedule. `--music off` disables the opening score and effects as well as gameplay music. Reduced motion retains timing and uses posters for its videos.
 
 No new voice generation, synchronized browser speech controls, dramatic thinking camera mode, publishing workflow or renderer worker is included. Existing format rules and the frozen classic presentation parser remain authoritative; transcript prose is never used to infer new game facts.
 

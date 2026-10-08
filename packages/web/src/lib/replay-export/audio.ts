@@ -4,7 +4,7 @@ import type { CompiledTiming, TimingProfile } from "./timing";
 
 export interface AudioClip {
   asset: string;
-  purpose: "music" | "speech";
+  purpose: "music" | "speech" | "effects";
   startMs: number;
   endMs: number;
   offsetMs: number;
@@ -18,7 +18,7 @@ export interface AudioSchedule {
 }
 export const MUSIC_FADE_MS = 700;
 export function compileAudio(
-  cues: readonly Pick<ExportCue, "timing" | "music">[],
+  cues: readonly (Pick<ExportCue, "timing" | "music"> & Partial<Pick<ExportCue, "picture">>)[],
   timeline: CompiledTiming[],
   assets: Record<string, CachedAsset>,
   profile: TimingProfile,
@@ -62,6 +62,25 @@ export function compileAudio(
         ]
       : [],
   );
+  if (music) {
+    const first = cues.findIndex(c => c.picture?.kind === "werewolf-opening");
+    const last = cues.findLastIndex(c => c.picture?.kind === "werewolf-opening");
+    const picture = cues[first]?.picture;
+    if (picture?.kind === "werewolf-opening") {
+      const asset = picture.cue.opening.musicUrl;
+      const startMs = timeline[first]!.startMs, endMs = timeline[last]!.endMs - 300;
+      if (duration(asset) < endMs - startMs) throw new Error("Opening score is shorter than the opening");
+      clips.push({asset, purpose:"music", startMs, endMs, offsetMs:0, gain:volume, fadeInMs:700, fadeOutMs:2000});
+      for (let i = first; i <= last; i++) {
+        const p = cues[i]!.picture;
+        if (p?.kind !== "werewolf-opening" || !p.cue.opening.effectUrl) continue;
+        const house = p.cue.opening.shot === "house";
+        if (duration(p.cue.opening.effectUrl) < 5000) throw new Error("Opening effect is shorter than its shot");
+        clips.push({asset:p.cue.opening.effectUrl, purpose:"effects", startMs:timeline[i]!.startMs, endMs:timeline[i]!.startMs + 5000,
+          offsetMs:0, gain:volume * (house ? 0.7 : 0.4), fadeInMs:house ? 250 : 150, fadeOutMs:house ? 500 : 400});
+      }
+    }
+  }
   if (music)
     for (let i = 0; i < cues.length; ) {
       const section = cues[i]!.music;

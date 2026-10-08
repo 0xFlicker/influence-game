@@ -458,7 +458,9 @@ export class PresentationDirector<C extends WatchCue> {
     this.animation.setSpeed(this.state.speed);
   }
 
-  seek(cursor: number): void {
+  /** Explicit elapsed time is used when restarting authored media from its first frame. */
+  seek(cursor: number, elapsedMs?: number): void {
+    if (elapsedMs !== undefined && (!Number.isFinite(elapsedMs) || elapsedMs < 0)) throw new Error("Invalid seek time");
     this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
@@ -470,7 +472,7 @@ export class PresentationDirector<C extends WatchCue> {
     this.animation.complete();
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.positionWithinCue(this.thought ? 0 : this.policy.scrubAtMs?.(this.state.cues[cursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0);
+    this.positionWithinCue(elapsedMs ?? (this.thought ? 0 : this.policy.scrubAtMs?.(this.state.cues[cursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0));
   }
 
   reconnect(cues: readonly C[]): void {

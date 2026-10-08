@@ -25,6 +25,7 @@ export type ReplaySource =
     }
   | {
       kind: "werewolf";
+      title?: string;
       windows: WerewolfWatchWindow[];
       thoughts: WerewolfThinking["entries"];
     };
@@ -127,7 +128,8 @@ export async function loadReplaySource(
         ))
     )
       throw new Error("Invalid thinking snapshot");
-    return { kind: "werewolf", windows, thoughts: thoughts?.entries ?? [] };
+    const lobby = await read<{episode?: {title?: string}}>(`/api/werewolf/${id}/lobby`);
+    return { kind: "werewolf", title: lobby.episode?.title, windows, thoughts: thoughts?.entries ?? [] };
   }
   if (entry.gameKind !== "influence")
     throw new Error(`Unsupported game kind: ${entry.gameKind}`);

@@ -58,13 +58,14 @@ await withPreparedReplay(
                   ? "tally"
                   : "ballot"
                 : picture.cue.moment.entry.kind))
-          : (picture.beat?.kind ?? picture.cue.kind);
+          : picture.kind === "werewolf-opening" ? `opening-${picture.cue.opening.shot}` : (picture.beat?.kind ?? picture.cue.kind);
       const interval = manifest.timeline[index]!;
       const reading = interval.segments.find(
         (segment) => segment.kind === "reading",
       );
       const transformation =
         picture.kind === "werewolf" ? picture.cue.transformation : undefined;
+      const cameraFrame = interval.startFrame + Math.ceil(0.2 * manifest.fps) - manifest.range.fromFrame;
       const frame =
         Math.ceil(
           ((interval.startMs +
@@ -94,11 +95,12 @@ await withPreparedReplay(
           prior.picture.kind === "werewolf" &&
           prior.picture.scene?.id === picture.scene.id &&
           prior.speech?.speakerId !== cue.speech.speakerId &&
+          cameraFrame >= 0 && cameraFrame < composition.durationInFrames &&
           !selected.has("camera-pan")
         )
           selected.set(
             "camera-pan",
-            interval.startFrame + Math.ceil(0.2 * manifest.fps),
+            cameraFrame,
           );
       }
     }

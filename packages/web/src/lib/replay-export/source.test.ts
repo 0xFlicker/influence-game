@@ -41,6 +41,7 @@ test("completed canonical Werewolf windows load with audience-safe evidence", as
   const read = reader([
     { id: "export-test", slug: "export-test", gameKind: "werewolf" },
     ...windows,
+    {episode:{title:"Silence Beneath the Lanterns"}},
   ]);
   const source = await loadReplaySource(read, {
     game: "export-test",
@@ -48,6 +49,7 @@ test("completed canonical Werewolf windows load with audience-safe evidence", as
     thinkingOrder: "thinking-first",
   });
   expect(source.kind).toBe("werewolf");
+  if (source.kind === "werewolf") expect(source.title).toBe("Silence Beneath the Lanterns");
   expect(JSON.stringify(source)).not.toContain('"thinking":');
   expect(JSON.stringify(source)).not.toContain('"wolfForms":');
   expect(JSON.stringify(source)).not.toContain('"staging":');

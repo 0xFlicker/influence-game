@@ -17,7 +17,7 @@ import {replayMoment} from "./replay-moment";
 
 const ignoreReadiness = () => {};
 
-export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel, navigationRevision = 0}: {cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: PresentationDirector<WerewolfWatchCue>; holding: boolean; status?: string; contextLabel?: string; navigationRevision?: number}) {
+export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, holding, status, contextLabel, navigationRevision = 0}: {cue: WerewolfWatchCue | null; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">; holding: boolean; status?: string; contextLabel?: string; navigationRevision?: number}) {
   const moment = cue ? replayMoment({...cue.moment.snapshot, entries: [cue.moment.entry]}) : null;
   return <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-black" data-werewolf-stage data-cursor={cue?.moment.cursor} data-elapsed={Math.floor(elapsed)} onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button,a,input,select,summary")) director.manualAdvance();}}>
     <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60" data-watch-context>{cue?.nightAction ? `Night ${cue.moment.snapshot.day} · ${cue.nightAction.kind === "hunt" ? "The hunt" : cue.nightAction.kind === "protect" ? "Doctor" : "Seer"}` : contextLabel ?? moment?.title ?? "The village"}</div>
@@ -26,7 +26,7 @@ export function WerewolfWatchStage({cue, scene, elapsed, reduced, director, hold
     </div>
   </div>;
 }
-function SceneContent({cue, moment, scene, elapsed, reduced, director, navigationRevision}: {navigationRevision: number; cue: WerewolfWatchCue; moment: ReturnType<typeof replayMoment>; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: PresentationDirector<WerewolfWatchCue>}) {
+function SceneContent({cue, moment, scene, elapsed, reduced, director, navigationRevision}: {navigationRevision: number; cue: WerewolfWatchCue; moment: ReturnType<typeof replayMoment>; scene: AcceptedVisualScene | null; elapsed: number; reduced: boolean; director: Pick<PresentationDirector<WerewolfWatchCue>, "manualAdvance" | "setReady" | "getSpeechElapsedBaseMs" | "getSnapshot">}) {
   const shot = scene?.shots ? selectVisualShot(scene.shots, moment.actor?.id) : null;
   const covered = Boolean(scene && moment.actor && (shot ? shot.visibleParticipantIds.includes(moment.actor.id) : scene.anchors.some(anchor => anchor.playerId === moment.actor?.id && anchor.confidence === "clear")));
   const readinessKey = `${cue.key}:${shot?.imageUrl ?? scene?.imageUrl ?? moment.actor?.avatarUrl ?? "none"}`;

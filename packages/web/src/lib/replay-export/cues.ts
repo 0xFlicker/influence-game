@@ -1,3 +1,4 @@
+import {werewolfOpening, type WerewolfOpeningCue} from "../../components/games/werewolf/werewolf-opening";
 import {
   werewolfCues,
   werewolfWatchPolicy,
@@ -45,6 +46,7 @@ import type { TimingInput } from "./timing";
 import type { ThinkingOrder } from "../../components/watch/thinking-timing";
 
 export type ExportPicture =
+  | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | {
       kind: "werewolf";
       cue: WerewolfWatchCue;
@@ -63,6 +65,7 @@ export interface ExportCue {
   picture: ExportPicture;
   label: string;
   source:
+    | {kind: "opening"}
     | { kind: "werewolf"; cursor: number }
     | {
         kind: "influence";
@@ -90,7 +93,11 @@ export async function buildExportCues(
       {},
       ...source.windows.map((w) => w.media),
     ) as Record<string, AcceptedVisualScene>;
-    return werewolfCues(source.windows).map((cue) => {
+    const opening: ExportCue[] = source.windows[0] ? werewolfOpening(source.windows[0], source.title).map(cue => ({
+      timing:{key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null, order},
+      picture:{kind:"werewolf-opening",cue}, source:{kind:"opening"}, label:"Opening", speech:null, music:null,
+    })) : [];
+    return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
       const line = replayMoment({
         ...cue.moment.snapshot,
         entries: [cue.moment.entry],
@@ -143,7 +150,7 @@ export async function buildExportCues(
           : null,
         music: werewolfMusic(cue.moment),
       };
-    });
+    })];
   }
   const { game, messages, frames, visual } = source;
   const scenes = buildStoryScenes(messages);

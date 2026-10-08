@@ -27,7 +27,7 @@ export interface SpeechRecording {
 export interface TimingInput {
   key: string;
   baseDurationMs: number;
-  kind: "speech" | "ballot" | "tally" | "scene" | "result";
+  kind: "opening" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
   order: ThinkingOrder;
@@ -237,7 +237,7 @@ export function compileTiming(
     } else {
       if (input.order === "thinking-first") addThought();
       const duration =
-        input.kind === "ballot"
+        input.kind === "opening" ? input.baseDurationMs : input.kind === "ballot"
           ? (settings.ballotHoldMs ?? input.baseDurationMs)
           : input.kind === "tally"
             ? (settings.tallyHoldMs ?? input.baseDurationMs)

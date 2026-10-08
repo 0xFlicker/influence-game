@@ -61,7 +61,7 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
   return requests;
 }
 
-const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z");
+const useFixtureWatch = () => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 1);
 
 test("cached distant windows wait for missing history after rewind and Previous", async () => {
   const requests = fixture([1, 40, 65, 97]);
@@ -69,7 +69,7 @@ test("cached distant windows wait for missing history after rewind and Previous"
   await waitFor(() => expect(view.result.current.preparing).toBe(false));
   await act(async () => { await view.result.current.seek(97, false); });
   await act(async () => { await view.result.current.seek(1, false); });
-  expect(view.result.current.snapshot.cueKeys).toEqual(["g:mystery:1"]);
+  expect(view.result.current.snapshot.cueKeys.filter(key => !key.includes(":opening:"))).toEqual(["g:mystery:1"]);
   expect(requests).not.toContain(33);
   expect(requests).not.toContain(65);
   await act(async () => { view.result.current.director.setSpeed(4); view.result.current.toggle(); });
@@ -98,4 +98,42 @@ test("live playback reaches the frontier after seeking backward through cached s
   await act(async () => { await view.result.current.seek(33, false); });
   await act(async () => { await view.result.current.seek(1, true); view.result.current.director.setSpeed(4); });
   await waitFor(() => expect(view.result.current.active?.cursor).toBe(97), { timeout: 7000 });
+});
+
+test("ordinary entry plays the opening; its stops seek, pause, restart and hand off to recorded introductions", async () => {
+  fixture([1, 2], 2);
+  const view = renderHook(() => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", undefined, "Actual episode"));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.openingCue?.opening.shot).toBe("house");
+  expect(view.result.current.scrubCount).toBe(6);
+  await act(async () => view.result.current.toggle());
+  await act(async () => {await view.result.current.seekStop(2);});
+  expect(view.result.current.openingCue?.opening.title).toBe("Actual episode");
+  expect(view.result.current.scrubPosition).toBe(1);
+  expect(view.result.current.snapshot.isPlaying).toBe(false);
+  await act(async () => {await view.result.current.seekStop(4);view.result.current.director.manualAdvance();});
+  expect(view.result.current.openingCue).toBeNull();
+  expect(view.result.current.active?.cursor).toBe(1);
+  await act(async () => view.result.current.previous());
+  expect(view.result.current.openingCue?.opening.shot).toBe("door");
+  await act(async () => {await view.result.current.seekOpening(0);});
+  expect(view.result.current.openingCue?.opening.shot).toBe("house");
+});
+
+test("explicit moment links bypass the opening, including moment one", async () => {
+  fixture([1,2],2);
+  const view=renderHook(()=>useWerewolfWatch("g","mystery","2026-10-06T00:00:00.000Z",1));
+  await waitFor(()=>expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.openingCue).toBeNull();expect(view.result.current.active?.cursor).toBe(1);
+});
+
+test("restarting from a distant moment restores opening navigation before the first recorded cue", async () => {
+  fixture([1, 65, 97]);
+  const view = renderHook(() => useWerewolfWatch("g", "mystery", "2026-10-06T00:00:00.000Z", 97));
+  await waitFor(() => expect(view.result.current.preparing).toBe(false));
+  expect(view.result.current.active?.cursor).toBe(97);
+  await act(async () => { await view.result.current.seekOpening(0); });
+  expect(view.result.current.openingCue?.opening.shot).toBe("house");
+  await act(async () => { await view.result.current.seek(1, false); view.result.current.previous(); });
+  expect(view.result.current.openingCue?.opening.shot).toBe("door");
 });

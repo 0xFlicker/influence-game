@@ -1,6 +1,8 @@
+import {WerewolfOpeningFrame, type OpeningVideoProps} from "../../components/games/werewolf/werewolf-opening-frame";
 import { useLayoutEffect, useState, useMemo, useRef } from "react";
 import {
   AbsoluteFill,
+  Freeze, OffthreadVideo, useVideoConfig,
   Audio,
   Sequence,
   Artifact,
@@ -29,9 +31,9 @@ function sceneFor(cue?: ExportCue) {
   if (!cue) return null;
   const picture = cue.picture;
   if (picture.kind === "werewolf") return picture.scene;
-  const beat = picture.beat;
+  const beat = picture.kind === "influence" ? picture.beat : null;
   return beat?.kind === "scene"
-    ? (picture.rooms.find((room) => room.id === beat.sceneId) ?? null)
+    ? ((picture.kind === "influence" ? picture.rooms : []).find((room) => room.id === beat.sceneId) ?? null)
     : null;
 }
 /** All URL-bearing data is local to the verified bundle before Chromium starts. */
@@ -147,14 +149,14 @@ export function ReplayFrame({
           }}
         >
           <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black">
-            <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">
+            {picture.kind !== "werewolf-opening" && <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">
               {cue.label}
-            </div>
+            </div>}
             <div
               ref={stage}
               className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
             >
-              {picture.kind === "werewolf" ? (
+              {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
                   cue={picture.cue}
                   scene={picture.scene}
@@ -270,4 +272,10 @@ function PreparedFrame({
   return capture && ready?.frame === frame ? (
     <Artifact filename={`layout-${frame}.json`} content={ready.json} />
   ) : null;
+}
+
+function renderOpeningVideo(props: OpeningVideoProps) {return <OpeningExportVideo {...props} />;}
+function OpeningExportVideo({src,timeMs}: OpeningVideoProps) {
+  const {fps} = useVideoConfig();
+  return <Freeze frame={Math.floor(timeMs * fps / 1000)}><OffthreadVideo src={src} muted style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}} /></Freeze>;
 }

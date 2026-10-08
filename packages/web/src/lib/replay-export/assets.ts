@@ -8,7 +8,7 @@ export const sha256 = (bytes: string | Uint8Array) =>
 export interface CachedAsset {
   path: string;
   sha256: string;
-  mediaType: "image" | "audio";
+  mediaType: "image" | "audio" | "video";
   width?: number;
   height?: number;
   durationMs?: number;
@@ -136,8 +136,8 @@ export class ReplayAssets {
         this.token,
         AbortSignal.any([this.signal, AbortSignal.timeout(60000)]),
       );
-      if (!/^(image|audio)\//.test(response.headers.get("content-type") ?? ""))
-        throw new Error("Selected replay asset is not image/audio content");
+      if (!/^(image|audio|video)\//.test(response.headers.get("content-type") ?? ""))
+        throw new Error("Selected replay asset is not image/audio/video content");
       const chunks: Uint8Array[] = [];
       let length = 0;
       if (!response.body) throw new Error("Asset has no body");
@@ -168,11 +168,14 @@ export class ReplayAssets {
     );
     const image = info.streams.find((s) => s.codec_type === "video");
     const audio = info.streams.find((s) => s.codec_type === "audio");
+    const durationMs = Number(info.format.duration) * 1000;
+    const movingImage = image && Number.isFinite(durationMs) && durationMs > 0;
     const asset: CachedAsset = image
       ? {
           path,
           sha256: hash,
-          mediaType: "image",
+          mediaType: movingImage ? "video" : "image",
+          ...(movingImage ? { durationMs } : {}),
           width: image.width,
           height: image.height,
         }
@@ -180,7 +183,7 @@ export class ReplayAssets {
           path,
           sha256: hash,
           mediaType: "audio",
-          durationMs: Number(info.format.duration) * 1000,
+          durationMs,
           sampleRate: Number(audio?.sample_rate),
         };
     if (
