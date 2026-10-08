@@ -520,6 +520,21 @@ test("shared replay fences delayed seeks and crosses silent live windows without
   }
 }, 60_000);
 
+test("Werewolf thinking isolates the speaker before speech on desktop and mobile", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
+  const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+    if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
+    return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
+  }});
+  const page=await browser.newPage();
+  try {
+    if (!servers.webUrl) throw new Error("Web server missing");
+    await page.goto(servers.webUrl,{waitUntil:"domcontentloaded"});
+    await checkInSceneThinking(page, `${servers.webUrl}/games/${game.slug}/replay`, servers.apiUrl);
+  } finally {await page.close();}
+},60_000);
+
 test("Werewolf autoplays with device preferences and Mystery preserves the saved choice", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
@@ -531,23 +546,20 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
   try {
     if (!servers.webUrl) throw new Error("Web server missing");
     await page.goto(servers.webUrl,{waitUntil:"domcontentloaded"});
-    await page.evaluate("localStorage.setItem('house:watch:viewer:v1',JSON.stringify({thinking:true,thinkingOrder:'speech-first'}))");
+    await page.evaluate("localStorage.setItem('house:watch:viewer:v1',JSON.stringify({thinking:true}))");
     await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=omniscient`,{waitUntil:"domcontentloaded"});
     await page.waitForSelector('button[aria-label="Pause replay"]');
     await page.waitForFunction("Number(document.querySelector('[data-werewolf-stage]')?.getAttribute('data-elapsed')) > 900");
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(true);
-    expect(await page.evaluate("document.querySelector('[role=\"dialog\"] select').value")).toBe("speech-first");
-    await page.select('[role="dialog"] select','thinking-first');
     await page.click('[role="dialog"] input[type="checkbox"]');
     let saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
-    expect(JSON.parse(saved as string)).toMatchObject({thinking:false,thinkingOrder:"thinking-first"});
+    expect(JSON.parse(saved as string)).toMatchObject({thinking:false});
     await page.reload({waitUntil:"domcontentloaded"});
     await pauseWerewolf(page);
     await page.click('button[aria-label="Player settings"]');
     expect(await page.evaluate("document.querySelector('[role=\"dialog\"] input[type=\"checkbox\"]').checked")).toBe(false);
-    expect(await page.evaluate("document.querySelector('[role=\"dialog\"] select').value")).toBe("thinking-first");
     await page.click('[role="dialog"] input[type="checkbox"]');
     saved=await page.evaluate("localStorage.getItem('house:watch:viewer:v1')");
     expect(JSON.parse(saved as string).thinking).toBe(true);

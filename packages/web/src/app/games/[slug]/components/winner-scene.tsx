@@ -12,7 +12,7 @@ export interface WinnerSceneBeat {
 }
 
 /** The final tableau stays visible after the director stops, including while paused. */
-export function WinnerScene({ beat, fullscreen = false }: { beat: WinnerSceneBeat; fullscreen?: boolean }) {
+export function WinnerScene({ beat, fullscreen = false, controlsInset = fullscreen ? 140 : 0 }: { beat: WinnerSceneBeat; fullscreen?: boolean; controlsInset?: number }) {
   const [failedBody, setFailedBody] = useState<string | null>(null);
   const { winner } = beat;
   const fullBody = winner.fullBodyReferenceUrl && winner.fullBodyReferenceUrl !== failedBody ? winner.fullBodyReferenceUrl : null;
@@ -21,7 +21,7 @@ export function WinnerScene({ beat, fullscreen = false }: { beat: WinnerSceneBea
   const remaining = beat.standings.filter(player => player.placement === null || player.placement > 4);
   const jury = remaining.filter(player => player.juryMember);
   const rest = remaining.filter(player => !player.juryMember);
-  return <section aria-label="Final standings" data-winner-scene className={styles.scene} data-fullscreen={fullscreen}>
+  return <section aria-label="Final standings" data-winner-scene className={styles.scene} data-fullscreen={fullscreen} style={{"--winner-controls-inset":`${controlsInset}px`} as React.CSSProperties}>
     <div className={styles.layout}>
       <div className={styles.winner}>
         <header className={styles.heading}>

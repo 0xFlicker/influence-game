@@ -20,20 +20,19 @@ test("append while paused at a tail cannot move the active source position",()=>
  expect(director.getSnapshot().position).toBe(4);expect(director.getSnapshot().isPlaying).toBe(false);director.play();expect(director.getSnapshot().position).toBe(9);
 });
 const speechPolicy: WatchPolicy<Cue> = {...policy, speech: () => ({showAtMs: 500, readAtMs: 800, hideAtMs: 3500, hiddenAtMs: 3800})};
-test("thinking first and speech first share the clock, preserve content time and ignore stale actors", () => {
- for (const order of ["thinking-first", "speech-first"] as const) {
-  const clock = new Clock(), director = new PresentationDirector({clock, policy:speechPolicy, followTail:true});
-  director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
-  director.setThinking("one", "A captured thought.", order);director.play();
-  if(order === "speech-first") {clock.tick(3800);expect(director.getElapsedBaseMs()).toBe(3800);}
-  else {expect(director.getThinkingFrame()).toBeNull();clock.tick(500);expect(director.getElapsedBaseMs()).toBe(500);}
-  expect(director.getThinkingFrame()?.text).toBe("A captured thought.");
-  const content = director.getElapsedBaseMs();clock.tick(1400);expect(director.getElapsedBaseMs()).toBe(content);
-  director.pause();clock.tick(5000);expect(director.getElapsedBaseMs()).toBe(content);
-  director.play();clock.tick(1400);clock.tick(4000);
-  expect(director.getSnapshot().activeKey).toBe("two");expect(director.getThinkingFrame()).toBeNull();
-  director.setThinking("one","Stale thought",order);expect(director.getThinkingFrame()).toBeNull();
- }
+test("thinking owns the clock, freezes on pause, and finishes before speech", () => {
+ const clock = new Clock(), director = new PresentationDirector({clock, policy:speechPolicy, followTail:true});
+ director.load([{key:"one",cursor:1,baseDurationMs:4000},{key:"two",cursor:2,baseDurationMs:4000}]);
+ director.setThinking("one", "A captured thought.");director.play();
+ expect(director.getThinkingFrame()).toBeNull();clock.tick(950);
+ expect(director.getElapsedBaseMs()).toBe(500);
+ const entering=director.getThinkingFrame()!;expect(entering.focus).toBeCloseTo(.5);expect(entering.opacity).toBe(0);
+ director.pause();clock.tick(5000);expect(director.getThinkingFrame()).toEqual(entering);
+ director.play();director.setSpeed(2);clock.tick(500);
+ expect(director.getThinkingFrame()?.opacity).toBe(1);
+ clock.tick(1900);expect(director.getThinkingFrame()).toBeNull();expect(director.getElapsedBaseMs()).toBe(500);
+ clock.tick(1750);expect(director.getSnapshot().activeKey).toBe("two");
+ director.setThinking("one","Stale thought");expect(director.getThinkingFrame()).toBeNull();
 });
 test("speech fade and reading clocks separate during a paused manual dismissal", () => {
  const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy,followTail:true});
@@ -52,40 +51,22 @@ test("missing thinking releases the clock and wakes paused render samplers", () 
  let notifications = 0;director.subscribe(() => notifications++);
  director.setThinkingPending("one",true);clock.tick(2000);expect(director.getElapsedBaseMs()).toBe(0);
  const pendingNotifications = notifications;
- director.setThinking("one",null,"thinking-first");expect(notifications).toBeGreaterThan(pendingNotifications);
+ director.setThinking("one",null);expect(notifications).toBeGreaterThan(pendingNotifications);
  clock.tick(1000);expect(director.getElapsedBaseMs()).toBe(1000);
 });
 
-test("manual speech-first advance shows thinking before dismissing speech", () => {
+test("manual thinking skips reading but preserves entrance and camera return", () => {
  const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
- director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.setThinking("one","A captured thought.","speech-first");
- director.manualAdvance();clock.tick(300);expect(director.getThinkingFrame()).toBeNull();
- director.manualAdvance();expect(director.getThinkingFrame()?.text).toBe("A captured thought.");
- expect(director.getElapsedBaseMs()).toBe(3800);
- director.manualAdvance();expect(director.getThinkingFrame()).toBeNull();
- director.seek(0);expect(director.getElapsedBaseMs()).toBe(0);
+ director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.setThinking("one","A captured thought.");
+ director.manualAdvance();clock.tick(1300);
+ expect(director.getThinkingFrame()?.opacity).toBe(1);expect(director.getThinkingFrame()?.focus).toBe(1);
+ director.manualAdvance();clock.tick(125);expect(director.getThinkingFrame()?.opacity).toBeCloseTo(.5);
+ clock.tick(575);expect(director.getThinkingFrame()?.opacity).toBe(0);expect(director.getThinkingFrame()?.focus).toBeCloseTo(.5);
+ clock.tick(450);expect(director.getThinkingFrame()).toBeNull();expect(director.getElapsedBaseMs()).toBe(500);
+ director.manualAdvance();clock.tick(300);expect(director.getElapsedBaseMs()).toBe(800);
+ director.seek(0,950);expect(director.getThinkingFrame()?.focus).toBeCloseTo(.5);
+ director.seek(0,2000);director.seek(0,950);expect(director.getThinkingFrame()?.focus).toBeCloseTo(.5);
 });
-
-test("thinking-first stays through speech, freezes on pause, then shares its exit", () => {
- const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
- director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.setThinking("one","A captured thought.","thinking-first");director.play();
- clock.tick(500);expect(director.getThinkingFrame()?.opacity).toBe(1);
- clock.tick(2800);expect(director.getThinkingFrame()?.opacity).toBe(1);
- clock.tick(2300);expect(director.getThinkingFrame()?.text).toBe("A captured thought.");
- director.pause();clock.tick(10000);expect(director.getThinkingFrame()?.opacity).toBe(1);director.play();
- clock.tick(850);expect(director.getThinkingFrame()?.opacity).toBeCloseTo(.5);
- clock.tick(150);expect(director.getThinkingFrame()).toBeNull();
-});
-
-test("manual speech dismissal also fades and removes thinking", () => {
- const clock=new Clock(),director=new PresentationDirector({clock,policy:speechPolicy});
- director.load([{key:"one",cursor:1,baseDurationMs:4000}]);director.setThinking("one","A captured thought.","thinking-first");
- director.manualAdvance();director.manualAdvance();director.manualAdvance();clock.tick(300);
- expect(director.getThinkingFrame()?.opacity).toBe(1);
- director.manualAdvance();clock.tick(150);expect(director.getThinkingFrame()?.opacity).toBeCloseTo(.5);
- clock.tick(150);expect(director.getThinkingFrame()).toBeNull();
-});
-
 
 test("arrow steps and direct seeks land on the same readable ballot state, including the final tally", () => {
  const clock = new Clock();

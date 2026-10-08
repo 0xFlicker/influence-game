@@ -4,7 +4,6 @@ import {ShareMoment} from "./share-moment";
 import {useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
 import type {MusicStatus} from "./watch-music";
-import type {ThinkingOrder} from "./watch-director";
 const SPEED_OPTIONS = [{value: 0.5, label: "0.5×"}, {value: 1, label: "1×"}, {value: 2, label: "2×"}, {value: 4, label: "4×"}];
 interface WatchTransportProps {
  fullscreen: boolean; fullscreenButton: RefObject<HTMLButtonElement | null>; toggleFullscreen: () => void | Promise<void>; fullscreenError: string | null;
@@ -12,13 +11,13 @@ interface WatchTransportProps {
  onScrubStart?: () => void; onScrubEnd?: () => void;
  shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
  goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
- thinking?: {enabled: boolean; onChange: (enabled: boolean) => void; order: ThinkingOrder; onOrderChange: (order: ThinkingOrder) => void}; live: boolean; cursor: number; count: number;
+ thinking?: {enabled: boolean; onChange: (enabled: boolean) => void}; live: boolean; cursor: number; count: number;
 }
 export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
  const transport = useRef<HTMLDivElement>(null);
  const [width, setWidth] = useState(0);
  const available = width - (music ? 140 : 0);
- const capacity = available >= 1280 ? 3 : available >= 1020 ? 2 : available >= 780 ? 1 : 0;
+ const capacity = available >= 1020 ? 2 : available >= 780 ? 1 : 0;
  useLayoutEffect(() => {
   const element = transport.current;
   if (!element) return;
@@ -42,7 +41,6 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
   <button key={option.value} type="button" aria-pressed={speed === option.value} onClick={() => onSpeed(option.value)} className={`h-9 rounded-lg border px-2 text-xs ${speed === option.value ? "border-white/50 bg-white/15 text-white" : "border-transparent text-white/60 hover:bg-white/10"}`}>{option.label}</button>
  )}</div></fieldset>;
  const thinkingControl = thinking && <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-white/80"><input type="checkbox" checked={thinking.enabled} onChange={event => thinking.onChange(event.target.checked)} />Show thinking</label>;
- const orderControl = thinking && <label className="flex items-center gap-2 whitespace-nowrap text-xs text-white/60">Order<select aria-label="Thinking order" className="h-9 rounded-lg border border-white/20 bg-zinc-900 px-2 text-white/80" value={thinking.order} onChange={event => thinking.onOrderChange(event.target.value as ThinkingOrder)}><option value="thinking-first">Thinking first</option><option value="speech-first">Speech first</option></select></label>;
  return <>
   <div ref={transport} data-watch-transport className="flex min-w-0 items-center gap-0 sm:gap-1" onClick={event => event.stopPropagation()}>
     <button type="button" aria-label={isPlaying ? "Pause replay" : "Play replay"} title={isPlaying ? "Pause (Space)" : "Play (Space)"} onClick={togglePlay} className={button}>
@@ -59,7 +57,6 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
     <div className="min-w-0 flex-1" />
     {capacity >= 1 && <div className="mr-3 shrink-0">{speedControl}</div>}
     {capacity >= 2 && <div className="mr-3 shrink-0">{thinkingControl}</div>}
-    {capacity >= 3 && <div className="mr-3 shrink-0">{orderControl}</div>}
     {music && <div data-music-controls className="flex shrink-0 items-center gap-0 sm:gap-1">
       <button type="button" className={button} onClick={music.onMute} aria-pressed={!music.muted} aria-label={music.status === "blocked" ? "Enable music" : music.status === "unavailable" ? "Music unavailable. Retry" : music.muted ? "Turn music on" : "Mute music"} title={music.status === "blocked" ? "Enable music" : "Music"}>
         <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 4 6 8H3v8h3l5 4Z" />{music.muted || music.status === "blocked" || music.status === "unavailable" ? <path d="m16 9 6 6m0-6-6 6" /> : <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />}</svg>
@@ -88,7 +85,6 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
         <div className="space-y-4">
           {capacity < 1 && speedControl}
           {capacity < 2 && thinkingControl}
-          {capacity < 3 && orderControl}
         </div>
         <div className="mt-4 flex gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => {goToBeginning();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">Restart replay</button><button type="button" onClick={() => {goToEnd();setOpen(false);}} className="rounded-lg border border-white/20 px-3 py-2">{live ? "Go live" : "Go to end"}</button></div>
         <h3 className="mb-3 mt-4 font-semibold">Keyboard shortcuts</h3>

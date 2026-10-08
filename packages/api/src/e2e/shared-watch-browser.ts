@@ -105,26 +105,24 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   });
   await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
   await page.goto(`${url}?audience=omniscient`, {waitUntil:'domcontentloaded'});
+  await page.waitForSelector("[data-werewolf-stage], [data-werewolf-opening]");
+  const skipOpening = await page.$("[data-werewolf-opening]");
+  if (skipOpening) await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening')?.click()");
   await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
   await watchText(page, 'Keyboard shortcuts');
   await page.click('[role="dialog"] input[type="checkbox"]');
-  try { await page.waitForSelector('[data-in-scene-thinking]', {timeout:10000}); }
-  catch(error) {console.log('THINKING_DIAGNOSTICS', JSON.stringify({diagnostics,cursor,entries,body:await page.evaluate("document.body.innerText")}));await page.screenshot({path:'/tmp/werewolf-thinking-failure.png'});throw error;}
-  expect(await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'))).toBe(cursor);
-  await page.screenshot({path:'/tmp/werewolf-thinking-settings.png'});
-  await page.select('[role="dialog"] select', 'speech-first');
-  await page.waitForFunction("!document.querySelector('[data-in-scene-thinking]')");
+  expect(await page.$('[aria-label="Thinking order"]')).toBeNull();
   await page.click('button[aria-label="Close settings"]');
   await page.evaluate("document.activeElement?.blur()");
-  await page.keyboard.press('Space');
-  await page.waitForFunction("Array.from(document.querySelectorAll('[data-speech-bubble]')).some(e => Number(getComputedStyle(e).opacity) === 1)");
-  await page.waitForSelector('[data-in-scene-thinking]');
-  await page.keyboard.press('Space');
-  await page.waitForFunction("document.querySelector('[data-in-scene-thinking]')?.textContent.includes('one precise question')");
-  await page.screenshot({path:'/tmp/werewolf-speech-first-thinking.png'});
+  await page.keyboard.press('ArrowRight');
+  try { await page.waitForSelector('[data-in-scene-thinking]', {timeout:10000}); }
+  catch(error) {console.log('THINKING_DIAGNOSTICS', JSON.stringify({diagnostics,cursor,entries,body:await page.evaluate("document.body.innerText")}));throw error;}
+  await page.waitForFunction("Number(getComputedStyle(document.querySelector('[data-in-scene-thinking]')).opacity) === 1");
+  expect(await page.$('[data-speech-bubble]')).toBeNull();
+  await page.screenshot({path:'/tmp/werewolf-thinking-focus.png'});
   expect(await page.evaluate("(() => {const bubble=document.querySelector('[data-in-scene-thinking]').getBoundingClientRect(), stage=document.querySelector('[data-werewolf-stage]').getBoundingClientRect(); return bubble.top>=stage.top && bubble.bottom<=stage.bottom && document.querySelectorAll('[data-thought-tail]').length>=1;})()")).toBe(true);
   expect(await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'))).toBe(cursor);
   await page.setViewport({width:390,height:844});

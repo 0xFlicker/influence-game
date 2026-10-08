@@ -3,6 +3,7 @@
 import {voteSceneIdentity} from "./vote-ledger-model";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAnimate } from "motion/react";
+import {presentationEntrances} from "./presentation-entrances";
 import type { PresentationCue } from "./types";
 import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import { SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS, SOLO_EXIT_MS } from "./solo-presentation-timing";
@@ -105,78 +106,9 @@ export function usePresentationDirector({
     const currentStateEntry = scope.current.querySelector(
       '[data-presentation-current-entry="true"]',
     );
-    // Semantic content rests visible. Only the director owns entrance effects,
-    // so cancellation, seeking and Strict Mode cannot strand hidden cards.
-    if (!currentStateEntry && director.getSnapshot().isPlaying) {
-      scope.current.querySelectorAll<HTMLElement>("[data-two-names-reveal]").forEach((element) => {
-        const index = Number(element.dataset.dossierIndex ?? 0);
-        const dossier = element.dataset.twoNamesReveal === "dossier";
-        const control = animate(element, reducedMotion
-          ? { opacity: [0, 1] }
-          : { opacity: [0, 1], y: [18, 0], rotateY: [dossier ? (index === 0 ? -22 : 22) : 0, 0] },
-        { duration: reducedMotion ? 0.2 : 0.8, delay: dossier && !reducedMotion ? index * 0.18 : 0, ease: [0.16, 1, 0.3, 1] }) as RetainedMotionControl;
-        track(control);
-      });
-    }
-    if (
-      !reducedMotion
-      && !currentStateEntry
-      && activeCue?.source === "format"
-      && activeCue.kind === "safety_bounce_pointer"
-    ) {
-      const candidates = scope.current.querySelectorAll<HTMLElement>(
-        '[data-pointer-cycle-candidate="true"]',
-      );
-      candidates.forEach((candidate, index) => {
-        const control = animate(
-          candidate,
-          {
-            opacity: [0.2, 1, 0.28],
-            scale: [0.97, 1.04, 1],
-          },
-          {
-            delay: index * 0.2,
-            duration: 0.32,
-            ease: "easeInOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      });
-      const acceptedTarget = Array.from(
-        scope.current.querySelectorAll<HTMLElement>("[data-accepted-target]"),
-      ).find((element) => element.dataset.acceptedTarget === activeCue.targetId);
-      const classifiedCard = Array.from(
-        scope.current.querySelectorAll<HTMLElement>("[data-board-member]"),
-      ).find((element) => element.dataset.boardMember === activeCue.targetId);
-      const landingDelay = candidates.length * 0.2;
-      if (classifiedCard) {
-        const control = animate(
-          classifiedCard,
-          {
-            opacity: [0.35, 1],
-            y: [20, 0],
-            scale: [0.96, 1],
-          },
-          {
-            delay: landingDelay,
-            duration: 0.38,
-            ease: "easeOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      }
-      if (acceptedTarget) {
-        const control = animate(
-          acceptedTarget,
-          { opacity: [0.45, 1], scale: [0.985, 1] },
-          {
-            delay: landingDelay,
-            duration: 0.35,
-            ease: "easeOut",
-          },
-        ) as RetainedMotionControl;
-        track(control);
-      }
+    for (const entrance of presentationEntrances(scope.current, activeCue, reducedMotion,
+      !currentStateEntry && director.getSnapshot().isPlaying)) {
+      track(animate(entrance.element, entrance.keyframes, entrance.options) as RetainedMotionControl);
     }
 
     return () => {

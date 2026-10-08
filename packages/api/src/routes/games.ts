@@ -965,6 +965,13 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/transcript", async (c) => {
+    const rawLimit = c.req.query("limit"), rawOffset = c.req.query("offset");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? 0 : Number(rawOffset);
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
+      || !Number.isSafeInteger(offset) || offset < 0 || rawOffset !== undefined && limit === undefined) {
+      return c.json({error: "Use limit 1–256 and a nonnegative offset for transcript pages"}, 400);
+    }
     const idOrSlug = c.req.param("id");
 
     const game = (await db
@@ -999,14 +1006,15 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
-    const rows = await db
+    const query = db
       .select()
       .from(schema.transcripts)
       .where(and(
         eq(schema.transcripts.gameId, gameId),
         ne(schema.transcripts.scope, "huddle"),
       ))
-      .orderBy(asc(schema.transcripts.timestamp));
+      .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
+    const rows = await (limit === undefined ? query : query.limit(limit).offset(offset));
 
     const parseJsonOrNull = (value: string | null): Record<string, unknown> | null => {
       if (!value) return null;
@@ -1053,6 +1061,9 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/games/:id/replay-watch-frames", async (c) => {
     const idOrSlug = c.req.param("id");
+    const rawLimit = c.req.query("limit");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)) return c.json({error: "limit must be an integer from 1 to 256"}, 400);
     const afterSequenceParam = c.req.query("afterSequence");
     const presentationOnlyParam = c.req.query("presentationOnly");
     const afterSequence = afterSequenceParam === undefined
@@ -1072,6 +1083,7 @@ export function createGameRoutes(db: DrizzleDB) {
     const frames = await getGameWatchReplayFrames(db, idOrSlug, {
       afterSequence,
       presentationOnly: presentationOnlyParam === "true",
+      limit,
     });
     if (!frames) return c.json({ error: "Game not found" }, 404);
     return c.json(frames);

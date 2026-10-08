@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "purpose": "Shared Werewolf opening; existing gameplay score is unchanged.",
+  "sources": {
+    "lantern.mp4": ".renders/werewolf-intro/lantern-v1/lantern-wakes.mp4",
+    "door.mp4": ".renders/werewolf-intro/door-v1/door-closes.mp4",
+    "lantern-shadows.mp3": {
+      "title": "Lantern Shadows",
+      "provider": "Suno",
+      "master": ".renders/werewolf-intro/sequence-v1/sources/lantern-shadows.wav",
+      "masterSha256": "3533728f73cab7f5f9ce8ef2d93a08deee2fd670f659826b61cc4c17df3057f5",
+      "delivery": "Full-length MP3; opening starts at zero and fades at the end of its variable-length cast sequence."
+    },
+    "alley.jpg": "Approved moonlit-lane.png from Werewolf art exploration; JPEG delivery encode",
+    "effects": "Audio extracted from approved lantern/door clips; picture playback is muted",
+    "posters": "First frames of the respective approved clips"
+  },
+  "assets": {
+    "alley.jpg": {
+      "sha256": "69831468f7acb47fce5c683bf38311d520abb7a41e6330e85d61e612b389254e",
+      "bytes": 409762
+    },
+    "door-effects.mp3": {
+      "sha256": "a87e39d1d17f817ddff128cec2faef45d430501e6758796d87075bd655f2d26a",
+      "bytes": 84244
+    },
+    "door.jpg": {
+      "sha256": "c9ae5a7e1605f144525a4e5723ac6d130451960c31d04821f6564caf5c7a7c9b",
+      "bytes": 93848
+    },
+    "door.mp4": {
+      "sha256": "f785ca2e4ce08e44c1e4b1f5c927b882da7daca4e2c530146b8d031de4658829",
+      "bytes": 790159
+    },
+    "lantern-effects.mp3": {
+      "sha256": "0074eac1d54380254ba0a0af516ab6730a5b7108dc71588f9c57c82907cc6aa2",
+      "bytes": 84244
+    },
+    "lantern-shadows.mp3": {
+      "sha256": "bcd641789ced7408d48c477814ba4ad8597916fa7898d8d25ecaaf46bffe925f",
+      "bytes": 3749325
+    },
+    "lantern.jpg": {
+      "sha256": "31e1f1a970b41f435b718fa588c3acc89b8943fce1c31a9324fc22b34f84447d",
+      "bytes": 13071
+    },
+    "lantern.mp4": {
+      "sha256": "49d376f5707625c7ef17f6d93d505219446ef1ad5eff3e756337a8c6de5019dc",
+      "bytes": 1084267
+    }
+  }
+}

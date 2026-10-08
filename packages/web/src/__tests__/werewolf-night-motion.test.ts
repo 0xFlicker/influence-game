@@ -43,12 +43,12 @@ test("first pack entrance shares the pause/speed/thinking clock and step navigat
   const frame=wolfTransformationFrame(director.getElapsedBaseMs(),0,false);
   director.pause();clock.tick(9000);expect(wolfTransformationFrame(director.getElapsedBaseMs(),0,false)).toEqual(frame);
   director.setSpeed(2);director.play();clock.tick(200);expect(director.getElapsedBaseMs()).toBe(1100);
-  director.setThinking(cue!.key,"A private thought.","thinking-first");
+  director.setThinking(cue!.key,"A private thought.");
   expect(director.getThinkingFrame()).toBeNull();
   director.pause();director.seek(0);
   expect(director.getElapsedBaseMs()).toBe(0);
   expect(director.getSnapshot().isPlaying).toBe(false);
-  director.setThinking(cue!.key,null,"thinking-first");director.seek(0);
+  director.setThinking(cue!.key,null);director.seek(0);
   expect(director.getElapsedBaseMs()).toBe(werewolfWatchPolicy.scrubAtMs!(cue!));
   director.load([{...plain,key:"before"},cue!,{...plain,key:"after"}]);
   director.seek(0);director.seek(1);

@@ -1,10 +1,9 @@
 "use client";
 import {useCallback, useEffect, useRef, useState} from "react";
-import type {ThinkingOrder} from "./watch-director";
 
 export type WatchPreferenceScope = "viewer" | "production";
-export interface WatchPreferences { thinking: boolean; thinkingOrder: ThinkingOrder; musicMuted: boolean; musicVolume: number }
-const defaults: WatchPreferences = {thinking:false, thinkingOrder:"thinking-first", musicMuted:true, musicVolume:0.3};
+export interface WatchPreferences { thinking: boolean; musicMuted: boolean; musicVolume: number }
+const defaults: WatchPreferences = {thinking:false, musicMuted:true, musicVolume:0.3};
 const changed = "house-watch-preferences-changed";
 export const watchPreferenceKey = (scope: WatchPreferenceScope) => `house:watch:${scope}:v1`;
 function read(scope: WatchPreferenceScope): WatchPreferences {
@@ -13,7 +12,6 @@ function read(scope: WatchPreferenceScope): WatchPreferences {
     if (value && typeof value === "object") {
       return {
         thinking: "thinking" in value && typeof value.thinking === "boolean" ? value.thinking : defaults.thinking,
-        thinkingOrder: "thinkingOrder" in value && (value.thinkingOrder === "thinking-first" || value.thinkingOrder === "speech-first") ? value.thinkingOrder : defaults.thinkingOrder,
         musicMuted: "musicMuted" in value && typeof value.musicMuted === "boolean" ? value.musicMuted : defaults.musicMuted,
         musicVolume: "musicVolume" in value && typeof value.musicVolume === "number" && Number.isFinite(value.musicVolume) ? Math.max(0,Math.min(1,value.musicVolume)) : defaults.musicVolume,
       };
@@ -46,6 +44,5 @@ export function useWatchPreferences(scope: WatchPreferenceScope = "viewer") {
   return {ready:state?.scope === scope, ...(state?.scope === scope ? state.value : defaults),
     setThinking:useCallback((thinking:boolean)=>update({thinking}),[update]),
     setMusicMuted:useCallback((musicMuted:boolean)=>update({musicMuted}),[update]),
-    setMusicVolume:useCallback((musicVolume:number)=>update({musicVolume:Math.max(0,Math.min(1,musicVolume))}),[update]),
-    setThinkingOrder:useCallback((thinkingOrder:ThinkingOrder)=>update({thinkingOrder}),[update])};
+    setMusicVolume:useCallback((musicVolume:number)=>update({musicVolume:Math.max(0,Math.min(1,musicVolume))}),[update])};
 }

@@ -11,13 +11,14 @@ type Classification = "safe" | "vulnerable" | "unclassified";
 const colors = { safe: "#6ee7b7", vulnerable: "#fbbf24", unclassified: "#e2e8f0" };
 
 /** Saved lobby pixels + canonical pointer receipts; no generated or inferred choices. */
-export function SafetyBounceScene({ beat, elapsedMs, paused, reducedMotion, currentStateEntry = false, fullscreen = false }: {
+export function SafetyBounceScene({ beat, elapsedMs, paused, reducedMotion, currentStateEntry = false, fullscreen = false, controlsInset = fullscreen ? 140 : 0 }: {
   beat: SafetyBounceSceneBeat;
   elapsedMs: number;
   paused: boolean;
   reducedMotion: boolean;
   currentStateEntry?: boolean;
   fullscreen?: boolean;
+  controlsInset?: number;
 }) {
   const { cue, roster, scene } = beat;
   const board = cue.after.safetyBounce!;
@@ -60,7 +61,7 @@ export function SafetyBounceScene({ beat, elapsedMs, paused, reducedMotion, curr
     : `Up next: ${name(board.currentActorId)} chooses someone ${board.safePlayerIds.includes(board.currentActorId) ? "Vulnerable" : "Safe"}.`;
 
   return <section aria-label="Safety Bounce in the lobby" data-format-cue={cue.kind} data-safety-bounce-scene={scene.id}
-    className={`flex min-h-0 flex-1 flex-col text-white ${fullscreen ? "pb-[140px]" : ""}`}>
+    className="flex min-h-0 flex-1 flex-col text-white" style={{paddingBottom:controlsInset}}>
     <header className="shrink-0 px-3 pb-3 pt-2 text-center">
       <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/50">Safety Bounce · Round {cue.round}</p>
       <h2 className="mt-1 text-base font-semibold sm:text-xl" aria-live="polite">{title}</h2>

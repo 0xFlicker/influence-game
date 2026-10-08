@@ -2433,6 +2433,14 @@ describe("Game REST API", () => {
       expect(body[1]!.scope).toBe("system");
       expect(body[1]!.thinking).toBeNull();
       expect(body[1]).toMatchObject({ dialogueKind: "house_summary", firstDurableEventSequence: 17 });
+      const firstPage = await app.request(`/api/games/${id}/transcript?limit=1&offset=0`);
+      const secondPage = await app.request(`/api/games/${id}/transcript?limit=1&offset=1`);
+      expect(await firstPage.json()).toEqual([body[0]]);
+      expect(await secondPage.json()).toEqual([body[1]]);
+      for (const query of ["limit=0", "limit=257", "offset=1", "limit=2&offset=-1"]) {
+        expect((await app.request(`/api/games/${id}/transcript?${query}`)).status).toBe(400);
+      }
+
     });
 
     test("omits hidden alliance huddle entries from public transcript export", async () => {

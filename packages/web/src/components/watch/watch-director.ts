@@ -1,7 +1,7 @@
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
-export type ThinkingOrder = "thinking-first" | "speech-first";
+import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThoughtTiming, type SpeechBoundaries} from "./thinking-timing";
+export type {SpeechBoundaries} from "./thinking-timing";
 export interface WatchCue { key: string; baseDurationMs: number }
-export interface SpeechBoundaries { showAtMs: number; readAtMs: number; hideAtMs: number; hiddenAtMs: number }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
   speech(cue: C | null): SpeechBoundaries | null;
@@ -137,7 +137,7 @@ export class PresentationDirector<C extends WatchCue> {
   private disposed = false;
   private ready = true;
   private thinkingPending = false;
-  private thought: {key: string; text: string; order: ThinkingOrder; duration: number; insertAt: number} | null = null;
+  private thought: (ThoughtTiming & {key: string}) | null = null;
 
   setThinkingPending(key: string, pending: boolean): void {
     if (key !== this.getActiveCue()?.key || this.thinkingPending === pending) return;
@@ -145,18 +145,16 @@ export class PresentationDirector<C extends WatchCue> {
     for (const listener of this.listeners) listener();
   }
 
-  setThinking(key: string, text: string | null, order: ThinkingOrder): void {
+  setThinking(key: string, text: string | null): void {
     if (key !== this.getActiveCue()?.key) return;
     this.setThinkingPending(key, false);
     const normalized = text?.trim() || null;
-    if ((!normalized && !this.thought) || this.thought?.text === normalized && this.thought.order === order) return;
+    if ((!normalized && !this.thought) || this.thought?.text === normalized) return;
     this.captureRemainingTime(); this.clearTimer();
     const contentElapsed = this.getElapsedBaseMs();
     const speech = this.policy.speech(this.getActiveCue());
-    this.thought = normalized ? {key, text: normalized, order,
-      duration: Math.max(2800, normalized.split(/\s+/).length * 320),
-      insertAt: order === "thinking-first" ? speech?.showAtMs ?? 0 : speech?.hiddenAtMs ?? this.getActiveCue()!.baseDurationMs,
-    } : null;
+    const timing = thoughtTiming(normalized, speech);
+    this.thought = timing ? {key, ...timing} : null;
     this.manualTransition = null; this.exitReadingPositionMs = null;
     this.remainingBaseMs = this.activeDurationMs() - (this.thought ? Math.min(contentElapsed, this.thought.insertAt) : contentElapsed);
     this.ensureTimer();
@@ -166,26 +164,15 @@ export class PresentationDirector<C extends WatchCue> {
   getThinkingFrame() {
     const thought = this.thought;
     if (!thought || thought.key !== this.getActiveCue()?.key) return null;
-    const timeline = this.getTimelineElapsedBaseMs();
-    const elapsed = timeline - thought.insertAt;
-    const speech = thought.order === "thinking-first" ? this.speechBoundaries() : null;
-    const end = speech?.hiddenAtMs ?? thought.insertAt + thought.duration;
-    if (elapsed < 0 || timeline >= end || this.state.waitingAtTail) return null;
-    const opacity = speech && timeline > speech.hideAtMs
-      ? Math.max(0, (speech.hiddenAtMs - timeline) / Math.max(1, speech.hiddenAtMs - speech.hideAtMs)) : 1;
-    return {text: thought.text, elapsedMs: Math.min(elapsed, thought.duration), durationMs: thought.duration, opacity};
+    return this.state.waitingAtTail ? null : sampleThought(this.getTimelineElapsedBaseMs(), thought);
   }
 
   private contentTime(elapsed: number): number {
-    const thought = this.thought;
-    return !thought ? elapsed : elapsed <= thought.insertAt ? elapsed : Math.max(thought.insertAt, elapsed - thought.duration);
+    return thoughtContentTime(elapsed, this.thought);
   }
 
   private speechBoundaries() {
-    const speech = this.policy.speech(this.getActiveCue());
-    if (!speech || !this.thought) return speech;
-    const shift = (time: number) => time >= this.thought!.insertAt ? time + this.thought!.duration : time;
-    return {showAtMs: shift(speech.showAtMs), readAtMs: shift(speech.readAtMs), hideAtMs: shift(speech.hideAtMs), hiddenAtMs: shift(speech.hiddenAtMs)};
+    return thoughtSpeechBoundaries(this.policy.speech(this.getActiveCue()), this.thought);
   }
 
 
@@ -380,22 +367,24 @@ export class PresentationDirector<C extends WatchCue> {
     }
     if (this.thought) {
       const elapsed = this.getTimelineElapsedBaseMs();
-      if (this.thought.order === "thinking-first" && elapsed < this.thought.insertAt) {
-        this.positionWithinCue(this.thought.insertAt);
+      const start = this.thought.insertAt;
+      const read = start + this.thought.readAtMs;
+      const hide = start + this.thought.hideAtMs;
+      const end = start + this.thought.duration;
+      if (elapsed < read) {
+        if (!this.state.isPlaying) this.transitionWhilePaused(Math.max(elapsed, start), read);
+        else if (elapsed < start) this.positionWithinCue(start);
         return;
       }
-      if (elapsed < this.thought.insertAt + this.thought.duration && elapsed >= this.thought.insertAt) {
-        this.positionWithinCue(this.thought.insertAt + this.thought.duration);
+      if (elapsed < end) {
+        if (!this.state.isPlaying) this.transitionWhilePaused(Math.max(elapsed, hide), end);
+        else if (elapsed < hide) this.positionWithinCue(hide);
         return;
       }
     }
     const speech = this.speechBoundaries();
     if (speech) {
       const elapsed = this.getTimelineElapsedBaseMs();
-      if (this.thought?.order === "speech-first" && elapsed >= speech.readAtMs && elapsed < this.thought.insertAt) {
-        this.positionWithinCue(this.thought.insertAt);
-        return;
-      }
       if (elapsed < speech.readAtMs) {
         if (this.state.isPlaying) {
           if (elapsed < speech.showAtMs) this.positionWithinCue(speech.showAtMs);
@@ -471,7 +460,9 @@ export class PresentationDirector<C extends WatchCue> {
     this.animation.setSpeed(this.state.speed);
   }
 
-  seek(cursor: number): void {
+  /** Explicit elapsed time is used when restarting authored media from its first frame. */
+  seek(cursor: number, elapsedMs?: number): void {
+    if (elapsedMs !== undefined && (!Number.isFinite(elapsedMs) || elapsedMs < 0)) throw new Error("Invalid seek time");
     this.navigationRevision++;
     if (this.disposed || this.state.cues.length === 0) return;
     this.clearTimer();
@@ -483,7 +474,7 @@ export class PresentationDirector<C extends WatchCue> {
     this.animation.complete();
     this.apply({ type: "set_waiting_at_tail", waitingAtTail: false });
     this.apply({ type: "set_cursor", cursor });
-    this.positionWithinCue(this.thought ? 0 : this.policy.scrubAtMs?.(this.state.cues[cursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0);
+    this.positionWithinCue(elapsedMs ?? (this.thought ? 0 : this.policy.scrubAtMs?.(this.state.cues[cursor]!) ?? this.speechBoundaries()?.showAtMs ?? 0));
   }
 
   reconnect(cues: readonly C[]): void {
