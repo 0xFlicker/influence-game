@@ -155,3 +155,31 @@ test("disabled Werewolf rejects creation and discovery but leaves existing game 
     expect((await readWerewolfLobby(db,g.id)).id).toBe(g.id);
   } finally {if(old===undefined)delete process.env.NEXT_PUBLIC_ENABLED_GAMES;else process.env.NEXT_PUBLIC_ENABLED_GAMES=old;}
 });
+
+test.each(["gamer", "admin", "sysop", "player", "producer"])("only operator roles may start: %s", async role => {
+  const { grantTestAuthority } = await import("./rbac-fixtures.js");
+  // Even an accidentally granted permission cannot authorize other roles.
+  await grantTestAuthority(db, "owner", ["start_game", "create_game"], role);
+  const token = await createSessionToken("owner", { roles: ["sysop"], permissions: ["start_game", "create_game"] });
+  const game = await create();
+  const app = createWerewolfRoutes(db);
+  const response = await app.request(`/api/werewolf/${game.id}/start`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  const allowed = ["gamer", "admin", "sysop"].includes(role);
+  expect(response.status).toBe(allowed ? 200 : 403);
+  expect((await readWerewolfLobby(db, game.id)).status).toBe(allowed ? "in_progress" : "waiting");
+  if (!allowed) {
+    expect(await readWerewolfEvents(db, game.id)).toEqual([]);
+    expect((await app.request("/api/werewolf", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: "{}" })).status).toBe(403);
+  }
+});
+
+test("revoking the operator role invalidates an existing start token", async () => {
+  const { grantTestAuthority } = await import("./rbac-fixtures.js");
+  await grantTestAuthority(db, "owner", ["start_game"], "gamer");
+  const token = await createSessionToken("owner", { roles: ["gamer"], permissions: ["start_game"] });
+  await db.delete(schema.userRoles).where(eq(schema.userRoles.userId, "owner"));
+  const game = await create();
+  const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.id}/start`, { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  expect(response.status).toBe(403);
+  expect(await readWerewolfEvents(db, game.id)).toEqual([]);
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { CastingRoster, CastCard, CastInvitation } from "@/components/casting/casting-roster";
 import { CastPortraitDialog } from "@/components/casting/cast-portrait";
 import Link from "next/link";
@@ -46,9 +47,11 @@ export function WerewolfEntry({ slug, audience, replay = false, startCursor }: {
   </section>;
 }
 
-function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refresh: () => Promise<void> }) {
+export function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refresh: () => Promise<void> }) {
   const auth = useAuth();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles } = usePermissions();
+  const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
+  const [confirmStart, setConfirmStart] = useState(false);
   const [choosing, setChoosing] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
   const [portrait, setPortrait] = useState<WerewolfLobbyData["players"][number] | null>(null);
   const pending = useRef(false);
@@ -71,7 +74,7 @@ function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refre
       playerCount={game.playerCount} castCount={game.players.length} seatsLabel={`${openSeats} ${openSeats === 1 ? "seat" : "seats"} open`}
       canJoin={canJoin} disabled={busy || !auth.ready} onChoose={choose} chooseLabel={inCast ? "Add another agent" : "Join with an agent"} rulesHref="/rules?game=werewolf">
       {inCast && <p className="pre-show-notice">Your agent is in. This cast is saved.</p>}
-      {hasPermission("start_game") && <div className="mt-5"><button disabled={busy} className="pre-show-join" onClick={() => void act(() => startWerewolfLobby(game.id))}>{busy ? "Updating…" : "Start Werewolf"}</button><p className="pre-show-notice">{openSeats ? `Starting adds ${openSeats} House agents to fill the village.` : "The village is ready."} Roles and strategies freeze at the start.</p></div>}
+      {canStart && <div className="mt-5"><button disabled={busy} className="pre-show-join" onClick={() => openSeats ? setConfirmStart(true) : void act(() => startWerewolfLobby(game.id))}>{busy ? "Updating…" : "Start Werewolf"}</button><p className="pre-show-notice">{openSeats ? `Starting adds ${openSeats} House agents to fill the village.` : "The village is ready."} Roles and strategies freeze at the start.</p></div>}
       {hasPermission("stop_game") && <button className="mt-4 text-sm text-red-300" disabled={busy} onClick={() => void act(() => stopWerewolf(game.id))}>Cancel game</button>}
       {error && <p role="alert" className="pre-show-notice">{error}</p>}
     </CastingHero>
@@ -81,6 +84,11 @@ function WerewolfWaitingGame({ game, refresh }: { game: WerewolfLobbyData; refre
       {game.players.map((player,index) => <CastCard key={player.id} name={player.name} index={index} src={resolveAgentAvatarUrl(player.avatarUrl,player.personaKey ?? "",player.name,player.personaKey)} eyebrow={getPersonaLabel(player.personaKey)} detail={player.available ? "In the village" : "Remove before starting"} onInspect={() => setPortrait(player)}
         action={(operator || player.ownerPublicId === auth.account?.publicId) && <button className="werewolf-cast-remove" disabled={busy} aria-label={`Remove ${player.name} from cast`} onClick={() => void act(() => leaveWerewolfLobby(game.id,player.id))}>×</button>} />)}
     </CastingRoster>
+    {confirmStart && canStart && <ConfirmActionDialog title="Fill the village and start?" disabled={busy} confirmLabel={openSeats ? `Add ${openSeats} House agents and start` : "Start Werewolf"}
+      onClose={() => setConfirmStart(false)} onConfirm={() => { setConfirmStart(false); void act(() => startWerewolfLobby(game.id)); }}>
+      <p>{openSeats} of {game.playerCount} seats are empty. The House will fill them with AI agents and start the game immediately.</p>
+      <p>To wait for invited players, choose Cancel.</p>
+    </ConfirmActionDialog>}
     {portrait && <CastPortraitDialog name={portrait.name} src={resolveAgentAvatarUrl(portrait.avatarUrl,portrait.personaKey ?? "",portrait.name,portrait.personaKey)} eyebrow={getPersonaLabel(portrait.personaKey)} onClose={() => setPortrait(null)} />}
 
     <footer className="pre-show-footer"><p>{game.visibility === "unlisted" ? "Unlisted game" : "Public game"} <span>/</span> {game.playerCount} agents <span>/</span> {game.modelLabel}</p><p>Share this page to invite the rest of the village.</p></footer>

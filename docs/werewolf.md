@@ -291,3 +291,9 @@ In player settings, **Share this moment** uses native sharing or copies a link s
 Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
+
+### Starting and replacing rejected scene art
+
+Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Starting an unfilled village asks for confirmation with the number of House AI seats to add. A full village starts directly.
+
+Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. If a scene request has an uncertain charge, confirm another paid render in the same dialog. Its exact attempt IDs are retained in the accepted request, and the original accounting remains unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.

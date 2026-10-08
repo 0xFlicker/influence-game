@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
-import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
+import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
 import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
@@ -23,7 +23,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     console.error("[werewolf] Request failed", error);
     return c.json({ error: "Werewolf request failed. Try again." }, 500);
   });
-  app.post("/api/werewolf", requireAuth(db), requirePermission("create_game"), requirePermission("start_game"), async (c) => {
+  app.post("/api/werewolf", requireAuth(db), requirePermission("create_game"), requirePermission("start_game"), requireRole("gamer", "admin", "sysop"), async (c) => {
     let input: Record<string, unknown>;
     try { input = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!input || typeof input !== "object" || Array.isArray(input)
@@ -63,7 +63,7 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     await leaveWerewolfLobby(db, c.req.param("id"), c.get("user").id, c.req.param("playerId"));
     return c.json({ removed: true });
   });
-  app.post("/api/werewolf/:id/start", requireAuth(db), requirePermission("start_game"), async c => c.json(await startWerewolfLobby(db, c.req.param("id"))));
+  app.post("/api/werewolf/:id/start", requireAuth(db), requirePermission("start_game"), requireRole("gamer", "admin", "sysop"), async c => c.json(await startWerewolfLobby(db, c.req.param("id"))));
   app.get("/api/werewolf", async (c) => {
     if (!enabledGameKinds().includes("werewolf")) return c.json([]);
     c.header("Cache-Control", "private, no-store");

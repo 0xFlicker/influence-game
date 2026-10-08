@@ -607,10 +607,10 @@ function RecentGameRow({
 
 export function AdminPanel() {
   const { address } = useAccount();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles } = usePermissions();
 
   const canCreateGame = hasPermission("create_game");
-  const canStartGame = hasPermission("start_game");
+  const canStartGame = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
   const canStopGame = hasPermission("stop_game");
   const canFillGame = hasPermission("fill_game");
   const canHideGame = hasPermission("hide_game");

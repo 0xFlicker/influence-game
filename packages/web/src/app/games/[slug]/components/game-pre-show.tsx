@@ -123,12 +123,12 @@ export function GamePreShow({ game, onGameUpdated }: {
 }
 
 function PreGameControls({ game, onGameUpdated }: { game: GameDetail; onGameUpdated: (game: GameDetail) => void }) {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, roles } = usePermissions();
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmHide, setConfirmHide] = useState(false);
-  const canStart = hasPermission("start_game");
+  const canStart = hasPermission("start_game") && roles.some(role => ["gamer", "admin", "sysop"].includes(role));
   const canStop = hasPermission("stop_game");
   const canHide = hasPermission("hide_game");
   if (!canStart && !canStop && !canHide) return null;

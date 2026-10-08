@@ -193,3 +193,15 @@ test("Production refuses unfinished games and caller-authored scene fields", asy
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: scene.key, previewHash: scene.previewHash, requestId: "running" }) })).status).toBe(409);
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
 });
+
+test("regeneration acknowledgement is an exact bounded list and cannot be supplied to other actions", async () => {
+  const headers = await operator("producer"), app = createVisualReplayProductionRoutes(db);
+  const url = `/api/admin/production/games/${gameId}/visual/media`;
+  for (const ids of [null, "attempt", [1], [""], ["same", "same"], Array.from({length: 101}, (_, i) => String(i))]) {
+    const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "regenerate", acknowledgeUncertainAttempts: ids})});
+    expect(result.status).toBe(400);
+  }
+  const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "continue", acknowledgeUncertainAttempts: []})});
+  expect(result.status).toBe(400);
+  expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
+});

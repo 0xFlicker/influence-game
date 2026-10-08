@@ -131,7 +131,14 @@ function decodeReplayMediaControl(value: unknown): MediaControl | null {
     if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;
     if (b.audience !== undefined && b.audience !== "public" && b.audience !== "private") return null;
     fields.push("versionId", "expectedPublication", "audience");
-  } else if (b.action === "regenerate") { if (b.regenerateForms !== undefined && typeof b.regenerateForms !== "boolean") return null; fields.push("regenerateForms"); }
+  } else if (b.action === "regenerate") {
+    if (b.regenerateForms !== undefined && typeof b.regenerateForms !== "boolean") return null;
+    const ids = b.acknowledgeUncertainAttempts;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.length > 100
+      || ids.some(id => typeof id !== "string" || !id.trim() || id.length > 200)
+      || new Set(ids).size !== ids.length)) return null;
+    fields.push("regenerateForms", "acknowledgeUncertainAttempts");
+  }
   else return null;
   if (Object.keys(b).some(key => !fields.includes(key))) return null;
   return b as MediaControl;

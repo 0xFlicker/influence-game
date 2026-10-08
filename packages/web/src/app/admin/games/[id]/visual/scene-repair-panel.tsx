@@ -3,6 +3,7 @@ import { useAdminSession, useAdminValue, type Operation } from "../../../admin-s
 import { useQueryClient } from "@tanstack/react-query";
 import type { StoredVisualShot, VisualShotPresentation } from "@influence/engine/visual-mode";
 import { useEffect, useState } from "react";
+import { ConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { ImageReviewEditor } from "./image-review-editor";
 
 export interface MediaJob {
@@ -21,7 +22,7 @@ export interface MediaRecords {
   requests: Array<{ id: string; input: Record<string, unknown>; receipt: Receipt }>;
 }
 export interface MediaAttempt {
-  id: string; operationKey: string; repairJobId?: string | null; status: "pending" | "finished" | "needs_reconciliation" | "reconciled";
+  id: string; operationKey: string; sceneId?: string | null; repairJobId?: string | null; status: "pending" | "finished" | "needs_reconciliation" | "reconciled";
   costMicrousd: number | null; receipt?: { chargeUncertain: boolean; status?: number | null; failure?: { kind: string; message: string } } | null; reconciliation?: unknown;
 }
 interface Receipt { accepted: boolean; code: string; message: string; jobId?: string; versionId?: string; version?: number; publicationId?: string }
@@ -81,13 +82,14 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   const selected = versions.find(version => version.id === selection) ?? versions[0];
   const [editingVersion, setEditingVersion] = useAdminValue<number | null>(`ui:${resource}:${sceneId}:editing`, null);
   const selectedAnchors = selected?.shots ? new Set([...selected.shots.groups, ...(selected.shots.overview ? [selected.shots.overview] : [])].flatMap(shot => shot.anchors.map(anchor => anchor.playerId))).size : selected?.localization.anchors.length ?? 0;
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const [regenerateForms, setRegenerateForms] = useState(false);
   const [review, setReview] = useState(false);
   const [annotated, setAnnotated] = useState(false);
   const accepted = operation?.phase === "accepted" ? operation.result as Receipt : undefined;
   const awaitingReceipt = Boolean(accepted?.accepted && (
     accepted.jobId && !jobs.some(job => job.id === accepted.jobId)
-    || accepted.versionId && !versions.some(version => version.id === accepted.versionId)
+    || !accepted.jobId && accepted.versionId && !versions.some(version => version.id === accepted.versionId)
     || accepted.publicationId && !publications.some(publication => publication.id === accepted.publicationId)
   ));
   const busy = operation?.phase === "submitting" || awaitingReceipt, uncertain = operation?.phase === "unknown";
@@ -107,22 +109,36 @@ export function SceneRepairPanel({ gameId, sceneId, originalFailed, media, canOp
   };
   const lastReceipt = feedback ?? media.requests.find(request => request.input.sceneId === sceneId)?.receipt;
   const jobAttempts = latest ? attempts.filter(attempt => (attempt.repairJobId === latest.id || attempt.operationKey.startsWith(`media:${latest.id}:`))) : [];
-  const unresolved = attempts.filter(attempt => (attempt.operationKey.startsWith(`${sceneId}:render:`) || jobs.some(job => (attempt.repairJobId === job.id || attempt.operationKey.startsWith(`media:${job.id}:`)))) && attempt.status === "needs_reconciliation");
+  const authorizedAttempts = new Set(media.requests.filter(request => request.receipt.accepted && request.input.sceneId === sceneId && request.input.action === "regenerate")
+    .flatMap(request => Array.isArray(request.input.acknowledgeUncertainAttempts) ? request.input.acknowledgeUncertainAttempts as string[] : []));
+  const unresolved = attempts.filter(attempt => !authorizedAttempts.has(attempt.id) && (attempt.sceneId === sceneId || attempt.operationKey.startsWith(`${sceneId}:render:`) || jobs.some(job => (attempt.repairJobId === job.id || attempt.operationKey.startsWith(`media:${job.id}:`)))) && attempt.status === "needs_reconciliation");
+  const regenerationDisabled = !canOperate || busy || !!active || uncertain || renderDisabled;
+  const regenerate = () => {
+    if (regenerationDisabled) return;
+    setConfirmRegenerate(false); setEditingVersion(null);
+    void send({ action: "regenerate", ...(wolfForms && regenerateForms ? { regenerateForms: true } : {}),
+      ...(unresolved.length ? {acknowledgeUncertainAttempts: unresolved.map(attempt => attempt.id)} : {}) });
+  };
   return <section aria-label="Scene repair" className="space-y-3 border-t border-white/15 pt-3">
     <p className="text-xs text-white/60">{publicationAudience === "viewers" ? "Viewer version" : "Production version"}: {published ? `v${published.version}` : publicationAudience === "viewers" ? "Portraits" : "Unpublished"} · Publication {publications[0]?.revision ?? 0}</p>
     {canOperate && <div className="flex flex-wrap gap-2">
       <button className={button} disabled={busy || !!active || uncertain} onClick={() => setEditingVersion(latest?.version ?? 0)}>Correct images</button>
-      <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "regenerate", ...(wolfForms && regenerateForms ? { regenerateForms: true } : {}) })}>{renderLabel}</button>
+      <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => unresolved.length ? setConfirmRegenerate(true) : regenerate()}>{renderLabel}</button>
       {(latest && ["failed", "needs_reconciliation"].includes(latest.status) || !latest && originalFailed) && <button className={button} disabled={busy || !!active || uncertain || renderDisabled} onClick={() => void send({ action: "continue", ...(latest && { sourceJobId: latest.id }) })}>Continue failed repair</button>}
       {uncertain && <button className={button} disabled={busy} onClick={() => void send({})}>Check request</button>}
     </div>}
     {canOperate && wolfForms && <label className="flex items-center gap-2 text-sm text-white/70"><input type="checkbox" checked={regenerateForms} onChange={event => setRegenerateForms(event.target.checked)} />Regenerate wolf forms too</label>}
-    {canOperate && editingVersion !== null && <ImageReviewEditor key={editingVersion} gameId={gameId} sceneId={sceneId} apiPrefix={apiPrefix} disabled={busy || !!active || uncertain} onClose={() => setEditingVersion(null)} onSave={review => void send({ action: "review", review, expectedVersion: editingVersion })} />}
+    {canOperate && editingVersion !== null && <ImageReviewEditor key={editingVersion} gameId={gameId} sceneId={sceneId} apiPrefix={apiPrefix} disabled={busy || !!active || uncertain} onClose={() => setEditingVersion(null)} onRegenerate={() => setConfirmRegenerate(true)} onSave={review => void send({ action: "review", review, expectedVersion: editingVersion })} />}
+    {confirmRegenerate && canOperate && <ConfirmActionDialog disabled={regenerationDisabled} title="Regenerate this scene?" confirmLabel="Regenerate scene" onClose={() => setConfirmRegenerate(false)} onConfirm={regenerate}>
+      <p>Generate a fresh image. You can discard this candidate without marking heads or saving a reviewed version.</p>
+      {unresolved.length > 0 && <p>The previous provider request has an uncertain cost and may already have been charged. Continuing authorizes another paid render. Its receipt remains available for accounting.</p>}
+      <p>Review the new image before publishing it.</p>
+    </ConfirmActionDialog>}
     <p className="text-xs text-white/50">Repairs may incur provider charges. Regeneration includes harmonization for multi-panel scenes. Candidates need review and publication; gameplay is unchanged.</p>
     {unresolved.length > 0 && <div role="status" className="rounded bg-amber-400/10 p-3 text-sm text-amber-200">
       <p>Needs reconciliation: {unresolved.length} provider request(s) have an uncertain outcome.</p>
       {unresolved.map(attempt => <p key={attempt.id} className="break-all text-xs">{attempt.operationKey.split(":").at(-1)} · Attempt {attempt.id}</p>)}
-      <a href="#provider-attempts" className="underline">Review receipts before another paid request</a>
+      <p>Use Regenerate scene to authorize a new render, or <a href="#provider-attempts" className="underline">review provider receipts</a>.</p>
     </div>}
     {lastReceipt && <p role={lastReceipt.accepted ? "status" : "alert"} className={`break-words text-sm ${lastReceipt.accepted ? "text-green-200" : "text-amber-200"}`}>{lastReceipt.message}{lastReceipt.jobId && <span className="block text-xs">Job {lastReceipt.jobId}</span>}</p>}
     {latest && <div className="rounded bg-white/5 p-3 text-sm" aria-live="polite">

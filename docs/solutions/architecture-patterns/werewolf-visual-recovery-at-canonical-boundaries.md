@@ -32,3 +32,9 @@ Werewolf originally treated every visual failure as portrait fallback. Exposing 
 ## Next-game guidance
 
 Add a game-owned boundary validator and recovery adapter. Reuse policy UI and production services; never fabricate another game's cursor or derive required cast from prose. Keep recovery imagery distinct from gameplay authority and from general editorial publication.
+
+## Bad pixels are separate from uncertain billing
+
+The producer could be forced to mark heads and save an unwanted candidate, yet still could not regenerate because an earlier request lacked a settled receipt. Keep image rejection, publication, and cost reconciliation independent. **Reject and regenerate** now queues a fresh version directly. Exact uncertain scene attempt IDs can be acknowledged in the accepted, idempotent media request; this is permission for new paid work, not evidence that the old request was free or settled. Existing receipts and unpublished versions remain intact. Active repairs and stale versions still block, and continuing an old operation chain still requires reconciliation. The browser regression covers confirmation, cancellation, rejecting from the head editor, a fresh deterministic candidate, explicit publication, and resume.
+
+A queue receipt contains both a job ID and its intended version ID. Waiting for that version to exist kept all controls disabled after a failed render. Queue acknowledgement must be satisfied by the saved job; only actions without a job wait directly for a version. A failed job is a recovery state, not a pending request.
