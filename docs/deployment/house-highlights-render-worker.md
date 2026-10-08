@@ -124,6 +124,12 @@ bun run dev:api
 bun run dev:render-worker
 ```
 
+The dev service supplies `.renders/render-worker/drain-ack.json` in the checkout
+for local drain control (including Ctrl-C). `POSTGAME_MEDIA_DRAIN_ACK_FILE` can
+override it. Run one dev render worker per checkout; simultaneous workers need
+separate control directories. The deployed poll command still requires an
+explicit control path; its handoff contract is unchanged.
+
 Queue a completed game from **Admin -> Game History -> Trailer -> Backfill**.
 The authenticated API equivalent is:
 
