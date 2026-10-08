@@ -796,3 +796,7 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
+
+## Local full-replay video export
+
+Use `bun run replay:export -- <slug> --output ./exports/game.mp4` to render a completed Influence or Werewolf game locally through the fullscreen content stages. See [local replay export](docs/local-replay-export.md) for audience rules, offline bundles, adjustable presentation timing, prerecorded speech, and verification boundaries. This does not invoke providers or publish media.

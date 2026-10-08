@@ -52,7 +52,8 @@
     "render-worker:once": "cd packages/web && bun run render-worker:once",
     "render-worker:smoke": "cd packages/web && bun run render-worker:smoke",
     "render-worker:health": "cd packages/web && bun run render-worker:health",
-    "game-assets": "bun run scripts/game-assets.ts"
+    "game-assets": "bun run scripts/game-assets.ts",
+    "replay:export": "REPLAY_EXPORT_CWD=\"$PWD\" bun run --cwd packages/web replay:export"
   },
   "devDependencies": {
     "@clerk/backend": "3.11.7",
