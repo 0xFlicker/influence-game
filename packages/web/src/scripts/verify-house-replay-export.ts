@@ -46,6 +46,7 @@ await withPreparedReplay(
         inputProps,
       });
     const selected = new Map<string, number>();
+    const thinkingFrames = new Map<string, number>();
     for (const [index, cue] of manifest.cues.entries()) {
       const picture = cue.picture;
       const kind =
@@ -60,6 +61,22 @@ await withPreparedReplay(
                 : picture.cue.moment.entry.kind))
           : picture.kind === "werewolf-opening" ? `opening-${picture.cue.opening.shot}` : (picture.beat?.kind ?? picture.cue.kind);
       const interval = manifest.timeline[index]!;
+      if (interval.thought) {
+        const thought = interval.thought;
+        const treatment = picture.kind === "werewolf" && picture.scene
+          ? "scene" : picture.kind === "influence" && picture.beat?.kind === "scene"
+            ? "scene" : "portrait";
+        for (const [phase, offset] of [
+          ["enter", thought.enterMs / 2],
+          ["reading", thought.readAtMs + 500],
+          ["return", (thought.returnAtMs + thought.duration) / 2],
+        ] as const) {
+          const key = `thinking-${treatment}-${phase}`;
+          const frame = Math.ceil((interval.startMs + thought.insertAt + offset) * manifest.fps / 1000) - manifest.range.fromFrame;
+          if (frame >= 0 && frame + 1 < composition.durationInFrames && !thinkingFrames.has(key))
+            thinkingFrames.set(key, frame);
+        }
+      }
       const reading = interval.segments.find(
         (segment) => segment.kind === "reading",
       );
@@ -104,7 +121,7 @@ await withPreparedReplay(
           );
       }
     }
-    const samples = [...selected].slice(0, 14),
+    const samples = [...selected].slice(0, 14).concat([...thinkingFrames]),
       hashes = new Map<number, string>();
     const browser = await openBrowser("chrome");
     try {
