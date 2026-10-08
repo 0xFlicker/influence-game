@@ -3,8 +3,8 @@
 import {useSampledStage} from "@/components/watch/sampled-stage";
 import {sceneCameraProgress} from "./visual-scene-layout";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
-import {ThoughtBubble, useSceneThinking} from "@/components/watch/watch-thinking";
-import {layoutThought} from "@/components/watch/thought-layout";
+import {useSceneThinking} from "@/components/watch/watch-thinking";
+import {thinkingFocus, ThinkingFocusOverlay} from "@/components/watch/thinking-focus";
 import { useLayoutEffect, useRef, useState } from "react";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { TimedSpeech } from "./timed-speech";
@@ -68,15 +68,13 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     : readingElapsedMs - SCENE_SPEECH_START_MS;
   const rawBubble = {left: beside ? 12 : Math.max(12, (size.width - 480) / 2), top: bubbleTop,
     width: Math.max(0, Math.min(480, beside ? size.width * .43 : size.width - 24)), height: bubbleHeight};
-  const thoughtLayout = thought ? layoutThought(size.width, available, rawBubble, {x:centerX, y:centerY - diameter * .2}) : null;
-  const speechBox = thoughtLayout?.speech ?? rawBubble;
-  const thoughtBox = thoughtLayout?.thought ?? {...speechBox,height:0};
+  const focus = thinkingFocus(size.width,available,{left:centerX-diameter*.28,top:centerY-diameter*.4,width:diameter*.56,height:diameter*.56},thought?.focus ?? 0,true,reducedMotion);
+  const speechBox = rawBubble;
   const speechFit = useBubbleTypography(frame, beat.speech.text, speechBox, "speech", available < 300);
-  const thoughtFit = useBubbleTypography(frame, thought?.text ?? "", thoughtBox, "thought", available < 300);
-  const fittedThought = {...thoughtBox,width:thoughtFit.typography?.width ?? thoughtBox.width,height:thoughtFit.typography?.height ?? thoughtBox.height};
   const bubble = {...speechBox,width:speechFit.typography?.width ?? speechBox.width,height:speechFit.typography?.height ?? speechBox.height};
   return <section ref={frame} aria-label={beat.roomNumber === null ? "Mingle room" : `Mingle room ${beat.roomNumber}`} data-portrait-room
     className="relative min-h-0 w-full flex-1 overflow-hidden" style={{ perspective: 1200 }}>
+    <div data-thinking-camera className="absolute inset-0" style={{...focus.mediaStyle,perspective:1200}}>
     <StageBackdrop source={SOLO_STUDIO_BACKDROP} />
     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,transparent,rgba(0,0,0,.55))]" />
     <p className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">Mingle{beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}</p>
@@ -99,12 +97,13 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
         <p className={`mt-3 max-w-full truncate rounded-full bg-black/60 px-3 py-1 text-xs ${active ? "text-white" : "text-white/65"}`}>{player.name}</p>
       </div>;
     })}
-    {opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
+    </div>
+    {!thought && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
       <p className={`mb-2 h-5 shrink-0 truncate text-xs font-semibold leading-5 text-white/70 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
-      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className={thoughtLayout && available < 300 ? "text-xs leading-4" : "text-base leading-relaxed"} />
+      <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className="text-base leading-relaxed" />
       <span aria-hidden="true" className={`absolute h-4 w-4 rotate-45 border-white/25 bg-black/90 ${beside ? "-right-2 border-r border-t" : "-bottom-2 left-1/2 -translate-x-1/2 border-r border-b"}`} style={beside ? { top: centerY - bubbleTop - 8 } : undefined} />
     </div>}
-    {thoughtLayout && <ThoughtBubble box={fittedThought} head={thoughtLayout.head} typography={thoughtFit.typography} padding={thoughtFit.padding} />}
+    <ThinkingFocusOverlay frame={frame} layout={focus} />
   </section>;
 }

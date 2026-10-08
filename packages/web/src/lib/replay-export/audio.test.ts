@@ -69,7 +69,6 @@ const timing: TimingInput = {
   baseDurationMs: 12000,
   speech: null,
   thinking: null,
-  order: "thinking-first",
 };
 const score = {
   key: "day",

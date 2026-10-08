@@ -3,10 +3,9 @@ import { layoutSoloPresentation } from "../app/games/[slug]/components/solo-pres
 import type {SceneFrame} from "../app/games/[slug]/components/visual-scene-layout";
 const overlaps = (a: SceneFrame, b: SceneFrame) => a.left < b.left+b.width && b.left < a.left+a.width && a.top < b.top+b.height && b.top < a.top+a.height;
 for (const [width,height] of [[3440,1440],[2560,1080],[1280,800],[390,844],[844,390],[590,280]]) {
-  for (const thinking of [false,true]) {
-    test(`full-body art, bubbles and ledger have separate space: ${width}x${height}, thinking=${thinking}`, () => {
-      const layout = layoutSoloPresentation(width!,height!,1024,1536,true,110,308,{x:.4,y:.85,width:.15,height:.12},thinking);
-      const boxes = [layout.image,layout.bubble,...(layout.thought ? [layout.thought] : [])];
+    test(`full-body art, bubbles and ledger have separate space: ${width}x${height}`, () => {
+      const layout = layoutSoloPresentation(width!,height!,1024,1536,true,110,308,{x:.4,y:.85,width:.15,height:.12});
+      const boxes = [layout.image,layout.bubble];
       for (const box of boxes) {
         expect(box.width).toBeGreaterThan(0); expect(box.height).toBeGreaterThan(0);
         expect(box.left).toBeGreaterThanOrEqual(0); expect(box.top).toBeGreaterThanOrEqual(0);
@@ -16,16 +15,14 @@ for (const [width,height] of [[3440,1440],[2560,1080],[1280,800],[390,844],[844,
       for (let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) expect(overlaps(boxes[i]!,boxes[j]!)).toBe(false);
       expect(layout.image.width/layout.image.height).toBeCloseTo(2/3);
     });
-  }
 }
-for (const thinking of [false, true]) test(`ultrawide speech stays beside the contained portrait, thinking=${thinking}`, () => {
-  const {image, bubble, thought} = layoutSoloPresentation(3440, 1440, 1024, 1536, true, 110, 308, undefined, thinking);
+test(`ultrawide speech stays beside the contained portrait`, () => {
+  const {image, bubble} = layoutSoloPresentation(3440, 1440, 1024, 1536, true, 110, 308, undefined);
   expect(bubble.left - (image.left + image.width)).toBeCloseTo(20);
-  if (thought) expect(image.left - (thought.left + thought.width)).toBeCloseTo(20);
-  expect((thought?.left ?? image.left) + bubble.left + bubble.width).toBeCloseTo(3440);
+  expect(image.left + bubble.left + bubble.width).toBeCloseTo(3440);
 });
 test("silent ballots keep their whole character above the ledger", () => {
-  const {image} = layoutSoloPresentation(390,640,1024,1536,true,180,308,undefined,false,false);
+  const {image} = layoutSoloPresentation(390,640,1024,1536,true,180,308,undefined,false);
   expect(image.top+image.height).toBeLessThanOrEqual(460);
   expect(image.left+image.width/2).toBeCloseTo(195);
 });

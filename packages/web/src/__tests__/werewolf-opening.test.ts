@@ -55,7 +55,7 @@ test("door fades while moving, ending in black before dialogue; reduced motion r
 });
 test("full export prepends the same opening and audio envelopes without replacing gameplay music", async () => {
   const [window] = await windows();
-  const cues = await buildExportCues({kind:"werewolf",title:"Silence Beneath the Lanterns",windows:[window!],thoughts:[]},"thinking-first",false);
+  const cues = await buildExportCues({kind:"werewolf",title:"Silence Beneath the Lanterns",windows:[window!],thoughts:[]},false);
   const intro=werewolfOpening(window!,"Silence Beneath the Lanterns");
   expect(cues.slice(0,intro.length).map(c=>c.picture.cue)).toEqual(intro);
   expect(cues[intro.length]!.music?.src).toContain("lantern-to-fang");

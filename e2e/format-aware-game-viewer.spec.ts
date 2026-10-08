@@ -131,7 +131,7 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
-  test("captured thinking shares the Influence player clock in either presentation order", async ({page}) => {
+  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
     const slug = "thinking-presentation-fixture";
     const scenario = createFormatKernelViewerScenario("two_names_declined");
     const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
@@ -148,44 +148,31 @@ test.describe("format-aware game viewer", () => {
     const settings = page.getByRole("dialog", {name:"Player settings"});
     await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
     await page.getByLabel("Show thinking", { exact: true }).check();
-    await expect(page.locator('[data-in-scene-thinking]')).toContainText("One precise question");
-    await expect(page.getByRole("heading", {name:"Introductions",exact:true})).toBeVisible();
-    await page.getByLabel("Thinking order", { exact: true }).selectOption("speech-first");
-    await expect(page.locator('[data-in-scene-thinking]')).toHaveCount(0);
+    await expect(page.getByLabel("Thinking order", {exact:true})).toHaveCount(0);
     await page.getByRole("button",{name:"Close settings",exact:true}).click();
-    await playbackKey(page,"Space");
-    await expect(page.locator('[data-solo-image] blockquote').locator('..')).toHaveCSS("opacity", "1");
-    await expect(page.locator('[data-in-scene-thinking]')).toBeVisible();
-    await playbackKey(page,"Space");
-    await page.screenshot({path:"/tmp/influence-speech-first-thinking.png"});
-    await expect.poll(() => page.evaluate(() => {
-      const thought = document.querySelector('[data-in-scene-thinking]')!.getBoundingClientRect();
-      const speech = document.querySelector('[data-speech-bubble]');
-      const stage = document.querySelector('[data-solo-image]')!.getBoundingClientRect();
-      return thought.height > 0 && thought.top >= stage.top && thought.bottom <= stage.bottom
-        && (!speech || Number(getComputedStyle(speech).opacity) === 0);
-    })).toBe(true);
+    await playbackKey(page,"ArrowRight");
+    const thought = page.locator('[data-in-scene-thinking]');
+    await expect(thought).toHaveCSS("opacity","1");
+    await expect(thought).toContainText("One precise question");
+    await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
+    const focused = await page.locator('[data-thinking-camera]').getAttribute('style');
+    await page.waitForTimeout(150);
+    expect(await page.locator('[data-thinking-camera]').getAttribute('style')).toBe(focused);
+    await page.screenshot({path:"/tmp/influence-thinking-focus.png"});
     await page.setViewportSize({width:390,height:844});
-    await expect(page.locator('[data-in-scene-thinking]')).toContainText("One precise question");
+    await expect(thought).toContainText("One precise question");
     await expect.poll(() => page.evaluate(() => {
-      const thought = document.querySelector('[data-in-scene-thinking]')!.getBoundingClientRect();
-      const head = document.querySelector('[data-solo-portrait]')!.getBoundingClientRect();
-      return thought.left >= head.right && document.documentElement.scrollWidth <= innerWidth;
+      const box=document.querySelector('[data-in-scene-thinking]')!.getBoundingClientRect();
+      const stage=document.querySelector('[data-solo-image]')!.getBoundingClientRect();
+      return box.left>=stage.left && box.right<=stage.right && box.bottom<=stage.bottom;
     })).toBe(true);
     await page.screenshot({path:"/tmp/influence-mobile-thinking.png"});
-    await page.setViewportSize({width:1280,height:720});
-    await page.getByRole("button",{name:"Player settings",exact:true}).click();
-    await page.getByLabel("Thinking order", { exact: true }).selectOption("thinking-first");
-    await page.getByRole("button",{name:"Close settings",exact:true}).click();
-    const thoughtBox = await page.locator('[data-in-scene-thinking]').boundingBox();
     await playbackKey(page,"ArrowRight");
+    await expect(thought).toHaveCount(0);
+    await expect(page.locator('[data-thinking-camera]')).toHaveCSS('transform','matrix(1, 0, 0, 1, 0, 0)');
     await playbackKey(page,"ArrowRight");
     await expect(page.locator('[data-speech-bubble]')).toHaveCSS("opacity","1");
-    expect(await page.locator('[data-in-scene-thinking]').boundingBox()).toEqual(thoughtBox);
-    await page.screenshot({path:"/tmp/influence-thought-and-speech.png"});
-    await playbackKey(page,"ArrowRight");
-    await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
-    await expect(page.locator('[data-in-scene-thinking]')).toHaveCount(0);
+    await expect(thought).toHaveCount(0);
   });
 
   for (const status of ["completed", "in_progress"] as const) test(`shared Influence moment links open their canonical action and preserve playback intent (${status})`, async ({ page }) => {

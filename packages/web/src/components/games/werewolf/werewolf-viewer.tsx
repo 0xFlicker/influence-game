@@ -41,7 +41,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
   const frame = useRef<HTMLDivElement>(null);
   const fullscreen = usePlayerFullscreen(frame);
   const [selected, setSelected] = useState<string | null>(null);
-  const {thinking, setThinking, thinkingOrder, setThinkingOrder} = preferences;
+  const {thinking, setThinking} = preferences;
   const [inspecting, setInspecting] = useState(false), [transcript, setTranscript] = useState(false);
   const [stopping, setStopping] = useState(false), [stopError, setStopError] = useState<string | null>(null);
   const {hasPermission} = usePermissions();
@@ -100,7 +100,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         {watch.openingCue ? <div className="relative min-h-0 flex-1" onClick={event => {if (!(event.target instanceof Element) || !event.target.closest("button")) director.manualAdvance();}}>
           <WerewolfOpeningFrame cue={watch.openingCue} elapsedMs={watch.elapsed} playing={snapshot.isPlaying && !watch.preparing && !watch.holding} speed={snapshot.speed} reduced={snapshot.reducedMotion} />
           <button type="button" className="absolute right-4 top-4 rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white/80" onClick={() => {music.suspend(); void watch.seek(1);}}>Skip opening</button>
-        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} order={thinkingOrder} speaker={performer?.name ?? "Player"} load={loadThinking}>
+        </div> : <WatchThinking director={director} cueKey={cue?.key ?? null} enabled={audience === "omniscient" && thinking} speaker={performer?.name ?? "Player"} load={loadThinking}>
         <WerewolfWatchStage navigationRevision={watch.navigationRevision} contextLabel={active ? replayMoment({...active.snapshot, entries:[active.entry]}).title : undefined} cue={cue} scene={active?.mediaKey ? watch.media[active.mediaKey] ?? null : null} elapsed={watch.elapsed} reduced={snapshot.reducedMotion} director={director} holding={watch.holding} status={data?.status} />
         </WatchThinking>}
         {watch.preparing && <p role="status" className="absolute right-3 top-2 text-xs text-white/40">Preparing…</p>}
@@ -111,7 +111,7 @@ function WerewolfSession({slug, title, audience, cutoff, preferences, startCurso
         {data?.status === "completed" && <Link href={gameResultsHref(slug)}>View results · Spoilers</Link>}
         <button onClick={() => setTranscript(value => !value)}>Transcript</button>
         {data?.status === "in_progress" && hasPermission("stop_game") && <button disabled={stopping} onClick={async () => {setStopping(true);try {await stopWerewolf(data.gameId);} catch(cause) {setStopError(cause instanceof Error ? cause.message : "Could not stop game");} finally {setStopping(false);}}}>Stop game</button>}
-      </div>} thinking={audience === "omniscient" ? {enabled:thinking,onChange:setThinking,order:thinkingOrder,onOrderChange:setThinkingOrder} : undefined} />
+      </div>} thinking={audience === "omniscient" ? {enabled:thinking,onChange:setThinking} : undefined} />
         </div>
       {transcript && <div role="dialog" aria-modal="true" aria-label="Game transcript" className="absolute inset-4 z-40 flex flex-col overflow-hidden rounded-xl border border-white/20 bg-black p-4"><button className="self-end" onClick={() => setTranscript(false)}>Close transcript</button><RawTranscript key={`${cursor}`} slug={slug} audience={audience} cutoff={cutoff} cursor={cursor} /></div>}
       </div>

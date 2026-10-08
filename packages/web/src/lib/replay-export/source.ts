@@ -8,7 +8,6 @@ import type { WerewolfWatchWindow } from "@influence/engine/werewolf/watch-contr
 import type { WerewolfThinking } from "@influence/engine/werewolf/thinking";
 import type { WerewolfAudience } from "@influence/engine/werewolf";
 import type { VisualWatchData } from "../../app/games/[slug]/components/visual-watch-model";
-import type { ThinkingOrder } from "../../components/watch/thinking-timing";
 
 export type InfluenceExportGame = Pick<
   GameDetail,
@@ -33,7 +32,6 @@ export interface SourceOptions {
   game: string;
   audience?: WerewolfAudience;
   thinking: boolean;
-  thinkingOrder: ThinkingOrder;
 }
 export type ReadReplayJson = <T>(path: string) => Promise<T>;
 

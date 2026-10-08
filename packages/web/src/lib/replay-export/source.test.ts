@@ -15,7 +15,6 @@ test("Mystery exports reject thinking before reading private evidence", async ()
     loadReplaySource(read, {
       game: "game",
       thinking: true,
-      thinkingOrder: "thinking-first",
     }),
   ).rejects.toThrow("Mystery");
 });
@@ -46,7 +45,6 @@ test("completed canonical Werewolf windows load with audience-safe evidence", as
   const source = await loadReplaySource(read, {
     game: "export-test",
     thinking: false,
-    thinkingOrder: "thinking-first",
   });
   expect(source.kind).toBe("werewolf");
   if (source.kind === "werewolf") expect(source.title).toBe("Silence Beneath the Lanterns");
@@ -61,7 +59,7 @@ test("completed canonical Werewolf windows load with audience-safe evidence", as
         { id: "export-test", slug: "export-test", gameKind: "werewolf" },
         poisoned,
       ]),
-      { game: "export-test", thinking: false, thinkingOrder: "thinking-first" },
+      { game: "export-test", thinking: false },
     ),
   ).rejects.toThrow("private");
 });
@@ -81,7 +79,7 @@ test("gapped windows fail before they become a render manifest", async () => {
         { id: "gap-test", slug: "gap-test", gameKind: "werewolf" },
         window,
       ]),
-      { game: "gap-test", thinking: false, thinkingOrder: "thinking-first" },
+      { game: "gap-test", thinking: false },
     ),
   ).rejects.toThrow("gap");
 });

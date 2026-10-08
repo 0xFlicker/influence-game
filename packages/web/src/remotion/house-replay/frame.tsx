@@ -116,7 +116,6 @@ export function ReplayFrame({
   return (
     <AbsoluteFill style={{ background: "black", color: "white" }}>
       <SceneThinkingProvider
-        enabled={data.thinking}
         thought={
           sample.thought
             ? { ...sample.thought, speaker: cue.speech?.speaker ?? "" }

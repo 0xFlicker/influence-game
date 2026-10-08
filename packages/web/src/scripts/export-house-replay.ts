@@ -27,7 +27,6 @@ const options = {
   "api-base-url": { type: "string" },
   audience: { type: "string" },
   thinking: { type: "string" },
-  "thinking-order": { type: "string" },
   output: { type: "string" },
   bundle: { type: "string" },
   inspect: { type: "boolean" },
@@ -58,7 +57,6 @@ Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
 --api-base-url URL       API origin (default http://127.0.0.1:3000)
 --audience mystery|omniscient  Werewolf only; default mystery
 --thinking on|off        Default off
---thinking-order thinking-first|speech-first
 --timing FILE            JSON presentation adjustments
 --speech-manifest FILE   Existing recorded messages, never generated
 --music on|off           Default on; --volume 0..1 (default 0.3)
@@ -153,9 +151,7 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
         (args.music && !["on", "off"].includes(args.music))
       )
         throw new Error("thinking/music must be on or off");
-      const order = args["thinking-order"] ?? "thinking-first";
-      if (order !== "thinking-first" && order !== "speech-first")
-        throw new Error("Invalid thinking order");
+
       const api = new URL(args["api-base-url"] ?? "http://127.0.0.1:3000"),
         token = process.env.HOUSE_REPLAY_TOKEN;
       if (api.username || api.password || api.search || api.pathname !== "/")
@@ -174,11 +170,9 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
         game: positionals[0]!,
         audience: args.audience as "mystery" | "omniscient" | undefined,
         thinking: args.thinking === "on",
-        thinkingOrder: order,
       });
       let cues = await buildExportCues(
         source,
-        order,
         args.thinking === "on",
         read,
       );

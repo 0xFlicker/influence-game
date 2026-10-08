@@ -11,7 +11,6 @@ const speech: TimingInput = {
   baseDurationMs: 6000,
   speech: { showAtMs: 500, readAtMs: 1000, hideAtMs: 5000, hiddenAtMs: 5500 },
   thinking: null,
-  order: "thinking-first",
 };
 describe("replay timing", () => {
   test("default is the same stage clock", () => {
@@ -19,27 +18,22 @@ describe("replay timing", () => {
     for (const ms of [0, 500, 999, 1000, 4500, 5500, 5999])
       expect(sampleTiming(cue, ms).elapsedMs).toBe(ms);
   });
-  test("thinking reserves its interval then persists through speech", () => {
-    const cue = compileTiming(
-      [{ ...speech, thinking: "A thought" }],
-      parseTimingProfile(),
-      30,
-    )[0]!;
-    expect(cue.endMs).toBe(8800);
-    expect(sampleTiming(cue, 1500).elapsedMs).toBe(500);
-    expect(sampleTiming(cue, 4500).thought?.text).toBe("A thought");
-    expect(sampleTiming(cue, 8100).thought?.opacity).toBeCloseTo(0.4);
-    expect(sampleTiming(cue, 8300).thought).toBeNull();
+  test("thinking camera, reading and return finish before speech and voice", () => {
+    const cue = compileTiming([{...speech,thinking:"A thought",recording:{assetId:"voice",durationMs:1500}}],parseTimingProfile(),30)[0]!;
+    expect(cue.endMs).toBe(11250);
+    expect(sampleTiming(cue,950).elapsedMs).toBe(500);
+    expect(sampleTiming(cue,950).thought?.focus).toBeCloseTo(.5);
+    expect(sampleTiming(cue,2000).thought?.opacity).toBe(1);
+    expect(sampleTiming(cue,5300).thought?.focus).toBeCloseTo(.5);
+    expect(sampleTiming(cue,5750).thought).toBeNull();
+    expect(cue.speech?.showAtMs).toBe(5750);expect(cue.recording?.startMs).toBe(6250);
   });
-  test("speech-first thought follows exit", () => {
-    const cue = compileTiming(
-      [{ ...speech, thinking: "A thought", order: "speech-first" }],
-      parseTimingProfile(),
-      30,
-    )[0]!;
-    expect(sampleTiming(cue, 5000).thought).toBeNull();
-    expect(sampleTiming(cue, 6000).elapsedMs).toBe(5500);
-    expect(sampleTiming(cue, 6000).thought?.text).toBe("A thought");
+  test("export timing scales thought reading separately from camera motion", () => {
+    const cue=compileTiming([{...speech,thinking:"A thought"}],parseTimingProfile({thinkingRate:2,motionScale:2}),30)[0]!;
+    expect(cue.thought!.hideAtMs-cue.thought!.readAtMs).toBe(1400);
+    expect(cue.thought!.enterMs).toBe(1800);
+    expect(cue.thought!.duration-cue.thought!.returnAtMs).toBe(1800);
+    expect(sampleTiming(cue,cue.speech!.showAtMs).thought).toBeNull();
   });
   test("voice cannot be truncated by reading speed", () => {
     const cue = compileTiming(

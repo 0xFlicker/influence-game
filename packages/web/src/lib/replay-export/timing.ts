@@ -2,7 +2,6 @@ import {
   thoughtTiming,
   sampleThought,
   type SpeechBoundaries,
-  type ThinkingOrder,
   type ThoughtTiming,
 } from "../../components/watch/thinking-timing";
 
@@ -30,7 +29,6 @@ export interface TimingInput {
   kind: "opening" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
-  order: ThinkingOrder;
   recording?: SpeechRecording;
 }
 export interface TimeSegment {
@@ -176,15 +174,8 @@ export function compileTiming(
       time += duration;
     };
     const motion = settings.motionScale ?? 1;
-    const thought = thoughtTiming(
-      input.thinking,
-      input.order,
-      input.baseDurationMs,
-      speech,
-    );
-    const thoughtDuration = thought
-      ? thought.duration / (settings.thinkingRate ?? 1)
-      : 0;
+    const thought = thoughtTiming(input.thinking, speech, {readingRate: settings.thinkingRate, motionScale: motion});
+    const thoughtDuration = thought?.duration ?? 0;
     const addThought = () => {
       if (thought)
         add("thinking", thought.insertAt, thought.insertAt, thoughtDuration);
@@ -196,7 +187,7 @@ export function compileTiming(
         speech.showAtMs,
         settings.establishingHoldMs ?? speech.showAtMs * motion,
       );
-      if (input.order === "thinking-first") addThought();
+      addThought();
       add(
         "entrance",
         speech.showAtMs,
@@ -221,7 +212,6 @@ export function compileTiming(
         speech.hiddenAtMs,
         (speech.hiddenAtMs - speech.hideAtMs) * motion,
       );
-      if (input.order === "speech-first") addThought();
       add(
         "hold",
         speech.hiddenAtMs,
@@ -235,7 +225,7 @@ export function compileTiming(
         settings.conversationGapMs ?? 0,
       );
     } else {
-      if (input.order === "thinking-first") addThought();
+      addThought();
       const duration =
         input.kind === "opening" ? input.baseDurationMs : input.kind === "ballot"
           ? (settings.ballotHoldMs ?? input.baseDurationMs)
@@ -243,7 +233,6 @@ export function compileTiming(
             ? (settings.tallyHoldMs ?? input.baseDurationMs)
             : input.baseDurationMs * motion;
       add("hold", 0, input.baseDurationMs, duration);
-      if (input.order === "speech-first") addThought();
     }
     if (time <= 0 || !Number.isFinite(cursor + time))
       throw new Error(`Cue has no finite playable duration: ${input.key}`);
@@ -258,7 +247,6 @@ export function compileTiming(
             duration: thoughtDuration,
           }
         : null;
-    // sampleThought shifts speech itself, so supply boundaries before thought insertion.
     const boundary = (kind: TimeSegment["kind"], edge: "startMs" | "endMs") =>
       segments.find((s) => s.kind === kind)![edge];
     const compiledSpeech = speech
@@ -314,18 +302,5 @@ export function sampleTiming(cue: CompiledTiming, absoluteMs: number) {
   const elapsedMs =
     segment.sourceStartMs +
     fraction * (segment.sourceEndMs - segment.sourceStartMs);
-  const thought = cue.thought;
-  const unshift = (value: number) =>
-    thought && value >= thought.insertAt + thought.duration
-      ? value - thought.duration
-      : value;
-  const originalSpeech = cue.speech
-    ? {
-        showAtMs: unshift(cue.speech.showAtMs),
-        readAtMs: unshift(cue.speech.readAtMs),
-        hideAtMs: unshift(cue.speech.hideAtMs),
-        hiddenAtMs: unshift(cue.speech.hiddenAtMs),
-      }
-    : null;
-  return { elapsedMs, thought: sampleThought(local, thought, originalSpeech) };
+  return { elapsedMs, thought: sampleThought(local, cue.thought) };
 }

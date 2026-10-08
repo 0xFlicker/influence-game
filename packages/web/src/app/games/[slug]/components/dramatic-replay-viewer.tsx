@@ -152,7 +152,7 @@ function DramaticReplayTheater({
     reducedMotion,
   } = usePresentationDirector({ followTail: live });
   const { fullscreen, button: fullscreenButton, error: fullscreenError, toggle: toggleFullscreen } = usePlayerFullscreen(animationScope);
-  const {thinking:showThinking, setThinking:setShowThinking, thinkingOrder, setThinkingOrder} = preferences;
+  const {thinking:showThinking, setThinking:setShowThinking} = preferences;
   const controlsRef = useRef<HTMLDivElement>(null);
   const controlsHovered = useRef(false);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -641,7 +641,7 @@ function DramaticReplayTheater({
             : "items-start overflow-y-auto overscroll-y-contain"
         } justify-center ${fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
-        <WatchThinking director={director} cueKey={activeCue?.key ?? null} enabled={showThinking} order={thinkingOrder} speaker={thinkingSpeaker} load={loadThinking}>
+        <WatchThinking director={director} cueKey={activeCue?.key ?? null} enabled={showThinking} speaker={thinkingSpeaker} load={loadThinking}>
         <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${fullscreen || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
@@ -690,7 +690,7 @@ function DramaticReplayTheater({
           isPlaying={isPlaying} togglePlay={() => { if (isPlaying) pausePresentation(); else director.play(); }} speed={speed} onSpeed={value => director.setSpeed(value)}
           goToBeginning={goToBeginning} goToPrevScene={goToPrevScene} onSeek={position => director.seek(position - 1)} goToNextScene={goToNextScene} goToEnd={goToEnd}
           live={live} cursor={directorSnapshot.cursor} count={presentationCues.length}
-          thinking={{enabled:showThinking,onChange:setShowThinking,order:thinkingOrder,onOrderChange:setThinkingOrder}} />
+          thinking={{enabled:showThinking,onChange:setShowThinking}} />
       </div>
     </div>
   );

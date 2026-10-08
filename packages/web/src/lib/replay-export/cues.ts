@@ -43,7 +43,6 @@ import type { MusicSection } from "../../components/watch/watch-music";
 import type { ReplaySource, ReadReplayJson } from "./source";
 import { loadInfluenceThought } from "./source";
 import type { TimingInput } from "./timing";
-import type { ThinkingOrder } from "../../components/watch/thinking-timing";
 
 export type ExportPicture =
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
@@ -84,7 +83,6 @@ export interface ExportCue {
 
 export async function buildExportCues(
   source: ReplaySource,
-  order: ThinkingOrder,
   thinking: boolean,
   read?: ReadReplayJson,
 ): Promise<ExportCue[]> {
@@ -94,7 +92,7 @@ export async function buildExportCues(
       ...source.windows.map((w) => w.media),
     ) as Record<string, AcceptedVisualScene>;
     const opening: ExportCue[] = source.windows[0] ? werewolfOpening(source.windows[0], source.title).map(cue => ({
-      timing:{key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null, order},
+      timing:{key:cue.key, baseDurationMs:cue.baseDurationMs, kind:"opening", speech:null, thinking:null},
       picture:{kind:"werewolf-opening",cue}, source:{kind:"opening"}, label:"Opening", speech:null, music:null,
     })) : [];
     return [...opening, ...werewolfCues(source.windows).map((cue): ExportCue => {
@@ -129,7 +127,6 @@ export async function buildExportCues(
                 : "scene",
           speech: werewolfWatchPolicy.speech(cue),
           thinking: thought,
-          order,
         },
         picture: {
           kind: "werewolf",
@@ -261,7 +258,6 @@ export async function buildExportCues(
               : "scene",
         speech: influencePresentationPolicy.speech(cue),
         thinking: actorId ? thought : null,
-        order,
       },
       picture: { kind: "influence", cue, ...picture, roster, ledger },
       source: {

@@ -52,11 +52,11 @@ for (const audience of ["mystery", "omniscient"] as const) test(`${audience}: ro
   await act(async () => {});
 });
 for (const speechPresentation of ["solo","scene"] as const) for (const [width,height] of [[1440,900],[390,700],[640,250]]) {
-  test(`${speechPresentation}: ${width}x${height} full-body framing stays fixed through empty, thought and speech intervals`, async () => {
+  test(`${speechPresentation}: ${width}x${height} thinking camera returns to normal framing before speech`, async () => {
     Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>width},clientHeight:{configurable:true,get:()=>height}});
     const director = new PresentationDirector<WatchCue>({policy:{position:()=>1,speech:()=>null,isCatchUp:()=>false,acceptAtWatermark:()=>false,reconcile:cues=>cues}});
     const thinking = spyOn(director,"getThinkingFrame").mockReturnValue(null);
-    const content = (elapsedMs:number, enabled=true) => <WatchThinking director={director} cueKey={null} enabled={enabled} order="thinking-first" speaker="Player" load={load}>
+    const content = (elapsedMs:number, enabled=true) => <WatchThinking director={director} cueKey={null} enabled={enabled} speaker="Player" load={load}>
       <SoloPresentation beat={beat} elapsedMs={elapsedMs} speechPresentation={speechPresentation}/>
     </WatchThinking>;
     const view=render(content(0));
@@ -65,19 +65,24 @@ for (const speechPresentation of ["solo","scene"] as const) for (const [width,he
     fireEvent.load(image);
     const rectangle=()=>[image.style.left,image.style.top,image.style.width,image.style.height];
     const reserved=rectangle();
+    const camera=()=>view.container.querySelector<HTMLElement>("[data-thinking-camera]")!.style.transform;
+    const normal=camera();
     expect(parseFloat(image.style.height)).toBeGreaterThan(0);
     expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
-    thinking.mockReturnValue({text:"One precise question.",elapsedMs:100,durationMs:2000,opacity:1});
+    thinking.mockReturnValue({text:"One precise question.",elapsedMs:100,durationMs:2000,opacity:1,focus:1});
     view.rerender(content(1000));
     expect(view.container.querySelector("[data-in-scene-thinking]")).not.toBeNull();
     expect(rectangle()).toEqual(reserved);
+    expect(camera()).not.toBe(normal);
+    expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
     thinking.mockReturnValue(null);
     view.rerender(content(100000));
     expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
     expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
     expect(rectangle()).toEqual(reserved);
     view.rerender(content(0,false));
-    expect(rectangle()).not.toEqual(reserved);
+    expect(rectangle()).toEqual(reserved);
+    expect(camera()).toBe(normal);
     await act(async () => {});
     thinking.mockRestore();
   });

@@ -26,7 +26,6 @@ test("recordings require an exact speaker and text identity; missing files never
       ],
       thoughts: [],
     },
-    "thinking-first",
     false,
   );
   const cue = cues.find((c) => c.speech)!;
