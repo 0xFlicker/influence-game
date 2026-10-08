@@ -155,6 +155,8 @@ export interface GameWatchReplayFrame {
 }
 
 export interface GameWatchReplayFrameOptions {
+  /** Bound an offline export page without changing canonical sequence identity. */
+  limit?: number;
   /** Return only frames after this trusted canonical sequence. */
   afterSequence?: number;
   /**
@@ -303,6 +305,7 @@ export async function getGameWatchReplayFrames(
   options: GameWatchReplayFrameOptions = {},
 ): Promise<GameWatchReplayFrame[] | null> {
   const afterSequence = options.afterSequence ?? 0;
+  if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 256)) throw new Error("limit must be an integer from 1 to 256");
   if (!Number.isInteger(afterSequence) || afterSequence < 0) {
     throw new Error("afterSequence must be a non-negative integer");
   }
@@ -361,6 +364,7 @@ export async function getGameWatchReplayFrames(
       counts: countPlayers(framePlayers),
       ...(viewerDecisionEvent && { viewerDecisionEvent }),
     });
+    if (options.limit !== undefined && frames.length >= options.limit) break;
   }
 
   return frames;

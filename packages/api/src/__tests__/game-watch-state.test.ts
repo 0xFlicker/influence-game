@@ -343,6 +343,18 @@ describe("GameWatchState", () => {
     await appendGameEvents(db, { gameId, ownerEpoch, events });
 
     const fullFrames = await getGameWatchReplayFrames(db, gameId);
+    const paged = [];
+    let afterSequence = 0;
+    for (;;) {
+      const page = await getGameWatchReplayFrames(db, gameId, {afterSequence, limit: 2});
+      expect(page!.length).toBeLessThanOrEqual(2);
+      if (!page!.length) break;
+      paged.push(...page!);
+      afterSequence = page!.at(-1)!.sequence;
+    }
+    expect(paged).toEqual(fullFrames!);
+    await expect(getGameWatchReplayFrames(db, gameId, {limit: 0})).rejects.toThrow();
+
     const fullViewerEvents = fullFrames
       ?.flatMap((frame) => frame.viewerDecisionEvent ? [frame.viewerDecisionEvent] : []) ?? [];
     const expectedViewerEvents = events

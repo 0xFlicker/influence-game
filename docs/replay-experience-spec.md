@@ -16,6 +16,8 @@ This spec defines the architecture, scene model, room types, timing system, Hous
 
 **Current route ownership (2026-06-20):** `MatchWatchShell` is now the default watch surface for live in-progress games and completed transcript replays. `DramaticReplayViewer` remains the scene/timing theater and is embedded inside the shell so replay controls, keyboard behavior, live catch-up, and phase renderers stay intact. Waiting, joining, load-error, and no-transcript completed games keep their existing non-watch flows.
 
+**Shared scrubber behavior (2026-10-07):** Influence and Werewolf use the same replay range control, with or without generated visuals. Dragging previews the selected stop locally and commits one seek on release; the thumb retains that target while a Werewolf history window loads. Pointer cancellation restores the current position, and keyboard changes seek immediately. Cue-count positioning remains in place; migrating the scrubber to the exporter's presentation-time timeline is a separate queued task.
+
 **Data boundary for shell V0:** Shell-level facts come from `GameWatchState` when present and fall back to the existing game detail/transcript state when that is the best available source. The selected-agent inspector loads public watch intelligence from `/api/games/:idOrSlug/watch-intelligence`: curated `thinking`, whitelisted `strategy` artifact fields, transcript-level thinking for visible messages, and canonical revealed round facts. It does not expose durable relationship edges, inferred deals/promises, private reasoning traces, `reasoningContext`, prompts, provider responses, storage keys, trace manifests, source pointers, or checkpoint continuity capsules.
 
 ---

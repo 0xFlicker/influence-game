@@ -1,10 +1,11 @@
 "use client";
 
+import {useSampledStage} from "@/components/watch/sampled-stage";
+import {sceneCameraProgress} from "./visual-scene-layout";
 import {useBubbleTypography} from "@/components/watch/use-bubble-typography";
 import {ThoughtBubble, useSceneThinking} from "@/components/watch/watch-thinking";
 import {layoutThought} from "@/components/watch/thought-layout";
 import { useLayoutEffect, useRef, useState } from "react";
-import { motion } from "motion/react";
 import { resolveAgentAvatarUrl } from "@/components/agent-avatar";
 import { TimedSpeech } from "./timed-speech";
 import type { VisualPresentationBeat } from "./visual-presentation";
@@ -34,6 +35,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
 }) {
+  const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [failed, setFailed] = useState<ReadonlySet<string>>(new Set());
@@ -47,6 +49,9 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  const [speakers,setSpeakers]=useState({current:beat.speech.playerId,previous:beat.speech.playerId});
+  if(speakers.current!==beat.speech.playerId)setSpeakers({current:beat.speech.playerId,previous:speakers.current});
+  const previousSpeaker=sampled ? sampled.previousSpeaker : speakers.previous;
   const speakerIndex = beat.participants.findIndex(player => player.id === beat.speech.playerId);
   const available = Math.max(0, size.height - controlsInset);
   const beside = available < 340 && size.width >= 600;
@@ -77,19 +82,22 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     <p className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">Mingle{beat.roomNumber === null ? "" : ` · Room ${beat.roomNumber}`}</p>
     <div aria-hidden="true" className="absolute rounded-[50%] border border-white/10 bg-black/15" style={{ left: centerX, top: centerY + diameter * .1, width: Math.max(0, size.width * (beside ? .5 : 1) - 80), height: diameter * .7, transform: "translateX(-50%) rotateX(35deg)" }} />
     {beat.participants.map((player, index) => {
-      const seat = seats[index]!;
+      const target = seats[index]!;
+      const previousIndex = beat.participants.findIndex(player => player.id === previousSpeaker);
+      const previous = previousIndex >= 0 ? portraitRoomSeats(beside ? size.width * .5 : size.width, beat.participants.length, previousIndex)[index]! : target;
+      const progress = reducedMotion ? 1 : sceneCameraProgress(elapsedMs * 450 / 650);
+      const seat = {...target, x: previous.x + (target.x-previous.x)*progress, y: previous.y + (target.y-previous.y)*progress, z: previous.z + (target.z-previous.z)*progress, scale: previous.scale + (target.scale-previous.scale)*progress};
       const active = index === speakerIndex;
       const saved = resolveAgentAvatarUrl(player.avatarUrl, player.persona, player.name, player.personaKey);
       const source = failed.has(saved) ? resolveAgentAvatarUrl(null, player.persona, player.name, player.personaKey) : saved;
-      return <motion.div key={player.id} data-room-player={player.id} data-active-speaker={active}
-        className="absolute flex flex-col items-center" style={{ left: centerX - diameter / 2, top: centerY - diameter / 2, width: diameter, zIndex: active ? 170 : Math.round(seat.z + 100) }}
-        initial={false} animate={{ x: seat.x, y: seat.y, z: seat.z, scale: seat.scale }}
-        transition={{ duration: reducedMotion ? 0 : .65, ease: [.25, .1, .25, 1] }}>
+      return <div key={player.id} data-room-player={player.id} data-active-speaker={active}
+        className="absolute flex flex-col items-center" style={{ left: centerX - diameter / 2, top: centerY - diameter / 2, width: diameter, zIndex: active ? 170 : Math.round(seat.z + 100), transform: `translate3d(${seat.x}px, ${seat.y}px, ${seat.z}px) scale(${seat.scale})` }}
+        >
         {/* eslint-disable-next-line @next/next/no-img-element -- frozen room cast with a deterministic portrait if art fails */}
         <img src={source} alt={player.name} onError={() => setFailed(previous => new Set(previous).add(saved))}
           className={`aspect-square w-full rounded-full object-cover shadow-2xl ring-2 ${active ? "ring-[#d9c9a2]" : "ring-white/20"}`} />
         <p className={`mt-3 max-w-full truncate rounded-full bg-black/60 px-3 py-1 text-xs ${active ? "text-white" : "text-white/65"}`}>{player.name}</p>
-      </motion.div>;
+      </div>;
     })}
     {opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>

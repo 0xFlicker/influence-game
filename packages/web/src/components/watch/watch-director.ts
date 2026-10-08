@@ -1,7 +1,7 @@
 /** One shared clock; game adapters own interpretation, ordering and speech timing. */
-export type ThinkingOrder = "thinking-first" | "speech-first";
+import {thoughtTiming, thoughtContentTime, thoughtSpeechBoundaries, sampleThought, type ThinkingOrder, type SpeechBoundaries} from "./thinking-timing";
+export type {ThinkingOrder, SpeechBoundaries} from "./thinking-timing";
 export interface WatchCue { key: string; baseDurationMs: number }
-export interface SpeechBoundaries { showAtMs: number; readAtMs: number; hideAtMs: number; hiddenAtMs: number }
 export interface WatchPolicy<C extends WatchCue> {
   position(cue: C): number | null;
   speech(cue: C | null): SpeechBoundaries | null;
@@ -153,10 +153,8 @@ export class PresentationDirector<C extends WatchCue> {
     this.captureRemainingTime(); this.clearTimer();
     const contentElapsed = this.getElapsedBaseMs();
     const speech = this.policy.speech(this.getActiveCue());
-    this.thought = normalized ? {key, text: normalized, order,
-      duration: Math.max(2800, normalized.split(/\s+/).length * 320),
-      insertAt: order === "thinking-first" ? speech?.showAtMs ?? 0 : speech?.hiddenAtMs ?? this.getActiveCue()!.baseDurationMs,
-    } : null;
+    const timing = thoughtTiming(normalized, order, this.getActiveCue()!.baseDurationMs, speech);
+    this.thought = timing ? {key, ...timing} : null;
     this.manualTransition = null; this.exitReadingPositionMs = null;
     this.remainingBaseMs = this.activeDurationMs() - (this.thought ? Math.min(contentElapsed, this.thought.insertAt) : contentElapsed);
     this.ensureTimer();
@@ -166,26 +164,15 @@ export class PresentationDirector<C extends WatchCue> {
   getThinkingFrame() {
     const thought = this.thought;
     if (!thought || thought.key !== this.getActiveCue()?.key) return null;
-    const timeline = this.getTimelineElapsedBaseMs();
-    const elapsed = timeline - thought.insertAt;
-    const speech = thought.order === "thinking-first" ? this.speechBoundaries() : null;
-    const end = speech?.hiddenAtMs ?? thought.insertAt + thought.duration;
-    if (elapsed < 0 || timeline >= end || this.state.waitingAtTail) return null;
-    const opacity = speech && timeline > speech.hideAtMs
-      ? Math.max(0, (speech.hiddenAtMs - timeline) / Math.max(1, speech.hiddenAtMs - speech.hideAtMs)) : 1;
-    return {text: thought.text, elapsedMs: Math.min(elapsed, thought.duration), durationMs: thought.duration, opacity};
+    return this.state.waitingAtTail ? null : sampleThought(this.getTimelineElapsedBaseMs(), thought, this.policy.speech(this.getActiveCue()));
   }
 
   private contentTime(elapsed: number): number {
-    const thought = this.thought;
-    return !thought ? elapsed : elapsed <= thought.insertAt ? elapsed : Math.max(thought.insertAt, elapsed - thought.duration);
+    return thoughtContentTime(elapsed, this.thought);
   }
 
   private speechBoundaries() {
-    const speech = this.policy.speech(this.getActiveCue());
-    if (!speech || !this.thought) return speech;
-    const shift = (time: number) => time >= this.thought!.insertAt ? time + this.thought!.duration : time;
-    return {showAtMs: shift(speech.showAtMs), readAtMs: shift(speech.readAtMs), hideAtMs: shift(speech.hideAtMs), hiddenAtMs: shift(speech.hiddenAtMs)};
+    return thoughtSpeechBoundaries(this.policy.speech(this.getActiveCue()), this.thought);
   }
 
 

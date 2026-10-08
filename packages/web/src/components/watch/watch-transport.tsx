@@ -1,4 +1,5 @@
 "use client";
+import {ReplayScrubber} from "./replay-scrubber";
 import {ShareMoment} from "./share-moment";
 import {useLayoutEffect, useRef, useState, type ReactNode, type RefObject} from "react";
 import {autoUpdate, flip, FloatingFocusManager, FloatingPortal, offset, shift, size, useDismiss, useFloating, useInteractions, useMergeRefs} from "@floating-ui/react";
@@ -10,7 +11,7 @@ interface WatchTransportProps {
  music?: {muted: boolean; volume: number; status: MusicStatus; onMute: () => void; onVolume: (volume: number) => void; retry: () => void};
  onScrubStart?: () => void; onScrubEnd?: () => void;
  shareHref?: string; header?: ReactNode; settings?: ReactNode; isPlaying: boolean; togglePlay: () => void; speed: number; onSpeed: (speed: number) => void;
- goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void; goToNextScene: () => void; goToEnd: () => void;
+ goToBeginning: () => void; goToPrevScene: () => void; onSeek: (position: number) => void | Promise<void>; goToNextScene: () => void; goToEnd: () => void;
  thinking?: {enabled: boolean; onChange: (enabled: boolean) => void; order: ThinkingOrder; onOrderChange: (order: ThinkingOrder) => void}; live: boolean; cursor: number; count: number;
 }
 export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, fullscreenError, header, isPlaying, togglePlay, speed, onSpeed, goToBeginning, goToPrevScene, onSeek, goToNextScene, goToEnd, live, cursor, count, thinking, settings, shareHref, music, onScrubStart, onScrubEnd}: WatchTransportProps) {
@@ -73,9 +74,7 @@ export function WatchTransport({fullscreen, fullscreenButton, toggleFullscreen, 
       <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square"><path d={fullscreen ? "M9 3v6H3m12-6v6h6M3 15h6v6m12-6h-6v6" : "M9 3H3v6m12-6h6v6M3 15v6h6m12-6v6h-6"} /></svg>
     </button>
   </div>
-  <input aria-label="Replay position" type="range" min={1} max={Math.max(1,count)} value={Math.min(Math.max(1,cursor + 1),Math.max(1,count))} disabled={count === 0}
-    onPointerDown={event => {event.currentTarget.setPointerCapture(event.pointerId); onScrubStart?.();}} onPointerUp={onScrubEnd} onPointerCancel={onScrubEnd} onLostPointerCapture={onScrubEnd} onBlur={onScrubEnd}
-    onChange={event => onSeek(Number(event.target.value))} onClick={event => event.stopPropagation()} className="mt-1 block h-4 w-full cursor-pointer accent-white disabled:cursor-default" />
+  <ReplayScrubber cursor={cursor} count={count} onSeek={onSeek} onScrubStart={onScrubStart} onScrubEnd={onScrubEnd} />
   {fullscreenError && <p role="alert" className="text-xs text-amber-200">{fullscreenError}</p>}
   {open && <FloatingPortal root={portalRoot}>
     <FloatingFocusManager context={context} modal={false} returnFocus={settingsButton}>

@@ -1,7 +1,7 @@
 ---
 title: Local House replay export and shared audiovisual timing
 type: feat
-status: proposed
+status: completed
 date: 2026-10-07
 ---
 
@@ -140,7 +140,7 @@ When speech is added to the browser later, pause freezes visual and speech posit
 
 ## CLI and artifacts
 
-Proposed root command (implementation will add it):
+Root command:
 
 ```sh
 bun run replay:export -- hazy-ruby-sand \
@@ -205,3 +205,17 @@ Deferred: production TTS and voice selection; browser synchronized speech and pi
 - [Share the clock without sharing game rules](../solutions/architecture-patterns/share-watch-clock-with-game-owned-projections.md)
 - [Shared replay music transport](../solutions/architecture-patterns/shared-replay-music-transport.md)
 - [Trailer renderer and spoiler boundary](../solutions/architecture-patterns/werewolf-trailer-shared-renderer-and-spoiler-boundary.md)
+
+## Implementation evidence
+
+Implemented on `codex/house-replay-export`; see [usage, timing/audio contracts and validation evidence](../local-replay-export.md). RE-01 through RE-04 have local implementation and verification: complete exports of both games, 1080p excerpts, bounded authorized reads, frozen assets/layout, frame-order checks, canonical format fixtures, and recorded-signal/range-audio checks. No provider calls or publication were made.
+
+The provider-free baseline passed 2,330 tests (5 skipped), PostgreSQL passed 1,917 tests in a fresh isolated database, and type/lint checks passed. A subsequent focused exporter run passed 18 tests including the range-mix regression. Whole-game verification used 640×360/12fps; the separately inspected introduction clips used 1080p/30fps. Full-resolution end-to-end viewing and subjective listening with actual voice recordings remain operator acceptance, not claimed proof.
+
+Implementation findings:
+
+- Browser camera history and timer-driven format entrances needed explicit offline context. The exporter reuses stage geometry and entrance definitions; sampled frames matched across forward/reverse/independent renders.
+- Asset and font readiness are not a timed loading beat. A preparation pass freezes speech/thinking layouts before encoding; required asset failures stop with the affected cue.
+- Remotion volume callback time is relative to the visible audio sequence, not its trimmed source. Excerpts must retain a separate absolute envelope clock. Decoding the rendered audio caught and verified the correction.
+- Remotion's Chromium runner exits synchronously on SIGINT. The local exporter owns exit cleanup for its temporary bundle and partial output in addition to normal asynchronous cleanup.
+- The shared development test database lacked an older legacy table. Baseline proof used an isolated migrated database and removed it afterward, preserving the operator's database and separate checkout.

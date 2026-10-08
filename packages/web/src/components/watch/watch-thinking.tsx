@@ -5,12 +5,17 @@ import type {BubbleTypography} from "./bubble-typography";
 import {TimedSpeech} from "@/app/games/[slug]/components/timed-speech";
 import {visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
 
-type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string};
+export type Thought = NonNullable<ReturnType<PresentationDirector<WatchCue>["getThinkingFrame"]>> & {speaker: string};
 const ThinkingEnabledContext = createContext(false);
 /** Layout intent remains stable while the timed thought is hidden or loading. */
 export const useSceneThinkingEnabled = () => useContext(ThinkingEnabledContext);
 const ThinkingContext = createContext<Thought | null>(null);
 export const useSceneThinking = () => useContext(ThinkingContext);
+
+/** Frozen evidence can use the same layout without browser fetching or clocks. */
+export function SceneThinkingProvider({enabled, thought, children}: {enabled: boolean; thought: Thought | null; children: ReactNode}) {
+  return <ThinkingEnabledContext.Provider value={enabled}><ThinkingContext.Provider value={thought}>{children}</ThinkingContext.Provider></ThinkingEnabledContext.Provider>;
+}
 
 /** Optional captured evidence shares the director's clock; it never makes a model call. */
 export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, order, speaker, load, children}: {
@@ -40,10 +45,10 @@ export function WatchThinking<C extends WatchCue>({director, cueKey, enabled, or
     return () => {unsubscribe();cancelAnimationFrame(frame);};
   }, [enabled, director]);
   const thought = enabled ? director.getThinkingFrame() : null;
-  return <ThinkingEnabledContext.Provider value={enabled}><ThinkingContext.Provider value={thought ? {...thought, speaker} : null}>
+  return <SceneThinkingProvider enabled={enabled} thought={thought ? {...thought, speaker} : null}>
     {children}
     {enabled && error?.key === errorKey && <p role="status" className="pointer-events-none absolute right-4 top-14 z-30 rounded bg-black/90 p-2 text-xs text-white/70">{error.message}</p>}
-  </ThinkingContext.Provider></ThinkingEnabledContext.Provider>;
+  </SceneThinkingProvider>;
 }
 
 /** A scene owns placement. There is no opaque lane or separate playback clock. */
@@ -81,7 +86,7 @@ export function ThoughtBubble({box, head, typography, padding = 18}: {
     <aside aria-label={`${thought.speaker} thinking`} data-in-scene-thinking
       className="pointer-events-none absolute z-[180] flex flex-col rounded-[2rem] border border-slate-300/35 bg-slate-950/90 text-slate-300 shadow-xl"
       style={{...box, padding, opacity: thought.opacity}}>
-      <p className={`mb-1 flex shrink-0 gap-2 text-[10px] leading-3 font-medium text-slate-400 ${typography && typography.pages.length > 1 && !typography.footerHeight ? "pr-12" : ""}`}><span className="motion-safe:animate-pulse" aria-hidden="true">•••</span>{thought.speaker} thinks</p>
+      <p className={`mb-1 flex shrink-0 gap-2 text-[10px] leading-3 font-medium text-slate-400 ${typography && typography.pages.length > 1 && !typography.footerHeight ? "pr-12" : ""}`}><span style={{opacity: .65 + .35 * Math.sin(thought.elapsedMs / 350) ** 2}} aria-hidden="true">•••</span>{thought.speaker} thinks</p>
       <TimedSpeech typography={typography} text={thought.text} elapsedMs={VISUAL_SPEECH_FADE_MS + thought.elapsedMs / thought.durationMs * reading} />
     </aside>
   </>;
