@@ -3835,6 +3835,25 @@ export const servicePrincipals = pgTable("service_principals", {
 }, table => [check("service_principals_purpose_check", sql`${table.purpose} = 'free_queue'`)]);
 
 
+// A wake is delivery bookkeeping only; game_postgame_media owns every render job.
+export const postgameMediaWakeOutbox = pgTable("postgame_media_wake_outbox", {
+  id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  deliveredAt: text("delivered_at"),
+}, table => [index("postgame_media_wake_pending_idx").on(table.createdAt).where(sql`${table.deliveredAt} IS NULL`)]);
+
+export const postgameMediaRenderRelease = pgTable("postgame_media_render_release", {
+  id: integer("id").primaryKey(),
+  generation: text("generation"),
+  workerDigest: text("worker_digest"),
+  mode: text("mode").$type<"local" | "remote">().notNull().default("local"),
+  draining: boolean("draining").notNull().default(false),
+}, table => [check("postgame_media_render_release_singleton", sql`${table.id} = 1`)]);
+
+export const postgameMediaRenderGenerations = pgTable("postgame_media_render_generations", {
+  generation: text("generation").primaryKey(),
+  workerDigest: text("worker_digest").notNull(),
+});
 /** Bounded automatic editorial jobs. Public reads expose only the publication. */
 export const houseCutJobs = pgTable("house_cut_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),

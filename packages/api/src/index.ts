@@ -1,3 +1,5 @@
+import { renderExecutionConfig } from "@influence/engine/render-execution-config";
+import { remoteRenderingEnabled, startRenderWakeDispatcher } from "./services/postgame-media-execution.js";
 import { startHouseCutWorker } from "./services/house-cut-worker.js";
 import { isViewerGame, viewerGameAvailable } from "./services/game-visibility.js";
 import { createWerewolfAdminRoutes } from "./routes/werewolf-admin.js";
@@ -498,9 +500,14 @@ async function finishBackgroundRuntimeStartup(
     : null;
   executionScanTimer?.unref();
 
+  const renderWakeDispatcher = gameExecutionWorker && remoteRenderingEnabled()
+    ? startRenderWakeDispatcher(db, () => !stopping && runtimeActivation.canClaimWork())
+    : null;
+
   return {
     async stop() {
       stopping = true;
+      await renderWakeDispatcher?.stop();
       await houseCutWorker?.stop();
       await episodeWorker?.stop();
       await visualMediaWorker?.stop();
@@ -542,7 +549,9 @@ app.use(
 );
 
 // Health check (both paths: /health for direct access, /api/health for reverse-proxy)
+const releaseRenderExecution = renderExecutionConfig();
 const healthResponse = () => ({
+  renderExecution: releaseRenderExecution,
   status: "ok" as const,
   service: "influence-api",
   version: apiVersion,

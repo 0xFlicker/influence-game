@@ -180,7 +180,7 @@ jobs:
             Dockerfile.api Dockerfile.web Dockerfile.render-worker \
             .dockerignore package.json bun.lock bunfig.toml tsconfig.json scripts/test-api-image.sh \
             packages/api/ packages/engine/ packages/prompt-lab-protocol/ packages/web/ \
-            music/house-highlights-variants/; then
+            deployment/ music/house-highlights-variants/ music/werewolf/; then
             echo "release_required=false" >> "$GITHUB_OUTPUT"
           else
             echo "release_required=true" >> "$GITHUB_OUTPUT"

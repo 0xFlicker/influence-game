@@ -38,6 +38,11 @@ COPY --chown=bun:bun packages/web/ packages/web/
 COPY --chown=bun:bun music/house-highlights-variants/ ./music/house-highlights-variants/
 COPY --chown=bun:bun music/werewolf/ ./music/werewolf/
 
+COPY deployment/render-execution.json /app/deployment/render-execution.json
+ENV INFLUENCE_RENDER_CONFIG_PACKAGED=1
+
+COPY --chmod=755 deployment/chromium-tailnet /usr/local/bin/chromium-tailnet
+
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
 ENV NODE_ENV=production

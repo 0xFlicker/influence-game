@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "environments": {
+    "prod": {
+      "mode": "local",
+      "network": "direct"
+    },
+    "staging": {
+      "mode": "local",
+      "network": "tailnet",
+      "apiOrigin": "https://influence-staging.tail8a79ed.ts.net"
+    }
+  }
+}

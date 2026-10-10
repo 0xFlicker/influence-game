@@ -249,6 +249,91 @@ queued/leased jobs remain API-owned and can be reclaimed after their lease
 expires. Production handoff additionally binds drain intent and acknowledgement
 to the current worker generation before enabling candidate claims.
 
+## On-demand remote execution (opt-in)
+
+`deployment/render-execution.json` is packaged at the same path in API and
+renderer images and selects policy per environment. **Both prod and staging stay
+local in this first landing.** After the separately approved staging infrastructure,
+credential and tailnet setup, activation is a small reviewed commit changing only
+staging's `mode` to `remote`; this config path triggers the complete immutable
+three-image release. No Doppler rollout switch is used. The host binds
+`INFLUENCE_DEPLOYMENT_ENVIRONMENT` to the deployment and verifies the raw-file
+SHA256 extracted from the exact candidate API and renderer image digests.
+Production can also verify the validating candidate's `/api/health` before draining
+its active renderer. Staging uses immutable image checks and the available baseline
+API preflight before stopping the old slot; it verifies the new API's health policy
+after startup and before admitting the new renderer. Health exposes only non-secret
+release policy; ordinary local deployments need no new control credential. Remote
+operations use the separately authenticated release endpoint. Existing
+hosts may derive an environment from `NODE_ENV` for local releases only; remote
+execution requires the explicit updated-host binding. Conflicting bindings fail
+closed. `POSTGAME_MEDIA_EXECUTION_MODE` no longer selects execution.
+
+Remote workers select a finite, single-concurrency batch and require
+an HTTPS `POSTGAME_MEDIA_API_URL` without URL credentials and:
+
+```text
+POSTGAME_MEDIA_RENDER_GENERATION=<fresh opaque release epoch>
+POSTGAME_MEDIA_WORKER_DIGEST=sha256:<exact image digest>
+POSTGAME_MEDIA_WORKER_INSTANCE_ID=<persisted launch identity>
+POSTGAME_MEDIA_MAX_JOBS=4
+POSTGAME_MEDIA_QUIET_INTERVAL_MS=30000
+```
+
+A worker checks `/api/internal/postgame-media/control` before each claim. Control
+and claim carry `x-render-generation`, `x-render-worker-digest` and
+`x-render-worker-instance`. Only the accepted, undrained generation and exact
+image digest can claim. Draining leaves existing lease heartbeats, constrained
+uploads and finalization available, then the worker exits before another claim.
+Remote polling needs no Compose host acknowledgement file. Child-process render
+isolation remains in place; the child reports a typed attempt outcome to its
+parent so an empty claim is distinguishable from completed/failed work.
+
+The API owns a PostgreSQL release singleton plus permanent used-epoch records.
+`GET /api/internal/postgame-media/release` returns
+`{generation,workerDigest,draining,activeLeases}`. `POST` accepts
+`{operation:"accept"|"drain",generation,workerDigest,previousGeneration}` using a
+separate `POSTGAME_MEDIA_CONTROL_TOKEN`. `previousGeneration` is a compare-and-swap
+fence (null for the first acceptance). Drain must name the current generation and
+digest. Exact active acceptance replay is idempotent; retired epochs cannot be
+readmitted, including rollback. Rollback selects the prior digest with a fresh
+release epoch. The renderer bearer has no release-control authority.
+
+PostgreSQL remains job authority. A migration trigger inserts a wake outbox row
+in the same transaction as every queued enqueue/requeue, including older writers
+during a rolling release. It never creates a second job in SQS. The active game
+worker runtime dispatches at most ten notices per sweep and retries failures with
+the same durable request ID. Configure on the API only:
+
+```text
+POSTGAME_MEDIA_WAKE_URL=https://<wake-function-url>/
+POSTGAME_MEDIA_WAKE_SECRET=<dedicated wake signing secret>
+POSTGAME_MEDIA_WAKE_ENVIRONMENT=prod
+```
+
+Environment accepts `prod` or `staging`. The exact JSON payload is
+`{schemaVersion:1,operation:"wake",environment,requestId}`. `X-Render-Timestamp`
+is epoch seconds; `X-Render-Signature` is the hexadecimal HMAC-SHA256 of timestamp,
+newline, then exact body, with a five-minute receiver skew limit. No wake may
+select a task image or release generation. Store the wake secret separately from
+release-control credentials. Delivered outbox receipts expire after seven days;
+undelivered notifications and used-generation tombstones retain their authority.
+
+Every 30 seconds the active runtime repairs missing wakes for queued jobs or
+expired leases. This covers bounded-batch leftovers, enqueue concurrent with
+quiet exit, failed task launch and missed STOPPED notifications. Failed and
+waiting-music jobs retain their current explicit retry behavior. Validation
+candidates cannot dispatch before runtime acceptance. AWS must independently
+retain one occupied task slot until ECS confirms STOPPED and reconcile uncertain
+launches with a stable `RunTask` client token. With no work, there are no render
+tasks; an approximately one-to-two-minute cold start is acceptable, not a latency
+guarantee.
+
+This application change does not configure secrets, expose staging networking,
+provision AWS, switch release transport or disable the local production worker.
+The separate [falsefloor/infra](https://github.com/falsefloor/infra) renderer stack
+and generation-aware `linode-iac` host release adapter are required
+before remote cutover. Live AWS state and a disposable real render remain unverified.
 
 ## W5 shared Werewolf delivery
 
@@ -274,3 +359,39 @@ Old schema-1 jobs become an actionable `render_input` failure at claim rather th
 Local W5 proof and remaining deployment boundaries are recorded in the [focused plan](../plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). No external upload or deployed-image smoke is implied by local tests.
 
 Trailer captions are available through the native CC menu but are off by default in both the completed-game player and episode previews.
+
+
+### Staging tailnet proof and mode changes
+
+Staging keeps the existing canonical HTTPS origin
+`https://influence-staging.tail8a79ed.ts.net`. AWS uses a userspace Tailscale sidecar
+with task-scoped, single-use ephemeral identities (the lifecycle and approval
+packet live in `falsefloor/infra`). A renderer starts only after sidecar health
+proves the exact HTTPS origin. It requires the loopback HTTP proxy
+`POSTGAME_MEDIA_HTTP_PROXY=http://127.0.0.1:1055` for remote tailnet policy. Bun API,
+health and presigned upload requests use the explicit proxy and reject redirects;
+Chromium uses the packaged wrapper for remote asset fetches while bypassing its
+local Remotion bundle server. TLS hostname verification stays enabled. No bearer
+header is supplied to asset requests or arbitrary upload origins.
+
+The authenticated release endpoint exposes both effective database `mode` and
+release-owned `execution` (environment, desired mode, network, origin and
+`configDigest`). Every release mutation must present that exact config digest;
+acceptance must match the desired mode. Local claims also lock the durable release
+row, so a stale local-config API cannot bypass an accepted remote epoch. Drain
+permits existing lease heartbeat/upload/finalization. `accept-local` reserves a
+fresh generation and requires completed drain plus zero active leases when
+changing ownership; retired generations never become reusable. The host separately
+retains the last cloud generation for later re-enablement and fresh-epoch rollback.
+
+For proof, use staging's separate database, controller state and credentials, a
+completed visible fixture with its canonical story/editorial snapshot already
+frozen, and the exact API/web/renderer manifest. Rendering itself performs no image
+generation and calls no paid model API: it parses that stored snapshot, validates
+packaged music, runs Chromium/Remotion and ffmpeg, and uploads/finalizes artifacts.
+Preparing a new game, visual assets or House Cuts can invoke paid upstream workers;
+reuse settled inputs instead. Fargate, networking and storage still incur cost.
+The active game-worker owns durable wake delivery, so keep its API runtime available
+without introducing new upstream generation. Verify enabled wake binding, one
+completed render and playback, clean task exit, zero idle tasks, stale-epoch fencing
+and fresh-epoch restoration before reviewing production's separate config change.

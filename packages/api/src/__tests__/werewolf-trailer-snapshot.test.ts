@@ -149,3 +149,19 @@ test("the shared media route accepts Werewolf slugs anonymously without the Infl
   await db.update(schema.games).set({ hiddenAt: new Date().toISOString() }).where(eq(schema.games.id, id));
   expect((await app.request(`/api/games/${slug}/postgame/media`)).status).toBe(404);
 });
+
+
+test("remote admission retains Werewolf schema, music and frozen spoiler boundary without paid generation", async () => {
+  const { mutateRenderRelease, claimRemotePostgameMedia, claimLocalPostgameMedia } = await import("../services/postgame-media-execution.js");
+  const { id } = await fixture();
+  await reconcilePostgameMediaForGame(db, id);
+  const digest = `sha256:${"a".repeat(64)}`;
+  await mutateRenderRelease(db, { operation: "accept", generation: "werewolf-remote", workerDigest: digest, previousGeneration: null });
+  expect((await claimLocalPostgameMedia(db, "stale-local")).admitted).toBe(false);
+  const claim = (await claimRemotePostgameMedia(db, "remote-renderer", { generation: "werewolf-remote", workerDigest: digest, workerInstanceId: "task-werewolf" })).claim!;
+  expect(claim.manifest.schemaVersion).toBe(2);
+  expect(claim.manifest.kind).toBe("werewolf");
+  expect(claim.provenance.musicAssetId).toBe("werewolf-suno-trailer-v1");
+  expect(claim.provenance.rendererVersion).toBe("remotion-v2");
+  expect(JSON.stringify(claim.manifest)).not.toMatch(/SECRET_|protectedId|attackTargetId|winnerIds/);
+});
