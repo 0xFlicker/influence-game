@@ -31,7 +31,7 @@ import { launchBrowser, closeBrowser, createAuthenticatedPage } from "./test-bro
 import { assignRole, createAdminUser, createTestUser } from "./test-auth.js";
 import { cleanupE2eResources } from "./cleanup.js";
 import { verifyStudioEncodedParity } from "./studio-export-parity.js";
-import { proveStudioInterface, clickStudioButton, openStudioDialog, closeStudioDialog, chooseStudioOption, setStudioInput } from "./studio-interface-review.js";
+import { proveStudioInterface, clickStudioButton, openStudioDialog, closeStudioDialog, openStudioSelect, chooseStudioOption, configureStudioCut, addStudioTag, markStudioLabel, setStudioInput } from "./studio-interface-review.js";
 
 let database: TestDB, browser: Browser, api: ReturnType<typeof Bun.serve>, web: Bun.Subprocess;
 let webUrl: string, token: string, sysopToken: string;
@@ -163,6 +163,222 @@ async function captureStudioFrame(page: Page, frame: number, waitForPaint = true
   return png;
 }
 async function sampleStudioFrame(page: Page, frame: number): Promise<string> {return createHash("sha256").update(await captureStudioFrame(page, frame)).digest("hex");}
+
+async function keyboardFrame(page: Page, expected: number) {
+  try {await page.waitForFunction(`Number(document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame'))===${expected} && Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===${expected}`);}
+  catch (error) {console.error('STUDIO_KEYBOARD_FRAME',expected,await page.evaluate("({requested:document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame'),committed:document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'),focus:document.activeElement?.outerHTML.slice(0,160),inScope:Boolean(document.activeElement?.closest('[data-studio-shortcuts]')),dialog:document.querySelector('dialog[open]')?.getAttribute('aria-label')})")); throw error;}
+}
+async function currentKeyboardFrame(page: Page) {
+  return page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
+}
+const keyboardMonitor = '[aria-label="Preview keyboard controls"]';
+async function keyboardFailure(page:Page, phase:string) {
+  console.error('STUDIO_KEYBOARD_FAILURE',phase,await page.evaluate("({focus:document.activeElement?.outerHTML.slice(0,180),frame:document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'),moment:document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment'),transport:document.querySelector('[aria-label=\"Playback controls\"]')?.textContent,metadataOpen:document.querySelector('[aria-label=\"Moment properties\"] details')?.open,layers:Array.from(document.querySelectorAll('dialog[open],[role=listbox],[role=menu]')).map(node=>({role:node.getAttribute('role'),label:node.getAttribute('aria-label'),visible:node.getClientRects().length})),properties:document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.slice(0,200)})"));
+}
+
+test("Studio keyboard transport shares Player time and preserves native controls in both games", async () => {
+  for (const fixture of [studioFixture.influence,studioFixture.werewolf]) {
+    const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${fixture.id}${fixture===studioFixture.werewolf ? '?audience=omniscient' : ''}`);
+    let phase='transport'; page.setDefaultTimeout(10_000);
+    try {
+      await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+      await captureStudioFrame(page,100); await page.focus(keyboardMonitor);
+      await page.keyboard.down('ArrowRight'); await keyboardFrame(page,101);
+      await page.keyboard.down('ArrowRight'); await keyboardFrame(page,102); await page.keyboard.up('ArrowRight');
+      await page.keyboard.press('ArrowLeft'); await keyboardFrame(page,101);
+      await page.keyboard.down('Shift'); await page.keyboard.press('ArrowRight'); await page.keyboard.up('Shift'); await keyboardFrame(page,131);
+      await page.keyboard.down('Shift'); await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Shift'); await keyboardFrame(page,101);
+      await page.keyboard.press('Space'); await page.waitForFunction("Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent==='Pause')");
+      await page.waitForFunction("Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))>102");
+      await page.keyboard.press('ArrowRight'); await page.waitForFunction("Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent==='Play')");
+      const paused = await currentKeyboardFrame(page); await Bun.sleep(100); expect(await currentKeyboardFrame(page)).toBe(paused);
+      await page.focus('[aria-keyshortcuts="Space"]'); await page.keyboard.press('Space');
+      await page.waitForFunction("Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent==='Pause')");
+      await page.keyboard.press('Space'); await page.waitForFunction("Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent==='Play')");
+      await page.focus(keyboardMonitor); await page.keyboard.press('Home'); await keyboardFrame(page,0);
+      await page.keyboard.press('ArrowLeft'); await keyboardFrame(page,0);
+      const final = await page.$eval('[aria-label="Timeline playhead"]',node=>Number(node.getAttribute('aria-valuemax')));
+      await page.keyboard.press('End'); await keyboardFrame(page,final); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,final);
+
+      phase='moments'; const thought = await page.$eval('[data-moment-id]:has([data-kind="thinking"])',node=>node.getAttribute('data-moment-id')!);
+      await page.click(`[data-moment-id="${thought}"] > button:first-child`);
+      await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thought)} && Number(getComputedStyle(document.querySelector('[data-in-scene-thinking]')).opacity)===1`);
+      const content = await currentKeyboardFrame(page);
+      const next = await page.$eval(`[data-moment-id="${thought}"]`,node=>node.nextElementSibling!.getAttribute('data-moment-id')!);
+      await page.focus(keyboardMonitor); await page.keyboard.press(']');
+      await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(next)}`);
+      await page.keyboard.press('['); await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thought)}`);
+      expect(await currentKeyboardFrame(page)).toBeLessThan(content);
+
+      phase='native controls'; const muteLabel = await page.$eval('[aria-keyshortcuts="m"]',node=>node.textContent);
+      await page.focus(keyboardMonitor); await page.keyboard.down('m');
+      await page.waitForFunction(`document.querySelector('[aria-keyshortcuts="m"]')?.textContent!==${JSON.stringify(muteLabel)}`);
+      const toggledMute = await page.$eval('[aria-keyshortcuts="m"]',node=>node.textContent);
+      await page.keyboard.down('m'); await page.keyboard.up('m'); expect(await page.$eval('[aria-keyshortcuts="m"]',node=>node.textContent)).toBe(toggledMute);
+      const beforeControls = await currentKeyboardFrame(page);
+      await page.focus('[aria-label="Playback volume"]'); await page.keyboard.press('ArrowLeft'); await keyboardFrame(page,beforeControls);
+      await page.focus('[aria-label="Timeline zoom"]'); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,beforeControls);
+      await page.focus('[role="separator"]'); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,beforeControls);
+      await page.focus('[aria-label="Timeline playhead"]'); await page.keyboard.press('ArrowUp'); await keyboardFrame(page,beforeControls+1);
+      await page.keyboard.press('ArrowDown'); await keyboardFrame(page,beforeControls);
+
+      // Child timeline commands must also consult the workspace capture fence.
+      phase='capture'; const divider = await page.$('[role="separator"]'), bounds = (await divider!.boundingBox())!;
+      await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2); await page.mouse.down(); await page.mouse.move(bounds.x+bounds.width/2+1,bounds.y+bounds.height/2);
+      await page.waitForFunction("document.querySelector('[role=separator]')?.hasPointerCapture(1)");
+      await page.focus('[aria-label="Timeline playhead"]'); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,beforeControls);
+      await page.focus(keyboardMonitor); await page.keyboard.press('e'); expect(await page.$('dialog[open]')).toBeNull();
+      await page.keyboard.press('m'); expect(await page.$eval('[aria-keyshortcuts="m"]',node=>node.textContent)).toBe(toggledMute);
+      // Removing a captured owner must not strand keyboard eligibility.
+      await page.setViewport({width:390,height:700}); await page.waitForFunction("!document.querySelector('[role=separator]')");
+      await page.mouse.up();
+      await page.focus(keyboardMonitor); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,beforeControls+1);
+      await page.setViewport({width:1440,height:920}); await page.waitForSelector('[role="separator"]');
+
+      // A native disclosure owns Space; it must not start playback.
+      phase='disclosure/fullscreen'; await page.focus('[aria-label="Moment properties"] summary'); await page.keyboard.press('Space');
+      expect(await page.$eval('[aria-label="Moment properties"] details',node=>node.hasAttribute('open'))).toBe(true);
+      expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent==='Play'))).toBe(true);
+      await page.focus(keyboardMonitor); await page.keyboard.press('f'); await page.waitForFunction('Boolean(document.fullscreenElement)');
+      await page.keyboard.press('?'); await page.waitForSelector('dialog[open][aria-label="Keyboard hints"]');
+      const stopped = await currentKeyboardFrame(page); await page.keyboard.press('ArrowRight'); await keyboardFrame(page,stopped);
+      await page.keyboard.press('e'); expect(await page.$('dialog[open][aria-label="Export selected cut"]')).toBeNull();
+      await page.keyboard.press('Escape'); await page.waitForFunction("!document.querySelector('dialog[open]')");
+      expect(await page.evaluate("document.activeElement===document.querySelector('[aria-label=\"Preview keyboard controls\"]')")).toBe(true);
+      await page.keyboard.press('f'); await page.waitForFunction('!document.fullscreenElement');
+    } catch (error) {await keyboardFailure(page,phase); throw error;} finally {await page.mouse.reset(); await page.close();}
+  }
+},90_000);
+
+test("Studio keyboard panels, metadata saving and character preferences keep their existing owners", async () => {
+  const fixture = studioFixture.influence;
+  const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,fixture.id));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${fixture.id}`);
+  const previousPreference = await page.evaluate("localStorage.getItem('house.studio.character-shortcuts.v1')") as string|null;
+  let phase='metadata focus'; page.setDefaultTimeout(10_000);
+  let releases: (()=>void)[] = [], saves = 0, selections = 0;
+  const intercept = async (request:HTTPRequest) => {
+    if (request.method()==='POST' && new URL(request.url()).pathname.endsWith('/annotation')) {saves++; await new Promise<void>(accept=>releases.push(accept));}
+    if (request.method()==='POST' && new URL(request.url()).pathname.endsWith('/selection')) selections++;
+    await request.continue();
+  };
+  const release = () => {for (const accept of releases) accept(); releases=[];};
+  try {
+    await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+    await page.setRequestInterception(true); page.on('request',intercept);
+    await page.click(`[data-moment-id="${fixture.thoughtId}"] > button:first-child`);
+    await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(fixture.thoughtId)}`);
+    await page.focus(keyboardMonitor); await page.keyboard.press('t');
+    await page.waitForFunction("document.activeElement?.getAttribute('aria-label')==='Tag key 1' && document.querySelector('[aria-label=\"Moment properties\"] details')?.open");
+    expect(saves).toBe(0);
+    await clickButton(page,'Add tag');
+    const row = await page.$$eval('[aria-label="Moment properties"] input[aria-label^="Tag key"]',nodes=>nodes.length);
+    await page.focus(`input[aria-label="Tag key ${row}"]`); await page.keyboard.type('editor.keyboard');
+    await page.focus(`input[aria-label="Tag value ${row}"]`); await page.keyboard.type('mftre12/?[]');
+    expect(await page.$('dialog[open]')).toBeNull(); expect(saves).toBe(0);
+    phase='save'; const modifier = await page.evaluate("navigator.platform.toLowerCase().includes('mac') ? 'Meta' : 'Control'") as 'Meta'|'Control';
+    const saveChord = async () => {await page.keyboard.down(modifier); await page.keyboard.press('Enter'); await page.keyboard.up(modifier);};
+
+    // The inspector owns save, but shares the pointer-capture eligibility fence.
+    const bounds = (await (await page.$('[role="separator"]'))!.boundingBox())!;
+    await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2); await page.mouse.down(); await page.mouse.move(bounds.x+bounds.width/2+1,bounds.y+bounds.height/2);
+    await page.waitForFunction("document.querySelector('[role=separator]')?.hasPointerCapture(1)");
+    await page.focus(`input[aria-label="Tag value ${row}"]`); await saveChord(); expect(saves).toBe(0);
+    await page.mouse.up(); await saveChord();
+    await page.waitForFunction("document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.includes('Saving…')");
+    await saveChord(); expect(saves).toBe(1);
+    // Capture starting after a submit must not discard the accepted response.
+    await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2); await page.mouse.down(); await page.mouse.move(bounds.x+bounds.width/2+1,bounds.y+bounds.height/2); release();
+    await page.waitForFunction("document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.includes('Saved revision 2')");
+    await page.mouse.up(); expect(await page.$eval(`input[aria-label="Tag value ${row}"]`,node=>(node as {value:string}).value)).toBe('mftre12/?[]');
+    await clickButton(page,'Add tag'); await saveChord(); expect(saves).toBe(1); // Empty metadata is invalid.
+    const invalidRow = row+1; await page.click(`[aria-label="Remove tag ${invalidRow}"]`);
+    // A real revision conflict keeps keyboard Save locked until explicit review.
+    await database.db.update(schema.productionMomentAnnotations).set({revision:3}).where(eq(schema.productionMomentAnnotations.momentKey,fixture.thoughtId));
+    await setStudioInput(page,`Tag value ${row}`,'Conflicting keyboard draft'); await page.focus(`input[aria-label="Tag value ${row}"]`);
+    await saveChord(); await page.waitForFunction("document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.includes('Saving…')"); release();
+    await page.waitForFunction("document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.includes('Another edit was saved')");
+    await saveChord(); expect(saves).toBe(2); await clickButton(page,'Use saved labels');
+
+    phase='narrow focus'; await page.setViewport({width:390,height:700}); await page.focus(keyboardMonitor); await page.keyboard.press('/');
+    await page.waitForFunction("document.activeElement?.getAttribute('aria-label')==='Find a moment'");
+    await page.keyboard.type('mftre12/?[]'); expect(await page.$('dialog[open]')).toBeNull();
+    await page.focus(keyboardMonitor); await page.keyboard.press('/');
+    expect(await page.$eval('[aria-label="Find a moment"]',node=>(node as {value:string}).value)).toBe('mftre12/?[]');
+    await page.focus(keyboardMonitor); await page.keyboard.press('t');
+    await page.waitForFunction("document.activeElement?.getAttribute('aria-label')==='Tag key 1'");
+    expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(fixture.thoughtId);
+    phase='views'; await page.focus(keyboardMonitor); await page.keyboard.press('2');
+    await page.waitForFunction("new URL(location.href).searchParams.get('view')==='cut' && document.querySelector('[data-composition-frame]')");
+    expect(await page.$eval('[aria-label="Find a moment"]',node=>(node as {value:string}).value)).toBe('');
+    await page.focus(keyboardMonitor); await page.keyboard.press('1');
+    await page.waitForFunction("new URL(location.href).searchParams.get('view')==='source' && document.querySelector('[data-composition-frame]')");
+    await page.focus(keyboardMonitor); await page.keyboard.press('r');
+    expect(await page.$eval('[aria-label="Moment properties"]',node=>node.textContent?.includes('Follows current moment'))).toBe(true);
+    phase='panels/preference'; await page.focus(keyboardMonitor); await page.keyboard.press('e'); await page.waitForSelector('dialog[open][aria-label="Export selected cut"]');
+    expect(selections).toBe(0); const panelFrame = await currentKeyboardFrame(page);
+    await page.keyboard.press('Space'); await keyboardFrame(page,panelFrame);
+    await page.keyboard.press('Escape'); await page.waitForFunction("!document.querySelector('dialog[open]')");
+    await page.focus(keyboardMonitor); await page.keyboard.press('?'); await page.waitForSelector('dialog[open][aria-label="Keyboard hints"]');
+    await page.setViewport({width:390,height:360});
+    expect(await page.$eval('dialog[open]',node=>node.getBoundingClientRect().right)).toBeLessThanOrEqual(390);
+    expect(await page.$eval('dialog[open]',node=>node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(360);
+    await (await page.$('[aria-label="Enable letter and symbol shortcuts"]'))!.click();
+    await page.keyboard.press('Escape'); await page.waitForFunction("!document.querySelector('dialog[open]')");
+    await page.focus(keyboardMonitor); const disabledFrame = await currentKeyboardFrame(page);
+    for (const key of ['m','f','e','?','t','r','1','2','[',']','/'] as const) await page.keyboard.press(key);
+    expect(await page.$('dialog[open]')).toBeNull(); expect(await currentKeyboardFrame(page)).toBe(disabledFrame);
+    expect(await page.$('[aria-keyshortcuts="e"]')).toBeNull();
+    await page.keyboard.press('ArrowRight'); await keyboardFrame(page,disabledFrame+1);
+    await page.reload({waitUntil:'domcontentloaded'}); await page.waitForSelector('[data-composition-frame]');
+    await page.click('[aria-label="Keyboard hints"]'); await page.waitForSelector('dialog[open][aria-label="Keyboard hints"]');
+    expect(await page.$eval('[aria-label="Enable letter and symbol shortcuts"]',node=>(node as {checked:boolean}).checked)).toBe(false);
+    await (await page.$('[aria-label="Enable letter and symbol shortcuts"]'))!.click(); await closeStudioDialog(page);
+    await openStudioDialog(page,'Presentation'); await openStudioSelect(page,'Aspect ratio'); await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Escape'); expect(await page.$('dialog[open][aria-label="Presentation"]')).not.toBeNull();
+    await page.keyboard.press('Escape'); await page.waitForFunction("!document.querySelector('dialog[open]')"); expect(selections).toBe(0);
+  } catch (error) {await keyboardFailure(page,phase); throw error;} finally {
+    await page.mouse.reset(); release();
+    // A failed assertion may leave a released annotation request committing.
+    // Settle it before restoring fixture rows, including failure cleanup.
+    try {await page.waitForNetworkIdle({idleTime:200,timeout:5000});} finally {
+      await page.evaluate(`localStorage.${previousPreference===null ? "removeItem('house.studio.character-shortcuts.v1')" : `setItem('house.studio.character-shortcuts.v1',${JSON.stringify(previousPreference)})`}`);
+      page.off('request',intercept); await page.setRequestInterception(false); await page.close();
+      await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,fixture.id));
+      if (saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
+    }
+  }
+},90_000);
+
+test("Studio keyboard ignores unavailable media without queuing commands and keeps Mystery private", async () => {
+  const fixture = studioFixture.influence;
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production`);
+  let release!:()=>void, sawMedia!:()=>void, timer:ReturnType<typeof setTimeout>|undefined;
+  const gate = new Promise<void>(accept=>{release=accept;});
+  const pending = new Promise<void>(accept=>{sawMedia=accept;});
+  const intercept = async (request:HTTPRequest) => {
+    if (new URL(request.url()).pathname.startsWith(`/api/admin/production/games/${fixture.id}/visual/artifacts/`)) {sawMedia(); await gate;}
+    await request.continue();
+  };
+  try {
+    await page.setRequestInterception(true); page.on('request',intercept);
+    await page.goto(`${webUrl}/admin/production/games/${fixture.id}`,{waitUntil:'domcontentloaded'});
+    await Promise.race([pending,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Keyboard media gate was not reached')),10_000);})]); clearTimeout(timer);
+    await page.focus('[aria-keyshortcuts="1"]');
+    for (const key of ['ArrowRight',']','m','Space'] as const) await page.keyboard.press(key);
+    expect(await page.$('[data-composition-frame]')).toBeNull();
+    await page.keyboard.press('?'); await page.waitForSelector('dialog[open][aria-label="Keyboard hints"]');
+    await page.keyboard.press('Escape'); release(); await page.waitForSelector('[data-composition-frame]'); await keyboardFrame(page,0);
+    expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent==='Play'))).toBe(true);
+    page.off('request',intercept); await page.setRequestInterception(false);
+    await page.goto(`${webUrl}/admin/production/games/${studioFixture.werewolf.id}`,{waitUntil:'domcontentloaded'}); await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$('[data-moment-id]:has([data-kind="thinking"])')).toBeNull();
+    await page.focus(keyboardMonitor); await page.keyboard.press(']');
+    await page.keyboard.press('t'); await page.waitForFunction("document.activeElement?.matches('[data-add-tag],input[aria-label^=\"Tag\"]')");
+    expect(await page.$('[data-in-scene-thinking]')).toBeNull();
+    expect(await page.$eval('[aria-label="Moment properties"] [data-kind]',node=>node.getAttribute('data-kind'))).not.toBe('thinking');
+  } finally {clearTimeout(timer); release(); page.off('request',intercept); await page.setRequestInterception(false); await page.close();}
+},90_000);
 
 /** Checks native audio driven by the shared composition schedule. */
 async function proveRecordedAudioLifecycle(page:Page) {
@@ -335,10 +551,10 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
     await page.waitForSelector('[data-composition-frame]');
     const thoughtRow = await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
     const thoughtId = await thoughtRow!.evaluate(node => node.closest('[data-moment-id]')!.getAttribute('data-moment-id'));
-    await page.click(`[data-moment-id="${thoughtId}"] button`);
+    await page.click(`[data-moment-id="${thoughtId}"] button[aria-label="Seek to moment"]`);
     await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(thoughtId)} && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thoughtId)}`);
     step = "thought tag";
-    await clickButton(page, "Add tag"); await clickButton(page, "Save tags");
+    await addStudioTag(page); await clickButton(page, "Save labels");
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
     step = "presentation";
     await openStudioDialog(page, "Presentation");
@@ -352,11 +568,13 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
     await chooseStudioOption(page, "Output size", "640 pixels · draft"); await chooseStudioOption(page, "Frames per second", "24 fps");
     await closeStudioDialog(page);
     step = "selected view";
+    await configureStudioCut(page,"Smart","None");
     await clickButton(page, "Selected cut");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view') === 'cut' && document.querySelector('[data-composition-frame]')");
     // Match the encoded geometry for this comparison only. The ordinary bounded
     // monitor fit is proved separately by the actual interface check.
-    await page.evaluate("(()=>{const preview=document.querySelector('[data-preview-frame]');preview.parentElement.style.setProperty('--monitor-height','362px');preview.style.width='640px';preview.style.height='360px';})()");
+    await page.evaluate("(()=>{const stage=document.querySelector('[data-preview-frame]').parentElement;stage.style.flex='none';stage.style.width='642px';stage.style.height='362px';})()");
+    await page.waitForFunction("(()=>{const r=document.querySelector('[data-preview-frame]').getBoundingClientRect();return r.width===640 && r.height===360;})()");
     expect(await page.$eval('[data-preview-frame]',node=>({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))).toEqual({width:640,height:360});
     const response = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
     step = "freeze";
@@ -375,6 +593,299 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
   } finally {await page.close();}
 }, 360_000);
 
+test("Moment rows seek readable content while target icons seek the start in both games", async () => {
+  for (const fixture of [studioFixture.influence,studioFixture.werewolf]) {
+    const werewolf = fixture === studioFixture.werewolf;
+    const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${fixture.id}${werewolf ? "?audience=omniscient" : ""}`);
+    try {
+      await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+      const thought = await page.$eval('[data-moment-id]:has([data-kind="thinking"])',node=>node.getAttribute('data-moment-id')!);
+      const speech = await page.$eval('[data-moment-id]:has([data-kind="speech"])',node=>node.getAttribute('data-moment-id')!);
+      for (const [id,content] of [[thought,'[data-in-scene-thinking]'],[speech,'[data-speech-bubble]']] as const) {
+        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] ${content}')).opacity)===1`);
+        const contentFrame = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
+        expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(id);
+        if (id === thought) expect(await page.$('[data-preview-frame] [data-speech-bubble]')).toBeNull();
+        await page.click(`[data-moment-id="${id}"] [aria-label="Seek to moment"]`);
+        await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))<${contentFrame}`);
+        const startFrame = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
+        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.waitForFunction(`Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===${contentFrame}`);
+        expect(contentFrame).toBeGreaterThan(startFrame);
+        expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent?.trim()==='Play'))).toBe(true);
+      }
+      // Source thinking playback remains an explicit preference. A blocked
+      // thought selection pins Properties and pauses without revealing it.
+      for (const enabled of [false,true]) {
+        await openStudioDialog(page,"Source settings");
+        const toggle = await page.evaluateHandle("Array.from(document.querySelectorAll('label')).find(node=>node.textContent?.trim()==='Play thinking in Source')?.querySelector('input')");
+        try {await toggle.asElement()!.click();} finally {await toggle.dispose();}
+        await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && document.querySelector('[data-composition-frame]')`);
+        await closeStudioDialog(page);
+        if (!enabled) {
+          await page.click(`[data-moment-id="${speech}"] > button:first-child`);
+          await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(speech)}`);
+          const before = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
+          await clickButton(page,"Play");
+          await page.waitForFunction(`Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))>${before}`);
+          await page.click(`[data-moment-id="${thought}"] > button:first-child`);
+          await page.waitForFunction("document.body.innerText.includes('Thinking is not playing in Source.') && Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent?.trim()==='Play')");
+          expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(thought);
+          const stopped = await page.$eval('[data-preview-frame]',node=>Number(node.getAttribute('data-preview-frame')));
+          await page.waitForFunction(`Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===${stopped}`);
+          await new Promise(accept=>setTimeout(accept,150));
+          expect(await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')))).toBe(stopped);
+          expect(await page.$('[data-preview-frame] [data-in-scene-thinking]')).toBeNull();
+        }
+      }
+      if (!werewolf) {
+        // Generated-scene speech has its own entrance, not the portrait offset.
+        const id = studioFixture.influence.roomSpeechId;
+        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-speech-bubble]')).opacity)===1`);
+        await configureStudioCut(page,"Smart","None"); await clickButton(page,"Selected cut");
+        await page.waitForSelector(`[data-moment-id="${thought}"]`);
+        await page.click(`[data-moment-id="${thought}"] > button:first-child`);
+        await page.waitForFunction("Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-in-scene-thinking]')).opacity)===1");
+        expect(await page.$('[data-preview-frame] [data-speech-bubble]')).toBeNull();
+        await page.click(`[data-moment-id="${thought}"] [aria-label="Seek to moment"]`);
+        await page.waitForFunction("Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===0");
+      }
+    } finally {await page.close();}
+  }
+},90_000);
+
+test("The latest row content selection survives delayed initial media preparation", async () => {
+  const fixture = studioFixture.influence;
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production`);
+  let release!:()=>void, sawMedia!:()=>void, deadline:ReturnType<typeof setTimeout>|undefined;
+  const gate = new Promise<void>(accept=>{release=accept;});
+  const pending = new Promise<void>(accept=>{sawMedia=accept;});
+  const intercept = async (request:HTTPRequest) => {
+    if (new URL(request.url()).pathname.startsWith(`/api/admin/production/games/${fixture.id}/visual/artifacts/`)) {sawMedia(); await gate;}
+    await request.continue();
+  };
+  try {
+    await page.setViewport({width:1440,height:920}); await page.setRequestInterception(true); page.on("request",intercept);
+    await page.goto(`${webUrl}/admin/production/games/${fixture.id}`,{waitUntil:"domcontentloaded"});
+    await Promise.race([pending,new Promise<never>((_,reject)=>{deadline=setTimeout(()=>reject(new Error("Initial private media gate was not reached")),10_000);})]);
+    clearTimeout(deadline); await page.waitForSelector(`[data-moment-id="${fixture.thoughtId}"]`);
+    expect(await page.$('[data-composition-frame]')).toBeNull();
+    await page.click(`[data-moment-id="${fixture.thoughtId}"] > button:first-child`);
+    await page.click(`[data-moment-id="${fixture.speechId}"] > button:first-child`);
+    release();
+    await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(fixture.speechId)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-speech-bubble]')).opacity)===1`);
+    expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(fixture.speechId);
+  } finally {clearTimeout(deadline); release(); page.off("request",intercept); await page.setRequestInterception(false); await page.close();}
+},90_000);
+
+test("Checkbox labels save Werewolf Smart thoughts immediately and enter the same frozen cut", async () => {
+  const id = studioFixture.werewolf.id;
+  const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+  await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}`);
+  try {
+    await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$$('[data-moment-id] [data-kind="thinking"]')).toHaveLength(0);
+    await chooseStudioOption(page,"Production audience","Omniscient");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience')==='omniscient'");
+    await page.waitForSelector('[data-composition-frame]'); await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
+    const thoughts = await page.$$eval('[data-moment-id]:has([data-kind="thinking"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')!));
+    const speeches = await page.$$eval('[data-moment-id]:has([data-kind="speech"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')!));
+    const selected = thoughts.slice(0,3); expect(selected).toHaveLength(3); expect(thoughts.length).toBeGreaterThan(3);
+    for (const momentId of selected) {
+      await page.click(`[data-moment-id="${momentId}"] > button:first-child`);
+      const response = page.waitForResponse(r=>r.url().endsWith(`/moments/${encodeURIComponent(momentId)}/annotation`) && r.request().method()==="POST");
+      await markStudioLabel(page); expect((await response).status()).toBe(200);
+      await page.waitForFunction(`document.querySelector('[data-moment-id="${momentId}"]')?.textContent?.includes('Smart')`);
+    }
+    // No Save-button click occurred. A new mount must find all three saved rows.
+    await page.reload({waitUntil:"domcontentloaded"}); await page.waitForSelector('[data-composition-frame]');
+    await openStudioDialog(page,"Selected cut rule");
+    await chooseStudioOption(page,"Thinking inclusion","Matching labels");
+    await page.click('[aria-label="Keep thinking marked Smart"]');
+    await chooseStudioOption(page,"Speech inclusion","All"); await clickButton(page,"Watch selected cut");
+    await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && !!document.querySelector('[data-composition-frame]')");
+    expect(await page.$$eval('[data-moment-id]:has([data-kind="thinking"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(selected);
+    expect(await page.$$eval('[data-moment-id]:has([data-kind="speech"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(speeches);
+    const frozenResponse = page.waitForResponse(r=>r.url().endsWith('/selection') && r.request().method()==="POST");
+    await openStudioDialog(page,"Export selected cut"); await clickButton(page,"Download selected export");
+    const response = await frozenResponse; expect(response.status()).toBe(200);
+    const frozen = await response.json() as ProductionExportDescriptor;
+    expect(frozen.momentIds.filter(momentId=>thoughts.includes(momentId))).toEqual(selected);
+    expect(frozen.annotations.filter(row=>selected.includes(row.momentId))).toEqual(selected.map(momentId=>({momentId,tags:{"label.smart":"true"},revision:1})));
+    await closeStudioDialog(page);
+    expect(await page.$$('[aria-label="Cut rules"]')).toHaveLength(1);
+    await page.screenshot({path:temporaryPath("production-studio-smart-cut-desktop.png")});
+    // The same single entry remains usable while narrow Properties hides the browser.
+    for (const width of [390,320]) {
+      await page.setViewport({width,height:844});
+      await clickStudioButton(page,"Properties",'[aria-label="Editor panels"]');
+      await page.waitForFunction("document.querySelector('[data-mobile-panel]')?.getAttribute('data-mobile-panel')==='properties'");
+      expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+      expect(await page.$$('[aria-label="Cut rules"]')).toHaveLength(1);
+      await openStudioDialog(page,"Selected cut rule"); expect(await page.$('[aria-label="Keep thinking marked Smart"]:checked')).not.toBeNull();
+      await closeStudioDialog(page);
+    }
+    await page.screenshot({path:temporaryPath("production-studio-smart-cut-narrow.png")});
+    await page.setViewport({width:1440,height:920});
+    await chooseStudioOption(page,"Production audience","Mystery");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience')==='mystery'");
+    await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$$('[data-moment-id] [data-kind="thinking"]')).toHaveLength(0);
+    for (const momentId of selected) expect(await page.$(`[data-selected-moment="${momentId}"], [data-moment-id="${momentId}"]`)).toBeNull();
+    await chooseStudioOption(page,"Production audience","Omniscient");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience')==='omniscient'");
+    await page.waitForFunction("document.querySelectorAll('[data-moment-id]:has([data-kind=thinking])').length===3 && !!document.querySelector('[data-composition-frame]')");
+    expect(await page.$$eval('[data-moment-id]:has([data-kind="thinking"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual(selected);
+  } finally {
+    await page.close();
+    await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+    if(saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
+  }
+},120_000);
+
+test("Checkbox label saves keep metadata drafts, exact unknown retries and explicit conflicts", async () => {
+  const {id,thoughtId} = studioFixture.influence;
+  const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}`);
+  const requests: string[] = []; let drop = true;
+  const intercept = async (request: HTTPRequest) => {
+    if (request.url().endsWith(`/moments/${encodeURIComponent(thoughtId)}/annotation`) && request.method()==="POST") {
+      requests.push(request.postData()!);
+      if(drop) {drop=false; await request.abort("failed"); return;}
+    }
+    await request.continue();
+  };
+  try {
+    await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+    await page.click(`[data-moment-id="${thoughtId}"] > button:first-child`);
+    await page.$eval('[aria-label="Moment properties"] details',node=>{(node as unknown as {open:boolean}).open=true;});
+    await clickButton(page,"Add tag");
+    await setStudioInput(page,"Tag key 3","editor.note"); await setStudioInput(page,"Tag value 3","Uncommitted note");
+    await clickButton(page,"Add tag"); // Intentionally unfinished metadata must not block exact label retry.
+    await clickButton(page,"Add tag");
+    await setStudioInput(page,"Tag key 5","cut"); await setStudioInput(page,"Tag value 5","shorts");
+    await page.setRequestInterception(true); page.on("request",intercept);
+    await markStudioLabel(page,"Smart",false);
+    await page.waitForFunction("document.body.innerText.includes('The save response is unavailable.')");
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0]!).tags).toEqual({cut:"youtube"});
+    expect(await page.$$eval('[aria-label="Moment properties"] fieldset input',nodes=>nodes.every(node=>node.matches(':disabled')))).toBe(true);
+    const retryResponse = page.waitForResponse(r=>r.url().endsWith(`/moments/${encodeURIComponent(thoughtId)}/annotation`) && r.request().method()==="POST");
+    await clickButton(page,"Retry exact label request"); expect((await retryResponse).status()).toBe(200);
+    await page.waitForFunction("document.body.innerText.includes('Saved revision 2')");
+    expect(requests).toHaveLength(2); expect(requests[1]).toBe(requests[0]);
+    expect(await page.$eval('[aria-label="Tag value 2"]',node=>(node as unknown as {value:string}).value)).toBe("Uncommitted note");
+    expect(await page.$eval('[aria-label="Tag key 4"]',node=>(node as unknown as {value:string}).value)).toBe("cut");
+    expect(await page.$eval('[aria-label="Tag value 4"]',node=>(node as unknown as {value:string}).value)).toBe("shorts");
+    expect(await page.evaluate("document.body.innerText.includes('Unsaved draft')")).toBe(true);
+    const [row] = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.momentKey,thoughtId));
+    expect(row!.tags).toEqual({cut:"youtube"});
+    // A competing accepted edit is not silently overwritten by the next checkbox.
+    await database.db.update(schema.productionMomentAnnotations).set({tags:{cut:"youtube","label.smart":"true"},revision:3}).where(eq(schema.productionMomentAnnotations.momentKey,thoughtId));
+    const conflictResponse = page.waitForResponse(r=>r.url().endsWith(`/moments/${encodeURIComponent(thoughtId)}/annotation`) && r.request().method()==="POST");
+    await markStudioLabel(page,"Smart",true); expect((await conflictResponse).status()).toBe(409);
+    await page.waitForFunction("document.body.innerText.includes('Another edit was saved')");
+    expect(await page.$$eval('[aria-label="Moment properties"] fieldset input',nodes=>nodes.every(node=>node.matches(':disabled')))).toBe(true);
+    expect(await page.$eval('[aria-label="Tag value 2"]',node=>(node as unknown as {value:string}).value)).toBe("Uncommitted note");
+    await page.click('[aria-label="Remove tag 3"]');
+    await page.click('[aria-label="Remove tag 3"]');
+    await clickButton(page,"Retry my draft at revision 3"); await page.waitForFunction("document.body.innerText.includes('Saved revision 4')");
+    const [resolved] = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.momentKey,thoughtId));
+    expect(resolved!.tags).toEqual({cut:"youtube","label.smart":"true","editor.note":"Uncommitted note"});
+  } finally {
+    page.off("request",intercept); await page.setRequestInterception(false); await page.close();
+    await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+    if(saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
+  }
+},90_000);
+
+test("Exact checkbox retry after an audience switch displays the accepted speech labels", async () => {
+  const id = studioFixture.werewolf.id;
+  const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+  await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}?audience=omniscient`);
+  let momentId: string, drop = true; const bodies: string[] = [];
+  const intercept = async (request: HTTPRequest) => {
+    if(request.url().endsWith(`/moments/${encodeURIComponent(momentId)}/annotation`) && request.method()==="POST") {
+      bodies.push(request.postData()!);
+      if(drop) {drop=false; await request.abort("failed"); return;}
+    }
+    await request.continue();
+  };
+  try {
+    await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+    momentId = (await page.$$eval('[data-moment-id]:has([data-kind="speech"])',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')!)))[0]!;
+    await page.click(`[data-moment-id="${momentId}"] > button:first-child`);
+    await page.setRequestInterception(true); page.on("request",intercept);
+    await markStudioLabel(page); await page.waitForFunction("document.body.innerText.includes('The save response is unavailable.')");
+    await chooseStudioOption(page,"Production audience","Mystery");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience')==='mystery'");
+    await page.waitForSelector('[data-composition-frame]'); await page.click(`[data-moment-id="${momentId}"] > button:first-child`);
+    expect(await page.$$eval('[aria-label="Moment properties"] fieldset input',nodes=>nodes.map(node=>(node as unknown as {checked:boolean}).checked))).toEqual([false,false,false]);
+    const retryResponse = page.waitForResponse(r=>r.url().endsWith(`/moments/${encodeURIComponent(momentId)}/annotation`) && r.request().method()==="POST");
+    await clickButton(page,"Retry exact label request"); expect((await retryResponse).status()).toBe(200);
+    await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
+    expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]);
+    expect(await page.$$eval('[aria-label="Moment properties"] fieldset input',nodes=>nodes.map(node=>(node as unknown as {checked:boolean}).checked))).toEqual([true,false,false]);
+    expect(await page.evaluate("document.body.innerText.includes('Unsaved draft')")).toBe(false);
+    expect(await page.$$('[data-moment-id] [data-kind="thinking"]')).toHaveLength(0);
+  } finally {
+    page.off("request",intercept); await page.setRequestInterception(false); await page.close();
+    await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+    if(saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
+  }
+},90_000);
+
+test("Annotation settlement survives inspecting another moment", async () => {
+  const fixture = studioFixture.influence;
+  const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId, fixture.id));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${fixture.id}`);
+  let release = () => {};
+  try {
+    await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
+    await page.click(`[data-moment-id="${fixture.thoughtId}"] > button:first-child`);
+    for (const status of [200,409]) {
+      let requested!: () => void;
+      const gate = new Promise<void>(resolve => {release = resolve;});
+      const pending = new Promise<void>(resolve => {requested = resolve;});
+      const delayed = async (request: HTTPRequest) => {
+        if (request.url().includes(`/moments/${encodeURIComponent(fixture.thoughtId)}/annotation`) && request.method() === "POST") {requested(); await gate;}
+        await request.continue();
+      };
+      await page.setRequestInterception(true); page.on("request",delayed);
+      try {
+        const response = page.waitForResponse(r => r.url().includes(`/moments/${encodeURIComponent(fixture.thoughtId)}/annotation`) && r.request().method() === "POST");
+        await markStudioLabel(page,status === 200 ? "Mistake" : "4th wall",true,false); await pending;
+        await page.click(`[data-moment-id="${fixture.speechId}"] > button:first-child`);
+        await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(fixture.speechId)}`);
+        if (status === 409) await database.db.update(schema.productionMomentAnnotations).set({tags:{"label.smart":"true"},revision:3}).where(eq(schema.productionMomentAnnotations.momentKey,fixture.thoughtId));
+        release(); expect((await response).status()).toBe(status);
+        await page.click(`[data-moment-id="${fixture.thoughtId}"] > button:first-child`);
+        if (status === 200) {
+          await page.waitForFunction("document.body.innerText.includes('Saved revision 2')");
+          await configureStudioCut(page,"Mistake","None"); await clickButton(page,"Selected cut");
+          await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && document.querySelectorAll('[data-moment-id]').length===1");
+          expect(await page.$$('[data-moment-id]')).toHaveLength(1);
+          await clickButton(page,"Source"); await page.waitForSelector(`[data-moment-id="${fixture.speechId}"]`);
+          await page.click(`[data-moment-id="${fixture.thoughtId}"] > button:first-child`);
+        } else {
+          await page.waitForFunction("document.body.innerText.includes('Another edit was saved')");
+          await page.waitForFunction("document.body.innerText.includes('Retry my draft at revision 3')");
+          expect(await page.$$eval('[aria-label="Moment properties"] fieldset input',nodes=>nodes.map(node=>(node as unknown as {checked:boolean}).checked))).toEqual([true,true,true]);
+          await clickButton(page,"Use saved labels");
+        }
+      } finally {release(); page.off("request",delayed); await page.setRequestInterception(false);}
+    }
+  } finally {
+    release(); await page.close();
+    await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,fixture.id));
+    if (saved.length) await database.db.insert(schema.productionMomentAnnotations).values(saved);
+  }
+},90_000);
+
 test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes reviewed IDs and rejects changed cuts", async () => {
   const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.influence.id}`);
   const errors: string[] = []; page.on("pageerror", error => {errors.push(String(error));console.error("[Canonical Studio pageerror]",String(error));});
@@ -386,6 +897,7 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     const inspected = `Array.from(document.querySelectorAll('[data-moment-id]')).find(row => row.getAttribute('data-moment-id') === ${JSON.stringify(thoughtId)})?.querySelector('button')`;
     await page.evaluate(`${inspected}?.click()`);
     await page.waitForFunction(`${inspected}?.getAttribute('aria-pressed') === 'true'`);
+    await configureStudioCut(page,"Smart","None");
     await clickButton(page, "Selected cut");
     await page.waitForFunction(`document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view') === 'cut' && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment') === ${JSON.stringify(thoughtId)}`);
     const pixels = new Map<number, string>();
@@ -393,6 +905,7 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     for (const frame of [45, 0, 15]) expect(await sampleStudioFrame(page, frame)).toBe(pixels.get(frame)!);
     expect(await page.$eval("[data-preview-frame]", node => node.textContent?.includes("I will listen closely"))).toBe(false);
     await page.reload({waitUntil: "domcontentloaded"}); await page.waitForSelector("[data-production-preview]");
+    await configureStudioCut(page,"Smart","None");
     expect(await sampleStudioFrame(page, 45)).toBe(pixels.get(45)!);
     await captureStudioFrame(page,75);
     expect(await page.$eval('[data-composition-moment]',node=>node.getAttribute("data-composition-moment"))).toBe(thoughtId);
@@ -426,7 +939,8 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     for (const fraction of [.25, .5, .7]) {await page.mouse.move(bounds.x + bounds.width * fraction, bounds.y + 35); await page.waitForFunction(`Math.abs(Number(document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')) - ${Math.round(maximum * fraction)}) <= 1`); frames.push(await page.$eval("[data-preview-frame]", node => Number(node.getAttribute("data-preview-frame"))));}
     await page.mouse.up(); expect(frames[0]!).toBeLessThan(frames[1]!); expect(frames[1]!).toBeLessThan(frames[2]!);
     await database.db.update(schema.productionMomentAnnotations).set({tags: {cut: "festival"}, revision: 2}).where(eq(schema.productionMomentAnnotations.momentKey, thoughtId));
-    await clickButton(page, "Save tags"); await page.waitForFunction("document.body.innerText.includes('Another edit was saved')");
+    await clickButton(page, "Save labels"); await page.waitForFunction("document.body.innerText.includes('Another edit was saved')");
+    await page.$eval('[aria-label="Moment properties"] details',node=>{(node as unknown as {open:boolean}).open=true;});
     expect(await page.$eval('[aria-label="Tag value 1"]', node => (node as unknown as {value: string}).value)).toBe("youtube");
     await clickButton(page, "Retry my draft at revision 2"); await page.waitForFunction("document.body.innerText.includes('Saved revision 3')");
     const frozenResponse = page.waitForResponse(response => response.url().endsWith("/selection") && response.request().method() === "POST");
@@ -434,7 +948,7 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     await clickButton(page, "Download selected export");
     const frozen = await (await frozenResponse).json() as ProductionExportDescriptor;
     expect(frozen.momentIds).toEqual([thoughtId]); expect(frozen.recordings).toEqual([]);
-    expect(frozen.annotations).toEqual([{momentId: thoughtId, tags: {cut: "youtube"}, revision: 3}]);
+    expect(frozen.annotations).toEqual([{momentId: thoughtId, tags: {cut: "youtube", "label.smart": "true"}, revision: 3}]);
     await database.db.update(schema.productionMomentAnnotations).set({tags: {cut: "festival"}, revision: 4}).where(eq(schema.productionMomentAnnotations.momentKey, thoughtId));
     await clickButton(page, "Download selected export"); await page.waitForFunction("document.body.innerText.includes('Saved tags changed after this cut was reviewed')");
     await clickButton(page, "Refresh saved tags"); await page.waitForFunction("document.body.innerText.includes('Review refreshed cut')");
@@ -457,16 +971,18 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     await clickButton(page, "Source");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='source' && document.querySelector('[data-composition-frame]')");
     for (const enabled of [false,true]) {
-      const toggle = await page.evaluateHandle("Array.from(document.querySelectorAll('label')).find(node=>node.textContent?.trim()==='Show thinking moments')?.querySelector('input')");
+      await openStudioDialog(page,"Source settings");
+      const toggle = await page.evaluateHandle("Array.from(document.querySelectorAll('label')).find(node=>node.textContent?.trim()==='Play thinking in Source')?.querySelector('input')");
       try {await toggle.asElement()!.click();} finally {await toggle.dispose();}
-      await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && document.querySelector('[data-composition-frame]') && ${enabled ? "!!" : "!"}document.querySelector('[data-moment-id] [data-kind=thinking]')`);
+      await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && document.querySelector('[data-composition-frame]') && !!document.querySelector('[data-moment-id] [data-kind=thinking]')`);
+      await closeStudioDialog(page);
     }
     // The native audio lifecycle below uses the import made before this scope
     // toggle, proving that presentation preferences do not discard recordings.
-    const speechInspected = `Array.from(document.querySelectorAll('[data-moment-id]')).find(row => row.getAttribute('data-moment-id') === ${JSON.stringify(studioFixture.influence.speechId)})?.querySelector('button')`;
-    await page.evaluate(`${speechInspected}?.click()`);
+    await page.click(`[data-moment-id="${studioFixture.influence.speechId}"] button[aria-label="Seek to moment"]`);
     await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(studioFixture.influence.speechId)} && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(studioFixture.influence.speechId)}`);
-    await clickButton(page, "Add tag"); await clickButton(page, "Save tags"); await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
+    await addStudioTag(page); await clickButton(page, "Save labels"); await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
+    await configureStudioCut(page,"None","Smart");
     await clickButton(page, "Selected cut"); await page.waitForSelector("[data-production-preview]");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut'");
     await proveRecordedAudioLifecycle(page);
@@ -481,13 +997,14 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     await page.click('[aria-label="Back to production library"]');
     const reopen = `a[href^="/admin/production/games/${studioFixture.influence.id}?"]`;
     await page.waitForSelector(reopen); await page.click(reopen); await page.waitForSelector('[data-composition-frame]');
-    await page.click(`[data-moment-id="${studioFixture.influence.speechId}"] button`);
+    await page.click(`[data-moment-id="${studioFixture.influence.speechId}"] button[aria-label="Seek to moment"]`);
     await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(studioFixture.influence.speechId)}`);
     await captureStudioFrame(page,300);
     expect(await page.$('[data-production-preview] [role="alert"]')).toBeNull();
     await openStudioDialog(page,"Local recordings");
     expect(await page.$$eval('dialog[open] button',nodes=>nodes.some(node=>node.textContent?.trim()==="Remove local recordings"))).toBe(false);
     await closeStudioDialog(page);
+    await configureStudioCut(page,"None","Smart");
     await clickButton(page,"Selected cut");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && document.querySelector('[data-composition-frame]')");
     const afterReturnResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==="POST");
@@ -514,8 +1031,8 @@ test("Cached selected-cut replacement reports the newly mounted Player's paused 
   const thoughtId = studioFixture.influence.thoughtId, speechId = studioFixture.influence.speechId;
   const savedAnnotations = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId, studioFixture.influence.id));
   const setTag = async (momentKey: string, value: string, revision: number) => {
-    await database.db.insert(schema.productionMomentAnnotations).values({gameId: studioFixture.influence.id, momentKey, tags: {cut: value}, revision, updatedById: studioFixture.producer.userId})
-      .onConflictDoUpdate({target: [schema.productionMomentAnnotations.gameId, schema.productionMomentAnnotations.momentKey], set: {tags: {cut: value}, revision}});
+    await database.db.insert(schema.productionMomentAnnotations).values({gameId: studioFixture.influence.id, momentKey, tags: {cut: value, [value === "youtube" ? "label.smart" : "label.mistake"]: "true"}, revision, updatedById: studioFixture.producer.userId})
+      .onConflictDoUpdate({target: [schema.productionMomentAnnotations.gameId, schema.productionMomentAnnotations.momentKey], set: {tags: {cut: value, [value === "youtube" ? "label.smart" : "label.mistake"]: "true"}, revision}});
   };
   await setTag(thoughtId, "youtube", 10); await setTag(speechId, "festival", 10);
   const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.influence.id}?view=cut`);
@@ -525,10 +1042,10 @@ test("Cached selected-cut replacement reports the newly mounted Player's paused 
     await page.setViewport({width: 1440, height: 1050});
     const waitForMoment = async (id: string) => page.waitForFunction(`document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)}`);
     const predicate = async (value: string, id: string) => {
-      await openStudioDialog(page, "Selected cut rule");
-      await setStudioInput(page, "Cut tag value", value); await closeStudioDialog(page);
+      await configureStudioCut(page,value === "youtube" ? "Smart" : "Mistake", value === "youtube" ? "Smart" : "Mistake");
       await waitForMoment(id);
     };
+    await page.waitForSelector("[data-composition-frame]"); await configureStudioCut(page,"Smart","Smart");
     await waitForMoment(thoughtId);
     // Warm both real selected bundles under the same accepted source/media hash.
     // A later saved-tag refresh then replaces Player without unmounting its host.
@@ -572,7 +1089,7 @@ test("Studio keeps newer saved tags over a slow refresh and retries the exact un
   const {thoughtId, speechId} = studioFixture.influence;
   const savedAnnotations = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId, studioFixture.influence.id));
   await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId, studioFixture.influence.id));
-  await database.db.insert(schema.productionMomentAnnotations).values({gameId: studioFixture.influence.id, momentKey: thoughtId, tags: {cut:"youtube"}, revision:1, updatedById:studioFixture.producer.userId});
+  await database.db.insert(schema.productionMomentAnnotations).values({gameId: studioFixture.influence.id, momentKey: thoughtId, tags: {cut:"youtube", "label.smart":"true"}, revision:1, updatedById:studioFixture.producer.userId});
   const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.influence.id}`);
   let releaseRefresh!: () => void, sawRefresh!: () => void;
   const refreshGate = new Promise<void>(accept => {releaseRefresh=accept;});
@@ -599,12 +1116,17 @@ test("Studio keeps newer saved tags over a slow refresh and retries the exact un
     await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(speechId)}`);
     await page.setRequestInterception(true); page.on("request",intercept);
     await openStudioDialog(page,"Selected cut rule"); await clickButton(page,"Refresh saved tags"); await refreshRequested; await closeStudioDialog(page);
-    await clickButton(page,"Add tag");
+    await addStudioTag(page);
     const saved = page.waitForResponse(response => response.url().includes(`/moments/${encodeURIComponent(speechId)}/annotation`) && response.request().method()==="POST");
-    await clickButton(page,"Save tags"); expect((await saved).status()).toBe(200);
+    await clickButton(page,"Save labels"); expect((await saved).status()).toBe(200);
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')"); releaseRefresh();
     await page.waitForFunction("document.body.innerText.includes('Saved tags refreshed at the pinned source boundary.')");
-    expect(await page.$eval('[aria-label="Tag value 1"]',node=>(node as unknown as {value:string}).value)).toBe("youtube");
+    expect(await page.$$eval('[aria-label^="Tag key "]',nodes=>{
+      const key=nodes.find(node=>(node as unknown as {value:string}).value==="cut");
+      const value=key?.closest('div')?.querySelector('[aria-label^="Tag value "]');
+      return value ? (value as unknown as {value:string}).value : undefined;
+    })).toBe("youtube");
+    await configureStudioCut(page,"Smart","Smart");
     await openStudioDialog(page,"Selected cut rule"); await clickButton(page,"Review refreshed cut");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && document.querySelector('[data-composition-frame]')");
     expect(await page.$$eval('[data-moment-id]',nodes=>nodes.map(node=>node.getAttribute('data-moment-id')))).toEqual([thoughtId,speechId]);
@@ -612,7 +1134,7 @@ test("Studio keeps newer saved tags over a slow refresh and retries the exact un
     await page.waitForFunction("Array.from(document.querySelectorAll('dialog[open] button')).some(node=>node.textContent?.trim()==='Retry exact export request' && !node.disabled)");
     expect(selectionBodies).toHaveLength(1);
     await closeStudioDialog(page); await openStudioDialog(page,"Selected cut rule");
-    await setStudioInput(page,"Cut tag value","festival"); await closeStudioDialog(page);
+    await closeStudioDialog(page); await configureStudioCut(page,"Mistake","Mistake");
     await page.waitForFunction("!document.querySelector('[data-moment-id]')");
     await openStudioDialog(page,"Export selected cut");
     const frozenResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==="POST");
@@ -667,37 +1189,40 @@ test("Omniscient thinking visibility keeps the source pin and freezes independen
     const sourceReadCount = sourceRequests.length;
     const revision = await page.$eval('[data-preview-revision]', node => node.getAttribute("data-preview-revision"));
     const inspect = async (momentId:string) => {
-      await page.click(`[data-moment-id="${momentId}"] button`);
+      await page.click(`[data-moment-id="${momentId}"] button[aria-label="Seek to moment"]`);
       await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(momentId)} && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(momentId)}`);
     };
     const toggleThinking = async (enabled:boolean) => {
-      const toggle = await page.evaluateHandle("Array.from(document.querySelectorAll('label')).find(node=>node.textContent?.trim()==='Show thinking moments')?.querySelector('input')");
+      await openStudioDialog(page,"Source settings");
+      const toggle = await page.evaluateHandle("Array.from(document.querySelectorAll('label')).find(node=>node.textContent?.trim()==='Play thinking in Source')?.querySelector('input')");
       try {await toggle.asElement()!.click();} finally {await toggle.dispose();}
       // Fence the intended visibility, media preparation and committed sample;
       // an outgoing Player marker alone is insufficient after a route change.
-      await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && ${enabled ? "!!" : "!"}document.querySelector('[data-moment-id] [data-kind=thinking]') && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(speechId)} && document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')===document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')`);
+      await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && !!document.querySelector('[data-moment-id] [data-kind=thinking]') && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(speechId)} && document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')===document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')`);
+      await closeStudioDialog(page);
       expect(sourceRequests).toHaveLength(sourceReadCount);
       expect(await page.$eval('[data-preview-revision]', node => node.getAttribute("data-preview-revision"))).toBe(revision);
       expect(await page.$('[data-production-preview] [role="alert"]')).toBeNull();
     };
     step = "independent thought tag";
-    await inspect(thoughtId); await clickButton(page,"Add tag");
+    await inspect(thoughtId); await addStudioTag(page);
     const thoughtSaved = page.waitForResponse(result => result.url().endsWith(`/moments/${encodeURIComponent(thoughtId)}/annotation`) && result.request().method()==="POST");
-    await clickButton(page,"Save tags"); expect((await thoughtSaved).status()).toBe(200);
+    await clickButton(page,"Save labels"); expect((await thoughtSaved).status()).toBe(200);
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
     step = "thinking off/on retains the pin";
     await inspect(speechId);
     await toggleThinking(false); await toggleThinking(true); await toggleThinking(false);
     step = "save speech while thinking is hidden";
-    await clickButton(page,"Add tag");
+    await addStudioTag(page);
     const speechSaved = page.waitForResponse(result => result.url().endsWith(`/moments/${encodeURIComponent(speechId)}/annotation`) && result.request().method()==="POST");
-    await clickButton(page,"Save tags"); const annotationResponse = await speechSaved;
+    await clickButton(page,"Save labels"); const annotationResponse = await speechSaved;
     expect(annotationResponse.status()).toBe(200);
     const annotationBody = JSON.parse(annotationResponse.request().postData()!) as {thinking:boolean;snapshot:WerewolfProductionSnapshot;tags:Record<string,string>};
     expect(annotationBody.thinking).toBe(true); expect(annotationBody.snapshot).toEqual(source.snapshot);
-    expect(annotationBody.tags).toEqual({cut:"youtube"});
+    expect(annotationBody.tags).toEqual({cut:"youtube", "label.smart":"true"});
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
     step = "review exact speech-only cut";
+    await configureStudioCut(page,"None","Smart");
     await clickButton(page,"Selected cut");
     await page.waitForFunction(`document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(speechId)} && document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')===document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')`);
     expect(await page.$$eval('[data-moment-id]', nodes => nodes.map(node => node.getAttribute('data-moment-id')))).toEqual([speechId]);
@@ -711,10 +1236,10 @@ test("Omniscient thinking visibility keeps the source pin and freezes independen
     const body = JSON.parse(frozenResult.request().postData()!) as {thinking:boolean;snapshot:WerewolfProductionSnapshot;selection:{thinking:boolean};expectedMomentIds:string[]};
     const frozen = await frozenResult.json() as ProductionExportDescriptor;
     expect(body.thinking).toBe(true); expect(body.snapshot).toEqual(source.snapshot);
-    expect(body.selection.thinking).toBe(false); expect(body.expectedMomentIds).toEqual([speechId]);
+    expect(body.selection.thinking).toBe(true); expect(body.expectedMomentIds).toEqual([speechId]);
     expect(frozen.sourceSnapshot).toEqual({...source.snapshot}); expect(frozen.sourceSnapshot.thinking).toBe(true);
-    expect(frozen.selection.thinking).toBe(false); expect(frozen.momentIds).toEqual([speechId]);
-    expect(frozen.annotations).toEqual([{momentId:speechId,tags:{cut:"youtube"},revision:1}]);
+    expect(frozen.selection.thinking).toBe(true); expect(frozen.momentIds).toEqual([speechId]);
+    expect(frozen.annotations).toEqual([{momentId:speechId,tags:{cut:"youtube", "label.smart":"true"},revision:1}]);
     for (const copy of thoughtCopy) expect(JSON.stringify(frozen)).not.toContain(copy);
     expect(sourceRequests).toHaveLength(sourceReadCount);
   } catch (error) {

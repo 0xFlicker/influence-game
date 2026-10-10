@@ -72,7 +72,8 @@ export type ProductionSource =
   | (OrderedProductionSource & { kind: "opening"; gameKind: ProductionGameKind })
   | (OrderedProductionSource & { kind: "influence-bridge"; following: Exclude<ProductionSourceReference, { kind: "influence-bridge" }>; followingPart: ProductionMomentPart });
 
-export type ProductionMomentKind = "thinking" | "speech" | "ballot" | "tally" | "scene" | "action" | "outcome" | "result" | "opening" | "bridge";
+export const PRODUCTION_MOMENT_KINDS = ["thinking", "speech", "ballot", "tally", "scene", "action", "outcome", "result", "opening", "bridge"] as const;
+export type ProductionMomentKind = typeof PRODUCTION_MOMENT_KINDS[number];
 export interface ProductionMoment {
   id: string;
   sourceKey: string;
@@ -288,10 +289,37 @@ export function validateProductionTags(value: unknown, requireNonempty = false):
   return result;
 }
 
+export const PRODUCTION_LABELS = {smart: "Smart", fourth_wall: "4th wall", mistake: "Mistake", aggressive: "Aggressive"} as const;
+export type ProductionLabel = keyof typeof PRODUCTION_LABELS;
+export const THINKING_LABELS: readonly ProductionLabel[] = ["smart", "fourth_wall", "mistake"];
+export const SPEECH_LABELS: readonly ProductionLabel[] = ["smart", "mistake", "aggressive"];
+export function productionLabelKey(label: ProductionLabel): string {return `label.${label}`;}
+export type ProductionKindPolicy = {mode: "all"} | {mode: "none"} | {mode: "any"; labels: readonly ProductionLabel[]};
+export type ProductionRecipe = {mode: "recipe"; thinking: boolean; base: "full" | "empty"; policies: Partial<Record<ProductionMomentKind, ProductionKindPolicy>>};
+
+function decodeRecipePolicies(value: unknown): ProductionRecipe["policies"] {
+  if (!value || typeof value !== "object" || Array.isArray(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error("Production recipe policies must be a flat object");
+  const result: ProductionRecipe["policies"] = {};
+  for (const [kind, input] of Object.entries(value)) {
+    if (!PRODUCTION_MOMENT_KINDS.includes(kind as ProductionMomentKind)) throw new Error(`Unsupported production moment kind ${kind}`);
+    if (!input || typeof input !== "object" || Array.isArray(input) || ![Object.prototype, null].includes(Object.getPrototypeOf(input))) throw new Error("Invalid production kind policy");
+    const policy = input as Record<string, unknown>;
+    const fields = policy.mode === "any" ? ["mode", "labels"] : ["mode"];
+    if (Object.keys(policy).some(field => !fields.includes(field))) throw new Error("Unsupported production policy fields");
+    if (policy.mode === "all" || policy.mode === "none") result[kind as ProductionMomentKind] = {mode: policy.mode};
+    else if (policy.mode === "any") {
+      if (!Array.isArray(policy.labels) || policy.labels.length > Object.keys(PRODUCTION_LABELS).length || policy.labels.some(label => typeof label !== "string" || !Object.hasOwn(PRODUCTION_LABELS, label)) || new Set(policy.labels).size !== policy.labels.length) throw new Error("Production recipe requires unique known labels");
+      result[kind as ProductionMomentKind] = {mode: "any", labels: policy.labels as ProductionLabel[]};
+    } else throw new Error("Unsupported production policy mode");
+  }
+  return result;
+}
+
 export type ProductionSelection =
   | { mode: "full"; thinking: boolean }
   | { mode: "tagged"; thinking: boolean; predicate: ProductionTags; includeOpening?: boolean; includeResult?: boolean }
-  | { mode: "ids"; thinking: boolean; ids: readonly string[] };
+  | { mode: "ids"; thinking: boolean; ids: readonly string[] }
+  | ProductionRecipe;
 
 /** Client selection is a strict data contract, never a path or source authority. */
 export function decodeProductionSelection(value: unknown): ProductionSelection {
@@ -300,9 +328,14 @@ export function decodeProductionSelection(value: unknown): ProductionSelection {
   if (typeof record.thinking !== "boolean") throw new Error("Production selection requires boolean thinking");
   const fields = record.mode === "full" ? ["mode", "thinking"]
     : record.mode === "tagged" ? ["mode", "thinking", "predicate", "includeOpening", "includeResult"]
-    : record.mode === "ids" ? ["mode", "thinking", "ids"] : null;
+    : record.mode === "ids" ? ["mode", "thinking", "ids"]
+    : record.mode === "recipe" ? ["mode", "thinking", "base", "policies"] : null;
   if (!fields || Object.keys(record).some(key => !fields.includes(key))) throw new Error("Unsupported production selection fields");
   if (record.mode === "full") return { mode: "full", thinking: record.thinking };
+  if (record.mode === "recipe") {
+    if (record.base !== "full" && record.base !== "empty") throw new Error("Invalid production recipe baseline");
+    return {mode: "recipe", thinking: record.thinking, base: record.base, policies: decodeRecipePolicies(record.policies)};
+  }
   if (record.mode === "ids") {
     if (!Array.isArray(record.ids) || record.ids.length > 50000 || record.ids.some(id => typeof id !== "string" || id.length < 1 || id.length > 8192) || new Set(record.ids).size !== record.ids.length) throw new Error("Production selection requires unique bounded moment IDs");
     return { mode: "ids", thinking: record.thinking, ids: record.ids as string[] };
@@ -335,6 +368,19 @@ export function selectProductionMoments(catalog: ProductionCatalog, selection: P
     return moments;
   }
   if (selection.mode === "full") return catalog.moments.filter(m => m.defaultIncluded && (selection.thinking || m.kind !== "thinking"));
+  if (selection.mode === "recipe") {
+    if (selection.base !== "full" && selection.base !== "empty") throw new Error("Invalid production recipe baseline");
+    const policies = decodeRecipePolicies(selection.policies);
+    return catalog.moments.filter(moment => {
+      if (moment.kind === "thinking" && !selection.thinking) return false;
+      const policy = policies[moment.kind];
+      if (!policy) return selection.base === "full" && moment.defaultIncluded;
+      if (policy.mode === "all") return true;
+      if (policy.mode === "none") return false;
+      const tags = annotations[moment.id];
+      return policy.labels.some(label => tags !== undefined && Object.hasOwn(tags, productionLabelKey(label)) && tags[productionLabelKey(label)] === "true");
+    });
+  }
   if (selection.mode !== "tagged") throw new Error("Unsupported production selection");
   const predicate = validateProductionTags(selection.predicate, true);
   if (selection.includeOpening !== undefined && typeof selection.includeOpening !== "boolean" || selection.includeResult !== undefined && typeof selection.includeResult !== "boolean") throw new Error("Invalid production opening/result selection");

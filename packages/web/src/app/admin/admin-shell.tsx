@@ -19,12 +19,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const scope = `${auth.account?.id ?? "guest"}:${generation}`;
   const ready = auth.ready && !access.loading;
   return <div className="min-h-screen bg-[#08090b] text-white" data-admin-shell data-production-shell={productionWorkspace || undefined}>
-    <Nav />
+    {!productionWorkspace && <><Nav />
     <div className="border-b border-white/10 bg-black/20">
       <nav aria-label="Administration" className="mx-auto flex max-w-[90rem] gap-2 px-4 sm:px-6 lg:px-8">
         {areas.map(name => { const first = links.find(entry => entry.area === name); return first && <Link key={name} href={first.href} aria-current={area === name ? "true" : undefined} className={`min-h-12 border-b-2 px-3 py-3 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400 ${area === name ? "border-indigo-400 text-white" : "border-transparent text-white/50 hover:text-white"}`}>{name}</Link>; })}
       </nav>
-    </div>
+    </div></>}
     <main className="mx-auto w-full max-w-[90rem] px-4 py-6 sm:px-6 lg:px-8" data-admin-content>
       {!ready ? <p role="status" className="min-h-64 py-12 text-white/60">Connecting to administration…</p> : !auth.authenticated ? <div className="py-12"><p>Sign in to access administration.</p><button onClick={auth.openSignIn} className="influence-button-primary mt-4 rounded px-4 py-2">Sign in</button></div> : <AdminSessionProvider key={scope} scope={scope}>
         <ProductionAccessBoundary />
@@ -49,7 +49,7 @@ function ProductionAccessBoundary() {
       return url.startsWith(prefix) && (!discoveryAllowed || !metadata);
     };
     session.invalidateReadsMatching(privateResource);
-    session.clearMatching(key => key.includes(prefix) && privateResource(key.slice(key.indexOf(prefix))));
+    session.clearMatching(key => key.includes(prefix) && ((key.startsWith("draft:") || key.startsWith("operation:") || key.startsWith("ui:")) || privateResource(key.slice(key.indexOf(prefix)))));
     const filter = { predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[0] === "admin" && query.queryKey[1] === session.scope && privateResource(String(query.queryKey[2])) };
     void client.cancelQueries(filter); client.removeQueries(filter);
   }, [allowed, discoveryAllowed, session, client]);

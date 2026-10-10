@@ -1,7 +1,7 @@
 ---
 title: Production Studio timeline, editorial labels and workspace sizing
 type: feat
-status: draft
+status: in_progress
 date: 2026-10-10
 pillar: A2
 slices: [A2.1, A2.2]
@@ -9,18 +9,18 @@ slices: [A2.1, A2.2]
 
 # Production Studio editing refinements
 
-Planning only. This follows real local Studio use and supplements the [combined delivery plan](2026-10-09-001-feat-production-studio-moment-editor.md) and [keyboard proposal](2026-10-10-001-feat-production-studio-keyboard-shortcuts.md). No application edits, restarts, browser interaction, database writes, dependency installation or test harnesses were performed for this draft. Delivered-workspace acceptance remains pending; approval of the prior prototype does not establish acceptance of these changes.
+Implementation authorized on 2026-10-10. This follows real local Studio use and supplements the [combined delivery plan](2026-10-09-001-feat-production-studio-moment-editor.md) and [keyboard proposal](2026-10-10-001-feat-production-studio-keyboard-shortcuts.md). The operator approved the isolated interactive refinements prototype at `http://127.0.0.1:63098/` before final component/layout choices. The original planning findings below describe the pre-edit checkpoint. Current implementation/proof is recorded at the end; delivered-workspace acceptance remains pending.
 
 ## Operator decisions from 2026-10-10
 
-- A moment row selects its properties without seeking. A separate target/crosshair icon pauses, seeks to that moment and recenters the timeline. Pin denotes inspection state, so it is unsuitable for seek; a triangle suggests expansion.
+- Initial decision: a moment row selects its properties without seeking. A separate target/crosshair icon pauses, seeks to that moment and recenters the timeline. The later content-seeking follow-up at the end supersedes the row behavior: rows seek readable content; target icons retain start seeking. Pin denotes inspection state, so it is unsuitable for seek; a triangle suggests expansion.
 - Vertical wheel movement over the timeline zooms around the playhead. Shift+wheel pans. Horizontal trackpad movement pans. Provide a visible horizontal scrolling control.
 - Thinking labels: **Smart**, **4th wall**, **Mistake**. Speech/message labels: **Smart**, **Mistake**, **Aggressive**. Labels are independent checkboxes and reusable across cuts, rather than membership in a single named export.
 - Cut controls have **All / None / Matching labels** per type. Matching includes any checked label within that type: thinking marked Smart OR 4th wall, for example. No exclusions or nested logical editor in this pass.
 - On narrow screens the first problem is stacked navigation, titles and toolbars consuming the space above the preview. Compress those into a small bar and menus, then enlarge the preview. A narrow-screen resize handle is optional and is not a prerequisite.
 - The reported absence of thinking occurred in Werewolf **Mystery**, on Source. Mystery deliberately excludes thinking. The UI must explain this restriction; Omniscient exposes available accepted contestant thoughts.
 
-Playback page scrolling, proposed pane limits, label saving details and final compact layout below are recommendations for the next pass, not claims of implemented behavior or new operator acceptance.
+Playback page scrolling, proposed pane limits, label saving details and final compact layout below are the original recommendations, not claims of new operator acceptance. The follow-up ledger records the later change to immediate checkbox saving after operator testing exposed the explicit-save step as too easy to miss.
 
 ## Findings from the current checkout
 
@@ -131,19 +131,107 @@ The next prototype must show compressed navigation, thought discovery/labels, th
 
 Preserve the current branch and unrelated/task dirt. The existing continue-in-place authorization remains in effect; this plan does not authorize commits, deployment, providers or external writes. Keep the original ST-01–ST-15 checklist intact and link this follow-up when implementation actually lands.
 
-## Validation for a later authorized coding pass
+## Validation
 
-- [ ] Geometry tests cover middle/boundary zoom anchoring, Fit, pan bounds, resize, and zero/one-frame timelines; no operation changes the sampled frame unless seeking was requested.
-- [ ] Browser proof measures actual content/viewport/scroll positions and exercises real vertical wheel, Shift+wheel, horizontal trackpad-equivalent input and the visible scrollbar. Browser zoom and controls outside the timeline retain normal behavior.
-- [ ] Captured pointer seeks continuously while the viewport pans at both edges, including held-still edge dragging, cancellation, lost capture and changing media/scope. Playback auto-scroll pages repeatedly until the final frame; manual pan turns it off visibly.
-- [ ] Row selection changes properties without moving the frame; target icon pauses and seeks/recenters. Active vs inspected styling remains clear. Omitted cut moments never reveal Source without an explicit action.
-- [ ] Real authorized thinking appears separately in Omniscient/Influence; Mystery shows an explanatory policy state without private data/counts. Browser-only filters do not change cut membership or source pin.
-- [ ] Checkbox drafts/save/conflict/unknown retry/permission loss use the existing single annotation owner. Independent thought/speech flags, retained unrelated tags and a second producer's revision edits are covered.
-- [ ] Per-kind OR cases include all speech plus Smart/4th-wall thinking, thought-only and mixed highlights; empty matches, multiple labels, source order, no duplicates, unsupported kinds/keys and handcrafted private references are covered.
-- [ ] Existing full-export IDs/coverage are unchanged. Previously downloaded full/tagged/ids exports still verify their unmodified hashes. Recipe freeze uses one selection snapshot, rejects stale displayed membership, and survives later label edits via its exact frozen IDs.
-- [ ] Resize/collapsed chrome fits real desktop, HD, narrow/short and fullscreen views without reducing focus/touch access or stranding repair, review, publish, resume, settings, recording or export operations. Separator arrows do not step frames. Monitor resize preserves frame/audio and output geometry.
-- [ ] Shared renderer sampling remains forward/reverse/random/fresh-mount consistent; slow responses cannot restore an older seek. Thought cuts never flash omitted speech. Preview/export frame and audio parity is checked using the existing local verifier after selection changes.
-- [ ] After code lands, run `bun run test`, `bun run test:postgres`, `bun run check`, `bun run test:browser:api`, with existing PostgreSQL isolation and browser-child cleanup. No paid generation or staging/production mutations.
+- [x] Geometry tests cover middle/boundary zoom anchoring, Fit, pan bounds, resize, and zero/one-frame timelines; no operation changes the sampled frame unless seeking was requested.
+- [x] Browser proof measures actual content/viewport/scroll positions and exercises real vertical wheel, Shift+wheel, horizontal trackpad-equivalent input and the persistent position control. Browser/OS zoom is ignored by the timeline handler; native controls keep their ownership.
+- [x] Captured pointer seeks continuously while the viewport pans at both edges, including held-still dragging. Native lost capture proves the cancellation policy stops seeking and leaves playback paused. Playback auto-scroll pages repeatedly until the final frame; manual pan turns it off visibly. Pointer-cancel and host/scope animation cleanup were also reviewed; OS/device-generated cancellation during scope change is not separately automated.
+- [x] Row selection changes properties without moving the frame; target icon pauses and seeks/recenters. Active vs inspected styling remains clear. Omitted cut moments never reveal Source without an explicit action.
+- [x] Real authorized thinking appears separately in Omniscient/Influence; Mystery shows an explanatory policy state without private data/counts. Browser-only filters do not change cut membership or source pin.
+- [x] Checkbox saves/conflict/unknown retry/permission loss use the existing single annotation owner. Independent thought/speech flags, retained unrelated tags and a second producer's revision edits are covered. Held 200/409 saves settle after inspecting another moment; actual colon-form drafts/conflicts clear on revocation. The operator follow-up below changes checkboxes from explicit-save drafts to immediate saves.
+- [x] Per-kind OR cases include all speech plus Smart/4th-wall thinking, thought-only and mixed highlights; empty matches, multiple labels, source order, no duplicates, unsupported kinds/keys and handcrafted private references are covered.
+- [x] Existing full-export IDs/coverage are unchanged. Old full/tagged/ids payload/checksum regression rejects decoder normalization; recipe freeze uses one selection snapshot, rejects stale displayed membership, and survives later label edits via its exact frozen IDs. This is local fixture evidence, not validation of an operator's historical download against a deployed source.
+- [x] Resize/collapsed chrome fits desktop, HD, narrow/short and headless fullscreen views. Real divider drag/arrows preserve the Player and frame; resizing during playback preserves playback/mute state and output geometry. Existing operation homes remain accessible. Native macOS fullscreen/operator usability remains manual acceptance.
+- [x] Shared renderer sampling remains forward/reverse/random/fresh-mount consistent; slow responses cannot restore an older seek. Thought cuts never flash omitted speech. Local Studio → frozen recipe → CLI encoded frames pass the existing verifier. The thought-only encoded cut schedules no audio; recorded-speech alignment/gain remains separately verified by the shared local verifier/browser suite.
+- [x] After code lands, run `bun run test`, `bun run test:postgres`, `bun run check`, `bun run test:browser:api`, with existing PostgreSQL isolation and browser-child cleanup. No paid generation or staging/production mutations.
 - [ ] Operator reviews the revised editing loop and explicitly accepts it. Current feedback and planning answers establish requirements, not delivered acceptance.
 
-This draft records source/research findings and decisions only. Browser scrolling defects, new labels/rules, resizing and compact chrome have not been implemented or newly tested here. Export readiness/concurrency, broad transport audit, harmonize schema alignment and A2.3 job console remain separate.
+Export readiness/concurrency, broad transport audit, harmonize schema alignment and A2.3 job console remain separate.
+
+## Implementation ledger — 2026-10-10
+
+- [x] Inspect current clean `codex/production-studio` checkout; preserve planning history, read AGENTS and relevant Player/export/layout solutions. Continue in place without restarting the operator's local services.
+- [x] Add strict finite per-kind recipe selection to the single engine catalog/selector; preserve full/tagged/ids shapes and default full coverage. Deterministic selector/viewport fixtures pass (18 tests, 135 assertions at the foundation checkpoint).
+- [x] Prove actual installed `react-resizable-panels@4.14.2` Group/Panel/Separator using Bun and isolated desktop/narrow browser input. Operator approved prototype direction.
+- [x] Integrate labels through existing sparse annotations/drafts/CAS; split row inspection from target seeking, add browser type filters and explain Mystery. No new storage or mutation owner.
+- [x] Integrate playhead-centered zoom, normalized wheel/pan, persistent scroll control, Fit/Recenter, explicit playback page-follow and captured edge dragging through Player events and drag-only animation frames.
+- [x] Integrate compact navigation/dialog homes and desktop resizing. Preserve Player subtree and movie geometry across responsive layout changes. Keyboard hint copy covers current local control/save bindings; broader character shortcuts remain a separate proposal.
+- [x] Complete current canonical browser, required baseline and encoded-media checks; fix failures before marking proof complete.
+- [x] Final bounded simplification/consistency review: one selector/compiler/Player/audio owner and annotation mutation owner. Fix private draft cleanup, settlement across inspector remounts and synchronous audience invalidation; recipe summary now includes gameplay/opening/result and kind overrides. No remaining material reviewer findings.
+- [ ] Delivered operator acceptance. Approved prototype direction is recorded separately above.
+
+Concrete findings during implementation:
+
+- Panel `className` styles its inner element, so CSS ordering there cannot move the outer sizing wrapper. Reorder keyed direct children under Group instead. Keep both registered panel IDs on narrow Properties, with moments bounded to zero, to avoid registration/layout races and retain Player.
+- Bound effective zoom to the new duration/FPS when switching from a long source to a short cached cut. No seek/remount is required.
+- The playhead could extend horizontal overflow at the final frame. Clip horizontal content at the timeline boundary so Fit has no residual pan.
+- A label conflict can remove the last cut member, changing media preparation and remounting Properties. Freeze even an unchanged draft before submission and retain comparison/error alongside that draft in the existing session owner. Audience/permission cleanup still clears it.
+- Werewolf opening audio needs prepared duration evidence even when music is off. Do not compile metadata-only duration summaries using an empty asset map while media is loading; wait for the already-owned preparation result.
+- The existing shared test database reported migrations applied but lacked `werewolf_lobby_seats`. The first required PG baseline failed at reset before Studio assertions. The rerun uses the existing disposable-database helper and the same required command; no dev/shared schema repair is included.
+- An inspector-mount settlement guard discarded held annotation 200/409 outcomes after switching rows. Settlement now follows the game/audience workspace; the audience generation invalidates synchronously before routing. Native source playback is not paused again when a delayed save settles.
+- Production draft/conflict keys have colon suffixes and can resemble game metadata URLs. Revocation clears owned draft/operation/UI keys independently of the allowed metadata-read exception.
+- Two older browser journeys needed current operation entry points/assertions: Tools → Episode tools, and Trailer & poster for an admin without episode-edit permission. Their first failure left a fixture role downgraded and caused a subsequent banner read failure. Production permission gates were preserved.
+
+### Current evidence ledger
+
+- `bun run test`: **2,481 passed, 5 existing skips, 0 failures**, 18,064 assertions across 261 files. Log: `/tmp/studio-refinements-test-final.log`.
+- `bun run test:postgres`: **1,983 passed, 0 failures**, 22,568 assertions across 171 files, using the existing isolated PostgreSQL helper around the unchanged required command. Log: `/tmp/studio-refinements-postgres-isolated.log`. The shared test-schema drift remains an environment issue.
+- `bun run check`: all package type/lint checks passed after final lifecycle fixes. Log: `/tmp/studio-refinements-check-final.log`.
+- Focused actual-interface proof passed with real wheel/pan, held edge dragging, lost native capture, repeated playback paging, divider drag/arrows, resizing during playback, unchanged Player identity, independent label saves and narrow/short/fullscreen operation access. Log: `/tmp/studio-refinements-interface-final.log`; the final full-suite run rechecks the final integrated layout.
+- Held annotation settlement proof: **1 passed**, both accepted 200 and conflicting 409 after inspecting a sibling; retained draft and accepted cut membership verified. Log: `/tmp/studio-refinements-annotation-settlement.log`.
+- First complete browser run: 55 passed / 1 optional skip / 3 failures described above. Its Studio and direct encoded parity tests passed. Thought-only movie: 640×360 / 24 fps; three direct Studio/encoded frame differences below 2/255 and shared four-frame/reverse/random/fresh/contiguous verification. No scheduled speech/music clips in that cut. Artifact: `/var/folders/7b/zb_l0ml96vqg87_fzj__vh0c0000gn/T/production-studio-ui-encoded-proof-pmxGm3/studio-parity.json`.
+- `STUDIO_INTERFACE_PROOF=1 STUDIO_ENCODED_PROOF=1 bun run test:browser:api`: **59 passed, 1 optional synthetic-duration skip, 0 failures**, 923 assertions across 13 files. Log: `/tmp/studio-refinements-browser-final2.log`. Includes current Studio pointer/resize/label proof, held annotation settlements, exact unknown retries, Werewolf admin/results, review/publication and canonical repair/publish/explicit-resume journeys. Exit code 0 after cleanup.
+- Final direct encoded artifact: `/var/folders/7b/zb_l0ml96vqg87_fzj__vh0c0000gn/T/production-studio-ui-encoded-proof-2DRWBS/studio-parity.json`. Movie 640×360 / 24 fps; three direct Studio/encoded samples have mean differences 1.44 / 2.04 / 1.39 on the 255-level channel scale; the shared four-sample and contiguous-range verifier also passed. The thought-only schedule contains zero audio clips. This is not a new spoken-audio proof; the existing shared fixture covers recording waveform alignment/gain separately.
+- Final narrow-height regression also passed after the last layout adjustment: 1 actual-interface test, 57 assertions, including Properties preview height at least the Moments preview height. Log: `/tmp/studio-refinements-narrow-final.log`. Owned browser/Next/API teardown and database drop completed; generated route-path additions were restored without resetting files.
+
+The operator's normal API/web services were not restarted. The isolated prototype server was stopped after approved direction and integrated browser proof. Browser runs use owned databases/children; no provider generation, staging/production mutation, commit or deployment occurred. Broader global character shortcuts remain in the separate proposal; the implemented help lists only current control-owned keys and explicit metadata Save.
+
+### Operator follow-up — immediate labels and one Cut rules control
+
+Delivered acceptance remains pending. The operator reported Smart thinking consistently resolving to zero and redundant Cut rules entry points. Read-only inspection of the current Omniscient game confirmed Smart thinking rules but no stored annotations: checkbox changes were still drafts awaiting Save. The previous draft-only marking flow did not make that distinction clear enough for repeated editorial marking.
+
+- [x] Save each checkbox immediately through the existing revision-checked annotation operation. Update cut membership only after acceptance and expose Saving, Saved, failure, conflict and exact-retry states. Existing pre-change drafts still require explicit Save once.
+- [x] Keep custom metadata in draft, including unfinished and duplicate rows. Checkbox saves preserve saved custom tags without submitting those drafts; Cmd/Ctrl+Enter and Save labels retain explicit metadata ownership.
+- [x] Unknown retries bypass current draft validation and submit the retained request exactly. Accepted checkbox values come from the result even after an audience switch cleared the old draft. Preserve audience-generation, session and access-denial settlement fences.
+- [x] Keep one header Cut rules button, available as rules on narrow screens and while Properties hides the moment browser. Remove the redundant browser-heading entry point.
+- [x] Add isolated real-browser regressions for three checkbox-only Smart thoughts, reload, exact cut/frozen IDs, Mystery exclusion, 390px/320px access, custom draft retention, uncertain retry, revision conflict and retry after audience change. The initial complete follow-up run passed all these new regressions and direct encoded parity.
+- [x] Complete bounded save/retry simplification review. Fix the reviewer-found unfinished-draft retry, accepted-checkbox display and duplicate metadata-group retention cases. No remaining material review findings.
+
+The initial follow-up full browser run had 60 passes, one optional skip and two obsolete assertions: an admin's existing `manage_postgame_media` grant permits Episode presentation; metadata key/value matching must not assume `cut` occupies row one after accepted label reconciliation. Both tests were corrected without altering production grants or metadata ordering. This also corrects the earlier ledger's mistaken description of that admin as lacking episode-edit permission. Log: `/tmp/studio-checkbox-browser-final.log`.
+
+Fresh provider-free baseline: 2,481 passes, five existing skips, zero failures, 18,067 assertions across 261 files (`/tmp/studio-checkbox-test-final.log`). Its first sandbox run could not bind test HTTP listeners; the local-network rerun passed. The prior 1,983-test isolated PostgreSQL baseline above remains the API/schema baseline: this follow-up changes browser save behavior and browser tests, without changing backend storage or mutation services.
+
+Final follow-up evidence:
+
+- `bun run check`: all package types/lint passed after the retry and test-assertion fixes (`/tmp/studio-checkbox-check-corrected.log`).
+- `STUDIO_INTERFACE_PROOF=1 STUDIO_ENCODED_PROOF=1 bun run test:browser:api`: **62 passed, one optional synthetic-duration skip, zero failures**, 968 assertions across 13 files, 453.21 seconds (`/tmp/studio-checkbox-browser-corrected.log`). All checkbox-only Smart, reload/freeze, narrow entry point, custom draft/conflict/exact retry, audience switch, delayed refresh, permission and existing recovery journeys passed. Exit code zero after owned cleanup; the Studio database drop is recorded in the log. Only generated Next route-path additions were restored after all children exited.
+- Direct encoded parity: `/var/folders/7b/zb_l0ml96vqg87_fzj__vh0c0000gn/T/production-studio-ui-encoded-proof-lZzmOk/studio-parity.json`. Thought-only movie 640×360 / 24 fps, three Studio/encoded mean channel differences 1.44 / 2.04 / 1.39 on the 255-level scale. Shared reverse/random/fresh/contiguous verifier passed. Zero scheduled audio clips in this cut; recorded speech evidence remains the separate shared fixture.
+- Actual saved-cut screenshots: `/var/folders/7b/zb_l0ml96vqg87_fzj__vh0c0000gn/T/production-studio-smart-cut-desktop.png` and `production-studio-smart-cut-narrow.png`. These are isolated canonical browser fixtures, not operator acceptance or real-game mutations.
+
+The operator's game was inspected read-only; no labels were saved on their behalf. Normal API/web services were not restarted. Existing operator drafts need Save labels once before reload; new checkbox changes save directly. Previously downloaded selections remain frozen and require a fresh download to include newly saved moments. No providers, staging/production writes, commit or deployment occurred. Delivered operator acceptance remains open.
+
+## Follow-up: select readable content, target the beginning
+
+The operator changed the row-selection contract after testing: clicking a row should move the head into its type's visible content; the target icon should retain beginning-of-moment navigation. This explicitly supersedes the initial inspection-only decision above without changing layout, cut membership, source privacy or playback ownership.
+
+- [x] Compile a content destination beside each moment's start/end using the existing presentation timing. Thinking uses its first read boundary after camera entrance, speech uses its read boundary, silent ballots use the existing revealed-vote boundary scaled to the hold, and other silent moments use the first authored shot's midpoint. Clamp within that shot, including one-frame shots. Atomic openings remain one moment.
+- [x] Row selection pauses, seeks content, recenters and pins Properties. Target icons pause at the beginning and recenter. Previous/next moment transport retains beginning navigation. Settings and filters do not acquire a second seek owner.
+- [x] Preserve the latest semantic content selection while media preparation has no mounted Player; resolve it against the eventual compiled timing. Mounted seeks retain exact moment/time offsets through the existing path. Source thinking-off or omitted-cut selection pauses/retains and explains the restriction without enabling hidden content.
+- [x] Deterministic sampling proves readable thought/speech content at 24/30/60 fps, edited motion/reading settings, thought-only omission, first-shot bounds and silent-ballot reveal. Real browser proof covers both games, generated-scene speech, row/icon distinction, Source thinking-off pause and two selections made during held initial private-media preparation.
+- [x] Bounded final reviewer found no remaining material content-anchor/selection issues after fixing the disabled-thinking early return.
+- [x] Record the complete final browser/encoded run below after cleanup.
+- [ ] Delivered operator acceptance remains pending; this behavior request is authorization to implement, not completed acceptance.
+
+Fresh provider-free baseline: **2,483 passes, five existing skips, zero failures**, 18,192 assertions across 261 files (`/tmp/studio-content-frame-test.log`). Focused real interface/content proof passed both games and disabled-thinking pause (`/tmp/studio-content-frame-browser-fixed.log`, two passes); its delayed-media regression initially targeted the wrong game's route. After matching the Influence source service's actual private `/visual/artifacts/` path, the held-media test passed and database cleanup completed (`/tmp/studio-content-frame-delayed-media.log`, one pass). This was a test interceptor correction; product media routes were unchanged. The unchanged backend retains the isolated PostgreSQL baseline above.
+
+Final integrated checks:
+
+- `bun run check`: all-package typecheck and lint passed (`/tmp/studio-content-frame-check-final.log`).
+- `STUDIO_INTERFACE_PROOF=1 STUDIO_ENCODED_PROOF=1 bun run test:browser:api`: **64 passes, one optional synthetic-duration skip, zero failures**, 994 assertions across 13 files, 454.96 seconds (`/tmp/studio-content-frame-browser-final.log`). Includes current row/icon selection, both games, held initial media, pointer/resize editing, annotation/conflict/permission journeys, public replay and canonical repair/publication/explicit resume. Exit zero after owned cleanup; Studio database drop recorded as `influence_e2e_46235_eaa83821bb1e4bd8ae5128fdadc5f2d9`.
+- Direct Studio/frozen-export encoded proof: thought-only 640×360 at 24 fps, Studio/encoded frame differences 1.44 / 2.04 / 1.39 out of 255, plus the existing forward/reverse/random/fresh/contiguous sampling verifier. Zero scheduled audio clips. Artifact: `/var/folders/7b/zb_l0ml96vqg87_fzj__vh0c0000gn/T/production-studio-ui-encoded-proof-G4ohm7/studio-parity.json`.
+
+Normal development API/web services were not restarted. Only the known generated Next route-path additions were restored after the isolated browser children exited; no files were reset. No real-game annotations, paid generation, staging/production writes, commit or deployment occurred. Operator acceptance remains separate.
+
+## Follow-up: remaining keyboard shortcuts
+
+The operator authorized the remaining keys from the [keyboard plan](2026-10-10-001-feat-production-studio-keyboard-shortcuts.md). They now use the existing Player/button actions and annotation owner, with Studio-scoped bubbling dispatch, native typing/control/layer ownership, a shared pointer-capture fence and a browser-local character-shortcut preference in the existing Help dialog. This supersedes the earlier proposal-only keyboard checkpoint. Row selection still seeks readable content; bracket navigation and the target icon seek moment beginnings. Follow current moment remains independent from timeline Auto-scroll. The keyboard plan records the current checks and manual acceptance boundary; no label or Auto-scroll letter keys were inferred.

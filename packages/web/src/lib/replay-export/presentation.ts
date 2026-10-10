@@ -2,6 +2,7 @@ import type {ExportCue, ExportPicture} from "./cues";
 import {compileTiming, type TimingProfile, type CompiledTiming} from "./timing";
 import {compileAudio, type AudioSchedule} from "./audio";
 import type {CachedAsset} from "./assets";
+import {SOLO_READ_START_MS} from "../../app/games/[slug]/components/solo-presentation-timing";
 
 export interface PresentationMoment {
   id: string;
@@ -10,7 +11,7 @@ export interface PresentationMoment {
 }
 export interface CompiledPresentation {
   momentIds: string[];
-  moments: {id: string; startFrame: number; endFrame: number; sourceOrder: number}[];
+  moments: {id: string; startFrame: number; contentFrame: number; endFrame: number; sourceOrder: number}[];
   cues: ExportCue[];
   timeline: CompiledTiming[];
   audio: AudioSchedule;
@@ -89,7 +90,14 @@ export function compilePresentation(input: {
   const moments = ordered.map(moment => {
     const first = segmentOffset;
     segmentOffset += moment.segments.length;
-    return {id:moment.id,startFrame:timeline[first]!.startFrame,endFrame:timeline[segmentOffset-1]!.endFrame,
+    const timing = timeline[first]!;
+    // Inspect the first readable page, after camera/text entrance. Silent
+    // shots use a settled point; ballots land after the current vote reveals.
+    const contentMs = timing.thought ? timing.thought.insertAt + timing.thought.readAtMs
+      : timing.speech ? timing.speech.readAtMs
+      : (timing.endMs - timing.startMs) * (cues[first]!.timing.kind === "ballot" ? SOLO_READ_START_MS / cues[first]!.timing.baseDurationMs : .5);
+    const contentFrame = Math.max(timing.startFrame, Math.min(timing.endFrame - 1, Math.ceil((timing.startMs + contentMs) * input.fps / 1000)));
+    return {id:moment.id,startFrame:timing.startFrame,contentFrame,endFrame:timeline[segmentOffset-1]!.endFrame,
       sourceOrder:byId.get(moment.id)!.sourceOrder};
   });
   return {momentIds:ordered.map(moment => moment.id),moments,cues,timeline,audio};
@@ -97,10 +105,10 @@ export function compilePresentation(input: {
 
 /** Navigation survives an edit without storing a mutable array position. */
 export function retainPresentationAnchor(source: readonly PresentationMoment[], compiled: CompiledPresentation,
-  anchor: {momentId: string; offsetFrames: number} | null): number | null {
+  anchor: {momentId: string; offsetFrames: number} | {momentId: string; at: "content"} | null): number | null {
   if (!compiled.moments.length) return null;
   const surviving = anchor && compiled.moments.find(moment => moment.id === anchor.momentId);
-  if (surviving) return surviving.startFrame + Math.max(0,Math.min(anchor.offsetFrames,surviving.endFrame-surviving.startFrame-1));
+  if (surviving) return "at" in anchor ? surviving.contentFrame : surviving.startFrame + Math.max(0,Math.min(anchor.offsetFrames,surviving.endFrame-surviving.startFrame-1));
   const oldOrder = anchor ? source.findIndex(moment => moment.id === anchor.momentId) : -1;
   return (compiled.moments.find(moment => moment.sourceOrder > oldOrder) ?? compiled.moments.at(-1))!.startFrame;
 }

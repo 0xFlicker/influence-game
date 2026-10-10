@@ -8,6 +8,8 @@ tags: [remotion, player, production, seeking, audio, privacy, export]
 
 # Production Studio Player and frozen recordings
 
+The [2026-10-10 refinements](2026-10-10-production-studio-timeline-and-label-recipes.md) supersede this checkpoint's navigation and shared thinking-toggle guidance. Following the latest operator decision, rows pause and seek readable content while pinning Properties; target icons pause at the beginning. Both recenter. Source playback preferences remain independent from label/type cut rules. Player, preparation, privacy and exact-request ownership below still apply.
+
 Use the exact installed Remotion Player version (4.0.486) with the existing sampled composition and audio schedule. Player owns playback time. Timeline input calls `seekTo`; frame events update the playhead. A host's requested frame can precede the composition's committed frame, so browser sampling must wait for both. Image/font readiness uses Player buffering and fences cleanup from an older sampled frame. Render-only preparation stays in the export host.
 
 An explicit visual refresh may return after another seek. Capturing an anchor only when refresh starts reproduced frame 75 → seek 105 → refreshed revision restoring 75. Each explicit seek must retain its bounded target's moment and time before the host seek; a later remount uses that latest anchor. The regression holds the actual refresh response until after the second seek, then checks both requested and committed frame 105. Do not mistake a capture taken before a Source/Cut transition commits for this defect: the outgoing view can legitimately map an omitted moment to the next selected moment.

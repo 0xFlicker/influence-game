@@ -5,6 +5,8 @@ import { Window } from "happy-dom";
 import { fileURLToPath } from "node:url";
 import { setApiBase } from "../lib/api";
 import type {ProductionLibraryGame} from "../lib/production-studio";
+import type {AdminSession} from "../app/admin/admin-session";
+import {useEffect} from "react";
 
 const originalFetch = globalThis.fetch;
 const globals = ["window", "document", "navigator", "localStorage", "Element", "HTMLElement", "Node", "Event"] as const;
@@ -36,6 +38,9 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   mock.module("@/hooks/use-auth", () => ({ AUTH_GENERATION_KEY: "influence_auth_generation", useAuth: () => ({ ready: true, authenticated: true, account: { id: "operator", roles, permissions } }) }));
   mock.module("@/hooks/use-permissions", () => ({ usePermissions: () => ({ loading: false, roles, permissions, hasPermission: (permission: string) => permissions.includes(permission) }) }));
   const { AdminShell } = await import("../app/admin/admin-shell");
+  const {useAdminSession} = await import("../app/admin/admin-session");
+  let session!: AdminSession;
+  function SessionProbe() {const current = useAdminSession(); useEffect(() => {session = current;}, [current]); return null;}
   const { ProductionWorkspace } = await import("../app/admin/production/production-workspace");
   const { ProductionSceneInspector } = await import("../app/admin/production/production-scenes");
   let metadataReads = 0;
@@ -51,10 +56,11 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
       hidden: false, playerCount: 6, needsAttention: false, capabilities: { editorial: true, visualRead: true, episodeEdit: true, trailerRead: true, trailerRender: true, influenceRecovery: false } });
   }, { preconnect: originalFetch.preconnect }) as typeof fetch;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ui = (id: string) => <QueryClientProvider client={client}><AdminShell><ProductionWorkspace gameId={id} /></AdminShell></QueryClientProvider>;
+  const ui = (id: string) => <QueryClientProvider client={client}><AdminShell><SessionProbe /><ProductionWorkspace gameId={id} /></AdminShell></QueryClientProvider>;
   const view = render(ui("wolf"));
   await waitFor(() => expect(view.getByText("Loading the complete accepted source prefix and media metadata…")).toBeTruthy());
   expect(view.queryByRole("button", { name: "Game production and recovery" })).toBeNull();
+  fireEvent.click(view.getByRole("button", { name: "Tools" }));
   fireEvent.click(view.getByRole("button", { name: "Episode tools" }));
   const episodeTools = view.getByRole("dialog", { name: "Episode tools" });
   expect(within(episodeTools).getByRole("button", { name: "Episode presentation" })).toBeTruthy();
@@ -63,7 +69,10 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   expect(view.queryByRole("dialog", { name: "Episode tools" })).toBeNull();
   expect(view.getByRole("dialog", { name: "Game production and recovery" })).toBeTruthy();
   await waitFor(() => expect(view.getByRole("region", { name: "Game production recovery" })).toBeTruthy());
+  const privateDraft = "draft:/api/admin/production/games/wolf:omniscient:moment:pm1:thought";
+  act(() => {session.set(privateDraft,{revision:1,rows:[["label.smart","true"]]}); session.set(`${privateDraft}:conflict`,{tags:{private:"evidence"}}); session.set(`${privateDraft}:error`,"Private conflict");});
   roles = []; view.rerender(ui("wolf"));
+  expect(session.get(privateDraft)).toBeUndefined(); expect(session.get(`${privateDraft}:conflict`)).toBeUndefined(); expect(session.get(`${privateDraft}:error`)).toBeUndefined();
   expect(view.queryByText("Loading the complete accepted source prefix and media metadata…")).toBeNull();
   expect(view.queryByText("Game production and recovery")).toBeNull();
   expect(view.queryByRole("button", { name: "Episode tools" })).toBeNull();

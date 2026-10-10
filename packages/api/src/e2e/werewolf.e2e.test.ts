@@ -435,6 +435,9 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     expect(await page.$('[aria-label="Scene inspector"]')).toBeNull();
     expect(await page.$('[data-production-preview]')).toBeNull();
     expect(await page.$('[aria-label="Game production recovery"]')).toBeNull();
+    await text(page,"Trailer & poster");
+    // Admin retains its existing manage_postgame_media grant while private
+    // Werewolf production evidence remains Producer/Sysop-only.
     await text(page,"Episode presentation");
     await page.goto(overviewUrl, {waitUntil:"domcontentloaded"}); await text(page,"Game overview");
     await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));

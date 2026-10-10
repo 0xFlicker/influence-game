@@ -2,7 +2,7 @@
   "name": "@influence/web",
   "version": "0.8.1",
   "private": true,
-  "description": "Influence game web frontend \u2014 Next.js App Router",
+  "description": "Influence game web frontend — Next.js App Router",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -34,6 +34,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
+    "react-resizable-panels": "4.14.2",
     "remark-gfm": "^4.0.1",
     "viem": "^2.27.2",
     "wagmi": "^2.14.16"
