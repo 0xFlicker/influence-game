@@ -45,6 +45,8 @@ describe("owner learning review start", () => {
     const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
       const projection = fakeOwnerLearningProjection(selection, evidenceIds);
       const games = projection.games.map((game) => {
+        if ("werewolf" in game.canonicalFacts) throw new Error("Expected Influence fixture");
+        const canonical = game.canonicalFacts;
         const narrativeGroups = Array.from({ length: 240 }, (_, index) => ({
           corr: "exact" as const,
           decisionId: `${game.gameId}:decision:${index}`,
@@ -66,10 +68,10 @@ describe("owner learning review start", () => {
         return {
           ...game,
           canonicalFacts: {
-            ...game.canonicalFacts,
-            game: { ...game.canonicalFacts.game, roundCount: 13, playerCount: 12 },
+            ...canonical,
+            game: { ...canonical.game, roundCount: 13, playerCount: 12 },
             reviewedPlayer: {
-              ...game.canonicalFacts.reviewedPlayer,
+              ...canonical.reviewedPlayer,
               placement: 2,
               status: "finalist" as const,
               eliminatedRound: null,

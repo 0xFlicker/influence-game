@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import {useState} from "react";
 import { resolveApiUrl } from "@/lib/api";
 
 const PERSONA_AVATAR_KEYS = [
@@ -98,7 +99,10 @@ export function resolveAgentAvatarUrl(
 
 export function AgentAvatar({ avatarUrl, personaKey, persona, name, size = "8" }: AgentAvatarProps) {
   const s = SIZE_CLASSES[size];
-  const src = resolveAgentAvatarUrl(avatarUrl, persona, name, personaKey);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const requested = resolveAgentAvatarUrl(avatarUrl, persona, name, personaKey);
+
+  const src = failedSource === requested ? resolveAgentAvatarUrl(null, persona, name, personaKey) : requested;
 
   return (
     <div className={`relative ${s.container} shrink-0`}>
@@ -108,6 +112,7 @@ export function AgentAvatar({ avatarUrl, personaKey, persona, name, size = "8" }
         width={s.px}
         height={s.px}
         className={`${s.container} rounded-full object-cover ring-1 ring-white/10`}
+        onError={() => setFailedSource(requested)}
         unoptimized
       />
     </div>

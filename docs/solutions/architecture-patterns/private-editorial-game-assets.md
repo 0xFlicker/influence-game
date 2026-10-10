@@ -8,7 +8,7 @@ tags: [game-assets, private-storage, oauth, minio, receipts]
 
 # Keep editorial images separate from gameplay visuals
 
-External promotion images need CRUD, presentation labels, and late attachment without becoming canonical scenes or game facts. Store dedicated game-asset metadata and immutable S3 objects using the existing MinIO/Linode content configuration. Asset `visibility` accepts `public` or `spoiler`; it is presentation metadata, never an ACL. Public-game images are anonymous-readable, and management roles control writes only. Keep existing private/hidden game access rules.
+External promotion images need CRUD, presentation labels, and late attachment without becoming canonical scenes or game facts. Store dedicated game-asset metadata and immutable S3 objects using the existing MinIO/Linode content configuration. Asset `visibility` accepts `public` or `spoiler`; it is presentation metadata, never an ACL. Public-game images are anonymous-readable, and management roles control writes only. Public and Unlisted game images are anonymous-readable; hidden and invalid game visibility remain unavailable. Asset presentation labels and management permissions are independent.
 
 Scope-bearing opaque OAuth tokens are accepted only by the asset endpoint family. Consent and use require current management permission; neither a scope string nor cached JWT claims grants a role. Existing producer and sysop roles receive the permission, and the CLI selects explicit asset consent using shared PKCE helpers.
 

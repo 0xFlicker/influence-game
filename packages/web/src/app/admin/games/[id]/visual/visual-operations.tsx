@@ -1,7 +1,9 @@
 "use client";
+import { VisualFailurePolicyControl } from "../../../visual-failure-policy-control";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, resolveApiUrl } from "@/lib/api";
+import { useAdminRead, useAdminSession } from "../../../admin-session";
 import { usePermissions } from "@/hooks/use-permissions";
 
 import { SceneRepairPanel, type MediaRecords } from "./scene-repair-panel";
@@ -54,12 +56,13 @@ function SceneImageDialog({ image, onClose }: { image: { url: string; label: str
   </dialog>;
 }
 function EvidenceImage({ gameId, id, kind, onOpen }: { gameId: string; id: string; kind: "attempt" | "artifact"; onOpen: (url: string) => void }) {
+  const session = useAdminSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return <div className="mt-3">
     <button className={button} disabled={busy} onClick={async () => {
       setBusy(true); setError(null);
-      try { const result = await apiFetch<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/${kind}/${id}`); onOpen(result.imageUrl); }
+      try { const result = await session.read<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/${kind}/${id}`); onOpen(result.imageUrl); }
       catch (failure) { setError(failure instanceof Error ? failure.message : "Evidence unavailable"); }
       finally { setBusy(false); }
     }}>{busy ? "Loading evidence…" : kind === "artifact" ? "View candidate image" : "View attempt image"}</button>
@@ -68,45 +71,32 @@ function EvidenceImage({ gameId, id, kind, onOpen }: { gameId: string; id: strin
 }
 export function VisualOperations({ gameId }: { gameId: string }) {
   const [openImage, setOpenImage] = useState<{ url: string; label: string } | null>(null);
-  const [data, setData] = useState<VisualExport | null>(null);
+  const { data, error: readError, denied, refresh: refetch } = useAdminRead<VisualExport>(`/api/admin/games/${gameId}/visual`, 3000);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failuresOnly, setFailuresOnly] = useState(false);
-  const requestVersion = useRef(0);
   const { hasPermission } = usePermissions();
   const canOperate = hasPermission("start_game");
   const preparedRepair = data?.scenes.some((scene) => scene.boundarySequence === data.pause?.boundarySequence && scene.status === "preparing" && scene.renderRevision > 0);
-  const refresh = useCallback(async () => {
-    const version = ++requestVersion.current;
-    try { const result = await apiFetch<VisualExport>(`/api/admin/games/${gameId}/visual`); if (version === requestVersion.current) { setData(result); setError(null); } }
-    catch (failure) { if (version === requestVersion.current) setError(failure instanceof Error ? failure.message : "Visual records unavailable"); }
-  }, [gameId]);
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => { void refresh(); }, 3000);
-    const versionRef = requestVersion;
-    return () => { clearInterval(timer); versionRef.current++; };
-  }, [refresh]);
+  const refresh = useCallback(async () => { await refetch(); }, [refetch]);
   const control = async (body: Record<string, unknown>, message: string) => {
     setBusy(true); setError(null); setNotice(null);
     try { await apiFetch(`/api/admin/games/${gameId}/visual/control`, { method: "POST", body: JSON.stringify(body) }); await refresh(); setNotice(message); }
     catch (failure) { setError(failure instanceof Error ? failure.message : "Operation failed"); }
     finally { setBusy(false); }
   };
+  if (denied) return <p role="alert">Visual production access is no longer available. <button className={button} onClick={() => void refresh()}>Check access again</button></p>;
   return <div className="space-y-6">
     {openImage && <SceneImageDialog image={openImage} onClose={() => setOpenImage(null)} />}
     <Link href="/admin/games" className="text-sm text-white/50">← Games</Link>
     <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Visual production</h1><button className={button} onClick={() => void refresh()}>Refresh</button></div>
-    {error && <p role="alert" className="rounded border border-red-400/30 p-3 text-red-300">{error}</p>}
+    {(readError || error) && <p role="alert" className="rounded border border-red-400/30 p-3 text-red-300">{readError ?? error}</p>}
     {notice && <p role="status" className="text-green-200">{notice}</p>}
-    {!data ? <p role="status">Loading visual records…</p> : <>
+    {!data ? !readError && !error && <p role="status">Loading visual records…</p> : <>
       <section aria-label="Visual policy" className="space-y-3 rounded-xl border border-white/15 p-5">
         <p>Game: {data.gameStatus} · Assets: {data.assets?.status ?? "Not prepared"}</p>
-        <label className="block">Failure policy <select aria-label="Visual failure policy" value={data.policy} disabled={!canOperate || busy} className="ml-3 rounded bg-neutral-900 p-2" onChange={(event) => void control({ action: "policy", policy: event.target.value }, "Policy saved. It applies at visual preparation boundaries.")}>
-          <option value="best_effort">Best effort — continue with portraits</option><option value="require_visuals">Require visuals — pause for repair</option>
-        </select></label>
-        <p className="text-sm text-white/60">Both policies retain provider errors, verification evidence, timing and costs. Changing policy does not automatically resume a paused game.</p>
+        <VisualFailurePolicyControl value={data.policy} disabled={!canOperate || busy} onChange={policy => void control({action:"policy",policy},"Policy saved. It applies at visual preparation boundaries.")} />
         {data.pause && <div className="space-y-3 border-t border-white/15 pt-3"><p className="text-amber-200">Paused at boundary {data.pause.boundarySequence}: {data.pause.reason}</p>
           {canOperate && <div className="flex flex-wrap gap-3">{data.assets?.status !== "ready" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_assets" }, "Asset repair prepared. Resume when ready to run it.")}>Prepare game recovery</button>}<button className={button} disabled={busy} onClick={() => void control({ action: "resume" }, "Resume queued for the game worker at the committed boundary.")}>Resume game</button></div>}
           <p className="text-sm text-white/60">Prepare game recovery below, then resume. Independent media repairs do not repair agent execution. Repairs may incur provider charges. Reconcile uncertain attempts first. To continue with portraits, select Best effort and resume.</p>
@@ -144,7 +134,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
         <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status === "ready" ? "Image verified" : scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
           {scene.candidateArtifactId && (scene.status !== "ready" || scene.candidateArtifactId !== scene.imageArtifactId) && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" onOpen={(url) => setOpenImage({ url, label: `${scene.roomId} · boundary ${scene.boundarySequence} · candidate image` })} />}
           {data.pause && canOperate && scene.status !== "preparing" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "Game recovery prepared. Resume is still required.")}>Prepare game recovery</button>}
-          <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canOperate} refresh={refresh} refreshError={error} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />
+          <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canOperate} refresh={refresh} refreshError={readError} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />
         </div>
       </article>)}</div>
       <h2 className="text-lg font-semibold">Operational timeline</h2>

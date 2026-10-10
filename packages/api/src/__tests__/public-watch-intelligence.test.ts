@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
+import {getPublicGameAlliances} from "../services/public-alliance-read-model.js";
+import type {AllianceProposalLineage} from "@influence/engine";
 import { getPublicWatchIntelligence } from "../services/public-watch-intelligence.js";
 import { setupTestDB } from "./test-utils.js";
 import {
@@ -18,6 +20,44 @@ describe("getPublicWatchIntelligence", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test("alliance rewind reconstructs earlier terms instead of filtering the final mutable record", async () => {
+    const gameId=await seedGameWithPlayers(db,"alliance-exact-cutoff"), ownerEpoch=await insertOwner(db,gameId);
+    const base=createCanonicalEventFixture(gameId), timestamp="2026-10-01T00:00:00.000Z";
+    const lineage:AllianceProposalLineage={id:"lineage",allianceId:"alliance",status:"open",currentVersionId:"v1",versions:[{versionId:"v1",proposerId:"atlas",terms:{name:"Earlier pact",purpose:"Earlier purpose",memberIds:["atlas","echo"],timebox:null},counterIndex:0,createdRound:1,createdAt:timestamp}],responsesByVersion:{v1:{atlas:"accepted"}},createdRound:1,createdAt:timestamp,resolvedRound:null,resolvedAt:null};
+    const sequence=base.at(-1)!.sequence+1;
+    const first:CanonicalGameEvent={gameId,sequence,round:1,phase:Phase.MINGLE_I,timestamp,source:"engine",visibility:"producer",payloadVersion:1,sourcePointers:[],type:"alliance.proposal_submitted",payload:{lineage}};
+    const later=structuredClone(lineage);later.currentVersionId="v2";later.versions.push({...later.versions[0]!,versionId:"v2",counterIndex:1,terms:{name:"FUTURE PACT",purpose:"FUTURE PURPOSE",memberIds:["atlas","mira"],timebox:null}});later.responsesByVersion.v2={mira:"accepted"};
+    const second:CanonicalGameEvent={...first,sequence:sequence+1,type:"alliance.counter_submitted",payload:{lineage:later}};
+    await appendGameEvents(db,{gameId,ownerEpoch,events:[...base,first,second]});
+    const prefix=await getPublicGameAlliances(db,gameId,{throughEventSequence:sequence,throughTranscriptSequence:0});
+    expect(prefix.ok).toBe(true);expect(JSON.stringify(prefix)).toContain("Earlier purpose");expect(JSON.stringify(prefix)).not.toContain("FUTURE");
+    const current=await getPublicGameAlliances(db,gameId,{throughEventSequence:sequence+1,throughTranscriptSequence:0});
+    expect(JSON.stringify(current)).toContain("FUTURE PURPOSE");
+  });
+
+  test("exact replay cutoff excludes later thinking in the same phase before ranking", async () => {
+    const gameId = await seedGameWithPlayers(db, "watch-exact-cutoff");
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createResolvedRoundCanonicalEventFixture(gameId);
+    await appendGameEvents(db, {gameId, ownerEpoch, events});
+    await insertArtifact(db, {id:"earlier-thought", gameId, actorPlayerId:"atlas", artifactType:"thinking", action:"vote", eventSequence:events[1]!.sequence, payload:{thinking:"Earlier accepted thought"}});
+    await insertArtifact(db, {id:"future-thought", gameId, actorPlayerId:"atlas", artifactType:"thinking", action:"vote", eventSequence:events[2]!.sequence, payload:{thinking:"FUTURE THOUGHT"}});
+    await db.insert(schema.transcripts).values([
+      {gameId,round:1,phase:"VOTE",fromPlayerId:"atlas",scope:"public",text:"Earlier",thinking:"Earlier transcript thought",timestamp:100,entrySequence:1},
+      {gameId,round:1,phase:"VOTE",fromPlayerId:"atlas",scope:"public",text:"Later",thinking:"FUTURE TRANSCRIPT",timestamp:101,entrySequence:2},
+      {gameId,round:1,phase:"VOTE",fromPlayerId:"atlas",scope:"public",text:"Legacy",thinking:"UNANCHORED THOUGHT",timestamp:102},
+    ]);
+    const result = await getPublicWatchIntelligence(db, {gameIdOrSlug:gameId,actorPlayerId:"atlas",round:1,phase:"VOTE",limit:4,throughEventSequence:events[1]!.sequence,throughTranscriptSequence:1});
+    expect(result.ok).toBe(true);
+    const body=JSON.stringify(result);
+    expect(body).toContain("Earlier accepted thought"); expect(body).toContain("Earlier transcript thought");
+    expect(body).not.toContain("FUTURE THOUGHT"); expect(body).not.toContain("FUTURE TRANSCRIPT"); expect(body).not.toContain("UNANCHORED THOUGHT");
+    const transcriptOnly = await getPublicWatchIntelligence(db, {gameIdOrSlug:gameId,actorPlayerId:"atlas",round:1,phase:"VOTE",limit:10,throughTranscriptSequence:1});
+    expect(JSON.stringify(transcriptOnly)).toContain("Earlier transcript thought");
+    expect(JSON.stringify(transcriptOnly)).not.toContain("FUTURE TRANSCRIPT");
+    expect(JSON.stringify(transcriptOnly)).not.toContain("UNANCHORED THOUGHT");
   });
 
   test("returns selected-player thinking and canonical receipts without compact strategy fields", async () => {

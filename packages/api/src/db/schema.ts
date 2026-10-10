@@ -337,6 +337,7 @@ export const seasons = pgTable("seasons", {
 ]);
 
 export const games = pgTable("games", {
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   id: text("id").primaryKey(), // UUID
   slug: text("slug").notNull().unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
@@ -366,6 +367,7 @@ export const games = pgTable("games", {
     .default(sql`now()::text`),
 }, (table) => [
   index("games_created_by_id_idx").on(table.createdById),
+  check("games_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   index("games_season_id_status_idx").on(table.seasonId, table.status),
   index("games_status_ended_at_idx").on(table.status, table.endedAt),
   index("games_status_ended_created_idx").on(table.status, table.endedAt, table.createdAt),
@@ -412,7 +414,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
-  strategyStyle: text("strategy_style"), // Strategy hints
+  strategyStyle: text("strategy_style"), // Influence strategy only
+  werewolfStrategyStyle: text("werewolf_strategy_style"),
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
   gender: text("gender").$type<AgentGender>(),
   currentRevisionId: text("current_revision_id")
@@ -2898,15 +2901,14 @@ export const agentLearningReviewEntitlements = pgTable("agent_learning_review_en
 
 export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence", {
   id: text("id").primaryKey(),
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   ownerUserId: text("owner_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   agentProfileId: text("agent_profile_id")
     .notNull()
     .references(() => agentProfiles.id, { onDelete: "restrict" }),
-  analyticalRevisionId: text("analytical_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  analyticalRevisionId: text("analytical_revision_id").notNull(), // Game-specific review identity; not a rating revision.
   gameId: text("game_id")
     .notNull()
     .references(() => games.id, { onDelete: "restrict" }),
@@ -2919,6 +2921,7 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
   sourceHash: text("source_hash").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("agent_learning_game_evidence_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_game_evidence_identity_unique").on(
     table.ownerUserId,
     table.agentProfileId,
@@ -2937,15 +2940,15 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
 
 export const agentLearningReviews = pgTable("agent_learning_reviews", {
   id: text("id").primaryKey(),
+  gameKind: text("game_kind").notNull().$type<"influence" | "werewolf">().default("influence"),
   ownerUserId: text("owner_user_id")
     .notNull()
     .references(() => users.id, { onDelete: "restrict" }),
   agentProfileId: text("agent_profile_id")
     .notNull()
     .references(() => agentProfiles.id, { onDelete: "restrict" }),
-  reviewedRevisionId: text("reviewed_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  reviewedRevisionId: text("reviewed_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  reviewedStrategyStyle: text("reviewed_strategy_style"),
   selectedGameFingerprint: text("selected_game_fingerprint").notNull(),
   startIdempotencyKey: text("start_idempotency_key").notNull(),
   eligibilityPolicyVersion: text("eligibility_policy_version").notNull(),
@@ -2981,6 +2984,7 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   completedAt: text("completed_at"),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
+  check("agent_learning_reviews_game_kind_check", sql`${table.gameKind} IN ('influence', 'werewolf')`),
   uniqueIndex("agent_learning_reviews_owner_idempotency_unique").on(
     table.ownerUserId,
     table.startIdempotencyKey,
@@ -3416,12 +3420,8 @@ export const agentLearningReviewApplications = pgTable("agent_learning_review_ap
     .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
   proposalFingerprint: text("proposal_fingerprint").notNull(),
   sourceRecommendationIds: jsonb("source_recommendation_ids").notNull().$type<string[]>(),
-  priorRevisionId: text("prior_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
-  resultingRevisionId: text("resulting_revision_id")
-    .notNull()
-    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  priorRevisionId: text("prior_revision_id").notNull(), // Game-specific review identity; not a rating revision.
+  resultingRevisionId: text("resulting_revision_id").notNull(), // Game-specific review identity; not a rating revision.
   priorStrategyStyle: text("prior_strategy_style").notNull(),
   resultingStrategyStyle: text("resulting_strategy_style").notNull(),
   mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),
@@ -3530,6 +3530,19 @@ export const visualArtifacts = pgTable("visual_artifacts", {
   height: integer("height").notNull(),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
 }, (table) => [unique("visual_artifacts_content_unique").on(table.gameId, table.contentHash)]);
+
+/** Verified character derivatives. Original match-frozen cast is never overwritten. */
+export const visualCharacterVariants = pgTable("visual_character_variants", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull(),
+  sourceArtifactId: text("source_artifact_id").notNull().references(() => visualArtifacts.id),
+  artifactId: text("artifact_id").notNull().references(() => visualArtifacts.id),
+  revision: text("revision").notNull(),
+  generation: text("generation").notNull(),
+  head: jsonb("head").notNull().$type<import("@influence/engine/character-portrait").HeadRectangle>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, table => [unique("visual_character_variants_identity_unique").on(table.gameId, table.playerId, table.sourceArtifactId, table.revision, table.generation)]);
 
 export const visualScenes = pgTable("visual_scenes", {
   id: text("id").primaryKey(),
@@ -3656,8 +3669,8 @@ export const agentProfileLifecycleActions = pgTable("agent_profile_lifecycle_act
 /** Media jobs never own or advance a game turn. */
 export const visualRepairJobs = pgTable("visual_repair_jobs", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
-  sceneId: text("scene_id").notNull().references(() => visualScenes.id), version: integer("version").notNull(),
-  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "harmonize" | "verify" | "continue" | "review">(),
+  sceneId: text("scene_id").references(() => visualScenes.id), version: integer("version").notNull(),
+  operatorId: text("operator_id").notNull(), mode: text("mode").notNull().$type<"regenerate" | "harmonize" | "verify" | "continue" | "review" | "forms">(),
   plan: jsonb("plan").notNull().$type<import("@influence/engine/visual-scene-plan").VisualScenePlan>(),
   renderContext: jsonb("render_context").notNull().$type<{ style: string; roomName: string; roomDirection: string }>(),
   candidateArtifactId: text("candidate_artifact_id"),
@@ -3667,7 +3680,7 @@ export const visualRepairJobs = pgTable("visual_repair_jobs", {
   step: text("step").notNull().default("queued"), failure: text("failure"),
   owner: text("owner"), leaseUntil: text("lease_until"), fallbackUsed: boolean("fallback_used").notNull().default(false),
   createdAt: text("created_at").notNull(), startedAt: text("started_at"), finishedAt: text("finished_at"),
-}, (t) => [unique("visual_repair_version_unique").on(t.sceneId, t.version),
+}, (t) => [check("visual_repair_jobs_mode_check",sql`${t.mode} IN ('regenerate','verify','continue','review','forms')`), check("visual_repair_job_target", sql`(${t.mode} = 'forms' AND ${t.sceneId} IS NULL) OR (${t.mode} <> 'forms' AND ${t.sceneId} IS NOT NULL)`), unique("visual_repair_version_unique").on(t.sceneId, t.version),
   uniqueIndex("visual_repair_active_unique").on(t.sceneId).where(sql`${t.status} IN ('queued','rendering','verifying')`)]);
 
 export const visualMediaVersions = pgTable("visual_media_versions", {
@@ -3682,10 +3695,11 @@ export const visualMediaVersions = pgTable("visual_media_versions", {
 }, (t) => [unique("visual_media_version_unique").on(t.sceneId, t.version)]);
 
 export const visualMediaPublications = pgTable("visual_media_publications", {
+  audience: text("audience").notNull().default("public").$type<"public" | "private">(),
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id), sceneId: text("scene_id").notNull().references(() => visualScenes.id),
   versionId: text("version_id").notNull().references(() => visualMediaVersions.id), revision: integer("revision").notNull(),
   operatorId: text("operator_id").notNull(), createdAt: text("created_at").notNull(),
-}, (t) => [unique("visual_media_publication_unique").on(t.sceneId, t.revision)]);
+}, (t) => [unique("visual_media_publication_unique").on(t.sceneId, t.revision), check("visual_media_publication_audience_check", sql`${t.audience} IN ('public', 'private')`)]);
 
 export const visualMediaRequests = pgTable("visual_media_requests", {
   id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
@@ -3804,6 +3818,7 @@ export const gameAssetOperations = pgTable("game_asset_operations", {
   check("game_asset_operations_request_check", sql`length(${t.requestId}) BETWEEN 1 AND 200`),
 ]);
 
+export { werewolfEvents, werewolfTurns, werewolfLobbySeats } from "./werewolf-schema.js";
 // Role authority belongs to an Influence account, independently of credentials.
 export const userRoles = pgTable("user_roles", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -3831,10 +3846,27 @@ export const postgameMediaRenderRelease = pgTable("postgame_media_render_release
   id: integer("id").primaryKey(),
   generation: text("generation"),
   workerDigest: text("worker_digest"),
-  draining: boolean("draining").notNull().default(true),
+  mode: text("mode").$type<"local" | "remote">().notNull().default("local"),
+  draining: boolean("draining").notNull().default(false),
 }, table => [check("postgame_media_render_release_singleton", sql`${table.id} = 1`)]);
 
 export const postgameMediaRenderGenerations = pgTable("postgame_media_render_generations", {
   generation: text("generation").primaryKey(),
   workerDigest: text("worker_digest").notNull(),
 });
+/** Bounded automatic editorial jobs. Public reads expose only the publication. */
+export const houseCutJobs = pgTable("house_cut_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  audience: text("audience").$type<"public" | "mystery" | "omniscient">().notNull(),
+  status: text("status").$type<"queued" | "running" | "ready" | "failed">().notNull().default("queued"),
+  source: jsonb("source").$type<import("@influence/engine/house-cuts/source").CutSource>(),
+  journal: jsonb("journal").$type<import("@influence/engine/house-cuts/trial").CutTrialJournal>(),
+  publication: jsonb("publication").$type<import("@influence/engine/house-cuts/publication").HouseCutsPublication>(),
+  leaseToken: uuid("lease_token"), leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  failure: text("failure"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique("house_cut_game_audience").on(t.gameId, t.audience),
+  check("house_cut_audience", sql`${t.audience} IN ('public','mystery','omniscient')`),
+  check("house_cut_status", sql`${t.status} IN ('queued','running','ready','failed')`)]);

@@ -315,6 +315,7 @@ function eligibleFixture(overrides: Partial<OwnerLearningEligibleInputs> = {}): 
     },
     profiles: [
       {
+        gameKind: "influence",
         agentProfileId: "agent-1",
         name: "Atlas",
         currentRevisionId: "revision-atlas-01",
@@ -333,6 +334,7 @@ function eligibleFixture(overrides: Partial<OwnerLearningEligibleInputs> = {}): 
         recommendedGameIds: ["game-3", "game-2", "game-1"],
       },
       {
+        gameKind: "influence",
         agentProfileId: "agent-2",
         name: "Mira",
         currentRevisionId: "revision-mira-01",
@@ -366,6 +368,7 @@ function preflightFixture(
   return {
     status,
     selection: {
+      gameKind: "influence",
       agentProfileId: "agent-1",
       agentProfileName: "Atlas",
       reviewedRevisionId: "revision-atlas-01",

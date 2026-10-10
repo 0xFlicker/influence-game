@@ -95,9 +95,8 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 | `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "medium" }` |
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |
 | `fillStrategy` | `random \| balanced` | required | `balanced` |
-| `timingPreset` | `fast \| standard \| slow \| custom` | required | `standard` |
 | `maxRounds` | `number \| "auto"` | ≥ 5 | `auto` (computed) |
-| `visibility` | `public \| unlisted \| private` | required | `public` |
+| `visibility` | `public \| unlisted` | required | `public` |
 
 **`mixed` mode (future):** Reserves N player slots for wallet-authenticated humans; AI fills remaining slots when game starts or a deadline is hit. V1 ships `all_ai` only — keep toggle visible but disabled with a "Coming soon" tooltip.
 
@@ -437,7 +436,7 @@ Players choose the archetype that matches how they *want* their agent to play. T
 
 ```
 Admin clicks "Create Game"
-  → POST /api/games { playerCount, modelSelection: { catalogId, reasoningPolicy }, personaPool, timing, visibility }
+  → POST /api/games { playerCount, modelSelection: { catalogId, reasoningPolicy }, personaPool, visibility }
   → Server: validate config, generate player slots, persist game (status: waiting)
   → Response: { id, slug }
   → Admin redirect → /admin/games/:id

@@ -137,7 +137,7 @@ describe("owner learning review", () => {
     expect(html).toContain("Seen across 1 game");
     expect(html).not.toContain("dialogue · moment-1");
     expect(html).not.toContain("moment-1");
-    expect(html).toContain("− Commit early.");
+    expect(html).toContain("Commit early.");
     expect(html).toContain("+ Wait for reciprocal support before committing.");
     expect(html).toContain("Edit suggested strategy");
     expect(html).toContain("Keep current strategy");
@@ -161,7 +161,7 @@ describe("owner learning review", () => {
 
     expect(html).toContain('data-state="applied"');
     expect(html).toContain("Strategy update applied");
-    expect(html).toContain("− Commit early.");
+    expect(html).toContain("Commit early.");
     expect(html).toContain("+ Wait for reciprocal support.");
     expect(html).toContain("Revision next-rev-2 is active. Future games use it.");
     expect(html).toContain('href="/games/free"');
@@ -321,6 +321,7 @@ function renderReview(
 function reviewFixture(): OwnerLearningReview {
   return {
     id: "review-1",
+    gameKind: "influence",
     agentProfileId: "agent-1",
     reviewedRevisionId: "revision-atlas-01",
     selectedGameIds: ["game-1"],

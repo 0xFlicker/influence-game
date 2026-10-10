@@ -1007,7 +1007,7 @@ export function createAdminRoutes(
   });
 
   app.get("/api/admin/games", requireAdminRead, async (c) => {
-    const rows = await db.select().from(schema.games);
+    const rows = await db.select().from(schema.games).where(eq(schema.games.gameKind, "influence"));
     const gameIds = rows.map((game) => game.id);
     let canReadProviderFailures = false;
     let providerFailureAccessUnavailable = false;
@@ -1073,7 +1073,6 @@ export function createAdminRoutes(
         modelSelection: config.modelSelection,
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
-        viewerMode: config.viewerMode ?? "speedrun",
         visualMode: config.visualMode === true,
         visualPaused: game.status === "suspended" && Boolean(config.visualPause),
         trackType: game.trackType,

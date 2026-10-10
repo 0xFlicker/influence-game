@@ -13,6 +13,7 @@ import {
 } from "../routes/mcp-oauth.js";
 import {
   MCP_OAUTH_CLIENT_ID,
+  buildOAuthRedirect,
   getMcpOAuthResourceUri,
   hashOpaqueSecret,
   pkceS256,
@@ -93,6 +94,7 @@ describe("MCP OAuth routes", () => {
     expect(authorizationServer.status).toBe(200);
     expect(await jsonObject(authorizationServer)).toMatchObject({
       issuer: "http://127.0.0.1:3000",
+      authorization_response_iss_parameter_supported: true,
       authorization_endpoint: "http://localhost:3001/oauth/mcp/authorize",
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
       revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
@@ -103,6 +105,17 @@ describe("MCP OAuth routes", () => {
       token_endpoint_auth_methods_supported: ["none"],
       client_id: MCP_OAUTH_CLIENT_ID,
     });
+  });
+
+  test("binds callbacks to the configured issuer instead of redirect or response parameters", () => {
+    const redirect = new URL(buildOAuthRedirect(`${REDIRECT_URI}?iss=https://wrong.example`, {
+      error: "access_denied",
+      state: "denied-state",
+      iss: "https://also-wrong.example",
+    }));
+    expect(redirect.searchParams.getAll("iss")).toEqual([new URL(RESOURCE_URI).origin]);
+    expect(redirect.searchParams.get("error")).toBe("access_denied");
+    expect(redirect.searchParams.get("state")).toBe("denied-state");
   });
 
   test("derives public API OAuth metadata from the games resource origin", async () => {
@@ -372,6 +385,7 @@ describe("MCP OAuth routes", () => {
     expect(authorize.status).toBe(200);
     const redirect = new URL(String((await jsonObject(authorize)).redirectTo));
     expect(redirect.origin + redirect.pathname).toBe(DYNAMIC_REDIRECT_URI);
+    expect(redirect.searchParams.get("iss")).toBe(new URL(RESOURCE_URI).origin);
     const code = redirect.searchParams.get("code");
     expect(code).toBeTruthy();
 
@@ -1447,6 +1461,7 @@ describe("MCP OAuth routes", () => {
     const redirect = new URL(String(body.redirectTo));
     expect(redirect.searchParams.get("error")).toBe("access_denied");
     expect(redirect.searchParams.get("state")).toBe("test-state");
+    expect(redirect.searchParams.get("iss")).toBe(new URL(RESOURCE_URI).origin);
   });
 
   test("re-checks producer role after consent preview and before approval", async () => {

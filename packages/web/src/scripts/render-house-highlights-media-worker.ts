@@ -1,3 +1,4 @@
+import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
 import { mkdir, mkdtemp, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -6,9 +7,11 @@ import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifes
 import {
   HouseHighlightsTrailerMusicUnavailableError,
   selectHouseHighlightsTrailerMusicVariant,
+  selectWerewolfTrailerMusic,
 } from "../lib/house-highlights-trailer-audio";
 import {
   DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR,
+  DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR,
   remotionMediaOptions,
   renderHouseHighlightsTrailerMediaBundle,
   writeHouseHighlightsTrailerPlaybackMetadata,
@@ -28,6 +31,7 @@ const PREPARED_PLAYER_COUNTS = [6, 8, 10, 12] as const;
 
 export interface HouseHighlightsMediaWorkerConfig {
   apiBaseUrl: string;
+  httpProxy?: string;
   workerToken: string;
   pollIntervalMs: number;
   httpTimeoutMs: number;
@@ -169,12 +173,11 @@ export class HouseHighlightsMediaWorkerDrainController {
   }
 }
 
-export function houseHighlightsMediaWorkerConfig(env: Record<string, string | undefined> = process.env): HouseHighlightsMediaWorkerConfig {
+export function houseHighlightsMediaWorkerConfig(env: Record<string, string | undefined> = process.env, execution: RenderExecution = renderExecutionConfig(env)): HouseHighlightsMediaWorkerConfig {
   const apiBaseUrl = env.POSTGAME_MEDIA_API_URL;
   const workerToken = env.POSTGAME_MEDIA_WORKER_TOKEN;
   if (!apiBaseUrl || !workerToken) throw new Error("POSTGAME_MEDIA_API_URL and POSTGAME_MEDIA_WORKER_TOKEN are required.");
-  const executionMode = env.POSTGAME_MEDIA_EXECUTION_MODE ?? "local";
-  if (executionMode !== "local" && executionMode !== "remote") throw new Error("POSTGAME_MEDIA_EXECUTION_MODE must be local or remote");
+  const executionMode = execution.mode;
   const apiUrl = new URL(apiBaseUrl);
   if (executionMode === "remote" && (apiUrl.protocol !== "https:" || apiUrl.username || apiUrl.password)) {
     throw new Error("POSTGAME_MEDIA_API_URL must use HTTPS without URL credentials in remote mode");
@@ -186,8 +189,15 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     maxJobs: boundedInt(env.POSTGAME_MEDIA_MAX_JOBS, 4, 1, 100, "POSTGAME_MEDIA_MAX_JOBS"),
     quietIntervalMs: boundedInt(env.POSTGAME_MEDIA_QUIET_INTERVAL_MS, 30_000, 1_000, 120_000, "POSTGAME_MEDIA_QUIET_INTERVAL_MS"),
   } : undefined;
-  const renderOptions = remotionMediaOptions(env);
+  let httpProxy: string | undefined;
+  if (executionMode === "remote" && execution.network === "tailnet") {
+    if (apiUrl.origin !== execution.apiOrigin || apiUrl.pathname !== "/" || apiUrl.search || apiUrl.hash) throw new Error("Worker API must match the release canonical tailnet HTTPS origin");
+    httpProxy = env.POSTGAME_MEDIA_HTTP_PROXY;
+    if (httpProxy !== "http://127.0.0.1:1055") throw new Error("Tailnet worker requires POSTGAME_MEDIA_HTTP_PROXY=http://127.0.0.1:1055");
+  } else if (env.POSTGAME_MEDIA_HTTP_PROXY) throw new Error("HTTP proxy is only permitted for release-configured remote tailnet rendering");
+  const renderOptions = remotionMediaOptions(httpProxy ? { ...env, REMOTION_BROWSER_EXECUTABLE: "/usr/local/bin/chromium-tailnet" } : env);
   return {
+    ...(httpProxy ? { httpProxy } : {}),
     apiBaseUrl: apiUrl.toString().replace(/\/$/, ""),
     workerToken,
     pollIntervalMs: positiveInt(env.POSTGAME_MEDIA_POLL_INTERVAL_MS, POLL_INTERVAL_MS),
@@ -418,13 +428,15 @@ export function withWorkerReachableAssetUrls(
 
   const agent = (value: HouseHighlightsTrailerManifest["cast"][number]) => ({
     ...value,
-    avatarUrl: rewriteWorkerAssetUrl(value.avatarUrl, apiBaseUrl, reachableHost, rewriteLoopbackHosts),
+    avatarUrl: rewriteWorkerAssetUrl(value.avatarUrl, apiBaseUrl, rewriteLoopbackHosts),
   });
+  if (manifest.kind === "werewolf") return { ...manifest, cast: manifest.cast.map(agent) };
   return {
     ...manifest,
     cast: manifest.cast.map(agent),
     scenelets: manifest.scenelets.map((scenelet) => ({
       ...scenelet,
+      backgroundImage: rewriteWorkerAssetUrl(scenelet.backgroundImage, apiBaseUrl, rewriteLoopbackHosts),
       primaryAgents: scenelet.primaryAgents.map(agent),
       secondaryAgents: scenelet.secondaryAgents.map(agent),
     })),
@@ -445,13 +457,12 @@ export function withWorkerReachableAssetUrls(
   };
 }
 
-function rewriteWorkerAssetUrl(value: string, apiBaseUrl: string, reachableHost: string, rewriteLoopbackHosts: boolean): string {
+function rewriteWorkerAssetUrl(value: string, apiBaseUrl: string, rewriteLoopbackHosts: boolean): string {
   if (value.startsWith("/api/")) return new URL(value, apiBaseUrl).toString();
   try {
     const url = new URL(value);
-    if (!rewriteLoopbackHosts || !isLoopbackHost(url.hostname)) return value;
-    url.hostname = reachableHost;
-    return url.toString();
+    if (!rewriteLoopbackHosts || !isLoopbackHost(url.hostname) || !url.pathname.startsWith("/api/")) return value;
+    return new URL(`${url.pathname}${url.search}${url.hash}`, new URL(apiBaseUrl).origin).toString();
   } catch {
     return value;
   }
@@ -485,7 +496,7 @@ export async function checkHouseHighlightsMediaWorkerHealth(
   const runCommand = dependencies.runCommand ?? runCommandQuietly;
   await runCommand("ffmpeg", ["-version"]);
   await runCommand(browserExecutable, ["--version"]);
-  await (dependencies.verifyMusic ?? assertPreparedHouseHighlightsTrailerMusicMatrix)();
+  await (dependencies.verifyMusic ?? assertPreparedTrailerMusic)();
   await (dependencies.verifyTemporarySpace ?? assertHouseHighlightsMediaWorkerTemporarySpace)(config.temporaryRoot, config.minimumFreeBytes);
   const response = await fetchWithTimeout(
     dependencies.fetchImpl ?? fetch,
@@ -493,10 +504,16 @@ export async function checkHouseHighlightsMediaWorkerHealth(
     undefined,
     config.httpTimeoutMs,
     "worker_health_api",
+    config.httpProxy,
   );
   if (!response.ok) throw new Error(`worker_health_api_${response.status}`);
   const body = await response.json().catch(() => null) as { status?: unknown } | null;
   if (body?.status !== "ok") throw new Error("worker_health_api_invalid_response");
+}
+
+export async function assertPreparedTrailerMusic() {
+  await assertPreparedHouseHighlightsTrailerMusicMatrix();
+  await selectWerewolfTrailerMusic(9, DEFAULT_WEREWOLF_TRAILER_MUSIC_DIR);
 }
 
 export async function assertPreparedHouseHighlightsTrailerMusicMatrix(
@@ -539,7 +556,7 @@ async function uploadArtifact(config: HouseHighlightsMediaWorkerConfig, target: 
       method: "PUT",
       headers: target.uploadHeaders,
       body: Bun.file(artifact.path),
-    }, config.uploadTimeoutMs, "artifact_upload");
+    }, config.uploadTimeoutMs, "artifact_upload", config.httpProxy);
   } catch {
     throw new Error("artifact_upload_request_failed");
   }
@@ -590,7 +607,7 @@ async function workerRequest<T>(config: HouseHighlightsMediaWorkerConfig, path: 
     headers.set("x-render-worker-instance", config.remote.instanceId);
   }
   if (init.body) headers.set("Content-Type", "application/json");
-  const response = await fetchWithTimeout(fetchImpl, `${config.apiBaseUrl}${path}`, { ...init, headers }, config.httpTimeoutMs, "worker_api");
+  const response = await fetchWithTimeout(fetchImpl, `${config.apiBaseUrl}${path}`, { ...init, headers }, config.httpTimeoutMs, "worker_api", config.httpProxy);
   if (!response.ok) throw new Error(`worker_api_${response.status}`);
   return response.json() as Promise<T>;
 }
@@ -601,9 +618,9 @@ function artifactMetadata(claim: WorkerClaim, bundle: Awaited<ReturnType<typeof 
   const captions = artifactRecord(targetFor(targets, "captions"), bundle.artifacts.captions);
   const metadata = artifactRecord(targetFor(targets, "metadata"), metadataArtifact);
   return {
-    preview: { title: "House Highlights", description: "A completed Influence game, told through the House." },
+    preview: claim.manifest.kind === "werewolf" ? { title: claim.manifest.story.title, description: claim.manifest.story.description } : { title: "House Highlights", description: "A completed Influence game, told through the House." },
     video: { ...video, width: bundle.dimensions.width, height: bundle.dimensions.height },
-    poster: { ...poster, altText: "House Highlights cast roster" },
+    poster: { ...poster, altText: claim.manifest.kind === "werewolf" ? "The Werewolf cast at The House" : "House Highlights cast roster" },
     captions: { ...captions, language: "en", label: "English" },
     manifest: metadata,
     storage: claim.storage,
@@ -634,10 +651,10 @@ function safePollFailureCode(error: unknown): string {
   return "poll_failed:unexpected";
 }
 function runCommandQuietly(command: string, args: readonly string[]): Promise<void> { return new Promise((resolvePromise, reject) => { const child = spawn(command, args, { stdio: "ignore" }); child.on("error", (error) => reject(new Error(`${command} failed to start: ${error.message}`))); child.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`))); }); }
-async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, errorPrefix: string): Promise<Response> {
+async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, errorPrefix: string, proxy?: string): Promise<Response> {
   const signal = AbortSignal.timeout(timeoutMs);
   try {
-    return await fetchImpl(input, { ...init, signal });
+    return await fetchImpl(input, { ...init, signal, redirect: "error", ...(proxy ? { proxy } : {}) });
   } catch {
     throw new Error(`${errorPrefix}_${signal.aborted ? "timeout" : "request_failed"}`);
   }

@@ -1,9 +1,10 @@
+import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
 import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
-import { claimPostgameMedia, failPostgameMediaAttempt, finalizePostgameMedia, heartbeatPostgameMedia, reportPostgameMediaProgress } from "../services/postgame-media-worker.js";
+import { failPostgameMediaAttempt, finalizePostgameMedia, heartbeatPostgameMedia, reportPostgameMediaProgress } from "../services/postgame-media-worker.js";
 import { isAuthorizedPostgameMediaWorker, workerTokenFromAuthorization } from "../services/postgame-media-worker-auth.js";
 import { secureTokenEquals } from "../services/postgame-media-worker-auth.js";
-import { claimRemotePostgameMedia, getRenderRelease, mutateRenderRelease, parseRendererIdentity, parseRenderReleaseCommand, remoteRenderingEnabled, rendererControl } from "../services/postgame-media-execution.js";
+import { claimLocalPostgameMedia, claimRemotePostgameMedia, getRenderRelease, mutateRenderRelease, parseRendererIdentity, parseRenderReleaseCommand, rendererControl } from "../services/postgame-media-execution.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
   issuePostgameMediaUploadTargets,
@@ -15,8 +16,9 @@ import {
 
 export function createPostgameMediaWorkerRoutes(
   db: DrizzleDB,
-  options: { canClaimWork?: () => boolean } = {},
+  options: { canClaimWork?: () => boolean; execution?: RenderExecution } = {},
 ) {
+  const execution = options.execution ?? renderExecutionConfig();
   const app = new Hono();
 
   app.use("/api/internal/postgame-media/*", async (c, next) => {
@@ -33,16 +35,21 @@ export function createPostgameMediaWorkerRoutes(
     await next();
   });
 
-  app.get("/api/internal/postgame-media/release", async c => c.json(await getRenderRelease(db)));
+  app.get("/api/internal/postgame-media/release", async c => c.json({ ...await getRenderRelease(db), execution }));
   app.post("/api/internal/postgame-media/release", async c => {
     const body = await parseJsonBody(c, "POST /api/internal/postgame-media/release");
     const command = parseRenderReleaseCommand(body);
+    if (body?.configDigest !== execution.configDigest) return c.json({ error: "Release configuration mismatch", code: "renderer_config_conflict" }, 409);
+    if (command && ((command.operation === "accept" && execution.mode !== "remote") || (command.operation === "accept-local" && execution.mode !== "local"))) return c.json({ error: "Release execution mode mismatch", code: "renderer_config_conflict" }, 409);
     if (!command) return c.json({ error: "Valid release operation, generation, workerDigest and previousGeneration required" }, 400);
     if (!await mutateRenderRelease(db, command)) return c.json({ error: "Release generation changed", code: "renderer_release_conflict" }, 409);
-    return c.json(await getRenderRelease(db));
+    return c.json({ ...await getRenderRelease(db), execution });
   });
   app.post("/api/internal/postgame-media/control", async c => {
-    if (!remoteRenderingEnabled()) return c.json({ admitted: true, generation: null, draining: false });
+    if (execution.mode === "local") {
+      const release = await getRenderRelease(db);
+      return c.json({ admitted: release.mode === "local" && !release.draining && !parseRendererIdentity(c.req.raw.headers), generation: release.generation, draining: release.draining });
+    }
     return c.json(await rendererControl(db, parseRendererIdentity(c.req.raw.headers)));
   });
 
@@ -63,11 +70,12 @@ export function createPostgameMediaWorkerRoutes(
       return c.json({ error: "Public media storage is not configured" }, 503);
     }
     const publicBaseUrl = postgameMediaPublicBaseUrl(c.req.url);
-    const remote = remoteRenderingEnabled()
+    if (execution.mode === "local" && parseRendererIdentity(c.req.raw.headers)) return c.json({ error: "Renderer generation is not admitted", code: "renderer_not_admitted" }, 409);
+    const remote = execution.mode === "remote"
       ? await claimRemotePostgameMedia(db, workerToken, parseRendererIdentity(c.req.raw.headers))
-      : null;
-    if (remote && !remote.admitted) return c.json({ error: "Renderer generation is not admitted", code: "renderer_not_admitted" }, 409);
-    const claim = remote ? remote.claim : await claimPostgameMedia(db, workerToken);
+      : await claimLocalPostgameMedia(db, workerToken);
+    if (!remote.admitted) return c.json({ error: "Renderer generation is not admitted", code: "renderer_not_admitted" }, 409);
+    const claim = remote.claim;
     if (!claim) return c.json({ claim: null });
     return c.json({
       claim: {

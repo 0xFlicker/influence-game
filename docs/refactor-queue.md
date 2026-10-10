@@ -1,5 +1,15 @@
 # Influence Refactor Queue
 
+## Shared presentation-time scrubber — 2026-10-07
+
+- Status: `ready`; explicit product follow-up.
+- Use the replay exporter's shared presentation timing compiler for the Influence and Werewolf browser scrubber. Represent elapsed presentation time instead of equally spaced cue ordinals, including precise positions inside speech, thinking, camera moves, transformations and vote holds.
+- Preserve Previous/Next as meaningful cue stops on the same timeline, including every ballot and the completed tally. Canonical events remain game authority; shared links retain stable source/cue anchors rather than depending on mutable elapsed time.
+- When thinking preferences or timing change, rebuild timing while preserving the active cue and local position. For windowed Werewolf playback, supply a lightweight complete timing index without loading all scene assets; live games append available history without moving a paused viewer.
+- Pictures and future recorded speech should seek from the same sampled position. Keep the current ambient-music seek policy explicit until browser audio transport is integrated; do not imply that replacing the slider alone synchronizes audio.
+- Validate both games with Visual Mode on and off, Mystery/Omniscient privacy, thinking on/off, paused/playing seeks, cross-window jumps, final tallies, live-tail growth, and frame/audio agreement with export sampling.
+- Seams: shared `watch-transport.tsx` and `watch-director.ts`, `use-werewolf-watch.ts`, `dramatic-replay-viewer.tsx`, and the local replay export timing compiler.
+
 Generated: 2026-06-21
 
 Last audited against `main`: 2026-09-07 (R20 live ruleset verification; R23/R31 staging evidence audit; R34 implementation and local validation)
@@ -67,10 +77,11 @@ Status legend:
 
 ### R35. Share the current replay moment across House game players
 
-- Status: `ready`
+- Status: `core implemented; validation follow-ups retained`
 - Priority: **high** — explicit product request, 2026-10-02; retained after the W0 planning simplification.
 - Placement: focused follow-up immediately after common House routing (W0). Can be pulled into W0 if implementation proves small; do not wait for full Results, MCP, House Cuts or Production studio work.
-- Current evidence: Influence has `gameReplaySequenceHref` and `/games/[slug]/replay/[sequence]` starting at a canonical event sequence. This is partial infrastructure, not proof of a shared player share action. On `codex/werewolf` at `62c7a54e`, Werewolf's page accepts only audience, its watch hook initially seeks cursor 1, and `components/watch/watch-transport.tsx` has no share-current-moment action. The Werewolf files currently live under `app/werewolf/` and move under game modules in W0. Recheck paths on implementation.
+- Current evidence: shared **Share this moment** action, canonical Influence sequence links and audience-bound Werewolf cursor links are implemented with direct initial-window loading. See [implementation evidence](reviews/2026-10-02-house-game-entry-implementation.md).
+- Follow-up: Influence retains its existing past-end/nearest-cue sequence clamping. Review stricter unavailable-location behavior separately. Expand exact live-frontier/native-device-share and private authenticated UI roundtrip coverage; live and completed canonical Influence roundtrips pass. API access and deterministic clipboard/cancellation paths are covered. Historical Influence cues without canonical sequence anchors intentionally do not emit a guessed link.
 - Product outcome: from either player, choose **Share this moment** and send a House replay URL that opens at that contribution/action rather than the beginning. Copy-link and supported native sharing use one shared action; private links confer no access. Reuse the existing share/copy behavior in `postgame-media-player.tsx` where appropriate.
 - Implementation boundary: each game module supplies a typed stable source position for the active presented moment. Influence event sequence and Werewolf audience-local cursor must never be interchanged or derived from the transient cue-array index. The common player owns the action and feedback. Resolve the initial target before displaying/autoplaying the scene; preserve device preferences and avoid an initial flash of the beginning.
 - Audience and persistence: Werewolf links bind Mystery/Omniscient explicitly. Never default an ambiguous link into Omniscient or expose pack/thinking data to Mystery. Changing audience must not reuse the other audience's cursor. Links survive refresh and append-only live updates. Start with the selected contribution/action, not character-by-character speech progress or wall-clock timestamps. Opening a link uses permitted published media; exact historical image/version reproduction is a separate requirement, not a prerequisite.
@@ -231,6 +242,12 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 - Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
 ## Future / Watchlist
+
+### Dramatic thinking presentation (2026-10-08)
+
+- Implemented in the shared player and exporter: thinking-only close-up, soft face isolation, thought fade, and return before speech. Removed simultaneous bubbles and the order preference.
+- Timing and framing live in `thinking-timing.ts` and `thinking-focus.tsx`; full bodies, headshots, portrait rooms and verified visual scenes use them. Mystery remains excluded.
+- Future polish: richer lighting can build on the same sampled focus progress when a WebGL renderer is available. It is not required for the current vignette and subtle halo.
 
 ### D1. Additional multi-instance execution and observer scaling
 
@@ -526,3 +543,14 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
   issuer utility for the deployed cron token; deployed credential inspection and
   rotation require separate authorization. Current code restricts existing
   registered principals to draw/start and supports immediate principal disable.
+
+
+## PR 163 follow-ups — 2026-10-06
+
+### Align the visual repair mode schema with deployed SQL
+
+`packages/api/src/db/schema.ts` still omits `harmonize` from `visual_repair_jobs_mode_check`, although main migration `0104_visual_panel_harmonization` and Werewolf migration `0112_werewolf_visual_recovery` permit it. Align the Drizzle source and verify a generated schema diff does not remove saved-panel harmonization. The current SQL migration chain is authoritative; do not rewrite applied migrations. Deferred explicitly by the operator during PR 163 cleanup.
+
+### Audit shared replay transport and cache consistency
+
+Review Influence WebSocket delivery and Werewolf watch-window polling together: bounded reads, frozen cast metadata, cache invalidation, audience and publication fences, contiguous timeline coverage, and equivalent seek/Previous/timed advancement. PR 163 removes cast-wide binary reads from Werewolf polls and excludes disconnected cached windows from sequential playback. Those fixes are not a complete transport audit. Preserve canonical source coordinates and accepted history; do not infer missing playback from prose or introduce a speculative replacement protocol.

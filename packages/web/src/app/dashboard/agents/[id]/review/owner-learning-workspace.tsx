@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ApiError,
   applyOwnerLearningReview,
@@ -29,6 +29,9 @@ import { formatAvailabilityTimestamp, isReviewPolling, reviewPath } from "./owne
 
 export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialKind = searchParams.get("game") === "werewolf" ? "werewolf" : "influence";
+  const [gameKind, setGameKind] = useState<"influence" | "werewolf">(initialKind);
   const [eligible, setEligible] = useState<OwnerLearningEligibleInputs | null>(null);
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState(agentId);
@@ -50,12 +53,14 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
         router.replace(reviewPath(next.openReview.agentProfileId, next.openReview.id));
         return;
       }
-      const profile = next.profiles.find((entry) => entry.agentProfileId === agentId)
+      const profile = next.profiles.find((entry) => entry.agentProfileId === agentId && entry.gameKind === initialKind)
+        ?? next.profiles.find((entry) => entry.agentProfileId === agentId)
         ?? next.profiles.find((entry) => entry.agentProfileId === next.recommendedAgentProfileId)
         ?? next.profiles[0]
         ?? null;
       setEligible(next);
       if (profile) {
+        setGameKind(profile.gameKind);
         setSelectedProfileId(profile.agentProfileId);
         setSelectedGameIds(profile.recommendedGameIds);
       }
@@ -66,7 +71,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [agentId, router]);
+  }, [agentId, initialKind, router]);
 
   useEffect(() => {
     void loadEligible();
@@ -77,16 +82,20 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     if (!selectedProfileId) return;
-    getAgent(selectedProfileId).then(setAgent).catch(() => setAgent(null));
+    let current = true;
+    setAgent(null);
+    getAgent(selectedProfileId).then(value => { if (current) setAgent(value); }).catch(() => { if (current) setAgent(null); });
+    return () => { current = false; };
   }, [selectedProfileId]);
 
   useEffect(() => {
+    const requestId = ++preflightRequest.current;
     if (!eligible || selectedGameIds.length === 0) {
+      setPreflightPending(false);
       setPreflight(null);
       setPreflightFailed(false);
       return;
     }
-    const requestId = ++preflightRequest.current;
     setPreflightPending(true);
     setPreflightFailed(false);
     preflightOwnerLearningReview({ agentProfileId: selectedProfileId, gameIds: selectedGameIds })
@@ -107,9 +116,12 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       });
   }, [eligible, selectedGameIds, selectedProfileId]);
 
-  function changeProfile(profileId: string) {
-    const profile = eligible?.profiles.find((entry) => entry.agentProfileId === profileId);
+  function changeProfile(profileId: string, kind = gameKind) {
+    const profile = eligible?.profiles.find((entry) => entry.agentProfileId === profileId && entry.gameKind === kind)
+      ?? eligible?.profiles.find(entry => entry.gameKind === kind);
     if (!profile) return;
+    setGameKind(profile.gameKind);
+    window.history.replaceState(null, "", `${window.location.pathname}?game=${profile.gameKind}`);
     setSelectedProfileId(profile.agentProfileId);
     setSelectedGameIds(profile.recommendedGameIds);
     setPreflight(null);
@@ -191,8 +203,10 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   }
 
   return (
+    <>
+    {new Set(eligible.profiles.map(profile => profile.gameKind)).size > 1 && <label className="olm-agent-switcher mb-6"><span>Game</span><select aria-label="Review game" value={gameKind} onChange={event => changeProfile(selectedProfileId, event.target.value === "werewolf" ? "werewolf" : "influence")}><option value="influence">Influence</option><option value="werewolf">Werewolf</option></select></label>}
     <OwnerLearningEntryView
-      eligible={eligible}
+      eligible={{ ...eligible, profiles: eligible.profiles.filter(profile => profile.gameKind === gameKind) }}
       agent={agent}
       selectedProfileId={selectedProfileId}
       selectedGameIds={selectedGameIds}
@@ -201,13 +215,14 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       preflightFailed={preflightFailed}
       startPending={startPending}
       notice={notice}
-      onChangeProfile={changeProfile}
+      onChangeProfile={id => changeProfile(id)}
       onToggleGame={toggleGame}
       onStart={() => void startReview()}
       onDismiss={eligible.prompt.threshold && !eligible.prompt.suppressedByDismissal
         ? () => void dismissPrompt()
         : undefined}
     />
+    </>
   );
 }
 
@@ -230,12 +245,18 @@ export function OwnerLearningReviewWorkspace({
   const offeredReviewId = useRef<string | null>(null);
   const previousState = useRef<string | null>(null);
   const terminalFocus = useRef<HTMLDivElement | null>(null);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const statusRequest = useRef<Promise<boolean> | null>(null);
   const polling = review ? isReviewPolling(review) : false;
 
   const loadReview = useCallback(async (announceErrors = true) => {
     if (!getAuthToken()) return null;
     try {
       const next = await getOwnerLearningReview(reviewId, agentId);
+      setLastCheckedAt(Date.now());
+      setCheckFailed(false);
       setReview(next);
       setActiveGameId((current) => current || next.selectedGameIds[0] || "");
       setError(null);
@@ -248,34 +269,44 @@ export function OwnerLearningReviewWorkspace({
     }
   }, [agentId, reviewId]);
 
-  const pollReview = useCallback(async (): Promise<boolean> => {
-    if (!getAuthToken()) return false;
-    try {
-      const status = await getOwnerLearningReviewStatus(reviewId, agentId);
-      if (isReviewStatusTerminal(status)) {
-        try {
+  const pollReview = useCallback((): Promise<boolean> => {
+    // Manual checks and scheduled polling share one request, so an older response
+    // cannot overwrite a newer status or multiply requests on repeated clicks.
+    if (statusRequest.current) return statusRequest.current;
+    setChecking(true);
+    const request = (async () => {
+      if (!getAuthToken()) {
+        setError("Sign in again to check this review.");
+        return false;
+      }
+      try {
+        const status = await getOwnerLearningReviewStatus(reviewId, agentId);
+        if (isReviewStatusTerminal(status)) {
           const next = await getOwnerLearningReview(reviewId, agentId);
           setReview(next);
           setActiveGameId((current) => current || next.selectedGameIds[0] || "");
-          setError(null);
-          return false;
-        } catch (nextError) {
-          if (isRetryableOwnerLearningPollError(nextError)) return true;
-          setError(apiMessage(nextError, "Review unavailable."));
-          return false;
+        } else {
+          setReview((current) => {
+            if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
+            return { ...current, ...status };
+          });
         }
+        setLastCheckedAt(Date.now());
+        setCheckFailed(false);
+        setError(null);
+        return !isReviewStatusTerminal(status);
+      } catch (pollError) {
+        setCheckFailed(true);
+        if (isRetryableOwnerLearningPollError(pollError)) return true;
+        setError(apiMessage(pollError, "Review unavailable."));
+        return false;
       }
-      setReview((current) => {
-        if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
-        return { ...current, ...status };
-      });
-      setError(null);
-      return true;
-    } catch (pollError) {
-      if (isRetryableOwnerLearningPollError(pollError)) return true;
-      setError(apiMessage(pollError, "Review unavailable."));
-      return false;
-    }
+    })();
+    statusRequest.current = request;
+    return request.finally(() => {
+      statusRequest.current = null;
+      setChecking(false);
+    });
   }, [agentId, reviewId]);
 
   useEffect(() => {
@@ -371,6 +402,8 @@ export function OwnerLearningReviewWorkspace({
       <span className="sr-only" aria-live="polite">{reviewStatusAnnouncement(review)}</span>
       <OwnerLearningReviewView
         review={review}
+        statusCheck={polling ? <ReviewStatusCheck lastCheckedAt={lastCheckedAt} failed={checkFailed}
+          checking={checking} onCheck={() => { void pollReview(); }} /> : null}
         agent={agent}
         activeGameId={activeGameId}
         pendingAction={pendingAction}
@@ -385,6 +418,33 @@ export function OwnerLearningReviewWorkspace({
         }}
         onResolve={(resolution) => void mutate("resolve", () => resolveOwnerLearningReview(review.id, resolution))}
       />
+    </div>
+  );
+}
+
+function ReviewStatusCheck({ lastCheckedAt, failed, checking, onCheck }: {
+  lastCheckedAt: number | null;
+  failed: boolean;
+  checking: boolean;
+  onCheck: () => void;
+}) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 10_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = lastCheckedAt === null ? 0 : Math.max(0, Math.floor((now - lastCheckedAt) / 1_000));
+  const label = seconds < 15 ? "Checked just now"
+    : seconds < 60 ? `Checked ${seconds}s ago` : `Checked ${Math.floor(seconds / 60)}m ago`;
+  return (
+    <div className="olm-status-check">
+      <span>{failed ? "Unable to check status" : lastCheckedAt !== null
+        ? <time dateTime={new Date(lastCheckedAt).toISOString()} title={new Date(lastCheckedAt).toLocaleString()}>{label}</time>
+        : "Status not checked"}</span>
+      <span aria-hidden="true"> · </span>
+      <button type="button" onClick={onCheck} disabled={checking}>
+        {checking ? "Checking…" : failed ? "Try again" : "Check again"}
+      </button>
     </div>
   );
 }

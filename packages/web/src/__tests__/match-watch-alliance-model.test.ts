@@ -23,7 +23,6 @@ function game(): GameDetail {
     ],
     modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
-    viewerMode: "live",
     createdAt: "2026-07-03T00:00:00.000Z",
   };
 }

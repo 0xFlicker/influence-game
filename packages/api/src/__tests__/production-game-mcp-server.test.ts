@@ -1,3 +1,4 @@
+import { houseContent } from "../game-mcp/house-contracts.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { contentImageFixture } from "./content-image-fixture.js";
 import { describe, expect, test } from "bun:test";
@@ -468,7 +469,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       fakeReadModel({
         listGames: async () => {
           listGamesCalls += 1;
-          return { games: [] };
+          return {schemaVersion:2,collection:"public",games:[]};
         },
       }),
       undefined,
@@ -506,7 +507,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       fakeReadModel({
         listGames: async () => {
           listGamesCalls += 1;
-          return { games: [] };
+          return {schemaVersion:2,collection:"public",games:[]};
         },
       }),
       undefined,
@@ -548,7 +549,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       fakeReadModel({
         listGames: async () => {
           listGamesCalls += 1;
-          return { games: [] };
+          return {schemaVersion:2,collection:"public",games:[]};
         },
       }),
       undefined,
@@ -623,7 +624,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       jsonrpc: "2.0",
       id: "rules",
       method: "tools/call",
-      params: { name: "get_rules", arguments: {} },
+      params: { name: "get_rules", arguments: {gameKind:"influence"} },
     }, GAMES_AUTH);
     await server.handle({
       jsonrpc: "2.0",
@@ -639,7 +640,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, AGENT_READ_AUTH);
 
     expect(eligibilityRequests.map((request) => request.needsProducerRole))
-      .toEqual([true, true, true, false, false, false]);
+      .toEqual([true, true, true, true, false, false]);
   });
 
   test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
@@ -854,6 +855,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "read_game",
+      "read_game_results",
+      "read_game_thinking",
+      "read_game_cuts",
       "list_seasons",
       "read_player_profile",
       "read_season_standings",
@@ -870,6 +875,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "player_timeline",
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
+      "get_rules",
+      "search_rules",
       "read_producer_season_diagnostics",
       "read_producer_visual_production",
       "inspect_durable_run",
@@ -1288,6 +1295,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "read_game",
+      "read_game_results",
+      "read_game_thinking",
+      "read_game_cuts",
       "list_seasons",
       "read_player_profile",
       "read_season_standings",
@@ -1338,7 +1349,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
     expect(JSON.stringify(tools)).not.toContain("read_producer_match_narrative");
     expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"producer\"]");
-    expect(JSON.stringify(tools)).not.toContain("\"vote\"");
+    expect(tools.map(tool => (tool as {name:string}).name)).not.toContain("vote");
     expect(JSON.stringify(tools)).not.toContain("mingle_message");
     expect(JSON.stringify(tools)).not.toContain("ready_check");
     expect(JSON.stringify(tools)).not.toContain("generate_image");
@@ -1643,11 +1654,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const contents = (read?.result as { contents: Array<{ mimeType: string; text: string; _meta?: unknown }> }).contents;
     expect(contents[0]?.mimeType).toBe("text/html");
     expect(contents[0]?.text).toContain("<!doctype html>");
-    expect(contents[0]?.text).toContain("Influence games");
+    expect(contents[0]?.text).toContain("House games");
     expect(contents[0]?.text).toContain("callTool(\"list_games\"");
-    expect(contents[0]?.text).toContain("JSON.parse(text.text)");
+    expect(contents[0]?.text).not.toContain("JSON.parse(text.text)");
     expect(contents[0]?.text).toContain("Promise.race");
-    expect(contents[0]?.text).toContain("Timed out while reading Influence games.");
+    expect(contents[0]?.text).toContain("Timed out while reading House games.");
     expect(contents[0]?.text).not.toContain("return {};");
     expect(contents[0]?.text).not.toContain("<iframe");
     expect(contents[0]?.text).not.toContain("access_token");
@@ -1659,20 +1670,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
   test("MCP App HTML renders games through the host tool bridge", async () => {
     const app = await runMcpAppHtml({
-      callTool: async () => ({
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            canonicalGameFacts: {
-              games: [{
-                slug: "season-one",
-                status: "running",
-                trackType: "mingle",
-                createdAt: "2026-06-28",
-              }],
-            },
-          }),
-        }],
+      callTool: async () => houseContent("list_games", {
+        schemaVersion: 2, collection: "public",
+        games: [{ id: "season-one", slug: "season-one", status: "in_progress",
+          gameKind: "influence", createdAt: "2026-06-28", href: "/games/season-one" }],
       }),
     });
 
@@ -1680,7 +1681,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(app.summary.textContent).toBe("Connected. 1 game available.");
     expect(app.games.children).toHaveLength(1);
     expect(app.games.children[0]?.textContent).toContain("season-one");
-    expect(app.games.children[0]?.textContent).toContain("running");
+    expect(app.games.children[0]?.textContent).toContain("in_progress");
   });
 
   test("MCP App HTML renders bridge, malformed payload, and timeout failures", async () => {
@@ -1694,8 +1695,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       }),
     });
     expect(malformed.status.textContent).toBe("Read failed");
-    expect(malformed.summary.textContent).toContain("JSON");
-    expect(malformed.summary.textContent).not.toContain("No Influence games");
+    expect(malformed.summary.textContent).toContain("Unsupported House catalog response");
+    expect(malformed.summary.textContent).not.toContain("No House games");
 
     const timedOut = await runMcpAppHtml({
       callTool: () => new Promise(() => undefined),
@@ -1706,7 +1707,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       },
     });
     expect(timedOut.status.textContent).toBe("Read failed");
-    expect(timedOut.summary.textContent).toBe("Timed out while reading Influence games.");
+    expect(timedOut.summary.textContent).toBe("Timed out while reading House games.");
   });
 
   test("does not list the MCP App resource for producer auth", async () => {
@@ -1739,7 +1740,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       listGames: async () => {
         calls.push("listGames");
-        return { ok: true };
+        return { schemaVersion: 2, collection: "public", games: [] };
       },
     }));
 
@@ -1754,9 +1755,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual(["listGames"]);
     const result = response?.result as { structuredContent: unknown; content: Array<{ text: string }> };
-    expect(result.structuredContent).toEqual({ ok: true });
-    const text = result.content[0]?.text;
-    expect(text).toContain("\"ok\": true");
+    expect(result.structuredContent).toEqual({ schemaVersion: 2, collection: "public", games: [], followUps: [] });
+    expect(result.content[0]?.text).toContain("House");
   });
 
   test("returns the same sanitized season v2 DTO to games and producer callers", async () => {
@@ -2073,9 +2073,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, GAMES_AUTH);
 
     expect(response?.error).toBeUndefined();
-    const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    const text = JSON.stringify((response?.result as { structuredContent: unknown }).structuredContent, null, 2);
     expect(text).toContain("\"key\": \"diplomat\"");
-    expect(text).toContain("\"strategyHint\"");
+    expect(text).toContain("\"strategyHints\"");
     expect(text).not.toContain("\"key\": \"broker\"");
   });
 
@@ -2601,7 +2601,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       listGames: async (_access: unknown, _limit?: number) => {
         calls.push({ method: "listGames", access: _access });
-        return { games: [] };
+        return {schemaVersion:2,collection:"public",games:[]};
       },
       readProjection: async (_gameIdOrSlug: string, access: unknown) => {
         calls.push({ method: "readProjection", access });
@@ -3476,7 +3476,7 @@ function fakeReadModel(
   overrides: Partial<Record<keyof ProductionGameMcpReadModel, unknown>> = {},
 ): ProductionGameMcpReadModel {
   return {
-    listGames: async () => ({ games: [] }),
+    listGames: async () => ({schemaVersion:2,collection:"public",games:[]}),
     listSeasons: async () => ({ schemaVersion: 1, seasons: [] }),
     readPlayerProfile: async () => ({ schemaVersion: 1, status: "not_found" }),
     readSeason: async () => ({ schemaVersion: 2 }),

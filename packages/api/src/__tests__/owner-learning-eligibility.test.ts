@@ -12,8 +12,9 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 describe("owner learning eligibility", () => {
-  test("V2 admits only completed Daily Free games with durable completion coordinates", () => {
+  test("V3 preserves Influence Daily Free and explicitly admits Werewolf custom completions", () => {
     const base = {
+      gameKind: "influence" as const,
       gameId: "game-1",
       agentProfileId: "profile-1",
       analyticalRevisionId: "revision-1",
@@ -30,6 +31,7 @@ describe("owner learning eligibility", () => {
       status: "completed",
       trackType: "custom",
     })).toBe(false);
+    expect(ownerLearningGameEligibilityPolicy.admits({ ...base, gameKind: "werewolf", status: "completed", trackType: "custom" })).toBe(true);
     expect(ownerLearningGameEligibilityPolicy.admits({
       ...base,
       status: "in_progress",

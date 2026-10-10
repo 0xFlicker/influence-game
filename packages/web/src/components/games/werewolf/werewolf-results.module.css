@@ -1,0 +1,31 @@
+.results { display: grid; gap: 1.5rem; padding-bottom: 5rem; color: #f4f2ed; }
+.layout { display: grid; grid-template-columns: 9rem minmax(0,1fr); gap: 2rem; margin-top: 1rem; }
+.index { align-self: start; position: sticky; top: 5rem; display: grid; gap: .5rem; font-size: .85rem; }
+.index a { color: #bbb8af; padding: .5rem .75rem; border-radius: .4rem; }
+.index a:hover, .index a:focus-visible { background: #ffffff0c; color: white; }
+.section, .moment { scroll-margin-top: 6rem; }
+.cast { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; }
+.player { display: flex; align-items: start; gap: 1rem; border: 1px solid #ffffff18; border-radius: .75rem; padding: 1rem; background: #ffffff03; }
+.player[data-winner] { border-color: #dabb7540; background: #dabb7508; }
+.portrait { flex-shrink: 0; width: 3.5rem; height: 3.5rem; border-radius: 50%; overflow: hidden; background: #252525; display: grid; place-items: center; }
+.portrait img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.evidence { display: inline-block; margin-top: .9rem; font-size: .8rem; color: #ddc58e; text-underline-offset: .2em; }
+.evidence:hover { text-decoration: underline; }
+.moment { border: 1px solid #ffffff20; border-radius: .75rem; overflow: hidden; }
+.moment summary { cursor: pointer; padding: 1rem 1.25rem; background: #ffffff04; }
+.moment summary:hover { background: #ffffff09; }
+.facts { padding: 1.25rem; border-top: 1px solid #ffffff15; }
+.nightFacts { display: grid; grid-template-columns: minmax(7rem,1fr) 2fr; gap: .7rem 1rem; font-size: .9rem; }
+.nightFacts dt { color: #a6a6a6; }
+.nightFacts dd { overflow-wrap: anywhere; }
+.ballots { width: 100%; font-size: .9rem; text-align: left; }
+.ballots th { color: #aaa; font-weight: 500; }
+.ballots th, .ballots td { padding: .65rem .5rem; border-bottom: 1px solid #ffffff12; overflow-wrap: anywhere; }
+@media(max-width: 900px) { .cast { grid-template-columns: 1fr; } }
+@media(max-width: 640px) {
+ .layout { display: block; }
+ .index { position: fixed; inset: auto 1rem max(.75rem,env(safe-area-inset-bottom)); z-index: 20; grid-template-columns: 1fr 1fr; text-align: center; padding: .35rem; background: #111; border: 1px solid #ffffff30; border-radius: .75rem; box-shadow: 0 4px 20px #0008; }
+ .index .dayLink { display: none; }
+ .facts { padding: 1rem; }
+ .player { gap: .75rem; padding: .85rem; }
+}

@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { WEREWOLF_TRAILER_MUSIC } from "@influence/engine/postgame-media/werewolf-trailer-manifest";
 import { resolve } from "node:path";
 
 export const HOUSE_HIGHLIGHTS_TRAILER_MUSIC_END_FADE_SECONDS = 3;
@@ -101,3 +104,20 @@ function validateRequest(request: HouseHighlightsTrailerMusicRequest): void {
 
 function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }
 function formatSeconds(value: number): string { return value.toFixed(1); }
+
+/** One full source, not a duration matrix. Verify identity before rendering expensive video. */
+export async function selectWerewolfTrailerMusic(durationSeconds: number, musicDir: string): Promise<HouseHighlightsTrailerMusicSelection> {
+  const request = { houseCuts: 0, players: 0, trailerDurationSeconds: durationSeconds };
+  validateRequest(request);
+  if (durationSeconds > WEREWOLF_TRAILER_MUSIC.durationSeconds) throw new HouseHighlightsTrailerMusicUnavailableError(request, "Werewolf trailer outlasts the selected music source.");
+  const path = resolve(musicDir, WEREWOLF_TRAILER_MUSIC.filename);
+  const hash = createHash("sha256");
+  try {
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
+  } catch (error) {
+    throw new HouseHighlightsTrailerMusicUnavailableError(request, `Werewolf music unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (hash.digest("hex") !== WEREWOLF_TRAILER_MUSIC.sha256) throw new HouseHighlightsTrailerMusicUnavailableError(request, "Werewolf music source does not match the approved source hash.");
+  return { path, filename: WEREWOLF_TRAILER_MUSIC.filename, variantHouseCuts: 0, variantPlayers: 0,
+    variantDurationSeconds: WEREWOLF_TRAILER_MUSIC.durationSeconds, trailerDurationSeconds: durationSeconds, behavior: "trim_and_fade" };
+}

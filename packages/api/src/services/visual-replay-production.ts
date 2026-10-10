@@ -1,5 +1,8 @@
+import { readWerewolfVisualPause, werewolfVisualPause } from "./werewolf-visual-policy.js";
+import { planWerewolfProduction } from "./werewolf-production-plan.js";
+import { freezeWerewolfReferences, readWerewolfProduction, WerewolfReferenceError } from "./werewolf-production.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import { GameState, Phase, selectActiveJury } from "@influence/engine";
 import { VISUAL_ROOMS, visualRoomForPhase, type FrozenVisualProfile, type VisualRoomId } from "@influence/engine/visual-mode";
 import { planVisualScene, type VisualCastMember, type VisualPlacement } from "@influence/engine/visual-scene-plan";
@@ -38,7 +41,8 @@ const sameCast = (ids: readonly string[], scene: Scene) => ids.length === scene.
 export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) {
   const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
   if (!game) throw new ReplayVisualError("Game not found", "game_missing", 404);
-  if (game.status !== "completed") throw new ReplayVisualError("Replay image production requires a completed game", "game_not_completed");
+  if (game.status !== "completed" && !await readWerewolfVisualPause(db, gameId)) throw new ReplayVisualError("Image production requires a completed game or a visual-repair pause", "game_not_completed");
+  if (game.gameKind === "werewolf") return readWerewolfProduction(db, gameId, game.slug);
   const [scenes, dialogue, events, media, accounting] = await Promise.all([
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
     db.select({ sequence: schema.transcripts.entrySequence, phase: schema.transcripts.phase, scope: schema.transcripts.scope,
@@ -99,6 +103,14 @@ export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) 
 
 /** Copies saved game-start references; this never generates a new character or background. */
 async function freezeReplayReferences(db: DrizzleDB, gameId: string, participants: Candidate["participants"]) {
+  const [game] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  if (game?.kind === "werewolf") {
+    try { return await freezeWerewolfReferences(db, gameId, participants); }
+    catch (error) {
+      if (error instanceof WerewolfReferenceError) throw new ReplayVisualError(error.message, "references_missing");
+      throw error;
+    }
+  }
   const players = await db.select().from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   const profiles: FrozenVisualProfile[] = players.map(player => {
     const persona = JSON.parse(player.persona) as Record<string, unknown>;
@@ -140,11 +152,16 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
   if (!selected || selected.previewHash !== input.previewHash) throw new ReplayVisualError("Scene evidence changed. Refresh the scene list before rendering.", "stale_preview");
   const { cast } = await freezeReplayReferences(db, gameId, selected.participants);
   const [assets] = await db.select().from(schema.visualGameAssets).where(eq(schema.visualGameAssets.gameId, gameId));
-  const plan = planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
+  const [gameKind] = await db.select({ kind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  const plan = gameKind?.kind === "werewolf" ? await planWerewolfProduction(db, gameId, selected.roomId, selected.boundarySequence) : planVisualScene({ roomId: selected.roomId, backgroundArtifactId: assets?.backgrounds[selected.roomId] ?? null,
     cast, roles: selected.roles, allianceGroups: selected.allianceGroups, cues: selected.cues });
   const scene = await db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).for("update");
-    if (game?.status !== "completed") throw new ReplayVisualError("Replay image production requires a completed game", "game_not_completed");
+    if (game?.status !== "completed") {
+      const pause = await readWerewolfVisualPause(tx, gameId);
+      if (pause?.work.kind !== "scene" || pause.work.descriptor.roomId !== selected.roomId || pause.work.descriptor.boundarySequence !== selected.boundarySequence)
+        throw new ReplayVisualError("Only the paused visual boundary can be repaired", "stale_preview");
+    }
     await tx.insert(schema.visualScenes).values({ id: randomUUID(), gameId, roomId: selected.roomId, boundarySequence: selected.boundarySequence,
       afterDialogueSequence: selected.afterDialogueSequence, plan, planHash: sha256StableJson(plan) }).onConflictDoNothing();
     const [stored] = await tx.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.roomId, selected.roomId), eq(schema.visualScenes.boundarySequence, selected.boundarySequence)));
@@ -157,7 +174,8 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
 
 /** Producer-only accounts use the same Production rows without broader admin access. */
 export async function listReplayVisualGames(db: DrizzleDB) {
-  const games = await db.select().from(schema.games).where(eq(schema.games.status, "completed")).orderBy(desc(schema.games.createdAt), asc(schema.games.id));
+  const rows = await db.select().from(schema.games).where(or(eq(schema.games.status, "completed"), and(eq(schema.games.gameKind, "werewolf"),eq(schema.games.status,"suspended")))).orderBy(desc(schema.games.createdAt), asc(schema.games.id));
+  const games = rows.filter(game => game.status === "completed" || werewolfVisualPause(JSON.parse(game.config)));
   if (!games.length) return [];
   const ids = games.map(game => game.id);
   const [episodes, seasons, settlements, players, results] = await Promise.all([
@@ -173,7 +191,7 @@ export async function listReplayVisualGames(db: DrizzleDB) {
     const winnerId = results.find(result => result.gameId === game.id)?.winnerId;
     const winner = cast.find(player => player.id === winnerId);
     return {
-      id: game.id, slug: game.slug, status: game.status, hidden: Boolean(game.hiddenAt),
+      id: game.id, slug: game.slug, gameKind: game.gameKind, status: game.status, hidden: Boolean(game.hiddenAt),
       episode: episodes.get(game.id), season: game.seasonId ? seasons.get(game.seasonId) : undefined,
       playerCount: game.maxPlayers ?? config.maxPlayers ?? cast.length, modelLabel: modelLabelFromConfig(config),
       winner: winner ? JSON.parse(winner.persona).name : undefined,

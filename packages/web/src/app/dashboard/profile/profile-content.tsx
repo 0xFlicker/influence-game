@@ -276,7 +276,7 @@ export function ProfileContent() {
       <div>
         <h1 className="influence-phase-title text-3xl font-bold mb-1">Profile</h1>
         <p className="influence-copy text-sm">
-          Your account settings and ELO rating.
+          Your account settings and Influence ELO rating.
         </p>
       </div>
 
@@ -417,7 +417,7 @@ export function ProfileContent() {
       {/* Account rating stats */}
       <section className="influence-panel rounded-xl p-6">
         <h2 className="influence-section-title mb-4">
-          Account Free-Track Rating
+          Influence Free-Track Rating
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
           <div>
@@ -514,7 +514,7 @@ export function ProfileContent() {
 
       {/* Link to leaderboard */}
       <div className="text-center">
-        <Link href="/games/free" className="influence-link text-sm">View Leaderboard →</Link>
+        <Link href="/games/free" className="influence-link text-sm">View Influence leaderboard →</Link>
       </div>
     </div>
   );

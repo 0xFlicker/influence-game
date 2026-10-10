@@ -1,0 +1,42 @@
+import { CUT_EDITORIAL_MODEL, CUT_EDITORIAL_PROMPT, CUT_PROPOSAL_SCHEMA, editCutSelection, type DiscoveryReport, type ReviewedCut } from "./editorial";
+
+const escape = (value: unknown) => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+function card(cut: ReviewedCut, report: DiscoveryReport, replayOrigin?: string) {
+  const name = (id: string) => report.source.cast.find(p => p.id === id)?.name ?? id;
+  const quotes = cut.proposal.quotes.map(q => {
+    const source = cut.context.find(e => e.id === q.sourceRef)!;
+    const actor = source.content.kind === "dialogue" ? name(source.content.speakerId) : "The House";
+    return `<figure><figcaption><span class="portrait">${escape(actor.slice(0, 1))}</span>${escape(actor)}</figcaption><blockquote>${escape(q.excerpt)}</blockquote></figure>`;
+  }).join("");
+  // Relative House links only. A fixture slug is never advertised as a working live destination.
+  const target = report.source.audience === "mystery" ? cut.context.at(-1)?.replayHref : cut.replayHref;
+  const href = target?.startsWith("/games/") ? target : null;
+  return `<article class="cut ${report.source.game.kind}"><div class="eyebrow">THE HOUSE / ${escape(report.source.game.kind)} <span>${escape(report.source.audience === "omniscient" ? "Full spoilers" : report.source.audience)}</span></div>
+    <h2>${escape(cut.proposal.title)}</h2><p class="context">${escape(cut.proposal.context)}</p><div class="quotes">${quotes}</div><p class="angle">${escape(cut.proposal.angle)}</p>
+    ${cut.proposal.payoff ? `<p>${escape(cut.proposal.payoff)}</p>` : ""}<footer>${escape(report.source.game.slug)} · ${escape(cut.context[0]?.label ?? "")}</footer></article>
+    <div class="evidence"><p>Replay target: ${href ? `<code>${escape(href)}</code>${replayOrigin ? ` · <a href="${escape(new URL(href, replayOrigin).href)}" target="_blank" rel="noopener">Watch this moment ↗</a>` : ""}` : "Unavailable: no exact source correlation. Not guessed."}</p>
+    <details><summary>Original context and editorial rationale</summary><p>${escape(cut.proposal.rationale)}</p>${cut.context.map(e => `<p><code>${escape(e.id)}</code> ${escape(e.content.kind === "dialogue" ? `${name(e.content.speakerId)}: ${e.content.text}` : JSON.stringify(e.content.value))}</p>`).join("")}</details></div>`;
+}
+
+/** Local review artifact: escaped source material, no scripts, trackers or public publication. */
+export function renderCutReview(reports: DiscoveryReport[], rankings: string[][], baseline?: { state: string; reason: string | null; selectedCount: number }, options: { replayOrigin?: string; showAllCandidates?: boolean } = {}): string {
+  if (reports.length !== rankings.length) throw new Error("Missing editorial rankings");
+  if (options.replayOrigin && !["http:", "https:"].includes(new URL(options.replayOrigin).protocol)) throw new Error("Invalid replay origin");
+  const fixtureOnly = reports.every(r => r.calls.every(c => c.kind === "fixture"));
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>House Cuts — editorial workshop</title><style>
+  *{box-sizing:border-box}body{margin:0;background:#0b0c10;color:#eeece6;font-family:system-ui,sans-serif;line-height:1.55}main{max-width:1140px;margin:auto;padding:48px 24px}header{border-bottom:1px solid #393b43;padding-bottom:32px;margin-bottom:44px}h1{font-family:Georgia,serif;font-size:clamp(38px,6vw,76px);font-weight:400;line-height:1.05;margin:18px 0}.eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#d7b977;display:flex;justify-content:space-between;gap:12px}.notice{padding:14px 18px;border-left:3px solid #d7b977;background:#191a21;color:#cbc8bd}h2{font-family:Georgia,serif;font-size:clamp(28px,4vw,48px);font-weight:400;line-height:1.1;margin:24px 0 16px}h3{font-size:22px;margin-top:44px}.cut{border:1px solid #4c4436;border-radius:4px;background:linear-gradient(140deg,#29251f,#141418);padding:36px;margin-top:24px}.cut.werewolf{background:linear-gradient(140deg,#18252a,#11131b);border-color:#344b52}.werewolf .eyebrow{color:#a6c8c7}.context{color:#b9b5ab;max-width:60ch}.quotes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:28px;margin:32px 0}figure{margin:0;min-width:0}figcaption{display:flex;gap:12px;align-items:center;font-size:14px;color:#d6d2c7}.portrait{width:38px;height:38px;border:1px solid #8d8165;border-radius:50%;display:grid;place-items:center}blockquote{margin:18px 0 0;font-size:clamp(20px,2.5vw,30px);line-height:1.45;overflow-wrap:anywhere}.angle{font-family:Georgia,serif;font-style:italic;color:#d7b977;font-size:22px}.werewolf .angle{color:#a6c8c7}footer{margin-top:32px;padding-top:18px;border-top:1px solid #ffffff22;color:#aaa69b;font-size:13px}.evidence{font-size:14px;color:#b9bdc8;padding:12px 4px 26px}summary{cursor:pointer;color:#e2dfd7}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}code{overflow-wrap:anywhere}a{color:#d7b977}.empty{padding:32px;border:1px dashed #555}details{margin:16px 0}summary:focus-visible{outline:2px solid #d7b977;outline-offset:5px}@media(max-width:620px){main{padding:28px 16px}.cut{padding:24px 20px}.quotes{grid-template-columns:1fr;gap:26px}.eyebrow{font-size:10px;letter-spacing:.1em}}@media print{body{background:white;color:black}details{display:block}.cut{break-inside:avoid}}
+  </style></head><body><main><header><div class="eyebrow">THE HOUSE <span>EDITORIAL WORKSHOP / V1</span></div><h1>The moments<br>worth sharing.</h1><p class="notice">${fixtureOnly ? "Synthetic fixture preview — authored dialogue and scripted candidates. No model calls, no real-game quality claim, no working fixture replay destinations." : "Draft review packet — human editorial approval required before rollout."}</p><p>Facts and quotations stay attached to their sources. Selection and interpretation remain editorial decisions.</p></header>
+  ${reports.map((report, i) => {
+    const edit = editCutSelection(report, rankings[i]!);
+    const displayed = options.showAllCandidates ? report.candidates : edit.selected;
+    const unknown = report.calls.filter(c => c.costUsd === null).length;
+    return `<section><h3>${escape(report.source.game.slug)} / ${escape(report.source.audience)}</h3><p>${report.plan.coverage.includedEntries}/${report.plan.coverage.totalEntries} eligible entries covered · ${report.calls.length} ${fixtureOnly ? "fixture invocations" : "invocations"} · $${report.calls.reduce((n, c) => n + (c.costUsd ?? 0), 0).toFixed(4)} estimated cost${unknown ? ` · ${unknown} unpriced calls` : ""}</p>
+    ${options.showAllCandidates ? "<p>All generated candidates below are drafts, in source order. No editorial selection or publication has been approved.</p>" : ""}
+    ${displayed.length ? displayed.map(c => card(c, report, fixtureOnly ? undefined : options.replayOrigin)).join("") : '<p class="empty">No selected moment. A quiet game does not need invented drama.</p>'}
+    <details><summary>${options.showAllCandidates ? "Selection pending" : `Rejected candidates (${edit.rejected.length})`}</summary>${(options.showAllCandidates ? [] : edit.rejected).map(r => `<p><strong>${escape(r.cut.proposal.title)}</strong>: ${escape(r.reason)}</p><p>${escape(r.cut.proposal.rationale)}</p>`).join("")}</details>
+    <details><summary>Source boundaries and coverage</summary><ul>${report.source.limitations.map(l => `<li>${escape(l)}</li>`).join("")}</ul><p>Source hash: <code>${escape(report.source.hash)}</code></p><pre>${escape(JSON.stringify(report.plan.coverage, null, 2))}</pre></details></section>`;
+  }).join("")}
+  ${baseline ? `<section><h3>Existing selector comparison</h3><p>The same Influence fixture produces <strong>${escape(baseline.state)}</strong>, with ${baseline.selectedCount} selected cards. Reason: ${escape(baseline.reason ?? "none")}.</p><p>The dialogue sample above remains admissible in the new contract. This demonstrates eligibility, not model discovery quality.</p></section>` : ""}
+  <details><summary>Proposed model, prompt and strict output schema</summary><p>${CUT_EDITORIAL_MODEL} · not invoked in fixture mode</p><pre>${escape(CUT_EDITORIAL_PROMPT)}</pre><pre>${escape(JSON.stringify(CUT_PROPOSAL_SCHEMA, null, 2))}</pre></details>
+  <footer>Pending: human editorial selection and approval, broader sample comparison, and publication integration. This preview is not an operational House Cuts release.</footer></main></body></html>`;
+}

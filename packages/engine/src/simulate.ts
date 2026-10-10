@@ -1,8 +1,62 @@
 #!/usr/bin/env bun
 /**
+ * API-backed House visibility is Public or Unlisted; local artifacts are not published.
+ * See api-simulate.ts for --visibility. This does not change decision trace permissions.
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
+ *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
+ * For a watchable API game plus a no-extra-inference text report, use
+ *   bun run simulate:werewolf:api
+ * API defaults: six House characters, one wolf, low reasoning, ten-day safety cap.
+ * Original Werewolf speech prints immediately; --transcript adds production notes
+ * and turn positions. No House rewrite or --summaries mode; readback makes no model calls.
+ * Ballots, survivors and results print and append to a unique report
+ * under engine/docs/simulations. Use --max-days 2 only for a short smoke run.
+ * Its --game ID_OR_SLUG option watches an existing game without starting another,
+ * including UI-created 6–8-seat villages with optional Seer/Doctor roles. UI Visual Mode
+ * generates spectator scenes automatically; reporting those games adds no model calls.
+ * API --audience omniscient labels every chat speaker with their role, including
+ * introductions and pack chat. Mystery readback keeps dialogue roles hidden.
+ * The standalone command is provider-free unless --model-catalog is explicit. Its canonical
+ * JSON and --chatty records contain private roles, strategies, and thinking.
+ * Werewolf model turns now require thinking, including speech/pass. API games journal
+ * it separately from gameplay speech and expose it only through an Omniscient toggle,
+ * bound to the replay cursor (sealed choices wait for resolution). Mystery never gets it.
+ * Native provider reasoning traces remain separate diagnostics. Standalone canonical
+ * logs contain target thinking; speech thinking lives in accepted provider evidence.
+ * Werewolf House characters freeze a Werewolf-specific archetype strategy at start.
+ * Aggressor defaults preserve confrontational temperament and possible overcommitment;
+ * evaluate faction benefit as well as survival when inspecting new-game behavior.
+ * Seer/Doctor receive private role coaching alongside those notes; evaluate full
+ * games for reveal ledgers and hidden protection. Villagers weigh claimed Seer
+ * results with explicit reasons to reconsider; Wolf guidance is unchanged.
+ * Shared Seer timing guidance counts completed public nights: one check per night,
+ * no daytime checks, and no extra results from additional discussion threads.
+ * Daytime passing guidance favors null text over repetition or agreement; measure
+ * voluntary passes separately from provider-unavailable fallbacks.
+ * Werewolf spoken text uses names; UUID leaks fail inside provider retries before
+ * acceptance. Structured target IDs remain legal; stored dialogue is unchanged.
+ * Pack negotiation allows three proposal/sealed-ballot attempts with unanimous
+ * agreement, seeded nightly initiative, and swapped initiative after failure.
+ * Three disagreements mean no attack; Doctor/Seer still act once. API Omniscient
+ * reports show each resolved pack ballot; Mystery never receives those ballots.
+ * Werewolf rotates a once-seeded opening ring across nights, skipping eliminated seats.
+ * Each living player opens at most once per day, choosing 0–3 ordered recipients before
+ * a seeded random open floor. Each spoken reply offers an opener answer; passes skip it.
+ * Publish each original contribution before the next call, with a final turn reminder.
+ * Earlier threads end with sealed target-or-abstain majority checkpoints. The final
+ * thread uses mandatory-target plurality: unique most votes wins; ties spare everyone.
+ * Reports distinguish vote modes; provider failures are marked unavailable abstentions.
+ * Daytime requests add a separate final task: reply to the opener's quoted latest
+ * message or pass; opener answers quote the prior respondent and name the next possible speaker.
+ * Sealed daytime ballots run concurrently. The API reporter shows accepted-decision
+ * counts as live spectator telemetry, separate from public history and player context.
+ * Choices and private reasoning stay sealed until the full checkpoint resolves.
+ * API Werewolf replay links use /games/:slug/replay?audience=...; the viewer
+ * can share an audience-bound source cursor without another model call.
+ * See docs/werewolf.md; never send those logs to a spectator projection.
  * Visual cues are opaque authored metadata, preserved without content checks. This CLI does not
  * enable Visual Mode yet. Keep House calls direct and schemas exact (no `as any`).
  * API image context distinguishes a selected group shot from the canonical room roster.
@@ -663,22 +717,6 @@ export function buildSimulationConfig(
 
   return {
     ...DEFAULT_CONFIG,
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      mingle: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-      plea: 0,
-      accusation: 0,
-      defense: 0,
-      openingStatements: 0,
-      juryQuestions: 0,
-      closingArguments: 0,
-      juryVote: 0,
-    },
     maxRounds,
     formatManifest: resolveFormatManifest(options.formatManifest),
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
@@ -2044,7 +2082,7 @@ async function main() {
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
 
-  // Simulation config: no timers (agents respond as fast as they can)
+  // Agents respond as fast as they can; playback pacing belongs to the viewer.
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
     richProducer: args.richProducer ?? false,

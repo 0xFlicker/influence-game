@@ -169,7 +169,7 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) 
     const status: VisualAttemptStatus = attempt.reconciliation ? "reconciled"
       : attempt.receipt ? attempt.receipt.chargeUncertain ? "needs_reconciliation" : "finished"
       : running && attempt.generation === operation.generation ? "pending" : "needs_reconciliation";
-    return { ...attempt, status, operationKey: operation.operationKey, sceneId: operation.sceneId, request: operation.request, inputHash: operation.inputHash };
+    return { ...attempt, status, operationKey: operation.operationKey, sceneId: operation.sceneId, repairJobId: operation.repairJobId, request: operation.request, inputHash: operation.inputHash };
   });
   return {
     knownCostMicrousd: summaries.reduce((sum, attempt) => sum + (attempt.costMicrousd ?? 0), 0),
@@ -204,15 +204,16 @@ async function runDurableLocalization(db: DrizzleDB, input: {
   apiKey: string; signal?: AbortSignal;
   beforeDispatch?: VisualBoundaryGuard; repairJobId?: string; reuseOperationKey?: string;
   onStep?: (step: string) => Promise<void>;
+  transformation?: "werewolf";
   compositionOnly?: boolean;
   allowMissing?: boolean;
   candidateAnchors?: readonly import("@influence/engine/visual-mode").VisualPlayerAnchor[];
 }) {
-  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, allowMissing: input.allowMissing === true, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
+  const inputHash = hash(stableJson({ task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), allowMissing: input.allowMissing === true, compositionOnly: input.compositionOnly === true, ...(input.candidateAnchors && { candidates: input.candidateAnchors }), scene: hash(input.scene),
     references: input.references.map((reference) => ({ image: hash(reference.image), players: reference.players })),
   }));
   const operation = await reserveVisualOperation(db, input.gameId, input.operationKey, inputHash, input.userId, {
-    task: VISUAL_LOCALIZATION_VERSION, model: VISUAL_LOCALIZATION_MODEL, compositionOnly: input.compositionOnly === true,
+    task: VISUAL_LOCALIZATION_VERSION, ...(input.transformation && { transformation: input.transformation }), model: VISUAL_LOCALIZATION_MODEL, compositionOnly: input.compositionOnly === true,
     sceneHash: hash(input.scene), candidates: input.candidateAnchors ?? null,
     references: input.references.map((reference) => ({ imageHash: hash(reference.image), players: reference.players })),
   }, input.sceneId, input.repairJobId);

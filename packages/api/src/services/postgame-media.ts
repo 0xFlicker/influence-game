@@ -104,7 +104,7 @@ export type AdminPostgameMediaRead =
     };
 
 export async function getPublicPostgameMedia(
-  db: DrizzleDB,
+  db: Pick<DrizzleDB, "select">,
   gameId: string,
 ): Promise<PublicPostgameMediaRead> {
   const row = await loadPostgameMedia(db, gameId);
@@ -179,7 +179,7 @@ export async function getAdminPostgameMedia(
   };
 }
 
-async function loadPostgameMedia(db: DrizzleDB, gameId: string) {
+async function loadPostgameMedia(db: Pick<DrizzleDB, "select">, gameId: string) {
   const [row] = await db.select()
     .from(schema.gamePostgameMedia)
     .where(and(

@@ -1,10 +1,13 @@
+import { createConnection, createServer } from "node:net";
+import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
 import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
+import { parseHouseHighlightsTrailerManifest, type InfluenceTrailerManifest } from "@influence/engine";
 import {
   createHouseHighlightsTrailerPlaybackMetadata,
+  writeHouseHighlightsTrailerPlaybackMetadata,
   renderHouseHighlightsTrailerMediaBundle,
   type HouseHighlightsTrailerRenderer,
 } from "../lib/house-highlights-trailer-media-bundle";
@@ -28,10 +31,11 @@ import {
 } from "../scripts/render-house-highlights-media-worker";
 
 describe("House Highlights media worker bundle", () => {
+  const execution: RenderExecution = { ...renderExecutionConfig({}), mode: "remote", environment: "staging" };
+  const remoteConfig = (env: Record<string, string | undefined>) => houseHighlightsMediaWorkerConfig(env, execution);
   const remoteEnv = {
     POSTGAME_MEDIA_API_URL: "https://api.test/",
     POSTGAME_MEDIA_WORKER_TOKEN: "worker-token",
-    POSTGAME_MEDIA_EXECUTION_MODE: "remote",
     POSTGAME_MEDIA_RENDER_GENERATION: "release-42",
     POSTGAME_MEDIA_WORKER_DIGEST: `sha256:${"a".repeat(64)}`,
     POSTGAME_MEDIA_WORKER_INSTANCE_ID: "11111111-1111-4111-8111-111111111111",
@@ -40,17 +44,79 @@ describe("House Highlights media worker bundle", () => {
 
   it("defaults to local execution and rejects incomplete or unbounded remote configuration", () => {
     expect(houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test", POSTGAME_MEDIA_WORKER_TOKEN: "test" }).executionMode).toBe("local");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_WORKER_INSTANCE_ID: undefined })).toThrow("POSTGAME_MEDIA_WORKER_INSTANCE_ID");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_EXECUTION_MODE: "other" })).toThrow("POSTGAME_MEDIA_EXECUTION_MODE");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "http://api.test" })).toThrow("must use HTTPS without URL credentials");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "https://user:secret@api.test" })).toThrow("must use HTTPS without URL credentials");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "101" })).toThrow("POSTGAME_MEDIA_MAX_JOBS");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "0" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
-    expect(() => houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "120001" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_WORKER_INSTANCE_ID: undefined })).toThrow("POSTGAME_MEDIA_WORKER_INSTANCE_ID");
+    expect(houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_EXECUTION_MODE: "remote" }).executionMode).toBe("local");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "http://api.test" })).toThrow("must use HTTPS without URL credentials");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "https://user:secret@api.test" })).toThrow("must use HTTPS without URL credentials");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "101" })).toThrow("POSTGAME_MEDIA_MAX_JOBS");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "0" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "120001" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
+  });
+
+  it("requires canonical tailnet TLS and routes API, health and Chromium through the sidecar", async () => {
+    const tailnet = { ...execution, network: "tailnet" as const, apiOrigin: "https://influence-staging.tail8a79ed.ts.net" };
+    const env = { ...remoteEnv, POSTGAME_MEDIA_API_URL: tailnet.apiOrigin, POSTGAME_MEDIA_HTTP_PROXY: "http://127.0.0.1:1055" };
+    expect(() => houseHighlightsMediaWorkerConfig({ ...env, POSTGAME_MEDIA_HTTP_PROXY: undefined }, tailnet)).toThrow("requires POSTGAME_MEDIA_HTTP_PROXY");
+    expect(() => houseHighlightsMediaWorkerConfig({ ...env, POSTGAME_MEDIA_API_URL: "https://100.1.2.3" }, tailnet)).toThrow("canonical tailnet HTTPS");
+    const config = houseHighlightsMediaWorkerConfig(env, tailnet);
+    expect(config.remotionOptions.browserExecutable).toBe("/usr/local/bin/chromium-tailnet");
+    let calls = 0;
+    const fetchImpl = (async (input, init) => {
+      expect((init as RequestInit & { proxy?: string }).proxy).toBe(env.POSTGAME_MEDIA_HTTP_PROXY);
+      expect(init?.redirect).toBe("error");
+      calls += 1;
+      return Response.json(String(input).endsWith("/control") ? { admitted: true, generation: "release-42", draining: false } : { claim: null });
+    }) as typeof fetch;
+    expect(await runHouseHighlightsMediaWorkerOnce(config, fetchImpl)).toBe("idle");
+    expect(calls).toBe(2);
+    const wrapper = await Bun.file(join(import.meta.dir, "../../../../deployment/chromium-tailnet")).text();
+    expect(wrapper).toContain('--proxy-server="$POSTGAME_MEDIA_HTTP_PROXY"');
+    expect(wrapper).not.toContain("ignore-certificate-errors");
+  });
+
+  it("tunnels real HTTPS API requests through a userspace HTTP proxy with hostname verification", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-proxy-tls-"));
+    const key = join(root, "key.pem"), certificate = join(root, "cert.pem");
+    const hostname = "influence-staging.tail8a79ed.ts.net";
+    expect(Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", certificate, "-days", "1", "-subj", `/CN=${hostname}`, "-addext", `subjectAltName=DNS:${hostname}`], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+    const api = Bun.serve({ port: 0, hostname: "127.0.0.1", tls: { key: Bun.file(key), cert: Bun.file(certificate) }, fetch: request => {
+      expect(request.headers.get("Authorization")).toBe("Bearer worker-token");
+      return Response.json(new URL(request.url).pathname.endsWith("/control") ? { admitted: true, generation: "release-42", draining: false } : { claim: null });
+    } });
+    const connects: string[] = [];
+    const proxy = createServer(socket => {
+      let request = Buffer.alloc(0);
+      const headers = (chunk: Buffer) => {
+        request = Buffer.concat([request, chunk]);
+        const boundary = request.indexOf("\r\n\r\n");
+        if (boundary < 0) return;
+        socket.off("data", headers);
+        connects.push(request.toString().split("\r\n")[0]!);
+        const upstream = createConnection({ host: "127.0.0.1", port: api.port! }, () => {
+          socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+          if (request.length > boundary + 4) upstream.write(request.subarray(boundary + 4));
+          socket.pipe(upstream); upstream.pipe(socket);
+        });
+        socket.on("error", () => upstream.destroy());
+        upstream.on("error", () => socket.destroy());
+      };
+      socket.on("data", headers);
+    });
+    await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Missing proxy fixture port");
+    const workerModule = join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts");
+    const child = Bun.spawn([process.execPath, "-e", `import {houseHighlightsMediaWorkerConfig, runHouseHighlightsMediaWorkerOnce} from ${JSON.stringify(workerModule)}; const config=houseHighlightsMediaWorkerConfig(process.env, ${JSON.stringify(execution)}); config.httpProxy=${JSON.stringify(`http://127.0.0.1:${address.port}`)}; if(await runHouseHighlightsMediaWorkerOnce(config)!=="idle")process.exit(1); process.exit(0);`], { env: { ...process.env, ...remoteEnv, POSTGAME_MEDIA_API_URL: `https://${hostname}`, POSTGAME_MEDIA_TEMP_DIR: root, NODE_EXTRA_CA_CERTS: certificate }, stdout: "pipe", stderr: "pipe" });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 5000);
+    try {
+      expect(await child.exited).toBe(0);
+      expect(connects.length).toBeGreaterThan(0);
+      expect(connects.every(value => value === `CONNECT ${hostname}:443 HTTP/1.1`)).toBe(true);
+    } finally { clearTimeout(timeout); child.kill(); proxy.close(); api.stop(true); await rm(root, { recursive: true, force: true }); }
   });
 
   it("sends exact remote identity to control and claim, and does not claim a draining generation", async () => {
-    const config = houseHighlightsMediaWorkerConfig(remoteEnv);
+    const config = remoteConfig(remoteEnv);
     const requests: Request[] = [];
     let draining = false;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -74,7 +140,7 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("fails closed for unavailable or malformed remote admission and refuses a different generation", async () => {
-    const config = houseHighlightsMediaWorkerConfig(remoteEnv);
+    const config = remoteConfig(remoteEnv);
     await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: true, generation: "old", draining: false })) as unknown as typeof fetch)).resolves.toBe(false);
     await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: false, generation: null, draining: false })) as unknown as typeof fetch)).resolves.toBe(false);
     await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json(null)) as unknown as typeof fetch)).rejects.toThrow("worker_api_invalid_control");
@@ -88,7 +154,7 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("exits a remote worker after a bounded batch, counting terminal outcomes", async () => {
-    const config = houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "2" });
+    const config = remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "2" });
     const outcomes = ["waiting_music", "failed", "completed"];
     let attempts = 0;
     const sleeps: number[] = [];
@@ -101,7 +167,7 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("requires a fresh quiet interval after work and then exits without an always-on poller", async () => {
-    const config = houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "1000", POSTGAME_MEDIA_POLL_INTERVAL_MS: "500" });
+    const config = remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "1000", POSTGAME_MEDIA_POLL_INTERVAL_MS: "500" });
     let now = 0;
     let attempts = 0;
     const sleeps: number[] = [];
@@ -115,7 +181,7 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("finishes a remote attempt before observing drain and never starts a second attempt", async () => {
-    const config = houseHighlightsMediaWorkerConfig(remoteEnv);
+    const config = remoteConfig(remoteEnv);
     const release = Promise.withResolvers<void>();
     const started = Promise.withResolvers<void>();
     let admitted = true;
@@ -145,7 +211,7 @@ describe("House Highlights media worker bundle", () => {
     }
   });
 
-  it("exits the remote poll CLI after quiet without a host acknowledgement file", async () => {
+  it("exits a remote loop process after quiet without a host acknowledgement file", async () => {
     const root = await mkdtemp(join(tmpdir(), "render-remote-cli-"));
     const key = join(root, "test-key.pem");
     const certificate = join(root, "test-cert.pem");
@@ -161,8 +227,10 @@ describe("House Highlights media worker bundle", () => {
       claims += 1;
       return Response.json({ claim: null });
     } });
-    const child = Bun.spawn([process.execPath,
-      join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts")], {
+    const workerModule = join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts");
+    const child = Bun.spawn([process.execPath, "-e", `import { houseHighlightsMediaWorkerConfig, runHouseHighlightsMediaWorker } from ${JSON.stringify(workerModule)};
+      await runHouseHighlightsMediaWorker(houseHighlightsMediaWorkerConfig(process.env, ${JSON.stringify(execution)}));
+      process.exit(0);`], {
       env: { ...process.env, ...remoteEnv, POSTGAME_MEDIA_API_URL: `https://127.0.0.1:${server.port}`,
         NODE_EXTRA_CA_CERTS: certificate,
         POSTGAME_MEDIA_TEMP_DIR: root, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "1000",
@@ -184,7 +252,7 @@ describe("House Highlights media worker bundle", () => {
   });
 
   it("refuses a remote attempt without an explicit result instead of treating it as empty work", async () => {
-    await expect(runHouseHighlightsMediaWorker(houseHighlightsMediaWorkerConfig(remoteEnv),
+    await expect(runHouseHighlightsMediaWorker(remoteConfig(remoteEnv),
       (async () => Response.json({ admitted: true, generation: "release-42", draining: false })) as unknown as typeof fetch,
       { runOnceImpl: async () => undefined },
     )).rejects.toThrow("worker_remote_attempt_result_missing");
@@ -245,6 +313,7 @@ describe("House Highlights media worker bundle", () => {
       renderer: fakeRenderer(),
     });
 
+    if (manifest.kind !== "influence") throw new Error("Expected Influence fixture");
     expect(bundle.music.behavior).toBe("trim_and_fade");
     expect(bundle.posterFrame).toBeGreaterThan(manifest.cueSheet.segments[0]!.startFrame);
     expect(bundle.posterFrame).toBeLessThan(manifest.cueSheet.segments[0]!.endFrame);
@@ -260,6 +329,7 @@ describe("House Highlights media worker bundle", () => {
     expect(bundle.artifacts.poster.byteLength).toBe(6);
     expect(bundle.artifacts.poster.sha256).toBe("sha256:293b9207228b7854bc3ccb2959ebea1583e066d41983124a5b381d6fdf6575f8");
     const metadata = createHouseHighlightsTrailerPlaybackMetadata({
+      preview: { title: "House Highlights", description: "A completed Influence game, told through the House." },
       durationMs: bundle.durationMs,
       dimensions: bundle.dimensions,
       renderVersion: "rv_fixture",
@@ -602,13 +672,34 @@ describe("House Highlights media worker bundle", () => {
 
     const rewritten = withWorkerReachableAssetUrls(manifest, "http://host.docker.internal:3002");
 
-    expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
-    expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=alice.png");
+    if (rewritten.kind !== "influence") throw new Error("Expected Influence fixture");
+    expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=alice.png");
     expect(rewritten.cast[1]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=pfp%2Fbob.png");
     expect(manifest.cast[0]!.avatarUrl).toStartWith("http://127.0.0.1:3000/");
     const native = withWorkerReachableAssetUrls(manifest, "http://127.0.0.1:3002");
     expect(native.cast[0]!.avatarUrl).toBe(manifest.cast[0]!.avatarUrl);
     expect(native.cast[1]!.avatarUrl).toBe("http://127.0.0.1:3002/api/uploads/local?key=pfp%2Fbob.png");
+  });
+
+  it("rewrites Influence and Werewolf internal assets to the exact HTTPS origin without changing public assets", async () => {
+    const origin = "https://influence-staging.tail8a79ed.ts.net";
+    const influence = manifestFixture();
+    influence.cast[0]!.avatarUrl = "http://localhost:3000/api/uploads/local?key=alice.png";
+    influence.scenelets.push({ id: "scene", title: "Scene", visualType: "council", backgroundImage: "http://localhost:3000/api/uploads/local?key=background.png", backdropCategory: "council", primaryAgents: [{ ...influence.cast[0]!, avatarUrl: "http://127.0.0.1:3002/api/uploads/local?key=scene.png" }], secondaryAgents: [], outcome: "A vote", facts: [] });
+    influence.cast[1]!.avatarUrl = "https://public.example.test/bob.png";
+    const output = withWorkerReachableAssetUrls(influence, origin);
+    expect(output.cast[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=alice.png`);
+    expect(output.cast[1]!.avatarUrl).toBe("https://public.example.test/bob.png");
+    if (output.kind !== "influence") throw new Error("Expected Influence");
+    expect(output.scenelets[0]!.backgroundImage).toBe(`${origin}/api/uploads/local?key=background.png`);
+    expect(output.scenelets[0]!.primaryAgents[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=scene.png`);
+    const { buildWerewolfTrailerManifest } = await import("@influence/engine/postgame-media/werewolf-trailer-manifest");
+    const { werewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
+    const events = await werewolfResultsFixture("village");
+    const werewolf = buildWerewolfTrailerManifest({ events, slug: "werewolf", episode: { title: "Lanterns", description: "A village gathers." }, cuts: { game: { id: events[0]!.gameId, slug: "werewolf", kind: "werewolf" }, audience: "mystery", status: "failed", publication: null } });
+    werewolf.cast[0]!.avatarUrl = "http://localhost:3000/api/uploads/local?key=alice.png";
+    expect(withWorkerReachableAssetUrls(werewolf, origin).cast[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=alice.png`);
   });
 
   it("requires every prepared score while tolerating unrelated extra music", async () => {
@@ -664,14 +755,14 @@ function fakeRenderer(overrides: Partial<HouseHighlightsTrailerRenderer> = {}): 
   };
 }
 
-function manifestFixture(): HouseHighlightsTrailerManifest {
+function manifestFixture(): InfluenceTrailerManifest {
   const agent = (id: string, name: string, placement: number, status: "winner" | "finalist" | "eliminated") => ({ id, name, initials: name[0]!, avatarUrl: `/avatars/${id}.png`, placement, status });
   const alice = agent("alice", "Alice", 1, "winner");
   const bob = agent("bob", "Bob", 2, "finalist");
   const cara = agent("cara", "Cara", 3, "eliminated");
   const dax = agent("dax", "Dax", 4, "eliminated");
   return {
-    schemaVersion: 1, mediaType: "house_highlights_trailer", timingContractVersion: "house-highlights-trailer-timing-v1",
+    schemaVersion: 2, kind: "influence", mediaType: "house_highlights_trailer", timingContractVersion: "house-highlights-trailer-timing-v1",
     game: { id: "fixture", slug: "fixture", status: "completed" }, frameRate: 30, width: 1920, height: 1080,
     cast: [alice, bob, cara, dax], scenelets: [],
     finalVote: { finalists: [alice, bob], groups: [{ finalist: alice, votes: 2, jurors: [cara, dax] }, { finalist: bob, votes: 0, jurors: [] }], voteLabel: "2-0", winner: alice },
@@ -684,6 +775,24 @@ function manifestFixture(): HouseHighlightsTrailerManifest {
   };
 }
 
-function cue(id: string, kind: HouseHighlightsTrailerManifest["cueSheet"]["segments"][number]["kind"], label: string, startFrame: number, endFrame: number) {
+function cue(id: string, kind: InfluenceTrailerManifest["cueSheet"]["segments"][number]["kind"], label: string, startFrame: number, endFrame: number) {
   return { id, kind, label, startFrame, endFrame, startSeconds: startFrame / 30, endSeconds: endFrame / 30, durationSeconds: (endFrame - startFrame) / 30 };
 }
+
+it("Werewolf playback metadata freezes the same episode copy submitted for publication", async () => {
+  const {buildWerewolfTrailerManifest} = await import("@influence/engine/postgame-media/werewolf-trailer-manifest");
+  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const events = await werewolfResultsFixture("village");
+  const root = await mkdtemp(join(tmpdir(), "wolf-metadata-"));
+  try {
+    for (const episode of [undefined, {title:"Lanterns and Lies",description:"Six strangers gather by candlelight."}]) {
+      const manifest = buildWerewolfTrailerManifest({events,slug:"hazy-ruby-sand",episode,cuts:{game:{id:events[0]!.gameId,slug:"hazy-ruby-sand",kind:"werewolf"},audience:"mystery",status:"failed",publication:null}});
+      const artifact = {name:"video" as const,path:"unused",contentType:"video/mp4",byteLength:1,sha256:"sha256:fixture"};
+      const outputPath = join(root,"metadata.json");
+      await writeHouseHighlightsTrailerPlaybackMetadata({bundle:{manifest,music:{path:"unused",filename:"unused",variantHouseCuts:0,variantPlayers:8,variantDurationSeconds:9,trailerDurationSeconds:9,behavior:"trim_and_fade"},timeline:{},durationMs:9000,dimensions:{width:1920,height:1080},posterFrame:0,captions:"",artifacts:{video:artifact,poster:{...artifact,name:"poster"},captions:{...artifact,name:"captions"},timeline:{...artifact,name:"timeline"}}},outputPath,renderVersion:"frozen-v1",urls:{videoUrl:"https://example.test/video",posterUrl:"https://example.test/poster",captionsUrl:"https://example.test/captions"}});
+      const metadata = JSON.parse(await readFile(outputPath,"utf8"));
+      expect(metadata.title).toBe(manifest.story.title);
+      expect(metadata.description).toBe(manifest.story.description);
+    }
+  } finally {await rm(root,{recursive:true,force:true});}
+});

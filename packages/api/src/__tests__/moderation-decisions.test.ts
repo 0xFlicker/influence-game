@@ -207,7 +207,7 @@ describe("whole-revision moderation decisions", () => {
     await joinQueue(db, context(), { queueType: "daily-free", agentId: first.profile.id });
     const gameId = randomUUID();
     await db.insert(schema.games).values({ id: gameId, slug: "moderation-waiting", status: "waiting", minPlayers: 1, maxPlayers: 4,
-      config: JSON.stringify({ modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" }, maxRounds: 10, visibility: "public", viewerMode: "speedrun" }) });
+      config: JSON.stringify({ modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" }, maxRounds: 10, visibility: "public", }) });
     const admission = { playerId: randomUUID(), gameId, userId: owner, agentProfileId: first.profile.id };
     await db.transaction(tx => admitOwnedSeatInTransaction(tx, admission));
     const seatsBefore = await db.select().from(schema.gamePlayers);

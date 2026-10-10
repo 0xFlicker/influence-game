@@ -44,8 +44,6 @@ beforeAll(async () => {
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       },
-      timingPreset: "fast",
-      viewerMode: "live",
       visibility: "public",
     }),
   });

@@ -2,6 +2,9 @@
 
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
+import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
+import { ResultsHeader } from "@/components/games/results-header";
+import { GameBanner } from "@/components/game-banner";
 import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
 import {
   getCompletedGameResults,
@@ -128,14 +131,8 @@ export function CompletedResultsReview({
 
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-white/35">Final Results</div>
-          <h2 className="mt-1 text-2xl font-semibold text-white">
-            {overview.headline}
-          </h2>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <GameBanner gameId={gameId} />
+      <ResultsHeader title={overview.headline} actions={<>
           <Link
             href={gameHref(gameSlug)}
             className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
@@ -154,9 +151,9 @@ export function CompletedResultsReview({
           >
             Watch Replay
           </Link>
-        </div>
-      </div>
+      </>} />
 
+      <OwnerLearningActivation enabled contextGameId={gameId} />
       {kernelDiagnostic ? (
         <div
           role="status"

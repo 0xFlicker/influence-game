@@ -1,3 +1,4 @@
+import { seededRandom } from "./seeded-random";
 import { beginMingleWindow, advanceMingleWindow, finishMingleWindow, mingleWindowRooms } from "./phases/mingle";
 import { prepareFormatMinglePressure } from "./phases/format-kernel";
 /**
@@ -95,7 +96,6 @@ import {
   collectStagedEffects,
   createDurableTurnIntent,
   createStagedAgents,
-  seededRandom,
   toDurableJsonObject,
   type DurableTurnIntentInput,
   type StagedTurnEffects,

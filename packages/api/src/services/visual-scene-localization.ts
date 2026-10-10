@@ -22,6 +22,7 @@ export async function localizeVisualScene(input: {
   signal?: AbortSignal;
   journal?: VisualImageJournal;
   candidateAnchors?: readonly VisualPlayerAnchor[];
+  transformation?: "werewolf";
   compositionOnly?: boolean;
   allowMissing?: boolean;
 }) {
@@ -37,6 +38,7 @@ export async function localizeVisualScene(input: {
     : input.candidateAnchors
     ? "Match each named character reference to the correct NUMBERED person in the FINAL scene. Compare face, skin, hair length and hair color. Clothing can vary in a generated scene: do not let a copied jacket override facial identity. Reference order is NOT seating order. Identify every person independently and use uncertain instead of guessing. Return the actual person count and one unique label for each player ID. Do not return coordinates."
     : "Locate every listed contestant in the FINAL image using the preceding character reference images. References identify appearance only; do not assume their ordering matches scene positions. Return the actual total number of people. For each listed identity return the tight bounding rectangle of their entire visible head (including hair), with x/y at the TOP LEFT and width/height, all normalized to the FINAL image dimensions. Every physical head must have a distinct non-overlapping rectangle; never reuse a rectangle for two identities. Labels must be unique integers 1 through the number of players. Use uncertain when identity cannot be established. Do not guess based on seating or assume requested players are present. These coordinates will anchor speech bubbles above their heads." }];
+  if (input.transformation === "werewolf") content.unshift({ type: "input_text", text: "This is a deliberate werewolf transformation. Verify one recognizable lupine version of the source character, preserving clothing, colors, accessories, silhouette and original rendering style. A changed lupine face is expected; do not demand the original human face. Use clear confidence only if it is visibly a wolf form AND retains that source identity and style. An unchanged original, generic unrelated wolf, wrong outfit/style or ambiguous identity must be uncertain. Measure the transformed head in the final image, never reuse the source head geometry." });
   for (const reference of input.references) {
     content.push({ type: "input_text", text: `Character reference identities: ${JSON.stringify(reference.players)}` });
     content.push({ type: "input_image", image_url: `data:image/png;base64,${Buffer.from(reference.image).toString("base64")}`, detail: "high" });

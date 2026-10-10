@@ -66,7 +66,7 @@ export async function readVisualReviewSources(db: DrizzleDB | VisualTransaction,
   }
   const groups = visualRenderGroups(scene.plan);
   for (const attempt of attempts) {
-    if (!attempt.hash) continue;
+    if (!attempt.hash || attempt.key.startsWith("wolf-form:")) continue;
     const match = /:section:v2:(\d+)$/.exec(attempt.key);
     sources.set(`attempt:${attempt.id}`, { id: `attempt:${attempt.id}`, kind: "attempt", imageId: attempt.id,
       label: match ? `Saved group ${Number(match[1]) + 1} · ${attempt.id.slice(0, 8)}` : `Saved composition · ${attempt.id.slice(0, 8)}`,

@@ -12,11 +12,11 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
     expect(source).toContain("Connect {HOUSE_VENUE.name} to your Chatbot or AI Agent");
-    expect(source).toContain("control.stats.gamesPlayed > 0");
+    expect(source).toContain("history.length > 0");
   });
 
   it("has useful copy for players with and without history", () => {
-    expect(source).toContain("Use your Influence history from an AI coding client");
+    expect(source).toContain("Use your House game history from an AI coding client");
     expect(source).toContain("Join or complete an Influence game");
     expect(source).toContain("games tied to your account");
   });

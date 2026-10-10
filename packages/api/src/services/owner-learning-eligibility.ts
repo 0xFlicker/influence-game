@@ -1,3 +1,5 @@
+import { currentReviewIdentity, werewolfReviewIdentity, type ReviewGameKind } from "./owner-learning-game.js";
+import { isViewerGame } from "./game-visibility.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -21,13 +23,14 @@ export interface OwnerLearningGameEligibilityCandidate {
   completionAt: string | null;
   agentProfileId: string | null;
   analyticalRevisionId: string | null;
+  gameKind: ReviewGameKind;
 }
 
 export const ownerLearningGameEligibilityPolicy = Object.freeze({
   version: OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
   admits(candidate: OwnerLearningGameEligibilityCandidate): boolean {
     return candidate.status === "completed"
-      && candidate.trackType === "free"
+      && (candidate.gameKind === "werewolf" ? candidate.trackType === "custom" : candidate.trackType === "free")
       && candidate.completionAt != null
       && candidate.agentProfileId != null
       && candidate.analyticalRevisionId != null;
@@ -107,6 +110,7 @@ export interface OwnerLearningEligibleGame {
 }
 
 export interface OwnerLearningEligibleProfile {
+  gameKind: ReviewGameKind;
   agentProfileId: string;
   name: string;
   currentRevisionId: string;
@@ -146,6 +150,7 @@ export type OwnerLearningPublishedCredit = OwnerLearningCreditDetails & (
 );
 
 export interface OwnerLearningValidatedSelection {
+  gameKind: ReviewGameKind;
   ownerUserId: string;
   agentProfileId: string;
   agentProfileName: string;
@@ -170,12 +175,7 @@ export async function getOwnerLearningEligibleInputs(
 ): Promise<OwnerLearningEligibleInputs> {
   const now = input.now ?? new Date();
   const [profileRows, seatRows, entitlementRows, openReviewRows, successfulReviewGameRows, unlimited] = await Promise.all([
-    db.select({
-      agentProfileId: schema.agentProfiles.id,
-      name: schema.agentProfiles.name,
-      currentRevisionId: schema.agentProfiles.currentRevisionId,
-      strategyStyle: schema.agentProfiles.strategyStyle,
-    }).from(schema.agentProfiles)
+    db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.userId, input.ownerUserId)),
     loadOwnedEligibleSeatRows(db, input.ownerUserId),
     db.select().from(schema.agentLearningReviewEntitlements)
@@ -193,7 +193,7 @@ export async function getOwnerLearningEligibleInputs(
         sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
       ))
       .limit(1),
-    db.select({ gameId: schema.agentLearningReviewGames.gameId })
+    db.select({ gameId: schema.agentLearningReviewGames.gameId, agentProfileId: schema.agentLearningReviews.agentProfileId })
       .from(schema.agentLearningReviewGames)
       .innerJoin(
         schema.agentLearningReviews,
@@ -206,7 +206,8 @@ export async function getOwnerLearningEligibleInputs(
     userHasRole(db, input.ownerUserId, "sysop"),
   ]);
 
-  const admittedRows = seatRows.filter(ownerLearningGameEligibilityPolicy.admits);
+  const werewolfRows = await loadOwnedWerewolfSeatRows(db, input.ownerUserId);
+  const admittedRows = [...seatRows, ...werewolfRows].filter(ownerLearningGameEligibilityPolicy.admits);
   const uniqueCompletions = dedupeCompletionCoordinates(admittedRows.map((row) => ({
     gameId: row.gameId,
     completionAt: row.completionAt!,
@@ -216,16 +217,16 @@ export async function getOwnerLearningEligibleInputs(
     ? { completionAt: entitlement.consumedCompletionAt, gameId: entitlement.consumedGameId }
     : null;
   const earnedCredit = deriveOwnerLearningCredit(uniqueCompletions, consumedWatermark);
-  const analyzedGameIds = new Set(successfulReviewGameRows.map((row) => row.gameId));
+  const analyzedGameIds = new Set(successfulReviewGameRows.map((row) => `${row.agentProfileId}:${row.gameId}`));
   const currentProfileRows = new Map(profileRows.flatMap((profile) =>
-    profile.currentRevisionId == null ? [] : [[profile.agentProfileId, profile] as const]
+    profile.currentRevisionId == null ? [] : [[profile.id, profile] as const]
   ));
   const gamesByProfile = new Map<string, OwnerLearningEligibleGame[]>();
 
   for (const row of admittedRows) {
     const profile = currentProfileRows.get(row.agentProfileId!);
-    if (!profile || !belongsToCurrentStrategyFamily(row, profile.currentRevisionId!)) continue;
-    const games = gamesByProfile.get(row.agentProfileId!) ?? [];
+    if (!profile || !belongsToCurrentStrategyFamily(row, currentReviewIdentity(row.gameKind, profile)!)) continue;
+    const games = gamesByProfile.get(`${row.agentProfileId}:${row.gameKind}`) ?? [];
     if (games.some((game) => game.gameId === row.gameId)) continue;
     games.push({
       gameId: row.gameId,
@@ -235,21 +236,22 @@ export async function getOwnerLearningEligibleInputs(
       analyticalRevisionId: row.analyticalRevisionId!,
       transcriptCaptureVersion: row.transcriptCaptureVersion,
       cognitiveArtifactCaptureVersion: row.cognitiveArtifactCaptureVersion,
-      previouslyAnalyzed: analyzedGameIds.has(row.gameId),
+      previouslyAnalyzed: analyzedGameIds.has(`${row.agentProfileId}:${row.gameId}`),
     });
-    gamesByProfile.set(row.agentProfileId!, games);
+    gamesByProfile.set(`${row.agentProfileId}:${row.gameKind}`, games);
   }
 
-  const profiles = profileRows.flatMap((profile): OwnerLearningEligibleProfile[] => {
+  const profiles = profileRows.flatMap((profile) => (["influence", "werewolf"] as const).flatMap((gameKind): OwnerLearningEligibleProfile[] => {
     if (profile.currentRevisionId == null) return [];
-    const games = (gamesByProfile.get(profile.agentProfileId) ?? [])
+    const games = (gamesByProfile.get(`${profile.id}:${gameKind}`) ?? [])
       .sort((left, right) => -compareOwnerLearningCompletion(left, right));
     if (games.length === 0) return [];
     return [{
-      agentProfileId: profile.agentProfileId,
+      agentProfileId: profile.id,
+      gameKind,
       name: profile.name,
-      currentRevisionId: profile.currentRevisionId,
-      strategyStyle: profile.strategyStyle,
+      currentRevisionId: currentReviewIdentity(gameKind, profile)!,
+      strategyStyle: gameKind === "werewolf" ? profile.werewolfStrategyStyle : profile.strategyStyle,
       qualifyingGameCount: games.length,
       games,
       recommendedGameIds: [...games]
@@ -258,7 +260,7 @@ export async function getOwnerLearningEligibleInputs(
         .slice(0, 3)
         .map((game) => game.gameId),
     }];
-  }).sort((left, right) =>
+  })).sort((left, right) =>
     -compareOwnerLearningCompletion(left.games[0]!, right.games[0]!)
   );
 
@@ -311,22 +313,21 @@ export async function validateOwnerLearningSelection(
   input: { ownerUserId: string; agentProfileId: string; gameIds: unknown },
 ): Promise<OwnerLearningValidatedSelection> {
   const gameIds = parseOwnerLearningGameIds(input.gameIds);
-  const profile = (await db.select({
-    agentProfileId: schema.agentProfiles.id,
-    name: schema.agentProfiles.name,
-    currentRevisionId: schema.agentProfiles.currentRevisionId,
-    strategyStyle: schema.agentProfiles.strategyStyle,
-  }).from(schema.agentProfiles).where(and(
+  const profile = (await db.select().from(schema.agentProfiles).where(and(
     eq(schema.agentProfiles.id, input.agentProfileId),
     eq(schema.agentProfiles.userId, input.ownerUserId),
   )).limit(1))[0];
   if (!profile?.currentRevisionId) throw new OwnerLearningEligibilityError("profile_unavailable");
-  const currentRevisionId = profile.currentRevisionId;
-
-  const rows = (await loadOwnedEligibleSeatRows(db, input.ownerUserId, gameIds))
+  const candidates = [...await loadOwnedEligibleSeatRows(db, input.ownerUserId, gameIds),
+    ...await loadOwnedWerewolfSeatRows(db, input.ownerUserId, gameIds)];
+  const kinds = new Set(candidates.map(row => row.gameKind));
+  if (kinds.size !== 1) throw new OwnerLearningEligibilityError("selection_unavailable");
+  const gameKind = candidates[0]!.gameKind;
+  const currentRevisionId = currentReviewIdentity(gameKind, profile)!;
+  const rows = candidates
     .filter(ownerLearningGameEligibilityPolicy.admits)
     .filter((row) =>
-      row.agentProfileId === profile.agentProfileId
+      row.agentProfileId === profile.id
       && belongsToCurrentStrategyFamily(row, currentRevisionId)
     );
   const rowByGameId = new Map(rows.map((row) => [row.gameId, row]));
@@ -336,10 +337,11 @@ export async function validateOwnerLearningSelection(
 
   return {
     ownerUserId: input.ownerUserId,
-    agentProfileId: profile.agentProfileId,
+    gameKind,
+    agentProfileId: profile.id,
     agentProfileName: profile.name,
     currentRevisionId,
-    strategyStyle: profile.strategyStyle,
+    strategyStyle: gameKind === "werewolf" ? profile.werewolfStrategyStyle : profile.strategyStyle,
     games: gameIds.map((gameId) => {
       const row = rowByGameId.get(gameId);
       if (!row) throw new OwnerLearningEligibilityError("selection_unavailable");
@@ -363,6 +365,7 @@ async function loadOwnedEligibleSeatRows(
   gameIds?: readonly string[],
 ) {
   return db.select({
+    gameKind: schema.games.gameKind,
     gameId: schema.games.id,
     slug: schema.games.slug,
     status: schema.games.status,
@@ -382,6 +385,7 @@ async function loadOwnedEligibleSeatRows(
     .leftJoin(schema.gameResults, eq(schema.gameResults.gameId, schema.games.id))
     .where(and(
       eq(schema.agentProfiles.userId, ownerUserId),
+      eq(schema.games.gameKind, "influence"),
       ...(gameIds ? [inArray(schema.games.id, [...gameIds])] : []),
     ))
     .orderBy(desc(schema.games.endedAt), desc(schema.gameResults.finishedAt), desc(schema.games.id));
@@ -408,4 +412,24 @@ function dedupeCompletionCoordinates(
   const byGameId = new Map<string, OwnerLearningCompletionCoordinate>();
   for (const completion of completions) byGameId.set(completion.gameId, completion);
   return [...byGameId.values()];
+}
+
+async function loadOwnedWerewolfSeatRows(db: OwnerLearningEligibilityDB, ownerUserId: string, gameIds?: readonly string[]) {
+  const profiles = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.userId, ownerUserId));
+  const owned = new Set(profiles.map(p => p.id));
+  if (owned.size === 0) return [];
+  const rows = await db.select({ game: schema.games, event: schema.werewolfEvents.event })
+    .from(schema.games).innerJoin(schema.werewolfEvents, and(eq(schema.games.id, schema.werewolfEvents.gameId), eq(schema.werewolfEvents.sequence, 1)))
+    .where(and(eq(schema.games.gameKind, "werewolf"), eq(schema.games.status, "completed"),
+      ...(gameIds ? [inArray(schema.games.id, [...gameIds])] : [])));
+  return rows.flatMap(({ game, event }) => {
+    if (!isViewerGame(game) || !game.endedAt || event.type !== "werewolf.started") return [];
+    return event.payload.players.flatMap(player => !player.agentProfileId || !owned.has(player.agentProfileId) ? [] : [{
+      gameKind: "werewolf" as const, gameId: game.id, slug: game.slug, status: game.status, trackType: game.trackType,
+      completionAt: game.endedAt, transcriptCaptureVersion: game.transcriptCaptureVersion,
+      cognitiveArtifactCaptureVersion: game.cognitiveArtifactCaptureVersion, playerId: player.id,
+      agentProfileId: player.agentProfileId, analyticalRevisionId: werewolfReviewIdentity(player),
+      analyticalRevisionTrigger: "werewolf", analyticalRevisionPriorRevisionId: null,
+    }]);
+  });
 }

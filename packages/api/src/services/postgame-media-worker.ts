@@ -7,6 +7,7 @@ import {
 import type { PostgameMediaArtifactMetadata } from "../db/schema.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { isViewerGame } from "./game-visibility.js";
 import { hashPostgameMediaToken, secureTokenEquals } from "./postgame-media-worker-auth.js";
 
 const MEDIA_TYPE = "house_highlights_trailer" as const;
@@ -79,15 +80,27 @@ export async function claimPostgameMedia(
     .limit(20);
 
   for (const candidate of candidates) {
+    const candidateWhere = and(eq(schema.gamePostgameMedia.gameId, candidate.gameId),
+      eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE), eq(schema.gamePostgameMedia.status, candidate.status),
+      eq(schema.gamePostgameMedia.renderVersion, candidate.renderVersion), eq(schema.gamePostgameMedia.attemptNumber, candidate.attemptNumber),
+      ...(candidate.status === "queued" ? [] : [lte(schema.gamePostgameMedia.leaseExpiresAt, nowIso)]));
+    const reject = async (message: string) => {
+      await db.update(schema.gamePostgameMedia).set({ status: "failed", failureCategory: "render_input", failureMessage: message,
+        workerIdHash: null, leaseTokenHash: null, leaseExpiresAt: null, attemptFinishedAt: nowIso, updatedAt: nowIso }).where(candidateWhere);
+    };
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, candidate.gameId));
+    if (!isViewerGame(game) || game?.status !== "completed") { await reject("Game is no longer available for a trailer"); continue; }
     if (!candidate.artifactVersion || !candidate.renderInputSnapshot || !candidate.renderInputSnapshotHash
       || !candidate.renderInputSnapshotVersion || !candidate.rendererVersion
       || !candidate.timingContractVersion || !candidate.musicAssetId) {
+      await reject("Incomplete render input; request a fresh trailer render");
       continue;
     }
     let manifest: HouseHighlightsTrailerManifest;
     try {
       manifest = parseHouseHighlightsTrailerManifest(candidate.renderInputSnapshot);
     } catch {
+      await reject("Unsupported or invalid render input; request a fresh trailer render");
       continue;
     }
 
@@ -100,6 +113,8 @@ export async function claimPostgameMedia(
       eq(schema.gamePostgameMedia.gameId, candidate.gameId),
       eq(schema.gamePostgameMedia.mediaType, MEDIA_TYPE),
       eq(schema.gamePostgameMedia.status, candidate.status),
+      eq(schema.gamePostgameMedia.renderVersion, candidate.renderVersion),
+      eq(schema.gamePostgameMedia.attemptNumber, candidate.attemptNumber),
     ];
     if (stale) {
       conditions.push(lte(schema.gamePostgameMedia.leaseExpiresAt, nowIso));
@@ -240,28 +255,33 @@ export async function finalizePostgameMedia(
     return { ok: false, error: "artifact_verification_failed" };
   }
 
-  const nowIso = now.toISOString();
-  const updated = await db.update(schema.gamePostgameMedia)
-    .set({
-      status: "ready",
-      workerIdHash: null,
-      leaseTokenHash: null,
-      leaseExpiresAt: null,
-      attemptFinishedAt: nowIso,
-      renderDurationMs: request.renderDurationMs,
-      artifactMetadata: request.artifacts,
-      uploadTargetMetadata: null,
-      cueMetadata: request.cueMetadata ? sanitizeRecord(request.cueMetadata) : null,
-      diagnostics: request.diagnostics ? sanitizeRecord(request.diagnostics) : null,
-      currentReadyRenderVersion: authorization.renderVersion,
-      currentReadyDurationMs: request.renderDurationMs,
-      currentReadyArtifactMetadata: request.artifacts,
-      currentReadyPublishedAt: nowIso,
-      updatedAt: nowIso,
-    })
-    .where(activeLeaseWhere(request, authorization.leaseTokenHash, nowIso))
-    .returning({ gameId: schema.gamePostgameMedia.gameId });
-  return updated.length === 1 ? { ok: true } : { ok: false, error: "stale_or_invalid_lease" };
+  return db.transaction(async tx => {
+    // Serialize publication with visibility changes, after slow artifact verification.
+    const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, request.gameId)).for("update");
+    if (!isViewerGame(game) || game?.status !== "completed") return { ok: false as const, error: "game_unavailable" };
+    const nowIso = (options.now ?? new Date()).toISOString();
+    const updated = await tx.update(schema.gamePostgameMedia)
+      .set({
+        status: "ready",
+        workerIdHash: null,
+        leaseTokenHash: null,
+        leaseExpiresAt: null,
+        attemptFinishedAt: nowIso,
+        renderDurationMs: request.renderDurationMs,
+        artifactMetadata: request.artifacts,
+        uploadTargetMetadata: null,
+        cueMetadata: request.cueMetadata ? sanitizeRecord(request.cueMetadata) : null,
+        diagnostics: request.diagnostics ? sanitizeRecord(request.diagnostics) : null,
+        currentReadyRenderVersion: authorization.renderVersion,
+        currentReadyDurationMs: request.renderDurationMs,
+        currentReadyArtifactMetadata: request.artifacts,
+        currentReadyPublishedAt: nowIso,
+        updatedAt: nowIso,
+      })
+      .where(activeLeaseWhere(request, authorization.leaseTokenHash, nowIso))
+      .returning({ gameId: schema.gamePostgameMedia.gameId });
+    return updated.length === 1 ? { ok: true as const } : { ok: false as const, error: "stale_or_invalid_lease" };
+  });
 }
 
 export type ActiveLeaseAuthorization = {
@@ -280,6 +300,8 @@ export async function authorizeActivePostgameMediaLease(
   request: LeaseRequest,
   now: Date,
 ): Promise<ActiveLeaseAuthorization | null> {
+  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, request.gameId));
+  if (!isViewerGame(game) || game?.status !== "completed") return null;
   const row = (await db.select().from(schema.gamePostgameMedia)
     .where(and(
       eq(schema.gamePostgameMedia.gameId, request.gameId),

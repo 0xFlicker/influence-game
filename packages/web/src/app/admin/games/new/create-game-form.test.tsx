@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { modelCatalogEntryById } from "@influence/engine";
 
@@ -17,8 +17,9 @@ const originalNavigator = globalThis.navigator;
 const originalLocalStorage = globalThis.localStorage;
 let activeWindow: HappyDOMWindow | null = null;
 
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  // Flush React work while this test still owns its DOM globals.
+  await act(async () => { cleanup(); });
   pushed.length = 0;
   globalThis.fetch = originalFetch;
   Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
@@ -434,3 +435,29 @@ async function configureTextFallbacks(mounted: ReturnType<typeof render>) {
   fireEvent.click(mounted.getByRole("button", { name: /Add fallback/ }));
   fireEvent.change(mounted.getByRole("combobox", { name: "Fallback 2 model" }), { target: { value: "katana:grok-4-5" } });
 }
+
+
+test("Werewolf uses shared model/casting controls and submits configurable roles and automatic visuals",async()=>{
+  installDom();
+  const calls:Array<{url:string;body:Record<string,unknown>}>=[];
+  globalThis.fetch=(async(request,init)=>{
+    if(String(request).endsWith("/api/provider-models"))return jsonResponse(providerInventory());
+    calls.push({url:String(request),body:JSON.parse(String(init?.body))});
+    return jsonResponse({id:"wolf",slug:"custom-village"},201);
+  }) as typeof fetch;
+  const mounted=render(<CreateGameForm initialKind="werewolf"/>);
+  await waitFor(()=>expect(mounted.getByRole("combobox",{name:"Primary model"})).not.toBeNull());
+  fireEvent.click(mounted.getByRole("button",{name:"7"}));
+  fireEvent.click(mounted.getByRole("button",{name:"2 wolves"}));
+  fireEvent.click(mounted.getByRole("checkbox",{name:/Seer/i}));
+  expect((mounted.getByRole("checkbox",{name:/Doctor/i}) as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(mounted.getByRole("button",{name:/Unlisted/i}));
+  fireEvent.click(mounted.getByRole("checkbox",{name:/Visual Mode/}));
+  expect(mounted.queryByText("Round formats")).toBeNull();
+  fireEvent.click(mounted.getByRole("button",{name:"Create Werewolf Game"}));
+  await waitFor(()=>expect(pushed).toEqual(["/games/custom-village"]));
+  expect(calls[0]!.url).toContain("/api/werewolf/lobbies");
+  expect(calls[0]!.body).toMatchObject({visibility:"unlisted",setup:{playerCount:7,wolves:2,seer:false,doctor:true},visualMode:true,fillStrategy:"balanced",providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"medium"},{catalogId:"katana:grok-4-6",reasoningPolicy:"action-policy",maxCallsPerGame:24}]});
+  expect((calls[0]!.body.personaPool as string[]).length).toBeGreaterThan(1);
+  expect(calls[0]!.body).not.toHaveProperty("formatManifest");
+});

@@ -1,3 +1,4 @@
+import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
 /**
@@ -199,14 +200,15 @@ const activeGames = new Map<string, ActiveGame>();
 const startingGames = new Set<string>();
 
 export function isGameRunning(gameId: string): boolean {
-  return startingGames.has(gameId) || activeGames.has(gameId);
+  return startingGames.has(gameId) || activeGames.has(gameId) || isWerewolfRunning(gameId);
 }
 
 export function getActiveGameCount(): number {
-  return activeGames.size + startingGames.size;
+  return activeGames.size + startingGames.size + activeWerewolfCount();
 }
 
 export function abortGame(gameId: string): boolean {
+  if (abortWerewolf(gameId)) return true;
   const active = activeGames.get(gameId);
   if (!active) return false;
   active.runner.abort();
@@ -215,6 +217,7 @@ export function abortGame(gameId: string): boolean {
 
 /** Abort and await all active games — used by tests to prevent cross-file pollution. */
 export async function abortAllGames(): Promise<void> {
+  await abortAllWerewolf();
   for (const game of activeGames.values()) {
     game.runner.abort();
   }
@@ -423,20 +426,6 @@ export function buildEngineConfigFromGameRecord(
   minPlayers: number,
   maxPlayers: number,
 ): GameConfig {
-  const defaultTimers = {
-    introduction: 30000,
-    lobby: 30000,
-    mingle: 45000,
-    rumor: 30000,
-    vote: 20000,
-    power: 15000,
-    council: 20000,
-  };
-  const storedTimers = (gameConfig.timers ?? {}) as Record<string, number>;
-
-  const roomPhaseTimer = storedTimers.mingle ?? defaultTimers.mingle;
-  const { whisper: _unsupportedWhisperTimer, ...currentTimers } = storedTimers;
-
   return {
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
@@ -444,11 +433,6 @@ export function buildEngineConfigFromGameRecord(
     formatManifest: resolveFormatManifest(
       gameConfig.formatManifest ?? LEGACY_FORMAT_MANIFEST,
     ),
-    timers: {
-      ...defaultTimers,
-      ...currentTimers,
-      mingle: roomPhaseTimer,
-    },
     diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
     // Preserve House narration configuration sealed into the game record.
     ...(typeof gameConfig.enableHouseRoundSummaries === "boolean" && {
@@ -676,6 +660,11 @@ async function startGameWithOwner(
 
   if (game.status !== "in_progress") {
     return { error: "Game must be in_progress to run" };
+  }
+
+  if (game.gameKind === "werewolf") {
+    await startWerewolfRuntime(db, gameId, ownerEpoch);
+    return {};
   }
 
   // Load players

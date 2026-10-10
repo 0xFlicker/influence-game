@@ -1,20 +1,15 @@
+import { isViewerGame } from "../services/game-visibility.js";
 import { Hono } from "hono";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { optionalAuth, requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import { decodeEpisodeCopy, queueEpisodeCopy, readEpisodePreview } from "../services/episode-presentation.js";
 
-export async function visibleEpisodeGames<T extends { id: string; config: string; createdById: string | null }>(db: DrizzleDB, games: T[], userId?: string, permissions: string[] = []): Promise<T[]> {
-  if (permissions.includes("view_admin")) return games;
-  const seats = userId ? await db.select({ gameId: schema.gamePlayers.gameId }).from(schema.gamePlayers).where(eq(schema.gamePlayers.userId, userId)) : [];
-  const joined = new Set(seats.map(p => p.gameId));
-  return games.filter(g => (JSON.parse(g.config) as { visibility?: string }).visibility !== "private" || (userId && (g.createdById === userId || joined.has(g.id))));
-}
 export function createEpisodeRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
   app.get("/api/games/:id/episode", optionalAuth(db), async c => {
     const games = await db.select().from(schema.games).where(or(eq(schema.games.id, c.req.param("id")), eq(schema.games.slug, c.req.param("id"))));
-    const [game] = await visibleEpisodeGames(db, games.filter(g => !g.hiddenAt), c.get("user")?.id, c.get("userPermissions"));
+    const game = games.find(isViewerGame);
     if (!game) return c.json({ error: "Game not found" }, 404);
     c.header("Cache-Control", "private, no-store");
     return c.json(await readEpisodePreview(db, game));
@@ -50,10 +45,14 @@ export function createEpisodeRoutes(db: DrizzleDB) {
     let body: { gameIds?: unknown; regenerate?: unknown; preview?: unknown };
     try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
     if (!body || !Array.isArray(body.gameIds) || body.gameIds.length < 1 || body.gameIds.length > 50 || body.gameIds.some(id => typeof id !== "string") || typeof body.regenerate !== "boolean" || typeof body.preview !== "boolean") return c.json({ error: "Select 1–50 games and specify regenerate and preview" }, 400);
-    const games = await db.select({ id: schema.games.id, title: schema.gameEpisodePresentations.title, locked: schema.gameEpisodePresentations.locked, status: schema.gameEpisodePresentations.status }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id)).where(inArray(schema.games.id, body.gameIds as string[]));
-    const selected = games.filter(g => !g.locked && (body.regenerate || (!g.title && g.status !== "queued" && g.status !== "generating")));
-    if (!body.preview) for (const g of selected) await queueEpisodeCopy(db, g.id, true);
-    return c.json({ gameIds: selected.map(g => g.id), calls: selected.length, skipped: games.length - selected.length, queued: !body.preview });
+    const ids = [...new Set(body.gameIds as string[])];
+    const games = await db.select({ id: schema.games.id, gameStatus: schema.games.status, hiddenAt: schema.games.hiddenAt, title: schema.gameEpisodePresentations.title, locked: schema.gameEpisodePresentations.locked, status: schema.gameEpisodePresentations.status }).from(schema.games).leftJoin(schema.gameEpisodePresentations, eq(schema.gameEpisodePresentations.gameId, schema.games.id)).where(inArray(schema.games.id, ids));
+    const selected = games.filter(g => !g.hiddenAt && g.gameStatus !== "waiting" && !g.locked && g.status !== "queued" && g.status !== "generating" && (body.regenerate || !g.title));
+    const submitted: string[] = [];
+    for (const g of selected) {
+      if (body.preview || await queueEpisodeCopy(db, g.id, body.regenerate)) submitted.push(g.id);
+    }
+    return c.json({ gameIds: submitted, calls: submitted.length, skipped: ids.length - submitted.length, queued: !body.preview });
   });
   return app;
 }

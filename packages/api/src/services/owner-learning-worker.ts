@@ -1,3 +1,4 @@
+import { currentReviewIdentity } from "./owner-learning-game.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
   FlexProcessingObserver,
@@ -53,6 +54,7 @@ import {
 } from "./owner-learning-provider.js";
 import {
   OWNER_LEARNING_MODEL,
+  OWNER_LEARNING_MODEL_ID,
   OWNER_LEARNING_REVIEW_INSTRUCTIONS,
   type OwnerLearningEvidenceProjector,
 } from "./owner-learning-review.js";
@@ -1528,7 +1530,7 @@ export async function retryOwnerLearningReview(
       eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
     )).limit(1))[0];
     const currentProfile = review && review.agentProfileId === identity.agentProfileId
-      ? (await tx.select({ currentRevisionId: schema.agentProfiles.currentRevisionId })
+      ? (await tx.select()
         .from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, review.agentProfileId))
         .limit(1))[0]
@@ -1555,7 +1557,11 @@ export async function retryOwnerLearningReview(
       || review.analysisStatus !== "failed"
       || !review.retryable
       || review.ownerRetryCount !== 0
-      || currentProfile?.currentRevisionId !== review.reviewedRevisionId
+      || (!currentProfile || currentReviewIdentity(review.gameKind, currentProfile) !== review.reviewedRevisionId)
+      || (review.gameKind === "werewolf" && currentProfile && (
+        currentProfile.moderationRequired || currentProfile.latestContentRevisionId !== currentProfile.contentRevisionId
+        || (currentProfile.werewolfStrategyStyle ?? "") !== (review.reviewedStrategyStyle ?? "")
+      ))
       || !isCurrentOwnerLearningReviewProtocol(review)
       || !ownerLearningCheckpointIsRetryable(review)
       || !ownerLearningFailureAllowsRetry(review.safeFailureCode)
@@ -1759,6 +1765,8 @@ export async function runClaimedOwnerLearningReview(
     ownerUserId: schema.agentLearningReviews.ownerUserId,
     agentProfileId: schema.agentLearningReviews.agentProfileId,
     reviewedRevisionId: schema.agentLearningReviews.reviewedRevisionId,
+    gameKind: schema.agentLearningReviews.gameKind,
+    reviewedStrategyStyle: schema.agentLearningReviews.reviewedStrategyStyle,
     analysisTrack: schema.agentLearningReviews.analysisTrack,
     checkpoint: schema.agentLearningReviews.checkpoint,
     checkpointHash: schema.agentLearningReviews.checkpointHash,
@@ -1776,7 +1784,7 @@ export async function runClaimedOwnerLearningReview(
     reviewedBehaviorSnapshot: schema.agentRevisions.behaviorSnapshot,
   }).from(schema.agentLearningReviews)
     .innerJoin(schema.agentProfiles, eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id))
-    .innerJoin(schema.agentRevisions, eq(schema.agentLearningReviews.reviewedRevisionId, schema.agentRevisions.id))
+    .leftJoin(schema.agentRevisions, eq(schema.agentLearningReviews.reviewedRevisionId, schema.agentRevisions.id))
     .where(eq(schema.agentLearningReviews.id, claim.reviewId)).limit(1))[0];
   if (!review) {
     options.signal?.removeEventListener("abort", abortFromCaller);
@@ -1839,7 +1847,7 @@ export async function runClaimedOwnerLearningReview(
       agentProfileId: review.agentProfileId,
       gameIds: selectedGames.map((game) => game.gameId),
     });
-    if (selection.currentRevisionId !== review.reviewedRevisionId) {
+    if (selection.gameKind !== review.gameKind || selection.currentRevisionId !== review.reviewedRevisionId) {
       await failOwnerLearningEvidenceDrift(db, {
         reviewId: review.id,
         leaseToken: claim.leaseToken,
@@ -1883,7 +1891,7 @@ export async function runClaimedOwnerLearningReview(
     const harness = await runOwnerLearningHarness({
       reviewId: review.id,
       analysisTrack: review.analysisTrack,
-      currentStrategyStyle: reviewedStrategyStyle(review.reviewedBehaviorSnapshot),
+      currentStrategyStyle: review.gameKind === "werewolf" ? review.reviewedStrategyStyle : reviewedStrategyStyle(review.reviewedBehaviorSnapshot),
       evidence,
       checkpoint: review.checkpoint,
       logicalCallCount: harnessCounters.logicalCallCount,
@@ -2355,7 +2363,7 @@ function isCurrentOwnerLearningReviewProtocol(review: {
 
 function ownerLearningInputPolicyHash(turn: OwnerLearningHarnessInvocation): string {
   return fingerprintOwnerLearningRequest({
-    model: "gpt-5.6-luna",
+    model: OWNER_LEARNING_MODEL_ID,
     input: turn.request,
     responseSchema: turn.responseSchema,
     maxOutputTokens: OWNER_LEARNING_MAX_OUTPUT_TOKENS,
@@ -2365,7 +2373,8 @@ function ownerLearningInputPolicyHash(turn: OwnerLearningHarnessInvocation): str
   });
 }
 
-function reviewedStrategyStyle(snapshot: Record<string, unknown>): string | null {
+function reviewedStrategyStyle(snapshot: Record<string, unknown> | null): string | null {
+  if (!snapshot) throw new Error("Reviewed Influence strategy snapshot is unavailable");
   const value = snapshot.strategyInstructions;
   if (value === null || typeof value === "string") return value;
   throw new Error("Reviewed agent revision is missing strategyInstructions");

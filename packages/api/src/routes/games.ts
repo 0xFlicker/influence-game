@@ -1,4 +1,7 @@
-import { createEpisodeRoutes, visibleEpisodeGames } from "./episodes.js";
+import { readHouseParticipation } from "../services/house-participation.js";
+import { createGameResultsRoutes } from "./game-results.js";
+import { enabledGameKinds } from "@influence/engine/game-availability";
+import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
 /**
  * Game REST API routes.
@@ -19,7 +22,7 @@ import { readEpisodePresentations } from "../services/episode-presentation.js";
 
 import { createVisualRoutes } from "./visual.js";
 import { Hono, type Context } from "hono";
-import { eq, inArray, asc, or, and, isNull, ne } from "drizzle-orm";
+import { eq, inArray, asc, or, and, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -28,6 +31,7 @@ import {
   requireAuth,
   optionalAuth,
   requirePermission,
+  requireRole,
   type AuthEnv,
 } from "../middleware/auth.js";
 import {
@@ -49,7 +53,6 @@ import {
   buildGameWatchState,
   getGameWatchReplayFrames,
 } from "../services/game-watch-state.js";
-import { getCompletedGameResults } from "../services/completed-game-results.js";
 import { getPublicGameAlliances } from "../services/public-alliance-read-model.js";
 import {
   buildCompactPostgameBrief,
@@ -60,7 +63,6 @@ import {
   type PostgameReadStatus,
 } from "../services/postgame-analysis.js";
 import { getPostgameHighlights } from "../services/postgame-highlights.js";
-import { getPublicPostgameMedia } from "../services/postgame-media.js";
 import {
   buildFallbackGameWatchStateSummary,
   getGameWatchStateSummaryReadsByGameIds,
@@ -98,6 +100,9 @@ import {
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 
+import { parseGameVisibility } from "@influence/engine/game-visibility";
+import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
+
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
 function publicErrorInfo(
@@ -120,16 +125,30 @@ function publicErrorInfo(
 
 export function createGameRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+  app.route("/", createGameResultsRoutes(db));
+  app.route("/", createEpisodeRoutes(db));
+
+  // Influence endpoints must never interpret another game through its defaults.
+  app.use("/api/games/*", async (c, next) => {
+    const id = decodeURIComponent(c.req.path.split("/")[3] ?? "");
+    const [game] = id ? await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, gameKind: schema.games.gameKind }).from(schema.games).where(or(eq(schema.games.id, id), eq(schema.games.slug, id))) : [];
+    if (game && (c.req.method === "GET" || /\/(join|fill|start)$/.test(c.req.path)) && !isViewerGame(game)) return c.json({ error: "Game not found" }, 404);
+    if (game?.gameKind === "werewolf") return c.json({ error: "Use the Werewolf game endpoint", href: `/api/werewolf/${encodeURIComponent(id)}` }, 409);
+    await next();
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/games — create a new game
   // -------------------------------------------------------------------------
 
   app.post("/api/games", requireAuth(db), requirePermission("create_game"), async (c) => {
+    if (!enabledGameKinds().includes("influence")) return c.json({ error: "Influence creation is unavailable." }, 403);
     const body = await parseJsonBody(c, "POST /api/games");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
+
+    if (body.gameKind !== undefined && body.gameKind !== "influence") return c.json({ error: "Create Werewolf games through /api/werewolf" }, 400);
 
     const {
       playerCount,
@@ -137,10 +156,8 @@ export function createGameRoutes(db: DrizzleDB) {
       modelSelection,
       personaPool,
       fillStrategy,
-      timingPreset,
       maxRounds,
       visibility,
-      viewerMode,
       serviceTier,
       formatManifest,
       visualMode = false,
@@ -160,53 +177,17 @@ export function createGameRoutes(db: DrizzleDB) {
       }, 400);
     }
 
+    try { parseGameVisibility(visibility); } catch { return c.json({ error: "Game visibility must be public or unlisted" }, 400); }
     if (!["best_effort", "require_visuals"].includes(visualFailurePolicy)) return c.json({ error: "Invalid visualFailurePolicy" }, 400);
     if (typeof visualMode !== "boolean") return c.json({ error: "visualMode must be a boolean" }, 400);
     const minPlayers = MIN_NEW_GAME_PLAYERS;
     const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
 
     // Build GameConfig (engine-compatible)
-    const timerPresets: Record<string, Record<string, number>> = {
-      fast: {
-        introduction: 15000,
-        lobby: 15000,
-        mingle: 20000,
-        rumor: 15000,
-        vote: 10000,
-        power: 10000,
-        council: 10000,
-      },
-      standard: {
-        introduction: 30000,
-        lobby: 30000,
-        mingle: 45000,
-        rumor: 30000,
-        vote: 20000,
-        power: 15000,
-        council: 20000,
-      },
-      slow: {
-        introduction: 60000,
-        lobby: 60000,
-        mingle: 90000,
-        rumor: 60000,
-        vote: 40000,
-        power: 30000,
-        council: 40000,
-      },
-    };
-
-    const timers = timerPresets[timingPreset ?? "standard"] ?? timerPresets.standard;
     const computedMaxRounds =
       maxRounds === "auto" || maxRounds == null
         ? Math.max(10, (maxPlayers - 4) + 3 + 2)
         : maxRounds;
-
-    // Validate viewerMode — only "live" and "speedrun" are valid at creation time
-    const validCreationModes = ["live", "speedrun"];
-    const resolvedViewerMode = validCreationModes.includes(viewerMode)
-      ? viewerMode
-      : "speedrun"; // Default for admin-created games
 
     const normalizedServiceTier = serviceTier == null
       ? "flex"
@@ -254,7 +235,6 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const config = {
-      timers,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
@@ -270,11 +250,10 @@ export function createGameRoutes(db: DrizzleDB) {
       }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
-      visibility: visibility ?? "public",
+      visibility: parseGameVisibility(visibility),
       slotType: "all_ai",
       visualMode,
       visualFailurePolicy,
-      viewerMode: resolvedViewerMode,
       formatManifest: frozenFormatManifest,
     };
 
@@ -312,6 +291,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games", optionalAuth(db), async (c) => {
+    if (!enabledGameKinds().includes("influence")) return c.json([]);
     const statusParam = c.req.query("status");
 
     let rows;
@@ -320,12 +300,11 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db
         .select()
         .from(schema.games)
-        .where(and(inArray(schema.games.status, statuses), isNull(schema.games.hiddenAt)));
+        .where(and(eq(schema.games.gameKind, "influence"), inArray(schema.games.status, statuses), publicGameFilter()));
     } else {
-      rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
+      rows = await db.select().from(schema.games).where(and(eq(schema.games.gameKind, "influence"), publicGameFilter()));
     }
 
-    rows = await visibleEpisodeGames(db, rows, c.get("user")?.id, c.get("userPermissions"));
     const episodes = await readEpisodePresentations(db, rows);
     c.header("Cache-Control", "private, no-store");
     const gameIds = rows.map((game) => game.id);
@@ -361,7 +340,6 @@ export function createGameRoutes(db: DrizzleDB) {
           eliminatedPlayers: watchState.counts.eliminatedPlayers,
           modelLabel: modelLabelFromConfig(config),
           visibility: config.visibility ?? "public",
-          viewerMode: config.viewerMode ?? "speedrun",
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -404,7 +382,7 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.games)
       .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))[0];
 
-    if (!game || !(await visibleEpisodeGames(db, [game], c.get("user")?.id, c.get("userPermissions"))).length) {
+    if (!game || !isViewerGame(game)) {
       return c.json({ error: "Game not found" }, 404);
     }
 
@@ -452,7 +430,6 @@ export function createGameRoutes(db: DrizzleDB) {
       })),
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
-      viewerMode: config.viewerMode ?? "speedrun",
       visualMode: config.visualMode === true,
       visualFailurePolicy: config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort",
       visualPaused: game.status === "suspended" && Boolean(config.visualPause),
@@ -695,7 +672,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/start — start a game (min players met)
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), async (c) => {
+  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), requireRole("gamer", "admin", "sysop"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = (await db
@@ -883,75 +860,7 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/player/games", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const playerRecords = await db
-      .select()
-      .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.userId, user.id));
-
-    if (playerRecords.length === 0) {
-      return c.json([]);
-    }
-
-    const results = (await Promise.all(playerRecords
-      .map(async (playerRecord) => {
-        const game = (await db
-          .select()
-          .from(schema.games)
-          .where(and(eq(schema.games.id, playerRecord.gameId), isNull(schema.games.hiddenAt))))[0];
-        if (!game) return null;
-        if (game.status !== "completed" || !game.endedAt) return null;
-
-        const config = JSON.parse(game.config);
-        const persona = JSON.parse(playerRecord.persona);
-
-        const allPlayers = await db
-          .select()
-          .from(schema.gamePlayers)
-          .where(eq(schema.gamePlayers.gameId, game.id));
-        const totalPlayers = allPlayers.length;
-
-        const result = (await db
-          .select()
-          .from(schema.gameResults)
-          .where(eq(schema.gameResults.gameId, game.id)))[0];
-
-        const isWinner = result?.winnerId === playerRecord.id;
-
-        return {
-          gameId: game.id,
-          gameSlug: game.slug,
-          agentName: persona.name ?? "Unknown",
-          persona: persona.personaKey ?? "strategic",
-          placement: isWinner ? 1 : totalPlayers,
-          totalPlayers,
-          eliminated: game.status === "completed" && !isWinner,
-          winner: isWinner,
-          rounds: result?.roundsPlayed ?? 0,
-          completedAt: game.endedAt ?? game.createdAt,
-          modelLabel: modelLabelFromConfig(config),
-        };
-      })))
-      .filter(Boolean);
-
-    return c.json(results);
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /api/games/:id/results — completed game results review
-  // -------------------------------------------------------------------------
-
-  app.get("/api/games/:id/results", async (c) => {
-    const idOrSlug = c.req.param("id");
-    const result = await getCompletedGameResults(db, idOrSlug);
-
-    if (!result.ok) {
-      if (result.status === "not_found") {
-        return c.json({ error: result.error }, 404);
-      }
-      return c.json({ error: result.error, status: result.status }, 409);
-    }
-
-    return c.json(result);
+    return c.json(await readHouseParticipation(db, user.id));
   });
 
   // -------------------------------------------------------------------------
@@ -960,7 +869,10 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/games/:id/alliances", async (c) => {
     const idOrSlug = c.req.param("id");
-    const result = await getPublicGameAlliances(db, idOrSlug);
+    const raw = c.req.query("throughEventSequence"), rawTranscript = c.req.query("throughTranscriptSequence");
+    for (const value of [raw, rawTranscript]) if (value !== undefined && (value.trim() === "" || !Number.isSafeInteger(Number(value)) || Number(value) < 0)) return c.json({error:"Invalid replay cutoff"},400);
+    c.header("Cache-Control", "private, no-store");
+    const result = await getPublicGameAlliances(db, idOrSlug, raw === undefined ? undefined : {throughEventSequence: Number(raw), throughTranscriptSequence: Number(rawTranscript ?? 0)});
 
     if (!result.ok) {
       return c.json({ error: result.error }, 404);
@@ -1049,22 +961,18 @@ export function createGameRoutes(db: DrizzleDB) {
     return c.json(result);
   });
 
-  // GET /api/games/:id/postgame/media — spoiler-safe postgame trailer state
-  app.get("/api/games/:id/postgame/media", async (c) => {
-    const idOrSlug = c.req.param("id");
-    const game = (await db.select({ id: schema.games.id })
-      .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
-      .limit(1))[0];
-    if (!game) return c.json({ error: "Game not found" }, 404);
-    return c.json(await getPublicPostgameMedia(db, game.id));
-  });
-
   // -------------------------------------------------------------------------
   // GET /api/games/:id/transcript — full transcript export
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/transcript", async (c) => {
+    const rawLimit = c.req.query("limit"), rawOffset = c.req.query("offset");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    const offset = rawOffset === undefined ? 0 : Number(rawOffset);
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)
+      || !Number.isSafeInteger(offset) || offset < 0 || rawOffset !== undefined && limit === undefined) {
+      return c.json({error: "Use limit 1–256 and a nonnegative offset for transcript pages"}, 400);
+    }
     const idOrSlug = c.req.param("id");
 
     const game = (await db
@@ -1099,14 +1007,15 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
-    const rows = await db
+    const query = db
       .select()
       .from(schema.transcripts)
       .where(and(
         eq(schema.transcripts.gameId, gameId),
         ne(schema.transcripts.scope, "huddle"),
       ))
-      .orderBy(asc(schema.transcripts.timestamp));
+      .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
+    const rows = await (limit === undefined ? query : query.limit(limit).offset(offset));
 
     const parseJsonOrNull = (value: string | null): Record<string, unknown> | null => {
       if (!value) return null;
@@ -1153,6 +1062,9 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/games/:id/replay-watch-frames", async (c) => {
     const idOrSlug = c.req.param("id");
+    const rawLimit = c.req.query("limit");
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1 || limit > 256)) return c.json({error: "limit must be an integer from 1 to 256"}, 400);
     const afterSequenceParam = c.req.query("afterSequence");
     const presentationOnlyParam = c.req.query("presentationOnly");
     const afterSequence = afterSequenceParam === undefined
@@ -1172,13 +1084,13 @@ export function createGameRoutes(db: DrizzleDB) {
     const frames = await getGameWatchReplayFrames(db, idOrSlug, {
       afterSequence,
       presentationOnly: presentationOnlyParam === "true",
+      limit,
     });
     if (!frames) return c.json({ error: "Game not found" }, 404);
     return c.json(frames);
   });
 
   app.route("/", createVisualRoutes(db));
-  app.route("/", createEpisodeRoutes(db));
   return app;
 }
 

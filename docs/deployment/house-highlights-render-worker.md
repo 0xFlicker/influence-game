@@ -124,7 +124,17 @@ bun run dev:api
 bun run dev:render-worker
 ```
 
+The dev service supplies `.renders/render-worker/drain-ack.json` in the checkout
+for local drain control (including Ctrl-C). `POSTGAME_MEDIA_DRAIN_ACK_FILE` can
+override it. Run one dev render worker per checkout; simultaneous workers need
+separate control directories. The deployed poll command still requires an
+explicit control path; its handoff contract is unchanged.
+
 Queue a completed game from **Admin -> Game History -> Trailer -> Backfill**.
+Werewolf game workspaces also expose **Production -> Trailer & poster** using
+the same diagnostics and actions. Failed jobs show **Retry trailer**; restarting
+the worker does not requeue terminal failures. Repair the missing assets, enter
+a reason, then retry.
 The authenticated API equivalent is:
 
 ```sh
@@ -241,8 +251,25 @@ to the current worker generation before enabling candidate claims.
 
 ## On-demand remote execution (opt-in)
 
-Local polling remains the default. `POSTGAME_MEDIA_EXECUTION_MODE=remote` on both
-API and renderer selects a finite, single-concurrency batch. Remote workers require
+`deployment/render-execution.json` is packaged at the same path in API and
+renderer images and selects policy per environment. **Both prod and staging stay
+local in this first landing.** After the separately approved staging infrastructure,
+credential and tailnet setup, activation is a small reviewed commit changing only
+staging's `mode` to `remote`; this config path triggers the complete immutable
+three-image release. No Doppler rollout switch is used. The host binds
+`INFLUENCE_DEPLOYMENT_ENVIRONMENT` to the deployment and verifies the raw-file
+SHA256 extracted from the exact candidate API and renderer image digests.
+Production can also verify the validating candidate's `/api/health` before draining
+its active renderer. Staging uses immutable image checks and the available baseline
+API preflight before stopping the old slot; it verifies the new API's health policy
+after startup and before admitting the new renderer. Health exposes only non-secret
+release policy; ordinary local deployments need no new control credential. Remote
+operations use the separately authenticated release endpoint. Existing
+hosts may derive an environment from `NODE_ENV` for local releases only; remote
+execution requires the explicit updated-host binding. Conflicting bindings fail
+closed. `POSTGAME_MEDIA_EXECUTION_MODE` no longer selects execution.
+
+Remote workers select a finite, single-concurrency batch and require
 an HTTPS `POSTGAME_MEDIA_API_URL` without URL credentials and:
 
 ```text
@@ -307,3 +334,64 @@ provision AWS, switch release transport or disable the local production worker.
 The separate [falsefloor/infra](https://github.com/falsefloor/infra) renderer stack
 and generation-aware `linode-iac` host release adapter are required
 before remote cutover. Live AWS state and a disposable real render remain unverified.
+
+## W5 shared Werewolf delivery
+
+Render input schema is now **2**, with required `kind: influence | werewolf`. Influence retains its existing cue timing and prepared music matrix. The Werewolf branch consumes an approved, strictly allowlisted opening-only teaser snapshot and hash-verified full Suno score. The shared coordinator queues completed visible Werewolf games after Mystery Cuts settle; empty/failed editorial work permits a cast-only teaser. The operator approved the sample, policy and score on 2026-10-05. `Dockerfile.render-worker` packages `music/werewolf/trailer-v1.wav`; worker health checks and renders verify its hash. No separate Werewolf worker or queue.
+
+Deploy API snapshot producers and workers together. Old active schema-1 input snapshots are rejected by the new parser and require an explicit rerender; no permissive migration/fallback is provided. Already-published immutable bundles remain readable without parsing old input manifests. A local MP4 does not prove claim/upload/finalize or deployed playback.
+
+Local review command (from repository root):
+
+```sh
+bun scripts/preview-werewolf-trailer.ts --game hazy-ruby-sand \
+  --output .renders/werewolf-trailer/w5-v1 \
+  --music-dir .renders/werewolf-music/suno-picks-v1
+```
+
+`--snapshot-only` freezes read-only canonical/publication input. `--from-snapshot FILE` renders that exact story without reloading the game. `--portrait-dir DIR` explicitly serves only the snapshot's named local portraits when the application API is stopped; it neither restores nor copies profile files. Local receipts pin source/policy/publication/music hashes. These commands do not create media jobs, upload or publish.
+
+
+Both games use the same media endpoint, public player, share metadata and existing admin backfill/rerender actions. Automatic startup reconciliation includes both kinds; the Cuts worker also reconciles after Mystery publication or terminal failure. Per-game transaction locks serialize automatic/operator enqueue requests. A failed replacement retains the prior ready bundle. Hidden games cannot claim/publish new media, and the media endpoint independently checks visibility before returning any URLs. Existing immutable public objects cannot be revoked by hiding a game; this is the existing storage boundary, not private storage.
+
+Old schema-1 jobs become an actionable `render_input` failure at claim rather than being silently skipped. Request a fresh render from the existing producer/admin control after deploying the coordinated API/web/worker release. `waiting_music` similarly uses the existing rerender recovery once the exact score is installed. Do not copy a `.renders` path into worker configuration.
+
+Local W5 proof and remaining deployment boundaries are recorded in the [focused plan](../plans/2026-10-05-001-feat-werewolf-trailers-release-assets.md). No external upload or deployed-image smoke is implied by local tests.
+
+Trailer captions are available through the native CC menu but are off by default in both the completed-game player and episode previews.
+
+
+### Staging tailnet proof and mode changes
+
+Staging keeps the existing canonical HTTPS origin
+`https://influence-staging.tail8a79ed.ts.net`. AWS uses a userspace Tailscale sidecar
+with task-scoped, single-use ephemeral identities (the lifecycle and approval
+packet live in `falsefloor/infra`). A renderer starts only after sidecar health
+proves the exact HTTPS origin. It requires the loopback HTTP proxy
+`POSTGAME_MEDIA_HTTP_PROXY=http://127.0.0.1:1055` for remote tailnet policy. Bun API,
+health and presigned upload requests use the explicit proxy and reject redirects;
+Chromium uses the packaged wrapper for remote asset fetches while bypassing its
+local Remotion bundle server. TLS hostname verification stays enabled. No bearer
+header is supplied to asset requests or arbitrary upload origins.
+
+The authenticated release endpoint exposes both effective database `mode` and
+release-owned `execution` (environment, desired mode, network, origin and
+`configDigest`). Every release mutation must present that exact config digest;
+acceptance must match the desired mode. Local claims also lock the durable release
+row, so a stale local-config API cannot bypass an accepted remote epoch. Drain
+permits existing lease heartbeat/upload/finalization. `accept-local` reserves a
+fresh generation and requires completed drain plus zero active leases when
+changing ownership; retired generations never become reusable. The host separately
+retains the last cloud generation for later re-enablement and fresh-epoch rollback.
+
+For proof, use staging's separate database, controller state and credentials, a
+completed visible fixture with its canonical story/editorial snapshot already
+frozen, and the exact API/web/renderer manifest. Rendering itself performs no image
+generation and calls no paid model API: it parses that stored snapshot, validates
+packaged music, runs Chromium/Remotion and ffmpeg, and uploads/finalizes artifacts.
+Preparing a new game, visual assets or House Cuts can invoke paid upstream workers;
+reuse settled inputs instead. Fargate, networking and storage still incur cost.
+The active game-worker owns durable wake delivery, so keep its API runtime available
+without introducing new upstream generation. Verify enabled wake binding, one
+completed render and playback, clean task exit, zero idle tasks, stale-epoch fencing
+and fresh-epoch restoration before reviewing production's separate config change.

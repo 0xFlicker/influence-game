@@ -1,0 +1,27 @@
+.frame { position:relative; width:100%; height:100%; min-height:0; overflow:hidden; background:#000; color:#eee6d5; container-type:size; }
+.picture {position:absolute; inset:0; overflow:hidden}
+.backdrop {position:absolute; inset:0; width:100%; height:100%; object-fit:cover}
+.shade {position:absolute; inset:0; background:linear-gradient(90deg,rgba(5,10,12,.82),rgba(5,10,12,.25) 75%,rgba(5,10,12,.15))}
+.brand {position:absolute; left:8%; top:28%; width:42%; display:flex; align-items:center; gap:2cqw}
+.logo {width:28%; object-fit:contain; mix-blend-mode:screen}
+.wordmark {display:flex; flex-direction:column; align-items:center; font-family:Impact,"Arial Narrow",system-ui,sans-serif}
+.the {font:600 1.4cqw system-ui,sans-serif; letter-spacing:.5em; padding-left:.5em; color:#cfb47a}
+.wordmark strong {font-size:6.5cqw; line-height:1.2; letter-spacing:.075em; font-weight:900}
+.presents {font:500 .8cqw system-ui,sans-serif; letter-spacing:.5em; padding-left:.5em; margin-top:1.5cqh}
+.title {position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; padding:8%; max-width:85%}
+.title p,.name p {font:600 1cqw system-ui,sans-serif; letter-spacing:.35em; color:#d6b575; margin:0 0 3cqh}
+.title h1 {font:400 clamp(20px,5.6cqw,120px)/1.12 Georgia,serif; text-wrap:balance; margin:0; overflow-wrap:anywhere}
+.rule {display:block; width:6cqw; height:2px; background:#b99457; margin-top:5cqh}
+.cast {position:absolute; inset:6% 9%; display:flex; align-items:center; gap:7%;}
+.portrait {height:100%; width:42%; display:flex; align-items:center; justify-content:center; overflow:hidden}
+.portrait img {max-height:100%; max-width:100%; width:auto; height:auto; object-fit:contain; border:1px solid #b79b6355; box-shadow:0 12px 60px #0009}
+.name {flex:1; min-width:0}
+.name h2 {font:400 5cqw/1.12 Georgia,serif; margin:0; text-wrap:balance; overflow-wrap:anywhere}
+.role {display:block; min-height:1.5em; margin-top:3cqh; color:#d2b981; font:500 1.35cqw system-ui,sans-serif; letter-spacing:.15em; text-transform:uppercase}
+@container (max-aspect-ratio: 1/1) {
+  .backdrop {object-position:60% center}
+  .brand {left:10%; top:35%; width:80%; gap:4cqw}
+  .wordmark strong {font-size:12cqw}.the {font-size:3cqw}.presents {font-size:2cqw}
+  .title {max-width:100%;padding:9%}.title h1{font-size:10cqw}.title p,.name p{font-size:2.5cqw}
+  .cast {inset:5% 8%; flex-direction:column; gap:3cqh}.portrait{height:70%;width:100%}.name{flex:1;text-align:center;width:100%}.name p{margin-bottom:1cqh}.name h2{font-size:8cqw}.role{font-size:3cqw;margin-top:1.5cqh}
+}

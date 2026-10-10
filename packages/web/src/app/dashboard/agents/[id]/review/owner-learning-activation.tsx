@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import "./owner-learning-review.css";
 import {
   dismissOwnerLearningPrompt,
   getAuthToken,
@@ -14,12 +15,16 @@ import { formatAvailabilityTimestamp, reviewEntryPath, reviewPath } from "./owne
 export function OwnerLearningActivationView({
   eligible,
   contextAgentId,
+  contextGameId,
   onDismiss,
 }: {
   eligible: OwnerLearningEligibleInputs;
   contextAgentId?: string;
+  contextGameId?: string;
   onDismiss?: () => void;
 }) {
+  const profiles = contextGameId ? eligible.profiles.filter(profile => profile.games.some(game => game.gameId === contextGameId)) : eligible.profiles;
+  if (contextGameId && !profiles.length) return null;
   if (eligible.openReview) {
     const profile = eligible.profiles.find((entry) => entry.agentProfileId === eligible.openReview?.agentProfileId);
     return (
@@ -31,9 +36,9 @@ export function OwnerLearningActivationView({
     );
   }
 
-  const profile = eligible.profiles.find((entry) => entry.agentProfileId === contextAgentId)
-    ?? eligible.profiles.find((entry) => entry.agentProfileId === eligible.recommendedAgentProfileId)
-    ?? eligible.profiles[0];
+  const profile = profiles.find((entry) => entry.agentProfileId === contextAgentId)
+    ?? profiles.find((entry) => entry.agentProfileId === eligible.recommendedAgentProfileId)
+    ?? profiles[0];
   if (!profile || (eligible.credit.mode === "metered"
     && eligible.credit.balance === 0
     && !eligible.credit.nextAvailableAt)) return null;
@@ -49,12 +54,12 @@ export function OwnerLearningActivationView({
         <p>{prominent ? "Three-game pattern ready" : availability.label}</p>
         <h2>{prominent ? `The room has more to say about ${profile.name}.` : `Review ${profile.name}'s latest game.`}</h2>
         <span>{prominent
-          ? "Compare accepted actions and counterplay across the latest eligible Daily Free games."
+          ? "Compare accepted actions and counterplay across the latest eligible games."
           : availability.detail}</span>
       </div>
       <div className="olm-activation-actions">
         {onDismiss && <button type="button" onClick={onDismiss}>Not now</button>}
-        <Link href={reviewEntryPath(profile.agentProfileId)}>{prominent ? "Review the pattern" : "Open game review"} →</Link>
+        <Link href={`${reviewEntryPath(profile.agentProfileId)}?game=${profile.gameKind}`}>{prominent ? "Review the pattern" : "Open game review"} →</Link>
       </div>
     </section>
   );
@@ -63,9 +68,11 @@ export function OwnerLearningActivationView({
 export function OwnerLearningActivation({
   enabled,
   contextAgentId,
+  contextGameId,
 }: {
   enabled: boolean;
   contextAgentId?: string;
+  contextGameId?: string;
 }) {
   const [eligible, setEligible] = useState<OwnerLearningEligibleInputs | null>(null);
   const impressedWatermark = useRef<string | null>(null);
@@ -93,7 +100,8 @@ export function OwnerLearningActivation({
     const threshold = eligible?.prompt.threshold;
     const completion = eligible?.credit.latestEligibleCompletion;
     if (
-      !threshold
+      (contextGameId && !eligible?.profiles.some(profile => profile.games.some(game => game.gameId === contextGameId)))
+      || !threshold
       || !completion
       || !eligible
       || (eligible.credit.mode === "metered" && eligible.credit.balance !== 1)
@@ -104,7 +112,7 @@ export function OwnerLearningActivation({
     if (impressedWatermark.current === watermark) return;
     impressedWatermark.current = watermark;
     void recordOwnerLearningPromptImpression(threshold).catch(() => undefined);
-  }, [eligible]);
+  }, [eligible, contextGameId]);
 
   async function dismiss() {
     try {
@@ -119,8 +127,9 @@ export function OwnerLearningActivation({
     <OwnerLearningActivationView
       eligible={eligible}
       contextAgentId={contextAgentId}
+      contextGameId={contextGameId}
       onDismiss={
-        !contextAgentId
+        !contextGameId && !contextAgentId
         && eligible.prompt.threshold
         && !eligible.prompt.suppressedByDismissal
         && eligible.prompt.prominent
@@ -150,5 +159,5 @@ function activationAvailability(eligible: OwnerLearningEligibleInputs): { label:
       detail: `Next review available ${formatAvailabilityTimestamp(eligible.credit.nextAvailableAt)}. You can inspect the recorded facts now.`,
     };
   }
-  return { label: "0 review credits", detail: "Complete another Daily Free game to earn one." };
+  return { label: "0 review credits", detail: "Complete another qualifying game to earn one." };
 }

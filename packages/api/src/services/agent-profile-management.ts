@@ -1,7 +1,8 @@
+import { currentReviewIdentity, reviewStrategyField } from "./owner-learning-game.js";
 import { parseCharacterHeadPosition } from "@influence/engine/character-portrait";
 import { confirmProfileHead } from "./character-head-position.js";
 import { randomUUID } from "crypto";
-import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
+import { readOwnerContent, latestSubmittedProfile, ContentSubmissionConflict, prepareContentAssets, readSavedContentAssets, recordContentSubmission, replayContentSubmission, type ContentAssetEvidence } from "./agent-content-submissions.js";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGENT_PROFILE_LIMITS } from "@influence/engine/agent-profile-contract";
 import type { DrizzleDB } from "../db/index.js";
@@ -67,6 +68,7 @@ const CREATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "werewolfStrategyStyle",
   "gender",
   "avatarUrl",
   "fullBodyReferenceUrl",
@@ -85,6 +87,7 @@ const UPDATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "werewolfStrategyStyle",
   "gender",
   "avatarUrl",
   "fullBodyReferenceUrl",
@@ -173,6 +176,7 @@ export interface CreateAgentProfileMutationInput {
   personality: unknown;
   backstory?: unknown;
   strategyStyle?: unknown;
+  werewolfStrategyStyle?: unknown;
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
@@ -191,6 +195,7 @@ export interface UpdateAgentProfileMutationInput {
   personality?: unknown;
   backstory?: unknown;
   strategyStyle?: unknown;
+  werewolfStrategyStyle?: unknown;
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
@@ -267,6 +272,7 @@ export interface AgentSummary {
   publicBiography: string | null;
   personalityPrompt: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle: string | null;
   gender: AgentGender | null;
   avatarUrl: string | null;
   fullBodyReferenceUrl: string | null;
@@ -470,6 +476,8 @@ function prepareAgentProfileCreate(
   const strategyStyle = input.strategyStyle === undefined
     ? null
     : optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  const werewolfStrategyStyle = input.werewolfStrategyStyle === undefined ? null
+    : optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   const personaKey = input.personaKey === undefined || input.personaKey === null
     ? null
     : optionalArchetype(input.personaKey);
@@ -503,6 +511,7 @@ function prepareAgentProfileCreate(
         backstory,
         personality,
         strategyStyle,
+        werewolfStrategyStyle,
         personaKey,
         gender,
         avatarUrl: avatarUrl.value ?? null,
@@ -521,6 +530,7 @@ function prepareAgentProfileCreate(
     backstory,
     personality,
     strategyStyle,
+    werewolfStrategyStyle,
     personaKey,
     gender,
     avatarUrl: avatarUrl.value ?? null,
@@ -647,7 +657,12 @@ export async function updateOwnedAgentProfile(
   const startingDraft = await latestSubmittedProfile(db, startingProfile);
   const prepared = prepareAgentProfileUpdates(context, input, startingDraft.avatarUrl);
   await assertAvailableProfileName(db, prepared.name ?? startingDraft.name, agentId);
-  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared });
+  const savedAssets = await readSavedContentAssets(db, startingDraft);
+  // Explicitly selected images must still be read and validated, even at the same URL.
+  for (const url of [prepared.avatarUrl, prepared.fullBodyReferenceUrl, prepared.portraitCrop?.sourceUrl]) {
+    if (url) delete savedAssets[url];
+  }
+  const contentAssets = await prepareContentAssets({ ...startingDraft, ...prepared }, savedAssets);
   const sourceReviewId = input.sourceReviewId === undefined
     ? undefined
     : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
@@ -676,6 +691,11 @@ export async function updateOwnedAgentProfile(
           agentProfileId: agentId,
           ...(sourceReviewId ? { sourceReviewId } : {}),
         });
+        if (sourceReviewId && learningReview && !learningReview.resolvedAt && (
+          currentReviewIdentity(learningReview.gameKind, locked.existing) !== learningReview.reviewedRevisionId
+          || (learningReview.gameKind === "werewolf" && (locked.existing.werewolfStrategyStyle ?? "") !== (learningReview.reviewedStrategyStyle ?? ""))
+          || (learningReview.gameKind === "werewolf" && (locked.existing.moderationRequired || locked.existing.latestContentRevisionId !== locked.existing.contentRevisionId))
+        )) throw new OwnerLearningResolutionError("review_state_conflict", 409);
         const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
           context: { ...context, contentAssets },
           agentId,
@@ -704,8 +724,11 @@ export async function updateOwnedAgentProfile(
         const resolution = await resolveOwnerLearningReviewForProfileMutation(tx, {
           review: learningReview,
           ...(sourceReviewId ? { sourceReviewId } : {}),
-          analyticalRevisionChanged: mutation.profileRevision.outcome === "created",
-          resultingStrategyStyle: mutation.profile.strategyStyle,
+          analyticalRevisionChanged: learningReview?.gameKind === "werewolf"
+            ? currentReviewIdentity("werewolf", locked.existing) !== currentReviewIdentity("werewolf", mutation.profile)
+              || locked.existing.werewolfStrategyStyle !== mutation.profile.werewolfStrategyStyle
+            : mutation.profileRevision.outcome === "created",
+          resultingStrategyStyle: mutation.profile[reviewStrategyField(learningReview?.gameKind ?? "influence")],
           nowIso: mutation.profile.updatedAt,
         });
         return {
@@ -941,6 +964,9 @@ function prepareAgentProfileUpdates(
   if (input.backstory !== undefined) {
     updates.backstory = optionalStringField(input.backstory, "backstory", MAX_PUBLIC_BIOGRAPHY_LENGTH);
   }
+  if (input.werewolfStrategyStyle !== undefined) {
+    updates.werewolfStrategyStyle = optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  }
   if (input.strategyStyle !== undefined) {
     updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   }
@@ -977,6 +1003,7 @@ function mutableAgentProfileChanged(left: AgentProfileRow, right: AgentProfileRo
     || left.backstory !== right.backstory
     || left.personality !== right.personality
     || left.strategyStyle !== right.strategyStyle
+    || left.werewolfStrategyStyle !== right.werewolfStrategyStyle
     || left.personaKey !== right.personaKey
     || left.gender !== right.gender
     || left.avatarUrl !== right.avatarUrl
@@ -1118,6 +1145,7 @@ export async function createOwnedAgent(
     backstory: publicBiography,
     personality: personalityPrompt,
     strategyStyle,
+    werewolfStrategyStyle: input.werewolfStrategyStyle,
     personaKey: archetype,
     gender: input.gender,
     avatarUrl: avatarUrl.value,
@@ -1162,6 +1190,9 @@ export async function updateOwnedAgent(
   }
   if (input.publicBiography !== undefined) {
     updates.backstory = optionalStringField(input.publicBiography, "publicBiography", MAX_PUBLIC_BIOGRAPHY_LENGTH);
+  }
+  if (input.werewolfStrategyStyle !== undefined) {
+    updates.werewolfStrategyStyle = optionalStringField(input.werewolfStrategyStyle, "werewolfStrategyStyle", MAX_STRATEGY_STYLE_LENGTH);
   }
   if (input.strategyStyle !== undefined) {
     updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
@@ -1210,7 +1241,7 @@ function mapOwnerLearningResolutionError(
     "source_review_conflict",
     error.code === "review_profile_mismatch"
       ? "That learning review belongs to a different agent."
-      : "That learning review has already been resolved.",
+      : "This review cannot accept that edit. Reopen it to check the current strategy and review status.",
     409,
   );
 }
@@ -1403,6 +1434,7 @@ function serializeAgent(
     publicBiography: profile.backstory,
     personalityPrompt: profile.personality,
     strategyStyle: profile.strategyStyle,
+    werewolfStrategyStyle: profile.werewolfStrategyStyle,
     gender: profile.gender,
     avatarUrl: profile.avatarUrl,
     fullBodyReferenceUrl: profile.fullBodyReferenceUrl,

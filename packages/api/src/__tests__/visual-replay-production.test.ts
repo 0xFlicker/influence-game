@@ -105,10 +105,10 @@ test("one selected historical scene queues once; candidates require publication 
   const api = createVisualRoutes(db);
   const version = (await readVisualMedia(db, gameId)).versions[0]!;
   expect((await api.request(`/api/games/${gameId}/visual/artifacts/${version.imageArtifactId}`)).status).toBe(404);
-  expect(await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", sceneId: job.sceneId, expectedVersion: 1, expectedPublication: 0, versionId: job.id })).toMatchObject({ accepted: true });
+  expect(await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", sceneId: job.sceneId!, expectedVersion: 1, expectedPublication: 0, versionId: job.id })).toMatchObject({ accepted: true });
   const viewer = await (await api.request(`/api/games/${gameId}/visual`)).json() as Awaited<ReturnType<typeof readViewerMedia>> & { enabled: boolean; status: string | null };
   expect(viewer).toMatchObject({ enabled: true, status: null }); expect(viewer.scenes).toHaveLength(1);
-  expect(viewer.bindings[4]).toBe(job.sceneId); expect(viewer.bindings[1]).not.toBe(job.sceneId);
+  expect(viewer.bindings[4]).toBe(job.sceneId!); expect(viewer.bindings[1]).not.toBe(job.sceneId!);
   expect((await api.request(`/api/games/${gameId}/visual/artifacts/${version.imageArtifactId}`)).status).toBe(200);
   expect(await acceptedRecords()).toEqual(before); expect(calls).toBe(0);
   // Earlier boundaries can be rendered after later ones, without rewriting gameplay.
@@ -118,9 +118,9 @@ test("one selected historical scene queues once; candidates require publication 
 test("partial backfills never carry a voted-off player into a later Lobby", async () => {
   const earlier = (await readReplayVisualProduction(db, gameId)).scenes[0]!;
   await render(earlier); const job = await complete();
-  await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", sceneId: job.sceneId, expectedVersion: 1, expectedPublication: 0, versionId: job.id });
+  await controlVisualMedia(db, gameId, "operator", { action: "publish", requestId: "publish", sceneId: job.sceneId!, expectedVersion: 1, expectedPublication: 0, versionId: job.id });
   const viewer = await readViewerMedia(db, gameId);
-  expect(viewer.bindings[1]).toBe(job.sceneId); expect(viewer.bindings[2]).toBe(job.sceneId); expect(viewer.bindings[4]).toBeUndefined();
+  expect(viewer.bindings[1]).toBe(job.sceneId!); expect(viewer.bindings[2]).toBe(job.sceneId!); expect(viewer.bindings[4]).toBeUndefined();
 });
 
 test("stale previews reject before writing and request IDs cannot be reused for another preview", async () => {
@@ -192,4 +192,16 @@ test("Production refuses unfinished games and caller-authored scene fields", asy
   expect((await app.request(root, { headers })).status).toBe(409);
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: scene.key, previewHash: scene.previewHash, requestId: "running" }) })).status).toBe(409);
   expect(await db.select().from(schema.visualScenes)).toHaveLength(0);
+});
+
+test("regeneration acknowledgement is an exact bounded list and cannot be supplied to other actions", async () => {
+  const headers = await operator("producer"), app = createVisualReplayProductionRoutes(db);
+  const url = `/api/admin/production/games/${gameId}/visual/media`;
+  for (const ids of [null, "attempt", [1], [""], ["same", "same"], Array.from({length: 101}, (_, i) => String(i))]) {
+    const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "regenerate", acknowledgeUncertainAttempts: ids})});
+    expect(result.status).toBe(400);
+  }
+  const result = await app.request(url, {method: "POST", headers, body: JSON.stringify({requestId: crypto.randomUUID(), sceneId: "scene", expectedVersion: 0, action: "continue", acknowledgeUncertainAttempts: []})});
+  expect(result.status).toBe(400);
+  expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
 });

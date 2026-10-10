@@ -131,6 +131,101 @@ test.describe("format-aware game viewer", () => {
     if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
   });
 
+  test("captured thinking isolates the speaker before speech on the shared clock", async ({page}) => {
+    const slug = "thinking-presentation-fixture";
+    const scenario = createFormatKernelViewerScenario("two_names_declined");
+    const fixture = await installDeterministicFormatGame(page, {slug, scenarioId:"two_names_declined", status:"in_progress", initialDecisionCount:0});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect.poll(() => fixture.sockets.length).toBe(1);
+    fixture.sockets[0]!.send(JSON.stringify({type:"message", entry:{
+      entrySequence:1, round:0, phase:"INTRODUCTION", from:scenario.roster[0]!.id,
+      scope:"public", text:"I want to hear your explanation before deciding where I stand.",
+      thinking:"One precise question may reveal whether their story holds together.", timestamp:Date.now(),
+    }}));
+    await expect(page.locator('[data-solo-image] blockquote').locator('..')).toHaveCSS("opacity", "1");
+    await page.getByRole("button", {name:/Pause/}).filter({visible:true}).click();
+    await page.getByRole("button", {name:"Player settings", exact:true}).click();
+    const settings = page.getByRole("dialog", {name:"Player settings"});
+    await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
+    await page.getByLabel("Show thinking", { exact: true }).check();
+    await expect(page.getByLabel("Thinking order", {exact:true})).toHaveCount(0);
+    await page.getByRole("button",{name:"Close settings",exact:true}).click();
+    await playbackKey(page,"ArrowRight");
+    const thought = page.locator('[data-in-scene-thinking]');
+    await expect(thought).toHaveCSS("opacity","1");
+    await expect(thought).toContainText("One precise question");
+    await expect(page.locator('[data-speech-bubble]')).toHaveCount(0);
+    const focused = await page.locator('[data-thinking-camera]').getAttribute('style');
+    await page.waitForTimeout(150);
+    expect(await page.locator('[data-thinking-camera]').getAttribute('style')).toBe(focused);
+    await page.screenshot({path:"/tmp/influence-thinking-focus.png"});
+    await page.setViewportSize({width:390,height:844});
+    await expect(thought).toContainText("One precise question");
+    await expect.poll(() => page.evaluate(() => {
+      const box=document.querySelector('[data-in-scene-thinking]')!.getBoundingClientRect();
+      const stage=document.querySelector('[data-solo-image]')!.getBoundingClientRect();
+      return box.left>=stage.left && box.right<=stage.right && box.bottom<=stage.bottom;
+    })).toBe(true);
+    await page.screenshot({path:"/tmp/influence-mobile-thinking.png"});
+    await playbackKey(page,"ArrowRight");
+    await expect(thought).toHaveCount(0);
+    await expect(page.locator('[data-thinking-camera]')).toHaveCSS('transform','matrix(1, 0, 0, 1, 0, 0)');
+    await playbackKey(page,"ArrowRight");
+    await expect(page.locator('[data-speech-bubble]')).toHaveCSS("opacity","1");
+    await expect(thought).toHaveCount(0);
+  });
+
+  for (const status of ["completed", "in_progress"] as const) test(`shared Influence moment links open their canonical action and preserve playback intent (${status})`, async ({ page }) => {
+    const slug = "shared-action-fixture";
+    await installDeterministicFormatGame(page, { slug, scenarioId: "save_or_eliminate_clear", status });
+    await page.goto(viewerUrl(`/games/${slug}/replay/16`));
+    await pauseAutoplay(page, "Pause replay");
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async (url: string) => { document.documentElement.dataset.copiedMoment = url; },
+      } });
+    });
+    await page.getByRole("button", { name: "Share this moment", exact: true }).click();
+    await expect(page.getByRole("status")).toContainText("Share link copied.");
+    const href = await page.evaluate(() => document.documentElement.dataset.copiedMoment);
+    expect(href).toBe(viewerUrl(`/games/${slug}/replay/16`));
+    await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
+    const position = await page.getByRole("slider", { name: "Replay position", exact: true }).inputValue();
+    expect(Number(position)).toBeGreaterThan(1);
+    await page.goto(href!);
+    await pauseAutoplay(page, "Pause replay");
+    await expect(page.getByRole("slider", { name: "Replay position", exact: true })).toHaveValue(position);
+    await page.getByRole("button", { name: "Play replay", exact: true }).click();
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Share this moment", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
+  });
+
+  test("content-fitted bubbles keep the same frame across all speech pages", async ({page}) => {
+    await page.setViewportSize({width:1600,height:1000});
+    const slug="bubble-pages-fixture", scenario=createFormatKernelViewerScenario("two_names_declined");
+    const fixture=await installDeterministicFormatGame(page,{slug,scenarioId:"two_names_declined",status:"in_progress",initialDecisionCount:0});
+    await page.goto(viewerUrl(`/games/${slug}/replay`));
+    await expect.poll(()=>fixture.sockets.length).toBe(1);
+    fixture.sockets[0]!.send(JSON.stringify({type:"message",entry:{entrySequence:1,round:0,phase:"INTRODUCTION",from:scenario.roster[0]!.id,
+      scope:"public",text:"You changed your vote before anyone answered my question. Explain what convinced you, and who you trust now. ".repeat(15),timestamp:Date.now()}}));
+    const bubble=page.locator('[data-speech-bubble]');
+    await expect(bubble).toHaveCSS("opacity","1");
+    await playbackKey(page,"Space");
+    const first=await bubble.boundingBox();
+    const pageLabel=await bubble.locator('[aria-label^="Page "]').getAttribute("aria-label");
+    expect(pageLabel).toMatch(/Page 1 of /);
+    await page.screenshot({path:"/tmp/bubble-fit-page-1.png"});
+    await playbackKey(page,"4");await playbackKey(page,"Space");
+    await expect(bubble.locator('[aria-label^="Page "]')).not.toHaveAttribute("aria-label",pageLabel!);
+    await playbackKey(page,"Space");
+    expect(await bubble.boundingBox()).toEqual(first);
+    await page.screenshot({path:"/tmp/bubble-fit-page-2.png"});
+  });
+
   test("fullscreen portrait player preserves speech through fallback, rotation and exit", async ({ page }) => {
     const slug = "fullscreen-portrait-fixture";
     await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
@@ -151,6 +246,10 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Enter fullscreen" }).click();
     const player = page.locator('[data-player-fullscreen="true"]');
     await expect(player).toBeVisible();
+    await player.getByRole("button",{name:"Player settings",exact:true}).click();
+    const settings = player.getByRole("dialog",{name:"Player settings"});
+    await expect(settings.getByText("Keyboard shortcuts")).toBeVisible();
+    await settings.getByRole("button",{name:"Close settings",exact:true}).click();
     await expect(player.getByLabel(/Page 1 of/)).toBeVisible();
     const before = await player.locator('[data-solo-image]').getAttribute('aria-label');
     // Fullscreen resize may still repaginate text while retaining the reading position.
@@ -165,7 +264,7 @@ test.describe("format-aware game viewer", () => {
       return bounds.top >= 0 && bounds.bottom <= window.innerHeight
         && element.scrollHeight <= element.clientHeight + 1;
     })).toBe(true);
-    await player.getByRole("button", { name: /Play/ }).filter({ visible: true }).click();
+    await player.getByRole("button", { name: /Play\b/ }).filter({ visible: true }).click();
     await player.getByRole("img").click();
     const controls = player.locator('[data-replay-controls]');
     await expect(controls).toHaveClass(/opacity-0/);
@@ -179,7 +278,7 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Exit fullscreen" }).press("Escape");
     await expect(player).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Enter fullscreen" })).toBeFocused();
-    await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
   });
 
@@ -223,9 +322,9 @@ test.describe("format-aware game viewer", () => {
     await page.clock.pauseAt(new Date(Date.now() + 1000));
     const next = createFormatKernelViewerScenario("two_names_declined").roster[1]!;
     fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "LOBBY", from: next.id, scope: "public", text: "Now the neighboring panel comes into view.", visualScene: { id: "room", roomId: "lobby" }, timestamp: Date.now() } }));
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     await page.clock.runFor(200);
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     await page.clock.runFor(500);
     const sceneLayers = room.locator('img[alt="Current conversation scene"]');
     await expect(sceneLayers).toHaveCount(2);
@@ -404,7 +503,7 @@ test.describe("format-aware game viewer", () => {
       await expect(bubble).toHaveCSS("opacity", "1");
       await page.clock.runFor(10_000);
       await expect(bubble).toContainText("The second accepted line.");
-      await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     });
   }
 
@@ -433,7 +532,7 @@ test.describe("format-aware game viewer", () => {
     await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
     await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
     await expect(speech).toContainText("The same speech stays on screen.");
-    await expect(page.getByRole("button", { name: /Play/ }).filter({ visible: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Play\b/ }).filter({ visible: true })).toBeVisible();
     await page.getByRole("button", { name: "Exit fullscreen", exact: true }).click();
     await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
     await expect(speech).toContainText("The same speech stays on screen.");
@@ -478,7 +577,7 @@ test.describe("format-aware game viewer", () => {
     await page.clock.runFor(300);
     await expect(solo.locator("blockquote")).toContainText(target.name);
     await expect(solo.locator("blockquote")).not.toContainText("Private thinking");
-    await page.getByRole("button", { name: "Go to replay start", exact: true }).click();
+    await restartReplay(page);
     await expect(solo.locator("blockquote")).toHaveCount(0);
     await solo.click();
     await page.clock.runFor(300);
@@ -487,7 +586,7 @@ test.describe("format-aware game viewer", () => {
   });
 
   for (const confirmedHead of [false, true]) {
-    test(`full-body solo speech and House summary fit the fullscreen midline layout (${confirmedHead ? "confirmed head" : "legacy fallback"})`, async ({ page }, testInfo) => {
+    test(`full-body solo speech and House summary stay legible in fullscreen (${confirmedHead ? "confirmed head" : "legacy fallback"})`, async ({ page }, testInfo) => {
       // Chromium cannot resize its native fullscreen window. Exercise rotation
       // in the viewport fallback; native entry/exit is covered separately.
       await page.addInitScript(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
@@ -506,28 +605,31 @@ test.describe("format-aware game viewer", () => {
       await expect(solo).toBeVisible();
       await expect(solo.getByRole("img")).toHaveAttribute("src", /\/solo-fixture\.svg$/);
       const enter = page.getByRole("button", { name: "Enter fullscreen", exact: true });
-      const icon = await enter.locator("svg").boundingBox();
-      expect(icon!.width).toBeGreaterThanOrEqual(32);
+      const fullscreenControl = await enter.boundingBox();
+      expect(fullscreenControl!.width).toBeGreaterThanOrEqual(40);
+      expect(fullscreenControl!.height).toBeGreaterThanOrEqual(40);
       await enter.click();
       await expect(solo.locator('blockquote').locator('..')).toHaveCSS("opacity", "1");
       await page.getByRole("button", { name: /Pause/ }).filter({ visible: true }).click();
       for (const size of [{ width: 1280, height: 800 }, { width: 3440, height: 1440 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
         await page.setViewportSize(size);
         await expect(solo.getByRole("img")).toHaveCSS("object-fit", "contain");
-        await expect.poll(async () => {
-          const image = await solo.getByRole("img").boundingBox();
-          return Math.round(image!.height);
-        }).toBe(size.height);
-        const image = (await solo.getByRole("img").boundingBox())!;
-        expect(image.y).toBe(0);
-        expect(image.width).toBeCloseTo(size.height * 2 / 3, 0);
-        expect(image.x).toBeCloseTo((size.width - image.width) / 2, 0);
         const bubble = solo.locator("blockquote");
         await expect(bubble).toContainText("I intend to win your trust.");
+        // Character art keeps its aspect ratio and makes room for speech;
+        // it no longer fills the viewport behind the text.
+        await expect.poll(async () => {
+          const image = (await solo.getByRole("img").boundingBox())!;
+          const text = (await bubble.boundingBox())!;
+          return image.width > 0 && image.height > 0
+            && Math.abs(image.width / image.height - 2 / 3) < .01
+            && image.x >= 0 && image.y >= 0
+            && image.x + image.width <= size.width + 1 && image.y + image.height <= size.height
+            && (image.x + image.width <= text.x + 1 || image.y + image.height <= text.y + 1);
+        }).toBe(true);
         const bounds = await bubble.evaluate(el => ({ top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom, viewport: innerHeight, scroll: el.firstElementChild!.scrollHeight, client: el.firstElementChild!.clientHeight }));
         expect(bounds.top).toBeGreaterThanOrEqual(0);
-        expect(bounds.top).toBeGreaterThan(image.y + image.height * (confirmedHead ? 0.23 : 0.22));
-        expect(bounds.bottom).toBeLessThan(bounds.viewport - 140);
+        expect(bounds.bottom).toBeLessThan(bounds.viewport);
         expect(bounds.scroll).toBeLessThanOrEqual(bounds.client + 1);
         const backdrop = solo.locator("[data-stage-backdrop]");
         await expect(backdrop.locator("img")).toHaveCount(2);
@@ -537,8 +639,8 @@ test.describe("format-aware game viewer", () => {
         await solo.screenshot({ path: testInfo.outputPath(`solo-edges-${size.width}.png`) });
       }
       fixture.sockets[0]!.send(JSON.stringify({ type: "message", entry: { entrySequence: 2, round: 0, phase: "INTRODUCTION", from: null, scope: "system", dialogueKind: "house_summary", text: "The House has heard their promises. Now the game begins.", timestamp: Date.now() } }));
-      await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeEnabled();
-      await page.keyboard.press("ArrowRight");
+      await expect(page.getByRole("button", { name: "Next scene", exact: true })).toBeEnabled();
+      await playbackKey(page, "ArrowRight");
       const house = page.getByRole("region", { name: "House summary" });
       await advanceUntilVisible(page, house, "House summary after hiding solo speech");
       const halves = await house.evaluate(el => {
@@ -568,39 +670,38 @@ test.describe("format-aware game viewer", () => {
       await pauseAutoplay(page, "⏸ Pause");
       await page.clock.pauseAt(new Date(Date.now() + 1000));
       const first = page.getByRole("region", { name: "Ballot: Atlas", exact: true });
-      for (let step = 0; step < 10 && !await first.isVisible(); step++) await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+      for (let step = 0; step < 10 && !await first.isVisible(); step++) await page.getByRole("button", { name: "Next scene", exact: true }).click();
       await expect(first).toBeVisible();
       await page.getByRole("button", { name: "Enter fullscreen", exact: true }).click();
       const ledger = page.locator("[data-vote-ledger]");
-      await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(0);
+      // Scene and scrub navigation land on the readable ballot, including its receipt.
+      await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(1);
       await expect(page.locator('[data-format-cue="format_aggregate"]')).toHaveCount(0);
-      await page.getByRole("button", { name: "Next dialogue step", exact: true }).filter({ visible: true }).click();
-      await page.clock.runFor(300);
       await expect(first.getByRole("blockquote")).toHaveText("Lyra");
       await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(1);
       await expect(ledger.locator('[data-running-total="lyra"]')).toHaveText("1");
       await expect(ledger).not.toContainText("Echo");
-      await page.getByRole("button", { name: "▶ Play", exact: true }).click();
-      await page.clock.runFor(soloPresentationDurationMs("Lyra") - 1300 - 375);
-      await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
+      await page.getByRole("button", { name: "Play replay", exact: true }).click();
+      await page.clock.runFor(soloPresentationDurationMs("Lyra") - 1250 - 375);
+      await page.getByRole("button", { name: "Pause replay", exact: true }).click();
       const collection = page.locator("[data-ballot-collection]");
       await expect(collection).toBeVisible();
       const held = await collection.getAttribute("style");
       await page.clock.runFor(1200);
       await expect(collection).toHaveAttribute("style", held!);
       await page.screenshot({ path: testInfo.outputPath("vote-portrait-collection.png") });
-      await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+      await page.getByRole("button", { name: "Next scene", exact: true }).click();
       await expect(page.locator('[data-format-cue="format_aggregate"]')).toBeVisible();
       await page.getByRole("button", { name: "Previous room or scene", exact: true }).filter({ visible: true }).click();
       await expect(first).toBeVisible();
-      await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(0);
+      await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(1);
       await expect(collection).toHaveCount(0);
       for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
         await page.setViewportSize(viewport);
         await expect(ledger).toBeInViewport();
-        await page.getByRole("button", { name: "Next dialogue step", exact: true }).filter({ visible: true }).click();
+        await playbackKey(page, "ArrowRight");
         await page.clock.runFor(300);
-        await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(1);
+        await expect(ledger.locator("[data-ledger-voter]")).toHaveCount(2);
         await assertLocatorInsideViewport(ledger, viewport.width);
         await page.getByRole("button", { name: /^Next (?:scene|▶▶)$/ }).filter({ visible: true }).click();
         await page.getByRole("button", { name: "Previous room or scene", exact: true }).filter({ visible: true }).click();
@@ -633,14 +734,15 @@ test.describe("format-aware game viewer", () => {
       // A mounted bubble can still be fading in; finish revealing before hiding it.
       await page.clock.runFor(300);
       await expect(page.getByRole("region", { name: `Ballot: ${voter.name}` }).locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
-      await page.keyboard.press("ArrowRight");
+      await playbackKey(page, "ArrowRight");
       await page.clock.runFor(300);
-      await page.keyboard.press("ArrowRight");
-      await page.clock.runFor(1000);
     }
+    await expect(page.locator("[data-vote-complete]")).toContainText("All votes are in");
+    await expect(page.locator("[data-ledger-voter]")).toHaveCount(voters.length);
+    await playbackKey(page, "ArrowRight");
     await expect(page.getByText("Rex wins The House.", { exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Next ▶▶", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Next scene", exact: true })).toBeDisabled();
   });
 
   for (const mobile of [false, true]) {
@@ -672,7 +774,7 @@ test.describe("format-aware game viewer", () => {
       await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
       await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toBeVisible();
       await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
-      const next = page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true });
+      const next = page.getByRole("button", { name: "Next scene", exact: true });
       await next.click();
       // Scene navigation skips the jury roll call; dialogue steps retain each vote.
       const tableau = page.getByRole("region", { name: "Final standings" });
@@ -689,11 +791,13 @@ test.describe("format-aware game viewer", () => {
       await expect(tableau.locator('[data-placement="3"]')).toContainText("Jury");
       await expect(tableau.locator('[data-placement="5"]')).toContainText("Sage");
       await expect(tableau.locator('[data-placement="6"]')).toContainText("Nova");
-      await page.keyboard.press("ArrowLeft");
+      // Global playback shortcuts must not steal keys from focused controls.
+      await next.evaluate(element => (element as HTMLElement).blur());
+      await playbackKey(page, "ArrowLeft");
       await expect(tableau).toHaveCount(0);
       await next.click();
       await next.click(); // Closing narration must not replace the result with fading text.
-      await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
+      await page.getByRole("button", { name: "Play replay", exact: true }).click();
       await page.clock.runFor(30_000);
       await expect(tableau).toBeVisible();
       await expect(tableau).toHaveCSS("opacity", "1");
@@ -735,18 +839,17 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await expect(page.getByRole("region", { name: "Ballot: Atlas" }).locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
     await pauseAutoplay(page, "⏸ Pause");
-    const start = page.getByRole("button", { name: "Go to replay start", exact: true });
-    if (await start.isEnabled()) await start.click();
-    const next = () => page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    await restartReplay(page);
+    const next = () => page.getByRole("button", { name: "Next scene", exact: true }).click();
     let revealed = 0;
     for (const [voter, target] of [["Atlas", "Lyra"], ["Lyra", "Atlas"], ["Echo", "Atlas"], ["Rex", "Lyra"]]) {
       await assertSoloBallot(page, voter!, target!);
       await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(++revealed);
-      await page.keyboard.press("ArrowRight");
+      await playbackKey(page, "ArrowRight");
       await page.clock.runFor(300);
-      await page.keyboard.press("ArrowRight");
-      await page.clock.runFor(1000);
     }
+    await expect(page.locator("[data-vote-complete]")).toContainText("All votes are in");
+    await playbackKey(page, "ArrowRight");
     const tie = page.locator('[data-format-cue="empowered_tie"]');
     await expect(tie).toContainText("A tie for Empower");
     await expect(tie).toContainText("Atlas · Lyra are tied");
@@ -769,10 +872,8 @@ test.describe("format-aware game viewer", () => {
     await assertSoloBallot(page, "Echo", "Lyra");
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(1);
     await expect(page.getByRole("region", { name: "Ballot: Echo" })).toContainText("Revote to empower");
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     await page.clock.runFor(300);
-    await page.keyboard.press("ArrowRight");
-    await page.clock.runFor(1000);
     await assertSoloBallot(page, "Rex", "Lyra");
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(2);
     await next();
@@ -785,25 +886,27 @@ test.describe("format-aware game viewer", () => {
     await page.screenshot({ path: testInfo.outputPath("empower-revote-result.png") });
   });
 
-  test("Empowered deciding vote gets a full-body speech beat before elimination", async ({ page }, testInfo) => {
+  test("Empowered choice shows the pool and marks the selected nominee before elimination", async ({ page }, testInfo) => {
     const slug = "deciding-vote-beat";
     await installDeterministicFormatGame(page, { slug, scenarioId: "majority_elimination_tie", status: "completed" });
     await page.route(`**/api/games/${slug}/visual`, route => route.fulfill({ json: { enabled: false, status: null, portraits: {}, scenes: [], fullBodies: { atlas: "/deciding-body.svg" } } }));
     await page.route("**/deciding-body.svg", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="600"><rect width="400" height="600" fill="#393532"/><circle cx="200" cy="90" r="40" fill="#bd9d70"/></svg>' }));
     await page.goto(viewerUrl(`/games/${slug}/replay`));
     await pauseAutoplay(page, "⏸ Pause");
-    const next = () => page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
-    const tie = page.locator('[data-format-cue="format_tiebreak"]');
-    for (let i = 0; i < 30 && !await tie.count(); i++) await next();
-    await expect(tie).toContainText("Atlas must break the tie");
-    await expect(tie).toContainText("Tied: Lyra · Echo");
+    const next = () => page.getByRole("button", { name: "Next scene", exact: true }).click();
+    const pool = page.locator('[data-nominee-selection]');
+    for (let i = 0; i < 30 && !await pool.count(); i++) await next();
+    await expect(pool).toContainText("Atlas chooses who leaves");
+    await expect(page.getByRole("button", {name:"Inspect Echo",exact:true})).toContainText("In");
+    await expect(pool.locator('[data-nominee]')).toHaveCount(2);
+    await expect(pool.locator('[data-selected="true"]')).toHaveCount(0);
+    await expect(pool.locator('img[alt="Atlas"]')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("nominee-pool.png") });
     await next();
-    await assertSoloBallot(page, "Atlas", "Echo");
-    const solo = page.locator('[data-solo-image="full-body"]');
-    await expect(solo).toBeVisible();
-    await expect(solo.locator("blockquote").locator("..")).toHaveCSS("opacity", "1");
-    await expect(page.getByRole("region", { name: "Ballot: Atlas" })).toContainText("Deciding vote · Vote to eliminate");
-    await page.screenshot({ path: testInfo.outputPath("deciding-vote.png") });
+    await expect(pool.locator('[data-nominee="echo"]')).toHaveAttribute("data-eliminated", "true");
+    await expect(pool.locator('[data-nominee="lyra"]')).toHaveAttribute("data-eliminated", "false");
+    await page.setViewportSize({width:390,height:844});
+    await page.screenshot({ path: testInfo.outputPath("deciding-vote-mobile.png") });
     await next();
     await expect(page.locator('[data-format-cue="format_elimination"]')).toContainText("Echo is eliminated");
   });
@@ -853,7 +956,7 @@ test.describe("format-aware game viewer", () => {
     await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
     const cue = page.locator("[data-format-cue]").first();
     await expect(cue).toBeVisible();
-    await page.getByRole("button", { name: "⏸ Pause", exact: true }).click();
+    await page.getByRole("button", { name: "Pause replay", exact: true }).click();
     const pausedKind = await cue.getAttribute("data-format-cue");
     const catchUp = page.waitForResponse(response => {
       const url = new URL(response.url());
@@ -864,10 +967,10 @@ test.describe("format-aware game viewer", () => {
     fixture.sockets.at(-1)!.close({ code: 1001, reason: "test reconnect" });
     await expect.poll(() => fixture.sockets.length).toBe(2);
     await (await catchUp).finished();
-    await expect(page.getByRole("button", { name: "▶ Play", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Play replay", exact: true })).toBeVisible();
     await expect(cue).toHaveAttribute("data-format-cue", pausedKind!);
-    await page.getByRole("button", { name: "▶ Play", exact: true }).click();
-    await expect(page.getByRole("button", { name: "⏸ Pause", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Play replay", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Pause replay", exact: true })).toBeVisible();
   });
 
   for (const frameResponseDelayMs of [0, 500]) {
@@ -907,7 +1010,7 @@ test.describe("format-aware game viewer", () => {
     await expect.poll(() => reads).toBeGreaterThan(0);
     for (let i = 0; i < 5; i++) {
       if (await page.getByRole("button", { name: "Inspect Atlas", exact: true }).textContent().then(text => text?.includes("Out"))) break;
-      await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+      await page.getByRole("button", { name: "Next scene", exact: true }).click();
     }
     await expect(page.getByRole("button", { name: "Inspect Atlas", exact: true })).toContainText("Out");
     await expect(page.getByRole("button", { name: "Inspect Lyra", exact: true })).toContainText("Out");
@@ -924,7 +1027,7 @@ test.describe("format-aware game viewer", () => {
     const seek = async (kind: string) => {
       for (let i = 0; i < 20; i++) {
         if (await page.locator(`[data-format-cue="${kind}"]`).count()) return;
-        await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+        await page.getByRole("button", { name: "Next scene", exact: true }).click();
       }
       throw new Error(`Missing format stage ${kind}`);
     };
@@ -952,7 +1055,7 @@ test.describe("format-aware game viewer", () => {
     await pauseAutoplay(page, "⏸ Pause");
     for (let i = 0; i < 20; i++) {
       if (await page.locator('[data-format-cue="safety_bounce_started"]').count()) break;
-      await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+      await page.getByRole("button", { name: "Next scene", exact: true }).click();
     }
     const scenario = createFormatKernelViewerScenario("safety_bounce_tie");
     const start = scenario.decisions.find((event) => event.type === "format.safety_bounce_started");
@@ -961,7 +1064,7 @@ test.describe("format-aware game viewer", () => {
     const card = (id: string) => page.getByRole("button", { name: `Inspect ${scenario.roster.find((player) => player.id === id)!.name}`, exact: true });
     await expect(card(start.payload.starterId)).toContainText("Safe");
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
-    await page.getByRole("button", { name: "Next ▶▶", exact: true }).click();
+    await page.getByRole("button", { name: "Next scene", exact: true }).click();
     await expect(card(pointer.payload.targetId)).toContainText("Vulnerable");
     await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
     await expect(card(pointer.payload.targetId)).not.toContainText("Vulnerable");
@@ -978,9 +1081,8 @@ test.describe("format-aware game viewer", () => {
         await page.goto(viewerUrl(`/games/${slug}/replay`));
         // The local Next dev badge otherwise covers the mobile playback dock.
         await page.addStyleTag({ content: "nextjs-portal { display: none; }" });
-        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
-        const next = async () => page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true }).click();
-        const nextDialogueStep = async () => page.getByRole("button", { name: "Next dialogue step", exact: true }).click();
+        await pauseAutoplay(page, "Pause replay");
+        const next = async () => page.getByRole("button", { name: "Next scene", exact: true }).click();
         const seek = async (kind: string) => {
           const stage = page.locator(`[data-format-cue="${kind}"]`);
           for (let i = 0; i < 30; i++) {
@@ -995,11 +1097,11 @@ test.describe("format-aware game viewer", () => {
         await expect(initial).toContainText("Atlas nominates:");
         // Re-enter while playing: exercise animation completion, then seek back while paused.
         await page.getByRole("button", { name: "Previous room or scene", exact: true }).click();
-        await page.getByRole("button", { name: mobile ? "Play replay" : "▶ Play", exact: true }).click();
+        await page.getByRole("button", { name: "Play replay", exact: true }).click();
         await expect(initial).toBeVisible({ timeout: 8_000 });
         await expect(initial.locator('[data-nominee-id="lyra"]')).toHaveCSS("opacity", "1");
         await expect(initial.locator('[data-nominee-id="echo"]')).toHaveCSS("opacity", "1");
-        await pauseAutoplay(page, mobile ? "Pause replay" : "⏸ Pause");
+        await pauseAutoplay(page, "Pause replay");
         await page.screenshot({ path: testInfo.outputPath("nominees.png") });
         if (scenarioId === "two_names_used_tie") {
           const removed = await seek("two_names_override_removed");
@@ -1017,7 +1119,7 @@ test.describe("format-aware game viewer", () => {
         for (let i = 0; i < 30 && !await plea.count(); i++) await next();
         const quote = plea.getByRole("blockquote");
         // A paused scene seek leaves its portrait clear until speech is requested.
-        await page.keyboard.press("ArrowRight");
+        await playbackKey(page, "ArrowRight");
         await expect(quote).toContainText("Keep me because the case against me");
         // Image sizing and measured pagination settle in separate observers.
         // Assert their combined result instead of sampling an intermediate page.
@@ -1027,37 +1129,35 @@ test.describe("format-aware game viewer", () => {
           return rect.bottom <= stage.bottom && rect.top >= stage.top
             && rect.height > 40 && element.scrollHeight <= element.clientHeight + 1;
         })).toBe(true);
-        await expect(page.getByRole("button", { name: mobile ? "Next scene" : "Next ▶▶", exact: true })).toBeInViewport();
+        await expect(page.getByRole("button", { name: "Next scene", exact: true })).toBeInViewport();
         await page.screenshot({ path: testInfo.outputPath("long-plea.png") });
-        const sealing = await seek("two_names_ballots_sealing");
-        await expect(sealing.locator("[data-nominee-id]")).toHaveCount(2);
-        await expect(sealing).not.toContainText("Exit votes");
-        await expect(sealing.getByLabel("1 of 2 ballots sealed", { exact: true })).toBeVisible();
-        await next();
-        await expect(sealing.getByLabel("2 of 2 ballots sealed", { exact: true })).toBeVisible();
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(0);
         const first = scenarioId === "two_names_used_tie" ? "Rex" : "Lyra";
-        await page.clock.pauseAt(new Date(Date.now() + 1000));
-        await nextDialogueStep();
         const firstBallot = page.getByRole("region", { name: `Ballot: ${scenarioId === "two_names_used_tie" ? "Lyra" : "Rex"}`, exact: true });
+        // Two pleas lead straight to the shared ballot presentation, with no
+        // synthetic collection card between the plea and the first receipt.
+        await next();
+        await expect(page.locator('[data-format-cue="two_names_plea"]')).toContainText("No plea was received");
+        await next();
         await expect(firstBallot).toBeVisible();
-        // Manual speech steps reveal, hide, then leave the portrait. Wait for
-        // each fade before another keypress instead of racing through ballots.
-        await page.keyboard.press("ArrowRight");
-        await page.clock.runFor(300);
-        await expect(firstBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
+        await expect(page.getByText(/Ballots sealed/)).toHaveCount(0);
         await expect(firstBallot.getByRole("blockquote")).toHaveText(first);
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
-        await page.keyboard.press("ArrowRight");
-        await page.clock.runFor(300);
-        await expect(firstBallot.getByRole("blockquote")).toHaveCount(0);
-        await page.keyboard.press("ArrowRight");
-        await page.clock.runFor(2100);
+        if (mobile) {
+          await expect.poll(() => firstBallot.evaluate(element => {
+            const stage = element.getBoundingClientRect();
+            const bubble = element.querySelector('[data-speech-bubble]')!.getBoundingClientRect();
+            const tail = element.querySelector('[data-speech-bubble] > [aria-hidden]')!.getBoundingClientRect();
+            return Math.abs(bubble.left + bubble.width / 2 - stage.left - stage.width / 2) < 1
+              && tail.left >= bubble.left && tail.right <= bubble.right;
+          })).toBe(true);
+          await page.screenshot({ path: testInfo.outputPath("centered-ballot.png") });
+        }
+        await playbackKey(page, "ArrowRight");
         const secondBallot = page.getByRole("region", { name: "Ballot: Nova", exact: true });
         await expect(secondBallot).toBeVisible();
-        await expect(secondBallot.locator("[data-speech-bubble]")).toHaveCSS("opacity", "1");
         await expect(secondBallot.getByRole("blockquote")).toHaveText(scenarioId === "two_names_used_tie" ? "Echo" : "Lyra");
-        await expect(page.getByRole("region", { name: /^Ballot: / })).toHaveCount(1);
+        await playbackKey(page, "ArrowRight");
+        await expect(page.locator("[data-vote-complete]")).toBeVisible();
+        await expect(page.locator("[data-votes-revealed]")).toHaveText("2 / 2 votes shown");
         const result = await seek("format_aggregate");
         await expect(result).toContainText(scenarioId === "two_names_used_tie" ? "Tie · Empowered decides" : "Result locked");
         await expect(result.getByLabel(`${first}: ${scenarioId === "two_names_used_tie" ? "1 exit vote" : "2 exit votes"}`, { exact: true })).toBeVisible();
@@ -1287,13 +1387,13 @@ test.describe("format-aware game viewer", () => {
       await expect(lobby).toHaveAttribute("data-format-cue", "safety_bounce_started");
       await expect(lobby.locator("[data-scene-player]")).toHaveCount(4);
       await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(0);
-      await page.keyboard.press("ArrowRight");
+      await playbackKey(page, "ArrowRight");
       await page.clock.runFor(500);
       await expect(lobby.locator('[data-chain-arrow="atlas:lyra"]')).toHaveAttribute("data-classification", "vulnerable");
       await expect(lobby.locator('[data-scene-player="lyra"]')).toHaveAttribute("data-classification", "vulnerable");
       await expect(lobby.locator('[data-scene-player="echo"]')).toHaveAttribute("data-classification", "unclassified");
       await expect(lobby.locator('[data-scene-player="atlas"]')).toHaveAttribute("data-chooser", "true");
-      await page.keyboard.press("ArrowRight");
+      await playbackKey(page, "ArrowRight");
       await page.clock.runFor(500);
       await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(2);
       await expect(lobby.locator('[data-chain-arrow="lyra:echo"]')).toHaveAttribute("data-classification", "safe");
@@ -1320,7 +1420,7 @@ test.describe("format-aware game viewer", () => {
         await page.getByRole("button", { name: "Exit fullscreen" }).click();
         await page.setViewportSize({ width: 390, height: 844 });
       }
-      await page.keyboard.press("ArrowLeft");
+      await playbackKey(page, "ArrowLeft");
       await page.clock.runFor(300);
       await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(1);
       await expect(lobby.locator('[data-scene-player="echo"]')).toHaveAttribute("data-classification", "unclassified");
@@ -1328,7 +1428,10 @@ test.describe("format-aware game viewer", () => {
       await expect(lobby).toHaveAttribute("data-format-cue", "format_aggregate");
       await expect(lobby.locator("[data-chain-arrow]")).toHaveCount(3);
       await expect(lobby.locator('[aria-label="2 votes"]')).toHaveCount(2);
-      await advanceUntilVisible(page, lobby.filter({ hasText: "Atlas breaks the tie" }), "Safety Bounce lobby tie");
+      const nominees = page.locator("[data-nominee-selection]");
+      await advanceUntilVisible(page, nominees, "Safety Bounce nominee pool");
+      await expect(nominees).toContainText("Atlas chooses who leaves");
+      await expect(nominees.locator("[data-nominee]")).toHaveCount(2);
       await advanceUntilVisible(page, page.locator('[data-format-cue="format_elimination"]'), "existing elimination presentation");
       await expect(lobby).toHaveCount(0);
     });
@@ -1388,26 +1491,30 @@ test.describe("format-aware game viewer", () => {
     const desktopBoard = await assertBoardPartition(pointerStage);
 
     const playButton = page.getByRole("button", {
-      name: "▶ Play",
+      name: "Play replay",
       exact: true,
     });
     await expect(playButton).toBeVisible();
     await playButton.click();
     await page.clock.runFor(120);
     const pauseButton = page.getByRole("button", {
-      name: "⏸ Pause",
+      name: "Pause replay",
       exact: true,
     });
     await expect(pauseButton).toBeVisible();
     await pauseButton.click();
     await expect(pointerStage).toBeVisible();
 
-    const fastestSpeed = page.getByRole("button", { name: "4x", exact: true });
+    await page.getByRole("button", { name: "Player settings", exact: true }).click();
+    const fastestSpeed = page.getByRole("button", { name: "4×", exact: true });
     await expect(fastestSpeed).toBeVisible();
     await fastestSpeed.click();
     await expect(fastestSpeed).toBeFocused();
     const firstAcceptedTarget = await acceptedTarget(pointerStage);
     await page.keyboard.press("ArrowRight");
+    expect(await acceptedTarget(pointerStage)).toBe(firstAcceptedTarget);
+    await page.keyboard.press("Escape");
+    await playbackKey(page, "ArrowRight");
     await expect
       .poll(async () => {
         const next = page.locator('[data-format-cue="safety_bounce_pointer"]');
@@ -1435,12 +1542,8 @@ test.describe("format-aware game viewer", () => {
     await advanceUntilVisible(page, rollCall.getByRole("blockquote"), "format roll call speech");
     const firstVoter = await rollCall.getAttribute("aria-label");
     await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     await page.clock.runFor(250);
-    await expect(rollCall).toHaveAttribute("aria-label", firstVoter!);
-    await expect(rollCall.getByRole("blockquote")).toHaveCount(0);
-    await page.keyboard.press("ArrowRight");
-    await page.clock.runFor(600);
     await expect(rollCall).not.toHaveAttribute("aria-label", firstVoter!);
     await expect(rollCall.getByRole("blockquote")).not.toBeEmpty();
     await expect(rollCall).toHaveCount(1);
@@ -1545,7 +1648,7 @@ test.describe("format-aware game viewer", () => {
     await expect(page.locator('[data-format-cue="format_aggregate"]')).toHaveCount(0);
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(1);
     await captureSettledScreenshot(page, testInfo, "format-first-revealed-ballot.png");
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     await assertSoloBallot(page, "Vera", "Finn");
     await expect(page.locator('[data-vote-ledger] [data-ledger-voter]')).toHaveCount(2);
     const aggregate = page.locator('[data-format-cue="format_aggregate"]');
@@ -1673,7 +1776,7 @@ async function advanceUntilVisible(
 ): Promise<void> {
   for (let index = 0; index < maxAdvances; index += 1) {
     if (await locator.isVisible().catch(() => false)) return;
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
     // Flush director/render work before inspecting the next accepted beat.
     await page.clock.runFor(250);
   }
@@ -1695,10 +1798,15 @@ async function advanceClockUntilVisible(
   throw new Error(`${stageLabel} did not appear before ${maxElapsedMs}ms.`);
 }
 
-async function pauseAutoplay(page: Page, accessibleName: string): Promise<void> {
+async function restartReplay(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Player settings", exact: true }).click();
+  await page.getByRole("button", { name: "Restart replay", exact: true }).click();
+}
+
+async function pauseAutoplay(page: Page, _accessibleName: string): Promise<void> {
   await page.mouse.move(20, 20);
   const pauseButton = page.getByRole("button", {
-    name: accessibleName,
+    name: /^(?:⏸ Pause|Pause replay)$/,
     exact: true,
   });
   const playButton = page.getByRole("button", {
@@ -1718,8 +1826,7 @@ async function assertCompletedFormatReplayProgression(
   scenario: ReturnType<typeof createFormatKernelViewerScenario>,
 ): Promise<void> {
   await pauseAutoplay(page, "⏸ Pause");
-  const replayStart = page.getByRole("button", { name: "Go to replay start" });
-  if (await replayStart.isEnabled()) await replayStart.click();
+  await restartReplay(page);
   const initial = await replayPlayerCounts(replayShell);
 
   // Every accepted ballot remains a separate roster-ordered speech beat.
@@ -1729,7 +1836,7 @@ async function assertCompletedFormatReplayProgression(
     if (ballot?.type !== "format.ballot_cast") continue;
     const target = scenario.roster.find(player => player.id === ballot.payload.targetId)!;
     await assertSoloBallot(page, voter.name, target.name);
-    await page.keyboard.press("ArrowRight");
+    await playbackKey(page, "ArrowRight");
   }
 
   const aggregate = replayShell.locator('[data-format-cue="format_aggregate"]');
@@ -1741,9 +1848,10 @@ async function assertCompletedFormatReplayProgression(
   );
   await advanceUntilVisible(page, elimination, "format elimination");
   await expect(elimination.getByText(/ is eliminated$/)).toBeVisible();
-  const resolved = await replayPlayerCounts(replayShell);
-  expect(resolved.alive).toBe(initial.alive - 1);
-  expect(resolved.out).toBe(initial.out + 1);
+  // The player publishes its canonical frame to the surrounding shell in an effect.
+  await expect.poll(() => replayPlayerCounts(replayShell)).toEqual({
+    alive: initial.alive - 1, out: initial.out + 1,
+  });
 }
 
 async function replayPlayerCounts(
@@ -1861,4 +1969,10 @@ async function stopLocalFormatViewerHarness(
   child: LocalHarnessProcess,
 ): Promise<void> {
   await stopLocalHarness(child);
+}
+
+/** Explicitly target the player; focused controls own their keyboard input. */
+async function playbackKey(page: Page, key: string): Promise<void> {
+  await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+  await page.keyboard.press(key);
 }

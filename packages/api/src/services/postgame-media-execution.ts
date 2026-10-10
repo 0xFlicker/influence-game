@@ -1,3 +1,4 @@
+import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
 import { and, count, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { createHmac } from "node:crypto";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -6,16 +7,14 @@ import { claimPostgameMedia } from "./postgame-media-worker.js";
 type Transaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 export type RendererIdentity = { generation: string; workerDigest: string; workerInstanceId: string };
 export type RenderReleaseCommand = {
-  operation: "accept" | "drain";
+  operation: "accept" | "accept-local" | "drain";
   generation: string;
   workerDigest: string;
   previousGeneration: string | null;
 };
 
 export function remoteRenderingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  const mode = env.POSTGAME_MEDIA_EXECUTION_MODE ?? "local";
-  if (mode !== "local" && mode !== "remote") throw new Error("POSTGAME_MEDIA_EXECUTION_MODE must be local or remote");
-  return mode === "remote";
+  return renderExecutionConfig(env).mode === "remote";
 }
 
 export function parseRendererIdentity(headers: Headers): RendererIdentity | null {
@@ -29,7 +28,7 @@ export function parseRendererIdentity(headers: Headers): RendererIdentity | null
 export function parseRenderReleaseCommand(body: unknown): RenderReleaseCommand | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
   const value = body as Record<string, unknown>;
-  if ((value.operation !== "accept" && value.operation !== "drain")
+  if ((value.operation !== "accept" && value.operation !== "accept-local" && value.operation !== "drain")
     || !validGeneration(value.generation) || !validDigest(value.workerDigest)
     || !(value.previousGeneration === null || validGeneration(value.previousGeneration))) return null;
   return { operation: value.operation, generation: value.generation, workerDigest: value.workerDigest, previousGeneration: value.previousGeneration };
@@ -46,7 +45,7 @@ async function lockRelease(tx: Transaction) {
   return (await tx.select().from(schema.postgameMediaRenderRelease).where(eq(schema.postgameMediaRenderRelease.id, 1)).for("update"))[0]!;
 }
 function admitted(row: typeof schema.postgameMediaRenderRelease.$inferSelect, identity: RendererIdentity | null) {
-  return !!identity && !row.draining && row.generation === identity.generation && row.workerDigest === identity.workerDigest;
+  return row.mode === "remote" && !!identity && !row.draining && row.generation === identity.generation && row.workerDigest === identity.workerDigest;
 }
 
 export async function rendererControl(db: DrizzleDB, identity: RendererIdentity | null) {
@@ -64,31 +63,50 @@ export async function claimRemotePostgameMedia(db: DrizzleDB, workerToken: strin
   });
 }
 
+export async function claimLocalPostgameMedia(db: DrizzleDB, workerToken: string) {
+  return db.transaction(async tx => {
+    const row = await lockRelease(tx);
+    if (row.mode !== "local" || row.draining) return { admitted: false as const, claim: null };
+    return { admitted: true as const, claim: await claimPostgameMedia(tx, workerToken) };
+  });
+}
+
 export async function getRenderRelease(db: DrizzleDB) {
   const [row] = await db.select().from(schema.postgameMediaRenderRelease).where(eq(schema.postgameMediaRenderRelease.id, 1));
   const [active] = await db.select({ value: count() }).from(schema.gamePostgameMedia).where(and(
     inArray(schema.gamePostgameMedia.status, ["claimed", "rendering", "composing", "uploading"]),
     gt(schema.gamePostgameMedia.leaseExpiresAt, new Date().toISOString()),
   ));
-  return { generation: row?.generation ?? null, workerDigest: row?.workerDigest ?? null, draining: row?.draining ?? true, activeLeases: active?.value ?? 0 };
+  return { generation: row?.generation ?? null, workerDigest: row?.workerDigest ?? null, mode: row?.mode ?? "local", draining: row?.draining ?? false, activeLeases: active?.value ?? 0 };
 }
 
 export async function mutateRenderRelease(db: DrizzleDB, command: RenderReleaseCommand): Promise<boolean> {
   return db.transaction(async tx => {
     const row = await lockRelease(tx);
     // Exact replay is idempotent; a stale CAS never overwrites a newer epoch.
-    if (command.operation === "accept" && row.generation === command.generation && row.workerDigest === command.workerDigest && !row.draining) return true;
+    const mode = command.operation === "accept-local" ? "local" : "remote";
+    if (command.operation !== "drain" && row.mode === mode && row.generation === command.generation && row.workerDigest === command.workerDigest && !row.draining) return true;
     if (row.generation !== command.previousGeneration) return false;
     if (command.operation === "drain") {
       if (row.generation !== command.generation || row.workerDigest !== command.workerDigest) return false;
       await tx.update(schema.postgameMediaRenderRelease).set({ draining: true }).where(eq(schema.postgameMediaRenderRelease.id, 1));
     } else {
+      // Every new epoch requires completed drain and no leases, including same-mode
+      // releases. The row lock also fences claim races.
+      {
+        if (row.generation !== null && !row.draining) return false;
+        const [active] = await tx.select({ value: count() }).from(schema.gamePostgameMedia).where(and(
+          inArray(schema.gamePostgameMedia.status, ["claimed", "rendering", "composing", "uploading"]),
+          gt(schema.gamePostgameMedia.leaseExpiresAt, new Date().toISOString()),
+        ));
+        if (active?.value) return false;
+      }
       // Permanent tombstones prevent A -> B -> A readmission. Rollback uses
       // a fresh epoch even when it selects a previously accepted image digest.
       const inserted = await tx.insert(schema.postgameMediaRenderGenerations).values({ generation: command.generation, workerDigest: command.workerDigest }).onConflictDoNothing().returning();
       if (inserted.length === 0) return false;
-      await tx.update(schema.postgameMediaRenderRelease).set({ generation: command.generation, workerDigest: command.workerDigest, draining: false }).where(eq(schema.postgameMediaRenderRelease.id, 1));
-      await tx.insert(schema.postgameMediaWakeOutbox).values({});
+      await tx.update(schema.postgameMediaRenderRelease).set({ generation: command.generation, workerDigest: command.workerDigest, mode, draining: false }).where(eq(schema.postgameMediaRenderRelease.id, 1));
+      if (mode === "remote") await tx.insert(schema.postgameMediaWakeOutbox).values({});
     }
     return true;
   });
@@ -100,12 +118,13 @@ export function signedRenderWake(body: string, secret: string, timestamp = Math.
 
 // Every sweep repairs lost notification/launcher/STOPPED delivery, including
 // expired leases. Terminal failed/waiting_music jobs deliberately stay terminal.
-export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch } = {}) {
+export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; execution?: RenderExecution } = {}) {
   const env = options.env ?? process.env;
-  if (!remoteRenderingEnabled(env)) return 0;
+  const execution = options.execution ?? renderExecutionConfig(env);
+  if (execution.mode !== "remote") return 0;
   const url = env.POSTGAME_MEDIA_WAKE_URL;
   const secret = env.POSTGAME_MEDIA_WAKE_SECRET;
-  const environment = env.POSTGAME_MEDIA_WAKE_ENVIRONMENT;
+  const environment = execution.environment;
   if (!url || !secret || (environment !== "prod" && environment !== "staging")) throw new Error("Remote render wake configuration is incomplete");
   const target = new URL(url);
   if (target.protocol !== "https:" || target.username || target.password) throw new Error("Render wake URL must be HTTPS without credentials");

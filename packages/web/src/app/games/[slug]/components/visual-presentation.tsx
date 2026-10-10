@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
+import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
 import { SoloPresentation } from "./solo-presentation";
-import type { PresentationDirector } from "./format-presentation-director";
+import type { PresentationDirector } from "./influence-presentation-director";
 import { TimedSpeech } from "./timed-speech";
 import { HouseSegment } from "./house-segment";
 import { VisualSceneView, type VisualSpeech } from "./visual-scene-view";
@@ -21,11 +22,12 @@ import type { FormatPresentationRosterPlayer } from "./types";
 
 /** Constructed from accepted dialogue or structured ballot facts at their reveal cue. */
 export type VisualPresentationBeat =
+  | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
   | { kind: "portrait-room"; roomNumber: number | null; participants: GamePlayer[]; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
-  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
+  | { kind: "portrait"; purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }
   | { kind: "anonymous"; speech: VisualSpeech };
 
@@ -60,7 +62,7 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   return <VisualPresentationFrame {...props} {...clock} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [] }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [] }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
@@ -72,6 +74,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   currentStateEntry?: boolean;
   reducedMotion?: boolean;
   fullscreen?: boolean;
+  controlsInset?: number;
   navigationRevision?: number;
   speechPresentation?: "solo" | "scene";
   status?: "preparing" | "recovery" | null;
@@ -86,16 +89,18 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   const readingElapsedMs = holdAtTail ? Math.min(readingTime, tailTime) : readingTime;
   const mingleRooms = rooms.filter((room) => room.roomId.startsWith("mingle-"));
   let content;
-  if (beat.kind === "winner") {
-    content = <WinnerScene beat={beat} fullscreen={fullscreen} />;
+  if (beat.kind === "nominee-selection") {
+    content = <NomineeSelection beat={beat} elapsedMs={clockElapsedMs} reducedMotion={reducedMotion} />;
+  } else if (beat.kind === "winner") {
+    content = <WinnerScene beat={beat} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "safety-bounce") {
-    content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} />;
+    content = <SafetyBounceScene beat={beat} elapsedMs={clockElapsedMs} paused={paused} reducedMotion={reducedMotion} currentStateEntry={currentStateEntry} fullscreen={fullscreen} controlsInset={controlsInset} />;
   } else if (beat.kind === "portrait-room") {
-    content = <PortraitRoom beat={beat} controlsInset={fullscreen ? 140 : 0} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
+    content = <PortraitRoom beat={beat} controlsInset={controlsInset} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} reducedMotion={reducedMotion} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "portrait") {
-    content = voteLedger ? <VotePresentation beat={beat} ledger={voteLedger} roster={roster} controlsInset={fullscreen ? 140 : 0}
+    content = voteLedger ? <VotePresentation beat={beat} ledger={voteLedger} roster={roster} controlsInset={controlsInset}
       paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} />
-      : <SoloPresentation beat={beat} controlsInset={fullscreen ? 140 : 0} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
+      : <SoloPresentation beat={beat} controlsInset={controlsInset} paused={paused} reducedMotion={reducedMotion} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} />;
   } else if (beat.kind === "anonymous") {
     const opacity = sceneSpeechOpacity(beat.speech.text, clockElapsedMs, reducedMotion);
     content = <section aria-label="Anonymous speech" className={`mx-auto w-full max-w-2xl py-10 ${fullscreen ? "flex min-h-0 flex-1 flex-col px-4" : ""}`}><p className="mb-4 text-xs text-white/50">Anonymous</p>{opacity > 0 && <blockquote data-speech-bubble style={{ opacity }} className={`rounded-2xl border border-white/20 bg-black/85 p-5 ${fullscreen ? "flex min-h-0 flex-1 flex-col" : ""}`}>{fullscreen ? <TimedSpeech text={beat.speech.text} elapsedMs={readingElapsedMs - SCENE_SPEECH_START_MS} /> : beat.speech.text}</blockquote>}</section>;
@@ -114,7 +119,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {scene && <VisualSceneView controlsInset={fullscreen ? 140 : 0} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+        {scene && <VisualSceneView controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
   }

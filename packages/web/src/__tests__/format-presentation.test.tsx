@@ -34,10 +34,6 @@ describe("FormatPresentation", () => {
     expect(nominees).toContain("Lyra");
     expect(nominees).toContain("Echo");
     expect(nominees).not.toContain("opacity:0");
-    const sealed = render("two_names_ballots_sealing");
-    expect(sealed).toContain("Lyra");
-    expect(sealed).toContain("Echo");
-    expect(sealed).not.toContain("exit votes");
     const roll = render("format_roll_call");
     expect(roll).toContain('aria-label="Lyra: 1 exit vote"');
     expect(roll).toContain('aria-label="Echo: 0 exit votes"');

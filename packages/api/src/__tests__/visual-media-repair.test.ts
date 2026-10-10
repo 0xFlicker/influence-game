@@ -339,9 +339,14 @@ test("harmonizes selected saved panels once, preserves their pixels and metadata
   expect(receipt).toMatchObject({ accepted: true, version: 1 });
   expect(await send(input)).toEqual(receipt);
   expect(calls).toEqual([]);
-  const job = await run();
+  const claimed = await claimVisualMediaJob(db, "saved-panel-worker");
+  expect(claimed).not.toBeNull();
+  const job = claimed!;
+  await executeVisualMediaJob(db, job!, new AbortController().signal, renderVisualCandidate, async () => {
+    throw new Error("Saved-panel harmonization must not regenerate character variants");
+  });
   expect(job).toMatchObject({ mode: "harmonize", sourceVersionId: source.id, sourceImageId: null });
-  const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job.id)!;
+  const media = await readVisualMedia(db, "media"), version = media.versions.find(v => v.id === job!.id)!;
   expect(media.jobs[0]!.status).toBe("ready");
   expect(calls).toEqual(["image", "composition", "heads", "identities"]);
   expect(version.shots).toMatchObject({ mode: "scene", groups: source.groups });
@@ -430,4 +435,56 @@ test.each(["admin", "producer"])("%s media endpoint authorizes and validates the
   const receipt = await result.json();
   expect(await (await app.request(url, { method: "POST", headers, body: JSON.stringify(input) })).json()).toEqual(receipt);
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(1); expect(calls).toEqual([]);
+});
+
+test("explicit saved-panel harmonization reports an image-provider failure", async () => {
+  const source = await acceptedPanels();
+  await send({ action: "harmonize", sourceVersionId: source.id });
+  fail = "first-image";
+  await run();
+  const media = await readVisualMedia(db, "media");
+  expect(media.jobs[0]!.status).toBe("failed");
+  expect(media.versions).toHaveLength(1);
+  expect(media.publications).toEqual([]);
+});
+
+test("explicit fresh regeneration bypasses uncertain billing without settling it or publishing bad art", async () => {
+  await db.update(schema.visualScenes).set({ status: "failed" }).where(eq(schema.visualScenes.id, scene.id));
+  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "old render", width: 512, height: 864, references: [] }, scene.id);
+  await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "old" });
+  const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id));
+  expect(await send()).toMatchObject({ accepted: false, code: "needs_reconciliation" });
+  expect(await send({ acknowledgeUncertainAttempts: ["another-scene-attempt"] })).toMatchObject({ code: "invalid_attempt_acknowledgement" });
+  const request = { requestId: "confirmed-fresh-render", acknowledgeUncertainAttempts: [attempt!.id] };
+  const result = await send(request);
+  expect(result).toMatchObject({ accepted: true, version: 1 });
+  expect(await send(request)).toEqual(result);
+  expect(await send({ expectedVersion: 1, acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
+  expect(calls).toHaveLength(0);
+  const [saved] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.id, attempt!.id));
+  expect(saved).toEqual(attempt); // Acknowledgement is not billing reconciliation.
+  let media = await readVisualMedia(db, "media");
+  expect(media.jobs).toHaveLength(1);
+  expect(media.jobs[0]?.reusePrefix).toBeNull();
+  expect(media.versions).toHaveLength(0);
+  expect(media.publications).toHaveLength(0);
+  await db.update(schema.visualRepairJobs).set({ status: "failed" }).where(eq(schema.visualRepairJobs.id, result.jobId!));
+  expect(await send({ action: "continue", expectedVersion: 1, sourceJobId: result.jobId! })).toMatchObject({ code: "needs_reconciliation" });
+  expect(await send({ expectedVersion: 1 })).toMatchObject({ accepted: true, version: 2 });
+  media = await readVisualMedia(db, "media");
+  expect(media.publications).toHaveLength(0);
+  expect(media.requests.find(row => row.requestId === request.requestId)?.input).toMatchObject(request);
+});
+
+test("uncertain request acknowledgement cannot bypass an original render still in progress", async () => {
+  await db.update(schema.games).set({ status: "in_progress" }).where(eq(schema.games.id, "media"));
+  const op = await reserveVisualRender(db, "media", `${scene.id}:render:0:composition`, { prompt: "in flight", width: 512, height: 864, references: [] }, scene.id);
+  await visualImageJournal(db, op).begin({ provider: "openai", model: "gpt-image-2", requestHash: "in-flight" });
+  const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id));
+  expect(await send({ acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
+  expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
+});
+
+test("fresh regeneration rejects unrelated acknowledgement even when the scene has no uncertainty", async () => {
+  expect(await send({ acknowledgeUncertainAttempts: ["foreign"] })).toMatchObject({ code: "invalid_attempt_acknowledgement" });
 });

@@ -13,6 +13,9 @@ describe("API-backed simulation config", () => {
 
     expect(args.players).toBe(MIN_NEW_GAME_PLAYERS);
     expect(args.maxRounds).toBe(7);
+    const body = buildGameCreateBody(args, "openai:gpt-6-luna");
+    expect(body).not.toHaveProperty("viewerMode");
+    expect(body).not.toHaveProperty("timingPreset");
   });
 
   it("rejects non-integer or out-of-range API simulation player counts", () => {

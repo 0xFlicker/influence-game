@@ -210,8 +210,6 @@ describe("format presentation compiler", () => {
       "two_names_mingle_complete",
       "two_names_plea",
       "two_names_plea",
-      "two_names_ballots_sealing",
-      "two_names_ballots_sealing",
       "format_roll_call",
       "format_roll_call",
       "format_aggregate",
@@ -219,6 +217,20 @@ describe("format presentation compiler", () => {
       "format_deciding_vote",
       "format_elimination",
     ]);
+    // Accept sealed ballots without inventing a collection interlude. Only
+    // canonical resolution releases their shared vote presentation.
+    for (const ballot of twoNames.filter((entry) => entry.type === "format.ballot_cast")) {
+      const prefix = compileFormatPresentationPrefix({
+        gameId: "two-names",
+        gameKernel: "format",
+        roster: twoNamesRoster,
+        decisions: twoNames.filter((entry) => entry.sequence <= ballot.sequence),
+        formatManifest: ["two_names"],
+      });
+      expect(prefix.diagnostic).toBeNull();
+      expect(prefix.cues.at(-1)?.kind).toBe("two_names_plea");
+      expect(prefix.cues.some((cue) => cue.kind === "format_roll_call")).toBe(false);
+    }
     expect(compiled.snapshot.twoNames).toMatchObject({
       empoweredId: "atlas",
       overrideHolderId: "atlas",
@@ -227,7 +239,6 @@ describe("format presentation compiler", () => {
       finalistPlayerIds: ["dax", "cyra"],
       completedMingleWindows: ["initial_names", "final_names"],
       pleaCount: 2,
-      ballotsSealed: 2,
     });
   });
 

@@ -69,7 +69,6 @@ function game(overrides: Partial<AdminGameSummary>): AdminGameSummary {
     eliminatedPlayers: 5,
     modelLabel: "OpenAI gpt-5.6-luna · Adaptive",
     visibility: "public",
-    viewerMode: "replay",
     trackType: "custom",
     createdAt: "2026-08-24T12:00:00.000Z",
     hidden: false,

@@ -683,15 +683,6 @@ describe("GameRunner canonical events", () => {
     const flushedSequences: number[] = [];
     const runner = new GameRunner(agents, {
       ...DEFAULT_CONFIG,
-      timers: {
-        introduction: 0,
-        lobby: 0,
-        mingle: 0,
-        rumor: 0,
-        vote: 0,
-        power: 0,
-        council: 0,
-      },
       maxRounds: 5,
       mingleSessionsPerRound: 1,
       maxDiaryFollowUps: 0,

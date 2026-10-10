@@ -3,15 +3,6 @@ import { DEFAULT_CONFIG, Phase, type GameConfig } from "../types";
 
 export const TEST_GAME_CONFIG: GameConfig = {
   ...DEFAULT_CONFIG,
-  timers: {
-    introduction: 0,
-    lobby: 0,
-    mingle: 0,
-    rumor: 0,
-    vote: 0,
-    power: 0,
-    council: 0,
-  },
   maxRounds: 6,
   maxDiaryFollowUps: 0,
   diaryRoomAfterPhases: [Phase.INTRODUCTION, Phase.LOBBY, Phase.VOTE],

@@ -8,7 +8,7 @@ import {
   createPresentationDirector,
   type PresentationAnimationControlAdapter,
   type PresentationClock,
-} from "../app/games/[slug]/components/format-presentation-director";
+} from "../app/games/[slug]/components/influence-presentation-director";
 import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
 import { soloPresentationDurationMs, soloPresentationMotion, SOLO_EXIT_MS, SOLO_SPEECH_START_MS, SOLO_READ_START_MS, SOLO_SPEECH_FADE_MS } from "../app/games/[slug]/components/solo-presentation-timing";

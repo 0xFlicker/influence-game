@@ -86,9 +86,19 @@ describe("generated agent names", () => {
   });
 });
 
-import { decodeCharacterProfile } from "../services/character-profile-contract.js";
-const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket", introQuips: ["The snacks are an alliance opportunity.", "I brought a plan and backup snacks.", "Trust is great; receipts are better."] as string[] } as const;
+import { decodeCharacterProfile, characterProfileSchemaFor } from "../services/character-profile-contract.js";
+const character = { name: "Mira Vale", gender: "female", personaKey: "strategic", backstory: "History", personality: "Patient", strategyStyle: "Build alliances", performanceInstructions: "Open posture", visualDesign: "Blue jacket", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["The snacks are an alliance opportunity.", "I brought a plan and backup snacks.", "Trust is great; receipts are better."] as string[] } as const;
 describe("complete character contract", () => {
+  test("Werewolf editing allows untouched blank fields but requires complete valid strategy output", () => {
+    const draft = { ...character, strategyStyle: "", visualDesign: "", performanceInstructions: "" };
+    const fields = ["werewolfStrategyStyle"] as const;
+    expect(decodeCharacterProfile(JSON.stringify(draft), ["strategic"], fields)).toEqual(draft);
+    expect(characterProfileSchemaFor(["strategic"], fields).properties).toMatchObject({ werewolfStrategyStyle: { minLength: 1, maxLength: 2000 }, strategyStyle: { minLength: 0 } });
+    expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, name: "" }), ["strategic"], fields)).toThrow();
+    for (const bad of [undefined, null, "", " ", 1, "a".repeat(2001)]) {
+      expect(() => decodeCharacterProfile(JSON.stringify({ ...draft, werewolfStrategyStyle: bad }), ["strategic"], fields)).toThrow();
+    }
+  });
   test("requires performance and visual design alongside the original fields", () => {
     expect(decodeCharacterProfile(JSON.stringify(character))).toEqual(character);
   });

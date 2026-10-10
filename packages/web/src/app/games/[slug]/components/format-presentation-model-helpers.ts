@@ -23,7 +23,6 @@ export const FIXED_CUE_DURATION_MS = {
   two_names_override_removed: 2_200,
   two_names_replacement: 2_600,
   two_names_plea: 3_600,
-  two_names_ballots_sealing: 2_400,
   format_aggregate: 3_200,
   format_tiebreak: 2_400,
   format_elimination: 3_200,

@@ -124,7 +124,8 @@ test("Producer uses the same rows, preserves lost-request controls, reviews and 
     await page.waitForSelector(toggle);
     expect(await page.$('select[aria-label="Game for replay images"]')).toBeNull();
     expect(await page.$('[aria-label="Production for waiting-game"]')).toBeNull();
-    expect(await page.$$eval('[aria-label="Admin sections"] a', links => links.map(link => link.textContent))).toEqual(["Production"]);
+    expect(await page.$$eval('nav[aria-label="Administration"] a', links => links.map(link => link.textContent))).toEqual(["Games", "Production"]);
+    expect(await page.$eval('nav[aria-label="Administration"] a', link => link.getAttribute("href"))).toBe("/admin/werewolf");
     expect(await database.db.select().from(schema.visualScenes)).toHaveLength(0);
     await page.click(toggle);
     await page.waitForFunction("Array.from(document.querySelectorAll('button')).filter(b => b.textContent === 'Render missing image').length === 2");
@@ -185,7 +186,7 @@ test("Producer uses the same rows, preserves lost-request controls, reviews and 
     const viewer = await (await api.fetch(new Request(`http://127.0.0.1:${api.port}/api/games/${gameId}/visual`))).json() as { enabled: boolean; scenes: unknown[] };
     expect(viewer.enabled).toBe(true); expect(viewer.scenes).toHaveLength(1);
     await page.goto(`${webUrl}/admin/users`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction("document.body.innerText.includes('Access denied.')");
+    await page.waitForFunction("document.body.innerText.includes('You do not have access to this administration section.')");
   } catch (error) {
     await page.screenshot({ path: temporaryPath("replay-production-browser-failure.png"), fullPage: true });
     console.error("[Production browser]", await page.evaluate("document.body.innerText")); throw error;

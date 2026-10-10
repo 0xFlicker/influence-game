@@ -1,3 +1,4 @@
+import {sharePostgameLink} from "../lib/share-link";
 import { describe, expect, it } from "bun:test";
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
@@ -8,7 +9,6 @@ import {
 } from "../app/games/[slug]/components/completed-game-entry";
 import {
   PostgameMediaPlayer,
-  sharePostgameLink,
   sharePostgameTrailer,
 } from "../app/games/[slug]/components/postgame-media-player";
 import {
@@ -17,8 +17,9 @@ import {
   setApiBase,
   type PublicPostgameMediaResponse,
 } from "../lib/api";
-import GameViewerPage, { generateMetadata } from "../app/games/[slug]/page";
-import { EpisodeLanding } from "../app/games/episode-landing";
+import { generateMetadata } from "../app/games/[slug]/page";
+import { HouseGameRoute } from "../app/games/[slug]/house-route";
+import { HouseGameEntry } from "../components/games/house-game-entry";
 
 const gameId = "edge-smoke-dusk";
 
@@ -66,6 +67,8 @@ describe("CompletedGameEntry", () => {
     expect(html).toContain("House Highlights");
     expect(html).toContain('controls=""');
     expect(html).toContain('preload="metadata"');
+    expect(html).toContain('crossorigin="anonymous"');
+    expect(html).toContain('playsInline=""');
     expect(html).toContain('poster="https://media.example.test/postgame/v3/poster.jpg"');
     expect(html).toContain('src="https://media.example.test/postgame/v3/trailer.mp4"');
     expect(html).toContain('src="https://media.example.test/postgame/v3/captions.vtt"');
@@ -285,13 +288,35 @@ describe("CompletedGameEntry", () => {
     expect(html).toContain('aria-label="Share trailer"');
   });
 
+
+  it("uses saved Werewolf episode copy and existing trailer art without fetching Influence detail", async () => {
+    const originalFetch = globalThis.fetch;
+    const calls: string[] = [];
+    const media = readyMedia();
+    media.preview = { title: "Werewolf at The House", description: "Who will you trust?" };
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
+      calls.push(String(url));
+      return Response.json(String(url).includes("/api/game-entries/")
+        ? { id: "wolf-game", slug: "wolf-game", gameKind: "werewolf", visibility: "unlisted" } : { episode: { title: "Lanterns and Lies", description: "Six strangers gather." }, media });
+    }) as typeof fetch;
+    try {
+      const metadata = await generateMetadata({ params: Promise.resolve({ slug: "wolf-game" }) });
+      expect(metadata.title).toBe("Lanterns and Lies — Werewolf · The House");
+      expect(metadata.description).toBe("Six strangers gather.");
+      expect(metadata.alternates?.canonical).toBe("/games/wolf-game");
+      expect(metadata.openGraph?.images).toEqual([{ url: media.poster.url, alt: media.poster.altText }]);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toEndWith("/api/games/wolf-game/episode");
+    } finally { globalThis.fetch = originalFetch; }
+  });
+
   it("uses stored ready media for spoiler-safe social metadata and falls back safely", async () => {
     const originalApiBackendUrl = process.env.API_BACKEND_URL;
     const originalFetch = globalThis.fetch;
     process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
     let mediaResponse: PublicPostgameMediaResponse = readyMedia();
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => new Response(JSON.stringify(
-      String(url).endsWith(`/api/games/${gameId}`)
+      String(url).includes("/api/game-entries/") ? {id:"game-id",slug:gameId,gameKind:"influence"} : String(url).endsWith(`/api/games/${gameId}`)
         ? { id: "game-id", slug: gameId, status: "completed" }
         : mediaResponse,
     ), {
@@ -348,6 +373,7 @@ describe("CompletedGameEntry", () => {
     setApiBase("http://web:3000");
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
       requestedUrls.push(String(url));
+      if (String(url).includes("/api/game-entries/")) return Response.json({id:"game-id",slug:gameId,gameKind:"influence"});
       if (String(url).endsWith(`/api/games/${gameId}`)) {
         return new Response(JSON.stringify({
           id: "game-id",
@@ -359,7 +385,6 @@ describe("CompletedGameEntry", () => {
           players: [],
           modelLabel: "OpenAI gpt-5-mini · Adaptive",
           visibility: "public",
-          viewerMode: "replay",
           createdAt: "2026-07-09T00:00:00.000Z",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
@@ -370,10 +395,11 @@ describe("CompletedGameEntry", () => {
     }) as unknown as typeof fetch;
 
     try {
-      const page = await GameViewerPage({ params: Promise.resolve({ slug: gameId }) });
-      const viewer = findElementByType(page, EpisodeLanding);
+      const page = await HouseGameRoute({ slug: gameId, mode:"entry" });
+      const viewer = findElementByType(page, HouseGameEntry);
 
       expect(requestedUrls).toEqual([
+        `http://api:3001/api/game-entries/${gameId}`,
         `http://api:3001/api/games/${gameId}`,
       ]);
       expect(viewer?.props.initialGame?.slug).toBe(gameId);
@@ -397,6 +423,7 @@ describe("CompletedGameEntry", () => {
     setApiBase("http://web:3000");
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
       requestedUrls.push(String(url));
+      if (String(url).includes("/api/game-entries/")) return Response.json({id:"game-id",slug:gameId,gameKind:"influence"});
       return new Response(JSON.stringify({
         id: "game-id",
         slug: gameId,
@@ -407,14 +434,13 @@ describe("CompletedGameEntry", () => {
         players: [],
         modelLabel: "OpenAI gpt-5-mini · Adaptive",
         visibility: "public",
-        viewerMode: "live",
         createdAt: "2026-07-09T00:00:00.000Z",
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     }) as unknown as typeof fetch;
 
     try {
-      await GameViewerPage({ params: Promise.resolve({ slug: gameId }) });
-      expect(requestedUrls).toEqual([`http://api:3001/api/games/${gameId}`]);
+      await HouseGameRoute({ slug: gameId, mode:"entry" });
+      expect(requestedUrls).toEqual([`http://api:3001/api/game-entries/${gameId}`, `http://api:3001/api/games/${gameId}`]);
     } finally {
       if (originalApiBackendUrl === undefined) {
         delete process.env.API_BACKEND_URL;

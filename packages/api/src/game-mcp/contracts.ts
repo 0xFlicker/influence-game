@@ -349,6 +349,7 @@ const ownerLearningEvidenceRefSchema = closedObject(
 );
 const ownerLearningFollowUpSchema = {
   anyOf: [
+    ownerLearningFollowUpVariant("read_game_results", { gameIdOrSlug: { type: "string" } }),
     ownerLearningFollowUpVariant("read_match_transcript", {
       gameIdOrSlug: { type: "string" },
     }),
@@ -421,7 +422,7 @@ const ownerLearningResultSchema = closedObject(
     proposal: nullableSchema(closedObject(
       ["field", "before", "after"],
       {
-        field: { type: "string", const: "strategyStyle" },
+        field: { type: "string", enum: ["strategyStyle", "werewolfStrategyStyle"] },
         before: { type: "string" },
         after: ownerLearningGeneratedTextSchema,
       },
@@ -454,6 +455,7 @@ const ownerLearningReviewApplicationSchema = closedObject(
 );
 const ownerLearningReviewSchema = closedObject(
   [
+    "gameKind",
     "id",
     "agentProfileId",
     "reviewedRevisionId",
@@ -479,6 +481,7 @@ const ownerLearningReviewSchema = closedObject(
     "followUps",
   ],
   {
+    gameKind: { type: "string", enum: ["influence", "werewolf"] },
     id: { type: "string" },
     agentProfileId: { type: "string" },
     reviewedRevisionId: { type: "string" },
@@ -607,9 +610,10 @@ const ownerLearningEligibilitySchema = closedObject(
     profiles: {
       type: "array",
       items: closedObject(
-        ["agentProfileId", "name", "currentRevisionId", "strategyStyle", "qualifyingGameCount", "games", "recommendedGameIds"],
+        ["gameKind", "agentProfileId", "name", "currentRevisionId", "strategyStyle", "qualifyingGameCount", "games", "recommendedGameIds"],
         {
           agentProfileId: { type: "string" },
+          gameKind: { type: "string", enum: ["influence", "werewolf"] },
           name: { type: "string" },
           currentRevisionId: { type: "string" },
           strategyStyle: nullableSchema({ type: "string" }),
@@ -651,9 +655,10 @@ const ownerLearningPreflightSchema = closedObject(
   {
     status: { type: "string", enum: ["awaiting_evidence", "ready", "generation_unavailable"] },
     selection: closedObject(
-      ["agentProfileId", "agentProfileName", "reviewedRevisionId", "gameIds"],
+      ["gameKind", "agentProfileId", "agentProfileName", "reviewedRevisionId", "gameIds"],
       {
         agentProfileId: { type: "string" },
+        gameKind: { type: "string", enum: ["influence", "werewolf"] },
         agentProfileName: { type: "string" },
         reviewedRevisionId: { type: "string" },
         gameIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
@@ -779,7 +784,7 @@ export const APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
 );
 
 function ownerLearningFollowUpVariant(
-  toolName: "read_match_transcript" | "read_owned_match_narrative" | "filter_events" | "read_game_brief",
+  toolName: "read_game_results" | "read_match_transcript" | "read_owned_match_narrative" | "filter_events" | "read_game_brief",
   argumentProperties: Record<string, unknown>,
 ): Record<string, unknown> {
   return closedObject(

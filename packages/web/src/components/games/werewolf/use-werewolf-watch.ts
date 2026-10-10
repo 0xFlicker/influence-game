@@ -1,0 +1,182 @@
+"use client";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import type {WerewolfAudience} from "@influence/engine/werewolf/observation";
+import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
+import {ApiError} from "@/lib/api";
+import {getWerewolfWatch} from "@/lib/werewolf-api";
+import {useWatchDirector} from "@/components/watch/use-watch-director";
+import {werewolfMusic} from "./werewolf-music";
+import {contiguousWerewolfWindows, consumedSilentTail, werewolfCues, werewolfMomentCues, werewolfScrubStops} from "./werewolf-watch-model";
+
+import {isOpeningCue, werewolfOpening, werewolfPlaybackPolicy, type WerewolfOpeningCue, type WerewolfPlaybackCue} from "./werewolf-opening";
+
+/** One mounted session per game/audience. Cached head data is never the active snapshot. */
+export function useWerewolfWatch(slug: string, audience: WerewolfAudience, cutoff: string, startCursor?: number, title?: string) {
+  const clock = useWatchDirector(werewolfPlaybackPolicy);
+  const {director} = clock;
+  const opening = useRef<WerewolfOpeningCue[]>([]);
+  const frozenTitle = useRef(title);
+  const firstPlayable = useRef<number | null>(null);
+  const withOpening = useCallback((cues: WerewolfPlaybackCue[]) => [...opening.current, ...cues], []);
+  const momentOf = (cue: WerewolfPlaybackCue | null) => cue && !isOpeningCue(cue) ? cue.moment : null;
+  const windows = useRef(new Map<number, WerewolfWatchWindow>());
+  const [data, setData] = useState<WerewolfWatchWindow | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(true);
+  const [tail, setTail] = useState<WerewolfWatchWindow["moments"][number] | null>(null);
+  const [follow, setFollow] = useState(true);
+  const request = useRef<AbortController | null>(null);
+  const intent = useRef(0);
+  const target = useRef(startCursor ?? 1);
+  const playIntent = useRef(true);
+  const awaitingInitialCue = useRef(true);
+  const [revision, setRevision] = useState(0);
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const commitWindow = useCallback((value: WerewolfWatchWindow, active: number) => {
+    // Validate overlaps before replacing a refreshed window.
+    werewolfCues([...windows.current.values(), value]);
+    windows.current.set(value.fromCursor, value);
+    const anchor = momentOf(director.getActiveCue())?.cursor;
+    const pinned = anchor === undefined ? null : Math.floor((anchor - 1) / 32) * 32 + 1;
+    const keys = [...windows.current.keys()].sort((a,b) => a === pinned ? -1 : b === pinned ? 1 : Math.abs(a-active) - Math.abs(b-active));
+    for (const key of keys.slice(3)) windows.current.delete(key);
+    setData(value); setRevision(n => n + 1);
+  }, [director]);
+  const seek = useCallback(async (position: number, play = playIntent.current, previous = false, initial = false, step = 0, openingStep?: number) => {
+    playIntent.current = play;
+    awaitingInitialCue.current = initial;
+    target.current = position;
+    setNavigationRevision(n => n + 1);
+    const generation = ++intent.current;
+    request.current?.abort();
+    const controller = new AbortController(); request.current = controller;
+    director.pause(); setFollow(play); setPreparing(true); setError(null);
+    try {
+      let next = Math.max(1, position), window: WerewolfWatchWindow;
+      for (;;) {
+        const start = Math.floor((next - 1) / 32) * 32 + 1;
+        window = await getWerewolfWatch(slug, audience, start, controller.signal, cutoff);
+        if (controller.signal.aborted || generation !== intent.current) return;
+        if (initial && startCursor !== undefined && startCursor > window.latestCursor) throw new Error("This replay moment is not available.");
+        if (next > window.latestCursor && window.latestCursor > 0) { next = window.latestCursor; continue; }
+        commitWindow(window, next);
+        if (!opening.current.length && window.fromCursor === 1) opening.current = werewolfOpening(window, frozenTitle.current);
+        if (position === 1) firstPlayable.current ??= werewolfCues([window])[0]?.moment.cursor ?? null;
+        const cues = werewolfCues(contiguousWerewolfWindows([...windows.current.values()], next));
+        const selected = previous ? cues.findLastIndex(cue => cue.moment.cursor <= next) : cues.findIndex(cue => cue.moment.cursor >= next);
+        if (selected >= 0) {
+          awaitingInitialCue.current = false;
+          const offset = Math.min(step, cues.filter(cue => cue.moment.cursor === cues[selected]!.moment.cursor).length - 1);
+          director.load(withOpening(cues));
+          director.seek(openingStep !== undefined ? Math.max(0, Math.min(opening.current.length - 1, openingStep)) :
+            initial && startCursor === undefined ? 0 : opening.current.length + selected + offset, initial && startCursor === undefined || openingStep === 0 && play ? 0 : undefined); setTail(null);
+          // Tail is always a scheduler holding state, even for terminal games.
+          director.setFollowTail(true);
+          if (playIntent.current) director.play();
+          break;
+        }
+        if (previous && window.fromCursor > 1) {next = window.fromCursor - 1; continue;}
+        if (!previous && window.throughCursor < window.latestCursor) { next = window.throughCursor + 1; continue; }
+        director.load(withOpening([])); setTail(window.moments.at(-1) ?? null);
+        if (opening.current.length && (openingStep !== undefined || initial && startCursor === undefined)) {
+          director.seek(openingStep ?? 0, play ? 0 : undefined); director.setFollowTail(true); if (playIntent.current) director.play();
+        }
+        break;
+      }
+    } catch (cause) {
+      if (!controller.signal.aborted && cause instanceof ApiError && [401,403,404].includes(cause.status)) { playIntent.current = false; setFollow(false); director.pause(); director.load([]); windows.current.clear(); setData(null); setTail(null); }
+      if (!controller.signal.aborted && generation === intent.current) setError(cause instanceof Error ? cause.message : "Could not prepare replay");
+    } finally { if (!controller.signal.aborted && generation === intent.current) setPreparing(false); }
+  }, [slug, audience, cutoff, commitWindow, director, startCursor, withOpening]);
+  const cancel = useCallback(() => { intent.current++; request.current?.abort(); }, []);
+  useEffect(() => { void seek(startCursor ?? 1, playIntent.current, false, true); return cancel; }, [seek, cancel, startCursor]);
+  useEffect(() => {
+    const visibility = () => { if (document.hidden) {playIntent.current = false; setFollow(false);} };
+    document.addEventListener("visibilitychange", visibility);
+    return () => document.removeEventListener("visibilitychange", visibility);
+  }, []);
+  const playbackCue = director.getActiveCue();
+  const openingCue = isOpeningCue(playbackCue) ? playbackCue : null;
+  const activeCue = playbackCue && !isOpeningCue(playbackCue) ? playbackCue : null;
+  const holding = clock.snapshot.waitingAtTail || !playbackCue;
+  const activeCursor = holding ? Math.max(activeCue?.moment.cursor ?? 1, tail?.cursor ?? 1) : activeCue?.moment.cursor ?? 1;
+  // Only a playing/following session consumes new silent history. Paused inspectors stay frozen.
+  useEffect(() => {
+    if (preparing || !holding || !follow || activeCue && !clock.snapshot.isPlaying) return;
+    const consumed = consumedSilentTail(contiguousWerewolfWindows([...windows.current.values()], activeCursor), activeCursor);
+    if (consumed) setTail(consumed);
+  }, [preparing, holding, follow, activeCue, clock.snapshot.isPlaying, activeCursor, revision]);
+  const latestCursor = data?.latestCursor, status = data?.status;
+  // Prefetch one neighboring window, poll only while live. Neither operation seeks.
+  useEffect(() => {
+    if (latestCursor === undefined || preparing) return;
+    const controller = new AbortController();
+    let busy = false;
+    const refresh = async () => {
+      if (busy) return;
+      busy = true;
+      const generation = intent.current;
+      try {
+        const currentStart = Math.floor((activeCursor - 1) / 32) * 32 + 1;
+        const nextStart = currentStart + 32;
+        const nearEnd = activeCursor >= currentStart + 23 || director.getSnapshot().waitingAtTail || !director.getActiveCue();
+        const from = nearEnd && latestCursor >= nextStart ? nextStart : currentStart;
+        const terminal = status !== "in_progress" && status !== "suspended";
+        if (terminal && !nearEnd) return;
+        const cached = terminal ? windows.current.get(from) : undefined;
+        const value = cached ?? await getWerewolfWatch(slug, audience, from, controller.signal, cutoff);
+        if (controller.signal.aborted || intent.current !== generation) return;
+        if (!cached) commitWindow(value, activeCursor);
+        const cues = werewolfCues(contiguousWerewolfWindows([...windows.current.values()], activeCursor));
+        if (!director.getActiveCue() && awaitingInitialCue.current && cues.some(cue => cue.moment.cursor >= activeCursor)) {
+          void seek(activeCursor, playIntent.current, false, true); return;
+        }
+        // The last spoken cue may have fallen outside the cache after a long consumed silent stretch.
+        if (holding && follow && !cues.some(cue => cue.key === director.getActiveCue()?.key) && cues.some(cue => cue.moment.cursor > activeCursor)) {
+          void seek(activeCursor + 1, true); return;
+        }
+        // An empty director can represent a deliberate silent seek. Do not resurrect older speech.
+        if (director.getActiveCue()) director.append(withOpening(cues));
+      } catch (cause) {
+        if (!controller.signal.aborted && intent.current === generation) {
+          if (cause instanceof ApiError && [401,403,404].includes(cause.status)) {playIntent.current = false;setFollow(false);director.pause();director.load([]);windows.current.clear();setData(null);setTail(null);}
+          setError(cause instanceof Error ? cause.message : "Could not refresh replay");
+        }
+      }
+      finally { busy = false; }
+    };
+    void refresh();
+    const timer = (status === "in_progress" || status === "suspended") ? setInterval(() => { void refresh(); }, 3000) : null;
+    return () => { controller.abort(); if (timer) clearInterval(timer); };
+  }, [activeCursor, holding, latestCursor, status, preparing, slug, audience, cutoff, director, commitWindow, follow, seek, withOpening]);
+  const buffered = [...windows.current.values()];
+  const active = openingCue ? buffered.find(w => w.fromCursor === 1)?.moments[0] ?? null : holding && tail && tail.cursor >= (activeCue?.moment.cursor ?? 0) ? tail : activeCue?.moment ?? tail;
+  const scrubStops = useMemo(() => werewolfScrubStops(data?.playback ?? []), [data?.playback]);
+  const activeStep = activeCue ? werewolfMomentCues(activeCue.moment).findIndex(cue => cue.key === activeCue.key) : 0;
+  const exactStop = scrubStops.findIndex(stop => stop.cursor === active?.cursor && stop.step === Math.max(0, activeStep));
+  const gameScrubPosition = exactStop >= 0 ? exactStop : Math.max(0, scrubStops.findLastIndex(stop => stop.cursor <= activeCursor));
+  const continueAtEnd = werewolfMusic(active)?.continueAtEnd === true;
+  useEffect(() => {
+    // Preserve user play intent while the victory score finishes over the final frame.
+    if (!openingCue && !continueAtEnd && !preparing && holding && data && data.status !== "in_progress" && !data.visualPaused && activeCursor >= data.latestCursor) {playIntent.current = false; setFollow(false); director.pause();}
+  }, [openingCue, continueAtEnd, preparing, holding, data, activeCursor, director]);
+  const media = Object.assign({}, ...buffered.map(w => w.media)) as WerewolfWatchWindow["media"];
+  void revision;
+  const seekOpening = (step: number) => {
+    if (openingCue && !preparing) {
+      setNavigationRevision(n => n + 1); director.seek(Math.max(0,Math.min(opening.current.length - 1,step)), step === 0 && playIntent.current ? 0 : undefined); return;
+    }
+    return seek(1, playIntent.current, false, false, 0, step);
+  };
+  return {...clock, openingCue, openingCount: opening.current.length, seekOpening, data, active, media, preparing, error, follow, holding, seek, navigationRevision, activeStep, scrubPosition: openingCue ? opening.current.findIndex(c => c.key === openingCue.key) : opening.current.length + gameScrubPosition, scrubCount: opening.current.length + scrubStops.length,
+    seekStop: (position: number) => {if (position <= opening.current.length) return seekOpening(position - 1); const stop = scrubStops[position - 1 - opening.current.length]; if (stop) return seek(stop.cursor, playIntent.current, false, false, stop.step);},
+    retry: () => void seek(target.current,playIntent.current,false,awaitingInitialCue.current),
+    toggle: () => { playIntent.current = !playIntent.current; setFollow(playIntent.current); if (!playIntent.current) director.pause(); else if (!preparing) director.play(); },
+    previous: () => {
+      const current = director.getSnapshot().cursor;
+      if (current > 0 && (openingCue || current > opening.current.length || activeCursor === firstPlayable.current)) {setNavigationRevision(n => n + 1); cancel(); setPreparing(false); setError(null); director.pause(); setFollow(playIntent.current); setTail(null); director.seek(current - 1); if (playIntent.current) director.play(); target.current = momentOf(director.getActiveCue())?.cursor ?? 1;}
+      else void seek(Math.max(1, activeCursor - 1), playIntent.current, true);
+    },
+    goLive: () => void seek(data?.latestCursor ?? 1, true, true),
+  };
+}

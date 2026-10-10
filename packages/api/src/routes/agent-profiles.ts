@@ -5,7 +5,7 @@ import { runAccountText, GenerationAdmissionError } from "../services/account-te
 import { readOwnerContent } from "../services/agent-content-submissions.js";
 import sharp from "sharp";
 import { APIConnectionTimeoutError } from "openai";
-import { CHARACTER_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
+import { CHARACTER_FIELDS, VISUAL_FIELDS, characterEditFields, type CharacterField, type CharacterDraftContext, isCreationStage } from "@influence/engine/agent-creation-assistant";
 import { selectCharacterEdit, selectCreationTurn } from "../services/agent-creation-assistant.js";
 import { buildAgentProfileGenerationSystemPrompt } from "../services/character-profile-prompt.js";
 import { characterProfileSchemaFor, decodeCharacterProfile } from "../services/character-profile-contract.js";
@@ -99,7 +99,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/creation-assistant");
     if (!body || !isCreationStage(body.stage) || typeof body.message !== "string" || !body.message.trim() || body.message.length > 2000
       || !Array.isArray(body.history) || body.history.length > 24 || body.history.some((value: unknown) => typeof value !== "string" || value.length > 2000)
-      || !Array.isArray(body.sections) || body.sections.length > 8 || body.sections.some((value: unknown) => typeof value !== "string" || !(CHARACTER_FIELDS as readonly string[]).includes(value))
+      || !Array.isArray(body.sections) || body.sections.length > CHARACTER_FIELDS.length || body.sections.some((value: unknown) => typeof value !== "string" || !(CHARACTER_FIELDS as readonly string[]).includes(value))
       || !body.draft || typeof body.draft !== "object" || Array.isArray(body.draft) || Object.keys(body.draft).length !== CHARACTER_FIELDS.length
       || CHARACTER_FIELDS.some(field => typeof body.draft[field] !== "string" || body.draft[field].length > 12000)) {
       return c.json({ error: "Invalid creation assistant turn" }, 400);
@@ -204,6 +204,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory?: string;
         personality?: string;
         strategyStyle?: string;
+        werewolfStrategyStyle?: string;
         personaKey?: string;
         gender?: AgentGender;
         performanceInstructions?: string;
@@ -230,7 +231,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
 
     if (selectedFields !== undefined && (!Array.isArray(selectedFields) || selectedFields.length > CHARACTER_FIELDS.length || selectedFields.some(field => !CHARACTER_FIELDS.includes(field)))) return c.json({ error: "Invalid selected fields" }, 400);
     if (selectedFields && existingProfile && (typeof existingProfile !== "object" || Array.isArray(existingProfile) || CHARACTER_FIELDS.some(field => existingProfile[field] != null && typeof existingProfile[field] !== "string"))) return c.json({ error: "Invalid character field context" }, 400);
-    const editFields = selectedFields ? characterEditFields(existingProfile ?? {}, selectedFields) : null;
+    const editFields = selectedFields?.length ? characterEditFields(existingProfile ?? {}, selectedFields) : null;
 
     const llmConfig = resolveAgentProfileGenerationLlm();
     if (!llmConfig) {
@@ -255,7 +256,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (isRefine && existingProfile) {
       userParts.push(`Refine this existing profile:\n${JSON.stringify(existingProfile, null, 2)}`);
     }
-    if (editFields) userParts.push(`Update only these fields: ${editFields.join(", ")}. Preserve every other populated field exactly. Empty fields are included for completion.`);
+    if (editFields) userParts.push(`Update only these fields: ${editFields.join(", ")}. Preserve every other field exactly, including empty strings. Return the complete structured profile. The application restores unselected fields from the draft.`);
     if (changeRequest) userParts.push(`User's requested changes (follow these instructions while preserving unrelated profile details):\n${changeRequest.trim()}`);
     if (selectedArchetype) {
       userParts.push(allowPersonaChange === true
@@ -275,7 +276,8 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
     if (requestedGender) userParts.push(`Required gender: ${requestedGender}. Do not change it.`);
 
     try {
-      const sourceUrl = existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl;
+      const needsReference = !selectedFields?.length || selectedFields.some(field => VISUAL_FIELDS.includes(field));
+      const sourceUrl = needsReference ? existingProfile?.fullBodyReferenceUrl || existingProfile?.avatarUrl : null;
       const reference = sourceUrl ? await sharp(await readVisualProfileImage(sourceUrl, { name: existingProfile?.name ?? "", personaKey: existingProfile?.personaKey ?? "" })).rotate().png().toBuffer() : null;
       const result = await runAccountText(db, { userId: c.get("user").id, requestKey: c.req.header("Idempotency-Key") ?? randomUUID(),
         kind: isRefine ? "profile_refinement" : "profile_creation", model: llmConfig.modelId, payload: body }, async record => {
@@ -296,7 +298,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
           json_schema: {
             name: "agent_profile_generation",
             strict: true,
-            schema: characterProfileSchemaFor(allowedPersonaKeys),
+            schema: characterProfileSchemaFor(allowedPersonaKeys, editFields ?? undefined),
           },
         },
       }, { signal: c.req.raw.signal, maxRetries: 0 });
@@ -308,7 +310,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       }
 
       if (response.choices[0]?.finish_reason !== "stop") throw new Error("Incomplete character profile");
-      const generated = decodeCharacterProfile(content, allowedPersonaKeys);
+      const generated = decodeCharacterProfile(content, allowedPersonaKeys, editFields ?? undefined);
       const existingNames = await db
         .select({ name: schema.agentProfiles.name })
         .from(schema.agentProfiles);
@@ -321,6 +323,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory: generated.backstory ?? null,
         personality: generated.personality,
         strategyStyle: generated.strategyStyle ?? null,
+        werewolfStrategyStyle: generated.werewolfStrategyStyle,
       }, generatedName.name);
 
       const output = {
@@ -328,6 +331,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory: profile.backstory,
         personality: profile.personality,
         strategyStyle: profile.strategyStyle,
+        werewolfStrategyStyle: profile.werewolfStrategyStyle,
         personaKey: generated.personaKey,
         performanceInstructions: generated.performanceInstructions,
         visualDesign: generated.visualDesign,
@@ -337,7 +341,11 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       // The model cannot rewrite unrelated populated fields, even if it returns them.
       if (editFields && existingProfile) {
         for (const field of CHARACTER_FIELDS) {
-          if (!editFields.includes(field) && typeof existingProfile[field] === "string") Object.assign(output, { [field]: existingProfile[field] });
+          if (!editFields.includes(field)) {
+            const original = existingProfile[field];
+            if (typeof original === "string") Object.assign(output, { [field]: original });
+            else if (field === "strategyStyle" || field === "werewolfStrategyStyle") Object.assign(output, { [field]: "" });
+          }
         }
       }
       return output;
@@ -380,6 +388,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory: body.backstory,
         personality: body.personality,
         strategyStyle: body.strategyStyle,
+        werewolfStrategyStyle: body.werewolfStrategyStyle,
         personaKey: body.personaKey,
         gender: body.gender,
         avatarUrl: body.avatarUrl,
@@ -586,6 +595,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         backstory: body.backstory,
         personality: body.personality,
         strategyStyle: body.strategyStyle,
+        werewolfStrategyStyle: body.werewolfStrategyStyle,
         personaKey: body.personaKey,
         gender: body.gender,
         avatarUrl: body.avatarUrl,

@@ -740,8 +740,64 @@
     {
       "idx": 105,
       "version": "7",
-      "when": 1791158400000,
-      "tag": "0105_render_wake_outbox",
+      "when": 1790985600001,
+      "tag": "0105_werewolf",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1790985600002,
+      "tag": "0106_visual_publication_audience",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790985600003,
+      "tag": "0107_werewolf_lobbies",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1790985600004,
+      "tag": "0108_house_owner_learning",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1791072000000,
+      "tag": "0109_house_cuts",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791244800000,
+      "tag": "0110_visual_character_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791244800001,
+      "tag": "0111_immutable_visual_character_variants",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791244800002,
+      "tag": "0112_werewolf_visual_recovery",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1791676800000,
+      "tag": "0113_render_wake_outbox",
       "breakpoints": true
     }
   ]

@@ -1,50 +1,41 @@
-import { Nav } from "@/components/nav";
+import { HouseGameRoute } from "./house-route";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { EpisodeLanding } from "../episode-landing";
-import type { GameDetail } from "@/lib/api";
-import { gameHref } from "@/lib/game-links";
+import { gameReplayHref, parseReplayAudience, parseReplayCursor, werewolfMomentHref, gameHref } from "@/lib/game-links";
 import {
+  getServerGameEntry,
   getServerGame,
   getServerPostgameMedia,
+  serverApiFetch,
+  resolveServerApiUrl,
 } from "@/lib/server-api";
+
+import type { EpisodePreview } from "@/lib/api";
+import { WEREWOLF_CARD_ART } from "@/lib/game-art";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ mode?: string | string[] }>;
+  searchParams?: Promise<{ mode?: string | string[]; audience?: string | string[]; cursor?: string | string[] }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
 
   try {
-    const game = await getServerGame(slug);
+    const identity = await getServerGameEntry(slug);
+    if (identity.gameKind === "werewolf") {
+      const { episode, media } = await serverApiFetch<EpisodePreview>(`/api/games/${encodeURIComponent(identity.id)}/episode`, { cache: "no-store" });
+      const title = `${episode.title} — Werewolf · The House`;
+      const fallback = trailerMetadata(identity.slug, title, episode.description, {url: episode.coverUrl ? resolveServerApiUrl(episode.coverUrl) : WEREWOLF_CARD_ART, altText: "Lanterns light a medieval village at dusk"});
+      return media.status === "ready" ? trailerMetadata(identity.slug, title, episode.description, media.poster) : fallback;
+    }
+    const game = await getServerGame(identity.slug);
     if (game.status === "completed") {
       const media = await getServerPostgameMedia(slug);
       if (media.status === "ready") {
         const title = `${game.episode?.title ?? media.preview.title} — Influence`;
         const description = game.episode?.description ?? media.preview.description;
-        const image = {
-          url: media.poster.url,
-          alt: media.poster.altText,
-        };
-        return {
-          title,
-          description,
-          alternates: { canonical: gameHref(slug) },
-          openGraph: {
-            title,
-            description,
-            type: "website",
-            images: [image],
-          },
-          twitter: {
-            card: "summary_large_image",
-            title,
-            description,
-            images: [media.poster.url],
-          },
-        };
+        return trailerMetadata(slug, title, description, media.poster);
       }
 
       if (!game.episode || game.episode.title === game.slug) return completedGameFallbackMetadata(slug);
@@ -57,9 +48,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   return {
-    title: `${slug} — Influence`,
-    description: "Watch this Influence game live or replay the transcript.",
+    title: "Game — The House",
+    description: "Step inside the House.",
   };
+}
+
+function trailerMetadata(slug: string, title: string, description: string, poster: { url: string; altText: string }): Metadata {
+  return { title, description, alternates: { canonical: gameHref(slug) },
+    openGraph: { title, description, type: "website", images: [{ url: poster.url, alt: poster.altText }] },
+    twitter: { card: "summary_large_image", title, description, images: [poster.url] } };
 }
 
 function completedGameFallbackMetadata(slug: string): Metadata {
@@ -91,25 +88,10 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
     redirect(`/games/${encodeURIComponent(slug)}/results`);
   }
   if (mode === "replay") {
-    redirect(`/games/${encodeURIComponent(slug)}/replay`);
+    const audience = parseReplayAudience(resolvedSearchParams.audience);
+    const cursor = parseReplayCursor(resolvedSearchParams.cursor);
+    if (audience !== "invalid" && cursor !== "invalid" && (cursor === undefined || audience)) redirect(cursor !== undefined && audience ? werewolfMomentHref(slug,audience,cursor) : gameReplayHref(slug, undefined, audience));
   }
 
-  let initialGame: GameDetail | undefined;
-
-  try {
-    initialGame = await getServerGame(slug);
-  } catch (err) {
-    console.error(`[GameViewerPage] SSR fetch failed for slug="${slug}":`, err);
-    // Client-side EpisodeLanding will retry and show loadError if API remains unavailable
-  }
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Nav />
-
-      <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
-        <EpisodeLanding slug={slug} initialGame={initialGame} />
-      </main>
-    </div>
-  );
+  return <HouseGameRoute slug={slug} mode={mode === "replay" ? "replay" : "entry"} audience={resolvedSearchParams.audience} cursor={resolvedSearchParams.cursor} />;
 }

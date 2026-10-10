@@ -5,6 +5,30 @@ resumes, or advances a game. The private `game-worker` role uses the **same API
 image digest** and owns execution through renewable, per-game `game_run_owners`
 leases. Render workers remain a separate image/service.
 
+The worker dispatches both Influence and Werewolf by `games.gameKind`. Apply
+the `0105`–`0112` Werewolf migration chain after unchanged main migration
+`0104_visual_panel_harmonization` before deploying the Werewolf implementation.
+Previously migrated development branches require a backup and the
+[migration-journal reconciliation procedure](../werewolf.md#persistence-and-execution),
+not replay of their existing DDL. Werewolf claims
+the same renewable owner leases but recovers its private canonical event log and
+frozen action plans instead of an Influence XState snapshot. Admission closure,
+drain counts, and graceful shutdown include both games. Invalid Werewolf history
+suspends that game without blocking adoption of unrelated games. See
+[Werewolf](../werewolf.md) for local operation and validation boundaries.
+
+Werewolf rules version 7 publishes each daytime contribution before the next
+speaker acts, preserving the seeded opening ring and ordered replies/answers.
+Sealed ballots retain frozen slots and one canonical resolution. Gateway and
+worker must use matching code. Experimental v1–v6 logs remain preserved but are
+rejected on read/resume; start a new v7 game. See the current Werewolf rules.
+
+House Cuts shutdown requeues jobs whose persisted provider attempts are all
+terminal (including a job stopped before dispatch). A new worker reuses accepted
+receipts. An unknown nonterminal paid dispatch remains failed for inspection;
+shutdown never authorizes an automatic paid redispatch or a premature cast-only
+trailer for safely resumable editorial work.
+
 ## Ephemeral PR previews
 
 Ephemeral previews need the same gateway/worker separation. Their IaC deployment
@@ -290,6 +314,6 @@ The existing game-worker process starts `startVisualMediaWorker` alongside its g
 
 Jobs expose queued, rendering, verifying, ready, failed and needs_reconciliation. The maximum running interval is 15 minutes; each provider retains its existing per-request timeout. Shutdown aborts media work, stops heartbeats and expires the held lease. A restarted worker adopts expired jobs and loads durable operation successes before further dispatch. Owner checks guard each provider reservation and every progress/candidate acceptance transaction. Late receipts and pixels are retained by the journal, but an old owner cannot accept or publish them.
 
-A missing receipt during a current rendering/verifying job with a live lease is pending. It becomes accounting uncertainty when the dispatch is interrupted or its lease expires; an explicitly uncertain receipt needs reconciliation immediately. The accounting read model derives this distinction from the saved job lease, with no schema migration. Reconciliation of a still-running request is rejected. Inspect provider request/billing evidence in Visual production, then record the reconciliation using the existing attempt endpoint; unknown costs must remain unknown until evidence establishes them. Never record zero as a substitute for missing evidence. Continue failed repair is an explicit new job that reuses successful source steps; it does not repeat unresolved attempts. Each job gets one generation pass with at most one eligible provider-availability fallback under the existing provider policy, and no composition-rejection regeneration loop.
+A missing receipt during a current rendering/verifying job with a live lease is pending. It becomes accounting uncertainty when the dispatch is interrupted or its lease expires; an explicitly uncertain receipt needs reconciliation immediately. The accounting read model derives this distinction from the saved job lease, with no schema migration. Reconciliation of a still-running request is rejected. Inspect provider request/billing evidence in Visual production, then record the reconciliation using the existing attempt endpoint; unknown costs must remain unknown until evidence establishes them. Never record zero as a substitute for missing evidence. Continue failed repair is an explicit new job that reuses successful source steps; it does not repeat unresolved attempts. A fresh scene regeneration may explicitly acknowledge the exact uncertain attempt IDs through its durable media request. This queues a new operation chain without reconciling costs, repeating the old dispatch, or publishing its pixels. Prior accepted acknowledgements prevent the same old attempt blocking later fresh scene regenerations; continuation and other repair actions still require reconciliation. Each job gets one generation pass with at most one eligible provider-availability fallback under the existing provider policy, and no composition-rejection regeneration loop.
 
 Independent regeneration starts immediately after queue acceptance. **Prepare game recovery** retains the separate paused-game preparation plus explicit **Resume game** flow. Publishing a media version affects viewers only; it cannot satisfy agent-context recovery requirements. See [Visual Mode](../visual-mode.md#independent-scene-repair-and-reviewed-publication) for card operations, API receipts, version review and automatic publication updates between playback beats.

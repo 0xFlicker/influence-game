@@ -6,7 +6,7 @@
  * the same Postgres-backed durable run path as the web UI.
  */
 
-import { loadStoredMcpAccessToken } from "./game-mcp/oauth-token-store";
+import { apiFetch, authHeaders, resolveSessionToken } from "./api-simulation-client";
 import {
   DEFAULT_MODEL_CATALOG_ID,
   normalizeProviderManifest,
@@ -29,24 +29,13 @@ interface ApiSimArgs {
   modelCatalogId?: string;
   providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
-  timingPreset: "fast" | "standard" | "slow";
   maxRounds: number | "auto";
-  visibility: "public" | "unlisted" | "private";
-  viewerMode: "live" | "speedrun";
+  visibility: "public" | "unlisted";
   waitForAdvance: boolean;
   advanceTimeoutMs: number;
   pollIntervalMs: number;
   serviceTier: OpenAIRequestServiceTier;
   formatManifest: LaunchFormatId[];
-}
-
-interface AuthExchangeResponse {
-  token: string;
-  user: {
-    id: string;
-    roles: string[];
-    permissions: string[];
-  };
 }
 
 interface GameCreateResponse {
@@ -97,10 +86,8 @@ export function parseArgs(
     providerManifest: parseProviderManifestEnv(env.INFLUENCE_API_SIM_PROVIDER_MANIFEST),
     serviceTier: normalizeServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER) ?? "flex",
     reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_API_SIM_REASONING_POLICY) ?? undefined,
-    timingPreset: parseTimingPreset(env.INFLUENCE_API_SIM_TIMING_PRESET) ?? "fast",
     maxRounds: envMaxRounds ?? 5,
     visibility: parseVisibility(env.INFLUENCE_API_SIM_VISIBILITY) ?? "public",
-    viewerMode: parseViewerMode(env.INFLUENCE_API_SIM_VIEWER_MODE) ?? "speedrun",
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
@@ -165,18 +152,12 @@ export function parseArgs(
       const policy = normalizeReasoningPolicy(next);
       if (policy) args.reasoningPolicy = policy;
       i++;
-    } else if (arg === "--timing-preset" && next) {
-      args.timingPreset = parseTimingPreset(next) ?? args.timingPreset;
-      i++;
     } else if (arg === "--max-rounds" && next) {
       args.maxRounds = parseMaxRounds(next) ?? args.maxRounds;
       hasExplicitMaxRounds = true;
       i++;
     } else if (arg === "--visibility" && next) {
       args.visibility = parseVisibility(next) ?? args.visibility;
-      i++;
-    } else if (arg === "--viewer-mode" && next) {
-      args.viewerMode = parseViewerMode(next) ?? args.viewerMode;
       i++;
     } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
       args.formatManifest = resolveFormatManifest(
@@ -247,29 +228,6 @@ async function main(): Promise<void> {
   }
 }
 
-async function resolveSessionToken(apiBaseUrl: string): Promise<string> {
-  const configured = process.env.INFLUENCE_API_SESSION_TOKEN?.trim();
-  if (configured) return configured;
-
-  const mcpToken = process.env.INFLUENCE_MCP_TOKEN?.trim() || loadStoredMcpAccessToken();
-  const exchanged = await apiFetch<AuthExchangeResponse>(
-    apiBaseUrl,
-    "/api/auth/local-cli-session",
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${mcpToken}` },
-      body: JSON.stringify({}),
-    },
-  );
-  const missing = ["create_game", "fill_game", "start_game"].filter(
-    (permission) => !exchanged.user.permissions.includes(permission),
-  );
-  if (missing.length > 0) {
-    throw new Error(`Authenticated CLI user is missing permissions: ${missing.join(", ")}`);
-  }
-  return exchanged.token;
-}
-
 async function createGame(
   args: ApiSimArgs,
   sessionToken: string,
@@ -298,11 +256,9 @@ export function buildGameCreateBody(
   return {
     playerCount: args.players,
     providerManifest,
-    timingPreset: args.timingPreset,
     maxRounds: args.maxRounds,
     visibility: args.visibility,
     fillStrategy: "balanced",
-    viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
     formatManifest: [...args.formatManifest],
   };
@@ -361,30 +317,6 @@ async function waitForGameAdvance(args: ApiSimArgs, gameId: string): Promise<voi
   throw new Error(`Timed out waiting for game ${gameId} to advance`);
 }
 
-async function apiFetch<T = unknown>(
-  apiBaseUrl: string,
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
-  const url = new URL(path, apiBaseUrl);
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers as Record<string, string> | undefined),
-    },
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText);
-    throw new Error(`${init?.method ?? "GET"} ${url.pathname} failed (${response.status}): ${text}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-function authHeaders(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}` };
-}
-
 export function catalogIdFromProviderAndModel(
   provider: ApiSimArgs["provider"],
   model: string | undefined,
@@ -420,19 +352,10 @@ function parseProvider(value: string | undefined): ApiSimArgs["provider"] | unde
   return undefined;
 }
 
-function parseTimingPreset(value: string | undefined): ApiSimArgs["timingPreset"] | undefined {
-  if (value === "fast" || value === "standard" || value === "slow") return value;
-  return undefined;
-}
-
 function parseVisibility(value: string | undefined): ApiSimArgs["visibility"] | undefined {
-  if (value === "public" || value === "unlisted" || value === "private") return value;
-  return undefined;
-}
-
-function parseViewerMode(value: string | undefined): ApiSimArgs["viewerMode"] | undefined {
-  if (value === "live" || value === "speedrun") return value;
-  return undefined;
+  if (value === undefined) return undefined;
+  if (value === "public" || value === "unlisted") return value;
+  throw new Error("Visibility must be public or unlisted");
 }
 
 function sleep(ms: number): Promise<void> {

@@ -629,7 +629,6 @@ export type AgentAction =
 // Game configuration
 // ---------------------------------------------------------------------------
 
-export type ViewerMode = "live" | "speedrun" | "replay";
 
 /** Minimum roster size admitted for newly created games. */
 export const MIN_NEW_GAME_PLAYERS = 6;
@@ -639,32 +638,12 @@ export const MAX_NEW_GAME_PLAYERS = 12;
 export interface GameConfig {
   /** Frozen legal formats for this game. Omission is normalized at admission. */
   formatManifest?: readonly LaunchFormatId[];
-  /** Phase durations in milliseconds (0 = wait for all players to respond) */
-  timers: {
-    introduction: number;
-    lobby: number;
-    mingle: number;
-    rumor: number;
-    vote: number;
-    power: number;
-    council: number;
-    // Endgame timers
-    plea?: number;
-    accusation?: number;
-    defense?: number;
-    openingStatements?: number;
-    juryQuestions?: number;
-    closingArguments?: number;
-    juryVote?: number;
-  };
   /** Max rounds before game is declared a draw */
   maxRounds: number;
   /** Minimum players to start */
   minPlayers: number;
   /** Maximum players */
   maxPlayers: number;
-  /** Presentation pacing mode: "live" for public viewers, "speedrun" for admin/testing, "replay" for post-game */
-  viewerMode?: ViewerMode;
   /** Max follow-up questions per diary room interview (default 1). Set to 0 for single-question interviews. */
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
@@ -684,27 +663,9 @@ export interface GameConfig {
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
-  timers: {
-    introduction: 30_000, // 30s for prototype
-    lobby: 30_000,
-    mingle: 45_000,
-    rumor: 30_000,
-    vote: 20_000,
-    power: 15_000,
-    council: 20_000,
-    // Endgame timers
-    plea: 20_000,
-    accusation: 20_000,
-    defense: 20_000,
-    openingStatements: 30_000,
-    juryQuestions: 30_000,
-    closingArguments: 30_000,
-    juryVote: 20_000,
-  },
   maxRounds: 10,
   minPlayers: MIN_NEW_GAME_PLAYERS,
   maxPlayers: MAX_NEW_GAME_PLAYERS,
-  viewerMode: "speedrun",
 };
 
 /**

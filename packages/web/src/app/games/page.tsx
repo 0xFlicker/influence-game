@@ -1,6 +1,7 @@
 import { Nav } from "@/components/nav";
-import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import { GamesBrowser } from "./games-browser";
+import Link from "next/link";
 
 export const metadata = {
   title: `Games - ${HOUSE_VENUE.name}`,
@@ -16,10 +17,11 @@ export default function GamesPage() {
           Every room has a story.
         </h1>
         <p className="influence-copy mb-8">
-          Find an {ACTIVE_GAME.name} game to enter. Find an episode to get lost in.
+          Find a House game to enter. Find an episode to get lost in.
         </p>
 
-        <GamesBrowser />
+        <Link href="/games/new" className="mb-6 inline-block rounded-lg border border-white/20 px-4 py-2 text-sm">Create game →</Link>
+        <GamesBrowser includeWerewolf />
       </main>
     </div>
   );

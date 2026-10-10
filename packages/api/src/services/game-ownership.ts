@@ -1,3 +1,5 @@
+import { queueEpisodeCopy } from "./episode-presentation.js";
+import { releaseWerewolfOwner } from "./werewolf-games.js";
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
@@ -552,6 +554,11 @@ export async function relinquishDurableGameRunOwner(
   ownerEpoch: string,
   reason = "process_shutdown",
 ): Promise<boolean> {
+  const [catalog] = await db.select({ gameKind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, gameId));
+  if (catalog?.gameKind === "werewolf") {
+    await releaseWerewolfOwner(db, gameId, ownerEpoch);
+    return true;
+  }
   const now = new Date().toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`
@@ -685,6 +692,8 @@ async function transitionWaitingGameToInProgress(
         "Game start state changed while the roster was freezing.",
         "invalid_state",
       );
+
+      await queueEpisodeCopy(tx, gameId);
 
       if (options.owner) {
         await tx.insert(schema.gameRunOwners)

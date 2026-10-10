@@ -1,3 +1,4 @@
+import { publicGameFilter, isViewerGame } from "./game-visibility.js";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -154,7 +155,7 @@ export async function getPublicSeasonDashboard(
   const seasonRow = await resolveSeason(db, idOrSlug);
   if (!seasonRow) return null;
   const season = publicSeasonIdentity(seasonRow);
-  const receipts = await loadPublicReceiptRows(db, season.id);
+  const receipts = await loadReceiptRows(db, season.id, true);
   const eligible = receipts.filter((receipt) => receipt.eligibilityStatus === "eligible");
   const internalAgentStandings = buildAgentStandings(eligible);
   const internalArchitectStandings = buildArchitectStandings(internalAgentStandings, eligible);
@@ -227,10 +228,10 @@ export async function getPublicGameCompetitionReceipts(
 ): Promise<{ season: PublicSeasonIdentity; receipts: PublicGameCompetitionReceipt[] } | null> {
   const season = await resolveSeason(db, seasonIdOrSlug);
   if (!season) return null;
-  const game = (await db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games)
+  const game = (await db.select({ id: schema.games.id, config: schema.games.config, hiddenAt: schema.games.hiddenAt, seasonId: schema.games.seasonId }).from(schema.games)
     .where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug))).limit(1))[0];
-  if (!game || game.seasonId !== season.id) return null;
-  const seasonReceipts = await loadPublicReceiptRows(db, season.id);
+  if (!game || !isViewerGame(game) || game.seasonId !== season.id) return null;
+  const seasonReceipts = await loadReceiptRows(db, season.id);
   const gameReceipts = seasonReceipts.filter((receipt) => receipt.gameId === game.id);
   const identities = await getPublicPlayerIdentityMap(
     db,
@@ -283,7 +284,7 @@ export async function getOwnedAgentSeasonAnalysis(
       eq(schema.agentProfiles.userId, input.ownerId),
     )).limit(1))[0];
   if (!profile) return null;
-  const rows = (await loadPublicReceiptRows(db, season.id))
+  const rows = (await loadReceiptRows(db, season.id))
     .filter((receipt) => receipt.agentProfileId === input.agentId);
   const revisions = await db.select({ id: schema.agentRevisions.id, ordinal: schema.agentRevisions.ordinal })
     .from(schema.agentRevisions).where(eq(schema.agentRevisions.agentProfileId, input.agentId));
@@ -341,7 +342,7 @@ export async function exportOwnedSeasonReceipts(
 }> {
   const season = await resolveSeason(db, input.seasonIdOrSlug);
   if (!season) return null;
-  const allRows = (await loadPublicReceiptRows(db, season.id))
+  const allRows = (await loadReceiptRows(db, season.id))
     .filter((receipt) => receipt.ownerId === input.ownerId)
     .filter((receipt) => !input.agentId || receipt.agentProfileId === input.agentId);
   const limit = Math.max(1, Math.min(input.limit ?? DEFAULT_EXPORT_LIMIT, MAX_EXPORT_LIMIT));
@@ -481,7 +482,7 @@ export async function getProducerSeasonDiagnostics(
 }
 
 type SeasonRow = typeof schema.seasons.$inferSelect;
-type ReceiptReadRow = Awaited<ReturnType<typeof loadPublicReceiptRows>>[number];
+type ReceiptReadRow = Awaited<ReturnType<typeof loadReceiptRows>>[number];
 
 async function resolveSeason(db: DrizzleDB, idOrSlug: string): Promise<SeasonRow | null> {
   return (await db.select().from(schema.seasons)
@@ -501,7 +502,7 @@ function publicSeasonIdentity(row: SeasonRow): PublicSeasonIdentity {
   };
 }
 
-async function loadPublicReceiptRows(db: DrizzleDB, seasonId: string) {
+async function loadReceiptRows(db: DrizzleDB, seasonId: string, discovery = false) {
   return db.select({
     id: schema.competitionReceipts.id,
     gameId: schema.competitionReceipts.gameId,
@@ -522,7 +523,7 @@ async function loadPublicReceiptRows(db: DrizzleDB, seasonId: string) {
     earnedAt: schema.competitionReceipts.earnedAt,
   }).from(schema.competitionReceipts)
     .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id))
-    .where(eq(schema.competitionReceipts.seasonId, seasonId))
+    .where(and(eq(schema.competitionReceipts.seasonId, seasonId), discovery ? publicGameFilter() : undefined))
     .orderBy(asc(schema.competitionReceipts.earnedAt), asc(schema.competitionReceipts.id));
 }
 

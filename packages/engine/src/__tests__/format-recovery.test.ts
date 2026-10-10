@@ -351,15 +351,6 @@ describe("multi-round format resume actor round catch-up", () => {
       maxRounds: 2,
       minPlayers: 4,
       maxPlayers: 12,
-      timers: {
-        introduction: 0,
-        lobby: 0,
-        mingle: 0,
-        rumor: 0,
-        vote: 0,
-        power: 0,
-        council: 0,
-      },
     };
 
     const runner = new GameRunner(allAgents, config, undefined, {

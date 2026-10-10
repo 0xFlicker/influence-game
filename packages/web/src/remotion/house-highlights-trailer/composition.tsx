@@ -1,3 +1,5 @@
+import { WerewolfTrailerBeat } from "./werewolf";
+import type { InfluenceTrailerManifest } from "@influence/engine";
 import type { CSSProperties, ReactNode } from "react";
 import {
   AbsoluteFill,
@@ -11,7 +13,6 @@ import {
 } from "remotion";
 import type {
   HouseHighlightsTrailerAgent,
-  HouseHighlightsTrailerCueSegment,
   HouseHighlightsTrailerManifest,
   HouseHighlightsTrailerPlayerResult,
   HouseHighlightsTrailerScenelet,
@@ -46,8 +47,9 @@ function Segment({
   segment,
 }: {
   manifest: HouseHighlightsTrailerManifest;
-  segment: HouseHighlightsTrailerCueSegment;
+  segment: HouseHighlightsTrailerManifest["cueSheet"]["segments"][number];
 }) {
+  if (manifest.kind === "werewolf") return <WerewolfTrailerBeat manifest={manifest} segmentId={segment.id} />;
   if (segment.kind === "cast_roster") {
     return <CastRosterBeat cast={manifest.cast} />;
   }
@@ -124,7 +126,7 @@ function SceneletBeat({ scenelet }: { scenelet: HouseHighlightsTrailerScenelet }
   );
 }
 
-function FinalVoteBeat({ manifest }: { manifest: HouseHighlightsTrailerManifest }) {
+function FinalVoteBeat({ manifest }: { manifest: InfluenceTrailerManifest }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const reveal = spring({ frame: frame - fps * 0.5, fps, config: { damping: 20, stiffness: 90 } });
@@ -154,7 +156,7 @@ function FinalVoteBeat({ manifest }: { manifest: HouseHighlightsTrailerManifest 
   );
 }
 
-function WinnerBeat({ manifest }: { manifest: HouseHighlightsTrailerManifest }) {
+function WinnerBeat({ manifest }: { manifest: InfluenceTrailerManifest }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const pop = spring({ frame: frame - fps * 0.25, fps, config: { damping: 16, stiffness: 100 } });

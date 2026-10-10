@@ -142,7 +142,6 @@ export interface OpenGameSummary {
     modelLabel: string;
     maxRounds: number;
     visibility: string;
-    viewerMode: string;
   };
   estimatedStart: string | null;
   createdAt: string;
@@ -735,7 +734,6 @@ function openGameSummary(game: GameRow, playerCount: number): OpenGameSummary {
       modelLabel: modelLabelFromConfig(config),
       maxRounds: typeof config.maxRounds === "number" ? config.maxRounds : 10,
       visibility: typeof config.visibility === "string" ? config.visibility : "public",
-      viewerMode: typeof config.viewerMode === "string" ? config.viewerMode : "speedrun",
     },
     estimatedStart: null,
     createdAt: game.createdAt,

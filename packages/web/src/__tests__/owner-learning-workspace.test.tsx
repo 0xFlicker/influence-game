@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, cleanup, render, type RenderResult } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { act, cleanup, fireEvent, render, type RenderResult } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { OwnerLearningReviewWorkspace } from "../app/dashboard/agents/[id]/review/owner-learning-workspace";
 import {
@@ -19,7 +19,7 @@ let domWindow: HappyDOMWindow;
 let timers: FakeTimers;
 let fullReviewCalls: number;
 let statusCalls: number;
-let statusMode: "transient_then_terminal" | "terminal_404";
+let statusMode: "transient_then_terminal" | "terminal_404" | "running";
 
 beforeEach(() => {
   domWindow = new HappyDOMWindow({
@@ -53,6 +53,9 @@ beforeEach(() => {
           headers: { "content-type": "application/json" },
         });
       }
+      if (statusMode === "running") return jsonResponse({ ...terminalStatus(),
+        analysisStatus: "running", stage: "scanning_narratives", safeFailureCode: null,
+      });
       if (statusCalls === 1) throw new Error("transient network failure");
       return jsonResponse(terminalStatus());
     }
@@ -126,6 +129,74 @@ describe("owner learning workspace lifecycle", () => {
     expect(timers.pendingTimerCount).toBe(0);
 
     await act(async () => mounted.unmount());
+  });
+
+  test("shows failed checks and recovers with a manual read without restarting analysis", async () => {
+    let mounted!: RenderResult;
+    await act(async () => {
+      mounted = render(<OwnerLearningReviewWorkspace agentId="agent-1" reviewId="review-1" />);
+      await settlePromises();
+    });
+    expect(mounted.getByText("Checked just now")).not.toBeNull();
+    await act(async () => { await timers.runNextTimer(); await settlePromises(); });
+    expect(mounted.getByText("Unable to check status")).not.toBeNull();
+    expect(mounted.container.querySelector(".olm-status-check time")).toBeNull();
+    statusMode = "running";
+    await act(async () => { fireEvent.click(mounted.getByRole("button", { name: "Try again" })); await settlePromises(); });
+    expect(mounted.queryByText("Unable to check status")).toBeNull();
+    expect(mounted.getByText("Checked just now")).not.toBeNull();
+    expect(statusCalls).toBe(2);
+    expect(fullReviewCalls).toBe(1);
+    expect(mounted.container.querySelector('[data-review-status="running"]')).not.toBeNull();
+    expect(timers.pendingTimerCount).toBe(1);
+  });
+
+  test("refreshes the checked time even when review progress is unchanged", async () => {
+    const clock = spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+    try {
+      statusMode = "running";
+      let mounted!: RenderResult;
+      await act(async () => {
+        mounted = render(<OwnerLearningReviewWorkspace agentId="agent-1" reviewId="review-1" />);
+        await settlePromises();
+      });
+      const originalTime = mounted.container.querySelector(".olm-status-check time")!.getAttribute("datetime");
+      clock.mockReturnValue(1_800_000_060_000);
+      await act(async () => { fireEvent.click(mounted.getByRole("button", { name: "Check again" })); await settlePromises(); });
+      expect(mounted.container.querySelector(".olm-status-check time")!.getAttribute("datetime")).not.toBe(originalTime);
+      expect(mounted.container.querySelector('[data-review-status="running"]')).not.toBeNull();
+      expect(fullReviewCalls).toBe(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("shares a pending manual check with scheduled polling and hides it on completion", async () => {
+    let mounted!: RenderResult;
+    await act(async () => {
+      mounted = render(<OwnerLearningReviewWorkspace agentId="agent-1" reviewId="review-1" />);
+      await settlePromises();
+    });
+    const fetchBeforeCheck = globalThis.fetch;
+    let checks = 0;
+    let resolveStatus: ((value: Response) => void) | undefined;
+    globalThis.fetch = (async (request, init) => {
+      if (String(request).includes("/status?")) {
+        checks += 1;
+        return new Promise<Response>((resolve) => { resolveStatus = resolve; });
+      }
+      return fetchBeforeCheck(request, init);
+    }) as typeof fetch;
+    await act(async () => { fireEvent.click(mounted.getByRole("button", { name: "Check again" })); await settlePromises(); });
+    expect(mounted.getByRole("button", { name: "Checking…" }).hasAttribute("disabled")).toBe(true);
+    // Start the scheduled callback without waiting for its still-pending request.
+    let scheduled: Promise<void> | undefined;
+    await act(async () => { scheduled = timers.runNextTimer(); await settlePromises(); });
+    expect(checks).toBe(1);
+    await act(async () => { resolveStatus!(jsonResponse(terminalStatus())); await scheduled; await settlePromises(); });
+    expect(mounted.container.querySelector('[data-review-status="failed"]')).not.toBeNull();
+    expect(mounted.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(timers.pendingTimerCount).toBe(0);
   });
 
   test("clears the pending poll when the workspace unmounts", async () => {
@@ -205,6 +276,7 @@ async function settlePromises(): Promise<void> {
 function runningReview(): OwnerLearningReview {
   return {
     id: "review-1",
+    gameKind: "influence",
     agentProfileId: "agent-1",
     reviewedRevisionId: "revision-1",
     selectedGameIds: ["game-1"],

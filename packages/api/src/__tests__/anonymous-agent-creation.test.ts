@@ -12,7 +12,7 @@ import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 
 const profile = { name: "Mira Vale", gender: "female", personaKey: "diplomat", backstory: "A former envoy.",
   personality: "Patient, warm, and suspicious of easy promises.", strategyStyle: "Build trust, at the risk of waiting too long.",
-  performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
+  performanceInstructions: "Quiet gestures.", visualDesign: "A blue coat.", werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips: ["Trust takes time.", "I keep receipts.", "We can talk."] };
 const turn = decodeAnonymousCreationTurn(JSON.stringify({ reply: "Mira builds trust, but may hesitate to act. Does she feel right?", profile }));
 const response: ChatCompletion = { id: "preview-response", object: "chat.completion", created: 0, model: "gpt-5.6-luna", choices: [],
   usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 } };

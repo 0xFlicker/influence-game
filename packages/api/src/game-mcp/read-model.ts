@@ -1,4 +1,6 @@
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { guardInfluenceInspection } from "../services/house-game-kind-guard.js";
+import { listHouseGames, type HouseCollection } from "../services/house-game-access.js";
+import { and, asc, eq, or } from "drizzle-orm";
 import {
   buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
@@ -40,7 +42,6 @@ import {
 import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
 import {
   getGameCompletionSettlementState,
-  getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import type { GameCompletionSettlementState } from "../db/schema.js";
 import { MAX_TRACE_MANIFEST_LIMIT, PrivateTraceReadModel } from "../services/private-trace-read-model.js";
@@ -111,12 +112,8 @@ import { resolveDailyFreeProviderManifest } from "../services/daily-provider-man
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
-const DEFAULT_GAME_LIMIT = 20;
-const MAX_GAME_LIMIT = 100;
 const DEFAULT_TRACE_CONTENT_BYTES = 8 * 1024 * 1024;
 const MAX_TRACE_CONTENT_BYTES = 64 * 1024 * 1024;
-const DEVELOPER_EVIDENCE_NOTE =
-  "Private reasoning tools are available as explicit tool calls behind the producer MCP scope.";
 
 export type ProductionGameMcpAccess = Pick<GameMcpAuthContext, "authProfile" | "userId">;
 
@@ -443,6 +440,7 @@ export class ProductionGameMcpReadModel {
     input: ReadMatchManifestInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,
   ): Promise<MatchManifestResult> {
+    await guardInfluenceInspection(this.db,input.gameIdOrSlug,{userId:access.userId,producer:false},true);
     if (!access.userId) {
       return {
         ok: false,
@@ -459,6 +457,7 @@ export class ProductionGameMcpReadModel {
     input: ReadMatchTranscriptInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,
   ): Promise<MatchTranscriptPageResult> {
+    await guardInfluenceInspection(this.db,input.gameIdOrSlug,{userId:access.userId,producer:false},true);
     if (!access.userId) {
       return {
         ok: false,
@@ -480,6 +479,7 @@ export class ProductionGameMcpReadModel {
     input: ReadMatchCognitionInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,
   ): Promise<MatchCognitionPageResult> {
+    await guardInfluenceInspection(this.db,input.gameIdOrSlug,{userId:access.userId,producer:false},true);
     if (!access.userId) {
       return {
         ok: false,
@@ -500,6 +500,7 @@ export class ProductionGameMcpReadModel {
     input: ReadMatchNarrativeInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,
   ): Promise<MatchNarrativePageResult> {
+    await guardInfluenceInspection(this.db,input.gameIdOrSlug,{userId:access.userId,producer:false},true);
     if (!access.userId) {
       return {
         ok: false,
@@ -521,6 +522,7 @@ export class ProductionGameMcpReadModel {
     input: ReadMatchNarrativeInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,
   ): Promise<MatchNarrativePageResult> {
+    await guardInfluenceInspection(this.db,input.gameIdOrSlug,{userId:access.userId,producer:!isGamesSubjectAccess(access)});
     if (!access.userId) {
       return {
         ok: false,
@@ -548,7 +550,7 @@ export class ProductionGameMcpReadModel {
         endedAt: schema.games.endedAt,
       })
       .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
+      .where(and(eq(schema.games.gameKind, "influence"), or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))
       .limit(1))[0];
 
     if (!row) return null;
@@ -556,104 +558,8 @@ export class ProductionGameMcpReadModel {
     return gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope));
   }
 
-  async listGames(access: ProductionGameMcpAccess, limit = DEFAULT_GAME_LIMIT): Promise<{
-    schemaVersion: 1;
-    canonicalGameFacts: { games: Array<ProductionGameMcpGameIdentity & {
-      eventLog: {
-        status: string;
-        rowCount: number;
-        trustedEventCount: number;
-        lastTrustedSequence: number;
-      };
-      projection: {
-        status: string;
-        round?: number;
-        phase?: string;
-        alivePlayers?: string[];
-        winner?: string;
-      };
-    }> };
-    developerEvidence?: { note: string };
-  }> {
-    const accessibleGameIds = await this.accessibleGameIds(access);
-    if (accessibleGameIds && accessibleGameIds.length === 0) {
-      return {
-        schemaVersion: 1,
-        canonicalGameFacts: { games: [] },
-      };
-    }
-
-    const selection = {
-      id: schema.games.id,
-      slug: schema.games.slug,
-      status: schema.games.status,
-      trackType: schema.games.trackType,
-      seasonId: schema.games.seasonId,
-      gameKernel: schema.games.gameKernel,
-      createdAt: schema.games.createdAt,
-      startedAt: schema.games.startedAt,
-      endedAt: schema.games.endedAt,
-    };
-    const rows = accessibleGameIds
-      ? await this.db
-          .select(selection)
-          .from(schema.games)
-          .where(inArray(schema.games.id, accessibleGameIds))
-          .orderBy(desc(schema.games.createdAt))
-          .limit(clamp(limit, 1, MAX_GAME_LIMIT))
-      : await this.db
-          .select(selection)
-          .from(schema.games)
-          .orderBy(desc(schema.games.createdAt))
-          .limit(clamp(limit, 1, MAX_GAME_LIMIT));
-    const settlementStates = await getGameCompletionSettlementStateMap(
-      this.db,
-      rows.map((row) => row.id),
-    );
-
-    const games = [];
-    for (const row of rows) {
-      const events = await getPersistedGameEvents(this.db, row.id);
-      const safeProjection = redactProjectionForSettlement(
-        events,
-        settlementStates.get(row.id),
-      );
-      games.push({
-        ...gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope)),
-        eventLog: {
-          status: events.status,
-          rowCount: events.eventCount,
-          trustedEventCount: events.events.length,
-          lastTrustedSequence: events.lastTrustedSequence,
-        },
-        projection: {
-          status: safeProjection.status,
-          ...(safeProjection.summary && {
-            round: safeProjection.summary.round,
-            ...(safeProjection.summary.phase && { phase: safeProjection.summary.phase }),
-            alivePlayers: safeProjection.summary.players.aliveNames,
-            ...(safeProjection.summary.winner?.name && {
-              winner: safeProjection.summary.winner.name,
-            }),
-          }),
-        },
-      });
-    }
-
-    const result: {
-      schemaVersion: 1;
-      canonicalGameFacts: { games: typeof games };
-    } = {
-      schemaVersion: 1,
-      canonicalGameFacts: { games },
-    };
-    if (!isGamesSubjectAccess(access)) {
-      return {
-        ...result,
-        developerEvidence: { note: DEVELOPER_EVIDENCE_NOTE },
-      };
-    }
-    return result;
+  async listGames(access: ProductionGameMcpAccess, limit = 20, collection: HouseCollection = "public", gameKind?: "influence" | "werewolf") {
+    return this.db.transaction(tx => listHouseGames(tx,{limit,collection,gameKind},{userId:access.userId,producer:!isGamesSubjectAccess(access)}), {isolationLevel:"repeatable read",accessMode:"read only"});
   }
 
   async readProjection(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
@@ -1048,6 +954,7 @@ export class ProductionGameMcpReadModel {
     };
   }> {
     requireProducerAccess(access);
+    await guardInfluenceInspection(this.db,gameIdOrSlug,{userId:access.userId,producer:true});
     const result = await getDurableRunInspection(this.db, gameIdOrSlug);
     if (!result.ok) throw new Error(result.error);
     return {
@@ -1223,6 +1130,7 @@ export class ProductionGameMcpReadModel {
     gameIdOrSlug: string,
     access: ProductionGameMcpAccess,
   ): Promise<CognitiveArtifactAccessor> {
+    await guardInfluenceInspection(this.db,gameIdOrSlug,{userId:access.userId,producer:!isGamesSubjectAccess(access)},true);
     if (access.authProfile === "producer") {
       return this.producerCognitiveAccessor(access);
     }
@@ -1256,6 +1164,7 @@ export class ProductionGameMcpReadModel {
     gameIdOrSlug: string,
     access: ProductionGameMcpAccess,
   ): Promise<ProductionGameMcpGameIdentity> {
+    await guardInfluenceInspection(this.db,gameIdOrSlug,{userId:access.userId,producer:!isGamesSubjectAccess(access)});
     if (isGamesSubjectAccess(access)) {
       // MatchAccessContext makes unknown and inaccessible games indistinguishable.
       const resolution = await resolveMatchAccessContext(this.db, {

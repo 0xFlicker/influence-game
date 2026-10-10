@@ -66,3 +66,11 @@ The pre-show also exposes Start, Stop, and Hide using the existing `start_game`,
 these permissions. Start waits for a full cast, actions lock while pending,
 failures remain visible, and Hide requires confirmation before returning to
 All games. The API remains the authority for each action.
+
+## Shared Werewolf casting
+
+`CastingHero` in `components/casting/casting-hero.tsx` owns the shared House hero, admission strip, venue image and icon. Influence keeps its waiting-game polling and controls. Werewolf creates a durable lobby first, then reads and joins its own persisted cast. The shared CSS lives in `components/casting/casting.css`.
+
+`AgentSelector` owns the portrait/search dialog, loading/retry/focus behavior and explicit selection. `JoinGameModal` is the Influence join adapter. `WerewolfWaitingGame` submits the Werewolf join endpoint and refreshes the canonical lobby. Neither adapter invents the other game's lifecycle. The Werewolf `join_werewolf` creation continuation preserves the destination game through character creation. Starting is a separate, permission-gated transaction that freezes approved character content and assigns roles once.
+
+The main games browser merges discovery at the UI boundary: Werewolf gets its own styled shelf and links, while search, game-type and status filters cover both. Influence episode previews, statistics and production actions remain Influence-owned. Deterministic browser coverage exercises saved admission across refresh and discovery navigation, mobile selection/removal, guest lobby reads, transition on start and the existing replay flows.

@@ -70,7 +70,7 @@ test('advanced visual affirmation uses context, preserves character text and ope
     context=JSON.parse(request.postData()!).context;
     void respond({tool:'update_visuals',fields:['performanceInstructions','visualDesign']});
    } else if(path==='/api/agent-profiles/generate') {
-    void respond({name:'Unwanted rename',personality:'Unwanted rewrite',backstory:'A careful observer.',strategyStyle:'Wait for evidence.',personaKey:'strategic',gender:'female',performanceInstructions:'Soft voice',visualDesign:'A blue coat',introQuips:[]});
+    void respond({name:'Unwanted rename',personality:'Unwanted rewrite',backstory:'A careful observer.',strategyStyle:'Wait for evidence.',personaKey:'strategic',gender:'female',performanceInstructions:'Soft voice',visualDesign:'A blue coat',werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips:[]});
    } else if(path==='/api/agent-profiles/visual-reference') {
     void respond({fullBodyReferenceUrl:'/avatars/personas/strategic.png',avatarUrl:'/avatars/personas/strategic.png',portraitCrop:{sourceUrl:'/avatars/personas/strategic.png',x:0,y:0,width:1,height:1},headSuggestion:null,cropWarning:null});
    } else void request.continue();
@@ -113,7 +113,7 @@ test('incomplete edits show save feedback and let AI fill identity on desktop an
     if(path===`/api/agent-profiles/${agentId}` && request.method()==='GET') void respond(original);
     else if(path==='/api/agent-profiles/generate' && request.method()==='POST') {
      generation=JSON.parse(request.postData()!);
-     releaseGeneration=()=>{releaseGeneration=undefined;void respond({...original,name:'Unwanted rename',personality:'Unwanted personality',gender:'female',personaKey:'loyalist',introQuips:[]});};
+     releaseGeneration=()=>{releaseGeneration=undefined;void respond({...original,name:'Unwanted rename',personality:'Unwanted personality',gender:'female',personaKey:'loyalist',werewolfStrategyStyle: "Test claims as village; bluff consistently as wolf.", introQuips:[]});};
      generationRequestedResolve();
     } else if(path===`/api/agent-profiles/${agentId}` && request.method()==='PATCH') {
      saves.push(JSON.parse(request.postData()!));

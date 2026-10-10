@@ -1,3 +1,4 @@
+import type { HouseParticipation } from "@influence/engine/house-participation";
 import type { AgentCreationTraitId } from "@influence/engine/agent-creation-traits";
 /**
  * Influence API client.
@@ -108,6 +109,7 @@ export async function apiFetch<T>(
   }
 
   const token = getAuthToken();
+  const requestGeneration = typeof window === "undefined" ? null : window.localStorage.getItem("influence_auth_generation");
   const isFormData = options?.body instanceof FormData;
   const headers: Record<string, string> = {
     // Skip Content-Type for FormData — browser sets it with the correct boundary
@@ -133,7 +135,7 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    if (res.status === 401 && typeof window !== "undefined" && token) {
+    if (res.status === 401 && typeof window !== "undefined" && token && token === getAuthToken() && requestGeneration === window.localStorage.getItem("influence_auth_generation")) {
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
     if (options?.method === 'POST' && typeof window !== 'undefined') {
@@ -225,14 +227,6 @@ export interface PublicPlayerIdentityRef {
   displayName: string;
 }
 
-export interface PublicCompetitionResult {
-  gameSlug: string;
-  agentName: string;
-  placement: number;
-  lobbySize: number;
-  totalPoints: number;
-  earnedAt: string;
-}
 
 export interface PublicAgentPreview {
   name: string;
@@ -283,7 +277,7 @@ export interface PublicPlayerProfile {
     wins: number;
     winRate: number;
   };
-  recentResults: PublicCompetitionResult[];
+  recentResults: HouseParticipation[];
   agents: PublicAgentPreview[];
 }
 
@@ -299,10 +293,9 @@ export type PublicPlayerProfileEnvelope =
     };
 
 export type FillStrategy = "random" | "balanced";
-export type TimingPreset = "fast" | "standard" | "slow" | "custom";
-export type GameVisibility = "public" | "unlisted" | "private";
+export type { GameVisibility } from "@influence/engine/game-visibility";
+import type { GameVisibility } from "@influence/engine/game-visibility";
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
-export type ViewerMode = "live" | "speedrun" | "replay";
 export type TrackType = "custom" | "free";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";
 export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
@@ -448,10 +441,8 @@ export interface CreateGameParams {
   providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
-  timingPreset: TimingPreset;
   maxRounds: number | "auto";
   visibility: GameVisibility;
-  viewerMode: "live" | "speedrun";
   formatManifest?: EngineLaunchFormatId[];
 }
 
@@ -528,7 +519,6 @@ export interface GameSummary {
   eliminatedPlayers: number;
   modelLabel: string;
   visibility: GameVisibility;
-  viewerMode: ViewerMode;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
@@ -581,7 +571,7 @@ export interface AdminGameSummary extends GameSummary {
 }
 
 export type ProductionGameSummary = Pick<AdminGameSummary,
-  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel">;
+  "id" | "slug" | "status" | "episode" | "season" | "hidden" | "playerCount" | "completionSettlement" | "winner" | "modelLabel"> & {gameKind?: "influence" | "werewolf"};
 
 export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
 
@@ -1055,15 +1045,20 @@ export async function getPublicWatchIntelligence(
     round?: number;
     phase?: string;
     limit?: number;
+    throughEventSequence?: number;
+    throughTranscriptSequence?: number;
   } = {},
+  signal?: AbortSignal,
 ): Promise<PublicWatchIntelligenceResult> {
   const search = new URLSearchParams();
   if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
   if (params.round !== undefined) search.set("round", String(params.round));
   if (params.phase) search.set("phase", params.phase);
   if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.throughEventSequence !== undefined) search.set("throughEventSequence", String(params.throughEventSequence));
+  if (params.throughTranscriptSequence !== undefined) search.set("throughTranscriptSequence", String(params.throughTranscriptSequence));
   const query = search.toString();
-  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`);
+  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`, {signal, cache:"no-store"});
 }
 
 /** The results endpoint returns the engine's canonical-event-derived read model verbatim. */
@@ -1079,6 +1074,7 @@ export type CompletedGameResultsJury = EngineCompletedGameResultsJury;
 export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 
 export interface CompletedGameResultsResponse {
+  gameKind: "influence";
   ok: true;
   /** v2 adds kernel routing; v1 remains accepted for cached legacy fixtures. */
   schemaVersion: 1 | 2;
@@ -1094,8 +1090,23 @@ export interface CompletedGameResultsResponse {
   results: CompletedGameResultsRead;
 }
 
+export interface WerewolfCompletedResultsResponse {
+  ok: true;
+  gameKind: "werewolf";
+  schemaVersion: 1;
+  game: { id: string; slug: string; status: GameStatus; completedAt: string | null; episode?: EpisodePresentation };
+  results: import("@influence/engine/werewolf/results-contract").WerewolfResults & {
+    players: Array<import("@influence/engine/werewolf/results-contract").WerewolfResultPlayer & { avatarUrl: string }>;
+  };
+}
+export type HouseGameResultsResponse = CompletedGameResultsResponse | WerewolfCompletedResultsResponse;
+export async function getHouseGameResults(gameIdOrSlug: string, signal?: AbortSignal): Promise<HouseGameResultsResponse> {
+  return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/results`, {signal, cache: "no-store"});
+}
 export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
-  return apiFetch(`/api/games/${gameIdOrSlug}/results`);
+  const result = await getHouseGameResults(gameIdOrSlug);
+  if (result.gameKind !== "influence") throw new Error("Expected Influence results");
+  return result;
 }
 
 export type HouseHighlightsState =
@@ -1639,8 +1650,8 @@ export interface PublicGameAlliancesResponse {
   };
 }
 
-export async function getGameAlliances(gameIdOrSlug: string): Promise<PublicGameAlliancesResponse> {
-  return apiFetch(`/api/games/${gameIdOrSlug}/alliances`);
+export async function getGameAlliances(gameIdOrSlug: string, cutoff?: {throughEventSequence: number; throughTranscriptSequence: number}): Promise<PublicGameAlliancesResponse> {
+  return apiFetch(`/api/games/${gameIdOrSlug}/alliances${cutoff ? `?throughEventSequence=${cutoff.throughEventSequence}&throughTranscriptSequence=${cutoff.throughTranscriptSequence}` : ""}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1975,19 +1986,7 @@ export async function adminRefillInviteCodes(minCodes: number, minAgeDays?: numb
 
 export type JoinGameConfig = { agentProfileId: string };
 
-export interface PlayerGameResult {
-  gameId: string;
-  gameSlug: string;
-  agentName: string;
-  persona: PersonaKey;
-  placement: number;
-  totalPlayers: number;
-  eliminated: boolean;
-  winner: boolean;
-  rounds: number;
-  completedAt: string;
-  modelLabel: string;
-}
+export type PlayerGameResult = HouseParticipation;
 
 // ---------------------------------------------------------------------------
 // Player API calls
@@ -2011,7 +2010,7 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
-export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
+export type AgentContentSnapshot = Pick<SavedAgent, "name" | "personality" | "personaKey" | "gender" | "backstory" | "strategyStyle" | "werewolfStrategyStyle" | "performanceInstructions" | "visualDesign" | "avatarUrl" | "fullBodyReferenceUrl" | "portraitCrop" | "headPosition">;
 
 export interface SavedAgent {
   ownerContent?: {
@@ -2031,6 +2030,7 @@ export interface SavedAgent {
   backstory: string | null;
   personality: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle?: string | null;
   personaKey: PersonaKey | null;
   gender?: AgentGender | null;
   avatarUrl: string | null;
@@ -2090,6 +2090,7 @@ export interface AgentProfileWriteParams {
   personality: string;
   backstory?: string;
   strategyStyle?: string;
+  werewolfStrategyStyle?: string;
   personaKey?: PersonaKey;
   gender: AgentGender;
   avatarUrl?: string;
@@ -2162,6 +2163,7 @@ export interface OwnerLearningEligibleInputs {
   eligibilityPolicyVersion: string;
   credit: OwnerLearningCredit;
   profiles: Array<{
+    gameKind: "influence" | "werewolf";
     agentProfileId: string;
     name: string;
     currentRevisionId: string;
@@ -2225,6 +2227,7 @@ export interface OwnerLearningEvidenceRef {
 }
 
 export interface OwnerLearningReview {
+  gameKind: "influence" | "werewolf";
   id: string;
   agentProfileId: string;
   reviewedRevisionId: string;
@@ -2239,7 +2242,7 @@ export interface OwnerLearningReview {
     analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
     strategyHealthClassification?: "guidance_gap" | "execution_gap" | "no_clear_strategy_defect";
     recommendations: OwnerLearningRecommendation[];
-    proposal?: { field: "strategyStyle"; before: string; after: string };
+    proposal?: { field: "strategyStyle" | "werewolfStrategyStyle"; before: string; after: string };
     noChange?: { rationale: string };
   };
   proposalFingerprint: string | null;
@@ -2293,6 +2296,7 @@ export type OwnerLearningReviewStatus = Pick<
 export interface OwnerLearningPreflight {
   status: "awaiting_evidence" | "ready" | "generation_unavailable";
   selection: {
+    gameKind: "influence" | "werewolf";
     agentProfileId: string;
     agentProfileName: string;
     reviewedRevisionId: string;
@@ -2377,6 +2381,7 @@ export interface GeneratePersonalityParams {
     backstory?: string;
     personality?: string;
     strategyStyle?: string;
+    werewolfStrategyStyle?: string;
     performanceInstructions?: string;
     visualDesign?: string;
     avatarUrl?: string | null;
@@ -2394,6 +2399,7 @@ export interface GeneratePersonalityResult {
   backstory: string | null;
   personality: string;
   strategyStyle: string | null;
+  werewolfStrategyStyle: string | null;
   personaKey: PersonaKey;
   gender: AgentGender;
 }
@@ -2735,7 +2741,6 @@ export interface GameDetail {
   players: GamePlayer[];
   modelLabel: string;
   visibility: GameVisibility;
-  viewerMode: ViewerMode;
   /** Frozen game configuration; absent only on historical/mock payloads. */
   formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;
@@ -2939,9 +2944,10 @@ export interface AdminOwnerLearningFailureDiagnostic {
 
 export interface AdminOwnerLearningReviewSummary {
   id: string;
+  gameKind: "influence" | "werewolf";
   owner: { userId: string; displayName: string | null; handle: string | null };
   agent: { profileId: string; name: string };
-  reviewedRevision: { id: string; ordinal: number };
+  reviewedRevision: { id: string; ordinal: number | null };
   track: "evidence_rich" | "strategy_health_check";
   status: OwnerLearningAnalysisStatus;
   stage: OwnerLearningStage;
@@ -2975,6 +2981,7 @@ export interface AdminOwnerLearningReviewList {
 
 export interface AdminOwnerLearningReviewDetail {
   id: string;
+  gameKind: "influence" | "werewolf";
   owner: AdminOwnerLearningReviewSummary["owner"];
   agent: AdminOwnerLearningReviewSummary["agent"];
   reviewedRevision: AdminOwnerLearningReviewSummary["reviewedRevision"];

@@ -134,6 +134,7 @@ export type PublicAllianceReadResult =
 export async function getPublicGameAlliances(
   db: PublicAllianceDB,
   idOrSlug: string,
+  cutoff?: {throughEventSequence: number; throughTranscriptSequence: number},
 ): Promise<PublicAllianceReadResult> {
   const game = await loadGame(db, idOrSlug);
   if (!game) return { ok: false, status: "not_found", error: "Game not found" };
@@ -142,13 +143,13 @@ export async function getPublicGameAlliances(
     loadPlayers(db, game.id),
     getPersistedGameEvents(db, game.id),
     loadHuddleTranscriptRows(db, game.id),
-    loadPublicAllianceConsequences(db, idOrSlug),
+    cutoff ? Promise.resolve(new Map<string, PublicAllianceConsequenceRead[]>()) : loadPublicAllianceConsequences(db, idOrSlug),
   ]);
   const playerNames = playerNameMap(players);
   const facts = buildPublicAllianceFacts({
-    events: eventRead.events.map((row) => row.envelope),
+    events: eventRead.events.filter(row => !cutoff || row.sequence <= cutoff.throughEventSequence).map((row) => row.envelope),
     playerNames,
-    transcriptRows,
+    transcriptRows: cutoff ? transcriptRows.filter(row => row.entrySequence !== null && row.entrySequence <= cutoff.throughTranscriptSequence) : transcriptRows,
     consequencesByAllianceId,
   });
 

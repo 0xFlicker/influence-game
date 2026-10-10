@@ -106,7 +106,6 @@ function adminGame(overrides: Partial<AdminGameSummary> = {}): AdminGameSummary 
     eliminatedPlayers: 2,
     modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
-    viewerMode: "live",
     trackType: "custom",
     hidden: false,
     completionSettlement: {

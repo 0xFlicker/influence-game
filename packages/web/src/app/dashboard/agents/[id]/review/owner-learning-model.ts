@@ -13,7 +13,7 @@ export const OWNER_LEARNING_STAGES: Array<{
   {
     stage: "evidence_ready",
     label: "Game records loaded",
-    detail: "Results, actions, votes, and powers",
+    detail: "Results, decisions, and votes",
   },
   {
     stage: "scanning_narratives",

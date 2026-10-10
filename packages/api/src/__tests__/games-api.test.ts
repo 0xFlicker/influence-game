@@ -88,7 +88,7 @@ async function setupApp() {
       },
     ]);
 
-    await grantTestAuthority(db, ADMIN_USER_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"]);
+    await grantTestAuthority(db, ADMIN_USER_ID, ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"], "admin");
   const adminToken = await createSessionToken(ADMIN_USER_ID, {
     roles: ["sysop"],
     permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"],
@@ -130,8 +130,9 @@ function authPost(token: string): RequestInit {
 // Tests that deliberately assemble several seats for one owner must grant an
 // actual current role, independently of the signed session's role claims.
 async function grantTestOwnerRole(db: DrizzleDB, roleName: string): Promise<string> {
-  const roleId = randomUUID();
-  await db.insert(schema.roles).values({ id: roleId, name: roleName });
+  const [existing] = await db.select().from(schema.roles).where(eq(schema.roles.name, roleName));
+  const roleId = existing?.id ?? randomUUID();
+  if (!existing) await db.insert(schema.roles).values({ id: roleId, name: roleName });
   await db.insert(schema.userRoles).values({
     userId: testUserIdForWallet("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     roleId,
@@ -165,7 +166,6 @@ async function createTestGame(
         },
         personaPool: ["honest", "strategic", "deceptive"],
         fillStrategy: "balanced",
-        timingPreset: "fast",
         maxRounds: 10,
         visibility: "public",
         slotType: "all_ai",
@@ -478,6 +478,14 @@ describe("Game REST API", () => {
       }
     });
 
+    test("rejects unsupported game visibility before writing a game", async () => {
+      for (const visibility of ["private", null, false, {}, ["public"]]) {
+        const response = await app.request("/api/games", { method: "POST", headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" }, body: JSON.stringify({ visibility }) });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: "Game visibility must be public or unlisted" });
+      }
+    });
+
     test("creates a game and returns id + slug", async () => {
       const res = await app.request(
         "/api/games",
@@ -488,7 +496,6 @@ describe("Game REST API", () => {
               catalogId: "openai:gpt-5.6-luna",
               reasoningPolicy: "action-policy",
             },
-            timingPreset: "standard",
             maxRounds: 10,
             visibility: "public",
           },
@@ -522,6 +529,9 @@ describe("Game REST API", () => {
       expect(transcriptState.prefixDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
       const config = JSON.parse(game.config);
       expect(config).not.toHaveProperty("modelTier");
+      expect(config).not.toHaveProperty("timers");
+      expect(config).not.toHaveProperty("viewerMode");
+      expect(config.maxRounds).toBe(10);
       expect(config.modelSelection).toEqual({
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
@@ -592,7 +602,6 @@ describe("Game REST API", () => {
               catalogId: "katana:grok-4-3",
               reasoningPolicy: "high",
             },
-            timingPreset: "standard",
             maxRounds: 10,
             visibility: "public",
           },
@@ -1732,8 +1741,8 @@ describe("Game REST API", () => {
       expect(body[0]).toMatchObject({
         gameId: completedGameId,
         agentName: "Atlas Vale",
-        rounds: 3,
-        winner: true,
+        gameKind: "influence",
+        result: { rounds: 3, outcome: "win" },
       });
     });
   });
@@ -2425,6 +2434,14 @@ describe("Game REST API", () => {
       expect(body[1]!.scope).toBe("system");
       expect(body[1]!.thinking).toBeNull();
       expect(body[1]).toMatchObject({ dialogueKind: "house_summary", firstDurableEventSequence: 17 });
+      const firstPage = await app.request(`/api/games/${id}/transcript?limit=1&offset=0`);
+      const secondPage = await app.request(`/api/games/${id}/transcript?limit=1&offset=1`);
+      expect(await firstPage.json()).toEqual([body[0]]);
+      expect(await secondPage.json()).toEqual([body[1]]);
+      for (const query of ["limit=0", "limit=257", "offset=1", "limit=2&offset=-1"]) {
+        expect((await app.request(`/api/games/${id}/transcript?${query}`)).status).toBe(400);
+      }
+
     });
 
     test("omits hidden alliance huddle entries from public transcript export", async () => {
@@ -2998,7 +3015,7 @@ describe("Game REST API", () => {
       expect(body[0]!.id).not.toBe(g1);
     });
 
-    test("GET /api/games/:id still returns hidden game by direct ID", async () => {
+    test("GET /api/games/:id denies hidden game by direct ID", async () => {
       const { id } = await createTestGame(app, adminToken);
 
       await app.request(`/api/games/${id}/hide`, {
@@ -3007,10 +3024,9 @@ describe("Game REST API", () => {
       });
 
       const res = await app.request(`/api/games/${id}`);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(404);
 
-      const body = (await res.json()) as { id: string };
-      expect(body.id).toBe(id);
+      expect(await res.json()).toEqual({error:"Game not found"});
     });
 
     test("unhidden game reappears in GET /api/games", async () => {

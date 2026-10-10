@@ -11,14 +11,18 @@
 
 ## Product Direction
 
-- Influence is the final product name.
+- The House is the venue; Influence and Werewolf are separate games. `games.gameKind` selects the game, while Influence's `classic` / `format` kernels remain Influence-only.
+- Werewolf daytime discussion is sequential: publish each original contribution before the next speaker acts. Preserve optional cues as production notes; do not reintroduce House rewriting or a separate should-speak call without an explicit product decision.
+- Werewolf rules v7: preserve the seeded opening ring/cursor across nights. Openings return strict ordered recipientIds (0–3); freeze the random open-floor remainder. Replies address the opener; each spoken reply offers the opener one answer quoting that respondent and identifying the next possible speaker. Passes skip answers. Never infer scheduling from prose; commit each contribution before dispatching the next.
+- Werewolf rules, private observations, faction outcomes, and spectator projections live in `packages/engine/src/werewolf/`. See `docs/werewolf.md`. Do not route Werewolf through Influence elimination, jury, scoring, narration, or transcript parsing.
+- Agent Profiles share character identity and visuals. `strategyStyle` is Influence-only; `werewolfStrategyStyle` is Werewolf-only. Never substitute one game's notes for the other.
 - The immediate audience is the user and friends, so the bar is an enjoyable-to-watch game with legible strategy rather than a fully public-scale product.
 - Agent quality matters: agents need help exhibiting real strategy, remembering commitments, and making watchable social decisions.
 - The active `feat/inf-228-mingle-hardening` branch is an unfinished Mingle/open-room experiment intended for eventual merge to `main`. The UI mostly works, but it needs more testing and tuning before merge.
 
 ## Known Risks
 
-- Current API games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Do not extend this claim to corrupt durable rows, historical runs without logical-turn authority, or multi-worker execution without the owner-epoch fence.
+- Current API Influence games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Werewolf adopts its own validated event cursor and frozen action/observation plans under the same owner-epoch and provider journal fences. Do not extend these claims to corrupt durable rows or historical runs without that authority.
 - Staging is real QA infrastructure. `influence-staging` updates from `main`; `influence-production` requires manual approval.
 
 ## Event authority
@@ -61,3 +65,7 @@
 - Shared test-database isolation is enforced across Bun processes by `setupTestDB()`'s session advisory lock. New DB-backed tests must use that helper and remain sequential within their process.
 - Prefer Compound Engineering skills for plan/implement/review/PR flows when available.
 - Update `docs/solutions/`, `CONCEPTS.md`, and ops docs when behavior changes.
+
+- Werewolf ballots use majority plus optional abstention before the last opener, then mandatory-target plurality after the last opener. Tied leaders spare everyone. Only canonical `werewolf.day_vote_resolved` establishes the result; never carry votes forward. Final model output cannot abstain, but a typed provider failure records a marked unavailable abstention rather than fabricating a target.
+
+- Werewolf sealed day ballots may dispatch concurrently only from frozen prepared slots. Preserve journal replay and one canonical reveal. Live `voteProgress` is spectator-only telemetry: count accepted decisions for exact pending slots plus committed ballots, never expose choices or inject progress into contestant observations or historical cursor reads.

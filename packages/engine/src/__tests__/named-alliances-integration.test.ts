@@ -5,15 +5,6 @@ import { MockAgent, ScriptedHouseInterviewer } from "./mock-agent";
 
 const TEST_CONFIG: GameConfig = {
   ...DEFAULT_CONFIG,
-  timers: {
-    introduction: 0,
-    lobby: 0,
-    mingle: 0,
-    rumor: 0,
-    vote: 0,
-    power: 0,
-    council: 0,
-  },
   maxRounds: 1,
   minPlayers: 5,
   maxPlayers: 5,

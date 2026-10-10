@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { backfillEpisodes, listAdminGames, listProductionGames, type ProductionGameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -30,7 +31,11 @@ export function ProductionPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     if (!isAdmin && !canRenderImages) { setLoading(false); return; }
-    try { setGames(await (isAdmin ? listAdminGames() : listProductionGames())); setError(null); setReview(null); }
+    try {
+      const [adminGames, productionGames] = await Promise.all([isAdmin ? listAdminGames() : Promise.resolve([]),canRenderImages ? listProductionGames() : Promise.resolve([])]);
+      setGames(isAdmin ? [...adminGames,...productionGames.filter(game=>game.gameKind === "werewolf" && !adminGames.some(existing=>existing.id===game.id))] : productionGames);
+      setError(null); setReview(null);
+    }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [isAdmin, canRenderImages]);
@@ -81,11 +86,12 @@ export function ProductionPanel() {
         {canManage && <input type="checkbox" aria-label={`Select ${game.slug}`} checked={selected.includes(game.id)} disabled={pending || (!selected.includes(game.id) && selected.length >= 50)} onChange={e => changeSelection(e.target.checked ? [...selected, game.id] : selected.filter(id => id !== game.id))} />}
         <div className="min-w-0 flex-1"><h2 className="font-medium">{game.episode?.title ?? game.slug}</h2><p className="text-xs text-white/50">{game.slug} · {game.season?.name ?? "Custom"} · {game.status} · Naming: {game.episode?.status ?? "unrequested"}{game.episode?.locked ? " · Protected" : ""}</p></div>
         {canManage && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setEditing(game.id)}>Edit episode</button>}
-        {isAdmin && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setMediaGame(game)}>Trailer & poster</button>}
-        {canRenderImages && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked}
+        {isAdmin && game.gameKind !== "werewolf" && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked} onClick={() => setMediaGame(game)}>Trailer & poster</button>}
+        {canRenderImages && game.gameKind !== "werewolf" && game.status === "completed" && <button className="influence-button-secondary rounded px-3 py-2 text-sm" disabled={pending || replayLocked}
           aria-expanded={replayGameId === game.id} aria-controls={`replay-images-${game.id}`} onClick={() => setReplayGameId(current => current === game.id ? null : game.id)}>
           {replayGameId === game.id ? "Close replay images" : "Replay images"}
         </button>}
+        {game.gameKind === "werewolf" && <Link className="influence-button-secondary rounded px-3 py-2 text-sm" href={`/admin/werewolf/${game.id}/production`}>{game.status === "suspended" ? "Repair visuals" : "Open production"}</Link>}
         {canRenderImages && replayGameId === game.id && <div id={`replay-images-${game.id}`} className="min-w-0 w-full">
           <ReplayVisualProductionPanel gameId={game.id} onLocked={setReplayLocked} />
         </div>}
