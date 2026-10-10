@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Phase } from "@influence/engine";
 import type { GameWatchReplayFrame, ViewerDecisionEvent, TranscriptEntry } from "../lib/api";
-import { buildEndgamePresentationCues, revealedWinnerCue } from "../app/games/[slug]/components/endgame-presentation";
+import { buildEndgamePresentationCues, revealedWinnerCue, compileRevealedWinnerCues } from "../app/games/[slug]/components/endgame-presentation";
 import { visualWatchPresentation } from "../app/games/[slug]/components/visual-watch-model";
 import { findPresentationCueIndexForSequence } from "../app/games/[slug]/components/presentation-sequence";
 import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/games/[slug]/components/house-story";
@@ -53,6 +53,13 @@ test("winner standings use canonical exits and remain hidden until the result cu
   const closing = { source: "house" as const, kind: "house_bridge" as const, key: "closing", followingCueKey: "end", canonicalSequence: 31, round: 5, phase: "JURY_VOTE" as const, title: "Game over", baseDurationMs: 2000 };
   expect(revealedWinnerCue([...cues, closing], cues.length)).toBe(result);
   expect(revealedWinnerCue(cues, 0)).toBeNull();
+  const indexed = compileRevealedWinnerCues([...cues, closing]);
+  for (const cursor of [cues.length, 0, cues.length - 2, cues.length - 1, 1, cues.length]) {
+    const latest = [...cues, closing].slice(0,cursor+1).findLast(cue => cue.source === "endgame" && cue.kind === "endgame_winner");
+    const expected = latest?.source === "endgame" ? latest : null;
+    expect(indexed[cursor]).toBe(expected);
+    expect(compileRevealedWinnerCues([...cues, closing])[cursor]).toBe(expected);
+  }
   const beat = visualWatchPresentation({ enabled: true, status: null, portraits: { Kaiya: "/kaiya-head.png" }, fullBodies: { Ione: "/ione-body.png" }, scenes: [] }, result, null, players).beat;
   expect(beat).toMatchObject({ kind: "winner", winner: { id: "Ione", fullBodyReferenceUrl: "/ione-body.png" }, standings: [
     { id: "Kaiya", placement: 2, avatarUrl: "/kaiya-head.png", juryMember: false }, { id: "Marnie", placement: 3, juryMember: true }, { id: "Arden", placement: 4, juryMember: true },

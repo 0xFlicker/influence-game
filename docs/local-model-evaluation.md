@@ -29,7 +29,7 @@ bun run simulate:werewolf --preset two_wolves --seed role-coaching-2 --model-cat
 
 Use a new output filename and recorded seed for each trial. The root script runs inside `packages/engine`, so relative output paths resolve there. Canonical logs contain private target rationale; review them locally. Public speech remains the original player contribution, with no extra planning or House rewrite calls.
 
-The current rules-v7 experiment tests ordered recipient exchanges and per-response opener answers, using original player lines. Start `bun run simulate:werewolf:api --audience omniscient --transcript` after starting gateway, worker and web and authorizing with `bun run mcp:game:login`. Defaults remain six House characters, one wolf, Luna/low and ten days maximum. Rules v7 requires a new game. Experimental v1–v6 logs remain intact but are rejected on read and resume; there is no compatibility adapter or SQL migration for this change. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
+The current rules-v7 experiment tests ordered recipient exchanges and per-response opener answers, using original player lines. Start `bun run simulate:werewolf:api --audience omniscient --transcript` after starting gateway, worker and web. Browser sign-in opens when the shared API-session cache needs refreshing; choose **Authorize local CLI**. Defaults remain six House characters, one wolf, Luna/low and ten days maximum. Rules v7 requires a new game. Experimental v1–v6 logs remain intact but are rejected on read and resume; there is no compatibility adapter or SQL migration for this change. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
 
 Opening order is shuffled once from the game seed and rotates across nights, skipping eliminated players. Each living player gets at most one opening per day. An opener chooses zero to three distinct other living recipients in order; the rest of the room follows in a seeded random order fixed for that thread. Each respondent speaks or passes once. After each spoken response the opener may speak or pass, answering that respondent while knowing the next possible speaker. A respondent pass skips the opener answer. An opening pass skips the thread. Every accepted contribution is public before the next call; there are no repeated response rounds or artificial pacing delays.
 
@@ -320,16 +320,12 @@ The API still needs app/database/auth secrets from Doppler unless you provide eq
 Use the API-backed CLI when you want the run to show up in the API/web UI and write durable game rows instead of JSONL-only simulator artifacts:
 
 ```bash
-# First obtain a producer MCP OAuth token if you do not already have one:
-cd packages/engine
-bun run mcp:game:login
-
-# Then launch a real API-backed local-model game:
-cd ../..
+# Launch a real API-backed local-model game from the repository root.
+# Browser sign-in opens when a checked cached app session is unavailable.
 bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 ```
 
-`simulate:api` uses `INFLUENCE_API_SESSION_TOKEN` when set. Otherwise it reads `INFLUENCE_MCP_TOKEN` or the saved `~/.influence-game/mcp-token.json` token and exchanges that producer MCP OAuth token for a normal app session through the loopback-only `/api/auth/local-cli-session` route. MCP tokens still do not authenticate normal app routes directly; the exchange is explicit local tooling and the minted session uses current RBAC permissions.
+`simulate:api` shares the origin-bound app-session cache and browser sign-in with local replay export. A checked valid session is reused; missing, expired or rejected sessions open the House sign-in page. Sign in and choose **Authorize local CLI**. Current gameplay permissions are checked before creating a game. `--web-base-url` selects the House web origin; `INFLUENCE_API_SESSION_TOKEN` supplies an explicit session for unattended tooling. MCP OAuth login remains separate for MCP clients; its token is not used by these normal app routes.
 
 API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
 

@@ -3,9 +3,14 @@ import { renderReplay } from "../lib/replay-export/render";
 import { parseArgs } from "node:util";
 import { resolve, join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
-import { loadReplaySource } from "../lib/replay-export/source";
-import { buildExportCues } from "../lib/replay-export/cues";
-import { compileTiming, parseTimingProfile } from "../lib/replay-export/timing";
+import {loadProductionReplaySource,type ProductionSnapshot} from "../lib/replay-export/production-source";
+import {bindInfluenceProductionPresentation,bindWerewolfProductionPresentation} from "../lib/replay-export/production-presentation";
+import {compilePresentation,type PresentationMoment} from "../lib/replay-export/presentation";
+import type {ExportCue} from "../lib/replay-export/cues";
+import {parseTimingProfile} from "../lib/replay-export/timing";
+import {selectProductionMoments,resolveProductionMomentIds} from "@influence/engine/production-moments";
+import {decodeProductionExport,stableProductionJson} from "@influence/engine/production-moments/export";
+import { resolveCliApiSession } from "@influence/engine/cli-api-session";
 import {
   ReplayAssets,
   bundlePath,
@@ -14,7 +19,6 @@ import {
   sha256,
   snapshotStageArt,
 } from "../lib/replay-export/assets";
-import { compileAudio } from "../lib/replay-export/audio";
 import { attachSpeech } from "../lib/replay-export/speech";
 import {
   validateManifest,
@@ -26,6 +30,8 @@ const resolveInput = (path: string) =>
   resolve(process.env.REPLAY_EXPORT_CWD ?? process.cwd(), path);
 const options = {
   "api-base-url": { type: "string" },
+  "web-base-url": { type: "string" },
+  selection:{type:"string"},
   audience: { type: "string" },
   thinking: { type: "string" },
   output: { type: "string" },
@@ -56,8 +62,10 @@ async function main() {
 Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
        bun run replay:export -- --bundle <directory> --output <file.mp4>
 --api-base-url URL       API origin (default http://127.0.0.1:3000)
+--web-base-url URL       House sign-in origin (default http://localhost:3001)
 --audience mystery|omniscient  Werewolf only; default mystery
 --thinking on|off        Default off
+--selection FILE         Frozen Studio selection; uses its exact IDs and presentation settings
 --timing FILE            JSON presentation adjustments
 --speech-manifest FILE   Existing recorded messages, never generated
 --music on|off           Default on; --volume 0..1 (default 0.3)
@@ -66,7 +74,8 @@ Usage: bun run replay:export -- <slug> --output <file.mp4> [options]
 --from-cue KEY --until-cue KEY  Inclusive/exclusive range
 --inspect               Prepare the sibling .bundle and print cue IDs
 --overwrite             Replace output; with a slug, freshly prepare its bundle too
-Private reads: set HOUSE_REPLAY_TOKEN in the environment. Never saved.
+Production reads reuse a cached Producer/Sysop session; browser sign-in opens when needed.
+INFLUENCE_API_SESSION_TOKEN supplies an explicit session for unattended local tooling.
 Paths are relative to the invoking directory. --bundle uses frozen settings.`);
     return;
   }
@@ -86,9 +95,17 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
               "until-cue",
             ].includes(key),
         )
-      : positionals.length !== 1
+      : args.selection ? positionals.length > 1 || Object.keys(args).some(key => !["selection","output","overwrite","inspect","api-base-url","web-base-url","speech-manifest"].includes(key)) : positionals.length !== 1
   )
     throw new Error("Supply one game OR --bundle; bundle settings are frozen");
+  const descriptor = args.selection ? decodeProductionExport(JSON.parse(await readFile(resolveInput(args.selection),"utf8"))) : null;
+  if (descriptor) {
+    const {hash,...frozen} = descriptor;
+    if (hash !== `sha256:${sha256(stableProductionJson(frozen))}`) throw new Error("Frozen selection checksum mismatch");
+    if (!descriptor.momentIds.length) throw new Error("Selected cut is empty; tag moments before exporting");
+    if (descriptor.recordings.length && !args["speech-manifest"]) throw new Error("This frozen cut requires its local --speech-manifest and audio files");
+    if (!descriptor.recordings.length && args["speech-manifest"]) throw new Error("Import recordings into the studio before freezing this cut");
+  }
   const output = resolveInput(args.output),
     bundleDir = args.bundle
       ? resolveInput(args.bundle)
@@ -107,11 +124,11 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
       );
       if (
         manifest.schema !== "house.replay-export" ||
-        manifest.version !== 1 ||
+        manifest.version !== 2 ||
         !manifest.cues.length ||
         manifest.timeline.length !== manifest.cues.length
       )
-        throw new Error("Invalid replay bundle");
+        throw new Error("Invalid or obsolete replay bundle; re-prepare it from the game");
       validateManifest(manifest);
       for (const [path, hash] of Object.entries(manifest.staticFiles))
         if (sha256(await readFile(bundlePath(bundleDir, path))) !== hash)
@@ -126,9 +143,9 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
       manifest = await prepareReplayBundle(bundleDir, !!args.overwrite, async (preparationDir) => {
         const number = (name: "width" | "height" | "fps", fallback: number) =>
           args[name] === undefined ? fallback : Number(args[name]);
-        const width = number("width", 1920),
-          height = number("height", 1080),
-          fps = number("fps", 30);
+        const width = descriptor?.settings.width ?? number("width", 1920),
+          height = descriptor?.settings.height ?? number("height", 1080),
+          fps = descriptor?.settings.fps ?? number("fps", 30);
         if (
           ![width, height].every(
             (value) =>
@@ -150,10 +167,15 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
         )
           throw new Error("thinking/music must be on or off");
 
-        const api = new URL(args["api-base-url"] ?? "http://127.0.0.1:3000"),
-          token = process.env.HOUSE_REPLAY_TOKEN;
+        const api = new URL(args["api-base-url"] ?? "http://127.0.0.1:3000");
         if (api.username || api.password || api.search || api.pathname !== "/")
           throw new Error("API base must be an origin without credentials");
+        const token = await resolveCliApiSession({
+          apiOrigin: api.origin,
+          webOrigin: args["web-base-url"] ?? process.env.INFLUENCE_WEB_BASE_URL ?? "http://localhost:3001",
+          requiredRoles: ["producer", "sysop"],
+          signal: abort.signal,
+        });
         console.log("Loading completed replay…");
         const read = async <T>(path: string): Promise<T> => {
           const response = await fetchReplay(
@@ -164,16 +186,33 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
           );
           return (await response.json()) as T;
         };
-        const source = await loadReplaySource(read, {
-          game: positionals[0]!,
-          audience: args.audience as "mystery" | "omniscient" | undefined,
-          thinking: args.thinking === "on",
-        });
-        let cues = await buildExportCues(
-          source,
-          args.thinking === "on",
-          read,
-        );
+        const entry = await read<{id:string;slug:string;gameKind:"influence"|"werewolf"}>(descriptor
+          ? `/api/admin/production/games/${encodeURIComponent(descriptor.gameId)}`
+          : `/api/game-entries/${encodeURIComponent(positionals[0]!)}`);
+        if (descriptor && (entry.id !== descriptor.gameId || entry.gameKind !== descriptor.gameKind)) throw new Error("Frozen selection belongs to another game");
+        if (descriptor && positionals[0] && positionals[0] !== entry.id && positionals[0] !== entry.slug) throw new Error("Frozen selection belongs to another game");
+        const audience = descriptor?.audience ?? (entry.gameKind === "werewolf" ? args.audience as "mystery"|"omniscient"|undefined ?? "mystery" : "public");
+        if (entry.gameKind === "influence" && args.audience) throw new Error("--audience applies only to Werewolf");
+        const thinking = descriptor ? typeof descriptor.sourceSnapshot.thinking === "boolean" ? descriptor.sourceSnapshot.thinking : descriptor.selection.thinking : args.thinking === "on";
+        if (descriptor) {
+          const response = await fetch(new URL(`/api/admin/production/games/${encodeURIComponent(entry.id)}/selection/validate`,api),{
+            method:"POST",redirect:"error",signal:AbortSignal.any([abort.signal,AbortSignal.timeout(60000)]),
+            headers:{"Content-Type":"application/json",...(token ? {Authorization:`Bearer ${token}`} : {})},body:JSON.stringify(descriptor)});
+          if (!response.ok) throw new Error(`Selection authorization failed: ${response.status} ${await response.text()}`);
+        }
+        const loaded = await loadProductionReplaySource(read,{gameId:entry.id,gameKind:entry.gameKind,audience,thinking,
+          snapshot:descriptor?.sourceSnapshot as ProductionSnapshot|undefined});
+        if (loaded.status !== "completed") throw new Error("Export requires a completed game; paused snapshots are preview-only");
+        const source = loaded.source;
+        if (source.kind === "werewolf" && descriptor?.copy.title !== undefined) source.title = descriptor.copy.title;
+        const moments = source.kind === "werewolf"
+          ? await bindWerewolfProductionPresentation({source,catalog:loaded.catalog,provenance:loaded.provenance,thoughts:loaded.thoughts})
+          : await bindInfluenceProductionPresentation({source,catalog:loaded.catalog,thoughts:loaded.acceptedThoughts});
+        const selectedIds = descriptor ? resolveProductionMomentIds(loaded.catalog,descriptor.momentIds).map(moment => moment.id)
+          : selectProductionMoments(loaded.catalog,{mode:"full",thinking:args.thinking === "on"}).map(moment => moment.id);
+        if (descriptor && selectedIds.some((id,index) => id !== descriptor.momentIds[index])) throw new Error("Frozen IDs must preserve source order");
+        const selected = new Set(selectedIds),permittedSpeech = moments.flatMap(moment => moment.segments);
+        const selectedMoments = moments.filter(moment => selected.has(moment.id));
         const assets = new ReplayAssets(
           preparationDir,
           join(webRoot, "public"),
@@ -181,38 +220,22 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
           abort.signal,
           token,
         );
-        if (args.music === "off")
-          cues = cues.map((cue) => ({ ...cue, music: null }));
         if (args["speech-manifest"])
-          await attachSpeech(resolveInput(args["speech-manifest"]), cues, assets);
-        console.log(`Preparing media for ${cues.length} cues…`);
-        for (let index = 0; index < cues.length; index++) {
-          try {
-            cues[index] = await assets.freeze(cues[index]!);
-          } catch (error) {
-            throw new Error(
-              `Media preparation failed for cue ${cues[index]!.timing.key}: ${error instanceof Error ? error.message : "unknown asset failure"}`,
-            );
-          }
+          await attachSpeech(resolveInput(args["speech-manifest"]),selectedMoments.flatMap(moment => moment.segments),assets,permittedSpeech,descriptor?.recordings);
+        const profile = descriptor?.settings.profile ?? parseTimingProfile(args.timing ? JSON.parse(await readFile(resolveInput(args.timing),"utf8")) : {});
+        const music = descriptor?.settings.music ?? args.music !== "off",volume = descriptor?.settings.volume ?? (args.volume === undefined ? .3 : Number(args.volume));
+        const frozenMoments:PresentationMoment[] = [];
+        for (const moment of selectedMoments) {
+          const segments:ExportCue[] = [];
+          for (const cue of moment.segments) segments.push(await assets.freeze({...cue,music:music ? cue.music : null}));
+          frozenMoments.push({...moment,segments});
         }
-        const profile = parseTimingProfile(
-          args.timing
-            ? JSON.parse(await readFile(resolveInput(args.timing), "utf8"))
-            : {},
-        );
-        const timeline = compileTiming(
-          cues.map((cue) => cue.timing),
-          profile,
-          fps,
-        );
-        const audio = compileAudio(
-          cues,
-          timeline,
-          assets.table,
-          profile,
-          args.music !== "off",
-          args.volume === undefined ? 0.3 : Number(args.volume),
-        );
+        // Preserve the complete source ID namespace for legal overrides, without carrying omitted payload into preparation.
+        const frozenById = new Map(frozenMoments.map(moment => [moment.id,moment]));
+        const preparationSource = moments.map(moment => frozenById.get(moment.id) ?? {id:moment.id,segments:[]});
+        const compiled = compilePresentation({source:preparationSource,selectedIds,profile,fps,assets:assets.table,music,volume});
+        const {cues,timeline,audio} = compiled;
+        console.log(`Preparing media for ${cues.length} cues…`);
         const game =
           source.kind === "werewolf"
             ? {
@@ -239,19 +262,19 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
               };
         const prepared: ReplayManifest = {
           schema: "house.replay-export",
-          version: 1,
+          version: 2,
           game,
           width,
           height,
           fps,
-          reducedMotion: Boolean(args["reduced-motion"]),
-          thinking: args.thinking === "on",
+          reducedMotion: descriptor?.settings.reducedMotion ?? Boolean(args["reduced-motion"]),
+          thinking: cues.some(cue => cue.picture.kind === "thinking"),
           profile,
           cues,
           timeline,
           assets: assets.table,
           staticFiles,
-          boundary,
+          boundary:{...boundary,sourceHash:loaded.snapshot.sourceHash,...(descriptor && {selectionHash:descriptor.hash})},
           audio,
           range: {
             fromFrame: 0,
@@ -294,6 +317,7 @@ Paths are relative to the invoking directory. --bundle uses frozen settings.`);
     console.log(
       `${manifest.game.kind}: ${manifest.cues.length} cues, ${Object.keys(manifest.assets).length} assets, ${((manifest.range.untilFrame - manifest.range.fromFrame) / manifest.fps).toFixed(2)}s at ${manifest.width}×${manifest.height}/${manifest.fps}fps`,
     );
+    if (manifest.boundary.selectionHash) console.log(`Frozen selection: ${manifest.boundary.selectionHash}`);
     if (args.inspect) {
       for (const [index, cue] of manifest.cues.entries())
         console.log(

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ADMIN_TABS, adminTabHref, isAdminTab } from "../app/admin/admin-sections";
+import { ADMIN_TABS, adminTabHref, isAdminTab,adminRoute,permitsAdminEntry } from "../app/admin/admin-sections";
 
 describe("admin section routes", () => {
   test("gives every admin tab a direct route", () => {
@@ -21,5 +21,11 @@ describe("admin section routes", () => {
   test("rejects unknown admin tab segments", () => {
     expect(isAdminTab("games")).toBeTrue();
     expect(isAdminTab("unknown")).toBeFalse();
+  });
+  test("production discovery preserves Influence operator entry without granting producer evidence", () => {
+    const route = adminRoute("/admin/production/games/g")!;
+    expect(permitsAdminEntry(route,{roles:[],permissions:["view_admin"]})).toBeTrue();
+    expect(permitsAdminEntry({access:"producer"},{roles:[],permissions:["view_admin"]})).toBeFalse();
+    expect(permitsAdminEntry(route,{roles:[],permissions:[]})).toBeFalse();
   });
 });

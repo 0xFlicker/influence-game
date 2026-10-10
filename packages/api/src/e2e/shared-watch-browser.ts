@@ -25,7 +25,11 @@ export async function seekWatch(page:Page,cursor:number,step=0){
 }
 /** Enter recorded play deliberately; do not wait for a cast-length-dependent opening. */
 export async function skipWerewolfOpening(page: Page) {
- await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Skip opening')");
+ try {await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Skip opening')");}
+ catch(error) {
+  console.error("Opening entry diagnostics", await page.evaluate("({url:location.href,opening:document.querySelector('[data-werewolf-opening]')?.getAttribute('data-werewolf-opening'),cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor'),buttons:Array.from(document.querySelectorAll('button')).map(button=>({text:button.textContent,label:button.getAttribute('aria-label')})),alerts:Array.from(document.querySelectorAll('[role=alert],[role=status]')).map(node=>node.textContent),watchRequests:performance.getEntriesByType('resource').filter(entry=>new URL(entry.name).pathname.endsWith('/watch')).map(entry=>({url:entry.name,duration:entry.duration})),text:document.body.innerText})"));
+  throw error;
+ }
  await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening').click()");
  await page.waitForSelector('[data-werewolf-stage][data-cursor]');
 }

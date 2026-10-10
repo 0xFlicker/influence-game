@@ -10,6 +10,7 @@ import {
 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
+import {computeVoteBombTallies,resolveVoteBomb,computeMajorityEliminationTallies,resolveMajorityElimination} from "@influence/engine/format-rules";
 
 const FIXTURE_TIME = "2026-07-27T00:00:00.000Z";
 const ALL_FORMATS = [
@@ -86,7 +87,7 @@ async function insertFormatFixture(
   }
 }
 
-function createFormatEvents(
+export function createFormatEvents(
   gameId: string,
   players: readonly { id: string; name: string }[],
   formats: readonly LaunchFormatId[],
@@ -203,8 +204,8 @@ function recordFormatRound(
     return eliminatedId;
   }
 
-  const totals = zeroTotals(aliveIds);
-  const eliminatedId = formatId === "vote_bomb" ? secondaryTarget : primaryTarget;
+  if (formatId !== "vote_bomb" && formatId !== "majority_elimination") throw new Error(`Unsupported viewer fixture format: ${formatId}`);
+  const ballots: {voterId:string;targetId:string}[] = [];
   for (const [index, voterId] of aliveIds.entries()) {
     const preferredTargetId = formatId === "vote_bomb" && index === 0
       ? secondaryTarget
@@ -213,19 +214,23 @@ function recordFormatRound(
       ? (preferredTargetId === primaryTarget ? secondaryTarget : primaryTarget)
       : preferredTargetId;
     state.recordFormatBallot({ formatId, voterId, targetId });
-    totals[targetId] = (totals[targetId] ?? 0) + 1;
+    ballots.push({voterId,targetId});
   }
+  const resolution = formatId === "vote_bomb" ? resolveVoteBomb(aliveIds,ballots) : resolveMajorityElimination(aliveIds,ballots);
+  if (resolution.kind === "tie") throw new Error(`Viewer fixture ${formatId} unexpectedly needs a tiebreak`);
+  const tallies = formatId === "vote_bomb" ? computeVoteBombTallies(aliveIds,ballots) : computeMajorityEliminationTallies(aliveIds,ballots);
+  const eliminatedId = resolution.eliminatedId;
   state.recordFormatResolution({
     formatId,
     empoweredId,
     eliminatedId,
-    resolutionKind: "auto",
-    tiedPlayerIds: [eliminatedId],
+    resolutionKind: resolution.kind,
+    tiedPlayerIds: resolution.tiedSet,
     tiebreakerId: null,
     aggregate: {
       capability: "sealed_elim",
-      totals,
-      eligiblePlayerIds: [...aliveIds],
+      totals:tallies.totals,
+      eligiblePlayerIds:"positiveIds" in tallies ? tallies.positiveIds : tallies.eligibleIds,
     },
   });
   return eliminatedId;

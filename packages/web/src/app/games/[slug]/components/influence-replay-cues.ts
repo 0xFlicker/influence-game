@@ -4,19 +4,12 @@ import {phaseToRoomType} from "./constants";
 import {MATCH_WATCH_FORMAT_PHASES, REPLAY_FRAME_PHASE_ORDER} from "./match-watch-model";
 import {transcriptPresentationDurationMs, isSoloTranscript} from "./visual-watch-model";
 import {voteSceneIdentity} from "./vote-ledger-model";
-const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "VOTE",
-  "FORMAT_MENU",
-  "FORMAT_PICK",
-  "FORMAT_RESOLVE",
-]);
+import { isInfluenceProductionSocialTranscript } from "@influence/engine/production-moments/influence-source";
 
 export function isFormatSocialTranscriptMessage(
   message: Pick<TranscriptEntry, "phase" | "presentationPurpose" | "dialogueKind">,
 ): boolean {
-  return message.dialogueKind === "house_summary"
-    || message.presentationPurpose === "farewell"
-    || !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
+  return isInfluenceProductionSocialTranscript(message);
 }
 
 export function buildClassicPresentationCues(
@@ -61,6 +54,26 @@ function latestFrameSequenceAtOrBefore(
     if (frame.timestamp <= timestamp) return frame.sequence;
   }
   return null;
+}
+
+/** Preserve findLast's source-array precedence, including duplicate or unsorted boundaries. */
+export function compileReplayFrameLookup(frames: readonly GameWatchReplayFrame[]) {
+  let latestIndex = -1;
+  const boundaries = frames.map((frame, index) => ({frame, index})).sort((a, b) => a.frame.sequence - b.frame.sequence)
+    .map(({frame, index}) => {
+      latestIndex = Math.max(latestIndex, index);
+      return {sequence: frame.sequence, frame: frames[latestIndex]!};
+    });
+  return (sequence: number | null): GameWatchReplayFrame | undefined => {
+    if (sequence === null || Number.isNaN(sequence)) return undefined;
+    let low = 0, high = boundaries.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (boundaries[middle]!.sequence <= sequence) low = middle + 1;
+      else high = middle;
+    }
+    return boundaries[low - 1]?.frame;
+  };
 }
 
 export function comparePresentationCues(

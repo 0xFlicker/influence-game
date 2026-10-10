@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
+import { adminTestWrapper } from "./admin-test-wrapper";
 import {
   AdminPostgameMediaDiagnostics,
   AdminPostgameMediaPanel,
@@ -87,8 +88,9 @@ describe("AdminPostgameMedia", () => {
   });
 
   it("preserves the exact lowercase slug in the media panel", () => {
+    const Wrapper = adminTestWrapper();
     const html = renderToString(
-      <AdminPostgameMediaPanel game={adminGame()} canManage={false} onClose={() => {}} />,
+      <Wrapper><AdminPostgameMediaPanel game={adminGame()} canManage={false} onClose={() => {}} /></Wrapper>,
     );
 
     expect(html).toContain(">vast-plum-bay</p>");

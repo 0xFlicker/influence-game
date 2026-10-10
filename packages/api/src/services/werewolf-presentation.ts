@@ -27,9 +27,9 @@ export async function readWerewolfPresentation(db: DrizzleDB, id: string, audien
   const presentation: WerewolfPresentation = { slug: game.slug, status: game.status, latestCursor: frame.latestCursor, publicationCutoff, view, scene };
   return { presentation, permitted };
 }
-export async function readWerewolfCharacter(db: DrizzleDB, gameId: string, playerId: string, image: "portrait" | "body" = "portrait") {
-  const players = (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players.filter(player => player.id === playerId) ?? [];
-  const [ref] = await werewolfReferenceMetadata(db, gameId, players);
+export async function readWerewolfCharacter(db: Pick<DrizzleDB, "select">, gameId: string, playerId: string, image: "portrait" | "body" = "portrait", availableHashes?: readonly string[]) {
+  const players = (await readWerewolfEvents(db, gameId)).find(event => event.type === "werewolf.started")?.payload.players ?? [];
+  const ref = (await werewolfReferenceMetadata(db, gameId, players, { availableHashes })).find(ref => ref.profile.id === playerId);
   if (!ref) return null;
   const hash = image === "body" ? (ref.kind === "full_body" ? ref.bodyHash : null) : ref.portraitHash;
   if (hash) {
@@ -39,23 +39,24 @@ export async function readWerewolfCharacter(db: DrizzleDB, gameId: string, playe
   return image === "portrait" && ref.bundled ? readVisualProfileImage(null, ref.profile) : null;
 }
 
-async function publishedWerewolfScenes(db: DrizzleDB, gameId: string, publicationCutoff: string) {
+export async function publishedWerewolfScenes(db: Pick<DrizzleDB, "select">, gameId: string, publicationCutoff: string, strictCutoff = false) {
   const [game] = await db.select({config:schema.games.config}).from(schema.games).where(eq(schema.games.id,gameId));
   const recoveryIds: string[] = game ? JSON.parse(game.config).visualRecoveryPublications ?? [] : [];
+  const before = lte(schema.visualMediaPublications.createdAt, publicationCutoff);
 
   return await db.select({ scene: schema.visualScenes, publication: schema.visualMediaPublications, version: schema.visualMediaVersions })
     .from(schema.visualScenes)
-    .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), or(inArray(schema.visualMediaPublications.id,recoveryIds), lte(schema.visualMediaPublications.createdAt, publicationCutoff), and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
+    .innerJoin(schema.visualMediaPublications, and(eq(schema.visualMediaPublications.sceneId, schema.visualScenes.id), eq(schema.visualMediaPublications.audience, "public"), strictCutoff ? before : or(inArray(schema.visualMediaPublications.id,recoveryIds), before, and(eq(schema.visualMediaPublications.operatorId, WEREWOLF_AUTO_PUBLISHER), eq(schema.visualMediaPublications.revision, 1)))))
     .innerJoin(schema.visualMediaVersions, eq(schema.visualMediaVersions.id, schema.visualMediaPublications.versionId))
     .where(and(eq(schema.visualScenes.gameId, gameId)))
     .orderBy(desc(schema.visualScenes.boundarySequence), desc(schema.visualMediaPublications.revision));
 
 }
-function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging) {
+export function bindWerewolfScene(rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, gameId: string, audience: WerewolfAudience, cursor: number, publicationCutoff: string, frame: WerewolfWatchStaging, productionSnapshot?: object) {
   // Introductions use frozen individual art, including games with old lobby renders.
   if (frame.roomId === null && frame.purpose !== "hunt" || audience === "mystery" && frame.purpose !== "village") return { scene: null, permitted: new Set<string>(), wolfForms: {} as Record<string, string> };
-  const root = `/api/werewolf/${encodeURIComponent(gameId)}`;
-  const query = `audience=${audience}&cursor=${cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
+  const root = productionSnapshot ? `/api/admin/production/games/${encodeURIComponent(gameId)}/source` : `/api/werewolf/${encodeURIComponent(gameId)}`;
+  const query = productionSnapshot ? `snapshot=${encodeURIComponent(JSON.stringify(productionSnapshot))}` : `audience=${audience}&cursor=${cursor}&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const mediaUrl = (asset: string) => `${root}/media/${encodeURIComponent(asset)}?${query}`;
   // Membership must match exactly: never substitute a future or pre-death cast.
   const eligible = rows.filter(row => row.scene.roomId === frame.roomId && row.scene.boundarySequence <= frame.boundary
@@ -103,15 +104,23 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
   const projection = projectWerewolfWatch(events, audience, fromCursor, limit);
   const rows = await publishedWerewolfScenes(db, game.id, publicationCutoff);
   const references = await werewolfReferenceMetadata(db, game.id, events.find(event => event.type === "werewolf.started")?.payload.players);
+  return materializeWerewolfWatch(projection, { id: game.id, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(JSON.parse(game.config))) }, audience, publicationCutoff, rows, references);
+}
+
+/** Same media binding for live watch and fixed production prefixes. Staging and
+ * reference instructions stay server-side; only accepted imagery is returned. */
+export function materializeWerewolfWatch(projection: ReturnType<typeof projectWerewolfWatch>, game: { id: string; slug: string; status: string; visualPaused: boolean }, audience: WerewolfAudience, publicationCutoff: string, rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, references: Awaited<ReturnType<typeof werewolfReferenceMetadata>>, productionSnapshot?: object): WerewolfWatchWindow {
   const media: WerewolfWatchWindow["media"] = {};
   const bindings = new Map<string, {mediaKey: string | null; wolfForms: Record<string, string>}>();
-  const portrait = (playerId: string) => `/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(playerId)}?audience=${audience}&cursor=1&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
+  const portrait = (playerId: string) => productionSnapshot
+    ? `/api/admin/production/games/${encodeURIComponent(game.id)}/source/characters/${encodeURIComponent(playerId)}?snapshot=${encodeURIComponent(JSON.stringify(productionSnapshot))}`
+    : `/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(playerId)}?audience=${audience}&cursor=1&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
   const body = (id: string) => references.find(ref => ref.profile.id === id)?.kind === "full_body" ? `${portrait(id)}&image=body` : null;
   const moments = projection.moments.map(({staging, ...moment}) => {
     const binding = JSON.stringify(staging);
     let bound = bindings.get(binding);
     if (!bound) {
-      const {scene, wolfForms} = bindWerewolfScene(rows, game.id, audience, moment.cursor, publicationCutoff, staging);
+      const {scene, wolfForms} = bindWerewolfScene(rows, game.id, audience, moment.cursor, publicationCutoff, staging, productionSnapshot);
       const mediaKey = scene ? `${scene.id}:${scene.version}` : null;
       if (scene && mediaKey && !media[mediaKey]) media[mediaKey] = scene;
       bound = {mediaKey, wolfForms};
@@ -120,6 +129,6 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
     const {mediaKey, wolfForms} = bound;
     return { ...moment, ...(Object.keys(wolfForms).length ? {wolfForms} : {}), ...(moment.night ? { night: { ...moment.night, before: { ...moment.night.before, players: moment.night.before.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } } } : {}), mediaKey, snapshot: { ...moment.snapshot, players: moment.snapshot.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) } };
   });
-  return { ...projection, slug: game.slug, status: game.status, visualPaused: game.status === "suspended" && Boolean(werewolfVisualPause(JSON.parse(game.config))), audience, publicationCutoff, moments, media,
+  return { ...projection, slug: game.slug, status: game.status, visualPaused: game.visualPaused, audience, publicationCutoff, moments, media,
     players: projection.players.map(player => ({...player, avatarUrl: portrait(player.id), fullBodyReferenceUrl: body(player.id)})) };
 }

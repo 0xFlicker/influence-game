@@ -5,7 +5,7 @@ import { VISUAL_LOCALIZATION_MODEL, VISUAL_LOCALIZATION_VERSION } from "./visual
 import { visualReceiptCostMicrousd } from "./visual-pricing.js";
 import type { VisualBoundaryGuard } from "./visual-execution-boundary.js";
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { stableJson } from "./stable-hash.js";
 import { generateVisualImage, type VisualImageJournal, type VisualImageReceipt, type VisualImageRequest } from "./visual-image-provider.js";
@@ -15,6 +15,32 @@ const attempts = schema.visualRenderAttempts;
 type Operation = typeof operations.$inferSelect;
 type Attempt = typeof attempts.$inferSelect;
 type VisualAttemptStatus = "pending" | "finished" | "needs_reconciliation" | "reconciled";
+function visualAttemptStatus(attempt:Pick<Attempt,"reconciliation"|"generation"> & {receipt:Pick<VisualImageReceipt,"chargeUncertain">|null},generation:number,running:boolean):VisualAttemptStatus {
+  return attempt.reconciliation ? "reconciled" : attempt.receipt ? attempt.receipt.chargeUncertain ? "needs_reconciliation" : "finished"
+    : running && attempt.generation === generation ? "pending" : "needs_reconciliation";
+}
+
+/** Historical null-scene journals retain ownership through their game-scoped job or stable prefix. */
+export function visualSceneOperationScope(gameId:string,sceneId:string) {
+  const jobs=schema.visualRepairJobs;
+  return and(eq(operations.gameId,gameId),sql`(${operations.sceneId} = ${sceneId}
+    OR (${operations.sceneId} IS NULL AND (starts_with(${operations.operationKey},${`${sceneId}:render:`})
+      OR EXISTS (SELECT 1 FROM ${jobs} WHERE ${jobs.gameId} = ${gameId} AND ${jobs.sceneId} = ${sceneId}
+        AND (${operations.repairJobId} = ${jobs.id} OR starts_with(${operations.operationKey},'media:' || ${jobs.id} || ':'))))))`);
+}
+
+function visualAttemptRunning() {
+  const jobs=schema.visualRepairJobs;
+  return sql<boolean>`EXISTS (SELECT 1 FROM ${jobs} WHERE ${jobs.id} = ${operations.repairJobId}
+    AND ${jobs.gameId} = ${operations.gameId} AND ${jobs.status} IN ('rendering','verifying') AND ${jobs.leaseUntil}::timestamptz > now())`;
+}
+
+/** Current in-flight dispatches are pending; every other unresolved charge needs an exact acknowledgement. */
+export function visualUncertainAttemptScope() {
+  return sql<boolean>`${attempts.reconciliation} IS NULL
+    AND (${attempts.receipt} IS NULL OR ${attempts.receipt}->>'chargeUncertain' = 'true')
+    AND NOT (${attempts.receipt} IS NULL AND ${visualAttemptRunning()} AND ${attempts.generation} = ${operations.generation})`;
+}
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex");
 
 export class VisualRenderRecoveryRequired extends Error {
@@ -159,16 +185,16 @@ export async function reconcileVisualAttempt(db: DrizzleDB, input: {
   });
 }
 
-export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) {
+export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string, options: {offset?:number;limit?:number;withoutScene?:boolean} = {}) {
   const { image: _image, ...receiptColumns } = getTableColumns(attempts);
-  const rows = await db.select({ attempt: receiptColumns, operation: operations,
+  let query = db.select({ attempt: receiptColumns, operation: operations,
     running: sql<boolean>`COALESCE(${schema.visualRepairJobs.status} IN ('rendering','verifying') AND ${schema.visualRepairJobs.leaseUntil}::timestamptz > now(), false)`,
   }).from(attempts).innerJoin(operations, eq(attempts.operationId, operations.id))
-    .leftJoin(schema.visualRepairJobs, eq(schema.visualRepairJobs.id, operations.repairJobId)).where(eq(operations.gameId, gameId));
+    .leftJoin(schema.visualRepairJobs, eq(schema.visualRepairJobs.id, operations.repairJobId)).where(and(eq(operations.gameId, gameId),options.withoutScene ? sql`${operations.sceneId} IS NULL` : undefined)).$dynamic();
+  if (options.limit !== undefined) query = query.orderBy(sql`${attempts.createdAt} DESC`,sql`${attempts.id} DESC`).limit(options.limit).offset(options.offset ?? 0);
+  const rows = await query;
   const summaries = rows.map(({ attempt, operation, running }) => {
-    const status: VisualAttemptStatus = attempt.reconciliation ? "reconciled"
-      : attempt.receipt ? attempt.receipt.chargeUncertain ? "needs_reconciliation" : "finished"
-      : running && attempt.generation === operation.generation ? "pending" : "needs_reconciliation";
+    const status = visualAttemptStatus(attempt,operation.generation,running);
     return { ...attempt, status, operationKey: operation.operationKey, sceneId: operation.sceneId, repairJobId: operation.repairJobId, request: operation.request, inputHash: operation.inputHash };
   });
   return {
@@ -179,6 +205,33 @@ export async function readVisualRenderAccounting(db: DrizzleDB, gameId: string) 
     attempts: summaries,
   };
 }
+
+/** Scene evidence pages never select provider inputs, native usage, localization or image bytes. */
+export async function readVisualSceneAttempts(db:DrizzleDB,gameId:string,sceneId:string,offset:number,limit:number) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("Invalid scene attempt page");
+  const requests=schema.visualMediaRequests,running=visualAttemptRunning(),scope=visualSceneOperationScope(gameId,sceneId);
+  const uncertain=sql<boolean>`${visualUncertainAttemptScope()}
+    AND NOT EXISTS (SELECT 1 FROM ${requests} WHERE ${requests.gameId} = ${gameId}
+      AND ${requests.input}->>'sceneId' = ${sceneId} AND ${requests.input}->>'action' = 'regenerate'
+      AND ${requests.receipt}->>'accepted' = 'true' AND COALESCE(${requests.input}->'acknowledgeUncertainAttempts','[]'::jsonb) ? ${attempts.id})`;
+  type ReceiptMetadata=Pick<VisualImageReceipt,"provider"|"model"|"requestId"|"status"|"elapsedMs"|"chargeUncertain"> & {failure?:Pick<NonNullable<VisualImageReceipt["failure"]>,"kind"|"message">};
+  const [page,unresolved] = await Promise.all([
+    db.select({id:attempts.id,generation:attempts.generation,provider:attempts.provider,model:attempts.model,costMicrousd:attempts.costMicrousd,
+      createdAt:attempts.createdAt,finishedAt:attempts.finishedAt,reconciliation:attempts.reconciliation,imageHash:attempts.imageHash,
+      receipt:sql<ReceiptMetadata|null>`CASE WHEN ${attempts.receipt} IS NULL THEN NULL ELSE jsonb_strip_nulls(jsonb_build_object(
+        'provider', ${attempts.receipt}->'provider', 'model', ${attempts.receipt}->'model', 'requestId', ${attempts.receipt}->'requestId',
+        'status', ${attempts.receipt}->'status', 'elapsedMs', ${attempts.receipt}->'elapsedMs', 'chargeUncertain', ${attempts.receipt}->'chargeUncertain',
+        'failure', CASE WHEN ${attempts.receipt}->'failure' IS NOT NULL THEN jsonb_build_object('kind', ${attempts.receipt}->'failure'->'kind', 'message', ${attempts.receipt}->'failure'->'message') END)) END`,
+      operationKey:operations.operationKey,sceneId:operations.sceneId,repairJobId:operations.repairJobId,operationGeneration:operations.generation,running,
+    }).from(attempts).innerJoin(operations,eq(attempts.operationId,operations.id))
+      .where(scope).orderBy(desc(attempts.createdAt),desc(attempts.id)).limit(limit+1).offset(offset),
+    db.select({id:attempts.id}).from(attempts).innerJoin(operations,eq(attempts.operationId,operations.id))
+      .where(and(scope,uncertain)).orderBy(asc(attempts.id)).limit(101),
+  ]);
+  return {attempts:page.slice(0,limit).map(({operationGeneration,running,...attempt})=>({...attempt,status:visualAttemptStatus(attempt,operationGeneration,running)})),
+    nextOffset:page.length > limit ? offset+limit : null,uncertainAttemptIds:unresolved.map(attempt=>attempt.id)};
+}
+
 
 /** Image and identity references are hashed into the same durable request boundary. */
 export async function localizeDurableVisualScene(db: DrizzleDB, input: Parameters<typeof runDurableLocalization>[1] & { gameId: string }) {

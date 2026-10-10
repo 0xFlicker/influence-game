@@ -21,10 +21,11 @@ const OVERVIEW_HOLD_MS = 200;
 export interface VisualSpeech { id: string; playerId: string | null; speaker: string; text: string; portrait?: { avatarUrl?: string | null; persona: string; personaKey?: string | null } }
 
 /** Camera, bubble pages and speech share the director's presentation time. */
-export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId }: {
+export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingElapsedMs = elapsedMs, reducedMotion = false, navigationRevision = 0, paused = false, controlsInset = 0, speechPresentation = "scene", panelTreatment = "focal", onReadyChange, focusPlayerId, focusActor }: {
   scene: AcceptedVisualScene; speech: VisualSpeech | null; elapsedMs: number;
   /** Frame a silent performance or elimination without inventing speech. */
   focusPlayerId?: string;
+  focusActor?: {id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null};
   onReadyChange?: (ready: boolean) => void;
   paused?: boolean;
   controlsInset?: number; reducedMotion?: boolean; navigationRevision?: number;
@@ -33,6 +34,8 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
   panelTreatment?: PanelTreatment;
 }) {
   const sampled = useSampledStage();
+  const portraitActor = speech ? {name:speech.speaker, avatarUrl:speech.portrait?.avatarUrl,
+    persona:speech.portrait?.persona ?? "", personaKey:speech.portrait?.personaKey} : focusActor;
   const openingKey = `${roomScene.id}:${roomScene.version}:${navigationRevision}`;
   const focusedPlayerId = speech?.playerId ?? focusPlayerId;
   const speechKey = speech?.id ?? `silent:${focusedPlayerId ?? "room"}`;
@@ -136,7 +139,7 @@ export function VisualSceneView({ scene: roomScene, speech, elapsedMs, readingEl
     }} />}
     <SceneImage layers={layers} failedUrl={failedUrl} />
     {/* eslint-disable-next-line @next/next/no-img-element -- frozen speaker portrait when scene head geometry is unavailable */}
-    {thought && fallback && speech && <img alt={speech.speaker} src={resolveAgentAvatarUrl(speech.portrait?.avatarUrl,speech.portrait?.persona ?? "",speech.speaker,speech.portrait?.personaKey)}
+    {thought && fallback && portraitActor && <img alt={portraitActor.name} src={resolveAgentAvatarUrl(portraitActor.avatarUrl,portraitActor.persona,portraitActor.name,portraitActor.personaKey)}
       className="absolute rounded-full object-cover" style={{...fallbackFrame,opacity:thought.focus}} />}
     </div>
     {!thought && speech && imageKnown && !transitioning && opacity > 0 && <div data-speech-bubble className="absolute z-10 flex flex-col rounded-2xl border border-white/20 bg-black/90 px-4 py-3 text-white shadow-xl"

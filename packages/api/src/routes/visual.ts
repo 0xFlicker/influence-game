@@ -1,8 +1,9 @@
 import { isViewerGame } from "../services/game-visibility.js";
-import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
+import { readVisualReviewSources } from "../services/visual-shot-review.js";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
-import { controlVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
+import { controlVisualMedia } from "../services/visual-media-repair.js";
+import { decodeVisualMediaControl } from "../services/visual-media-control.js";
 import { prepareVisualRepair, prepareVisualAssetRepair } from "../services/visual-repair.js";
 import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
 import { Hono } from "hono";
@@ -106,12 +107,9 @@ export function createVisualRoutes(db: DrizzleDB) {
     };
     let value: unknown;
     try { value = await c.req.json(); } catch { return invalid("Invalid JSON"); }
-    if (!value || typeof value !== "object" || Array.isArray(value)) return invalid("Invalid media request");
-    const b = value as Record<string, unknown>;
-    if (typeof b.requestId !== "string" || !b.requestId.trim() || b.requestId.length > 200 || typeof b.sceneId !== "string" || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0
-      || !(b.action === "review" || b.action === "regenerate" || (b.action === "verify" || b.action === "harmonize") && typeof b.sourceVersionId === "string" && Boolean(b.sourceVersionId.trim()) || b.action === "continue" && (b.sourceJobId === undefined || typeof b.sourceJobId === "string") || b.action === "publish" && typeof b.versionId === "string" && Number.isSafeInteger(b.expectedPublication) && Number(b.expectedPublication) >= 0)) return invalid("Invalid media control fields");
-    if (b.action === "review") { try { b.review = decodeVisualShotReview(b.review); } catch (error) { return invalid(error instanceof Error ? error.message : "Invalid review"); } }
-    const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, b as MediaControl);
+    const control = decodeVisualMediaControl(value);
+    if (!control) return invalid("Invalid media control fields");
+    const receipt = await controlVisualMedia(db, c.req.param("id"), c.get("user").id, control);
     return c.json({ ...receipt, ...(!receipt.accepted && { error: receipt.message }) }, receipt.accepted ? 200 : 409);
   });
   app.post("/api/admin/games/:id/visual/attempts/:attempt/reconcile", requireAuth(db), requirePermission("start_game"), async (c) => {

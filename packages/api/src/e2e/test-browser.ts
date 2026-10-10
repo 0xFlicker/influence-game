@@ -74,5 +74,22 @@ export async function createAnonymousPage(
  * Close the browser and clean up all associated pages and contexts.
  */
 export async function closeBrowser(browser: Browser): Promise<void> {
-  await browser.close();
+  const child = browser.process();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const closing = browser.close().then(() => ({error: null}), error => ({error: error instanceof Error ? error : new Error(String(error))}));
+  try {
+    const result = await Promise.race([closing, new Promise<null>(resolve => {timer = setTimeout(() => resolve(null), 5_000);})]);
+    if (result) {if (result.error) throw result.error; return;}
+    if (!child) throw new Error("Browser close timed out without an owned process to terminate");
+    clearTimeout(timer);
+    if (child.exitCode === null && child.signalCode === null) {
+      let onExit!: () => void;
+      const exited = new Promise<void>(resolve => {onExit = resolve; child.once("exit", onExit);});
+      try {
+        child.kill("SIGKILL"); browser.disconnect();
+        await Promise.race([exited, new Promise<never>((_, reject) => {timer = setTimeout(() => reject(new Error("Owned browser did not exit after forced shutdown")), 5_000);})]);
+      } finally {child.off("exit", onExit);}
+    } else browser.disconnect();
+    console.warn("Graceful browser close timed out; terminated the owned browser before continuing cleanup.");
+  } finally {clearTimeout(timer);}
 }

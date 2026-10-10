@@ -8,6 +8,17 @@ import {isWerewolfPlayable, type WerewolfNightAction, type WerewolfWatchIdentity
 export type WerewolfWatchStaging = ReturnType<typeof werewolfVisualStaging>;
 export function projectWerewolfWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor = 1, limit = 32) {
   if (!["mystery", "omniscient"].includes(audience) || !Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64) throw new Error("Invalid watch window");
+  return projectWatchHistory(events, audience, fromCursor, limit);
+}
+
+/** Producer-only complete projection of an already bounded canonical prefix.
+ * The caller materializes permitted media and paginates before serialization. */
+export function projectWerewolfProductionWatch(events: readonly WerewolfEvent[], audience: WerewolfAudience) {
+  if (audience !== "mystery" && audience !== "omniscient") throw new Error("Invalid Werewolf audience");
+  return projectWatchHistory(events, audience, 1, Number.MAX_SAFE_INTEGER);
+}
+
+function projectWatchHistory(events: readonly WerewolfEvent[], audience: WerewolfAudience, fromCursor: number, limit: number) {
   let state: WerewolfState | null = null, cursor = 0;
   const moments: Array<WerewolfWatchMoment & { staging: WerewolfWatchStaging }> = [];
   const navigation: WerewolfWatchIndex[] = [];
@@ -72,6 +83,22 @@ export function* walkWerewolfHistory(events: readonly WerewolfEvent[], audience:
     if (entry) cursor++;
     yield { event, before, state, entry, cursor };
   }
+}
+
+/** Producer-only join to canonical provenance. Keep this separate from public
+ * watch DTOs: a private sequence gap is never a spectator position or tag ID. */
+export function projectWerewolfProductionProvenance(events: readonly WerewolfEvent[], audience: WerewolfAudience, throughCursor?: number) {
+  if (audience !== "mystery" && audience !== "omniscient") throw new Error("Invalid Werewolf audience");
+  if (throughCursor !== undefined && (!Number.isSafeInteger(throughCursor) || throughCursor < 1)) throw new Error("Invalid production source prefix");
+  const provenance: Array<{ cursor: number; eventSequence: number }> = [];
+  for (const frame of walkWerewolfHistory(events, audience)) {
+    if (frame.entry) {
+      provenance.push({ cursor: frame.cursor, eventSequence: frame.event.sequence });
+      if (frame.cursor === throughCursor) break;
+    }
+  }
+  if (throughCursor !== undefined && provenance.at(-1)?.cursor !== throughCursor) throw new Error("Unavailable production source prefix");
+  return provenance;
 }
 
 /** One action list owns both scrub counts and scene expansion; public night entries remain empty. */

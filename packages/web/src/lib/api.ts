@@ -101,6 +101,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
+  decode?: (response:Response) => Promise<T>,
 ): Promise<T> {
   if (typeof window === "undefined" && process.env.NEXT_RUNTIME) {
     throw new Error(
@@ -146,9 +147,12 @@ export async function apiFetch<T>(
     }
     throw apiErrorFromResponse(res.status, text);
   }
-  const result = await res.json() as T;
+  const result = decode ? await decode(res) : await res.json() as T;
   if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
   return result;
+}
+export function apiFetchMedia(path:string,options?:RequestInit):Promise<Blob> {
+  return apiFetch<Blob>(path,options,response => response.blob());
 }
 
 /**
@@ -784,10 +788,6 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games", { cache: "no-store" });
-}
-
-export async function listProductionGames(): Promise<ProductionGameSummary[]> {
-  return apiFetch("/api/admin/production/games", { cache: "no-store" });
 }
 
 export async function getAdminProviderFailures(

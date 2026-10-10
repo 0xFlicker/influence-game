@@ -70,6 +70,20 @@ import type {
 import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
+
+/** Sparse editorial metadata; canonical history and cut projects do not live here. */
+export const productionMomentAnnotations = pgTable("production_moment_annotations", {
+  gameId: text("game_id").notNull().references(() => games.id, {onDelete:"cascade"}),
+  momentKey: text("moment_key").notNull(),
+  tags: jsonb("tags").notNull().$type<Record<string,string>>(),
+  revision: integer("revision").notNull(),
+  updatedById: text("updated_by_id").notNull().references(() => users.id),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).notNull().defaultNow(),
+}, table => [
+  primaryKey({columns:[table.gameId,table.momentKey]}),
+  check("production_moment_annotations_revision_positive",sql`${table.revision} > 0`),
+  check("production_moment_annotations_tags_object",sql`jsonb_typeof(${table.tags}) = 'object'`),
+]);
 export type PostgameMediaStatus =
   | "waiting_inputs"
   | "waiting_music"

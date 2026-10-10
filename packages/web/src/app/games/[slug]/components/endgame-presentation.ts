@@ -52,9 +52,13 @@ export function buildEndgamePresentationCues(frames: readonly GameWatchReplayFra
 
 /** Keep the revealed result on screen through closing narration, without leaking it on earlier seeks. */
 export function revealedWinnerCue(cues: readonly PresentationCue[], cursor: number): EndgamePresentationCue | null {
-  for (let index = Math.min(cursor, cues.length - 1); index >= 0; index -= 1) {
-    const cue = cues[index]!;
-    if (cue.source === "endgame" && cue.kind === "endgame_winner") return cue;
-  }
-  return null;
+  return compileRevealedWinnerCues(cues)[Math.min(cursor, cues.length - 1)] ?? null;
+}
+
+export function compileRevealedWinnerCues(cues: readonly PresentationCue[]): (EndgamePresentationCue | null)[] {
+  let winner: EndgamePresentationCue | null = null;
+  return cues.map(cue => {
+    if (cue.source === "endgame" && cue.kind === "endgame_winner") winner = cue;
+    return winner;
+  });
 }

@@ -91,7 +91,7 @@ OpenAI generates images; xAI is the availability fallback within the same bounde
 
 ## Operator workflow
 
-Open `/admin/games/<id>/visual`. Inspect the timeline, scene revision, candidate image, exact rejected verifier response, provider request ID, duration, cost and uncertainty before authorizing repair. Provider P50/P95 timings are per request, not total boundary wait. The production export includes this evidence and the immutable request description. Private evidence endpoints require admin access and cannot publish an unverified image to viewers.
+Open **Admin → Production → game**, at `/admin/production/games/<id>`. The playable source/cut preview, bounded scene inspector and **Game production and recovery** tools share this workspace. Inspect the scene revision, candidate image, exact rejected verifier response, provider request ID, duration, cost and uncertainty before authorizing repair. Provider P50/P95 timings are per request, not total boundary wait. The production export includes this evidence and the immutable request description. Private evidence endpoints retain their operation-specific permissions and cannot publish an unverified image to viewers. See [Production Studio](production-studio.md) for moment tagging, pinned preview refresh and local export.
 
 Click a scene thumbnail to view the complete image full-screen. Escape or Close returns to the same grid position; Open original opens the source image separately. Candidate and provider-attempt images open in the same viewer with distinct labels, without duplicating images inside scene cards.
 

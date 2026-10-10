@@ -1,0 +1,49 @@
+---
+title: Prove sampled Player time and frozen recordings before studio transport
+module: Production Studio and local replay export
+problem_type: integration_issue
+date: 2026-10-09
+tags: [remotion, player, production, seeking, audio, privacy, export]
+---
+
+# Production Studio Player and frozen recordings
+
+Use the exact installed Remotion Player version (4.0.486) with the existing sampled composition and audio schedule. Player owns playback time. Timeline input calls `seekTo`; frame events update the playhead. A host's requested frame can precede the composition's committed frame, so browser sampling must wait for both. Image/font readiness uses Player buffering and fences cleanup from an older sampled frame. Render-only preparation stays in the export host.
+
+An explicit visual refresh may return after another seek. Capturing an anchor only when refresh starts reproduced frame 75 → seek 105 → refreshed revision restoring 75. Each explicit seek must retain its bounded target's moment and time before the host seek; a later remount uses that latest anchor. The regression holds the actual refresh response until after the second seek, then checks both requested and committed frame 105. Do not mistake a capture taken before a Source/Cut transition commits for this defect: the outgoing view can legitimately map an omitted moment to the next selected moment.
+
+Keep that retention outside the conditionally mounted preview in the scoped workspace. Stable ref callbacks preserve it across asynchronous media preparation without rerendering the full source browser per pointer move. Initial-frame calculation must depend on the actual Player key and compiled input, including Retry; reading only the originally captured anchor would revive the race.
+
+The approved editing loop links moment selection to seeking and lets properties follow the active moment. Keep draft editing separate: input focus, Add/Remove, Save and conflict resolution must pause and pin the displayed moment before modifying its draft. Lock tag fields during submission or reconciliation of an unknown exact request, so a late response cannot overwrite a newer edit. Refreshing saved tags must keep locally accepted annotations whose revisions exceed the returned snapshot. A thinking visibility toggle should preserve presentation, cut rule and recording setup; audience changes still clear private state.
+
+Position custom selects with the existing Floating UI library. Portal their menus into the closest native dialog or active fullscreen element; a body portal falls outside those browser top layers. The fullscreen audience-menu regression verifies visibility, viewport bounds, keyboard dismissal/focus return and an unchanged playhead.
+
+Unknown export responses belong to `AdminSession`, as do their exact bodies. Subscribe to that operation and expose an explicit retry even if current cut membership has changed; a generic pending check that includes unknown outcomes would permanently disable the only recovery control. The retry uses the retained request and still handles server rejection visibly.
+
+Source visibility changes exposed a prepared-media lifetime mismatch: on → off → on returned an infinitely cached presentation containing image object URLs already revoked by the source-hash cache owner. The Player correctly reported `Preview image could not load`; relaxing requested/committed synchronization would hide the defect. Cancel/remove the exact departed-hash media and recording queries before revoking their URLs. Keep canonical source snapshots cached separately, and pause/retain the current anchor before a visibility change. Fresh preparation then replaces the disposed presentation without retaining unlimited media caches.
+
+The admin session also survives Studio → library → same game navigation. Unmount must cancel/remove that game's source-query family before disposing URLs and local recording handles. Canonical cached annotations must leave with component-local accepted overlays; otherwise re-entry can restore stale cut membership. A fresh workspace reads the current accepted prefix and saved annotations. Its imported recordings remain empty until explicitly imported again.
+
+Load the complete audience-authorized catalog once per workspace. Thinking visibility must filter that catalog rather than request a new current snapshot with a different source scope. Otherwise a visibility toggle can silently advance accepted history or published visuals. Source reads, refreshes, annotations and frozen-source validation use the fixed authorized thinking option; the visible preview and `selection.thinking` use the operator's toggle. Mystery's authorized source always excludes thinking. This preserves the explicit refresh boundary without modifying immutable snapshot hashes.
+
+Playback and buffering indicators also belong to a host key. A cached thought-cut → speech-cut replacement during a held saved-tag refresh kept the preview component mounted while its new Player initialized paused. Unkeyed state showed **Pause**, and clicking it started playback. Status now derives false for a new key until that host's events update it. The canonical regression checks the stopped committed frame and **Play** control before and after explicit playback.
+
+The installed Player's shared audio-tag pool failed local mute/zero-volume recovery. Its supported `numberOfSharedAudioTags={0}` configuration gives composition audio its own elements and passed the local recovery/seek fixture. Do not add an ambient controller or patch the dependency. Top-level monitoring volume remains separate from the frozen music mix.
+
+Assign stable moment identity to presentation segments before attaching recordings. Assigning it only during timing compilation silently omitted a frozen recording: the exporter matched recording evidence by moment ID before that ID existed on speech. The shared binder now carries it, and attachment fails before opening files if any frozen reference lacks its exact selected moment. Validate every manifest identity against permitted speech first; valid omitted recordings must never be opened or cached.
+
+Render a truly silent schedule with `muted:true`. Remotion counts layout capture artifacts as audio-bearing output; an artifact can otherwise create a silent AAC stream with padded duration. Validate video-stream duration rather than the padded container duration. This is a correctness condition, separate from exporter readiness/concurrency work.
+
+Decoded AAC comparison needs a bounded codec allowance. Remotion's bundled `libfdk_aac` ADTS encode added two 1024-sample frames at 48 kHz (42.6667 ms) in the local fixture. The verifier searches only within one output frame plus that explicit codec budget, reports the measured signed offset, and requires waveform correlation and gain agreement. Wrong gain, silence and an out-of-bounds shift have focused regressions. Mixed or overlapping schedules report recording alignment as unverified rather than claiming synchronization from non-silence.
+
+Evidence remains scoped: deterministic local unit/browser tests, actual isolated-API selected exports, and encoded-media checks do not establish deployed permissions, paid image quality or operator acceptance. Public replay transport retains its existing owner and behavior.
+
+Browser fixtures must first establish the canonical history their assertions need. A legally night-killed doctor has no public ballot; Mystery correctly returned an empty Decisions list while an old fixture waited for a row. A one-day fixture with legal self-protection and split living-player ballots now proves accepted vote/protection prerequisites before testing audience privacy. Preserve the rendering assertions when correcting that prerequisite.
+
+Wait for the intended actor's visible inspection control after each audience navigation. The replay's transport shell can expose **Pause** while initial watch data still shows zero cast members. Pausing that shell does not prove the actor is available. Record the primary failed operation before attempting DOM or screenshot diagnostics, and bound those diagnostic reads so an unhealthy browser protocol cannot hide the original error.
+
+One local run stalled while Next logged compilation of the replay route; its homepage and canonical API remained responsive. Preserving the captured logs and moving only the stopped harness's ignored `.next/e2e` cache allowed a fresh-process proof to pass. This observation does not establish a shared transport defect. Retained operator review runs for up to two hours and cleans its owned services/database, then restores only generated route-path additions.
+
+A later source-pin regression passed but raw `browser.close()` exhausted the entire teardown hook, preventing its Next/database cleanup. The shared test-browser owner now bounds graceful close to five seconds, disconnects and terminates only `browser.process()` if necessary, verifies exit within five more seconds, and lets ordered teardown continue. The infrastructure browser test deliberately stalls close and verifies owned-process exit and disconnected state. This is test cleanup, not a public replay transport change.
+
+Keep full automated proof separate from a retained native review. On macOS, the headful/emulated fullscreen request remained pending despite a trusted click and matched physical bounds, while the complete headless fullscreen seek/menu proof passed. The review runner now finishes that unchanged headless proof before opening fresh authenticated headful windows with `defaultViewport:null` and verifying native resize/committed previews. Remove experiment instrumentation after capturing logs. A locked Mac blocked direct native input, so operator fullscreen remains a manual trial; do not infer a product defect or claim native success from either the automated timeout or headless proof.

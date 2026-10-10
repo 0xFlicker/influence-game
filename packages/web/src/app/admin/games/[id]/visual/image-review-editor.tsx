@@ -10,8 +10,8 @@ interface Review { expectedRevision: number; planHash: string; mode: Mode; shots
 const button = "rounded border border-white/25 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40";
 
 /** Reusable correction surface for saved image reviews; no generation or publication. */
-export function ImageReviewEditor({ gameId, sceneId, apiPrefix, disabled, onSave, onClose, onRegenerate }: {
-  gameId: string; sceneId: string; apiPrefix: string; disabled: boolean;
+export function ImageReviewEditor({ gameId, sceneId, apiPrefix, readApiPrefix = apiPrefix, disabled, onSave, onClose, onRegenerate }: {
+  gameId: string; sceneId: string; apiPrefix: string; readApiPrefix?: string; disabled: boolean;
   onSave: (review: Review) => void; onClose: () => void; onRegenerate?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -37,21 +37,21 @@ export function ImageReviewEditor({ gameId, sceneId, apiPrefix, disabled, onSave
   const setSelections = (value: Selection[] | ((previous: Selection[]) => Selection[])) => updateDraft({ shots: typeof value === "function" ? value(selections) : value });
   useEffect(() => {
     let cancelled = false;
-    session.read<NonNullable<typeof data>>(`${apiPrefix}/${gameId}/visual/scenes/${sceneId}/review`).then(result => {
+    session.read<NonNullable<typeof data>>(`${readApiPrefix}/${gameId}/visual/scenes/${sceneId}/review`).then(result => {
       if (cancelled) return;
       setData(result); setSourceId(result.sources[0]?.id ?? ""); setPlayerId(result.players[0]?.id ?? "");
     }).catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Review unavailable"); });
     return () => { cancelled = true; };
-  }, [apiPrefix, gameId, sceneId, session]);
+  }, [readApiPrefix, gameId, sceneId, session]);
   const source = data?.sources.find(s => s.id === sourceId);
   useEffect(() => {
     if (!source) return;
     let cancelled = false;
-    session.read<{ imageUrl: string }>(`${apiPrefix}/${gameId}/visual/evidence/${source.kind}/${source.imageId}`).then(result => {
+    session.read<{ imageUrl: string }>(`${readApiPrefix}/${gameId}/visual/evidence/${source.kind}/${source.imageId}`).then(result => {
       if (!cancelled) { setError(null); setImage({ sourceId: source.id, url: result.imageUrl }); }
     }).catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : "Image unavailable"); });
     return () => { cancelled = true; };
-  }, [source, apiPrefix, gameId, session]);
+  }, [source, readApiPrefix, gameId, session]);
   const selected = selections.find(s => s.sourceId === sourceId);
   const choose = (role: Selection["role"] | "reject") => {
     if (!source) return;

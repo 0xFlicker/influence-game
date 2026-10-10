@@ -1,22 +1,19 @@
-import { readWerewolfVisualPause, werewolfVisualPause } from "./werewolf-visual-policy.js";
+import { readWerewolfVisualPause } from "./werewolf-visual-policy.js";
 import { planWerewolfProduction } from "./werewolf-production-plan.js";
-import { freezeWerewolfReferences, readWerewolfProduction, WerewolfReferenceError } from "./werewolf-production.js";
+import { freezeWerewolfReferences, readWerewolfProduction, readWerewolfProductionSceneCatalog, WerewolfReferenceError } from "./werewolf-production.js";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { GameState, Phase, selectActiveJury } from "@influence/engine";
 import { VISUAL_ROOMS, visualRoomForPhase, type FrozenVisualProfile, type VisualRoomId } from "@influence/engine/visual-mode";
 import { planVisualScene, type VisualCastMember, type VisualPlacement } from "@influence/engine/visual-scene-plan";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { readVisualProfileImage } from "./visual-game-assets.js";
 import { storeVisualArtifact } from "./visual-scene-store.js";
-import { controlVisualMedia, readVisualMedia } from "./visual-media-repair.js";
+import { controlVisualMedia, readVisualMedia, readVisualSceneStaging } from "./visual-media-repair.js";
 import { readVisualRenderAccounting } from "./visual-render-journal.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
-import { readEpisodePresentations } from "./episode-presentation.js";
-import { getGameSeasonIdentityMap } from "../lib/game-season.js";
-import { modelLabelFromConfig } from "../lib/model-label.js";
-import { buildGameCompletionSettlementSummary, getGameCompletionSettlementSummaryMap } from "./game-completion-settlement.js";
+import { readInfluenceVisualPause } from "./visual-policy.js";
 
 export class ReplayVisualError extends Error {
   constructor(message: string, readonly code: string, readonly status: 400 | 404 | 409 = 409) { super(message); }
@@ -35,23 +32,35 @@ function candidate(gameId: string, data: Omit<Candidate, "key" | "previewHash" |
   return { ...data, key: keyFor(gameId, data.roomId, data.boundarySequence), roomName: VISUAL_ROOMS[data.roomId].name,
     previewHash: sha256StableJson({ ...data, sceneId: undefined }) };
 }
-const sameCast = (ids: readonly string[], scene: Scene) => ids.length === scene.plan.cast.length && scene.plan.cast.every(member => ids.includes(member.id));
+const sameCast = (ids: readonly string[], scene: { plan: { cast: readonly { id: string }[] } }) => ids.length === scene.plan.cast.length && scene.plan.cast.every(member => ids.includes(member.id));
 
 /** Read-only discovery uses committed metadata and canonical prefixes, never dialogue prose. */
-export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) {
-  const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+async function readProductionGame(db: DrizzleDB, gameId: string) {
+  const [game] = await db.select({slug:schema.games.slug,gameKind:schema.games.gameKind,status:schema.games.status}).from(schema.games).where(eq(schema.games.id, gameId));
   if (!game) throw new ReplayVisualError("Game not found", "game_missing", 404);
-  if (game.status !== "completed" && !await readWerewolfVisualPause(db, gameId)) throw new ReplayVisualError("Image production requires a completed game or a visual-repair pause", "game_not_completed");
-  if (game.gameKind === "werewolf") return readWerewolfProduction(db, gameId, game.slug);
-  const [scenes, dialogue, events, media, accounting] = await Promise.all([
-    db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
+  if (game.status !== "completed" && !(game.gameKind === "werewolf" ? await readWerewolfVisualPause(db, gameId) : await readInfluenceVisualPause(db, gameId))) throw new ReplayVisualError("Image production requires a completed game or a visual-repair pause", "game_not_completed");
+  return game;
+}
+
+/** Full accepted canonical history is projected before paging scene metadata. */
+export async function readReplayVisualSceneCatalog(db: DrizzleDB, gameId: string) {
+  const game = await readProductionGame(db,gameId);
+  if (game.gameKind === "werewolf") {
+    const catalog = await readWerewolfProductionSceneCatalog(db,gameId,game.slug);
+    return {gameId,slug:game.slug,gameKind:game.gameKind,scenes:catalog.scenes,warnings:[]};
+  }
+  return {...await readInfluenceProductionSceneCatalog(db,gameId,game.slug),gameKind:game.gameKind};
+}
+
+async function readInfluenceProductionSceneCatalog(db:DrizzleDB,gameId:string,slug:string) {
+  const [scenes, dialogue, events] = await Promise.all([
+    readVisualSceneStaging(db,gameId),
     db.select({ sequence: schema.transcripts.entrySequence, phase: schema.transcripts.phase, scope: schema.transcripts.scope,
       speaker: schema.transcripts.speakerPlayerId, audience: schema.transcripts.audiencePlayerIds, context: schema.transcripts.safeContext,
       turn: schema.gameTurns.turnSequence, baseEvents: schema.gameTurns.baseEventSequence, baseDialogue: schema.gameTurns.baseDialogueSequence })
       .from(schema.transcripts).innerJoin(schema.gameTurns, eq(schema.transcripts.gameTurnId, schema.gameTurns.id))
       .where(and(eq(schema.transcripts.gameId, gameId), eq(schema.gameTurns.status, "committed"))).orderBy(asc(schema.transcripts.entrySequence)),
     getPersistedGameEvents(db, gameId),
-    readVisualMedia(db, gameId), readVisualRenderAccounting(db, gameId),
   ]);
   const candidates = new Map<string, Candidate>();
   for (const scene of scenes) {
@@ -91,14 +100,24 @@ export async function readReplayVisualProduction(db: DrizzleDB, gameId: string) 
       participants: ids.map(id => ({ id, name: state.getPlayerName(id) })), roles, allianceGroups, cues: existing?.plan.cues ?? [] });
     candidates.set(data.key, data);
   }
-  const publishedIds = new Set(media.publications.map(publication => publication.sceneId));
-  return { gameId, slug: game.slug, warnings: [
+  return { gameId, slug, warnings: [
     ...(events.status === "invalid" ? ["Some canonical records are invalid. Only the trusted prefix can be staged."] : []),
     ...(unsupported ? [`${unsupported} dialogue beats lack enough canonical evidence to stage an image.`] : []),
   ],
     scenes: [...candidates.values()].sort((a, b) => a.boundarySequence - b.boundarySequence || a.roomId.localeCompare(b.roomId)).map(data => ({ ...data,
-      available: Boolean(data.sceneId && (publishedIds.has(data.sceneId) || scenes.find(scene => scene.id === data.sceneId)?.status === "ready")),
-      originalFailed: scenes.find(scene => scene.id === data.sceneId)?.status === "failed" })), media, attempts: accounting.attempts };
+      available: Boolean(data.sceneId && scenes.find(scene => scene.id === data.sceneId)?.status === "ready"),
+      originalFailed: scenes.find(scene => scene.id === data.sceneId)?.status === "failed" })) };
+}
+
+/** Existing single-game repair inventory retains its evidence owner. Studio pages use the catalog above. */
+export async function readReplayVisualProduction(db:DrizzleDB,gameId:string) {
+  const game = await readProductionGame(db,gameId);
+  if (game.gameKind === "werewolf") return readWerewolfProduction(db,gameId,game.slug);
+  const [catalog,media,accounting] = await Promise.all([
+    readInfluenceProductionSceneCatalog(db,gameId,game.slug),readVisualMedia(db,gameId),readVisualRenderAccounting(db,gameId),
+  ]);
+  const published = new Set(media.publications.map(publication => publication.sceneId));
+  return {...catalog,scenes:catalog.scenes.map(scene => ({...scene,available:scene.available || Boolean(scene.sceneId && published.has(scene.sceneId))})),media,attempts:accounting.attempts};
 }
 
 /** Copies saved game-start references; this never generates a new character or background. */
@@ -170,32 +189,4 @@ export async function renderMissingReplayScene(db: DrizzleDB, gameId: string, op
   });
   return controlVisualMedia(db, gameId, operatorId, { sceneId: scene.id, requestId: input.requestId, expectedVersion: 0, action: "regenerate",
     previewKey: input.key, previewHash: input.previewHash }, { oneAtATime: true });
-}
-
-/** Producer-only accounts use the same Production rows without broader admin access. */
-export async function listReplayVisualGames(db: DrizzleDB) {
-  const rows = await db.select().from(schema.games).where(or(eq(schema.games.status, "completed"), and(eq(schema.games.gameKind, "werewolf"),eq(schema.games.status,"suspended")))).orderBy(desc(schema.games.createdAt), asc(schema.games.id));
-  const games = rows.filter(game => game.status === "completed" || werewolfVisualPause(JSON.parse(game.config)));
-  if (!games.length) return [];
-  const ids = games.map(game => game.id);
-  const [episodes, seasons, settlements, players, results] = await Promise.all([
-    readEpisodePresentations(db, games),
-    getGameSeasonIdentityMap(db, games.map(game => game.seasonId)),
-    getGameCompletionSettlementSummaryMap(db, ids),
-    db.select({ id: schema.gamePlayers.id, gameId: schema.gamePlayers.gameId, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(inArray(schema.gamePlayers.gameId, ids)),
-    db.select({ gameId: schema.gameResults.gameId, winnerId: schema.gameResults.winnerId }).from(schema.gameResults).where(inArray(schema.gameResults.gameId, ids)),
-  ]);
-  return games.map(game => {
-    const config = JSON.parse(game.config);
-    const cast = players.filter(player => player.gameId === game.id);
-    const winnerId = results.find(result => result.gameId === game.id)?.winnerId;
-    const winner = cast.find(player => player.id === winnerId);
-    return {
-      id: game.id, slug: game.slug, gameKind: game.gameKind, status: game.status, hidden: Boolean(game.hiddenAt),
-      episode: episodes.get(game.id), season: game.seasonId ? seasons.get(game.seasonId) : undefined,
-      playerCount: game.maxPlayers ?? config.maxPlayers ?? cast.length, modelLabel: modelLabelFromConfig(config),
-      winner: winner ? JSON.parse(winner.persona).name : undefined,
-      completionSettlement: settlements.get(game.id) ?? buildGameCompletionSettlementSummary(null),
-    };
-  });
 }

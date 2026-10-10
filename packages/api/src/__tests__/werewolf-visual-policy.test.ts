@@ -8,7 +8,8 @@ import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, readWerewol
 import { createWerewolfVisualPreparation } from "../services/werewolf-visual-runtime.js";
 import { pauseWerewolfForVisuals, readWerewolfVisualPause, resumeWerewolfVisualGame, queueWerewolfFormRepair, WerewolfVisualBlocked } from "../services/werewolf-visual-policy.js";
 import { setVisualFailurePolicy } from "../services/visual-policy.js";
-import { readReplayVisualProduction, renderMissingReplayScene, listReplayVisualGames } from "../services/visual-replay-production.js";
+import { readReplayVisualProduction, renderMissingReplayScene } from "../services/visual-replay-production.js";
+import {readProductionLibrary} from "../services/production-library.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { controlVisualMedia, readVisualMedia } from "../services/visual-media-repair.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
@@ -91,7 +92,7 @@ for (const beforeScene of [false, true])
     const pause = await readWerewolfVisualPause(db, f.game.id);
     expect(pause?.boundarySequence).toBe(pending.state.sequence);
     expect((await claimWerewolfGame(db, f.game.id)).ok).toBe(false);
-    expect((await listReplayVisualGames(db)).map(g => g.id)).toContain(f.game.id);
+    expect((await readProductionLibrary(db,{limit:25},{roles:["producer"],permissions:[]})).items.map(g => g.id)).toContain(f.game.id);
     expect((await readWerewolfWatch(db, f.game.id, "mystery", 1, 64)).visualPaused).toBe(true);
     await expect(resumeWerewolfVisualGame(db, f.game.id, "operator")).rejects.toThrow("publish");
     const inventory = await readReplayVisualProduction(db, f.game.id);

@@ -10,20 +10,18 @@ import type { WerewolfEvent } from "../werewolf/types";
 import { werewolfReportEntry } from "../werewolf/report";
 
 const originalFetch = globalThis.fetch;
-let sessionToken: string | undefined, mcpToken: string | undefined;
+let sessionToken: string | undefined;
 let reportDir: string;
 let reportIndex = 0;
 const runArgs = (argv: string[] = []) => ({ ...parseWerewolfApiArgs(argv, {}), out: join(reportDir, `report-${reportIndex++}.txt`) });
 beforeEach(async () => {
   reportDir = await mkdtemp(join(tmpdir(), "werewolf-report-"));
   sessionToken = process.env.INFLUENCE_API_SESSION_TOKEN;
-  mcpToken = process.env.INFLUENCE_MCP_TOKEN;
-  delete process.env.INFLUENCE_API_SESSION_TOKEN;
-  process.env.INFLUENCE_MCP_TOKEN = "test-mcp-token";
+  process.env.INFLUENCE_API_SESSION_TOKEN = "test-session";
 });
 afterEach(async () => {
   globalThis.fetch = originalFetch;
-  for (const [key, value] of [["INFLUENCE_API_SESSION_TOKEN", sessionToken], ["INFLUENCE_MCP_TOKEN", mcpToken]] as const) {
+  for (const [key, value] of [["INFLUENCE_API_SESSION_TOKEN", sessionToken]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
   await rm(reportDir, { recursive: true, force: true });
@@ -59,14 +57,13 @@ describe("Werewolf API simulation", () => {
     expect(parseWerewolfApiArgs(["--preset", "two_wolves", "--agent", "owned-1", "--agent", "owned-2"], {}).agentProfileIds).toEqual(["owned-1", "owned-2"]);
   });
 
-  test("creates exactly one Werewolf game using CLI auth, polls to completion, and reports canonical outcomes", async () => {
+  test("creates exactly one Werewolf game using a configured CLI session, polls to completion, and reports canonical outcomes", async () => {
     const { initial, final } = await fixture();
     const requests: { path: string; method: string; body?: unknown }[] = [];
     let polls = 0;
     globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
       const request = (input instanceof Request ? input : new Request(input.toString(), init)), path = new URL(request.url).pathname;
       requests.push({ path, method: request.method, ...(request.method === "POST" ? { body: await request.json() } : {}) });
-      if (path === "/api/auth/local-cli-session") return Response.json({ token: "test-session", user: { permissions: ["create_game", "start_game"] } });
       if (request.method === "POST") {
         expect(request.headers.get("Authorization")).toBe("Bearer test-session");
         return Response.json({ id: "report-game", slug: "report-slug" }, { status: 201 });
@@ -83,8 +80,8 @@ describe("Werewolf API simulation", () => {
       expect(partial).toContain("Cast (mystery)");
       expect(partial).not.toContain("Result:");
     }, log: line => { lines.push(line); } });
-    expect(requests.map(request => request.path)).toEqual(["/api/auth/local-cli-session", "/api/werewolf", "/api/werewolf/report-game", "/api/werewolf/report-game"]);
-    expect(requests[1]?.body).toMatchObject({ preset: "two_wolves", maxDays: 10, agentProfileIds: ["owned-1"], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
+    expect(requests.map(request => request.path)).toEqual(["/api/werewolf", "/api/werewolf/report-game", "/api/werewolf/report-game"]);
+    expect(requests[0]?.body).toMatchObject({ preset: "two_wolves", maxDays: 10, agentProfileIds: ["owned-1"], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
     expect(result.status).toBe("completed");
     expect(result.report).toContain("http://localhost:3001/games/report-slug/replay?audience=mystery");
     expect(result.report).toContain("Night 1:");
@@ -101,7 +98,7 @@ describe("Werewolf API simulation", () => {
 
   test("watching an existing game requires no login, creation, or model call", async () => {
     const { final } = await fixture();
-    delete process.env.INFLUENCE_MCP_TOKEN;
+    delete process.env.INFLUENCE_API_SESSION_TOKEN;
     let count = 0;
     globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
       const request = (input instanceof Request ? input : new Request(input.toString(), init));

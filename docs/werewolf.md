@@ -193,7 +193,7 @@ bun run dev:web          # browser viewer, port 3001
 Then, in another terminal:
 
 ```sh
-bun run mcp:game:login # once, or when the saved login expires
+# Browser sign-in opens when the shared cached API session needs refreshing.
 bun run simulate:werewolf:api
 
 # Eight seats, two wolves, Seer and Doctor; include selected owned characters.

@@ -10,12 +10,15 @@ import { createWerewolfVisualPreparation } from "../services/werewolf-visual-run
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readVisualMedia } from "../services/visual-media-repair.js";
+import { readProductionScenes } from "../services/production-scenes.js";
+import { readWerewolfVisualPause } from "../services/werewolf-visual-policy.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
 import { createAdminUser } from "./test-auth.js";
 import { launchBrowser, createAuthenticatedPage, closeBrowser } from "./test-browser.js";
 import { cleanupE2eResources } from "./cleanup.js";
+import { clickStudioButton, openStudioDialog, closeStudioDialog, chooseStudioOption } from "./studio-interface-review.js";
 let database: TestDB, servers: TestServerHandles, browser: Browser, admin: Awaited<ReturnType<typeof createAdminUser>>;
 const saved = { role: process.env.INFLUENCE_API_ROLE, key: process.env.OPENAI_API_KEY, secret: process.env.JWT_SECRET };
 beforeAll(async () => {
@@ -47,8 +50,8 @@ afterAll(async () => {
 async function text(page: Page, value: string) {
   await page.waitForFunction(`document.body.innerText.includes(${JSON.stringify(value)})`, { timeout: 30000, polling: 100 });
 }
-async function click(page: Page, label: string) {
-  const button = `Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === ${JSON.stringify(label)} && !b.disabled)`;
+async function click(page: Page, label: string, scope = "") {
+  const button = `Array.from(document.querySelectorAll(${JSON.stringify(`${scope ? `${scope} ` : ""}button`)})).find(b => b.textContent?.trim() === ${JSON.stringify(label)} && !b.disabled)`;
   await page.waitForFunction(button, { polling: 100 });
   await page.evaluate(`${button}.click()`);
 }
@@ -103,26 +106,47 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await page.bringToFront();
       console.info("W7A: inspect Production");
       await page.goto(`${servers.webUrl}/admin/production`, { waitUntil: 'domcontentloaded' });
-      await text(page, "Episode & video production");
-      await page.waitForSelector(`a[href="/admin/werewolf/${game!.id}/production"]`);
-      await page.click(`a[href="/admin/werewolf/${game!.id}/production"]`);
-      await text(page, "Paused for visuals");
+      await text(page, "Production Studio");
+      await page.waitForSelector(`a[href^="/admin/production/games/${game!.id}?"]`);
+      await page.click(`a[href^="/admin/production/games/${game!.id}?"]`);
+      await text(page, "Paused accepted prefix");
+      const openRecovery = async () => {
+        await clickStudioButton(page, "Episode tools");
+        await page.waitForSelector('dialog[open][aria-label="Episode tools"]');
+        await clickStudioButton(page, "Game production and recovery");
+        await page.waitForSelector('dialog[open][aria-label="Game production and recovery"]');
+        await text(page, "Paused for visuals");
+      };
+      await openRecovery();
       console.info("W7A: repair boundary");
       await page.setViewport({ width: 390, height: 844 });
       // Resizing triggers responsive layout; measure after it has settled.
       await page.waitForFunction("document.documentElement.scrollWidth <= innerWidth");
       await click(page, "Resume game");
       await text(page, "Review and publish the required scene");
-      await click(page, "Render missing image");
+      await closeStudioDialog(page);
+      await page.waitForSelector('[aria-label="Moment properties"]');
+      await clickStudioButton(page, "Properties");
+      await openStudioDialog(page, "Scene versions & production");
+      const pause = await readWerewolfVisualPause(db, game!.id);
+      if (pause?.work.kind !== "scene") throw Error("Missing canonical paused scene descriptor");
+      const descriptor = pause.work.descriptor;
+      const pausedScene = (await readProductionScenes(db, game!.id, {audience: "mystery"})).items.find(scene => scene.roomId === descriptor.roomId && scene.boundarySequence === descriptor.boundarySequence);
+      if (!pausedScene?.sceneId) throw Error("Missing retained paused scene plan");
+      await chooseStudioOption(page, "Inspect scene", `${pausedScene.roomName} · ${pausedScene.round ?? "Opening"}${pausedScene.attention ? " · Needs attention" : ""}`);
+      await page.waitForFunction(`new URL(location.href).searchParams.get('scene') === ${JSON.stringify(pausedScene.key)} && !!document.querySelector('[aria-label="Scene inspector"] button')`);
+      // The paused runtime retained the failed scene plan. Repair that exact
+      // scene through its media owner rather than requesting a missing plan.
+      await click(page, "Regenerate scene", '[aria-label="Scene inspector"]');
       await text(page, "queued for rendering");
       const interrupted = await claimVisualMediaJob(db, 'browser-interrupted-renderer');
       if (!interrupted) throw Error('Missing first job');
       const operation = await reserveVisualRender(db, game!.id, `media:${interrupted.id}:composition`, { prompt: "Interrupted fixture", width: 640, height: 360, references: [] }, interrupted.sceneId ?? undefined, interrupted.id);
       await visualImageJournal(db, operation).begin({ provider: "openai", model: "gpt-image-2", requestHash: "fixture-no-provider" });
       await db.update(schema.visualRepairJobs).set({status: "needs_reconciliation", leaseUntil: null, finishedAt: new Date().toISOString()}).where(eq(schema.visualRepairJobs.id, interrupted.id));
-      await click(page, "Refresh scenes");
+      await click(page, "Refresh selected scene", '[aria-label="Scene inspector"]');
       await text(page, "Needs reconciliation:");
-      await click(page, "Correct images");
+      await click(page, "Correct images", '[aria-label="Scene inspector"]');
       await text(page, "Reject and regenerate");
       await click(page, "Reject and regenerate");
       await text(page, "may already have been charged");
@@ -134,16 +158,19 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
         throw Error('Missing repair job');
       const image = await storeVisualArtifact(db, game!.id, await sharp({ create: { width: 640, height: 360, channels: 3, background: '#39453b' } }).png().toBuffer());
       await executeVisualMediaJob(db, job, new AbortController().signal, async () => ({ imageArtifactId: image, localization: { count: job.plan.cast.length, verifiedParticipantIds: job.plan.cast.map(m => m.id), anchors: [] } }));
-      await click(page, "Refresh scenes");
-      await text(page, "ready for review");
-      await click(page, "Versions and review");
-      await click(page, "Publish for viewers");
+      await click(page, "Refresh selected scene", '[aria-label="Scene inspector"]');
+      await text(page, "Ready for review");
+      await click(page, "Versions and review", '[aria-label="Scene inspector"]');
+      await click(page, "Publish for viewers", '[aria-label="Scene inspector"]');
       await text(page, "Published for new viewer sessions");
       expect((await claimWerewolfGame(db, game!.id)).ok).toBe(false);
       await page.screenshot({ path: '/tmp/w7-recovery-mobile.png', fullPage: true });
       console.info("W7A: resume published repair");
+      await closeStudioDialog(page);
+      await openRecovery();
       await click(page, "Resume game");
-      await page.waitForFunction(`!document.body.innerText.includes('Paused for visuals')`);
+      await text(page, "Resume accepted. The preview retains its pinned accepted prefix.");
+      expect(await page.$eval('[aria-label="Game production recovery"]', node => node.textContent?.includes("Paused for visuals"))).toBe(false);
       expect(await store.read()).toEqual(accepted);
       expect((await readVisualMedia(db, game!.id)).publications).toHaveLength(1);
       const resumed = await claimWerewolfGame(db, game!.id);

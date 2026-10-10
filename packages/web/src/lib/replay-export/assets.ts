@@ -21,6 +21,8 @@ export interface Probe {
     width?: number;
     height?: number;
     sample_rate?: string;
+    duration?: string;
+    nb_frames?: string;
   }[];
   format: { duration?: string };
 }
