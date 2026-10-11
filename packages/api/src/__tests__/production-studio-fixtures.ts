@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { Phase } from "@influence/engine";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";

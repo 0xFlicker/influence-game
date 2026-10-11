@@ -17,6 +17,7 @@ import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import {
   createCheckpointCapsule,
   createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   enrichCapsuleForV1Candidate,
   insertGame,
   insertOwner,
@@ -133,7 +134,7 @@ async function createPendingSettlementFixture(
   const ownerEpoch = await insertOwner(db, gameId, {
     expiresAt: "2099-01-01T00:00:00.000Z",
   });
-  const events = createCanonicalEventFixture(gameId);
+  const events = createCompletedCanonicalEventFixture(gameId);
   await appendGameEvents(db, { gameId, ownerEpoch, events });
   const finalEvent = events.at(-1)!;
   await captureGameCompletionSettlement(db, {

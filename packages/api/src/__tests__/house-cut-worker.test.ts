@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { cutInfluenceFixture } from "@influence/engine/house-cuts/fixtures";
 import { insertGame, insertOwner, insertCanonicalEventRows } from "./durable-run-test-utils";
 import { discoverCuts } from "@influence/engine/house-cuts/editorial";

@@ -33,6 +33,7 @@ import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.j
 import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   createResolvedRoundCanonicalEventFixture,
   insertCanonicalEventRows,
   insertOwner,
@@ -2306,7 +2307,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
       await db.update(schema.games).set({ status: "in_progress" })
         .where(eq(schema.games.id, id));
-      const events = createCanonicalEventFixture(id);
+      const events = createCompletedCanonicalEventFixture(id);
       const ownerEpoch = await insertOwner(db, id, {
         lastPersistedEventSequence: events.length,
         expiresAt: "2099-01-01T00:00:00.000Z",
@@ -2329,7 +2330,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
       await db.update(schema.games).set({ status: "in_progress" })
         .where(eq(schema.games.id, id));
-      const events = createCanonicalEventFixture(id);
+      const events = createCompletedCanonicalEventFixture(id);
       const ownerEpoch = await insertOwner(db, id, {
         lastPersistedEventSequence: events.length,
         expiresAt: "2099-01-01T00:00:00.000Z",

@@ -1,4 +1,5 @@
 import { queueHouseCuts } from "./house-cut-queue.js";
+import { assertInfluenceRetrospectiveCompletion } from "./game-retrospective-completion.js";
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Phase } from "@influence/engine";
@@ -147,6 +148,7 @@ export type GameCompletionSettlementCaptureErrorCode =
   | "event_boundary_not_found"
   | "event_owner_mismatch"
   | "event_hash_mismatch"
+  | "retrospective_incomplete"
   | "conflicting_capture"
   | "stored_payload_invalid"
   | "stored_payload_hash_mismatch";
@@ -761,6 +763,9 @@ export async function captureGameCompletionSettlement(
       );
     }
 
+    try { await assertInfluenceRetrospectiveCompletion(tx, input.gameId, input.finalEventSequence); }
+    catch (error) { throw new GameCompletionSettlementCaptureError("retrospective_incomplete", error instanceof Error ? error.message : "Retrospective completion is invalid"); }
+
     const existing = (await tx.select()
       .from(schema.gameCompletionSettlements)
       .where(eq(schema.gameCompletionSettlements.gameId, input.gameId))
@@ -913,6 +918,8 @@ export async function settleCapturedGameCompletion(
           `Completion boundary for game ${gameId} no longer matches durable events`,
         );
       }
+      try { await assertInfluenceRetrospectiveCompletion(tx, gameId, settlement.finalEventSequence); }
+      catch (error) { throw new DeterministicSettlementError("completion_boundary_conflict", error instanceof Error ? error.message : "Retrospective completion is invalid"); }
 
       const game = (await tx.select({
         status: schema.games.status,

@@ -38,6 +38,7 @@ import {
   insertGame,
   insertOwner,
   withJuryWinner,
+  withRetrospective,
 } from "./durable-run-test-utils.js";
 
 const PRODUCER_ACCESS = {
@@ -177,12 +178,14 @@ describe("ProductionGameMcpReadModel", () => {
         },
       },
     };
-    await appendGameEvents(db, { gameId, ownerEpoch, events: [juryEvent, finalEvent] });
+    const completedEvents = withRetrospective([...events, juryEvent, finalEvent]);
+    const settlementEvent = completedEvents.at(-1)!;
+    await appendGameEvents(db, { gameId, ownerEpoch, events: completedEvents.slice(events.length) });
     await captureGameCompletionSettlement(db, {
       gameId,
       ownerEpoch,
-      finalEventSequence: finalEvent.sequence,
-      finalEventHash: hashCanonicalEvent(finalEvent),
+      finalEventSequence: settlementEvent.sequence,
+      finalEventHash: hashCanonicalEvent(settlementEvent),
       terminalResult: {
         gameId,
         winnerId: "atlas",

@@ -13,6 +13,7 @@ import {
   createEngineBoundaryPlaceholder,
   createEmptyHouseNarrativeContinuity,
   requiredPhaseBoundaryAccumulatorIds,
+  freezeInfluenceRetrospective, prepareRetrospectiveRequest, retrospectiveCompletionProof,
   type CanonicalGameEvent,
   type GameCheckpointCapsule,
   type RuntimeSnapshotV1,
@@ -77,6 +78,32 @@ export function withJuryWinner(
       },
     },
   ];
+}
+
+/** Complete canonical epilogue for settlement fixtures; never forge completion from a vote. */
+export function withRetrospective(events: readonly CanonicalGameEvent[]): readonly CanonicalGameEvent[] {
+  const projection = replayCanonicalEvents(events);
+  const frozen = freezeInfluenceRetrospective({ events, transcript: [], transcriptThroughSequence: 0, dialogueAnchors: [],
+    seats: projection.playerOrder.map(id => ({ id, name: projection.players[id]!.name, personality: "Fixture character", backstory: "", influenceStrategy: "" })),
+    capacities: { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 1_000_000 }] },
+  });
+  let ticks = Date.parse(events.at(-1)!.timestamp);
+  const state = GameState.fromCanonicalEvents(events, { now: () => ++ticks });
+  state.recordPhaseEntered(Phase.RETROSPECTIVE);
+  state.recordRetrospective("retrospective.started", frozen.definition);
+  for (const actorId of frozen.definition.speakerIds) {
+    const current = replayCanonicalEvents(state.getCanonicalEvents()).retrospective!, request = prepareRetrospectiveRequest(current);
+    state.recordRetrospective("retrospective.statement_recorded", { version: 1, definitionHash: request.definitionHash,
+      actorId, ordinal: request.ordinal, priorStatementsHash: request.priorStatementsHash, requestHash: sha256StableJson(request),
+      providerLogicalCallId: `fixture-retrospective-${actorId}`, speech: `${actorId}: This is my final statement.` });
+  }
+  state.recordRetrospective("retrospective.completed", retrospectiveCompletionProof(replayCanonicalEvents(state.getCanonicalEvents()).retrospective!));
+  state.recordPhaseEntered(Phase.END);
+  return state.getCanonicalEvents();
+}
+
+export function createCompletedCanonicalEventFixture(gameId: string) {
+  return withRetrospective(withJuryWinner(createCanonicalEventFixture(gameId), "atlas"));
 }
 
 export function createResolvedRoundCanonicalEventFixture(gameId: string): readonly CanonicalGameEvent[] {

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { Phase } from "@influence/engine";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
 import { werewolfConversationScene } from "@influence/engine/werewolf/visual-scenes";
 import { productionMomentKey } from "@influence/engine/production-moments";

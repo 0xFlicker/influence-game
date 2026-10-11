@@ -33,7 +33,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Done |
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Done |
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Done |
-| RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Todo |
+| RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Done |
 | RT-07 | Early canonical results and continued delivery | RT-04–06 | Todo |
 | RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Todo |
 | RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Todo |
@@ -314,3 +314,17 @@ Local verification:
 - `bun run check`: typecheck and lint passed. Whitespace and 75 relative documentation links passed before the additional solution note.
 
 The maximum-duration competitive account exceeds the bounded retrospective input ceiling and fails explicitly; its fixture does not claim finished execution. These checks are local deterministic evidence. No live provider, paid quality trial, staging write or deployment occurred.
+
+## RT-06 completion record
+
+RT-06 is implemented on 2026-10-10. Influence terminal reconstruction, capture and pending settlement require the complete validated event head, original outcome, every required statement, completion proof and END. The existing runtime retains its owner and heartbeat through that head. Werewolf completed production sources and learning evidence also require the full proof; frozen production prefixes remain exact. Competitive results continue to come from the original canonical outcome, and final publication remains held until settlement.
+
+A real provider-free durable run interrupts before initialization, resumes the epilogue, restarts after its final commit, then adopts and settles. It proves one result, owner closure, transcript seal, completion publication and Cuts/media job. Existing retry, rating/reward and terminal accounting proofs now use complete canonical epilogues. Outcome-only capture fails without sealing or closing ownership.
+
+Local verification:
+
+- Full PostgreSQL baseline: 1,984 passed, 7 failed across 175 files. All seven failures were obsolete terminal fixtures in stop/retry, worker and adopted-terminal tests. They were updated to contain the required epilogue; the final affected run passed all 237 tests across 8 files.
+- Werewolf production/Studio boundary checks: 17 passed, 0 failures across 2 files. Learning and first/final journal recovery checks also passed in the broader focused run.
+- `bun run check`: typecheck and lint passed. Whitespace passed. The remaining tasks will repeat the full required baseline before acceptance; this record does not claim that the initial full run was green.
+
+These are local deterministic results. Read/delivery, explicit failure recovery, replay and export acceptance remain the following tasks; no live provider or deployment was used.

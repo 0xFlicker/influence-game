@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
 import { werewolfConversationScene } from "@influence/engine/werewolf/visual-scenes";
 import { projectWerewolfProductionWatch } from "@influence/engine/werewolf/watch";
@@ -124,7 +124,7 @@ test("handcrafted stale or future source descriptors and unavailable completed s
     await expect(readWerewolfProductionSource(db, f.id, { audience: "mystery", thinking: false, snapshot })).rejects.toThrow();
   }
   await db.delete(schema.werewolfEvents).where(eq(schema.werewolfEvents.sequence, f.events.at(-1)!.sequence));
-  await expect(readWerewolfProductionSource(db, f.id, { audience: "mystery", thinking: false })).rejects.toThrow("canonical result");
+  await expect(readWerewolfProductionSource(db, f.id, { audience: "mystery", thinking: false })).rejects.toThrow("retrospective completion proof");
 });
 
 test("producer source keeps existing hidden-game access without broadening public watch", async () => {
