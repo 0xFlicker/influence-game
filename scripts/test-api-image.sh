@@ -26,10 +26,12 @@ docker run -d --name "$db" --network "$scope" \
   -e POSTGRES_USER=influence -e POSTGRES_PASSWORD=fixture-only \
   -e POSTGRES_DB=image_check postgres:16 >/dev/null
 for attempt in {1..60}; do
-  if docker exec "$db" pg_isready -U influence -d image_check >/dev/null 2>&1; then break; fi
+  # The entrypoint's temporary initialization server accepts Unix sockets
+  # before restarting. TCP is available only on the final server.
+  if docker exec "$db" pg_isready -h 127.0.0.1 -U influence -d image_check >/dev/null 2>&1; then break; fi
   sleep 1
 done
-docker exec "$db" pg_isready -U influence -d image_check
+docker exec "$db" pg_isready -h 127.0.0.1 -U influence -d image_check
 
 for role in gateway game-worker; do
   docker run -d --name "$api" --network "$scope" \

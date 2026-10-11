@@ -1,6 +1,8 @@
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
@@ -286,9 +288,24 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   await database.db.insert(schema.userRoles).values({ userId: admin.userId, roleId: producer.id }).onConflictDoNothing();
   const inventory = await readReplayVisualProduction(database.db, game.id);
   const lobby = inventory.scenes.find(scene => scene.roomId === "lobby")!;
-  await renderMissingReplayScene(database.db, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
-  const job = await claimVisualMediaJob(database.db, "browser-fixture");
-  if (!job) throw new Error("Fixture render job missing");
+  const job = await (async () => {
+    // Keep enqueue and claim on one locked session so the running API worker
+    // cannot take this provider-free fixture between the two operations.
+    const client = postgres(database.databaseUrl, { max: 1 });
+    const fixtureDb = drizzle(client, { schema });
+    try {
+      await fixtureDb.execute(sql`SELECT pg_advisory_lock(hashtext('visual-media-worker'))`);
+      const receipt = await renderMissingReplayScene(fixtureDb, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
+      expect(receipt.accepted).toBe(true);
+      const claimed = await claimVisualMediaJob(fixtureDb, "browser-fixture");
+      if (!claimed) throw new Error("Fixture render job missing");
+      expect(claimed.id).toBe(receipt.jobId!);
+      return claimed;
+    } finally {
+      // Closing the session releases its advisory lock, including on failure.
+      await client.end();
+    }
+  })();
   // Initiative is seeded randomly per game. Keep the opening/reply actors in
   // verified panels while reserving an unrelated character for fallback checks.
   const replay = (await readWerewolfPresentation(database.db, game.id, "mystery")).presentation;
@@ -429,7 +446,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     console.error("Admin browser failure", page.url(), await page.evaluate("document.body.innerText"));
     throw error;
   } finally { await page.close(); }
-}, 90_000);
+}, 120_000);
 
 test("Werewolf without visual mode shows village and pack portrait rooms on desktop and mobile", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset: "two_wolves", agentProfileIds: [], maxDays: 1});
