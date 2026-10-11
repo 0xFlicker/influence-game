@@ -42,7 +42,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Done |
 | RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Done |
 | RT-14 | Integrated regression proof and documentation | RT-09–13 | Done |
-| RT-15 | Review, model-quality and deployment acceptance | RT-14 | In progress |
+| RT-15 | Review, model-quality and deployment acceptance | RT-14 | Operator acceptance pending |
 
 Build and prove an Influence vertical path through outcome → statements → terminal using fixtures first, then bring Werewolf to the same boundary with its own authority. Complete both before release. Do not deploy intermediate code that closes ownership at the outcome while later tasks assume it remains active.
 
@@ -382,3 +382,11 @@ The integrated local baselines passed: `bun run test` reported 2,554 passes, fiv
 A source-integrity regression reproduced two dialogue pointers on one accepted Influence statement concealing another statement's missing dialogue. The production reader now requires exactly one captured dialogue pointer per statement, in addition to its existing exact actor/text/event and complete-prefix checks. After this final service change, all 26 production source/Studio PostgreSQL tests and `bun run check` passed. The full baselines above preceded this guard; its affected suites were rerun afterward. Evidence logs are `/private/tmp/rt14-provider-free.log`, `/private/tmp/rt14-postgres.log`, `/private/tmp/rt14-browser-growth-confirmed.log`, `/private/tmp/rt14-source-integrity-final.log` and `/private/tmp/rt14-check-final.log`.
 
 Current concepts, Werewolf behavior, MCP/local artifacts, Studio/export and runtime operations now describe the complete feature. The [architecture learning](../solutions/architecture-patterns/retrospective-final-boundary-and-frozen-speech.md) records the single final boundary and frozen speech provenance. Real model quality, staging and production are unverified and remain RT-15 operator work. No paid game provider, media generation or deployment occurred.
+
+## RT-15 local review and operator handoff
+
+The read-only Grok source audit concluded with no confirmed actionable defects. It covered both final boundaries, strict native output and capacity, immutable complete input/priors, durable provider journals, current recovery authority, public/Mystery disclosure, settlement, Studio/frozen export identity and explicit local simulation adapters. Its source-only limitations and the local checks resolving hash/Unicode concerns are recorded in the [acceptance and handoff](../reviews/2026-10-11-game-retrospectives-local-acceptance.md). The exploratory rounds hit turn limits; the final continuation produced an explicit report, rather than treating an incomplete audit as a clean result.
+
+A final consolidated browser run on implementation commit `035a9ead` passed all four selected classic/format Influence, Werewolf faction/draw and paused growing-tail journeys, with zero failures (`/private/tmp/rt15-browser-consolidated.log`). Generated Next changes were restored and isolated harness resources cleaned. This supplements RT-14's targeted runs and RT-12's encoded proof. Current high-level acceptance, replay specification and local-model docs now reflect the delivered implementation.
+
+Local implementation/review work is complete. RT-15 remains operator acceptance pending: separately authorize paid whole-game statement-quality trials with a supported sealed route/spending limit, coordinate the Production Studio base and integration into staging's `main`, then verify deployed continuation/recovery/drain, current delivery/MCP and export. Production retains manual approval. No paid game trial, merge, push or deployment occurred.

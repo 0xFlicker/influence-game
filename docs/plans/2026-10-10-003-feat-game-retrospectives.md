@@ -7,7 +7,7 @@ date: 2026-10-10
 
 # Postgame contestant retrospectives
 
-The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies, and proof required. RT-01's contract layer and RT-02's [frozen context/order compilers](../game-retrospective-context.md) are implemented on `codex/game-retrospectives`; see the [exact contract](../game-retrospective-contract.md). Runtime generation and later tasks remain unstarted.
+The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies and proof. RT-01–14 are implemented and locally verified on `codex/game-retrospectives`, covering the [exact contract](../game-retrospective-contract.md), [frozen context/order](../game-retrospective-context.md), runtime, API/MCP, replay, Studio, export and simulation artifacts. Real-model quality and deployed acceptance remain RT-15 operator work.
 
 ## Goal and scope
 
@@ -135,18 +135,22 @@ Each slice builds on a working previous slice. Deployment is the feature gate; d
 
 ## Acceptance and validation
 
-- [ ] Canonical outcome projection publishes results before retrospective generation while the catalog remains active; final settlement waits for retrospective completion. Restart resumes only the unfinished stage, and deployment drain counts its active ownership.
-- [ ] Influence classic and format fixtures include every contestant in exit order, remaining finalists, winner last, and exact earlier speeches in each later request.
-- [ ] Werewolf fixtures cover night deaths, day eliminations, no-elimination games, dead faction winners, surviving losers, and draws. Survivor order is identical across retry, reload, web, MCP, Studio, and export.
-- [ ] An early-eliminated player receives the remainder of the game. Long-game context retains every played phase and outcome, including no-attack nights, tied votes, and jury activity where applicable.
-- [ ] A speech cannot alter canonical state, final outcomes, faction winners, placements, profiles, or earlier statements. Neither ordering nor factual labels are inferred from prose.
-- [ ] Malformed structured output is retried or fails explicitly and cannot become accepted speech. Include non-JSON text, fenced/embedded JSON, `{}`, missing/extra fields, blank/oversized speech, and exhausted retries.
-- [ ] Crash tests cover outcome commit before retrospective initialization, before dispatch, accepted provider response before slot commit, after commit before next preparation, duplicate outcome handling, lease expiry, and stale-owner rejection. Recovery preserves accepted inputs, avoids redispatching an accepted logical response, and never repeats result side effects.
-- [ ] A failed slot blocks downstream generation; retry uses the exact frozen dossier and accepted prefix. Results and ordinary game reads remain available throughout.
-- [ ] Public API and authenticated MCP transport tests prove shared content, schema/byte bounds, pinned pagination, permissions, spoiler-explicit access, hidden-game denial, producer recovery authorization, and private-field exclusion.
-- [ ] Browser tests play both games from final result into retrospectives, seek backward/forward, open a shared retrospective link, switch Werewolf audience, reconnect during generation, and preserve pause when new statements arrive.
-- [ ] Review screenshots for introduction visual reuse, eliminated-player identity, legible statement length, and narrow/fullscreen layouts. Verify behavior with no generated visuals.
-- [ ] Studio and export tests cover individual and retrospective-only selections, explicit result inclusion, completed-game gating, range output, exact audio/recording alignment, arbitrary-frame parity, and frozen IDs/media that cannot silently expand or change.
+The checked items below are local deterministic evidence, recorded by task in the implementation plan. Encoded proof covers one frozen retrospective speech per game; full-tail composition and recording alignment are compiler/attachment tests, rather than an encoded long-episode quality trial.
+
+- [x] Canonical outcome projection publishes results before retrospective generation while the catalog remains active; final settlement waits for retrospective completion. Restart resumes only the unfinished stage, and deployment drain counts its active ownership.
+- [x] Influence classic and format fixtures include every contestant in exit order, remaining finalists, winner last, and exact earlier speeches in each later request.
+- [x] Werewolf fixtures cover night deaths, day eliminations, no-elimination games, dead faction winners, surviving losers, and draws. Survivor order is identical across retry, reload, web, MCP, Studio, and export.
+- [x] An early-eliminated player receives the remainder of the game. Long-game context retains every played phase and outcome, including no-attack nights, tied votes, and jury activity where applicable.
+- [x] A speech cannot alter canonical state, final outcomes, faction winners, placements, profiles, or earlier statements. Neither ordering nor factual labels are inferred from prose.
+- [x] Malformed structured output is retried or fails explicitly and cannot become accepted speech. Include non-JSON text, fenced/embedded JSON, `{}`, missing/extra fields, blank/oversized speech, and exhausted retries.
+- [x] Crash tests cover outcome commit before retrospective initialization, before dispatch, accepted provider response before slot commit, after commit before next preparation, duplicate outcome handling, lease expiry, and stale-owner rejection. Recovery preserves accepted inputs, avoids redispatching an accepted logical response, and never repeats result side effects.
+- [x] A failed slot blocks downstream generation; retry uses the exact frozen dossier and accepted prefix. Results and ordinary game reads remain available throughout.
+- [x] Public API and authenticated MCP transport tests prove shared content, schema/byte bounds, pinned pagination, permissions, spoiler-explicit access, hidden-game denial, producer recovery authorization, and private-field exclusion.
+- [x] Browser tests play both games from final result into retrospectives, seek backward/forward, open a shared retrospective link, switch Werewolf audience, reconnect during generation, and preserve pause when new statements arrive.
+- [x] Local screenshots and browser checks cover introduction visual reuse, eliminated-player identity, readable fixture statements, narrow/fullscreen layouts and absent generated visuals. Real-model statement length and watchability remain below.
+- [x] Studio and export tests cover individual and retrospective-only selections, explicit result inclusion, completed-game gating, range output, exact audio/recording alignment, arbitrary-frame parity, and frozen IDs/media that cannot silently expand or change.
+- [ ] Separately authorized real-model trials establish whole-game accuracy, character voice, responses to priors, repetition and enjoyable episode length.
+- [ ] Staging establishes real worker continuation/recovery/drain, web/MCP delivery and export preparation for both games; production retains manual deployment approval.
 
 For implementation that will merge, run `bun run test`, `bun run test:postgres`, and `bun run check`. Shared PostgreSQL tests call `setupTestDB()` and remain sequential; browser harnesses use disposable databases and clean their children/databases. Do not run competing browser harnesses against the same Next build directory.
 
