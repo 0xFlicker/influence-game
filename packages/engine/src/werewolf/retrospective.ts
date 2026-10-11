@@ -1,7 +1,7 @@
-import { canonicalJson, hashCanonicalJson } from "@influence/prompt-lab-protocol";
+import { canonicalJson } from "@influence/prompt-lab-protocol";
 import { RetrospectiveContractError, type RetrospectiveInputV1 } from "../retrospective";
 import { appendRetrospectiveSection, freezeRetrospectiveGame, type RetrospectiveCapacityPolicy } from "../retrospective-context";
-import { seededRandom } from "../seeded-random";
+import { werewolfRetrospectiveSpeakerIds } from "./retrospective-order";
 import { applyWerewolfEvent, replayWerewolf } from "./rules";
 import type { WerewolfEvent, WerewolfState } from "./types";
 
@@ -40,28 +40,11 @@ function werewolfFact(event: WerewolfEvent): unknown {
   throw new RetrospectiveContractError(`Unsupported retrospective event: ${String(unhandled)}`);
 }
 
-/** Dedicated semantic seed and local RNG; never touches gameplay draws/cursors. */
-function survivorOrder(state: WerewolfState): string[] {
-  const result = [...state.aliveIds];
-  const draw = seededRandom(hashCanonicalJson({ purpose: "retrospective-survivors.v1", gameId: state.gameId,
-    seed: state.seed, outcomeHash: state.retrospectiveOutcomeSource!.eventHash }));
-  for (let index = result.length - 1; index > 0; index--) {
-    const other = Math.floor(draw() * (index + 1));
-    [result[index], result[other]] = [result[other]!, result[index]!];
-  }
-  return result;
-}
-
-export function freezeWerewolfRetrospective(options: {
-  events: readonly WerewolfEvent[];
-  capacities: RetrospectiveCapacityPolicy;
-}) {
-  const final = replayWerewolf(options.events), outcome = final.retrospectiveOutcomeSource;
+export function compileWerewolfRetrospective(events: readonly WerewolfEvent[]) {
+  const final = replayWerewolf(events), outcome = final.retrospectiveOutcomeSource;
   if (!outcome) throw new RetrospectiveContractError("Werewolf retrospective requires its canonical outcome");
-  const prefix = options.events.slice(0, outcome.eventSequence), original = replayWerewolf(prefix);
-  const deaths = prefix.flatMap(event => event.type === "werewolf.night_resolved" && event.payload.killedId ? [event.payload.killedId]
-    : event.type === "werewolf.day_vote_resolved" && event.payload.eliminatedId ? [event.payload.eliminatedId] : []);
-  const speakerIds = [...deaths, ...survivorOrder(original)];
+  const prefix = events.slice(0, outcome.eventSequence), original = replayWerewolf(prefix);
+  const speakerIds = werewolfRetrospectiveSpeakerIds(original);
   const input: RetrospectiveInputV1 = { version: 1, outcome, sections: [], dialogue: [] };
   let state: WerewolfState | null = null;
   for (const event of prefix) {
@@ -75,7 +58,12 @@ export function freezeWerewolfRetrospective(options: {
         text: event.payload.decision.text });
     }
   }
-  return freezeRetrospectiveGame(input, speakerIds, original.players.map(player => ({
+  return { input, speakerIds, speakers: original.players.map(player => ({
     id: player.id, name: player.name, personality: player.personality, backstory: player.backstory, strategy: player.strategy,
-  })), final.retrospective?.definition ?? null, options.capacities);
+  })), definition: final.retrospective?.definition ?? null };
+}
+
+export function freezeWerewolfRetrospective(options: { events: readonly WerewolfEvent[]; capacities: RetrospectiveCapacityPolicy }) {
+  const source = compileWerewolfRetrospective(options.events);
+  return freezeRetrospectiveGame(source.input, source.speakerIds, source.speakers, source.definition, options.capacities);
 }

@@ -1,6 +1,6 @@
 # Game retrospective runtime
 
-RT-04 connects Influence's existing runner to the [frozen context](game-retrospective-context.md) and [strict statement invocation](game-retrospective-invocation.md). Werewolf runtime wiring and the cross-layer completion/read/presentation work remain subsequent tasks in the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
+RT-04 connects Influence's existing runner to the [frozen context](game-retrospective-context.md) and [strict statement invocation](game-retrospective-invocation.md). RT-05 connects Werewolf to its own validated post-outcome stage; cross-layer completion/read/presentation work remain subsequent tasks in the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
 
 ## Influence execution
 
@@ -13,6 +13,12 @@ Initialization stores the private dossier in `game_retrospective_inputs` inside 
 Product dialogue and canonical events have independent sequence spaces. The API store captures the original outcome's owning committed turn and its dialogue head. Each original dialogue entry uses its persisted owning-turn event boundary, capped at the original outcome. Local runs bind dialogue at explicit completed phase boundaries; a supplied phase-boundary resume capsule binds its existing dialogue to that checkpoint. No current read head or transcript prose invents a source relationship. Formal speech writers now supply exact dialogue pointers; validation reuses their structured display formatter for presentation labels.
 
 An exact round limit can stop an Influence evaluation before any competitive outcome exists. Such a bounded run has no retrospective and cannot provide the new competitive completion proof. Normal API runs retain their existing player-scaled completion floor. This does not manufacture a winner or draw for partial evaluations.
+
+## Werewolf execution
+
+Fresh games use rules v8. `werewolf.completed` freezes the competitive outcome and enters the retrospective phase. The same runner admits the complete roster, atomically stores the private input with `werewolf.retrospective_started`, then prepares one exact request and full-context hash in `werewolf_turns` before each statement. The shared provider journal validates that slot under the current owner fence; accepted replay uses its existing value without another count or generation request.
+
+Only retrospective events can follow the outcome. Each statement adds a public speech entry with explicit retrospective purpose and ordinal. Dead speakers retain their original identity without changing the alive set, roles, opening cursor or earlier gameplay. The final full-roster proof closes the existing owner and catalog execution and queues the existing Cuts/media work. Outcome with an unfinished tail remains adoptable; required speech failure has no gameplay fallback. Existing v1–v7 logs are rejected without rewriting or generating historical tails.
 
 ## Local proof and remaining integration
 

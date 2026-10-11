@@ -1,6 +1,7 @@
 import { seededRandom } from "../seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { applyRetrospectiveRecord, type RetrospectiveRecordV1 } from "../retrospective";
+import { werewolfRetrospectiveSpeakerIds } from "./retrospective-order";
 import type {
   WerewolfAcceptedAction, WerewolfConfig, WerewolfDayResult, WerewolfDiscussion, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfEvent,
   WerewolfEventData, WerewolfNightResult, WerewolfOutcome, WerewolfPackVote, WerewolfPlayer,
@@ -16,7 +17,7 @@ export const WEREWOLF_MAX_RECIPIENTS = 3;
 export const WEREWOLF_PACK_ATTEMPTS = 3;
 
 export class WerewolfRulesVersionError extends Error {
-  constructor() { super("This game uses an unsupported Werewolf rules version. Start a new game to use ordered recipient threads (rules v7)."); }
+  constructor() { super("This game uses an unsupported Werewolf rules version. Start a new game to use game retrospectives (rules v8)."); }
 }
 
 export const WEREWOLF_RULES = `Werewolf is a fictional social deduction game. Win with your faction, even if you die.
@@ -26,7 +27,8 @@ All night choices use the same starting roster and resolve together. Protection 
 Everyone introduces themself before the first night. A seeded opening order is rolled once for the whole game. It rotates round robin across days, skipping dead players; each living player gets at most one opening per day. An opener supplies a short statement or question and an ordered list of zero to three distinct other living recipients. Those recipients respond in that order, then the rest of the room responds in a seeded random order fixed for this thread. Each respondent gets one Speak or Pass. After each spoken response, the opener gets one Speak or Pass replying to that response and is told who may speak next. A respondent's Pass skips the opener's answer. Addressing someone does not change the queue. There are no repeated response rounds. After each thread, including a skipped opening, a fresh sealed ballot is held.
 Each contribution is accepted and public before the next turn starts. Respond to the conversation as it exists now; there are no future replies, simultaneous batches or recursive branches. Make one conversational move, usually one sentence and roughly 10–30 words: ask a pointed question, answer, challenge, defend yourself, or state a changed position. Do not recap the room or repeat your point. Pass with null text when you have nothing useful to add. A speech or pass may include an optional short production cue describing observable acting or feeling, never extra dialogue, secret strategy or directions to another model. Cues do not change the schedule. An opening pass forfeits that thread. Provider-unavailable silence is marked separately. False role claims and invented investigation stories are legal speech, never certified facts.
 After earlier threads, all living players submit sealed ballots: choose one other living player to eliminate now, or null to hear more (an abstention). More than half of ALL living players must choose the same target; abstentions count in the denominator. A strict majority ends the day immediately, skipping remaining threads and without another vote. Otherwise the next opening begins. After the final opening, everyone MUST choose another living player: null is not a legal model choice. This final ballot uses plurality: the unique highest vote count eliminates that player, even without a majority. A tie for highest means no village elimination. Then normal night actions follow. Reveal all ballots together. Each checkpoint is fresh; votes never carry forward. Self-votes are illegal. A provider-unavailable ballot is recorded as an unavailable abstention, even at the final vote; it is not a player choice.
-Death removes all speaking, voting and night actions. Roles remain secret until game end. There are no final words, whispers, jury, empowerment, role changes, or resurrection.
+Death removes all gameplay speaking, voting and night actions. Roles remain secret until the competitive outcome. There are no death speeches, whispers, jury, empowerment, role changes, or resurrection.
+After the outcome, every original contestant receives the complete frozen game account and speaks once in a separate retrospective. Deaths speak in elimination order, followed by survivors in a separately seeded frozen random order. Each speaker receives the exact earlier final statements. Retrospective speech cannot change roles, eligibility or the outcome; execution finishes after all required speeches are committed.
 The village wins when no wolves remain. Wolves win when living wolves equal or outnumber living non-wolves. Check victory after the entire night or day resolution. The day limit is a draw if neither faction has won.`;
 
 export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: WerewolfSetup): WerewolfConfig {
@@ -36,7 +38,7 @@ export function werewolfConfig(preset: WerewolfPreset, maxDays = 10, setup?: Wer
     || Object.keys(setup).length !== 4 || ![6, 7, 8].includes(setup.playerCount) || ![1, 2].includes(setup.wolves)
     || typeof setup.seer !== "boolean" || typeof setup.doctor !== "boolean")) throw new Error("Choose 6–8 players, 1–2 wolves, and Seer/Doctor toggles");
   if (setup && (setup.wolves === 1 ? "one_wolf" : "two_wolves") !== preset) throw new Error("Werewolf preset must match the selected wolf count");
-  return { rulesVersion: 7, preset, maxDays, ...(setup ? { setup: { ...setup } } : {}) };
+  return { rulesVersion: 8, preset, maxDays, ...(setup ? { setup: { ...setup } } : {}) };
 }
 
 function same(left: unknown, right: unknown): boolean {
@@ -51,7 +53,7 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string): Record<string, WerewolfRole> {
-  if (config.rulesVersion !== 7) throw new WerewolfRulesVersionError();
+  if (config.rulesVersion !== 8) throw new WerewolfRulesVersionError();
   const validConfig = werewolfConfig(config.preset, config.maxDays, config.setup);
   if (!same(config, validConfig)) throw new Error("Invalid Werewolf rules configuration");
   if (players.length !== (config.setup?.playerCount ?? WEREWOLF_PRESETS[config.preset].players)) throw new Error("Werewolf roster does not match preset");
@@ -332,11 +334,15 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     case "werewolf.retrospective_completed": retrospectiveRecord = { kind: "completed", payload: event.payload }; break;
   }
   if (retrospectiveRecord) {
+    if (retrospectiveRecord.kind === "started" && !same(retrospectiveRecord.payload.speakerIds, werewolfRetrospectiveSpeakerIds(previous))) throw new Error("Werewolf retrospective speaker order differs from its canonical deaths and frozen survivor shuffle");
     const retrospective = applyRetrospectiveRecord(previous.retrospective, retrospectiveRecord, {
       outcome: previous.retrospectiveOutcomeSource, rosterIds: previous.players.map(player => player.id), eventSequence: event.sequence,
     });
-    return { ...structuredClone(previous), sequence: event.sequence, retrospective,
-      phase: retrospective.completedAtEventSequence === null ? "retrospective" : "complete" };
+    const state = { ...structuredClone(previous), sequence: event.sequence, retrospective,
+      phase: retrospective.completedAtEventSequence === null ? "retrospective" as const : "complete" as const };
+    if (event.type === "werewolf.retrospective_statement_recorded") state.history.push({ kind: "speech", day: state.day,
+      actorId: event.payload.actorId, audience: "public", text: event.payload.speech, cue: null, purpose: "retrospective", ordinal: event.payload.ordinal });
+    return state;
   }
   const expected = nextWerewolfStep(previous);
   if (expected.kind === "complete") throw new Error("Werewolf is already complete");
@@ -400,7 +406,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     case "werewolf.completed": {
       state.outcome = structuredClone(event.payload);
       state.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "werewolf", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
-      state.phase = "complete";
+      state.phase = "retrospective";
       state.history.push({ kind: "result", day: state.day, outcome: structuredClone(event.payload) });
     }
   }

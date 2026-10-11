@@ -14,6 +14,7 @@ import { CanonicalEventLog } from "../canonical-event-log";
 import { Phase, PlayerStatus } from "../types";
 import { werewolfResultsFixture } from "../fixtures/werewolf-results";
 import { applyWerewolfEvent, replayWerewolf, werewolfActionPlans } from "../werewolf/rules";
+import { compileWerewolfRetrospective } from "../werewolf/retrospective";
 
 const outcome = { gameId: "retro", gameKind: "influence" as const, eventSequence: 4, eventHash: hashCanonicalJson({ outcome: true }) };
 function input(): RetrospectiveInputV1 {
@@ -159,7 +160,7 @@ test("Werewolf reducer accepts only validated post-result records, preserving fa
   const dossier: RetrospectiveInputV1 = { version: 1, outcome: source, sections: [{ phase: "game", fromEventSequence: 1,
     throughEventSequence: source.eventSequence, summary: "The village eliminated the wolf." }], dialogue: [] };
   let state = applyWerewolfEvent(before, { gameId: before.gameId, sequence: before.sequence + 1, type: "werewolf.retrospective_started",
-    payload: createRetrospectiveDefinition(dossier, before.players.map(player => player.id)) });
+    payload: createRetrospectiveDefinition(dossier, compileWerewolfRetrospective(events).speakerIds) });
   expect(state.phase).toBe("retrospective");
   expect(werewolfActionPlans(state)).toEqual([]);
   const unchanged = structuredClone(state);
@@ -172,5 +173,6 @@ test("Werewolf reducer accepts only validated post-result records, preserving fa
   state = applyWerewolfEvent(state, { gameId: state.gameId, sequence: state.sequence + 1, type: "werewolf.retrospective_completed", payload: retrospectiveCompletionProof(state.retrospective!) });
   expect(state.phase).toBe("complete");
   expect(state.outcome).toEqual(before.outcome); expect(state.aliveIds).toEqual(before.aliveIds);
-  expect(state.roles).toEqual(before.roles); expect(state.history).toEqual(before.history);
+  expect(state.roles).toEqual(before.roles); expect(state.history.slice(0, before.history.length)).toEqual(before.history);
+  expect(state.history.slice(before.history.length).map(entry => entry.kind === "speech" && entry.purpose)).toEqual(before.players.map(() => "retrospective"));
 });

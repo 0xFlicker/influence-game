@@ -1,5 +1,6 @@
 import {
   projectWerewolfSnapshot,
+  replayWerewolf, werewolfExecutionFinished,
   type WerewolfAudience,
 } from "@influence/engine/werewolf";
 import { walkWerewolfHistory } from "@influence/engine/werewolf/watch";
@@ -26,7 +27,7 @@ export async function loadHouseWerewolfHistory(
     }
     if (
       (game.startedAt && !frames.length) ||
-      (game.status === "completed" && frames.at(-1)?.entry.kind !== "result")
+      (game.status === "completed" && !werewolfExecutionFinished(replayWerewolf(events)))
     )
       throw new HouseInspectionError(
         "unavailable",

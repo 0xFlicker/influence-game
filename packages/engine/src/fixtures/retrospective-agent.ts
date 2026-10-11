@@ -20,6 +20,10 @@ export const fixtureInfluenceRetrospectiveSpeaker: IAgent["getRetrospectiveSpeak
   return { id: this.id, name: this.name, personality: "Deterministic fixture character", backstory: "", strategy: "" };
 };
 export const fixtureWerewolfRetrospective: WerewolfAgent["getRetrospectiveStatement"] = async input => fixtureStatement(input.context, input.signal);
+export const fixtureRetrospectiveCapacity: WerewolfAgent["prepareRetrospectiveCapacity"] = async signal => {
+  signal?.throwIfAborted();
+  return { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 1_000_000 }] };
+};
 
 /** Exact detached contexts and scripted speeches for subsequent runtime proofs. */
 export class RetrospectiveStatementFixture {

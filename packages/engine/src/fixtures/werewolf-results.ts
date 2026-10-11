@@ -1,8 +1,8 @@
-import { fixtureWerewolfRetrospective } from "./retrospective-agent";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "./retrospective-agent";
 import { observeWerewolf } from "../werewolf/observation";
 import { ProviderUnavailableError } from "../provider-execution";
 import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
-import { werewolfFallback, type WerewolfAgent } from "../werewolf/runner";
+import { werewolfFallback, runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 
 export type WerewolfResultScenario = "village" | "wolves" | "saved" | "disagreement" | "unavailable";
 /** Provider-free, rules-driven fixtures shared by projection, HTTP and browser tests. */
@@ -13,7 +13,7 @@ export async function werewolfResultsFixture(scenario: WerewolfResultScenario, g
   const roles = replayWerewolf(events).roles;
   const wolves = players.filter(p => roles[p.id] === "werewolf").map(p=>p.id);
   const doctor = players.find(p=>roles[p.id] === "doctor")?.id;
-  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request,observation}) {
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request,observation}) {
     const legal = request.legalTargetIds;
     const village = legal.filter(id=>roles[id] !== "werewolf");
     if (request.action === "open_thread") return {kind:"opening",text:null,cue:null,recipientIds:[]};
@@ -53,5 +53,15 @@ export async function werewolfResultsFixture(scenario: WerewolfResultScenario, g
     state = applyWerewolfEvent(state,event);
     events.push(event);
   }
+  return events;
+}
+
+/** Fully finished v8 fixture, including its provider-free retrospective tail. */
+export async function completedWerewolfResultsFixture(...args: Parameters<typeof werewolfResultsFixture>) {
+  const events = await werewolfResultsFixture(...args);
+  await runWerewolf({ read: async () => structuredClone(events), append: async event => { applyWerewolfEvent(replayWerewolf(events), event); events.push(event); } }, {
+    prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
+    async decide() { throw new Error("Outcome fixture cannot renew gameplay"); },
+  });
   return events;
 }

@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective } from "@influence/engine";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import type { Browser, Page } from "puppeteer";
@@ -56,7 +56,7 @@ async function click(page: Page, label: string, scope = "") {
   await page.waitForFunction(button, { polling: 100 });
   await page.evaluate(`${button}.click()`);
 }
-const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
+const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "open_thread")
       return { kind: "opening", text: "Let's discuss the night.", cue: null, recipientIds: [] };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" } : { kind: "speech", text: "Hello village", cue: null };

@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import { describe, expect, test } from "bun:test";
 import { exactStructuredOutputRegistry } from "../structured-output";
 import { werewolfDecisionArtifact } from "../werewolf/agent";
@@ -14,7 +14,7 @@ async function dawn() {
   const store: WerewolfStore = { read: async () => structuredClone(events), append: async event => {
     applyWerewolfEvent(replayWerewolf(events), event); events.push(event);
   } };
-  const quiet: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => werewolfFallback(replayWerewolf(events), request) };
+  const quiet: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => werewolfFallback(replayWerewolf(events), request) };
   let state = replayWerewolf(events);
   while (state.phase !== "day") state = await advanceWerewolf(store, quiet);
   return { store, events, state, quiet };
@@ -28,7 +28,7 @@ describe("Werewolf ordered recipient threads", () => {
     expect(order).toEqual(werewolfDayInitiative(ctx.state));
     const calls: Parameters<WerewolfAgent["decide"]>[0][] = [];
     let state = ctx.state;
-    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
+    const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       if (input.request.action === "vote") return { kind: "target", targetId: null, thinking: "Hear more" };
       calls.push(input);
       const turn = input.observation.turnReminder!;
@@ -69,11 +69,11 @@ describe("Werewolf ordered recipient threads", () => {
     const ctx = await dawn();
     const opener = ctx.state.discussion!.initiativeIds[0]!;
     const recipients = ctx.state.aliveIds.filter(id => id !== opener).slice(0, 3);
-    let state = await advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "opening", text: "Why did you choose Vera?", cue: null, recipientIds: recipients }) });
+    let state = await advanceWerewolf(ctx.store, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "opening", text: "Why did you choose Vera?", cue: null, recipientIds: recipients }) });
     const queue = state.discussion!.respondentIds;
     const spoken = queue[1]!;
     const actors: string[] = [];
-    while (!state.discussion!.checkpointPending) state = await advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
+    while (!state.discussion!.checkpointPending) state = await advanceWerewolf(ctx.store, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       actors.push(input.request.actorId);
       const focus = werewolfConversationTurn(input.observation);
       expect(focus.messageToAnswer?.text).toBe(input.request.actorId === opener ? "My reason." : "Why did you choose Vera?");
@@ -89,7 +89,7 @@ describe("Werewolf ordered recipient threads", () => {
     const ready = Promise.withResolvers<void>();
     const response = Promise.withResolvers<WerewolfDecision>();
     let calls = 0;
-    const advancing = advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { calls++; ready.resolve(); return response.promise; } });
+    const advancing = advanceWerewolf(ctx.store, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { calls++; ready.resolve(); return response.promise; } });
     await ready.promise;
     expect(calls).toBe(1);
     expect(replayWerewolf(ctx.events)).toEqual(ctx.state);
@@ -106,7 +106,7 @@ describe("Werewolf ordered recipient threads", () => {
     expect(state.openingCursor).toBe((state.openingOrderIds.indexOf(first) + 1) % state.openingOrderIds.length);
     expect(state.discussion).toMatchObject({ threadIndex: 1, checkpointPending: true });
     const eliminated = ctx.state.discussion!.initiativeIds.slice(1).find(id => state.roles[id] === "villager")!;
-    const vote: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => input.request.action === "vote"
+    const vote: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => input.request.action === "vote"
       ? { kind: "target", targetId: input.request.actorId === eliminated ? null : eliminated, thinking: "" }
       : ctx.quiet.decide(input) };
     while (!(state.phase === "day" && state.day === 2)) state = await advanceWerewolf(ctx.store, vote);
@@ -134,7 +134,7 @@ describe("Werewolf ordered recipient threads", () => {
     for (const payload of invalid) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, JSON.stringify({ thinking: "Private thinking", ...payload })).status).toBe("invalid");
     for (const payload of ["hello", "{}", `prefix ${JSON.stringify(valid)}`, '```json\n'+JSON.stringify(valid)+'\n```']) expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, payload).status).toBe("invalid");
     const before = structuredClone(ctx.events);
-    await expect(advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "opening", ...valid, recipientIds: [request.actorId] }) })).rejects.toThrow("recipients");
+    await expect(advanceWerewolf(ctx.store, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "opening", ...valid, recipientIds: [request.actorId] }) })).rejects.toThrow("recipients");
     expect(ctx.events).toEqual(before);
     expect(() => werewolfEvent(ctx.state, { type: "werewolf.action_accepted", payload: { ...request, decision: { kind: "speech", text: "hello", cue: null }, fallback: null } })).toThrow("speech");
   });

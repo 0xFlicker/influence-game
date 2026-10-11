@@ -32,7 +32,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-02 | Complete frozen context and speaker order | RT-01 | Done |
 | RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Done |
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Done |
-| RT-05 | Werewolf validated retrospective stage | RT-01–03 | Todo |
+| RT-05 | Werewolf validated retrospective stage | RT-01–03 | Done |
 | RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Todo |
 | RT-07 | Early canonical results and continued delivery | RT-04–06 | Todo |
 | RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Todo |
@@ -299,3 +299,18 @@ Local verification:
 - `bun run check`: typecheck and lint passed. Whitespace and relative documentation links passed.
 
 These are deterministic local checks. External review remains RT-15; no model quality trial, staging run, deployment, authenticated retrospective MCP delivery or encoded export was performed for RT-04.
+
+## RT-05 completion record
+
+RT-05 is implemented on 2026-10-10. Fresh Werewolf rules-v8 runs continue through a validated retrospective in the existing runner and owner. The reducer independently validates canonical death order and the dedicated survivor shuffle, preserves the competitive outcome, roles, alive set and opening cursor, and exposes accepted speeches as public history with explicit purpose and ordinal. Exact requests and full-context hashes are prepared in existing Werewolf turn slots; the provider journal validates the same slot under its owner fence. Initialization stores its private input atomically. Accepted replay at the first and final slots uses no additional token-count or generation request.
+
+The Werewolf owner/catalog and existing Cuts/media queue now finish only at the full-roster proof; this RT-06 prerequisite is needed for the API runner to reach its new stage. Shared completed-history inspection and trailer snapshots validate execution completion instead of assuming the result is the visible tail. MCP schemas were regenerated with the existing pinned generator. Result availability, settlement audit, replay styling and export remain subsequent tasks.
+
+Local verification:
+
+- `bun run test`: 2,540 passed, 5 existing skips, 0 failures across 263 files.
+- Final engine contracts/context/runtime proofs: 28 passed, 0 failures across 3 files, including all faction/draw fixtures, exact priors, every restart boundary, rejected validly hashed reordering and required-speech/cancellation failure.
+- `bun run test:postgres`: 1,986 passed and 2 failed across 174 files. Both failures were fixtures claiming completed execution with an outcome-only log; those fixtures were corrected. Final affected PostgreSQL/HTTP MCP/trailer/inspection proofs passed: 51 tests, 0 failures across 4 files. They include actual accepted-journal recovery at first/final slots and rollback after input insertion when canonical event insertion fails. The full PostgreSQL baseline will be repeated after settlement integration.
+- `bun run check`: typecheck and lint passed. Whitespace and 75 relative documentation links passed before the additional solution note.
+
+The maximum-duration competitive account exceeds the bounded retrospective input ceiling and fails explicitly; its fixture does not claim finished execution. These checks are local deterministic evidence. No live provider, paid quality trial, staging write or deployment occurred.

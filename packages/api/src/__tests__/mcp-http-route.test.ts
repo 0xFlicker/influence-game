@@ -1,4 +1,4 @@
-import {werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {completedWerewolfResultsFixture as werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {houseInputSchemas,validateHouseInput,type HouseToolName} from "../game-mcp/house-contracts.js";
 import { testUserIdForWallet } from "./rbac-fixtures.js";
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";

@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import {expect,test} from "bun:test";
 import {startWerewolf,werewolfConfig} from "../werewolf/rules";
 import {runWerewolf, type WerewolfAgent} from "../werewolf/runner";
@@ -8,7 +8,7 @@ import {projectWerewolfPresentation} from "../werewolf/presentation";
 for (const preset of ["one_wolf","two_wolves"] as const) test(`${preset}: bounded watch windows preserve audience, causal snapshots and private staging`,async()=>{
   const players=Array.from({length:preset==="one_wolf"?6:8},(_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"careful",backstory:"frozen identity",strategy:"PRIVATE STRATEGY",avatarUrl:null}));
   const events=[startWerewolf("window",players,werewolfConfig(preset,2),"window")];
-  const agent:WerewolfAgent={ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){return request.action==="open_thread"?{kind:"opening",text:null,cue:"Waits",recipientIds:[]}:request.legalTargetIds.length?{kind:"target",targetId:request.legalTargetIds[0]!,thinking:"PRIVATE THINKING"}:{kind:"speech",text:request.action==="pack_talk"?"PRIVATE PACK":"Hello",cue:null};}};
+  const agent:WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){return request.action==="open_thread"?{kind:"opening",text:null,cue:"Waits",recipientIds:[]}:request.legalTargetIds.length?{kind:"target",targetId:request.legalTargetIds[0]!,thinking:"PRIVATE THINKING"}:{kind:"speech",text:request.action==="pack_talk"?"PRIVATE PACK":"Hello",cue:null};}};
   await runWerewolf({read:async()=>structuredClone(events),append:async e=>{events.push(structuredClone(e));}},agent);
   for(const audience of ["mystery","omniscient"] as const){
     const final=projectWerewolfPresentation(events,audience);
@@ -66,18 +66,18 @@ for (const scenario of ["saved", "disagreement", "wolves", "village"] as const) 
 
 test("disabled doctor and seer roles produce no fabricated role actions", async () => {
   const events=[startWerewolf("no-specialists",playersForNight(),werewolfConfig("one_wolf",1,{playerCount:6,wolves:1,seer:false,doctor:false}),"no-specialists")];
-  const agent: WerewolfAgent={ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) { return request.action === "open_thread" ? {kind:"opening",text:null,cue:null,recipientIds:[]} : request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:""} : {kind:"speech",text:null,cue:null}; }};
+  const agent: WerewolfAgent={ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) { return request.action === "open_thread" ? {kind:"opening",text:null,cue:null,recipientIds:[]} : request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:""} : {kind:"speech",text:null,cue:null}; }};
   await runWerewolf({read:async()=>events,append:async event=>{events.push(event);}},agent);
   const first=projectWerewolfWatch(events,"omniscient");
   const night=Array.from({length:first.latestCursor},(_,i)=>projectWerewolfWatch(events,"omniscient",i+1,1).moments[0]!).find(moment=>moment.entry.kind==="night")!;
   expect(night.night!.actions.map(action=>action.kind)).toEqual(["hunt"]);
 });
-function playersForNight() { return Array.from({length:6},(_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"",backstory:"",strategy:"",avatarUrl:null})); }
+function playersForNight() { return Array.from({length:6},(_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"Careful",backstory:"",strategy:"",avatarUrl:null})); }
 
 for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: nightly wolf appearance is stable across bounded windows and absent from Mystery`, async () => {
   const players = Array.from({length:preset === "one_wolf" ? 6 : 8},(_,i)=>({id:`w${i}`,name:`Wolf fixture ${i}`,personality:"careful",backstory:"",strategy:"",avatarUrl:null}));
   const events = [startWerewolf("transformation", players, werewolfConfig(preset,2),"transform")];
-  await runWerewolf({read:async()=>structuredClone(events),append:async event=>{events.push(event);}}, { getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
+  await runWerewolf({read:async()=>structuredClone(events),append:async event=>{events.push(event);}}, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
     if(request.action === "open_thread") return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"} : {kind:"speech",text:"The pack should compare targets.",cue:null};
   }});

@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective } from "@influence/engine";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -42,7 +42,7 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
     const state = replayWerewolf(await readWerewolfEvents(db, g.id));
     const wolfId = state.aliveIds.find(id => state.roles[id] === "werewolf")!;
-    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
+    const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
       if (unprotectedHunt && request.action === "protect") return { kind: "target", targetId: wolfId, thinking: "PRIVATE_REASON" };
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Leans back", recipientIds: [] };
       if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_REASON" };
@@ -59,7 +59,7 @@ test("admin discovery is Werewolf-only, includes hidden games, enforces current 
   const read = await app.request(`/api/admin/werewolf/${g.id}`, { headers });
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("private, no-store");
   const detail = await read.json() as { snapshot: { rulesVersion: number } };
-  expect(detail.snapshot.rulesVersion).toBe(7);
+  expect(detail.snapshot.rulesVersion).toBe(8);
   expect(JSON.stringify(detail)).not.toContain("PRIVATE_PACK");
   expect(JSON.stringify(detail)).not.toContain('"entries"');
   const activity = await app.request(`/api/admin/werewolf/${g.id}/activity`, { headers });

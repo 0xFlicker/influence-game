@@ -15,7 +15,8 @@ export interface WerewolfVoteProgress {
 }
 export type WerewolfPublicEntry =
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
-  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+  | ({ kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+    & ({ purpose: "retrospective"; ordinal: number } | { purpose?: never; ordinal?: never }))
   | { kind: "discussion"; day: number; contribution: WerewolfDiscussionTurn }
   | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
   | { kind: "night"; day: number; killedId: string | null; attackTargetId?: string | null; protectedId?: string | null; investigation?: { seerId: string; targetId: string; isWolf: boolean } | null }
@@ -24,7 +25,7 @@ export type WerewolfPublicEntry =
 
 export interface WerewolfView {
   gameId: string;
-  rulesVersion: 7;
+  rulesVersion: 8;
   preset: "one_wolf" | "two_wolves";
   setup?: import("./types").WerewolfSetup;
   audience: WerewolfAudience;
@@ -51,8 +52,11 @@ export function projectWerewolfEntry(entry: WerewolfHistoryEntry, audience: Were
   const omniscient = audience === "omniscient";
     switch (entry.kind) {
       case "phase": return [{ kind: "phase", day: entry.day, phase: entry.phase }];
-      case "speech": return entry.audience === "public" || omniscient
-        ? [{ kind: "speech", day: entry.day, actorId: entry.actorId, audience: entry.audience, text: entry.text, cue: entry.cue }] : [];
+      case "speech": {
+        if (entry.audience !== "public" && !omniscient) return [];
+        const speech = { kind: "speech" as const, day: entry.day, actorId: entry.actorId, audience: entry.audience, text: entry.text, cue: entry.cue };
+        return [entry.purpose === "retrospective" ? { ...speech, purpose: entry.purpose, ordinal: entry.ordinal } : speech];
+      }
       case "discussion": return [{ kind: "discussion", day: entry.day, contribution: structuredClone(entry.contribution) }];
       case "pack_vote": return omniscient ? [{ kind: "pack_vote", day: entry.day, result: structuredClone(entry.result) }] : [];
       case "night": return [{ kind: "night", day: entry.day, killedId: entry.result.killedId,

@@ -22,7 +22,7 @@ export interface WerewolfPlayer {
 export interface WerewolfSetup { playerCount: 6 | 7 | 8; wolves: 1 | 2; seer: boolean; doctor: boolean }
 
 export interface WerewolfConfig {
-  rulesVersion: 7;
+  rulesVersion: 8;
   preset: WerewolfPreset;
   setup?: WerewolfSetup;
   maxDays: number;
@@ -168,7 +168,8 @@ export interface WerewolfState {
 
 export type WerewolfHistoryEntry =
   | { kind: "phase"; day: number; phase: "introduction" | "night" | "day" | "vote" }
-  | { kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+  | ({ kind: "speech"; day: number; actorId: string; audience: "public" | "pack"; text: string | null; cue: string | null }
+    & ({ purpose: "retrospective"; ordinal: number } | { purpose?: never; ordinal?: never }))
   | { kind: "discussion"; day: number; contribution: WerewolfDiscussionTurn }
   | { kind: "pack_vote"; day: number; result: WerewolfPackVote }
   | { kind: "night"; day: number; result: WerewolfNightResult }

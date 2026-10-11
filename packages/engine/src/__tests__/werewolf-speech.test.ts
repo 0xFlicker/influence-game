@@ -1,4 +1,4 @@
-import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { createProviderAdapter } from "../provider-adapters";
@@ -51,7 +51,7 @@ describe("Werewolf names-only dialogue", () => {
     }));
     const events = [startWerewolf("speech-game", players, werewolfConfig("two_wolves"), "speech-seed")];
     const store = { read: async () => events, append: async (event: (typeof events)[number]) => { events.push(event); } };
-    const quiet: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "speech", cue: null, text: null }) };
+    const quiet: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "speech", cue: null, text: null }) };
     let state = replayWerewolf(events);
     while (state.phase !== "pack") state = await advanceWerewolf(store, quiet);
     const step = nextWerewolfStep(state);

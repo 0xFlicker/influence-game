@@ -7,7 +7,7 @@ import type { WerewolfAgent } from "./runner";
 import type { WerewolfDecision, WerewolfRequest } from "./types";
 import { werewolfRoleCoaching } from "./strategy";
 import { werewolfConversationTurn } from "./conversation";
-import { prepareRetrospectiveInvocation } from "../retrospective-invocation";
+import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "../retrospective-invocation";
 import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "../retrospective";
 
 const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue.";
@@ -78,6 +78,7 @@ export function werewolfDecisionArtifact(request: WerewolfRequest) {
 }
 
 export class WerewolfModelAgent implements WerewolfAgent {
+  prepareRetrospectiveCapacity(signal?: AbortSignal) { return prepareRetrospectiveCapacityPolicy(this.runtimes, signal); }
   private readonly coordinator: ProviderExecutionCoordinator;
   private readonly runtimes: readonly LlmProviderRuntime[];
 
