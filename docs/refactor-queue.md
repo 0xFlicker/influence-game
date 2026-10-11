@@ -352,11 +352,12 @@ Near-term order: R34 nullable-field policy. R23 is closed with occasional repeti
 
 ### W13. Postgame media scale-out and runtime portability
 
-- Status: `future`
+- Status: `in-progress`; application and AWS/release drafts, no live cutover.
 - Consolidates: former W13 queue infrastructure and W16 render-worker portability.
-- Signal: the first production trailer worker deliberately uses API polling and database leases from one Docker Compose worker on Linode. The manifest and lease protocol are portable, but the deployment is intentionally single-host and single-replica.
-- Promotion trigger: multiple render hosts, autoscaling, managed-job execution, materially higher completion volume, or evidence that polling and lease recovery are no longer sufficient.
-- Suggested slice if promoted: adapt the existing immutable manifest and claim/heartbeat/finalize protocol to the chosen queue/runtime. Do not move rendering into API or web request containers.
+- Implemented in the application draft: PostgreSQL-authoritative jobs with atomic wake outbox, authenticated wake retries and expired-lease repair, exact generation/digest claim admission, drain fencing and retired-epoch tombstones, finite remote batches/quiet exit. Local Compose polling remains the default; active leases still heartbeat, upload and finalize during drain.
+- Repository ownership: [falsefloor/infra](https://github.com/falsefloor/infra) owns renderer AWS resources and deployment IAM; `influence-game` owns the worker/API contract; `linode-iac` owns host release handoff and rollback. The renderer keeps its immutable image in the existing three-image release family.
+- Remaining proof: review and validate the independent AWS controller and full host lifecycle adapter together, then explicitly authorize a disposable render proving machine-authenticated networking, uncertain-launch recovery, drain/rollback and zero idle tasks. No live AWS state, production memory relief, measured cold start or production cutover is claimed by the application tests. The roughly one-to-two-minute cold-start delay is acceptable.
+- Deferred: image generation/visual repair offload and gateway polling optimization. Rendering stays outside API/web request containers.
 
 ### W14. Postgame media version retention
 

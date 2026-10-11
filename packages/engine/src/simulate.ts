@@ -8,7 +8,9 @@
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
  * speech-only agent methods with verified capacity and accepted journal replay.
  * Influence and Werewolf runners now include the retrospective after a canonical outcome.
- * Artifact/report and local MCP tail integration remain RT-13. See
+ * Complete artifacts/reports and local MCP tail inspection include each statement.
+ * Current prompt guidance targets candid 40–75 word final statements; the strict
+ * speech artifact retains its 2,000-code-point ceiling. See
  * docs/game-retrospective-runtime.md; native HTTP is mocked in focused tests.
  * Keep exact types without `as any` and call House methods directly when wiring turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:

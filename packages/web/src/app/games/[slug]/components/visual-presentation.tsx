@@ -13,7 +13,6 @@ import { SafetyBounceScene } from "./safety-bounce-scene";
 import type { SafetyBounceSceneBeat } from "./safety-bounce-scene-model";
 import { WinnerScene, type WinnerSceneBeat } from "./winner-scene";
 import { PortraitRoom } from "./portrait-room";
-import type { GamePlayer } from "@/lib/api";
 import { soloPresentationDurationMs, SOLO_EXIT_MS } from "./solo-presentation-timing";
 import { visualSpeechDurationMs, VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import { VotePresentation } from "./vote-presentation";
@@ -25,7 +24,7 @@ export type VisualPresentationBeat =
   | NomineeSelectionBeat
   | SafetyBounceSceneBeat
   | WinnerSceneBeat
-  | { kind: "portrait-room"; roomNumber: number | null; participants: GamePlayer[]; speech: VisualSpeech }
+  | { kind: "portrait-room"; roomNumber: number | null; roomLabel?: string; participants: Array<{id: string; name: string; persona: string; personaKey?: string | null; avatarUrl?: string | null}>; speech: VisualSpeech }
   | { kind: "scene"; sceneId: string; roomId: VisualRoomId; speech: VisualSpeech | null }
   | { kind: "portrait"; purpose: "Introduction" | "Retrospective" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea"; caption?: string; roleLabel?: string; player: { headRectangle?: import("@influence/engine/character-portrait").HeadRectangle; fullBodyReferenceUrl?: string | null; id: string; name: string; avatarUrl?: string | null; persona: string; personaKey?: string | null }; speech: VisualSpeech }
   | { kind: "house"; text: string | null; title?: string }

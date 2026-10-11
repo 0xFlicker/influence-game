@@ -78,7 +78,7 @@ async function main() {
     child.once("close",code => {
       signals.signal.removeEventListener("abort",abort);
       // Remotion owns browser teardown on success. Reap any group members left after failures.
-      try {killGroup(child,"SIGKILL");children.delete(child);} catch (error) {reject(error);return;}
+      try {if (code !== 0) killGroup(child,"SIGKILL");children.delete(child);} catch (error) {reject(error);return;}
       if (code === 0) accept();else reject(new Error(`Local proof command exited ${code}: ${errorOutput}`));
     });
   });

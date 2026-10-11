@@ -8,6 +8,8 @@ implementation_head: cddfc3ed
 
 # Paid retrospective model-quality trials
 
+Qualification scope: these trials precede `f70ae7cc`, which changed prompt guidance from 80–150 words to candid 40–75 word statements with a requested 1,000-code-point maximum. The artifact still permits at most 2,000 code points. The newer prompt has not received fresh paid qualification; the delivery evidence and quality findings below describe the original dispatched prompt.
+
 The operator authorized local paid trials for both games with a combined **$10 maximum**, and required results before staging deployment. These runs use hosted `openai:gpt-6-luna` with low reasoning, fresh synthetic games and built-in fictional House characters. No existing game database, user profiles or personal documents enter the trials. Production code and accepted statements are unchanged.
 
 **Three games completed all 20 final statements. Delivery/context checks passed; model quality needs improvement before staging acceptance.** Four speeches contain confirmed factual errors, with repeated framing and weak engagement with earlier final statements. Known usage estimates total **$0.387776**. The final conservative bound is **$3.327543**, including full reservations for four recovered HTTP 429 attempts whose billed usage is unavailable. The peak held bound was $3.478246; every dispatch stayed below $10. No further paid request or staging deployment followed these trials.

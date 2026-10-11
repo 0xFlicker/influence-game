@@ -1,3 +1,5 @@
+import { createConnection, createServer } from "node:net";
+import { renderExecutionConfig, type RenderExecution } from "@influence/engine/render-execution-config";
 import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -20,6 +22,7 @@ import {
   heartbeatIntervalForLease,
   parseHouseHighlightsMediaWorkerArgs,
   readHouseHighlightsMediaWorkerStartupMode,
+  readHouseHighlightsMediaWorkerAdmission,
   runHouseHighlightsMediaWorker,
   runHouseHighlightsMediaWorkerAttempt,
   runHouseHighlightsMediaWorkerOnce,
@@ -28,6 +31,233 @@ import {
 } from "../scripts/render-house-highlights-media-worker";
 
 describe("House Highlights media worker bundle", () => {
+  const execution: RenderExecution = { ...renderExecutionConfig({}), mode: "remote", environment: "staging" };
+  const remoteConfig = (env: Record<string, string | undefined>) => houseHighlightsMediaWorkerConfig(env, execution);
+  const remoteEnv = {
+    POSTGAME_MEDIA_API_URL: "https://api.test/",
+    POSTGAME_MEDIA_WORKER_TOKEN: "worker-token",
+    POSTGAME_MEDIA_RENDER_GENERATION: "release-42",
+    POSTGAME_MEDIA_WORKER_DIGEST: `sha256:${"a".repeat(64)}`,
+    POSTGAME_MEDIA_WORKER_INSTANCE_ID: "11111111-1111-4111-8111-111111111111",
+    POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+  };
+
+  it("defaults to local execution and rejects incomplete or unbounded remote configuration", () => {
+    expect(houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test", POSTGAME_MEDIA_WORKER_TOKEN: "test" }).executionMode).toBe("local");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_WORKER_INSTANCE_ID: undefined })).toThrow("POSTGAME_MEDIA_WORKER_INSTANCE_ID");
+    expect(houseHighlightsMediaWorkerConfig({ ...remoteEnv, POSTGAME_MEDIA_EXECUTION_MODE: "remote" }).executionMode).toBe("local");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "http://api.test" })).toThrow("must use HTTPS without URL credentials");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_API_URL: "https://user:secret@api.test" })).toThrow("must use HTTPS without URL credentials");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "101" })).toThrow("POSTGAME_MEDIA_MAX_JOBS");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "0" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
+    expect(() => remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "120001" })).toThrow("POSTGAME_MEDIA_QUIET_INTERVAL_MS");
+  });
+
+  it("requires canonical tailnet TLS and routes API, health and Chromium through the sidecar", async () => {
+    const tailnet = { ...execution, network: "tailnet" as const, apiOrigin: "https://influence-staging.tail8a79ed.ts.net" };
+    const env = { ...remoteEnv, POSTGAME_MEDIA_API_URL: tailnet.apiOrigin, POSTGAME_MEDIA_HTTP_PROXY: "http://127.0.0.1:1055" };
+    expect(() => houseHighlightsMediaWorkerConfig({ ...env, POSTGAME_MEDIA_HTTP_PROXY: undefined }, tailnet)).toThrow("requires POSTGAME_MEDIA_HTTP_PROXY");
+    expect(() => houseHighlightsMediaWorkerConfig({ ...env, POSTGAME_MEDIA_API_URL: "https://100.1.2.3" }, tailnet)).toThrow("canonical tailnet HTTPS");
+    const config = houseHighlightsMediaWorkerConfig(env, tailnet);
+    expect(config.remotionOptions.browserExecutable).toBe("/usr/local/bin/chromium-tailnet");
+    let calls = 0;
+    const fetchImpl = (async (input, init) => {
+      expect((init as RequestInit & { proxy?: string }).proxy).toBe(env.POSTGAME_MEDIA_HTTP_PROXY);
+      expect(init?.redirect).toBe("error");
+      calls += 1;
+      return Response.json(String(input).endsWith("/control") ? { admitted: true, generation: "release-42", draining: false } : { claim: null });
+    }) as typeof fetch;
+    expect(await runHouseHighlightsMediaWorkerOnce(config, fetchImpl)).toBe("idle");
+    expect(calls).toBe(2);
+    const wrapper = await Bun.file(join(import.meta.dir, "../../../../deployment/chromium-tailnet")).text();
+    expect(wrapper).toContain('--proxy-server="$POSTGAME_MEDIA_HTTP_PROXY"');
+    expect(wrapper).not.toContain("ignore-certificate-errors");
+  });
+
+  it("tunnels real HTTPS API requests through a userspace HTTP proxy with hostname verification", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-proxy-tls-"));
+    const key = join(root, "key.pem"), certificate = join(root, "cert.pem");
+    const hostname = "influence-staging.tail8a79ed.ts.net";
+    expect(Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", certificate, "-days", "1", "-subj", `/CN=${hostname}`, "-addext", `subjectAltName=DNS:${hostname}`], { stdout: "ignore", stderr: "ignore" }).exitCode).toBe(0);
+    const api = Bun.serve({ port: 0, hostname: "127.0.0.1", tls: { key: Bun.file(key), cert: Bun.file(certificate) }, fetch: request => {
+      expect(request.headers.get("Authorization")).toBe("Bearer worker-token");
+      return Response.json(new URL(request.url).pathname.endsWith("/control") ? { admitted: true, generation: "release-42", draining: false } : { claim: null });
+    } });
+    const connects: string[] = [];
+    const proxy = createServer(socket => {
+      let request = Buffer.alloc(0);
+      const headers = (chunk: Buffer) => {
+        request = Buffer.concat([request, chunk]);
+        const boundary = request.indexOf("\r\n\r\n");
+        if (boundary < 0) return;
+        socket.off("data", headers);
+        connects.push(request.toString().split("\r\n")[0]!);
+        const upstream = createConnection({ host: "127.0.0.1", port: api.port! }, () => {
+          socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+          if (request.length > boundary + 4) upstream.write(request.subarray(boundary + 4));
+          socket.pipe(upstream); upstream.pipe(socket);
+        });
+        socket.on("error", () => upstream.destroy());
+        upstream.on("error", () => socket.destroy());
+      };
+      socket.on("data", headers);
+    });
+    await new Promise<void>(resolve => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Missing proxy fixture port");
+    const workerModule = join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts");
+    const child = Bun.spawn([process.execPath, "-e", `import {houseHighlightsMediaWorkerConfig, runHouseHighlightsMediaWorkerOnce} from ${JSON.stringify(workerModule)}; const config=houseHighlightsMediaWorkerConfig(process.env, ${JSON.stringify(execution)}); config.httpProxy=${JSON.stringify(`http://127.0.0.1:${address.port}`)}; if(await runHouseHighlightsMediaWorkerOnce(config)!=="idle")process.exit(1); process.exit(0);`], { env: { ...process.env, ...remoteEnv, POSTGAME_MEDIA_API_URL: `https://${hostname}`, POSTGAME_MEDIA_TEMP_DIR: root, NODE_EXTRA_CA_CERTS: certificate }, stdout: "pipe", stderr: "pipe" });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 5000);
+    try {
+      expect(await child.exited).toBe(0);
+      expect(connects.length).toBeGreaterThan(0);
+      expect(connects.every(value => value === `CONNECT ${hostname}:443 HTTP/1.1`)).toBe(true);
+    } finally { clearTimeout(timeout); child.kill(); proxy.close(); api.stop(true); await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("sends exact remote identity to control and claim, and does not claim a draining generation", async () => {
+    const config = remoteConfig(remoteEnv);
+    const requests: Request[] = [];
+    let draining = false;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push(request);
+      return request.url.endsWith("/control")
+        ? Response.json({ admitted: true, generation: "release-42", draining })
+        : Response.json({ claim: null });
+    }) as unknown as typeof fetch;
+    expect(await runHouseHighlightsMediaWorkerOnce(config, fetchImpl)).toBe("idle");
+    expect(requests.map((request) => new URL(request.url).pathname)).toEqual(["/api/internal/postgame-media/control", "/api/internal/postgame-media/claim"]);
+    for (const request of requests) {
+      expect(request.headers.get("Authorization")).toBe("Bearer worker-token");
+      expect(request.headers.get("x-render-generation")).toBe("release-42");
+      expect(request.headers.get("x-render-worker-digest")).toBe(remoteEnv.POSTGAME_MEDIA_WORKER_DIGEST);
+      expect(request.headers.get("x-render-worker-instance")).toBe(remoteEnv.POSTGAME_MEDIA_WORKER_INSTANCE_ID);
+    }
+    draining = true;
+    expect(await runHouseHighlightsMediaWorkerOnce(config, fetchImpl)).toBe("drained");
+    expect(requests.length).toBe(3);
+  });
+
+  it("fails closed for unavailable or malformed remote admission and refuses a different generation", async () => {
+    const config = remoteConfig(remoteEnv);
+    await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: true, generation: "old", draining: false })) as unknown as typeof fetch)).resolves.toBe(false);
+    await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: false, generation: null, draining: false })) as unknown as typeof fetch)).resolves.toBe(false);
+    await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json(null)) as unknown as typeof fetch)).rejects.toThrow("worker_api_invalid_control");
+    await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: true, generation: null, draining: false })) as unknown as typeof fetch)).rejects.toThrow("worker_api_invalid_control");
+    await expect(readHouseHighlightsMediaWorkerAdmission(config, (async () => Response.json({ admitted: "true", generation: "release-42", draining: false })) as unknown as typeof fetch)).rejects.toThrow("worker_api_invalid_control");
+    let claims = 0;
+    await expect(runHouseHighlightsMediaWorker(config, (async () => new Response("", { status: 503 })) as unknown as typeof fetch, {
+      runOnceImpl: async () => { claims += 1; return "completed"; },
+    })).rejects.toThrow("worker_api_503");
+    expect(claims).toBe(0);
+  });
+
+  it("exits a remote worker after a bounded batch, counting terminal outcomes", async () => {
+    const config = remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_MAX_JOBS: "2" });
+    const outcomes = ["waiting_music", "failed", "completed"];
+    let attempts = 0;
+    const sleeps: number[] = [];
+    await runHouseHighlightsMediaWorker(config, (async () => Response.json({ admitted: true, generation: "release-42", draining: false })) as unknown as typeof fetch, {
+      runOnceImpl: async () => outcomes[attempts++],
+      sleepImpl: async (ms) => { sleeps.push(ms); },
+    });
+    expect(attempts).toBe(2);
+    expect(sleeps).toEqual([0]);
+  });
+
+  it("requires a fresh quiet interval after work and then exits without an always-on poller", async () => {
+    const config = remoteConfig({ ...remoteEnv, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "1000", POSTGAME_MEDIA_POLL_INTERVAL_MS: "500" });
+    let now = 0;
+    let attempts = 0;
+    const sleeps: number[] = [];
+    await runHouseHighlightsMediaWorker(config, (async () => Response.json({ admitted: true, generation: "release-42", draining: false })) as unknown as typeof fetch, {
+      runOnceImpl: async () => ++attempts === 2 ? "completed" : "idle",
+      nowImpl: () => now,
+      sleepImpl: async (ms) => { sleeps.push(ms); now += ms; },
+    });
+    expect(attempts).toBe(5);
+    expect(sleeps).toEqual([500, 0, 500, 500]);
+  });
+
+  it("finishes a remote attempt before observing drain and never starts a second attempt", async () => {
+    const config = remoteConfig(remoteEnv);
+    const release = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    let admitted = true;
+    let attempts = 0;
+    let finished = false;
+    const worker = runHouseHighlightsMediaWorker(config, (async () => Response.json({ admitted, generation: "release-42", draining: !admitted })) as unknown as typeof fetch, {
+      runOnceImpl: async () => { attempts += 1; started.resolve(); await release.promise; finished = true; return "completed"; },
+      sleepImpl: async () => undefined,
+    });
+    await started.promise;
+    admitted = false;
+    expect(finished).toBe(false);
+    release.resolve();
+    await worker;
+    expect(finished).toBe(true);
+    expect(attempts).toBe(1);
+  });
+
+  it("transports an isolated child outcome so a remote parent can distinguish idle from work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-attempt-result-"));
+    const script = join(root, "result.ts");
+    try {
+      await writeFile(script, 'process.send?.({ type: "postgame-media-result", result: "idle" });\nprocess.exit(0);\n');
+      expect(await runHouseHighlightsMediaWorkerAttempt(script)).toBe("idle");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("exits a remote loop process after quiet without a host acknowledgement file", async () => {
+    const root = await mkdtemp(join(tmpdir(), "render-remote-cli-"));
+    const key = join(root, "test-key.pem");
+    const certificate = join(root, "test-cert.pem");
+    const tlsFixture = Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+      "-keyout", key, "-out", certificate, "-days", "1", "-subj", "/CN=localhost",
+      "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { stdout: "ignore", stderr: "ignore" });
+    expect(tlsFixture.exitCode).toBe(0);
+    let claims = 0;
+    const identities: string[] = [];
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", tls: { key: Bun.file(key), cert: Bun.file(certificate) }, fetch: (request) => {
+      identities.push(request.headers.get("x-render-worker-instance") ?? "");
+      if (new URL(request.url).pathname.endsWith("/control")) return Response.json({ admitted: true, generation: "release-42", draining: false });
+      claims += 1;
+      return Response.json({ claim: null });
+    } });
+    const workerModule = join(import.meta.dir, "../scripts/render-house-highlights-media-worker.ts");
+    const child = Bun.spawn([process.execPath, "-e", `import { houseHighlightsMediaWorkerConfig, runHouseHighlightsMediaWorker } from ${JSON.stringify(workerModule)};
+      await runHouseHighlightsMediaWorker(houseHighlightsMediaWorkerConfig(process.env, ${JSON.stringify(execution)}));
+      process.exit(0);`], {
+      env: { ...process.env, ...remoteEnv, POSTGAME_MEDIA_API_URL: `https://127.0.0.1:${server.port}`,
+        NODE_EXTRA_CA_CERTS: certificate,
+        POSTGAME_MEDIA_TEMP_DIR: root, POSTGAME_MEDIA_QUIET_INTERVAL_MS: "1000",
+        POSTGAME_MEDIA_POLL_INTERVAL_MS: "500", POSTGAME_MEDIA_DRAIN_ACK_FILE: undefined,
+        POSTGAME_MEDIA_STARTUP_MODE: "active" },
+      stdout: "pipe", stderr: "pipe",
+    });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    try {
+      expect(await child.exited).toBe(0);
+      expect(claims).toBeGreaterThanOrEqual(2);
+      expect(identities.every((identity) => identity === remoteEnv.POSTGAME_MEDIA_WORKER_INSTANCE_ID)).toBe(true);
+    } finally {
+      clearTimeout(timeout);
+      child.kill();
+      server.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a remote attempt without an explicit result instead of treating it as empty work", async () => {
+    await expect(runHouseHighlightsMediaWorker(remoteConfig(remoteEnv),
+      (async () => Response.json({ admitted: true, generation: "release-42", draining: false })) as unknown as typeof fetch,
+      { runOnceImpl: async () => undefined },
+    )).rejects.toThrow("worker_remote_attempt_result_missing");
+  });
+
   it("defaults to active claims and validates the claim-disabled standby mode", () => {
     expect(readHouseHighlightsMediaWorkerStartupMode({})).toBe("active");
     expect(readHouseHighlightsMediaWorkerStartupMode({ POSTGAME_MEDIA_STARTUP_MODE: "standby" })).toBe("standby");
@@ -141,6 +371,7 @@ describe("House Highlights media worker bundle", () => {
       disallowParallelEncoding: true,
     });
     expect(requests[0]?.headers.get("Authorization")).toBe("Bearer secret-worker-token");
+    expect(requests[0]?.headers.has("x-render-generation")).toBe(false);
     expect(() => houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test" }))
       .toThrow("POSTGAME_MEDIA_WORKER_TOKEN");
     expect(parseHouseHighlightsMediaWorkerArgs(["--once"])).toBe("once");
@@ -441,14 +672,34 @@ describe("House Highlights media worker bundle", () => {
 
     const rewritten = withWorkerReachableAssetUrls(manifest, "http://host.docker.internal:3002");
 
-    expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=alice.png");
     if (rewritten.kind !== "influence") throw new Error("Expected Influence fixture");
-    expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=alice.png");
     expect(rewritten.cast[1]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=pfp%2Fbob.png");
     expect(manifest.cast[0]!.avatarUrl).toStartWith("http://127.0.0.1:3000/");
     const native = withWorkerReachableAssetUrls(manifest, "http://127.0.0.1:3002");
     expect(native.cast[0]!.avatarUrl).toBe(manifest.cast[0]!.avatarUrl);
     expect(native.cast[1]!.avatarUrl).toBe("http://127.0.0.1:3002/api/uploads/local?key=pfp%2Fbob.png");
+  });
+
+  it("rewrites Influence and Werewolf internal assets to the exact HTTPS origin without changing public assets", async () => {
+    const origin = "https://influence-staging.tail8a79ed.ts.net";
+    const influence = manifestFixture();
+    influence.cast[0]!.avatarUrl = "http://localhost:3000/api/uploads/local?key=alice.png";
+    influence.scenelets.push({ id: "scene", title: "Scene", visualType: "council", backgroundImage: "http://localhost:3000/api/uploads/local?key=background.png", backdropCategory: "council", primaryAgents: [{ ...influence.cast[0]!, avatarUrl: "http://127.0.0.1:3002/api/uploads/local?key=scene.png" }], secondaryAgents: [], outcome: "A vote", facts: [] });
+    influence.cast[1]!.avatarUrl = "https://public.example.test/bob.png";
+    const output = withWorkerReachableAssetUrls(influence, origin);
+    expect(output.cast[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=alice.png`);
+    expect(output.cast[1]!.avatarUrl).toBe("https://public.example.test/bob.png");
+    if (output.kind !== "influence") throw new Error("Expected Influence");
+    expect(output.scenelets[0]!.backgroundImage).toBe(`${origin}/api/uploads/local?key=background.png`);
+    expect(output.scenelets[0]!.primaryAgents[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=scene.png`);
+    const { buildWerewolfTrailerManifest } = await import("@influence/engine/postgame-media/werewolf-trailer-manifest");
+    const { werewolfResultsFixture } = await import("@influence/engine/fixtures/werewolf-results");
+    const events = await werewolfResultsFixture("village");
+    const werewolf = buildWerewolfTrailerManifest({ events, slug: "werewolf", episode: { title: "Lanterns", description: "A village gathers." }, cuts: { game: { id: events[0]!.gameId, slug: "werewolf", kind: "werewolf" }, audience: "mystery", status: "failed", publication: null } });
+    werewolf.cast[0]!.avatarUrl = "http://localhost:3000/api/uploads/local?key=alice.png";
+    expect(withWorkerReachableAssetUrls(werewolf, origin).cast[0]!.avatarUrl).toBe(`${origin}/api/uploads/local?key=alice.png`);
   });
 
   it("requires every prepared score while tolerating unrelated extra music", async () => {

@@ -31,7 +31,9 @@ export async function verifyStudioEncodedParity({descriptor, token, origin, outp
     child.once("error",error=>{clearTimeout(timer);reject(error);});
     child.once("close",code=>{
       clearTimeout(timer);
-      if(child.pid) try {process.kill(-child.pid,"SIGKILL");} catch(error) {
+      // Successful commands own browser teardown. Do not signal a stale group ID
+      // after exit; it may no longer belong to this child.
+      if(code!==0 && child.pid) try {process.kill(-child.pid,"SIGKILL");} catch(error) {
         if(!(error instanceof Error && "code" in error && error.code === "ESRCH")) {reject(error);return;}
       }
       if(code===0) accept();else reject(new Error(`Studio encoded proof exited ${code}: ${failure}`));
