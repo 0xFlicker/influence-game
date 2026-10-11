@@ -21,7 +21,7 @@ beforeAll(async () => {
   await recordCurrentLegalAcceptance(database.db,owner.userId,"existing_account","0123456789abcdef0123456789abcdef01234567");
   await database.db.insert(schema.agentProfiles).values({id:"history-agent",userId:owner.userId,name:"Current Name",personality:"Patient"});
   const date="2026-10-05T12:00:00.000Z";
-  await database.db.insert(schema.games).values({id:"history-influence",slug:"history-influence",status:"completed",config:"{}",endedAt:"2026-10-04T12:00:00.000Z"});
+  await database.db.insert(schema.games).values({id:"history-influence",slug:"history-influence",status:"completed",config:JSON.stringify({providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]}),endedAt:"2026-10-04T12:00:00.000Z"});
   await database.db.insert(schema.gamePlayers).values({id:"history-seat",gameId:"history-influence",userId:owner.userId,agentProfileId:"history-agent",persona:JSON.stringify({name:"Frozen Influence"}),agentConfig:"{}"});
   await database.db.insert(schema.gameResults).values({id:"history-result",gameId:"history-influence",winnerId:"history-seat",roundsPlayed:3,finishedAt:date,tokenUsage:"{}"});
   for (const [slug,status,visibility] of [
