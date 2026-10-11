@@ -2950,7 +2950,6 @@ describe("ProductionGameMcpJsonRpcServer", () => {
             projectionStatus: "complete" as const,
             lastTrustedSequence: 4,
             projectionLastSequence: 4,
-            settlementSafeProjection: true,
             diagnostics: [],
             followUpCapabilities: [{
               kind: "canonical_events" as const,

@@ -2,6 +2,8 @@ import { eq, or } from "drizzle-orm";
 import {
   buildCompletedGameResults,
   resolveGameKernel,
+  replayCanonicalEvents, retrospectiveProgress, Phase,
+  type RetrospectiveProgress,
   type CompletedGameResultsRead,
   type GameKernel,
   type GameKernelContradictionDiagnostic,
@@ -23,7 +25,7 @@ export type CompletedGameResultsReadStatus =
 export type CompletedGameResultsServiceResult =
   | {
       ok: true;
-      schemaVersion: 2;
+      schemaVersion: 3;
       game: {
         id: string;
         slug: string;
@@ -34,6 +36,7 @@ export type CompletedGameResultsServiceResult =
         gameKernelDiagnostics: GameKernelContradictionDiagnostic[];
       };
       results: CompletedGameResultsRead;
+      retrospective: RetrospectiveProgress;
     }
   | {
       ok: false;
@@ -42,8 +45,6 @@ export type CompletedGameResultsServiceResult =
     };
 
 type GameRow = Pick<typeof schema.games.$inferSelect, "id" | "slug" | "status" | "endedAt" | "gameKernel">;
-type PlayerRow = Pick<typeof schema.gamePlayers.$inferSelect, "id" | "persona">;
-type ResultRow = Pick<typeof schema.gameResults.$inferSelect, "winnerId" | "roundsPlayed">;
 
 export async function getCompletedGameResults(
   db: CompletedResultsDB,
@@ -53,35 +54,20 @@ export async function getCompletedGameResults(
   if (!game) {
     return { ok: false, status: "not_found", error: "Game not found" };
   }
-  if (game.status !== "completed") {
-    return {
-      ok: false,
-      status: "not_completed",
-      error: "Completed results are only available for completed games.",
-    };
-  }
-
-  const [players, terminalResult, persistedEvents] = await Promise.all([
-    loadPlayers(db, game.id),
-    loadTerminalResult(db, game.id),
-    getPersistedGameEvents(db, game.id),
-  ]);
+  const persistedEvents = await getPersistedGameEvents(db, game.id);
   const projection = getPersistedGameProjection(persistedEvents);
-  const playerNames = playerNameMap(players);
+  if (persistedEvents.status === "invalid" || projection.status === "failed") return { ok: false, status: "unavailable", error: "Canonical results failed validation." };
   const events = persistedEvents.events.map((event) => event.envelope);
+  const canonical = events.length ? replayCanonicalEvents(events) : null;
+  if (!canonical?.retrospectiveOutcomeSource) return { ok: false, status: game.status === "completed" ? "unavailable" : "not_completed", error: "Results are available after the canonical outcome is recorded." };
+  const retrospective = retrospectiveProgress(canonical.retrospectiveOutcomeSource, canonical.retrospective, canonical.playerOrder.length);
+  if (game.status === "completed" && (retrospective.status !== "completed" || canonical.phase !== Phase.END)) return { ok: false, status: "unavailable", error: "Completed execution has no retrospective completion proof." };
   const kernel = resolveGameKernel({ stored: game.gameKernel, events });
   const results = buildCompletedGameResults({
     events,
     eventLogStatus: persistedEvents.status,
     projectionStatus: projection.status,
     gameKernel: kernel.kernel,
-    terminalResult: terminalResult
-      ? {
-          winnerId: terminalResult.winnerId,
-          winnerName: terminalResult.winnerId ? playerNames.get(terminalResult.winnerId) ?? terminalResult.winnerId : null,
-          roundsPlayed: terminalResult.roundsPlayed,
-        }
-      : null,
   });
 
   if (results.availability.status === "unavailable") {
@@ -94,7 +80,7 @@ export async function getCompletedGameResults(
 
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     game: {
       id: game.id,
       slug: game.slug,
@@ -105,6 +91,7 @@ export async function getCompletedGameResults(
       gameKernelDiagnostics: kernel.diagnostics,
     },
     results,
+    retrospective,
   };
 }
 
@@ -120,48 +107,4 @@ async function loadGame(db: CompletedResultsDB, idOrSlug: string): Promise<GameR
     .from(schema.games)
     .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
     .limit(1))[0] ?? null;
-}
-
-async function loadPlayers(db: CompletedResultsDB, gameId: string): Promise<PlayerRow[]> {
-  return db
-    .select({
-      id: schema.gamePlayers.id,
-      persona: schema.gamePlayers.persona,
-    })
-    .from(schema.gamePlayers)
-    .where(eq(schema.gamePlayers.gameId, gameId));
-}
-
-async function loadTerminalResult(db: CompletedResultsDB, gameId: string): Promise<ResultRow | null> {
-  return (await db
-    .select({
-      winnerId: schema.gameResults.winnerId,
-      roundsPlayed: schema.gameResults.roundsPlayed,
-    })
-    .from(schema.gameResults)
-    .where(eq(schema.gameResults.gameId, gameId))
-    .limit(1))[0] ?? null;
-}
-
-function playerNameMap(players: readonly PlayerRow[]): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const player of players) {
-    const persona = parsePersona(player.persona);
-    names.set(player.id, persona.name ?? player.id);
-  }
-  return names;
-}
-
-function parsePersona(value: string): { name?: string } {
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (isRecord(parsed) && typeof parsed.name === "string") return { name: parsed.name };
-  } catch {
-    // Fall through to unknown identity.
-  }
-  return {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

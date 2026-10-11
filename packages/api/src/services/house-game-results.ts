@@ -1,6 +1,8 @@
 import { readEpisodePresentations } from "./episode-presentation.js";
 import { asc, eq, or } from "drizzle-orm";
 import { buildWerewolfResults } from "@influence/engine/werewolf/results";
+import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
+import { retrospectiveProgress } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getCompletedGameResults } from "./completed-game-results.js";
@@ -20,17 +22,18 @@ export async function readHouseGameResultsInTransaction(tx: Pick<DrizzleDB, "sel
     return result.ok ? {...result,gameKind:"influence" as const} : result;
   }
   if (game.gameKind !== "werewolf") return {ok:false as const,status:"unavailable" as const,error:"Unsupported game kind"};
-  if (game.status !== "completed") return {ok:false as const,status:"not_completed" as const,gameStatus:game.status,
-    error:game.status === "cancelled" ? "This game was stopped. No winner was declared."
-      : game.status === "suspended" ? "This game is paused. No winner has been declared." : "Results will be available when this game finishes."};
   const rows = await tx.select().from(schema.werewolfEvents).where(eq(schema.werewolfEvents.gameId,game.id)).orderBy(asc(schema.werewolfEvents.sequence));
   try {
     if (rows.some(row=>row.event.gameId !== game.id || row.sequence !== row.event.sequence)) throw new Error("Stored Werewolf event identity mismatch");
+    const state = rows.length ? replayWerewolf(rows.map(row => row.event)) : null;
+    if (!state?.outcome) return {ok:false as const,status:game.status === "completed" ? "unavailable" as const : "not_completed" as const,gameStatus:game.status,error:"Results are available after the canonical outcome is recorded."};
+    if (game.status === "completed" && !werewolfExecutionFinished(state)) throw new Error("Completed execution has no retrospective completion proof");
     const results = buildWerewolfResults(rows.map(row=>row.event));
     // Frozen character URLs use the existing audience/position-guarded image endpoint.
     const players = results.players.map(player=>({...player,avatarUrl:`/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(player.id)}?audience=omniscient&cursor=${results.source.cursor}`}));
-    return {ok:true as const,gameKind:"werewolf" as const,schemaVersion:1 as const,
-      game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:(await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players}};
+    return {ok:true as const,gameKind:"werewolf" as const,schemaVersion:2 as const,
+      game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:(await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players},
+      retrospective:retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,state.players.length)};
   } catch (error) {
     console.error(`[werewolf-results] Invalid completed history for ${game.id}:`,error);
     return {ok:false as const,status:"unavailable" as const,error:"Results are unavailable for this game. Try again later."};

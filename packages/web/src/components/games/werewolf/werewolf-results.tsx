@@ -13,7 +13,8 @@ import { ResultsHeader } from "../results-header";
 import styles from "./werewolf-results.module.css";
 
 export function WerewolfResultsPage({slug}: {slug: string}) {
-  const query = useQuery({queryKey: ["house-results", slug], queryFn: ({signal}) => getHouseGameResults(slug, signal), retry: false});
+  const query = useQuery({queryKey: ["house-results", slug], queryFn: ({signal}) => getHouseGameResults(slug, signal), retry: false,
+    refetchInterval: query => query.state.data?.game.status === "in_progress" ? 2000 : false});
   // A denied refresh must remove already-rendered final facts and images.
   if (query.error) {
     const incomplete = query.error instanceof ApiError && query.error.payload?.status === "not_completed";
@@ -25,7 +26,7 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
   }
   if (!query.data) return <p role="status" className="py-12 text-white/70">Loading results…</p>;
   if (query.data.gameKind !== "werewolf") return <p role="alert">This page could not load the correct game results.</p>;
-  const {game, results} = query.data;
+  const {game, results, retrospective} = query.data;
   const names = new Map(results.players.map(player => [player.id, player.name]));
   const name = (id: string) => names.get(id) ?? "Unknown player";
   const days = [...new Set(results.recap.map(item => item.day))];
@@ -35,7 +36,8 @@ export function WerewolfResultsPage({slug}: {slug: string}) {
     <GameBanner gameId={game.id} />
     <ResultsHeader title={werewolfOutcomeTitle(results.outcome)} description={<><p>{werewolfOutcomeReason(results.outcome)}</p><p className="mt-2 text-white/55">{game.episode?.title ?? game.slug} · Day {results.day} · {results.players.length} players</p></>}
       actions={<><Link className="influence-button-primary rounded-lg px-4 py-2 text-sm" href={gameReplayHref(slug)}>Watch from the beginning</Link><Link className="influence-button-secondary rounded-lg px-4 py-2 text-sm" href={werewolfMomentHref(slug,"omniscient",results.source.cursor)}>Watch the ending · Omniscient</Link></>} />
-    <OwnerLearningActivation enabled contextGameId={game.id} />
+    {game.status !== "completed" ? <p role="status" className="text-sm text-white/65">{game.status === "suspended" ? "Retrospective paused" : "Retrospective in progress"} · {retrospective.statementCount} of {retrospective.requiredStatements} statements. The result is fixed. <Link className="underline" href={werewolfMomentHref(slug, "omniscient", results.source.cursor)}>Continue watching</Link></p> : null}
+    <OwnerLearningActivation enabled={game.status === "completed"} contextGameId={game.id} />
     <div className={styles.layout}>
       <nav className={styles.index} aria-label="Results sections"><a href="#cast">Cast</a><a href="#recap">Recap</a>{days.map(day => <a className={styles.dayLink} key={day} href={`#day-${day}`}>Night & day {day}</a>)}</nav>
       <div className="min-w-0 space-y-10">

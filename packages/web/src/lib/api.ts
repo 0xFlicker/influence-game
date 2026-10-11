@@ -392,7 +392,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3 | 4 | 5;
+  schemaVersion: 6;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -414,6 +414,7 @@ export interface GameWatchState {
     unknownPlayers: number;
   };
   final: GameWatchFinalState;
+  retrospective: import("@influence/engine").RetrospectiveProgress;
   winner?: {
     id: string;
     name: string;
@@ -436,7 +437,7 @@ export interface GameWatchReplayFrame {
   viewerDecisionEvent?: ViewerDecisionEvent;
 }
 
-export type GameWatchStateSummary = Omit<GameWatchState, "players">;
+export type GameWatchStateSummary = Omit<GameWatchState, "players" | "schemaVersion" | "retrospective"> & { schemaVersion: 4 | 6 };
 
 export interface CreateGameParams {
   visualMode?: boolean;
@@ -1076,8 +1077,7 @@ export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 export interface CompletedGameResultsResponse {
   gameKind: "influence";
   ok: true;
-  /** v2 adds kernel routing; v1 remains accepted for cached legacy fixtures. */
-  schemaVersion: 1 | 2;
+  schemaVersion: 3;
   game: {
     id: string;
     slug: string;
@@ -1088,13 +1088,15 @@ export interface CompletedGameResultsResponse {
     gameKernelDiagnostics?: GameKernelContradictionDiagnostic[];
   };
   results: CompletedGameResultsRead;
+  retrospective: import("@influence/engine").RetrospectiveProgress;
 }
 
 export interface WerewolfCompletedResultsResponse {
   ok: true;
   gameKind: "werewolf";
-  schemaVersion: 1;
+  schemaVersion: 2;
   game: { id: string; slug: string; status: GameStatus; completedAt: string | null; episode?: EpisodePresentation };
+  retrospective: import("@influence/engine").RetrospectiveProgress;
   results: import("@influence/engine/werewolf/results-contract").WerewolfResults & {
     players: Array<import("@influence/engine/werewolf/results-contract").WerewolfResultPlayer & { avatarUrl: string }>;
   };
@@ -2813,7 +2815,7 @@ export type WsPublicationPayload =
       type: "game_status";
       gameId: string;
       status: "suspended" | "cancelled";
-      terminal: true;
+      terminal: boolean;
       reasonCode: string;
       message?: string;
     };

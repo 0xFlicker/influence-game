@@ -34,6 +34,8 @@ import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
   createCompletedCanonicalEventFixture,
+  withRetrospective,
+  withJuryWinner,
   createResolvedRoundCanonicalEventFixture,
   insertCanonicalEventRows,
   insertOwner,
@@ -1219,7 +1221,7 @@ describe("Game REST API", () => {
       });
       expect(byId.get(legacy.id)).toMatchObject({
         status: "suspended",
-        errorInfo: "The game failed and cannot be resumed.",
+        errorInfo: "Execution is paused. Committed play remains available.",
       });
       expect(byId.get(pending.id)).not.toHaveProperty("winner");
       expect(byId.get(repair.id)).not.toHaveProperty("winner");
@@ -1228,7 +1230,7 @@ describe("Game REST API", () => {
       for (const [fixture, errorInfo] of [
         [pending, "Finalizing results."],
         [repair, "Results under review."],
-        [legacy, "The game failed and cannot be resumed."],
+        [legacy, "Execution is paused. Committed play remains available."],
       ] as const) {
         const response = await app.request(`/api/games/${fixture.id}`);
         const detail = (await response.json()) as Record<string, unknown>;
@@ -1314,7 +1316,7 @@ describe("Game REST API", () => {
       expect(body.currentPhase).toBe("LOBBY");
       expect(body.players.filter((player) => player.status === "eliminated")).toHaveLength(1);
       expect(body.watchState).toMatchObject({
-        schemaVersion: 5,
+        schemaVersion: 6,
         source: "durable_projection",
         currentRound: 2,
         currentPhase: "LOBBY",
@@ -1408,7 +1410,7 @@ describe("Game REST API", () => {
       expect(invalidPresentationOnly.status).toBe(400);
     });
 
-    test("labels older completed games as best-available terminal watch state", async () => {
+    test("labels terminal rows without canonical history as unavailable results", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
@@ -1431,13 +1433,14 @@ describe("Game REST API", () => {
       expect(body).toMatchObject({
         currentRound: 4,
         currentPhase: "END",
-        winner: "Mira",
         watchState: {
           source: "best_available_terminal_result",
           projection: { availability: "unavailable", eventLogStatus: "empty" },
-          final: { winner: { name: "Mira", source: "best_available_terminal_result" } },
+          retrospective: { status: "unavailable", outcome: null },
         },
       });
+      expect(body.winner).toBeUndefined();
+      expect(body.watchState.final.winner).toBeUndefined();
       expect(body.players.find((player) => player.id === "mira")?.status).toBe("alive");
       expect(body.players.filter((player) => player.id !== "mira").map((player) => player.status)).toEqual([
         "unknown",
@@ -1499,9 +1502,9 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
-      const events = withPrivateDecisionSentinel(
+      const events = withRetrospective(withJuryWinner(withPrivateDecisionSentinel(
         createResolvedRoundCanonicalEventFixture(id),
-      );
+      ), "mira"));
       await appendGameEvents(db, { gameId: id, ownerEpoch, events });
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 1 });
       await markGameCompleted(db, id);
@@ -1533,7 +1536,7 @@ describe("Game REST API", () => {
       };
 
       expect(body.ok).toBe(true);
-      expect(body.schemaVersion).toBe(2);
+      expect(body.schemaVersion).toBe(3);
       expect(body.game).toMatchObject({
         gameKernel: "format",
         gameKernelSource: "stored",
@@ -1547,7 +1550,7 @@ describe("Game REST API", () => {
       });
       expect(body.results.source).toBe("durable_canonical_events");
       expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
-      expect(body.results.summary.roundsPlayed).toBe(1);
+      expect(body.results.summary.roundsPlayed).toBe(4);
       expect(body.results.rounds[0]?.canonicalFacts.roundFacts.standardVote.ledger).toHaveLength(4);
       expect(body.results.rounds[0]?.canonicalFacts.roundFacts.council).toBeUndefined();
       expect(body.results.rounds[0]?.formatRecap).toBeUndefined();
@@ -1556,29 +1559,15 @@ describe("Game REST API", () => {
       expect(JSON.stringify(body)).not.toContain("sourcePointers");
     });
 
-    test("returns degraded terminal fallback for older completed games", async () => {
+    test("requires canonical outcome evidence rather than a terminal row", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
       await markGameCompleted(db, id);
 
       const res = await app.request(`/api/games/${id}/results`);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as {
-        results: {
-          source: string;
-          availability: { status: string; diagnostics: Array<{ code: string }> };
-          summary: { winner: { id: string; name: string } | null; roundsPlayed: number };
-          rounds: unknown[];
-        };
-      };
-
-      expect(body.results.source).toBe("best_available_terminal_result");
-      expect(body.results.availability.status).toBe("degraded");
-      expect(body.results.availability.diagnostics.map((diagnostic) => diagnostic.code)).toContain("terminal_result_fallback");
-      expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
-      expect(body.results.summary.roundsPlayed).toBe(4);
-      expect(body.results.rounds).toEqual([]);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ status: "unavailable" });
     });
 
     test("returns compact postgame REST surfaces without raw event payloads", async () => {
@@ -1668,7 +1657,7 @@ describe("Game REST API", () => {
       expect(res.status).toBe(409);
       const body = (await res.json()) as { status: string; error: string };
       expect(body.status).toBe("not_completed");
-      expect(body.error).toContain("completed");
+      expect(body.error).toContain("canonical outcome");
     });
 
     test("does not expose cognitive artifact snippets in completed results", async () => {
@@ -1676,6 +1665,8 @@ describe("Game REST API", () => {
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
       await markGameCompleted(db, id);
+      const owner = await insertOwner(db, id);
+      await insertCanonicalEventRows(db, id, owner, createCompletedCanonicalEventFixture(id));
       await db.insert(schema.gameCognitiveArtifacts).values({
         id: randomUUID(),
         gameId: id,
@@ -1724,6 +1715,10 @@ describe("Game REST API", () => {
 
       const { id: completedGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
       const { playerId } = await joinTestPlayer(db, app, completedGameId, "Atlas Vale", userToken);
+      const state = new GameState([{ id: playerId, name: "Atlas Vale" }, { id: "echo", name: "Echo" },
+        { id: "mira", name: "Mira" }, { id: "nyx", name: "Nyx" }], { gameId: completedGameId });
+      const owner = await insertOwner(db, completedGameId);
+      await insertCanonicalEventRows(db, completedGameId, owner, withRetrospective(withJuryWinner(state.getCanonicalEvents(), playerId)));
       await insertResult(db, completedGameId, { winnerId: playerId, roundsPlayed: 3 });
       await markGameCompleted(db, completedGameId);
 
@@ -1743,7 +1738,7 @@ describe("Game REST API", () => {
         gameId: completedGameId,
         agentName: "Atlas Vale",
         gameKind: "influence",
-        result: { rounds: 3, outcome: "win" },
+        result: { rounds: 4, outcome: "win" },
       });
     });
   });
@@ -2351,7 +2346,7 @@ describe("Game REST API", () => {
         expect(captureAttempt.status).toBe("rejected");
         if (captureAttempt.status !== "rejected") throw new Error("Capture unexpectedly won");
         expect(captureAttempt.reason).toMatchObject({ code: "game_not_in_progress" });
-        expect(game.status).toBe("cancelled");
+        expect(game.status).toBe("suspended");
         expect(settlements).toHaveLength(0);
       } else {
         expect(stopAttempt.value.status).toBe(409);

@@ -43,7 +43,7 @@ describe("GameWatchState", () => {
 
     expect(state).not.toBeNull();
     expect(state).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameId,
       slug: "watch-live-projection",
       source: "durable_projection",
@@ -123,7 +123,7 @@ describe("GameWatchState", () => {
     });
   });
 
-  test("does not expose a durable terminal winner before completion settlement commits", async () => {
+  test("exposes the canonical winner while execution is suspended before settlement", async () => {
     const gameId = await insertGame(db, {
       slug: "watch-pending-completion-settlement",
       status: "suspended",
@@ -165,11 +165,12 @@ describe("GameWatchState", () => {
       source: "durable_projection",
       final: { status: "not_final" },
     });
-    expect(state?.final.winner).toBeUndefined();
+    expect(state?.final.winner?.id).toBe("mira");
     expect(state?.final.roundsPlayed).toBeUndefined();
-    expect(state?.winner).toBeUndefined();
+    expect(state?.winner?.id).toBe("mira");
     expect(state?.players.find((player) => player.id === "mira")?.status).toBe("alive");
-    expect(state?.players.find((player) => player.id === "echo")?.status).toBe("alive");
+    expect(state?.players.find((player) => player.id === "echo")?.status).toBe("eliminated");
+    expect(state?.retrospective).toMatchObject({ status: "pending", statementCount: 0, requiredStatements: 4 });
   });
 
   test("labels older completed games without durable events as best-available terminal result", async () => {
@@ -194,11 +195,6 @@ describe("GameWatchState", () => {
       },
       final: {
         status: "final",
-        winner: {
-          id: "atlas",
-          name: "Atlas Prime",
-          source: "best_available_terminal_result",
-        },
       },
     });
   });
@@ -476,7 +472,7 @@ describe("GameWatchState", () => {
     const state = await getGameWatchState(db, gameId);
 
     expect(state).toMatchObject({
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameKernel: "classic",
       gameKernelSource: "stored",
       gameKernelDiagnostics: [

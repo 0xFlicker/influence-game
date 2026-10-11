@@ -335,6 +335,10 @@ export function getMatchWatchRouteDecision(
     };
   }
 
+  if (game.status === "suspended" && game.watchState?.retrospective.outcome) {
+    return { eligible: true, mode: "replay", reason: "replay_transcript" };
+  }
+
   if (game.status === "completed") {
     if (completedMode === "replay" && messages.length > 0) {
       return {
@@ -753,7 +757,7 @@ function currentAgentPatch(
   return fallback !== undefined ? { currentAgent: fallback } : {};
 }
 
-function selectReplayWatchFrame(
+export function selectReplayWatchFrame(
   frames: readonly GameWatchReplayFrame[],
   playbackState: MatchWatchPlaybackState,
 ): GameWatchReplayFrame | null {

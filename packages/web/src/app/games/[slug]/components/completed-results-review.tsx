@@ -44,9 +44,13 @@ export function CompletedResultsReview({
 
   useEffect(() => {
     let cancelled = false;
-    getCompletedGameResults(gameId)
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => getCompletedGameResults(gameId)
       .then((result) => {
-        if (!cancelled) setLoadState({ gameId, status: "ready", payload: result });
+        if (!cancelled) {
+          setLoadState({ gameId, status: "ready", payload: result });
+          if (result.game.status === "in_progress") timer = setTimeout(refresh, 2000);
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -57,8 +61,10 @@ export function CompletedResultsReview({
           });
         }
       });
+    void refresh();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [gameId]);
 
@@ -131,6 +137,7 @@ export function CompletedResultsReview({
 
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">
+      {payload.game.status !== "completed" ? <p role="status">{payload.game.status === "suspended" ? "Retrospective paused" : "Retrospective in progress"} · {payload.retrospective.statementCount} of {payload.retrospective.requiredStatements} statements. The result is fixed. <Link href={completedGameModeHref(gameSlug, "replay")}>Continue watching</Link></p> : null}
       <GameBanner gameId={gameId} />
       <ResultsHeader title={overview.headline} actions={<>
           <Link
@@ -153,7 +160,7 @@ export function CompletedResultsReview({
           </Link>
       </>} />
 
-      <OwnerLearningActivation enabled contextGameId={gameId} />
+      <OwnerLearningActivation enabled={payload.game.status === "completed"} contextGameId={gameId} />
       {kernelDiagnostic ? (
         <div
           role="status"

@@ -228,8 +228,8 @@ describe("ProductionGameMcpReadModel", () => {
       },
       projection: {
         summary: {
-          winner: null,
-          acceptedOutcomes: { juryWinner: null },
+          winner: { id: "atlas" },
+          acceptedOutcomes: { juryWinner: { winnerId: "atlas" } },
           voteState: { juryVotes: {} },
         },
       },
@@ -245,15 +245,15 @@ describe("ProductionGameMcpReadModel", () => {
     expect(pendingList.games[0]).not.toHaveProperty("projection");
     const pendingProjection = await readModel.readProjection(gameId, PRODUCER_ACCESS);
     expect(pendingProjection.canonicalGameFacts.projection.summary).toMatchObject({
-      winner: null,
-      acceptedOutcomes: { juryWinner: null },
+      winner: { id: "atlas" },
+      acceptedOutcomes: { juryWinner: { winnerId: "atlas" } },
       voteState: { juryVotes: {} },
     });
     const pendingWinnerEvents = await readModel.filterEvents({
       gameIdOrSlug: gameId,
       eventType: "jury.winner_determined",
     }, PRODUCER_ACCESS);
-    expect(pendingWinnerEvents.canonicalGameFacts.events).toEqual([]);
+    expect(pendingWinnerEvents.canonicalGameFacts.events).toHaveLength(1);
     const pendingJuryVotes = await readModel.filterEvents({
       gameIdOrSlug: gameId,
       eventType: "jury.vote_cast",
@@ -264,13 +264,13 @@ describe("ProductionGameMcpReadModel", () => {
       eventType: "player.eliminated",
       fromSequence: finalEvent.sequence,
     }, PRODUCER_ACCESS);
-    expect(pendingFinalElimination.canonicalGameFacts.events).toEqual([]);
+    expect(pendingFinalElimination.canonicalGameFacts.events).toHaveLength(1);
     const pendingRoundFacts = await readModel.readRoundFacts({
       gameIdOrSlug: gameId,
       round: finalEvent.round,
     }, PRODUCER_ACCESS);
     expect(pendingRoundFacts.canonicalGameFacts.roundFacts.players.eliminated)
-      .not.toContainEqual(expect.objectContaining({ id: "echo" }));
+      .toContainEqual(expect.objectContaining({ id: "echo" }));
   });
 
   test("reads LLM-native postgame surfaces for edge-smoke-dusk", async () => {

@@ -1211,7 +1211,219 @@
           "dialogue": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/MatchTranscriptEntryDto"
+              "type": "object",
+              "properties": {
+                "retrospectiveSource": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "eventSequence": {
+                          "type": "number"
+                        },
+                        "ordinal": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "eventSequence",
+                        "ordinal"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "authority": {
+                  "type": "string",
+                  "const": "transcript"
+                },
+                "visibility": {
+                  "$ref": "#/definitions/TranscriptVisibilityClass"
+                },
+                "entrySequence": {
+                  "type": [
+                    "null",
+                    "number"
+                  ]
+                },
+                "rowId": {
+                  "type": "number"
+                },
+                "timestamp": {
+                  "type": "number"
+                },
+                "timestampIso": {
+                  "type": "string"
+                },
+                "round": {
+                  "type": "number"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "dialogueKind": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "speaker": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MatchTranscriptSpeakerDto"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audience": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MatchTranscriptAudienceDto"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "safeContext": {
+                  "anyOf": [
+                    {
+                      "description": "Versioned viewer-safe dialogue context stored on modern transcript rows.",
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "number",
+                          "const": 1
+                        },
+                        "roomId": {
+                          "type": "number"
+                        },
+                        "allianceId": {
+                          "type": "string"
+                        },
+                        "scheduleId": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "window": {
+                          "type": "string"
+                        },
+                        "sessionAudiencePlayerIds": {
+                          "description": "Session-time membership snapshot for huddles (IDs only).",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "formalSpeechCorrelationKey": {
+                          "description": "Deterministic formal-speech correlation key shared with accepted public\nspeech events. Enables U6 parity without fuzzy text matching. Optional so\nordinary dialogue and legacy rows remain valid. Not part of product-dialogue\ndigest identity (CanonicalDialogueContextV2 omits it).",
+                          "type": "string"
+                        },
+                        "anonymous": {
+                          "type": "boolean"
+                        },
+                        "presentationPurpose": {
+                          "const": "farewell",
+                          "type": "string"
+                        },
+                        "acceptedBallot": {
+                          "type": "object",
+                          "properties": {
+                            "voterId": {
+                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
+                              "type": "string"
+                            },
+                            "targetId": {
+                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
+                              "type": "string"
+                            },
+                            "purpose": {
+                              "enum": [
+                                "eliminate",
+                                "empower",
+                                "winner"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "purpose",
+                            "targetId",
+                            "voterId"
+                          ]
+                        },
+                        "visualScene": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "roomId": {
+                              "$ref": "#/definitions/VisualRoomId"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "roomId"
+                          ]
+                        },
+                        "decisionId": {
+                          "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "version"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "legacyContext": {
+                  "$ref": "#/definitions/MatchTranscriptLegacyContextDto"
+                },
+                "contentTrust": {
+                  "type": "string",
+                  "const": "untrusted_game_authored"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "audience",
+                "authority",
+                "contentTrust",
+                "dialogueKind",
+                "entrySequence",
+                "phase",
+                "retrospectiveSource",
+                "round",
+                "rowId",
+                "safeContext",
+                "scope",
+                "speaker",
+                "text",
+                "timestamp",
+                "timestampIso",
+                "visibility"
+              ]
             }
           },
           "capabilities": {
@@ -5054,198 +5266,6 @@
         ],
         "type": "string"
       },
-      "MatchTranscriptEntryDto": {
-        "description": "Dialogue-only owner transcript entry. Constructed by allowlist only —\nnever by stripping fields from a raw DB/engine row.",
-        "type": "object",
-        "properties": {
-          "authority": {
-            "type": "string",
-            "const": "transcript"
-          },
-          "visibility": {
-            "$ref": "#/definitions/TranscriptVisibilityClass"
-          },
-          "entrySequence": {
-            "type": [
-              "null",
-              "number"
-            ]
-          },
-          "rowId": {
-            "type": "number"
-          },
-          "timestamp": {
-            "type": "number"
-          },
-          "timestampIso": {
-            "type": "string"
-          },
-          "round": {
-            "type": "number"
-          },
-          "phase": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "dialogueKind": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "speaker": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/MatchTranscriptSpeakerDto"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "audience": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/MatchTranscriptAudienceDto"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "text": {
-            "type": "string"
-          },
-          "safeContext": {
-            "anyOf": [
-              {
-                "description": "Versioned viewer-safe dialogue context stored on modern transcript rows.",
-                "type": "object",
-                "properties": {
-                  "version": {
-                    "type": "number",
-                    "const": 1
-                  },
-                  "roomId": {
-                    "type": "number"
-                  },
-                  "allianceId": {
-                    "type": "string"
-                  },
-                  "scheduleId": {
-                    "type": "string"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "window": {
-                    "type": "string"
-                  },
-                  "sessionAudiencePlayerIds": {
-                    "description": "Session-time membership snapshot for huddles (IDs only).",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "formalSpeechCorrelationKey": {
-                    "description": "Deterministic formal-speech correlation key shared with accepted public\nspeech events. Enables U6 parity without fuzzy text matching. Optional so\nordinary dialogue and legacy rows remain valid. Not part of product-dialogue\ndigest identity (CanonicalDialogueContextV2 omits it).",
-                    "type": "string"
-                  },
-                  "anonymous": {
-                    "type": "boolean"
-                  },
-                  "presentationPurpose": {
-                    "const": "farewell",
-                    "type": "string"
-                  },
-                  "acceptedBallot": {
-                    "type": "object",
-                    "properties": {
-                      "voterId": {
-                        "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
-                        "type": "string"
-                      },
-                      "targetId": {
-                        "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
-                        "type": "string"
-                      },
-                      "purpose": {
-                        "enum": [
-                          "eliminate",
-                          "empower",
-                          "winner"
-                        ],
-                        "type": "string"
-                      }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                      "purpose",
-                      "targetId",
-                      "voterId"
-                    ]
-                  },
-                  "visualScene": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "roomId": {
-                        "$ref": "#/definitions/VisualRoomId"
-                      }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                      "id",
-                      "roomId"
-                    ]
-                  },
-                  "decisionId": {
-                    "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "version"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "legacyContext": {
-            "$ref": "#/definitions/MatchTranscriptLegacyContextDto"
-          },
-          "contentTrust": {
-            "type": "string",
-            "const": "untrusted_game_authored"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "audience",
-          "authority",
-          "contentTrust",
-          "dialogueKind",
-          "entrySequence",
-          "phase",
-          "round",
-          "rowId",
-          "safeContext",
-          "scope",
-          "speaker",
-          "text",
-          "timestamp",
-          "timestampIso",
-          "visibility"
-        ]
-      },
       "TranscriptVisibilityClass": {
         "enum": [
           "huddle",
@@ -5983,7 +6003,7 @@
                   },
                   "schemaVersion": {
                     "type": "number",
-                    "const": 2
+                    "const": 3
                   },
                   "game": {
                     "type": "object",
@@ -6025,6 +6045,9 @@
                   },
                   "results": {
                     "$ref": "#/definitions/CompletedGameResultsRead"
+                  },
+                  "retrospective": {
+                    "$ref": "#/definitions/RetrospectiveProgress"
                   }
                 },
                 "additionalProperties": false,
@@ -6033,6 +6056,7 @@
                   "gameKind",
                   "ok",
                   "results",
+                  "retrospective",
                   "schemaVersion"
                 ]
               },
@@ -6049,7 +6073,7 @@
                   },
                   "schemaVersion": {
                     "type": "number",
-                    "const": 1
+                    "const": 2
                   },
                   "game": {
                     "type": "object",
@@ -6061,8 +6085,7 @@
                         "type": "string"
                       },
                       "status": {
-                        "type": "string",
-                        "const": "completed"
+                        "$ref": "#/definitions/GameStatus"
                       },
                       "completedAt": {
                         "type": [
@@ -6190,6 +6213,9 @@
                       "rulesVersion",
                       "source"
                     ]
+                  },
+                  "retrospective": {
+                    "$ref": "#/definitions/RetrospectiveProgress"
                   }
                 },
                 "additionalProperties": false,
@@ -6198,6 +6224,7 @@
                   "gameKind",
                   "ok",
                   "results",
+                  "retrospective",
                   "schemaVersion"
                 ]
               }
@@ -8778,6 +8805,80 @@
           "groupKey",
           "player",
           "signature"
+        ]
+      },
+      "RetrospectiveProgress": {
+        "description": "Public progress from an already validated canonical prefix; never the private dossier.",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/RetrospectiveOutcomeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "in_progress",
+              "pending",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "statementCount": {
+            "type": "number"
+          },
+          "requiredStatements": {
+            "type": "number"
+          },
+          "nextActorId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "nextActorId",
+          "outcome",
+          "requiredStatements",
+          "statementCount",
+          "status"
+        ]
+      },
+      "RetrospectiveOutcomeSource": {
+        "description": "Exact canonical outcome event, distinct from the eventual final event head.",
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string"
+          },
+          "gameKind": {
+            "enum": [
+              "influence",
+              "werewolf"
+            ],
+            "type": "string"
+          },
+          "eventSequence": {
+            "type": "number"
+          },
+          "eventHash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "eventHash",
+          "eventSequence",
+          "gameId",
+          "gameKind"
         ]
       },
       "EpisodePresentation": {

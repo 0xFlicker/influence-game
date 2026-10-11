@@ -58,7 +58,8 @@ function baseGame(): GameDetail {
 
 function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
+    retrospective: { outcome: null, status: "unavailable", statementCount: 0, requiredStatements: 2, nextActorId: null },
     gameId: "game-1",
     slug: "public-game",
     status: "in_progress",
@@ -375,7 +376,7 @@ describe("match watch model", () => {
       )),
     };
     const olderState = watchState({
-      schemaVersion: 3,
+      schemaVersion: 6,
       players: watchState().players.map((player) => {
         const olderPlayer = { ...player };
         delete olderPlayer.currentAgent;

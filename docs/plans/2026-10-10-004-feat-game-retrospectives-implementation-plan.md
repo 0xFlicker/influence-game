@@ -34,8 +34,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Done |
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Done |
 | RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Done |
-| RT-07 | Early canonical results and continued delivery | RT-04–06 | Todo |
-| RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Todo |
+| RT-07 | Early canonical results and continued delivery | RT-04–06 | Done |
+| RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | In progress |
 | RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Todo |
 | RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Todo |
 | RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Todo |
@@ -328,3 +328,9 @@ Local verification:
 - `bun run check`: typecheck and lint passed. Whitespace passed. The remaining tasks will repeat the full required baseline before acceptance; this record does not claim that the initial full run was green.
 
 These are local deterministic results. Read/delivery, explicit failure recovery, replay and export acceptance remain the following tasks; no live provider or deployment was used.
+
+## RT-07 completion record
+
+Canonical outcomes now drive result availability independently of execution status. Results/watch DTOs expose safe retrospective progress; House reads and web result links preserve the selected canonical prefix, and correlated retrospective dialogue cannot run ahead of its fact boundary. Invalid history and terminal rows without canonical evidence cannot claim a result. Post-outcome stops pause both games, preserve the immutable outcome/frontier and leave final completion delivery to settlement. Result pages keep observation active through the epilogue.
+
+Validation: the final focused PostgreSQL run passed 115 tests across seven files, including authenticated pauses, early results, invalid logs, Mystery disclosure, pinned dialogue pagination and forged cursor rejection. The larger preceding REST/inspection run passed all REST cases after updating obsolete terminal-row fixtures; its one remaining inspection assertion was corrected and included in the final green run. Typecheck/lint passed. Generated strict House schemas were refreshed and exercised. The required provider-free baseline is running; full integrated PostgreSQL/provider-free baselines remain required before feature acceptance. This is local deterministic evidence, with no provider trial or deployment.

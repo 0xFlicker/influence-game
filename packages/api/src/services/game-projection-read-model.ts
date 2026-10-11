@@ -2,6 +2,7 @@ import {
   applyCanonicalEvent,
   type CanonicalGameProjection,
   createEmptyProjection,
+  retrospectiveProgress, type RetrospectiveProgress,
 } from "@influence/engine";
 import type {
   PersistedEventDiagnostic,
@@ -62,6 +63,7 @@ export interface DurableProjectionSummary {
     name: string;
     method: string;
   } | null;
+  retrospective: RetrospectiveProgress;
 }
 
 export interface PersistedGameProjectionRead {
@@ -167,6 +169,7 @@ export function summarizeCanonicalProjection(
         ? { ...projection.acceptedOutcomes.juryWinner }
         : null,
     },
+    retrospective: retrospectiveProgress(projection.retrospectiveOutcomeSource, projection.retrospective, projection.playerOrder.length),
     winner: winnerId
       ? {
           id: winnerId,
@@ -234,23 +237,17 @@ export function getPersistedGameProjection(
 }
 
 /**
- * Project only facts that are safe before the terminal settlement commits.
- * Jury ballots are withheld, and the winner event plus every later event are
- * excluded so neither the winner nor the losing finalist can be inferred.
- *
- * U6 match completeness marks this path with settlementSafeProjection when
- * completion settlement is pending or repair-required.
+ * Keep sealed jury ballots private until the canonical outcome exists.
+ * Settlement governs execution completion, rather than public outcome facts.
  */
-export function getPersistedGameProjectionBeforeTerminalOutcome(
+export function getPersistedGamePublicProjection(
   persistedEvents: PersistedGameEventsRead,
 ): PersistedGameProjectionRead {
   const terminalOutcomeSequence = persistedEvents.events.find(
     (event) => event.envelope.type === "jury.winner_determined",
   )?.sequence;
-  const safeEvents = persistedEvents.events.filter((event) => (
-    event.envelope.type !== "jury.vote_cast"
-      && (terminalOutcomeSequence === undefined || event.sequence < terminalOutcomeSequence)
-  ));
+  const safeEvents = terminalOutcomeSequence === undefined
+    ? persistedEvents.events.filter(event => event.envelope.type !== "jury.vote_cast") : persistedEvents.events;
   return getPersistedGameProjection({
     ...persistedEvents,
     events: safeEvents,

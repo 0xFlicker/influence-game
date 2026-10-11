@@ -14,7 +14,6 @@ import {
 } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
-  getPersistedGameProjectionBeforeTerminalOutcome,
   type DurableProjectionSummary,
   type ProjectionReplayDiagnostic,
   type ProjectionReplayStatus,
@@ -858,11 +857,7 @@ export async function getDurableRunInspection(
     evidence.summary.acceptedActionCorrelation = acceptedActionCorrelation.summary;
     const promptReuseRows = await tx.select().from(schema.gamePromptReuseRollups).where(eq(schema.gamePromptReuseRollups.gameId, game.id));
 
-    const sealedNonfinal = completionSettlement.state === "pending"
-      || completionSettlement.state === "repair_required";
-    const projection = sealedNonfinal
-      ? getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents)
-      : getPersistedGameProjection(persistedEvents);
+    const projection = getPersistedGameProjection(persistedEvents);
     const projectionSummary = projection.summary;
     const ownerSummary = summarizeOwnerAtInspection(owner);
     const kernelHealth = buildRedactedKernelHealth({

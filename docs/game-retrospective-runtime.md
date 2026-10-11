@@ -1,6 +1,6 @@
 # Game retrospective runtime
 
-RT-04 connects Influence's existing runner to the [frozen context](game-retrospective-context.md) and [strict statement invocation](game-retrospective-invocation.md). RT-05 connects Werewolf to its own validated post-outcome stage, and RT-06 makes its full completion proof the settlement boundary. Read and presentation work remain subsequent tasks in the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
+RT-04 connects Influence's existing runner to the [frozen context](game-retrospective-context.md) and [strict statement invocation](game-retrospective-invocation.md). RT-05 connects Werewolf to its own validated post-outcome stage, RT-06 makes its full completion proof the settlement boundary, and RT-07 exposes the canonical outcome while execution continues. Replay choreography, recovery and export work continue in the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
 
 ## Influence execution
 
@@ -21,6 +21,12 @@ Fresh games use rules v8. `werewolf.completed` freezes the competitive outcome a
 Only retrospective events can follow the outcome. Each statement adds a public speech entry with explicit retrospective purpose and ordinal. Dead speakers retain their original identity without changing the alive set, roles, opening cursor or earlier gameplay. The final full-roster proof closes the existing owner and catalog execution and queues the existing Cuts/media work. Outcome with an unfinished tail remains adoptable; required speech failure has no gameplay fallback. Existing v1–v7 logs are rejected without rewriting or generating historical tails. Completed production sources, trailers and learning input also validate the finished-execution proof. Previously frozen production prefixes retain their exact source boundary when the whole execution is complete.
 
 ## Local proof and remaining integration
+
+Results availability follows the validated original outcome. Influence results schema v3 and Werewolf results schema v2 include `retrospective`: outcome source, pending/in-progress/completed status, accepted count, required original roster count and next actor. Influence watch state v6 carries the same progress and an available canonical winner before settlement. The independent cached list-card schema stays v4; it does not store statement detail. Invalid canonical history cannot claim a winner, and terminal database rows alone cannot supply canonical results.
+
+House inspection and replay result links use the selected canonical prefix. A retrospective dialogue entry is joined to its accepted statement through the canonical transcript pointer, checked against its actor and verbatim text, and cannot advance past the fact lane. Mystery reads before Werewolf's outcome retain their earlier disclosure boundary. Current reads continue polling after the outcome while the catalog remains in progress. Only final settlement publishes completion and `game_over`; result pages refresh progress while execution continues.
+
+Stopping after an accepted outcome pauses execution as `suspended`, revokes the active owner and preserves the outcome, event head and unset completion timestamp. It does not turn the game into a cancellation. Paused result pages retain the winner and accepted statement count. Stops before an outcome keep their existing cancellation behavior. Explicit guarded retrospective recovery is the next implementation task.
 
 Deterministic engine tests restart at outcome, initialization, every statement ordinal and final completion. They verify exact prior text, unchanged outcome/order, one speech per original contestant, no premature completion, no repeated initialization capacity reads, correlated dialogue, and a required-speech failure retaining its unfinished frontier. Database proof exercises rollback after private-input insertion and successful restart into one complete epilogue.
 

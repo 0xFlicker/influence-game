@@ -85,7 +85,7 @@ function healthyFacts(): MatchCompletenessComposeInput["eventLog"] {
 }
 
 function healthyProjection(): MatchCompletenessComposeInput["projection"] {
-  return { status: "complete", lastSequence: 42, settlementSafe: false };
+  return { status: "complete", lastSequence: 42 };
 }
 
 function settledTranscriptState() {
@@ -211,7 +211,7 @@ describe("match-completeness compose (table-driven)", () => {
         game: baseGame({ status: "in_progress" }),
         transcriptState: liveTranscriptState(5),
         eventLog: { status: "complete", lastTrustedSequence: 12, eventCount: 12 },
-        projection: { status: "complete", lastSequence: 12, settlementSafe: false },
+        projection: { status: "complete", lastSequence: 12 },
       },
       expectOverall: "live_current",
       expectTranscriptCompleteness: "current",
@@ -267,7 +267,7 @@ describe("match-completeness compose (table-driven)", () => {
       name: "invalid event log → degraded overall; speech gap does not reclassify as only issue",
       overrides: {
         eventLog: { status: "invalid", lastTrustedSequence: 3, eventCount: 10 },
-        projection: { status: "incomplete", lastSequence: 3, settlementSafe: false },
+        projection: { status: "incomplete", lastSequence: 3 },
       },
       expectOverall: "degraded",
       expectFactCompleteness: "degraded",
@@ -683,7 +683,6 @@ describe("deriveOverallState", () => {
       projectionStatus: "complete",
       lastTrustedSequence: 1,
       projectionLastSequence: 1,
-      settlementSafeProjection: false,
       diagnostics: [],
       followUpCapabilities: [],
       ...overrides,

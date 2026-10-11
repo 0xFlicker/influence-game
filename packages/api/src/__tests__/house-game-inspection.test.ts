@@ -167,9 +167,7 @@ test("pinned pages drain before following growth; empty polls are stable; cancel
     .where(eq(schema.games.id, id));
   const stopped = await readHouseGame(db, { gameIdOrSlug: id });
   expect(stopped.pollCursor).toBeNull();
-  await expect(readHouseInspectionResults(db, id)).rejects.toMatchObject({
-    code: "not_completed",
-  });
+  expect(await readHouseInspectionResults(db, id)).toMatchObject({ result: { game: { status: "cancelled" } } });
 });
 test("waiting games are valid empty reads, strict inputs and schemas reject extra evidence", async () => {
   await db.insert(schema.games).values({
