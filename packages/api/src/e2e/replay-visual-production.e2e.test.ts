@@ -755,6 +755,9 @@ test("Sysop opens game recovery from the bounded studio library without generati
     await openStudioDialog(page, "Scene versions & production");
     await page.waitForSelector('[aria-label="Scene inspector"] [role="combobox"]');
     expect(await page.$('[aria-label="Replay image production"]')).toBeNull();
+    await closeStudioDialog(page);
+    await clickButton(page, "Episode tools");
+    await page.waitForSelector('dialog[open][aria-label="Episode tools"]');
     await clickButton(page, "Game production and recovery");
     await page.waitForSelector('dialog[open][aria-label="Game production and recovery"]');
     expect(await page.$('[aria-label="Game production recovery"]')).not.toBeNull();

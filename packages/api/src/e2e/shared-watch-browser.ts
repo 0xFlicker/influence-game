@@ -133,10 +133,9 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   });
   await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
   await page.goto(`${url}?audience=omniscient`, {waitUntil:'domcontentloaded'});
-  await page.waitForSelector("[data-werewolf-stage], [data-werewolf-opening]");
-  const skipOpening = await page.$("[data-werewolf-opening]");
-  if (skipOpening) await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening')?.click()");
-  await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);
+  // Wait for the new audience's opening instead of accepting the previous
+  // session's stage during navigation and missing the new opening entirely.
+  await skipWerewolfOpening(page);await pauseWerewolf(page);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');

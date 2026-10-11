@@ -1,4 +1,6 @@
 import type { Page, WebSocketRoute } from "@playwright/test";
+import type { GameWatchState, GameWatchPlayer } from "../packages/web/src/lib/api";
+import { retrospectiveProgress } from "../packages/engine/src/retrospective-progress";
 import { buildCompletedGameResults } from "../packages/engine/src/completed-game-results";
 import {
   EDGE_SMOKE_DUSK_EXPECTED,
@@ -219,7 +221,7 @@ function buildDeterministicFormatGame(
       ? { completedAt: "2026-07-27T00:10:00.000Z" }
       : {}),
     watchState: {
-      schemaVersion: 5,
+      schemaVersion: 6,
       gameId: slug,
       slug,
       status,
@@ -255,7 +257,8 @@ function buildDeterministicFormatGame(
         status: status === "completed" ? "final" : "not_final",
         ...(status === "completed" ? { roundsPlayed: 2 } : {}),
       },
-    },
+      retrospective: retrospectiveProgress(null, null, roster.length),
+    } satisfies GameWatchState,
   };
 }
 
@@ -288,7 +291,7 @@ function buildDeterministicFormatFrames(
 function deterministicFormatPlayers(
   roster: readonly { id: string; name: string }[],
   decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"],
-) {
+): GameWatchPlayer[] {
   let eliminatedId: string | null = null;
   for (const decision of decisions) {
     if (decision.type === "format.resolved") {

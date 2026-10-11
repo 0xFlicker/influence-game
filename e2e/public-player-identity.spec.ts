@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
 import type { GameDetail, GamePlayer, SavedAgent } from "../packages/web/src/lib/api";
+import type { ProductionLibraryGame, ProductionLibraryPage } from "../packages/web/src/lib/production-studio";
 import {
   startLocalHarness,
   stopLocalHarness,
@@ -363,6 +364,13 @@ test.describe("local public player identity", () => {
       episode: { title: `Episode ${i}`, description: "A teaser", status: "unrequested", cast: [], frameOrder: [], locked: false, revision: 0, episodeNumber: null, coverUrl: null },
     }));
     const batches: Array<{ gameIds: string[]; preview: boolean; regenerate: boolean }> = [];
+    const library: ProductionLibraryGame[] = games.map(game => ({
+      id: game.id, slug: game.slug, gameKind: "influence", status: "completed",
+      createdAt: game.createdAt, hidden: false, playerCount: game.playerCount,
+      title: game.episode.title, namingStatus: game.episode.status, needsAttention: false, recovery: null,
+      capabilities: { visualRead: false, sceneRepair: false, editorial: false, policy: false, resume: false,
+        influenceRecovery: false, formRepair: false, episodeRead: true, episodeEdit: true, trailerRead: false, trailerRender: false },
+    }));
     try {
       await page.route("**/api/auth/me", async route => {
         const response = await route.fetch();
@@ -370,7 +378,20 @@ test.describe("local public player identity", () => {
       });
       await page.route("**/api/games", route => route.fulfill({ json: games }));
       await page.route("**/api/admin/games", route => route.fulfill({ json: games }));
-      await page.route("**/api/admin/production/games", route => route.fulfill({ json: [] }));
+      await page.route(/\/api\/admin\/production\/library(?:\?.*)?$/, route => {
+        const query = new URL(route.request().url()).searchParams;
+        const limit = Number(query.get("limit"));
+        expect(limit).toBe(25);
+        const matching = library.filter(game => game.slug.includes(query.get("search") ?? ""));
+        return route.fulfill({ json: { items: matching.slice(0, limit), skippedInvalidPauses: 0,
+          nextCursor: matching.length > limit ? "fixture-next-page" : null } satisfies ProductionLibraryPage });
+      });
+      await page.route(/\/api\/admin\/games\/production-\d+\/episode$/, route => {
+        const id = new URL(route.request().url()).pathname.split("/").at(-2);
+        const game = games.find(game => game.id === id);
+        if (!game) return route.fulfill({ status: 404, json: { error: "Game not found" } });
+        return route.fulfill({ json: { episode: game.episode } });
+      });
       await page.route("**/api/free-queue", async route => { const response = await route.fetch(); await route.fulfill({ response, json: { ...await response.json(), promptEligible: false } }); });
       await page.route("**/api/admin/episodes/backfill", route => {
         const body = route.request().postDataJSON(); batches.push(body);
@@ -390,19 +411,20 @@ test.describe("local public player identity", () => {
       await page.goto(`${servers.webUrl}/games/public`, { waitUntil: "networkidle" });
       await expect(page.getByTestId("episode-card")).toHaveCount(58);
       await page.goto(`${servers.webUrl}/admin/production`, { waitUntil: "networkidle" });
-      await expect(page.getByRole("heading", { name: "Episode & video production" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Review 0 selected" })).toBeDisabled();
-      await expect(page.getByRole("button", { name: "Select all 60 matching" })).toBeDisabled();
+      await expect(page.getByRole("heading", { name: "Production Studio" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Review naming batch" })).toBeDisabled();
+      await expect(page.getByRole("checkbox", { name: /^Select episode-/ })).toHaveCount(25);
+      await expect(page.getByRole("checkbox", { name: "Select episode-40", exact: true })).toHaveCount(0);
       await page.getByRole("checkbox", { name: "Select episode-0", exact: true }).check();
-      await page.getByRole("searchbox", { name: "Search games" }).fill("episode-1");
-      await expect(page.getByRole("button", { name: "Review 0 selected" })).toBeDisabled();
+      await page.getByRole("searchbox", { name: "Search production" }).fill("episode-1");
+      await expect(page.getByRole("button", { name: "Review naming batch" })).toBeDisabled();
       await expect(page.getByRole("checkbox", { name: "Select episode-0", exact: true })).toHaveCount(0);
       await page.getByRole("checkbox", { name: "Select episode-1", exact: true }).check();
-      await page.getByRole("button", { name: "Review 1 selected" }).click();
-      await expect(page.getByRole("button", { name: "Queue 1 episodes" })).toBeVisible();
+      await page.getByRole("button", { name: "Review naming batch" }).click();
+      await expect(page.getByRole("button", { name: "Queue 1 naming requests" })).toBeVisible();
       expect(batches).toEqual([{ gameIds: ["production-1"], regenerate: false, preview: true }]);
-      await page.getByRole("button", { name: "Queue 1 episodes" }).click();
-      await expect(page.getByText("1 episodes queued. 0 skipped because their state changed.")).toBeVisible();
+      await page.getByRole("button", { name: "Queue 1 naming requests" }).click();
+      await expect(page.getByText("1 naming requests queued; 0 skipped because their state changed.")).toBeVisible();
       expect(batches[1]).toEqual({ gameIds: ["production-1"], regenerate: false, preview: false });
     } finally { await page.unrouteAll({ behavior: "wait" }); await context.close(); }
   });
