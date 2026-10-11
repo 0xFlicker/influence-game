@@ -153,16 +153,22 @@ export async function assertProofDatabase(sql: ProofSQL, runId: string): Promise
   if (!guard || !identity || identity.runId !== runId || identity.database !== database || identity.principal !== who.principal
     || identity.fixtureDigest !== fixtureDigest(validateFixture(guard.fixture)) || identity.migrationSet !== calculateMigrationSet()) throw new Error("Proof guard or release migrations differ");
   const tables = await sql`SELECT tablename FROM pg_tables WHERE schemaname='public'`;
-  for (const table of tables) {
-    const name = String(table.tablename);
-    if (!STATIC_TABLES.has(name) && !PROOF_TABLES.has(name)) {
-      const [count] = await sql.unsafe(`SELECT count(*)::int AS count FROM ${identifier(name)}`);
-      if (count?.count !== 0) throw new Error("Unrelated or upstream proof data: " + name);
-    }
-    for (const action of ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "TRIGGER"]) {
-      const [right] = await sql`SELECT has_table_privilege(current_user,${"public." + name},${action}) AS allowed`;
-      if (Boolean(right?.allowed) !== Boolean(PROOF_WRITES[name]?.includes(action))) throw new Error("Proof table permissions differ: " + name + " " + action);
-    }
+  const unrelated = tables.map(table => String(table.tablename)).filter(name => !STATIC_TABLES.has(name) && !PROOF_TABLES.has(name));
+  if (unrelated.length) {
+    // Batch whole-DB checks: the staging/prod databases share a managed server.
+    // A proof sweep must not add hundreds of round trips to that server.
+    const rows = await sql.unsafe(unrelated.map(name => {
+      const quoted = identifier(name); // also validates the literal below
+      return `SELECT '${name}' AS name, EXISTS(SELECT 1 FROM ${quoted} LIMIT 1) AS populated`;
+    }).join(" UNION ALL "));
+    const populated = rows.find(row => row.populated);
+    if (populated) throw new Error("Unrelated or upstream proof data: " + String(populated.name));
+  }
+  const rights = await sql`SELECT t.tablename,p.action,has_table_privilege(current_user,quote_ident(t.schemaname)||'.'||quote_ident(t.tablename),p.action) AS allowed
+    FROM pg_tables t CROSS JOIN unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE','TRIGGER']) AS p(action) WHERE t.schemaname='public'`;
+  for (const right of rights) {
+    const name = String(right.tablename), action = String(right.action);
+    if (Boolean(right.allowed) !== Boolean(PROOF_WRITES[name]?.includes(action))) throw new Error("Proof table permissions differ: " + name + " " + action);
   }
   const [authority] = await sql`SELECT has_database_privilege(current_user,current_database(),'CREATE') AS db_create,
     has_database_privilege(current_user,current_database(),'TEMP') AS db_temp,
