@@ -1105,6 +1105,25 @@ export type HouseGameResultsResponse = CompletedGameResultsResponse | WerewolfCo
 export async function getHouseGameResults(gameIdOrSlug: string, signal?: AbortSignal): Promise<HouseGameResultsResponse> {
   return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/results`, {signal, cache: "no-store"});
 }
+export interface GameRetrospectiveResponse {
+  schemaVersion: 1; gameKind: "influence" | "werewolf";
+  game: { id: string; slug: string; gameKind: "influence" | "werewolf"; status: GameDetail["status"]; createdAt: string; href: string };
+  source: { sequence: number; hash: string }; outcome: import("@influence/engine").RetrospectiveOutcomeSource;
+  initialized: boolean; progress: import("@influence/engine").RetrospectiveProgress;
+  speakers: Array<{ actorId: string; name: string; ordinal: number; avatarUrl: string | null; part:
+    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
+  statements: Array<{ actorId: string; ordinal: number; eventSequence: number; speech: string; href: string }>;
+  nextCursor: string | null; pollCursor: string | null;
+  recovery: { expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; reasonCode: string } | null;
+  resultsHref: string; contentTrust: "untrusted_game_authored";
+}
+export async function getGameRetrospective(gameIdOrSlug: string, signal?: AbortSignal): Promise<GameRetrospectiveResponse> {
+  return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/retrospective`, { signal, cache: "no-store" });
+}
+export async function resumeGameRetrospective(input: { gameIdOrSlug: string; gameKind: "influence" | "werewolf";
+  expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; idempotencyKey: string }): Promise<{ schemaVersion: 1; gameId: string; gameKind: "influence" | "werewolf"; status: GameDetail["status"]; alreadyResumed: boolean }> {
+  return apiFetch(`/api/games/${encodeURIComponent(input.gameIdOrSlug)}/retrospective/resume`, { method: "POST", body: JSON.stringify(input) });
+}
 export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
   const result = await getHouseGameResults(gameIdOrSlug);
   if (result.gameKind !== "influence") throw new Error("Expected Influence results");
@@ -1866,7 +1885,7 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "games:resume" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;

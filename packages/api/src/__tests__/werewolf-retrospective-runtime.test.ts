@@ -9,6 +9,7 @@ import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, releaseWere
 import { createApiProviderExecutionHooks } from "../services/provider-call-journal.js";
 import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
 import { pauseRetrospectiveExecution, resumeGameRetrospective } from "../services/game-retrospective-recovery.js";
+import { grantTestAuthority } from "./rbac-fixtures.js";
 
 const scripted: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
   async decide({ request }) {
@@ -122,6 +123,7 @@ test("input insertion rolls back when the same start transaction cannot append i
 test("a crash after exhausted native retries cannot spend again before explicit recovery", async () => {
   const db = await setupTestDB();
   await db.insert(schema.users).values({ id: "rt08-journal-owner" });
+  await grantTestAuthority(db, "rt08-journal-owner", ["resume_game_retrospective"], "admin");
   const game = await createWerewolfGame(db, "rt08-journal-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1,
     providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
   const first = await claimWerewolfGame(db, game.id);
@@ -158,7 +160,7 @@ test("a crash after exhausted native retries cannot spend again before explicit 
   expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(3);
   expect(await pauseRetrospectiveExecution(db, game.id, next.claim.ownerEpoch, failure!)).toBeTrue();
   const suspension = JSON.parse((await db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.config).retrospectiveFailure;
-  await resumeGameRetrospective(db, { gameId: game.id, expectedHead: suspension.head, expectedFailureId: suspension.id, idempotencyKey: "native-recovery" });
+  await resumeGameRetrospective(db, { gameId: game.id, expectedHead: suspension.head, expectedFailureId: suspension.id, idempotencyKey: "native-recovery" }, "rt08-journal-owner");
   const finalOwner = await claimWerewolfGame(db, game.id);
   if (!finalOwner.ok) throw Error(finalOwner.error);
   valid = true;

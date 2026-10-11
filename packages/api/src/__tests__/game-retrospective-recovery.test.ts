@@ -15,9 +15,17 @@ import { pauseRetrospectiveExecution, readRetrospectiveFrontier, resumeGameRetro
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore } from "../services/werewolf-games.js";
 import { readHouseGameResults } from "../services/house-game-results.js";
 import { abortAllWerewolf, activeWerewolfCount, startWerewolfRuntime } from "../services/werewolf-runtime.js";
+import { grantTestAuthority } from "./rbac-fixtures.js";
+
+async function authorizedDB() {
+  const db = await setupTestDB();
+  await db.insert(schema.users).values({ id: "rt08-recovery-admin" });
+  await grantTestAuthority(db, "rt08-recovery-admin", ["resume_game_retrospective"], "admin");
+  return db;
+}
 
 test.each(["malformed_output", "budget_exhausted", "circuit_open"] as const)("Influence %s suspends the exact slot until explicit fenced recovery", async code => {
-  const db = await setupTestDB(), gameId = await insertGame(db, { status: "in_progress" });
+  const db = await authorizedDB(), gameId = await insertGame(db, { status: "in_progress" });
   await db.update(schema.games).set({ transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1 }).where(eq(schema.games.id, gameId));
   await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(gameId));
   const ownerEpoch = await insertOwner(db, gameId, { expiresAt: "2099-01-01T00:00:00.000Z" });
@@ -49,12 +57,12 @@ test.each(["malformed_output", "budget_exhausted", "circuit_open"] as const)("In
   expect(calls).toBe(2);
   expect(await readHouseGameResults(db, gameId)).toMatchObject({ ok: true, game: { status: "suspended" }, retrospective: { statementCount: 1 } });
   const input = { gameId, expectedHead: suspended.head, expectedFailureId: suspended.id, idempotencyKey: "resume-rt08" };
-  await expect(resumeGameRetrospective(db, { ...input, expectedFailureId: "different" })).rejects.toMatchObject({ code: "conflict" });
-  await expect(resumeGameRetrospective(db, { ...input, expectedHead: { ...input.expectedHead, sequence: 0 } })).rejects.toMatchObject({ code: "conflict" });
+  await expect(resumeGameRetrospective(db, { ...input, expectedFailureId: "different" }, "rt08-recovery-admin")).rejects.toMatchObject({ code: "conflict" });
+  await expect(resumeGameRetrospective(db, { ...input, expectedHead: { ...input.expectedHead, sequence: 0 } }, "rt08-recovery-admin")).rejects.toMatchObject({ code: "conflict" });
   expect(await pauseRetrospectiveExecution(db, gameId, ownerEpoch, failure!)).toBeFalse();
-  expect(await resumeGameRetrospective(db, input)).toMatchObject({ alreadyResumed: false });
-  expect(await resumeGameRetrospective(db, input)).toMatchObject({ alreadyResumed: true });
-  await expect(resumeGameRetrospective(db, { ...input, expectedFailureId: null })).rejects.toMatchObject({ code: "conflict" });
+  expect(await resumeGameRetrospective(db, input, "rt08-recovery-admin")).toMatchObject({ alreadyResumed: false });
+  expect(await resumeGameRetrospective(db, input, "rt08-recovery-admin")).toMatchObject({ alreadyResumed: true });
+  await expect(resumeGameRetrospective(db, { ...input, expectedFailureId: null }, "rt08-recovery-admin")).rejects.toMatchObject({ code: "conflict" });
   shouldFail = false;
   const replacement = await adoptDurableGameRunOwner(db, gameId);
   if (!replacement.ok) throw Error(replacement.error);
@@ -69,7 +77,7 @@ test.each(["malformed_output", "budget_exhausted", "circuit_open"] as const)("In
 }, 30_000);
 
 test("Werewolf failure preserves its prepared request, frozen input and accepted prefix through explicit recovery", async () => {
-  const db = await setupTestDB();
+  const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-wolf-owner" });
   const game = await createWerewolfGame(db, "rt08-wolf-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(db, game.id);
@@ -94,7 +102,7 @@ test("Werewolf failure preserves its prepared request, frozen input and accepted
   expect((await claimWerewolfGame(db, game.id)).ok).toBeFalse();
   expect(await findStartupRecoverableGameIds(db)).toEqual([]); expect(calls).toBe(2);
   const failure = JSON.parse((await db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.config).retrospectiveFailure;
-  await resumeGameRetrospective(db, { gameId: game.id, expectedHead: frontier.head, expectedFailureId: failure.id, idempotencyKey: "wolf-resume" });
+  await resumeGameRetrospective(db, { gameId: game.id, expectedHead: frontier.head, expectedFailureId: failure.id, idempotencyKey: "wolf-resume" }, "rt08-recovery-admin");
   const next = await claimWerewolfGame(db, game.id);
   if (!next.ok) throw Error(next.error);
   await expect(advanceWerewolf(store, agent)).rejects.toThrow("stale");
@@ -108,7 +116,7 @@ test("Werewolf failure preserves its prepared request, frozen input and accepted
 }, 30_000);
 
 test("a dispatched retrospective remains in active ownership until drain aborts it; no failure or speech is fabricated", async () => {
-  const db = await setupTestDB();
+  const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-drain-owner" });
   const game = await createWerewolfGame(db, "rt08-drain-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(db, game.id);
@@ -145,7 +153,7 @@ test("a dispatched retrospective remains in active ownership until drain aborts 
 }, 30_000);
 
 test("the existing Werewolf runtime checkpoints failed initialization and releases the active run", async () => {
-  const db = await setupTestDB();
+  const db = await authorizedDB();
   await db.insert(schema.users).values({ id: "rt08-init-owner" });
   const game = await createWerewolfGame(db, "rt08-init-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(db, game.id);

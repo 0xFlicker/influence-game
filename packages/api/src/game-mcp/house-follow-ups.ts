@@ -4,12 +4,14 @@ import type {
 } from "../services/house-game-inspection.js";
 import type {
   HouseGameRead,
+  HouseRetrospectiveRead,
   HouseCatalogRead,
   HouseResultsRead,
   HouseThinkingRead,
 } from "./house-contract-types.js";
 
 export type HouseFollowUp =
+  | { tool: "read_game_retrospective"; arguments: { gameIdOrSlug: string; gameKind?: "influence" | "werewolf"; cursor?: string; limit?: number } }
   | { tool: "read_game"; arguments: HouseInspectionInput }
   | { tool: "read_game_thinking"; arguments: HouseThinkingInput }
   | { tool: "read_game_cuts"; arguments: { gameIdOrSlug: string; audience?: "public" | "mystery" | "omniscient" } }
@@ -51,7 +53,7 @@ export function houseFollowUps(name: string, value: unknown): HouseFollowUp[] {
         arguments: { gameIdOrSlug, audience: page.audience, view: "current" },
       });
     if (page.capabilities.results)
-      followUps.push({ tool: "read_game_cuts", arguments: { gameIdOrSlug, audience: page.audience } }, {
+      followUps.push({ tool: "read_game_retrospective", arguments: { gameIdOrSlug } }, { tool: "read_game_cuts", arguments: { gameIdOrSlug, audience: page.audience } }, {
         tool: "read_game_results",
         arguments: { gameIdOrSlug },
       });
@@ -85,12 +87,19 @@ export function houseFollowUps(name: string, value: unknown): HouseFollowUp[] {
     const result = value as HouseResultsRead;
     return "result" in result
       ? [
+          { tool: "read_game_retrospective", arguments: { gameIdOrSlug: result.result.game.id } },
           {
             tool: "read_game",
             arguments: { gameIdOrSlug: result.result.game.id, view: "replay" },
           },
         ]
       : [];
+  }
+  if (name === "read_game_retrospective") {
+    const page = value as HouseRetrospectiveRead;
+    if (!("game" in page)) return [];
+    const cursor = page.nextCursor ?? page.pollCursor;
+    return cursor ? [{ tool: "read_game_retrospective", arguments: { gameIdOrSlug: page.game.id, gameKind: page.gameKind, cursor } }] : [];
   }
   // Thinking continuation also needs the caller's actor filter, so the server
   // supplies its validated input rather than reconstructing it from the prose.

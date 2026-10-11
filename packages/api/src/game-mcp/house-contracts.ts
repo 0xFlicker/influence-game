@@ -1,4 +1,5 @@
 import { houseFollowUps, type HouseFollowUp } from "./house-follow-ups.js";
+import { retrospectiveResumeInputSchema } from "../services/house-retrospective-recovery.js";
 import {
   houseJsonBytes,
   HOUSE_PAGE_BYTES,
@@ -32,6 +33,8 @@ export const houseInputSchemas = {
   ),
   read_game_cuts: object({ gameIdOrSlug: string, audience }, ["gameIdOrSlug"]),
   read_game_results: object({ gameIdOrSlug: string }, ["gameIdOrSlug"]),
+  read_game_retrospective: object({ gameIdOrSlug: string, gameKind: kind, cursor, limit }, ["gameIdOrSlug"]),
+  resume_game_retrospective: retrospectiveResumeInputSchema,
   read_game_thinking: object(
     {
       gameIdOrSlug: string,
@@ -63,6 +66,8 @@ export const houseOutputSchemas = {
   list_games: schemas.HouseCatalogRead,
   read_game: schemas.HouseGameRead,
   read_game_results: schemas.HouseResultsRead,
+  read_game_retrospective: schemas.HouseRetrospectiveRead,
+  resume_game_retrospective: schemas.HouseRetrospectiveResume,
   read_game_cuts: schemas.HouseCutsRead,
   read_game_thinking: schemas.HouseThinkingRead,
   get_rules: schemas.HouseRulesRead,
@@ -116,7 +121,7 @@ export function houseContent(
       `Invalid ${name} follow-ups: ${ajv.errorsText(validator.errors)}`,
     );
   if (
-    ["read_game", "read_game_thinking", "read_game_results"].includes(name) &&
+    ["read_game", "read_game_thinking", "read_game_results", "read_game_retrospective"].includes(name) &&
     houseJsonBytes(structuredContent) >
       (name === "read_game_results" ? 256 * 1024 : HOUSE_PAGE_BYTES)
   )

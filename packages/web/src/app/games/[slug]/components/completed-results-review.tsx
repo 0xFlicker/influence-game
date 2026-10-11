@@ -4,6 +4,7 @@ import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 import { OwnerLearningActivation } from "@/app/dashboard/agents/[id]/review/owner-learning-activation";
 import { ResultsHeader } from "@/components/games/results-header";
+import { RetrospectiveResumeControl } from "@/components/games/retrospective-resume-control";
 import { GameBanner } from "@/components/game-banner";
 import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
 import {
@@ -39,6 +40,7 @@ export function CompletedResultsReview({
     status: "loading",
   });
   const [allianceFacts, setAllianceFacts] = useState<PublicGameAlliancesResponse | null>(null);
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [allianceLoadState, setAllianceLoadState] = useState<AllianceFactsLoadState>("idle");
   const [allianceError, setAllianceError] = useState<string | null>(null);
 
@@ -66,7 +68,7 @@ export function CompletedResultsReview({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [gameId]);
+  }, [gameId, refreshRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +140,7 @@ export function CompletedResultsReview({
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">
       {payload.game.status !== "completed" ? <p role="status">{payload.game.status === "suspended" ? "Retrospective paused" : "Retrospective in progress"} · {payload.retrospective.statementCount} of {payload.retrospective.requiredStatements} statements. The result is fixed. <Link href={completedGameModeHref(gameSlug, "replay")}>Continue watching</Link></p> : null}
+      {payload.game.status === "suspended" ? <RetrospectiveResumeControl gameId={gameId} onResumed={() => setRefreshRevision(revision => revision + 1)} /> : null}
       <GameBanner gameId={gameId} />
       <ResultsHeader title={overview.headline} actions={<>
           <Link

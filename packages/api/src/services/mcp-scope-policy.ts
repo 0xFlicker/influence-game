@@ -2,6 +2,7 @@ export const MCP_OAUTH_SCOPE_VALUES = [
   "agents:read",
   "agents:write",
   "games:read",
+  "games:resume",
   "producer",
   "moderation:read",
   "moderation:write",
@@ -20,7 +21,7 @@ export interface McpOAuthScopeDefinition {
   defaultSelected: boolean;
   requiredScopes: readonly McpOAuthScope[];
   requiredRole?: McpOAuthRequiredRole;
-  requiredPermission?: "manage_game_assets";
+  requiredPermission?: "manage_game_assets" | "resume_game_retrospective";
 }
 
 export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDefinition> = {
@@ -48,6 +49,9 @@ export const MCP_OAUTH_SCOPE_DEFINITIONS: Record<McpOAuthScope, McpOAuthScopeDef
     defaultSelected: true,
     requiredScopes: [],
   },
+  "games:resume": { scope: "games:resume", label: "Resume game retrospectives", group: "games", defaultSelected: false,
+    description: "Resume a paused retrospective using its current failure and event head. This can spend on required model statements; it cannot start games or replace accepted speeches.",
+    requiredScopes: ["games:read"], requiredPermission: "resume_game_retrospective" },
   "moderation:read": {
     scope: "moderation:read", label: "Read moderation inbox", description: "Inspect moderation revisions and retained evidence using your current moderator permissions. Admin recovery remains admin-only.", group: "moderation", requiredRole: "moderator", defaultSelected: false, requiredScopes: [],
   },

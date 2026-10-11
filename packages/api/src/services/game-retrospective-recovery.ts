@@ -7,6 +7,8 @@ import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { readWerewolfEvents } from "./werewolf-games.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { checkRecoveryAdmissionInTransaction } from "./deployment-admission.js";
+import { hasRetrospectiveRecoveryAccess } from "./retrospective-recovery-policy.js";
+import { isViewerGame } from "./game-visibility.js";
 
 type ReadDB = Pick<DrizzleDB, "select">;
 export interface RetrospectiveFrontier {
@@ -28,7 +30,7 @@ export interface RetrospectiveFailure extends RetrospectiveFrontier {
   failedAt: string;
 }
 export class RetrospectiveRecoveryError extends Error {
-  constructor(readonly code: "unavailable" | "conflict" | "admission_closed", message: string) { super(message); }
+  constructor(readonly code: "not_accessible" | "unavailable" | "conflict" | "admission_closed", message: string) { super(message); }
 }
 
 /** Derive the suspended slot from validated authority, never from error prose. */
@@ -90,17 +92,17 @@ export async function pauseRetrospectiveExecution(db: DrizzleDB, gameId: string,
 }
 
 export interface ResumeRetrospectiveInput { gameId: string; expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; idempotencyKey: string }
-/** Trusted mutation service; callers must authorize current roles and the dedicated recovery grant. */
-export async function resumeGameRetrospective(db: DrizzleDB, input: ResumeRetrospectiveInput) {
+/** Every caller supplies a subject; recheck role/permission inside the game-lock transaction. */
+export async function resumeGameRetrospective(db: DrizzleDB, input: ResumeRetrospectiveInput, actorUserId: string) {
   if (!input.idempotencyKey || input.idempotencyKey.length > 100) throw new RetrospectiveRecoveryError("conflict", "A bounded idempotency key is required");
   return db.transaction(async tx => {
     const [game] = await tx.select().from(schema.games).where(eq(schema.games.id, input.gameId)).for("update");
-    if (!game) throw new RetrospectiveRecoveryError("unavailable", "Game is unavailable");
+    if (!game || !isViewerGame(game) || !(await hasRetrospectiveRecoveryAccess(tx, actorUserId))) throw new RetrospectiveRecoveryError("not_accessible", "Game or retrospective recovery permission is unavailable");
     const config = JSON.parse(game.config) as Record<string, unknown>, fingerprint = sha256StableJson(input);
     const previous = config.retrospectiveResume as { idempotencyKey?: string; fingerprint?: string } | undefined;
     if (previous?.idempotencyKey === input.idempotencyKey) {
       if (previous.fingerprint !== fingerprint) throw new RetrospectiveRecoveryError("conflict", "Idempotency key was used with a different recovery request");
-      return { gameId: game.id, status: "in_progress" as const, alreadyResumed: true };
+      return { gameId: game.id, status: game.status, alreadyResumed: true };
     }
     if (game.status !== "suspended") throw new RetrospectiveRecoveryError("conflict", "Only a paused retrospective can resume");
     const failure = config.retrospectiveFailure as RetrospectiveFailure | null | undefined;

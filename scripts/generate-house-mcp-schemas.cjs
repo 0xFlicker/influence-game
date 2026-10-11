@@ -42,6 +42,8 @@ for (const type of [
   "HouseGameRead",
   "HouseThinkingRead",
   "HouseResultsRead",
+  "HouseRetrospectiveRead",
+  "HouseRetrospectiveResume",
   "HouseCutsRead",
   "HouseCatalogRead",
   "HouseRulesRead",
