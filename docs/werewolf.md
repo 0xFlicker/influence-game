@@ -297,3 +297,7 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Starting an unfilled village asks for confirmation with the number of House AI seats to add. A full village starts directly.
 
 Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. If a scene request has an uncertain charge, confirm another paid render in the same dialog. Its exact attempt IDs are retained in the accepted request, and the original accounting remains unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.
+
+## Retrospective contract layer
+
+[RT-01](game-retrospective-contract.md) defines Werewolf-owned retrospective start, accepted-statement and completion records after `werewolf.completed`, preserving the canonical faction result, roles and deaths. The reducer validates those records and has an explicit retrospective phase. The current v7 runner still stops at the outcome; automatic generation and the fresh-run v8 boundary are RT-05. No existing replay or simulator is claimed to generate final statements yet.

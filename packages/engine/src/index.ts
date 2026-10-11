@@ -6,6 +6,7 @@
 
 // Core types
 export * from "./types";
+export * from "./retrospective";
 export {
   costHouseProviderUsage,
   costHouseSummaryGame,

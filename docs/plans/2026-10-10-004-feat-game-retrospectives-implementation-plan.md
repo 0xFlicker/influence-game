@@ -1,7 +1,7 @@
 ---
 title: Game retrospectives implementation tasks
 type: feat
-status: planned
+status: in_progress
 date: 2026-10-10
 parent: 2026-10-10-003-feat-game-retrospectives.md
 research: ../research/2026-10-10-game-retrospectives-research.md
@@ -9,7 +9,7 @@ research: ../research/2026-10-10-game-retrospectives-research.md
 
 # Game retrospectives implementation tasks
 
-The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Research is complete; every implementation task below remains unstarted. Planning authorization does not start implementation, providers, historical generation, or deployment.
+The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, beginning with RT-01. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md). Providers, historical generation and deployment remain outside this work.
 
 ## Locked direction and planning defaults
 
@@ -22,13 +22,13 @@ The agreed design makes retrospective completion the final boundary of the exist
 - Completion settlement, ratings/rewards, learning entitlements, final cost capture, transcript sealing, full-export readiness, and automatic downstream postgame work occur after the epilogue. This deliberately avoids a second settlement system. Exhausted speech failure suspends that completion until explicit recovery.
 - First delivery covers fresh game runs. Historical backfill and replacement of accepted statements are excluded. Read paths never generate content.
 
-The implementation checkout decision remains separate: the inspected development checkout is dirty with active Studio work. Do not reset it or create another worktree automatically. Resolve the existing “commit first or continue in place” instruction when implementation is authorized; this research stage only adds planning documents.
+Implementation uses the chat's existing clean worktree at `/Users/user/.codex/worktrees/b44a/influence-game`, on `codex/game-retrospectives` based on the Studio branch's committed revision. The active development checkout and its uncommitted Studio work remain untouched.
 
 ## Task ledger and dependencies
 
 | Task | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
-| RT-01 | Final boundary, event, input-storage and provider contracts | Research | Todo |
+| RT-01 | Final boundary, event, input-storage and provider contracts | Research | Done |
 | RT-02 | Complete frozen context and speaker order | RT-01 | Todo |
 | RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Todo |
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Todo |
@@ -224,4 +224,18 @@ The planning pass checked the following failure scenarios against the tasks:
 | Final accounting omits statement costs or credits twice | RT-06/08: one final capture/settlement and existing journals. |
 | A cut silently acquires another speech or new media | RT-11/12: exact source heads, selected IDs and pinned media. |
 
-Research and task planning are complete as documents. No code implementation or test execution is claimed. Event/storage/version decisions become concrete in RT-01; no remaining task requires an additional worker design.
+Research and task planning are complete. RT-01 now makes the event/storage/version decisions concrete; no remaining task requires an additional worker design.
+
+RT-01 is implemented on 2026-10-10. The [contract document](../game-retrospective-contract.md) defines the exact records, cursor, input/storage, speech bounds, provider bindings and version policy. Both game adapters validate a complete epilogue without changing outcome facts; the runtime still stops at the existing result boundary. Runtime generation and all later tasks remain unstarted.
+
+Local verification:
+
+- `bun run test`: 2,483 passed, 5 existing skips, 0 failures across 260 files.
+- `bun run test:postgres`: 1,984 passed, 0 failures across 172 files, using a fresh task-specific local database because the shared database has a pre-existing migration/table mismatch.
+- Final durable API adoption/commit checks: 28 passed, 0 failures across 3 files.
+- Final immutable-input migration/storage checks: 2 passed, 0 failures, including explicit rejection of JSON-null game kinds. The complete migration chain applied from scratch.
+- `bun run check`: typecheck and lint passed. Release migration policy accepted migration 0114; whitespace and relative documentation links passed.
+
+A read-only single-turn Grok review was attempted with editing, web search and subagents disabled. It returned no review findings within five minutes and was stopped; this is incomplete external review, not a clean review result. Final integrated review remains RT-15.
+
+These checks are deterministic local evidence. They do not establish live model quality, staging behavior, MCP delivery, replay or export acceptance.

@@ -1,13 +1,13 @@
 ---
 title: Postgame contestant retrospectives across Influence and Werewolf
 type: feat
-status: planned
+status: in_progress
 date: 2026-10-10
 ---
 
 # Postgame contestant retrospectives
 
-The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies, and proof required. Research/task planning is complete; implementation has not started.
+The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies, and proof required. RT-01's contract layer is implemented on `codex/game-retrospectives`; see the [exact contract](../game-retrospective-contract.md). Runtime generation and later tasks remain unstarted.
 
 ## Goal and scope
 

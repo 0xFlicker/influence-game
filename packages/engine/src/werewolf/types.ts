@@ -1,8 +1,9 @@
 /** Werewolf owns its rules and event vocabulary; Influence phases do not apply. */
+import type { RetrospectiveDefinitionV1, RetrospectiveStatementV1, RetrospectiveCompletionV1, RetrospectiveOutcomeSource, RetrospectiveStateV1 } from "../retrospective";
 export type WerewolfRole = "werewolf" | "villager" | "seer" | "doctor";
 export type WerewolfFaction = "village" | "wolves";
 export type WerewolfPreset = "one_wolf" | "two_wolves";
-export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "complete";
+export type WerewolfPhase = "introduction" | "pack" | "night" | "day" | "vote" | "retrospective" | "complete";
 export type WerewolfAction = "introduce" | "pack_talk" | "attack" | "investigate" | "protect" | "open_thread" | "discuss" | "vote";
 export type WerewolfVoteMode = "majority" | "plurality";
 
@@ -127,8 +128,11 @@ export interface WerewolfOutcome {
 }
 
 export type WerewolfEventData =
+  | { type: "werewolf.retrospective_started"; payload: RetrospectiveDefinitionV1 }
+  | { type: "werewolf.retrospective_statement_recorded"; payload: RetrospectiveStatementV1 }
+  | { type: "werewolf.retrospective_completed"; payload: RetrospectiveCompletionV1 }
   | { type: "werewolf.started"; payload: { config: WerewolfConfig; seed: string; players: WerewolfPlayer[]; roles: Record<string, WerewolfRole> } }
-  | { type: "werewolf.phase_started"; payload: { phase: Exclude<WerewolfPhase, "complete" | "introduction">; day: number } }
+  | { type: "werewolf.phase_started"; payload: { phase: Exclude<WerewolfPhase, "complete" | "introduction" | "retrospective">; day: number } }
   | { type: "werewolf.action_accepted"; payload: WerewolfAcceptedAction }
   | { type: "werewolf.pack_vote_resolved"; payload: WerewolfPackVote }
   | { type: "werewolf.night_resolved"; payload: WerewolfNightResult }
@@ -139,6 +143,8 @@ export type WerewolfEventData =
 export type WerewolfEvent = WerewolfEventData & { gameId: string; sequence: number };
 
 export interface WerewolfState {
+  retrospectiveOutcomeSource: RetrospectiveOutcomeSource | null;
+  retrospective: RetrospectiveStateV1 | null;
   gameId: string;
   sequence: number;
   config: WerewolfConfig;

@@ -363,6 +363,10 @@ Up to three proposal/ballot attempts per night. Living wolves propose sequential
 
 The seat-scoped model input containing public facts and speech, its own character and selected strategy, and only the role's authorized secrets. Wolves know the pack, Seers know their own checks, and Doctors know their previous protection target. Spoken role claims remain unverified speech.
 
+## Game retrospective
+
+A contestant-authored epilogue after the immutable competitive result. Every original contestant receives a complete chronological game account and gives one final speech. Influence uses exit order with the winner last; Werewolf uses death order followed by a frozen survivor shuffle. Earlier accepted speeches are context for later speakers. Canonical definition/statement/completion records own order and progress; speech never changes game facts. The new final execution boundary follows the complete epilogue. [RT-01 contracts](docs/game-retrospective-contract.md) are implemented; runtime generation, result/settlement changes and presentation remain subsequent tasks.
+
 ## Werewolf spectator mode
 
 Mystery and Omniscient are projections of the same accepted game. Mystery reveals roles only at the ending; Omniscient includes roles, pack speech, and resolved night secrets. Neither includes private reasoning or owner strategy. Replay positions count audience-visible entries; future deaths, roles, and outcomes do not leak into an earlier prefix.

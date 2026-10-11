@@ -800,3 +800,7 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 ## Local full-replay video export
 
 Use `bun run replay:export -- <slug> --output ./exports/game.mp4` to render a completed Influence or Werewolf game locally through the fullscreen content stages. See [local replay export](docs/local-replay-export.md) for audience rules, offline bundles, adjustable presentation timing, prerecorded speech, and verification boundaries. This does not invoke providers or publish media.
+
+## Retrospective contracts
+
+The [RT-01 contract](docs/game-retrospective-contract.md) and migration `0114_game_retrospective_inputs` establish the retrospective record/input layer. Runtime generation is not connected yet. Run the provider-free suite, PostgreSQL suite and `bun run check`; keep model/provider trials opt-in. Use `setupTestDB()` for DB fixtures, preserve exact types without `as any`, and call House methods directly when adding future invocations.

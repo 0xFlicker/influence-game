@@ -474,3 +474,7 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
+
+## Retrospective contract implementation status
+
+[RT-01](game-retrospective-contract.md) adds provider-free contract fixtures for final statements in both games. Existing simulator commands still stop at the result; there is no retrospective generation option or additional model spending in this layer. Later runner tasks will use the same effective provider manifest and complete frozen context. Do not add `as any`, permissive output parsing or indirect House calls when wiring that stage.

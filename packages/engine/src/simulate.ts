@@ -5,6 +5,10 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Retrospective RT-01 supplies validated postgame contracts only; this runner
+ * still stops at the outcome until its later execution task is connected.
+ * See docs/game-retrospective-contract.md. Keep exact types without `as any`
+ * and call House methods directly when wiring future model turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
  * For a watchable API game plus a no-extra-inference text report, use

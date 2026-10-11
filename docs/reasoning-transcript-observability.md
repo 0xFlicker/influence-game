@@ -1,5 +1,7 @@
 # Reasoning & Transcript Observability
 
+The [retrospective contract](game-retrospective-contract.md) introduces exact final speech without a private-thinking field. Canonical postgame records bind actor, ordinal, frozen input and prior speeches; the private dossier and provider receipt are not spectator DTOs. RT-01 validates records only: simulations still stop at the outcome until later tasks wire the runner. Preserve no `as any`, separate cognition from speech, and direct House calls when adding that invocation.
+
 Werewolf freezes the effective game-specific strategy at game start: owner notes when present, otherwise a Werewolf archetype default. CLI House characters use those same defaults. Inspect the private starting event when comparing strategy behavior; changing an archetype or saved notes later does not change a running game. The AI editor writes independent Influence and Werewolf blocks without reusing Influence tactics as a fallback.
 
 The shared `/games/new` creator supports 6–8 Werewolf seats, 1–2 wolves, and optional Seer/Doctor roles. The initial event freezes this setup; agents see those public role counts and only receive actions for their actual assigned role. Archetype pool/fill settings apply to House-filled seats. Visual Mode generates spectator scenes through the existing image renderer; it does not add player reasoning or change original speech. CLI presets remain six/eight seats; `--game ID_OR_SLUG` can report a custom UI-created game without inference.

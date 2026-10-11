@@ -1,5 +1,6 @@
 import { seededRandom } from "../seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
+import { applyRetrospectiveRecord, type RetrospectiveRecordV1 } from "../retrospective";
 import type {
   WerewolfAcceptedAction, WerewolfConfig, WerewolfDayResult, WerewolfDiscussion, WerewolfDiscussionTurn, WerewolfTurnReminder, WerewolfEvent,
   WerewolfEventData, WerewolfNightResult, WerewolfOutcome, WerewolfPackVote, WerewolfPlayer,
@@ -117,6 +118,7 @@ function requests(state: WerewolfState): WerewolfRequest[] {
         : speech([actor], "discuss");
     }
     case "vote": return alive.map((actorId) => ({ actorId, action: "vote", voteMode: werewolfVoteMode(state), legalTargetIds: alive.filter((id) => id !== actorId) }));
+    case "retrospective":
     case "complete": return [];
   }
 }
@@ -319,9 +321,23 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
       openingOrderIds: shuffled(players.map(p => p.id), seed, "opening_order"), openingCursor: 0,
       phase: "introduction", day: 0, actions: [], discussion: null, pack: null, resolved: false, previousProtection: null,
       investigations: [], history: [{ kind: "phase", day: 0, phase: "introduction" }], outcome: null,
+      retrospectiveOutcomeSource: null, retrospective: null,
     };
   }
   if (event.gameId !== previous.gameId || event.sequence !== previous.sequence + 1) throw new Error("Discontinuous Werewolf event sequence");
+  let retrospectiveRecord: RetrospectiveRecordV1 | null = null;
+  switch (event.type) {
+    case "werewolf.retrospective_started": retrospectiveRecord = { kind: "started", payload: event.payload }; break;
+    case "werewolf.retrospective_statement_recorded": retrospectiveRecord = { kind: "statement", payload: event.payload }; break;
+    case "werewolf.retrospective_completed": retrospectiveRecord = { kind: "completed", payload: event.payload }; break;
+  }
+  if (retrospectiveRecord) {
+    const retrospective = applyRetrospectiveRecord(previous.retrospective, retrospectiveRecord, {
+      outcome: previous.retrospectiveOutcomeSource, rosterIds: previous.players.map(player => player.id), eventSequence: event.sequence,
+    });
+    return { ...structuredClone(previous), sequence: event.sequence, retrospective,
+      phase: retrospective.completedAtEventSequence === null ? "retrospective" : "complete" };
+  }
   const expected = nextWerewolfStep(previous);
   if (expected.kind === "complete") throw new Error("Werewolf is already complete");
   if (expected.kind === "action") {
@@ -383,6 +399,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     }
     case "werewolf.completed": {
       state.outcome = structuredClone(event.payload);
+      state.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "werewolf", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
       state.phase = "complete";
       state.history.push({ kind: "result", day: state.day, outcome: structuredClone(event.payload) });
     }

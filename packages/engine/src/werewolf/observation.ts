@@ -30,7 +30,7 @@ export interface WerewolfView {
   audience: WerewolfAudience;
   day: number;
   maxDays: number;
-  phase: "introduction" | "night" | "day" | "vote" | "complete";
+  phase: "introduction" | "night" | "day" | "vote" | "retrospective" | "complete";
   discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; recipientIds: string[]; respondentIds: string[]; ended: boolean } | null;
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;

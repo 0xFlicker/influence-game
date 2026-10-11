@@ -151,6 +151,7 @@ export interface DurableRunFinaleIntegrity {
 }
 
 export type DurableRunExecutionCursorSummary =
+  | { kind: "retrospective"; coordinate: "initialize" | "statement" | "complete" }
   | { kind: "phase_enter"; coordinate: string }
   | { kind: "parallel_batch"; coordinate: string }
   | {
@@ -633,6 +634,8 @@ function summarizeExecutionCursor(
   cursor: GameExecutionCursorV1,
 ): DurableRunExecutionCursorSummary {
   switch (cursor.kind) {
+    case "retrospective":
+      return { kind: cursor.kind, coordinate: cursor.stage };
     case "phase_enter":
       return { kind: cursor.kind, coordinate: cursor.actor };
     case "parallel_batch":
