@@ -26,7 +26,7 @@ export interface RenderProofIdentity {
 }
 export function proofDigest(value: unknown): string {
   const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
-    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)).map(([key, child]) => [key, canonical(child)])) : item;
+    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, child]) => [key, canonical(child)])) : item;
   return "sha256:" + createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
 const identifier = (name: string) => {
@@ -89,6 +89,8 @@ export async function exportProofFixture(source: ProofSQL, gameId: string): Prom
 
 /** Creates only a fresh proof DB and NOLOGIN principal. Human credential entry is separate. */
 export async function prepareProofDatabase(adminUrl: string, fixture: RenderProofFixture, input: Omit<RenderProofIdentity, "database" | "principal" | "fixtureDigest" | "gameId" | "migrationSet" | "leaseId" | "fencingToken">): Promise<RenderProofIdentity> {
+  const approvalFields = ["runId", "candidateSha", "sourceRepository", "workflowRunId", "workflowRunAttempt", "wakeUrl", "wakeQueueArn", "deadLetterQueueArn"];
+  if (!input || Object.keys(input).length !== approvalFields.length || Object.keys(input).some(key => !approvalFields.includes(key))) throw new Error("Proof approval must contain exactly its nonsecret identity fields");
   fixture = validateFixture(fixture);
   const database = proofDatabase(input.runId), principal = database + "_api";
   identifier(principal);

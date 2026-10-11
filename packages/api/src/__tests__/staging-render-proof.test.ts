@@ -98,6 +98,9 @@ describe("isolated staging render proof", () => {
     bad.media.snapshotHash = hashHouseHighlightsTrailerManifest(bad.media.snapshot as InfluenceTrailerManifest);
     expect(() => validateFixture(bad)).toThrow("credential-free");
   });
+  test("approval rejects unknown fields before opening a connection or creating objects", async () => {
+    await expect(prepareProofDatabase("invalid-url", fixture, { ...approval, token: "never-in-a-safe-receipt" } as typeof approval)).rejects.toThrow("nonsecret identity fields");
+  });
   test("fresh DB has only the frozen fixture, durable hold and bounded table permissions", async () => {
     expect(await assertProofDatabase(sql, runId)).toEqual(identity);
     await expect(Promise.resolve(sql`INSERT INTO users(id) VALUES(${randomUUID()})`)).rejects.toThrow();
