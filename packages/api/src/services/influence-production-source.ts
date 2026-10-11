@@ -1,4 +1,4 @@
-import { LEGACY_FORMAT_MANIFEST, Phase, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
+import { LEGACY_FORMAT_MANIFEST, Phase, replayCanonicalEvents, resolveFormatManifest, resolveGameKernel } from "@influence/engine";
 import { validHeadRectangle, type CharacterHeadPosition, type HeadRectangle } from "@influence/engine/character-portrait";
 import { assembleProductionCatalog, type ProductionCatalog } from "@influence/engine/production-moments";
 import { buildInfluenceProductionSources, type InfluenceProductionThought } from "@influence/engine/production-moments/influence-source";
@@ -138,6 +138,9 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   if (execution && execution.heads.eventSequence !== history.lastTrustedSequence)
     throw new InfluenceProductionSourceError("Influence accepted event head changed");
   const throughEventSequence = supplied?.throughEventSequence ?? history.lastTrustedSequence;
+  const complete = history.events.length ? replayCanonicalEvents(history.events.map(event => event.envelope)) : null;
+  if (game.status === "completed" && (!complete?.retrospective?.completedAtEventSequence || complete.phase !== Phase.END))
+    throw new InfluenceProductionSourceError("Completed game has no retrospective completion proof");
   if (throughEventSequence > history.lastTrustedSequence || throughEventSequence !== 0 && !history.events.some(event => event.sequence === throughEventSequence))
     throw new InfluenceProductionSourceError("Production snapshot is outside the accepted event prefix");
   const throughTurnSequence = supplied ? supplied.throughTurnSequence : execution?.heads.turnSequence ?? null;
@@ -162,6 +165,11 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     || transcriptPrefix.maxId && !acceptedRows.some(row => row.id === transcriptPrefix.maxId))
     throw new InfluenceProductionSourceError("Production snapshot is outside the accepted transcript prefix");
   const selectedRows = acceptedRows.filter(row => row.id <= transcriptPrefix.maxId && (row.entrySequence ?? 0) <= transcriptPrefix.maxEntrySequence);
+  const retrospectiveByEntry = new Map(history.events.flatMap(({ envelope }) => envelope.sequence <= throughEventSequence && envelope.type === "retrospective.statement_recorded"
+    ? envelope.sourcePointers.filter(pointer => pointer.kind === "transcript_entry").map(pointer => [pointer.sequence, { eventSequence: envelope.sequence, ...envelope.payload }] as const) : []));
+  const acceptedRetrospectives = history.events.filter(event => event.sequence <= throughEventSequence && event.envelope.type === "retrospective.statement_recorded");
+  if (retrospectiveByEntry.size !== acceptedRetrospectives.length || [...retrospectiveByEntry.keys()].some(sequence => !selectedRows.some(row => row.entrySequence === sequence)))
+    throw new InfluenceProductionSourceError("Accepted retrospective speech is missing its captured dialogue");
   const publicationCutoff = options.refreshVisuals || !supplied ? new Date().toISOString() : supplied.publicationCutoff;
   const acceptedCutoff = supplied?.acceptedCutoff ?? publicationCutoff;
   const artifactUrl = (id: string) => `/api/admin/production/games/${encodeURIComponent(game.id)}/visual/artifacts/${encodeURIComponent(id)}`;
@@ -192,10 +200,15 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     if (!Object.values(Phase).includes(row.phase as Phase)) throw new InfluenceProductionSourceError("Unknown accepted transcript phase");
     const anonymous = row.safeContext?.anonymous === true;
     const fromPlayerId = anonymous ? null : row.fromPlayerId;
+    const retrospective = row.entrySequence === null ? undefined : retrospectiveByEntry.get(row.entrySequence);
+    if (row.phase === Phase.RETROSPECTIVE && !retrospective || retrospective && (row.phase !== Phase.RETROSPECTIVE || anonymous
+      || (row.speakerPlayerId ?? row.fromPlayerId) !== retrospective.actorId || row.text !== retrospective.speech || row.thinking !== null || row.firstDurableEventSequence !== retrospective.eventSequence))
+      throw new InfluenceProductionSourceError("Retrospective dialogue does not match its canonical speech");
     return { id: row.id, gameId: game.id, round: row.round, phase: row.phase as Phase, scope: row.scope,
       entrySequence: row.entrySequence ?? undefined, dialogueKind: row.dialogueKind,
       firstDurableEventSequence: row.firstDurableEventSequence, speakerPlayerId: anonymous ? null : row.speakerPlayerId,
       anonymous, presentationPurpose: row.safeContext?.presentationPurpose, acceptedBallot: row.safeContext?.acceptedBallot,
+      ...(retrospective ? { retrospectiveSource: { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } } : {}),
       visualScene: row.safeContext?.visualScene, fromPlayerId, fromPlayerName: fromPlayerId ? frozen.get(fromPlayerId)?.player.name ?? null : null,
       toPlayerIds: stringArray(row.toPlayerIds), ...(row.roomId !== null && { roomId: row.roomId }),
       ...(row.roomMetadata !== null && { roomMetadata: roomMetadata(row.roomMetadata) }), text: row.text, thinking: row.thinking, timestamp: row.timestamp };

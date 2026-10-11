@@ -38,8 +38,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Done |
 | RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Done |
 | RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Done |
-| RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | In progress |
-| RT-12 | Frozen export, recordings and renderer parity | RT-11 | Todo |
+| RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Done |
+| RT-12 | Frozen export, recordings and renderer parity | RT-11 | In progress |
 | RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Todo |
 | RT-14 | Integrated regression proof and documentation | RT-09–13 | Todo |
 | RT-15 | Review, model-quality and deployment acceptance | RT-14 | Todo |
@@ -356,3 +356,9 @@ Validation: 76 local PostgreSQL tests passed across five files. Real MCP HTTP te
 Retrospective entries reuse the original solo portrait stage, staging/reading clocks and media fallback. Influence clears its winner hold at RETROSPECTIVE, derives winner/finalist/exit labels from earlier canonical viewer events and includes the chapter in phase navigation. Both classic and format speech links keep the accepted canonical sequence. Werewolf uses the canonical speech purpose, revealed original role, faction result and recorded exit/survival part. Mystery receives these public facts only after the outcome. A holding tail retains the final readable portrait/speech; it does not revive the player. Mystery Cut discovery excludes all post-outcome retrospective speech; Omniscient retains its exact chapter and cursor provenance. No trailer auto-append or new imagery was introduced.
 
 Local validation: 111 focused replay/Cut tests passed; a further 17 endgame/Werewolf checks passed, including winner-hold termination and backward-seek labels. The provider-free browser lane passed the Werewolf desktop/mobile, audiences, result-to-retrospective autoplay, pause, seeks and fullscreen journey. Two additional browser tests passed real durable classic and format Influence through complete epilogues, canonical speech links, reload/backward navigation and mobile layouts. Typecheck/lint and generated House schemas passed. Browser harness databases and children were cleaned. Initial browser attempts exposed missing fixture migration/model metadata, corrected before the green runs. Broader growing-tail/transport/encoded-export acceptance remains RT-14. No live provider, media generation or deployment occurred.
+
+## RT-11 completion record
+
+Both catalogs represent the epilogue as ordinary speech with explicit retrospective purpose and canonical actor/event/ordinal provenance. Influence requires exact captured text and owning event identity, and a completed source requires the full retrospective proof. Labels remain independent; retrospective-only source-ordered cuts include no implicit result. Studio exposes the provenance in its inspector. Existing completion fixtures now provide full tails, and historical terminal rows no longer assert unverified results.
+
+Local validation: 150 PostgreSQL tests passed across seven files, 24 engine catalog tests passed, 66 replay export tests passed, and typecheck/lint passed. The broader prior PostgreSQL run was not green: it found outdated permission/tool inventories and outcome-only fixtures; the affected tests are included in this green run. An import error in that earlier run was caused by editing the shared fixture module while Bun had already loaded it. Final full-baseline acceptance remains RT-14. No provider or deployed action occurred.

@@ -19,7 +19,7 @@ import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } f
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { readInfluenceProductionSource } from "../services/influence-production-source.js";
 import { buildWerewolfProductionSourceSnapshot, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
-import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner } from "./durable-run-test-utils.js";
+import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
 import { seedProductionStudioFixture } from "./production-studio-fixtures.js";
@@ -44,7 +44,9 @@ async function influence(id = "studio-influence") {
   const gameId = await insertGame(db, { id, status: "completed" });
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId, persona: JSON.stringify({ name: id, personality: "Frozen" }), agentConfig: "{}" })));
   const ownerEpoch = await insertOwner(db, gameId);
-  await appendGameEvents(db, { gameId, ownerEpoch, events: withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira") });
+  const events = withRetrospective(withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira"), 1000);
+  await appendGameEvents(db, { gameId, ownerEpoch, events });
+  await insertRetrospectiveTranscriptFixture(db, events);
   const [transcript] = await db.insert(schema.transcripts).values({ gameId, round: 1, phase: Phase.LOBBY, scope: "public", fromPlayerId: "atlas",
     text: "Accepted original speech", thinking: "Accepted independent thinking", timestamp: 1 }).returning();
   const source = await readInfluenceProductionSource(db, gameId);

@@ -15,7 +15,7 @@ import { initialGameTranscriptStateValues } from "../services/transcript-capture
 import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readWerewolfProductionSource } from "../services/werewolf-production-source.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
-import { insertOwner, withJuryWinner } from "./durable-run-test-utils.js";
+import { insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 
 /** Provider-free browser/export data. Caller must own an isolated database and
  * lifecycle, or call setupTestDB() before mutations in shared PostgreSQL tests.
@@ -36,8 +36,9 @@ export async function seedProductionStudioFixture(db: DrizzleDB) {
   const [owner] = await db.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId, gameId));
   if (!owner || history.status !== "complete") throw new Error("Production fixture needs the existing trusted format events");
   await db.update(schema.gameRunOwners).set({ status: "active", closedAt: null }).where(eq(schema.gameRunOwners.id, owner.id));
-  await appendGameEvents(db, { gameId, ownerEpoch: owner.ownerEpoch,
-    events: withJuryWinner(history.events.map(event => event.envelope), atlas).slice(history.events.length) });
+  const completed = withRetrospective(withJuryWinner(history.events.map(event => event.envelope), atlas), 3);
+  await appendGameEvents(db, { gameId, ownerEpoch: owner.ownerEpoch, events: completed.slice(history.events.length) });
+  await insertRetrospectiveTranscriptFixture(db, completed);
   await db.update(schema.gameRunOwners).set({ status: "closed", closedAt: new Date().toISOString() }).where(eq(schema.gameRunOwners.id, owner.id));
   const seats = await db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   const portraitImage = await readFile(new URL("../../../web/public/avatars/personas/observer.png", import.meta.url));

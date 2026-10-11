@@ -45,3 +45,9 @@ Keep exact types without `as any`, separate private cognition from public speech
 ## Replay presentation
 
 The competitive result remains a readable cue before the Retrospective chapter. Each accepted speech uses the contestant's original solo portrait, name and canonical part/outcome. Influence clears its closing winner hold at this chapter; Werewolf reveals the original role and recorded exit/survival outcome in both audiences after the result. Existing clocks own pagination, pause, audio and seeking. A waiting/completed tail keeps the last speech readable. Mystery highlight discovery omits retrospective evidence so postgame knowledge cannot label earlier strategy; Omniscient retains the exact postgame chapter and source cursor.
+
+## Studio source authority
+
+Retrospective statements are ordinary selectable speech moments. Their purpose, actor, ordinal and canonical event sequence accompany the existing stable transcript/cursor identity. Influence's owning production reader verifies each captured row against its accepted statement, including exact text, actor, phase and event boundary; missing or substituted dialogue fails clearly. Werewolf uses its own validated post-result projection. Full sources require the completed retrospective proof. A validated visual pause can still preview its earlier accepted prefix, including an empty opening frontier, but cannot freeze a completed export.
+
+Labels and recipes remain independent of semantic purpose. A retrospective-only cut contains exactly the selected speeches in source order; including the result is a separate choice. Source hashes include captured text and canonical provenance. The inspector shows the retrospective speaker ordinal and event reference without exposing the private dossier.

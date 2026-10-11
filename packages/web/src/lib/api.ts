@@ -2716,6 +2716,7 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  retrospectiveSource?: { eventSequence: number; ordinal: number };
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;

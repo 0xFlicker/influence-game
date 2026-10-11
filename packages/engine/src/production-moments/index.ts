@@ -51,6 +51,7 @@ export type ProductionSource =
       presentation: "speech" | "scene" | "ballot";
       ballot?: { voterId: string; purpose: "empower" | "eliminate" | "winner" };
       actorId?: string; thinking?: string | null; defaultThinking?: boolean;
+      retrospectiveSource?: { eventSequence: number; ordinal: number };
     })
   | (OrderedProductionSource & {
       kind: "influence-event"; eventSequence: number;
@@ -83,6 +84,8 @@ export interface ProductionMoment {
   /** Finite presentation expansion within this source anchor. */
   semanticOrder: number;
   actorId?: string;
+  purpose?: "retrospective";
+  retrospectiveSource?: { eventSequence: number; ordinal: number };
   /** Adding catalog coverage must not silently expand existing full movies. */
   defaultIncluded: boolean;
 }
@@ -197,7 +200,14 @@ export function assembleProductionCatalog(input: {
       const prior = seen.get(id);
       if (prior) throw new Error(`Duplicate or ambiguous production moment ${id} at ${JSON.stringify(prior)} and ${JSON.stringify(source.order)}`);
       seen.set(id, source.order);
-      moments.push({ id, sourceKey: productionSourceKey(input.gameId, ref), source: ref, part, kind, order: { ...source.order }, semanticOrder, defaultIncluded, ...(actorId !== undefined ? { actorId } : {}) });
+      const retrospective = kind === "speech" ? source.kind === "influence-transcript" ? source.retrospectiveSource
+        : source.kind === "werewolf-event" && source.entry.kind === "speech" && source.entry.purpose === "retrospective" ? { eventSequence: source.eventSequence, ordinal: source.entry.ordinal } : undefined : undefined;
+      if (retrospective) {
+        sequence(retrospective.eventSequence);
+        if (!actorId || !Number.isSafeInteger(retrospective.ordinal) || retrospective.ordinal < 0 || retrospective.ordinal >= 12) throw new Error("Invalid retrospective production provenance");
+      }
+      moments.push({ id, sourceKey: productionSourceKey(input.gameId, ref), source: ref, part, kind, order: { ...source.order }, semanticOrder, defaultIncluded, ...(actorId !== undefined ? { actorId } : {}),
+        ...(retrospective ? { purpose: "retrospective" as const, retrospectiveSource: retrospective } : {}) });
     };
     const thought = (text: string | null | undefined, full: boolean | undefined, actorId?: string) => {
       if (text !== undefined && text !== null && typeof text !== "string") throw new Error("Invalid production thinking evidence");

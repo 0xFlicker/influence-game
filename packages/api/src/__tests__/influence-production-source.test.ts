@@ -10,7 +10,7 @@ import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } f
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
-import { createCanonicalEventFixture, createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner } from "./durable-run-test-utils.js";
+import { createCanonicalEventFixture, createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 let db: DrizzleDB;
@@ -20,8 +20,9 @@ async function fixture(id = "production-influence", resolved = true) {
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId,
     persona: JSON.stringify({ name: id === "atlas" ? "Atlas" : id, personality: "Frozen character", avatarUrl: `/avatars/${id}.png` }), agentConfig: "{}" })));
   const ownerEpoch = await insertOwner(db, gameId);
-  const events = withJuryWinner(resolved ? createResolvedRoundCanonicalEventFixture(gameId) : createCanonicalEventFixture(gameId), "mira");
+  const events = withRetrospective(withJuryWinner(resolved ? createResolvedRoundCanonicalEventFixture(gameId) : createCanonicalEventFixture(gameId), "mira"), 1000);
   await appendGameEvents(db, { gameId, ownerEpoch, events });
+  await insertRetrospectiveTranscriptFixture(db, events);
   return { gameId, events, ownerEpoch };
 }
 async function dialogue(gameId: string, number: number, extra: Partial<typeof schema.transcripts.$inferInsert> = {}) {
@@ -37,6 +38,19 @@ async function scene(gameId: string, image: string) {
     cast: [{ id: "atlas", name: "Atlas", referenceArtifactId: image, performanceInstructions: "Frozen" }] }) });
   return acceptVisualScene(db, { sceneId: row.id, planHash: row.planHash, imageArtifactId: image, anchors: [], verifiedParticipantIds: ["atlas"] });
 }
+
+test("complete retrospective catalog requires exact captured canonical speech and rejects substitution or absence", async () => {
+  const {gameId, events} = await fixture();
+  const source = await readInfluenceProductionSource(db, gameId), retrospective = source.catalog.moments.filter(moment => moment.purpose === "retrospective");
+  expect(retrospective).toHaveLength(4);
+  expect(retrospective.map(moment => moment.actorId)).toEqual(events.flatMap(event => event.type === "retrospective.statement_recorded" ? [event.payload.actorId] : []));
+  expect(retrospective.every(moment => moment.kind === "speech" && moment.source.kind === "influence-transcript")).toBeTrue();
+  const speech = source.messages.find(message => message.retrospectiveSource)!;
+  await db.update(schema.transcripts).set({text: "Substituted text"}).where(eq(schema.transcripts.id, speech.id));
+  await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("canonical speech");
+  await db.delete(schema.transcripts).where(eq(schema.transcripts.id, speech.id));
+  await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("missing its captured dialogue");
+});
 
 test("bounded source and moment pages share one accepted snapshot and independent thought identity", async () => {
   const { gameId, events } = await fixture();
