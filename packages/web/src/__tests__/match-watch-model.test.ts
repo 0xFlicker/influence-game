@@ -791,6 +791,7 @@ describe("match watch model", () => {
       "FORMAT_PICK",
       "FORMAT_MINGLE",
       "FORMAT_RESOLVE",
+      "RETROSPECTIVE",
       "END",
     ]);
     expect(format.phaseSegments.some((segment) => segment.key === "COUNCIL")).toBe(false);

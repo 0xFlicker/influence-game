@@ -210,6 +210,7 @@ export function buildExportCues(source: ReplaySource): ExportCue[] {
       message,
       activePlayers,
       prior,
+      frames,
     );
     const spoken =
       picture.beat && "speech" in picture.beat ? picture.beat.speech : null;

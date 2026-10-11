@@ -35,7 +35,7 @@ export interface WerewolfView {
   discussion: { initiativeIds: string[]; thread: number; totalThreads: number; stage: "opening" | "reply" | "answer"; recipientIds: string[]; respondentIds: string[]; ended: boolean } | null;
   /** Audience-local cursor; private action counts/coordinates never leave the server. */
   cursor: number;
-  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole }>;
+  players: Array<{ id: string; name: string; avatarUrl: string | null; fullBodyReferenceUrl?: string | null; personaKey: string | null; alive: boolean; role?: WerewolfRole; elimination?: { day: number; kind: "night" | "vote" } | null }>;
   entries: WerewolfPublicEntry[];
   outcome: WerewolfOutcome | null;
 }
@@ -84,6 +84,10 @@ export function projectWerewolfSnapshot(state: WerewolfState, audience: Werewolf
     cursor,
     players: state.players.map((p) => ({ id: p.id, name: p.name, avatarUrl: p.avatarUrl, personaKey: p.personaKey ?? null, alive: state.aliveIds.includes(p.id),
       ...(omniscient || state.outcome ? { role: state.roles[p.id]! } : {}),
+      ...(state.outcome ? { elimination: (() => {
+        const exit = state.history.find(entry => entry.kind === "night" && entry.result.killedId === p.id || entry.kind === "vote" && entry.result.eliminatedId === p.id);
+        return exit?.kind === "night" || exit?.kind === "vote" ? { day: exit.day, kind: exit.kind } : null;
+      })() } : {}),
     })), outcome: state.outcome ? structuredClone(state.outcome) : null,
   };
 }

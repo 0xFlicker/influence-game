@@ -1,4 +1,10 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
+import { DEFAULT_CONFIG, GameRunner } from "@influence/engine";
+import { ApiTestMockAgent } from "../services/game-lifecycle.js";
+import { createDurableGameRunnerStore } from "../services/durable-game-runner-store.js";
+import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
+import { insertGame, insertOwner } from "../__tests__/durable-run-test-utils.js";
+import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -817,6 +823,40 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
     await page.screenshot({path:"/tmp/house-mcp-influence-moment.png"});
   } finally {await page.close();}
 },90_000);
+
+test.each(["classic", "format"] as const)("%s Influence retrospective portraits follow canonical speech links and survive reload/backward seek", async gameKernel => {
+  const config = {...DEFAULT_CONFIG, visibility: "public", maxDiaryFollowUps: 0, diaryRoomAfterPhases: [], mingleSessionsPerRound: 1,
+    modelSelection: {catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" as const},
+    ...(gameKernel === "format" ? {formatManifest: ["save_or_eliminate" as const]} : {})};
+  const id = await insertGame(database.db, {status: "in_progress", config});
+  await database.db.update(schema.games).set({gameKernel, transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1}).where(eq(schema.games.id, id));
+  await database.db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(id));
+  const agents = ["Atlas", "Echo", "Nova"].map((name, index) => new ApiTestMockAgent(`${id}-${index}`, name));
+  await database.db.insert(schema.gamePlayers).values(agents.map(agent => ({id: agent.id, gameId: id, persona: JSON.stringify({name: agent.name, personality: "Fixture"}), agentConfig: '{}', status: "alive" as const})));
+  const ownerEpoch = await insertOwner(database.db, id, {expiresAt: "2099-01-01T00:00:00.000Z"});
+  await new GameRunner(agents, config, undefined, {gameId: id, durableTurnStore: createDurableGameRunnerStore(database.db, {gameId: id, ownerEpoch})}).run();
+  await database.db.update(schema.games).set({status: "completed"}).where(eq(schema.games.id, id));
+  const retrospective = await readHouseGameRetrospective(database.db, {gameIdOrSlug: id});
+  expect(retrospective.statements).toHaveLength(3);
+  const page = await browser.newPage();
+  try {
+    for (const index of [0, 2, 1]) {
+      const speech = retrospective.statements[index]!, speaker = retrospective.speakers[index]!;
+      await page.goto(`${servers.webUrl}${speech.href}`, {waitUntil: "domcontentloaded"});
+      await page.waitForSelector(`section[aria-label="Retrospective: ${speaker.name}"]`);
+      await page.waitForFunction(`document.querySelector('[data-speech-bubble]')?.textContent.includes(${JSON.stringify(speech.speech)})`);
+      expect(await page.$('[data-werewolf-stage]')).toBeNull();
+      await page.setViewport({width: index === 1 ? 390 : 1440, height: index === 1 ? 844 : 1000});
+      expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBeTrue();
+      if (index === 2) { await page.reload({waitUntil: "domcontentloaded"}); await page.waitForSelector(`section[aria-label="Retrospective: ${speaker.name}"]`); }
+    }
+    await page.screenshot({path: `/tmp/retrospective-${gameKernel}-mobile.png`});
+  } catch (error) {
+    console.log(`Retrospective ${gameKernel} browser state:`, await page.evaluate("document.body.innerText"));
+    await page.screenshot({path: `/tmp/retrospective-${gameKernel}-failed.png`});
+    throw error;
+  } finally {await page.close();}
+}, 120_000);
 
 
 test("House replay music follows transport, remembers volume and stays visible on mobile", async () => {

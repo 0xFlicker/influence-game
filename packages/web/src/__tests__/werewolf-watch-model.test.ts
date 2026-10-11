@@ -2,11 +2,33 @@ import {expect, test} from "bun:test";
 import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
 import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 import type {WerewolfWatchMoment} from "../../../engine/src/werewolf/watch-contract";
-import {werewolfDoctorSave, werewolfMomentCues, werewolfScrubStops, consumedSilentTail} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfDoctorSave, werewolfMomentCues, werewolfScrubStops, consumedSilentTail, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {replayMoment} from "../components/games/werewolf/replay-moment";
+import {soloPresentationDurationMs, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const players = Array.from({length: 6}, (_, index) => ({id: `p${index}`, name: `Player ${index}`, personality: "Careful", backstory: "", strategy: "", avatarUrl: null}));
 const projection = projectWerewolfWatch([startWerewolf("silent-tail", players, werewolfConfig("one_wolf", 1), "seed")], "mystery");
 const template = projection.moments[0]!;
+test("both Werewolf audiences reveal canonical parts only at the outcome and play each retrospective after the result", async () => {
+  const {completedWerewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const events = await completedWerewolfResultsFixture("village", "rt10-watch");
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const window = projectWerewolfWatch(events, audience);
+    const outcomeIndex = window.moments.findIndex(moment => moment.entry.kind === "result");
+    const speeches = window.moments.filter(moment => moment.entry.kind === "speech" && moment.entry.purpose === "retrospective");
+    expect(speeches).toHaveLength(6);
+    expect(speeches.every(moment => window.moments.indexOf(moment) > outcomeIndex && moment.chapterId === "retrospective" && moment.snapshot.outcome !== null)).toBeTrue();
+    for (const moment of speeches) {
+      const rendered = replayMoment({...moment.snapshot, entries: [moment.entry]});
+      expect(rendered).toMatchObject({title: "Retrospective", retrospective: true, spoken: true});
+      expect(rendered.actor?.role).toBeDefined(); expect(rendered.part).toBeString();
+      const cue = werewolfMomentCues(moment)[0]!;
+      expect(cue.baseDurationMs).toBe(soloPresentationDurationMs(rendered.text));
+      expect(werewolfWatchPolicy.speech(cue)?.readAtMs).toBe(SOLO_READ_START_MS);
+    }
+    if (audience === "mystery") for (const moment of window.moments.slice(0, outcomeIndex)) expect(moment.snapshot.players.every(player => player.role === undefined && player.elimination === undefined)).toBeTrue();
+  }
+});
 function silent(cursor: number): WerewolfWatchMoment {
   return {...template, cursor, entry: {kind: "phase", day: 1, phase: "day"}};
 }

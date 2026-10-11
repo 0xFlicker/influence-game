@@ -187,7 +187,7 @@ function DramaticReplayTheater({
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
   const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages, replayFrames,
   );
   const thinkingActor = visual.beat && "speech" in visual.beat ? visual.beat.speech?.playerId : null;
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";

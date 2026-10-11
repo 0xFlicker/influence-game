@@ -116,6 +116,7 @@ export const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
   CLOSING_ARGUMENTS: "endgame",
   JURY_VOTE: "endgame",
   END: "endgame",
+  RETROSPECTIVE: "endgame",
 };
 
 export const ROOM_TYPE_COLORS: Record<RoomType, string> = {

@@ -27,6 +27,7 @@ const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
 const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
@@ -41,6 +42,7 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
 export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = INFLUENCE_PRODUCTION_FORMAT_PHASES;

@@ -37,8 +37,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-07 | Early canonical results and continued delivery | RT-04–06 | Done |
 | RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Done |
 | RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Done |
-| RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | In progress |
-| RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Todo |
+| RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Done |
+| RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | In progress |
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Todo |
 | RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Todo |
 | RT-14 | Integrated regression proof and documentation | RT-09–13 | Todo |
@@ -350,3 +350,9 @@ The shared bounded reader exposes only the canonical outcome, frozen order, publ
 A separate opt-in `games:resume` scope requires `games:read` and current admin/sysop/producer recovery permission. Consent, code exchange, refresh, introspection, descriptor selection and calls check this authority; the underlying mutation rechecks current authority/visibility inside its transaction before idempotent return. REST and MCP share the exact fenced resume service. Results views expose an eligible-operator control with fresh head/failure fields and explicit remaining-spend copy. Migration 0115 extends the canonical scope constraints; RBAC seeds the separate permission.
 
 Validation: 76 local PostgreSQL tests passed across five files. Real MCP HTTP tests prove discovery/read versus mutation separation, strict arguments, exact successful/idempotent resume, hidden denial and live role revocation. Reader tests cover both games, canonical links, outcome-only progress, completed-proof rejection, growth/pinned pages, forged count/hash/definition/game cursors, corrupt suffixes and whole multibyte pagination without writes. Native journal/recovery tests pass with mandatory caller authority. Typecheck/lint and strict schema generation passed. The React review checked query cancellation, current eligibility, explicit mutation retries, fresh recovery data and accessible errors. No provider or deployed call occurred.
+
+## RT-10 completion record
+
+Retrospective entries reuse the original solo portrait stage, staging/reading clocks and media fallback. Influence clears its winner hold at RETROSPECTIVE, derives winner/finalist/exit labels from earlier canonical viewer events and includes the chapter in phase navigation. Both classic and format speech links keep the accepted canonical sequence. Werewolf uses the canonical speech purpose, revealed original role, faction result and recorded exit/survival part. Mystery receives these public facts only after the outcome. A holding tail retains the final readable portrait/speech; it does not revive the player. Mystery Cut discovery excludes all post-outcome retrospective speech; Omniscient retains its exact chapter and cursor provenance. No trailer auto-append or new imagery was introduced.
+
+Local validation: 111 focused replay/Cut tests passed; a further 17 endgame/Werewolf checks passed, including winner-hold termination and backward-seek labels. The provider-free browser lane passed the Werewolf desktop/mobile, audiences, result-to-retrospective autoplay, pause, seeks and fullscreen journey. Two additional browser tests passed real durable classic and format Influence through complete epilogues, canonical speech links, reload/backward navigation and mobile layouts. Typecheck/lint and generated House schemas passed. Browser harness databases and children were cleaned. Initial browser attempts exposed missing fixture migration/model metadata, corrected before the green runs. Broader growing-tail/transport/encoded-export acceptance remains RT-14. No live provider, media generation or deployment occurred.

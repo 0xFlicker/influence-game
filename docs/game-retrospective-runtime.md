@@ -41,3 +41,7 @@ Deterministic engine tests restart at outcome, initialization, every statement o
 Fresh local Influence runner calls also execute the epilogue. Simulator artifact/report and local MCP integration remain RT-13; the dedicated runtime is not a claim that those downstream formats already support the new tail. Verified hosted OpenAI capacity remains required for real statements; unsupported local/provider windows fail explicitly. Paid/provider quality and deployed execution remain separately authorized validation.
 
 Keep exact types without `as any`, separate private cognition from public speech, and call House methods directly. No extra worker, queue, speech fallback, media generation or historical generation is introduced.
+
+## Replay presentation
+
+The competitive result remains a readable cue before the Retrospective chapter. Each accepted speech uses the contestant's original solo portrait, name and canonical part/outcome. Influence clears its closing winner hold at this chapter; Werewolf reveals the original role and recorded exit/survival outcome in both audiences after the result. Existing clocks own pagination, pause, audio and seeking. A waiting/completed tail keeps the last speech readable. Mystery highlight discovery omits retrospective evidence so postgame knowledge cannot label earlier strategy; Omniscient retains the exact postgame chapter and source cursor.
