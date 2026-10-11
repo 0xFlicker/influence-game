@@ -67,6 +67,7 @@ export type PhaseMachineEvent =
   | { type: "PLAYER_ELIMINATED"; playerId: UUID }
   | { type: "UPDATE_ALIVE_PLAYERS"; aliveIds: UUID[] }
   | { type: "NEXT_ROUND" }
+  | { type: "RETROSPECTIVE_COMPLETE" }
   | { type: "JURY_WINNER_DETERMINED"; winnerId: UUID };
 
 // ---------------------------------------------------------------------------
@@ -200,7 +201,8 @@ export function createPhaseMachine() {
     },
     guards: {
       gameIsOver: ({ context }) =>
-        context.alivePlayers.length <= 1 || context.round >= context.maxRounds,
+        context.alivePlayers.length <= 1,
+      roundLimitReached: ({ context }) => context.round >= context.maxRounds,
       hasEnoughPlayers: ({ context }) => context.alivePlayers.length >= 2,
       autoEliminateTriggered: ({ context }) => context.autoEliminated !== null,
       // --- Endgame guards ---
@@ -386,9 +388,10 @@ export function createPhaseMachine() {
         always: [
           {
             guard: "gameIsOver",
-            target: "end",
+            target: "retrospective",
             actions: ["setWinner"],
           },
+          { guard: "roundLimitReached", target: "end", actions: ["setWinner"] },
           {
             guard: "reckoningTriggered",
             target: "reckoning_lobby",
@@ -531,13 +534,19 @@ export function createPhaseMachine() {
           JURY_WINNER_DETERMINED: {
             actions: ["setJuryWinner"],
           },
-          PHASE_COMPLETE: "end",
+          PHASE_COMPLETE: "retrospective",
         },
       },
 
       // =====================================================================
       // End
       // =====================================================================
+
+      retrospective: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.RETROSPECTIVE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.RETROSPECTIVE } }],
+        on: { RETROSPECTIVE_COMPLETE: "end" },
+      },
 
       end: {
         type: "final",

@@ -8,6 +8,7 @@ import {
   durableProviderLogicalCallId,
   durableProviderSemanticCoordinateForSubcall,
   providerSemanticCoordinateHash,
+  providerLogicalCallId,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   resolveProviderManifestFromGameConfig,
@@ -102,24 +103,7 @@ function logicalCallId(
   coordinate: ProviderLogicalCallCoordinate,
   options: Pick<CreateApiProviderExecutionHooksOptions, "gameId">,
 ): string {
-  if (coordinate.semantic.kind === "durable_turn") {
-    return durableProviderLogicalCallId({
-      gameId: options.gameId,
-      turnId: coordinate.semantic.turnId,
-      subcallSlot: coordinate.semantic.subcallSlot,
-    });
-  }
-  return sha256StableJson({
-    domain: "influence.provider.logical-call.v2",
-    coordinate: {
-      gameId: options.gameId,
-      actor: coordinate.actor,
-      action: coordinate.action,
-      phase: coordinate.phase,
-      round: coordinate.round,
-      semantic: canonicalProviderSemanticCoordinate(coordinate.semantic),
-    },
-  });
+  return providerLogicalCallId(options.gameId, coordinate);
 }
 
 function attemptJournalId(callId: string, attemptOrdinal: number): string {

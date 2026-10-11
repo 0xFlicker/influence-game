@@ -715,6 +715,7 @@ export {
   assertProviderSemanticCoordinate,
   canonicalProviderSemanticCoordinate,
   durableProviderLogicalCallId,
+  providerLogicalCallId,
   providerSemanticCoordinateHash,
 } from "./provider-execution";
 export {

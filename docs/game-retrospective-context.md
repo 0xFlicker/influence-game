@@ -1,6 +1,6 @@
 # Frozen retrospective context and speaker order
 
-RT-02 implements deterministic context compilers in [influence-retrospective.ts](../packages/engine/src/influence-retrospective.ts) and [werewolf/retrospective.ts](../packages/engine/src/werewolf/retrospective.ts). [retrospective-context.ts](../packages/engine/src/retrospective-context.ts) freezes their inputs, admits the complete context against model budgets and materializes the next speaker's input. The [contract](game-retrospective-contract.md) and [task plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md) define the surrounding lifecycle. These helpers do not invoke providers or connect the current runners to the retrospective.
+RT-02 implements deterministic context compilers in [influence-retrospective.ts](../packages/engine/src/influence-retrospective.ts) and [werewolf/retrospective.ts](../packages/engine/src/werewolf/retrospective.ts). [retrospective-context.ts](../packages/engine/src/retrospective-context.ts) freezes their inputs, admits the complete context against model budgets and materializes the next speaker's input. The [contract](game-retrospective-contract.md) and [task plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md) define the surrounding lifecycle. These helpers do not invoke providers. [RT-04](game-retrospective-runtime.md) connects Influence to them; Werewolf runtime wiring remains subsequent work.
 
 ## Canonical account and dialogue
 

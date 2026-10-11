@@ -12,6 +12,13 @@ function fixtureStatement(context: RetrospectiveSpeakerContext, signal?: AbortSi
 }
 
 export const fixtureInfluenceRetrospective: IAgent["getRetrospectiveStatement"] = async (_phase, context, options) => fixtureStatement(context, options?.signal);
+export const fixtureInfluenceRetrospectiveSetup: IAgent["prepareRetrospectiveSetup"] = async function (this: IAgent) {
+  return { speaker: this.getRetrospectiveSpeaker(),
+    capacities: { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 1_000_000 }] } };
+};
+export const fixtureInfluenceRetrospectiveSpeaker: IAgent["getRetrospectiveSpeaker"] = function (this: IAgent) {
+  return { id: this.id, name: this.name, personality: "Deterministic fixture character", backstory: "", strategy: "" };
+};
 export const fixtureWerewolfRetrospective: WerewolfAgent["getRetrospectiveStatement"] = async input => fixtureStatement(input.context, input.signal);
 
 /** Exact detached contexts and scripted speeches for subsequent runtime proofs. */

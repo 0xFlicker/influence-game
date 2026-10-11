@@ -9,7 +9,7 @@ research: ../research/2026-10-10-game-retrospectives-research.md
 
 # Game retrospectives implementation tasks
 
-The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, through RT-03. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md), [context compiler guide](../game-retrospective-context.md) and [invocation guide](../game-retrospective-invocation.md). Live provider trials, historical generation and deployment remain outside this work.
+The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives` through the remaining local work until operator assistance is required. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md), [context compiler guide](../game-retrospective-context.md) and [invocation guide](../game-retrospective-invocation.md). Live provider trials, historical generation and deployment remain separately scoped.
 
 ## Locked direction and planning defaults
 
@@ -31,7 +31,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-01 | Final boundary, event, input-storage and provider contracts | Research | Done |
 | RT-02 | Complete frozen context and speaker order | RT-01 | Done |
 | RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Done |
-| RT-04 | Influence durable retrospective turns | RT-01–03 | Todo |
+| RT-04 | Influence durable retrospective turns | RT-01–03 | Done |
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Todo |
 | RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Todo |
 | RT-07 | Early canonical results and continued delivery | RT-04–06 | Todo |
@@ -280,3 +280,22 @@ Local verification:
 A read-only single-turn Grok review was attempted outside the sandbox with tools, web search and subagents disabled. It returned no review after more than three minutes and was stopped. This is incomplete external review, not a clean review result; final integrated review remains RT-15.
 
 Current runners, simulations and settlement still end at the competitive result. RT-04 onward remains unimplemented. These checks are deterministic local evidence, not live provider quality, deployed runtime, MCP, replay or export acceptance.
+
+## RT-04 completion record
+
+RT-04 is implemented on 2026-10-10. The [runtime guide](../game-retrospective-runtime.md) records Influence's nonfinal retrospective state, whole-roster admission, one staged statement per durable turn and final completion proof/held publication. Initialization commits the frozen private input with its canonical definition under the existing owner/head fence. Recovery reuses the same input, order and exact accepted prefix; original contestants remain available without regaining gameplay eligibility. Cancellation reaches capacity reads and statement dispatch. Required-statement failure retains its unfinished cursor rather than fabricating speech or completing.
+
+Source binding uses the original outcome's committed owning turn and its dialogue cutoff. Original transcript entries retain their owning-turn canonical boundary; the two sequence spaces remain separate. Actual full-run fixtures exposed format event-envelope phases and structured formal-speech display labels. The compiler now uses that canonical phase evidence and the existing formatter; formal writers supply exact dialogue pointers. No prose parser was added. Engine/API provider call identity is shared, preserving existing journal IDs for durable, standalone and Werewolf calls.
+
+Local Influence runner calls now continue after a canonical win. Exact round-capped evaluations that stop without a competitive outcome remain partial runs and cannot provide retrospective completion evidence. Simulation artifact/report/MCP integration remains RT-13. Werewolf, settlement validation, early results, replay, Studio and exports remain subsequent tasks; this intermediate branch is not a delivered release.
+
+Local verification:
+
+- `bun run test`: 2,533 passed, 5 existing skips, 0 failures across 262 files.
+- Final retrospective/provider-execution/durable-runner checks: 120 passed, 0 failures across 5 files, including exact prior context, restart at every ordinal, unchanged outcome/order, no repeated initialization capacity read, failure retaining the cursor and pre-append semantic rejection.
+- `bun run test:postgres`: 1,985 passed, 0 failures across 172 files on a fresh disposable local database. The shared database was left untouched.
+- Final atomic-input/restart, immutable storage and durable-store checks: 7 passed, 0 failures across 3 files. A deliberate failure after private-input insertion rolls back both input and initialization; restart completes one epilogue while API settlement/owner closure remain pending.
+- Final shared provider-journal/runtime checks: 31 passed, 0 failures across 2 files, including replay, owner fencing, accounting and unchanged call identities. An earlier targeted run timed out waiting for the baseline's advisory lock; rerunning sequentially passed.
+- `bun run check`: typecheck and lint passed. Whitespace and relative documentation links passed.
+
+These are deterministic local checks. External review remains RT-15; no model quality trial, staging run, deployment, authenticated retrospective MCP delivery or encoded export was performed for RT-04.

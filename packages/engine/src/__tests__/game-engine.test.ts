@@ -1771,7 +1771,7 @@ describe("Phase machine - state transitions", () => {
     actor.stop();
   });
 
-  it("ends game when only 1 player remains", async () => {
+  it("waits for retrospective completion when only 1 player remains", async () => {
     const machine = createPhaseMachine();
     const playerIds = [createUUID(), createUUID()];
     const actor = createActor(machine, {
@@ -1802,7 +1802,12 @@ describe("Phase machine - state transitions", () => {
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: defined(playerIds[1]) });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: [defined(playerIds[0])] });
-    await advance(); // format_resolve -> checkGameOver -> end
+    await advance(); // format_resolve -> checkGameOver -> retrospective
+    expect(actor.getSnapshot().value).toBe("retrospective");
+    expect(actor.getSnapshot().status).toBe("active");
+    await advance(); // ordinary phase completion cannot close the retrospective
+    expect(actor.getSnapshot().value).toBe("retrospective");
+    actor.send({ type: "RETROSPECTIVE_COMPLETE" });
 
     // Wait for actor to complete
     await Promise.race([done, new Promise((r) => setTimeout(r, 100))]);
@@ -1976,7 +1981,10 @@ describe("Phase machine - endgame transitions", () => {
 
     // Determine winner
     actor.send({ type: "JURY_WINNER_DETERMINED", winnerId: defined(playerIds[0]) });
-    await advance(); // judgment_jury_vote -> end
+    await advance(); // judgment_jury_vote -> retrospective
+    expect(actor.getSnapshot().value).toBe("retrospective");
+    expect(actor.getSnapshot().status).toBe("active");
+    actor.send({ type: "RETROSPECTIVE_COMPLETE" });
 
     await Promise.race([done, new Promise((r) => setTimeout(r, 100))]);
     expect(actor.getSnapshot().status).toBe("done");

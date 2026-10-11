@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { ProviderProfileId } from "./model-catalog";
 import { Phase, type UUID } from "./types";
 
@@ -161,6 +162,22 @@ export function durableProviderLogicalCallId(input: {
     gameId: input.gameId,
     semantic: canonicalProviderSemanticCoordinate(semantic),
   })).digest("hex")}`;
+}
+
+/** Shared engine/journal identity, including standalone and Werewolf calls. */
+export function providerLogicalCallId(gameId: string, coordinate: ProviderLogicalCallCoordinate): string {
+  if (coordinate.semantic.kind === "durable_turn") return durableProviderLogicalCallId({
+    gameId, turnId: coordinate.semantic.turnId, subcallSlot: coordinate.semantic.subcallSlot,
+  });
+  return hashCanonicalJson({ domain: "influence.provider.logical-call.v2", coordinate: {
+    gameId, actor: { name: coordinate.actor.name,
+      ...(coordinate.actor.id !== undefined && { id: coordinate.actor.id }),
+      ...(coordinate.actor.role !== undefined && { role: coordinate.actor.role }) },
+    action: coordinate.action,
+    ...(coordinate.phase !== undefined && { phase: coordinate.phase }),
+    ...(coordinate.round !== undefined && { round: coordinate.round }),
+    semantic: canonicalProviderSemanticCoordinate(coordinate.semantic),
+  } });
 }
 
 export function assertProviderSemanticCoordinate(

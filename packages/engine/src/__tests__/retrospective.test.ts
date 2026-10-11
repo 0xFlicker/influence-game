@@ -36,6 +36,23 @@ function statement(state: RetrospectiveStateV1): RetrospectiveStatementV1 {
 }
 
 describe("retrospective contracts", () => {
+  test("GameState rejects invalid postgame effects before appending them", () => {
+    const game = new GameState(rosterIds.map(id => ({ id, name: id })), { gameId: "retro-state" });
+    game.eliminatePlayer("echo");
+    game.eliminatePlayer("mira");
+    const source = game.getDomainProjection().retrospectiveOutcomeSource!;
+    const definition = createRetrospectiveDefinition({ version: 1, outcome: source, dialogue: [],
+      sections: [{ phase: "fixture", fromEventSequence: 1, throughEventSequence: source.eventSequence, summary: "Atlas won." }] }, ["echo", "mira", "atlas"]);
+    game.recordRetrospective("retrospective.started", definition);
+    const accepted = game.getCanonicalEvents();
+    const state = game.getDomainProjection().retrospective!;
+    expect(() => game.recordRetrospective("retrospective.statement_recorded", { ...statement(state), ordinal: 2, actorId: "atlas" })).toThrow();
+    expect(game.getCanonicalEvents()).toEqual(accepted);
+    expect(() => game.recordRetrospective("retrospective.completed", { version: 1, definitionHash: definition.definitionHash,
+      statementCount: 3, statementsHash: hashCanonicalJson([]) })).toThrow("whole original roster");
+    expect(game.getCanonicalEvents()).toEqual(accepted);
+  });
+
   test("only complete bounded outcome-pinned input can bind the frozen definition", () => {
     const original = input(), definition = createRetrospectiveDefinition(original, rosterIds);
     expect(() => assertRetrospectiveInputBinding(original, definition)).not.toThrow();

@@ -1,4 +1,5 @@
 import { canonicalJson } from "@influence/prompt-lab-protocol";
+import { formalSpeechDisplayText } from "./accepted-formal-speech";
 import type { CanonicalGameEvent } from "./canonical-events";
 import { replayCanonicalEvents } from "./game-projection";
 import type { TranscriptEntry } from "./game-runner.types";
@@ -172,6 +173,7 @@ export function freezeInfluenceRetrospective(options: {
   let phase = Phase.INIT;
   for (const event of prefix) {
     if (event.type === "game.phase_entered") phase = event.payload.phase;
+    else if (event.phase !== null) phase = event.phase;
     appendRetrospectiveSection(input.sections, `round:${event.round}/${phase}`, event.sequence,
       `${event.type} ${canonicalJson(influenceFact(event))}${event.sequence === outcome.eventSequence ? `; outcome winner=${winnerId}` : ""}`);
   }
@@ -189,8 +191,9 @@ export function freezeInfluenceRetrospective(options: {
   for (const entry of productEntries) {
     if (!["public", "mingle", "huddle", "whisper"].includes(entry.scope)) continue;
     if (entry.phase === Phase.RETROSPECTIVE || entry.phase === Phase.END
-      || !prefix.some(event => event.type === "game.phase_entered" && event.round === entry.round && event.payload.phase === entry.phase)) {
-      throw new RetrospectiveContractError("Dialogue phase is outside the original game account");
+      || !prefix.some(event => event.round === entry.round && (event.phase === entry.phase
+        || event.type === "game.phase_entered" && event.payload.phase === entry.phase))) {
+      throw new RetrospectiveContractError(`Dialogue phase is outside the original game account: ${entry.round}/${entry.phase}, entry ${entry.entrySequence}`);
     }
     if (!entry.speakerPlayerId || !original.playerOrder.includes(entry.speakerPlayerId) || !entry.text.trim()) {
       throw new RetrospectiveContractError("Retrospective dialogue requires canonical speaker identity and nonblank text");
@@ -208,7 +211,14 @@ export function freezeInfluenceRetrospective(options: {
       || event.type === "endgame.speech_recorded" && event.payload.correlationKey === entry.dialogueContext?.formalSpeechCorrelationKey));
     if (linked) {
       const quote = eventQuotes(linked)[0]!;
-      if (quote.actorId !== entry.speakerPlayerId || quote.text !== entry.text || entry.scope !== "public") {
+      const displayText = linked.type === "endgame.speech_recorded" ? formalSpeechDisplayText({
+        kind: linked.payload.speechKind, text: linked.payload.text, targetId: linked.payload.targetId,
+        counterpartId: linked.payload.counterpartId,
+      }, { targetName: linked.payload.targetId ? original.players[linked.payload.targetId]?.name : undefined })
+        : linked.type === "judgment.speech_recorded" ? formalSpeechDisplayText({
+          kind: linked.payload.speechKind, text: linked.payload.text, counterpartId: linked.payload.addresseeId,
+        }, { counterpartName: linked.payload.addresseeId ? original.players[linked.payload.addresseeId]?.name : undefined }) : quote.text;
+      if (quote.actorId !== entry.speakerPlayerId || displayText !== entry.text || entry.scope !== "public") {
         throw new RetrospectiveContractError("Canonical and correlated product speech differ");
       }
       continue;

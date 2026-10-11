@@ -1,4 +1,9 @@
 import { seededRandom } from "./seeded-random";
+import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
+import { freezeInfluenceRetrospective } from "./influence-retrospective";
+import { materializeRetrospectiveContext, preflightRetrospectiveContext, type FrozenRetrospectiveGame } from "./retrospective-context";
+import { assertRetrospectiveInputBinding, retrospectiveCompletionProof, type RetrospectiveInputV1 } from "./retrospective";
+import { durableProviderLogicalCallId, providerLogicalCallId } from "./provider-execution";
 import { beginMingleWindow, advanceMingleWindow, finishMingleWindow, mingleWindowRooms } from "./phases/mingle";
 import { prepareFormatMinglePressure } from "./phases/format-kernel";
 /**
@@ -202,6 +207,7 @@ interface DurableHouseBeatInput {
 
 interface DurablePhaseTurnInput extends DurableTurnIntentInput {
   houseBeat?: DurableHouseBeatInput;
+  retrospectiveInput?: RetrospectiveInputV1;
 }
 
 export class GameRunner {
@@ -230,6 +236,9 @@ export class GameRunner {
   private readonly prepareVisualTurn?: GameRunnerOptions["prepareVisualTurn"];
   private readonly prepareVisualBoundary?: GameRunnerOptions["prepareVisualBoundary"];
   private durableTurnSnapshot: DurableGameTurnSnapshotV1 | null = null;
+  private frozenRetrospective: FrozenRetrospectiveGame | null = null;
+  private readonly retrospectiveCancellation = new AbortController();
+  private readonly localDialogueAnchors = new Map<number, number>();
   private agentsStarted = false;
   private durablePreparation: Promise<void> | null = null;
   private streamListener?: (event: GameStreamEvent) => void;
@@ -332,6 +341,9 @@ export class GameRunner {
     this.logger = new TranscriptLogger(this.gameState);
     if (this.resumeFrom) {
       this.logger.seed(this.resumeFrom.transcriptReplay);
+      for (const entry of this.resumeFrom.transcriptReplay) if (entry.entrySequence !== undefined) {
+        this.localDialogueAnchors.set(entry.entrySequence, this.resumeFrom.lastEventSequence);
+      }
       hydrateMingleInboxFromReplay(this.mingleInbox, this.resumeFrom.mingleInboxReplay);
       const canonicalHead = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
       const dialogueHead = this.logger.transcript.reduce(
@@ -452,6 +464,7 @@ export class GameRunner {
 
   /** Signal the game to stop at the next phase boundary. */
   abort(): void {
+    this.retrospectiveCancellation.abort(new Error("Game run aborted"));
     this._aborted = true;
   }
 
@@ -1383,7 +1396,7 @@ export class GameRunner {
     const store = this.durableTurnStore;
     const base = this.durableTurnSnapshot;
     if (!store || !base) throw new Error("Durable turn coordinator is not initialized");
-    const visualEvents = await this.prepareVisualBoundary?.(structuredClone(base));
+    const visualEvents = base.execution.cursor.kind === "retrospective" ? [] : await this.prepareVisualBoundary?.(structuredClone(base));
     if (this._aborted) throw new Error("Game run aborted");
     const requestedIntent = createDurableTurnIntent(base.execution, input);
     const planned = await store.planNextTurn(requestedIntent);
@@ -1461,7 +1474,7 @@ export class GameRunner {
     });
     let committed: DurableGameTurnCommittedV1;
     try {
-      committed = await store.commitTurn(draft);
+      committed = await store.commitTurn(draft, input.retrospectiveInput);
     } catch (error) {
       const retriedPlan = await store.planNextTurn(intent);
       if (retriedPlan.status !== "committed") throw error;
@@ -1502,6 +1515,8 @@ export class GameRunner {
       case "tribunal_lobby":
       case "judgment_opening":
         return { version: 1, kind: "phase_enter", actor: coordinate };
+      case "retrospective":
+        return { version: 1, kind: "retrospective", stage: "initialize" };
       case "end":
         return { version: 1, kind: "terminal", stage: "commit_game" };
       default:
@@ -1514,8 +1529,8 @@ export class GameRunner {
     expected: readonly string[],
   ): GameExecutionCursorV1 {
     const coordinate = String(actor.getSnapshot().value);
-    if (coordinate === "end") {
-      return { version: 1, kind: "terminal", stage: "commit_game" };
+    if (coordinate === "retrospective") {
+      return { version: 1, kind: "retrospective", stage: "initialize" };
     }
     if (!expected.includes(coordinate)) {
       throw new Error(`Endgame phase ended at unexpected actor coordinate ${coordinate}`);
@@ -2200,6 +2215,11 @@ export class GameRunner {
     while (!this._aborted) {
       const snapshot = this.requireDurableSnapshot();
       if (snapshot.execution.cursor.kind === "terminal") return;
+      if (snapshot.execution.cursor.kind === "retrospective") {
+        if (this.actorCoordinateFromDurableSnapshot(snapshot) !== "retrospective") throw new Error("Retrospective cursor has a different machine state");
+        await this.runDurableRetrospective();
+        continue;
+      }
       const coordinate = this.actorCoordinateFromDurableSnapshot(snapshot);
       if (!this.isDurableConvertedActorCoordinate(coordinate)) {
         throw new Error(
@@ -2209,6 +2229,115 @@ export class GameRunner {
       await this.runDurableConvertedPhase(coordinate);
       await this.tickPhaseActor();
     }
+  }
+
+  private async initializeRetrospective(source: {
+    transcriptThroughSequence: number;
+    dialogueAnchors: Array<{ entrySequence: number; eventSequence: number }>;
+  }): Promise<FrozenRetrospectiveGame> {
+    const setups = [];
+    for (const agent of this.agents.values()) setups.push(await agent.prepareRetrospectiveSetup(this.retrospectiveCancellation.signal));
+    const budgets = new Map<string, number>();
+    const effectiveModelIds = new Set<string>();
+    for (const setup of setups) {
+      for (const id of setup.capacities.effectiveModelIds) effectiveModelIds.add(id);
+      for (const model of setup.capacities.models) budgets.set(model.modelId, Math.min(budgets.get(model.modelId) ?? Infinity, model.maxContextBytes));
+    }
+    const frozen = freezeInfluenceRetrospective({ events: this.gameState.getCanonicalEvents(), transcript: this.logger.transcript,
+      ...source, seats: setups.map(({ speaker }) => ({ id: speaker.id, name: speaker.name, personality: speaker.personality,
+        backstory: speaker.backstory, influenceStrategy: speaker.strategy })),
+      capacities: { effectiveModelIds: [...effectiveModelIds], models: [...budgets].map(([modelId, maxContextBytes]) => ({ modelId, maxContextBytes })) } });
+    for (const setup of setups) preflightRetrospectiveContext(frozen, setup.capacities);
+    return frozen;
+  }
+
+  private async runDurableRetrospective(): Promise<void> {
+    const base = this.requireDurableSnapshot();
+    const cursor = base.execution.cursor;
+    if (cursor.kind !== "retrospective" || !this.durableTurnStore) throw new Error("Retrospective requires its durable cursor");
+    if (cursor.stage === "initialize") {
+      const source = await this.durableTurnStore.readRetrospectiveSource(base.execution.gameId);
+      if (source.input) throw new Error("Uninitialized retrospective already has an input");
+      const frozen = await this.initializeRetrospective(source);
+      await this.executeDurableTurn({ branch: "engine", action: "retrospective-initialize", retrospectiveInput: frozen.input }, async ctx => {
+        ctx.logger.emitPhaseChange(Phase.RETROSPECTIVE);
+        ctx.gameState.recordRetrospective("retrospective.started", frozen.definition);
+        return { version: 1, kind: "retrospective", stage: "statement", definitionHash: frozen.definition.definitionHash, ordinal: 0 };
+      });
+      this.frozenRetrospective = frozen;
+      return;
+    }
+    const state = this.gameState.getDomainProjection().retrospective;
+    if (!state || state.definition.definitionHash !== cursor.definitionHash || state.completedAtEventSequence !== null) throw new Error("Retrospective cursor differs from its accepted prefix");
+    if (!this.frozenRetrospective) {
+      const source = await this.durableTurnStore.readRetrospectiveSource(base.execution.gameId);
+      if (!source.input) throw new Error("Retrospective has no frozen input");
+      assertRetrospectiveInputBinding(source.input, state.definition);
+      this.frozenRetrospective = { input: source.input, definition: state.definition,
+        speakers: [...this.agents.values()].map(agent => agent.getRetrospectiveSpeaker()) };
+    }
+    if (cursor.stage === "complete") {
+      await this.executeDurableTurn({ branch: "engine", action: "retrospective-complete" }, async (ctx, actor) => {
+        ctx.gameState.recordRetrospective("retrospective.completed", retrospectiveCompletionProof(state));
+        actor.send({ type: "RETROSPECTIVE_COMPLETE" });
+        ctx.logger.emitPhaseChange(Phase.END);
+        return { version: 1, kind: "terminal", stage: "commit_game" };
+      });
+      return;
+    }
+    if (cursor.ordinal !== state.statements.length) throw new Error("Retrospective cursor skipped a statement");
+    const context = materializeRetrospectiveContext(this.frozenRetrospective, state);
+    const turnId = `${base.execution.gameId}:turn:${base.execution.heads.turnSequence + 1}`;
+    await this.executeDurableTurn({ branch: "single_provider", action: "retrospective-statement", actorIds: [context.self.id],
+      providerActions: [{ actorId: context.self.id, action: "retrospective-statement", contractId: "retrospective.v1" }] }, async ctx => {
+      await this.acceptRetrospectiveStatement(ctx, this.frozenRetrospective!, durableProviderLogicalCallId({ gameId: base.execution.gameId, turnId, subcallSlot: 1 }));
+      const ordinal = cursor.ordinal + 1;
+      return ordinal === state.definition.speakerIds.length
+        ? { version: 1, kind: "retrospective", stage: "complete", definitionHash: cursor.definitionHash }
+        : { version: 1, kind: "retrospective", stage: "statement", definitionHash: cursor.definitionHash, ordinal };
+    });
+  }
+
+  private async acceptRetrospectiveStatement(ctx: PhaseRunnerContext, frozen: FrozenRetrospectiveGame, plannedCallId?: string): Promise<void> {
+    const state = ctx.gameState.getDomainProjection().retrospective;
+    if (!state) throw new Error("Retrospective statement has no definition");
+    const context = materializeRetrospectiveContext(frozen, state);
+    const agent = ctx.agents.get(context.self.id);
+    if (!agent) throw new Error("Original retrospective contestant is unavailable");
+    const phase = ctx.contextBuilder.buildPhaseContext(agent.id, Phase.RETROSPECTIVE, undefined, true);
+    const callId = plannedCallId ?? providerLogicalCallId(ctx.gameState.gameId, {
+      actor: { id: agent.id, name: agent.name, role: "player" }, action: "retrospective-statement",
+      phase: Phase.RETROSPECTIVE, round: ctx.gameState.round,
+      semantic: phase.providerSemanticCoordinate ?? { version: 1, kind: "phase_call", phase: Phase.RETROSPECTIVE,
+        round: ctx.gameState.round, canonicalEventSequence: phase.providerCallBoundaryEventSequence ?? 0, callSlot: context.request.ordinal + 1 },
+    });
+    const response = await agent.getRetrospectiveStatement(phase, context, { signal: this.retrospectiveCancellation.signal });
+    if (this._aborted) throw new Error("Game run aborted");
+    await ctx.beforeAcceptedCommit?.();
+    const dialogueSequence = ctx.logger.nextProductDialogueSequence;
+    ctx.gameState.recordRetrospective("retrospective.statement_recorded", { version: 1,
+      definitionHash: state.definition.definitionHash, actorId: agent.id, ordinal: context.request.ordinal,
+      priorStatementsHash: context.request.priorStatementsHash, requestHash: hashCanonicalJson(context.request), providerLogicalCallId: callId,
+      speech: response.speech }, [{ kind: "transcript_entry", sequence: dialogueSequence, actorId: agent.id }]);
+    ctx.logger.logPublic(agent.id, response.speech, Phase.RETROSPECTIVE);
+  }
+
+  private async runLocalRetrospective(ctx: PhaseRunnerContext, actor: PhaseActor): Promise<void> {
+    const outcome = ctx.gameState.getDomainProjection().retrospectiveOutcomeSource;
+    if (!outcome) throw new Error("Retrospective requires an accepted competitive outcome");
+    const frozen = await this.initializeRetrospective({ transcriptThroughSequence: Math.max(0, ...ctx.logger.transcript.map(entry => entry.entrySequence ?? 0)),
+      dialogueAnchors: [...this.localDialogueAnchors].map(([entrySequence, eventSequence]) => ({ entrySequence, eventSequence: Math.min(eventSequence, outcome.eventSequence) })) });
+    this.frozenRetrospective = frozen;
+    ctx.logger.emitPhaseChange(Phase.RETROSPECTIVE);
+    ctx.gameState.recordRetrospective("retrospective.started", frozen.definition);
+    await this.flushDurableEvents({ continueBuffering: true });
+    for (let ordinal = 0; ordinal < frozen.definition.speakerIds.length; ordinal++) {
+      await this.acceptRetrospectiveStatement(ctx, frozen);
+      await this.flushDurableEvents({ continueBuffering: true });
+    }
+    ctx.gameState.recordRetrospective("retrospective.completed", retrospectiveCompletionProof(ctx.gameState.getDomainProjection().retrospective!));
+    actor.send({ type: "RETROSPECTIVE_COMPLETE" });
+    ctx.logger.emitPhaseChange(Phase.END);
   }
 
   private async runGameLoop(actor: PhaseActor): Promise<void> {
@@ -2314,6 +2443,8 @@ export class GameRunner {
       } else if (state === "judgment_jury_vote") {
         await runJudgmentJuryVote(prc, actor);
 
+      } else if (state === "retrospective") {
+        await this.runLocalRetrospective(prc, actor);
       } else if (state === "checkGameOver") {
         await new Promise((r) => setTimeout(r, 10));
       } else if (state === "end" || done) {
@@ -2349,6 +2480,10 @@ export class GameRunner {
           ?? Phase.INIT,
         phaseActor: actor,
       });
+      const boundary = this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0;
+      for (const entry of this.logger.transcript) if (entry.entrySequence !== undefined && !this.localDialogueAnchors.has(entry.entrySequence)) {
+        this.localDialogueAnchors.set(entry.entrySequence, boundary);
+      }
     }
 
     if (!this._aborted) {

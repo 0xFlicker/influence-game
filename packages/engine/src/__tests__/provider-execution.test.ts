@@ -11,6 +11,7 @@ import {
   classifyResponsesTerminalOutcome,
   createProviderEvidenceFetch,
   providerSemanticCoordinateHash,
+  providerLogicalCallId,
   sanitizeProviderEvidence,
   type ProviderAttemptRecord,
   type ProviderLogicalCallCoordinate,
@@ -34,6 +35,13 @@ const coordinate: ProviderLogicalCallCoordinate = {
 };
 
 describe("ProviderExecutionCoordinator", () => {
+  it("uses the existing journal identities for phase and Werewolf retrospective calls", () => {
+    expect(providerLogicalCallId("game-1", { ...coordinate, semantic: { version: 1, kind: "phase_call", phase: Phase.VOTE,
+      round: 2, canonicalEventSequence: 9, callSlot: 1 } })).toBe("sha256:3735d3610ea12be0f7a629298c2d9c81cb9201840e22c3aa3f9adc6c23fddaeb");
+    expect(providerLogicalCallId("game-1", { actor: coordinate.actor, action: "retrospective-statement", round: 2,
+      semantic: { version: 1, kind: "werewolf_action", eventSequence: 99 } })).toBe("sha256:a62fe4ba816fbeabbf7c6f7d000f747745883bfb6318aed935d25cc7068fa14c");
+  });
+
   it("canonically hashes closed semantic coordinates and rejects malformed variants", () => {
     const diary = {
       version: 1 as const,

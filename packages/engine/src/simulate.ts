@@ -7,8 +7,9 @@
  * Runs multiple game simulations and outputs structured analysis.
  * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
  * speech-only agent methods with verified capacity and accepted journal replay.
- * This runner still stops at the outcome until its later execution task is connected.
- * See docs/game-retrospective-invocation.md; native HTTP is mocked in focused tests.
+ * Influence runner execution now includes the retrospective after a canonical win.
+ * Artifact/report and local MCP tail integration remain RT-13. See
+ * docs/game-retrospective-runtime.md; native HTTP is mocked in focused tests.
  * Keep exact types without `as any` and call House methods directly when wiring turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty

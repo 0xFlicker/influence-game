@@ -1,4 +1,4 @@
-import { fixtureInfluenceRetrospective } from "@influence/engine";
+import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
 import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
@@ -307,8 +307,10 @@ function mockResponse(message: string): AgentResponse {
   return { thinking: "", message };
 }
 
-class ApiTestMockAgent implements IAgent {
-  getRetrospectiveStatement = fixtureInfluenceRetrospective;
+export class ApiTestMockAgent implements IAgent {
+  getRetrospectiveStatement: IAgent["getRetrospectiveStatement"] = fixtureInfluenceRetrospective;
+  prepareRetrospectiveSetup: IAgent["prepareRetrospectiveSetup"] = fixtureInfluenceRetrospectiveSetup;
+  getRetrospectiveSpeaker: IAgent["getRetrospectiveSpeaker"] = fixtureInfluenceRetrospectiveSpeaker;
   readonly id: UUID;
   readonly name: string;
 

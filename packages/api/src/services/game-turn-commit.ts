@@ -4,6 +4,8 @@ import {
   assertGameExecutionStateV1,
   assertGameTurnCommitDraftV1,
   assertGameTurnIntentV1,
+  replayCanonicalEvents,
+  type RetrospectiveInputV1,
   projectViewerDecisionEvent,
   validateCanonicalGameEvent,
   validateTwoNamesCanonicalPrefixes,
@@ -29,6 +31,7 @@ import {
 import { hashCanonicalEvent } from "./game-events.js";
 import { gameExecutionStateFromRow } from "./game-execution-state.js";
 import { sha256StableJson } from "./stable-hash.js";
+import { insertRetrospectiveInput } from "./game-retrospective-inputs.js";
 import {
   isDialogueTranscriptScope,
   TRANSCRIPT_CAPTURE_VERSION,
@@ -457,7 +460,7 @@ export async function planGameTurn(
  */
 export async function commitGameTurn(
   db: DrizzleDB,
-  params: { ownerEpoch: string; draft: GameTurnCommitDraftV1 },
+  params: { ownerEpoch: string; draft: GameTurnCommitDraftV1; retrospectiveInput?: RetrospectiveInputV1 },
 ): Promise<GameTurnCommitResultV1> {
   assertGameTurnCommitDraftV1(params.draft);
   const effectHash = sha256StableJson(params.draft);
@@ -540,6 +543,16 @@ export async function commitGameTurn(
         "execution_state_conflict",
         `Invalid Two Names canonical lifecycle: ${lifecycle.errors.join("; ")}`,
       );
+    }
+    const history = [...persistedEventRows.map(row => row.envelope as unknown as CanonicalGameEvent), ...canonicalEvents.map(row => row.event)];
+    const projection = replayCanonicalEvents(history);
+    const start = canonicalEvents.find(row => row.event.type === "retrospective.started")?.event;
+    if (start?.type === "retrospective.started") {
+      if (!params.retrospectiveInput) throw new Error("Retrospective initialization requires its frozen private input");
+      await insertRetrospectiveInput(tx, params.retrospectiveInput, start.payload);
+    } else if (params.retrospectiveInput) throw new Error("Private retrospective input is only legal with canonical initialization");
+    if (params.draft.nextExecution.cursor.kind === "retrospective" && !projection.retrospectiveOutcomeSource) {
+      throw new Error("Retrospective cursor requires an accepted canonical outcome");
     }
     const eventHeadSequence = params.draft.expectedBaseHeads.eventSequence + canonicalEvents.length;
     const eventHeadHash = canonicalEvents.at(-1)?.eventHash ?? params.draft.expectedBaseHeads.eventHash;

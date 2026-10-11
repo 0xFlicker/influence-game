@@ -63,7 +63,7 @@ import type {
   FormatDecisionProvenance,
 } from "./game-runner.types";
 import { Phase } from "./types";
-import { prepareRetrospectiveInvocation } from "./retrospective-invocation";
+import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "./retrospective-invocation";
 import type { RetrospectiveSpeakerContext } from "./retrospective-context";
 import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "./retrospective";
 import type {
@@ -2644,6 +2644,16 @@ export class InfluenceAgent implements IAgent {
   // ---------------------------------------------------------------------------
   // Phase-specific actions (normal rounds)
   // ---------------------------------------------------------------------------
+
+  getRetrospectiveSpeaker() {
+    return { id: this.id, name: this.name,
+      personality: this.personalityPrompt ?? PERSONALITY_PROMPTS[this.personality],
+      backstory: this.backstory, strategy: this.strategyInstructions ?? "" };
+  }
+
+  async prepareRetrospectiveSetup(signal?: AbortSignal) {
+    return { speaker: this.getRetrospectiveSpeaker(), capacities: await prepareRetrospectiveCapacityPolicy(this.providerManifest, signal) };
+  }
 
   async getRetrospectiveStatement(ctx: PhaseContext, retrospective: RetrospectiveSpeakerContext, options?: AgentCallOptions): Promise<RetrospectiveSpeechV1> {
     options?.signal?.throwIfAborted();
