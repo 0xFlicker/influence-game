@@ -51,3 +51,11 @@ The competitive result remains a readable cue before the Retrospective chapter. 
 Retrospective statements are ordinary selectable speech moments. Their purpose, actor, ordinal and canonical event sequence accompany the existing stable transcript/cursor identity. Influence's owning production reader verifies each captured row against its accepted statement, including exact text, actor, phase and event boundary; missing or substituted dialogue fails clearly. Werewolf uses its own validated post-result projection. Full sources require the completed retrospective proof. A validated visual pause can still preview its earlier accepted prefix, including an empty opening frontier, but cannot freeze a completed export.
 
 Labels and recipes remain independent of semantic purpose. A retrospective-only cut contains exactly the selected speeches in source order; including the result is a separate choice. Source hashes include captured text and canonical provenance. The inspector shows the retrospective speaker ordinal and event reference without exposing the private dossier.
+
+## Local acceptance and operator boundary
+
+The implementation branch's evidence is provider-free/local: native malformed-output fixtures, canonical game/journal/recovery checks, authenticated REST/MCP authority checks, browser navigation and frozen encoded export. Read-only Grok review is tracked in the task ledger. Real statements still require the verified hosted capacity lane. Local LM Studio capacity is unsupported and fails clearly at retrospective initialization.
+
+An operator can inspect an active/paused outcome with the bounded retrospective reader, then deliberately resume the same failure/head through the eligible results control or `games:read games:resume` MCP grant. Recovery resumes required generation under the sealed route; existing statements are preserved. The command does not replace accepted speech or complete a historical game.
+
+Real-model quality trials need separate paid-provider authorization, followed by staging verification of worker continuation/recovery/drain, current web/MCP delivery and export preparation. Staging tracks main; production retains its manual approval. A feature-branch local trial is not a deployed acceptance result.

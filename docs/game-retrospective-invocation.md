@@ -1,6 +1,6 @@
 # Strict retrospective final statements
 
-RT-03 adds mandatory `getRetrospectiveStatement` methods to `IAgent` / `InfluenceAgent` and `WerewolfAgent` / `WerewolfModelAgent`. [RT-04](game-retrospective-runtime.md) now calls the Influence method through durable turns; Werewolf runtime and simulator artifact/report integration remain subsequent tasks. See the [contract](game-retrospective-contract.md), [context compiler](game-retrospective-context.md) and [task plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
+Mandatory `getRetrospectiveStatement` methods on `IAgent` / `InfluenceAgent` and `WerewolfAgent` / `WerewolfModelAgent` run through both existing engines and their durable API authorities. Simulations retain complete artifacts and bounded local MCP inspection. See the [runtime](game-retrospective-runtime.md), [contract](game-retrospective-contract.md), [context compiler](game-retrospective-context.md) and [task plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md).
 
 ## Model contract and context
 

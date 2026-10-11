@@ -8,7 +8,9 @@ import { readHouseGameRetrospective } from "../services/house-game-retrospective
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import {completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {projectWerewolfView} from "@influence/engine/werewolf/observation";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
 import { readWerewolfPresentation } from "../services/werewolf-presentation.js";
@@ -733,7 +735,7 @@ test("House visibility creation works for both games on desktop and mobile", asy
 },180_000);
 
 test("House Werewolf results: anonymous endings, exact evidence, Mystery isolation and mobile", async () => {
-  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {completedWerewolfResultsFixture:werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
   const {buildWerewolfResults} = await import("@influence/engine/werewolf/results");
   const page = await browser.newPage();
   page.setDefaultNavigationTimeout(90_000);
@@ -1119,6 +1121,45 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
     expect(await page.$eval('[data-werewolf-stage]',element=>element.textContent)).not.toContain("Tonight’s target");
   } finally { await page.close(); }
 }, 60_000);
+
+test("a canonical retrospective grows after results without moving a paused replay and survives reconnect",async () => {
+  const id = "browser-retrospective-growth", events = await completedWerewolfResultsFixture("saved",id,1);
+  const firstIndex = events.findIndex(event => event.type === "werewolf.retrospective_statement_recorded");
+  const prefix = events.slice(0,firstIndex), first = events[firstIndex]!;
+  const initialView = projectWerewolfView(replayWerewolf(prefix),"mystery");
+  const resultCursor = initialView.entries.findIndex(entry => entry.kind === "result")+1, firstCursor = resultCursor+1;
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"in_progress",startedAt:new Date().toISOString(),config:JSON.stringify({providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"low"}]})});
+  await database.db.insert(schema.werewolfEvents).values(prefix.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const claim = await claimWerewolfGame(database.db,id);
+  if (!claim.ok) throw new Error(claim.error);
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${resultCursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${resultCursor}"]`);await pauseWerewolf(page);
+    const originalMax = await page.$eval('input[aria-label="Replay position"]',input => Number(input.getAttribute("max")));
+    await database.db.insert(schema.werewolfEvents).values({gameId:id,sequence:first.sequence,event:first});
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max)>${originalMax}`,{timeout:15_000});
+    expect(await page.$eval('[data-werewolf-stage]',stage => Number(stage.getAttribute("data-cursor")))).toBe(resultCursor);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`,{timeout:20_000});
+    if (first.type !== "werewolf.retrospective_statement_recorded") throw new Error("Missing first speech");
+    await watchText(page,first.payload.speech);
+    await pauseWerewolf(page);
+    const firstMax = await page.$eval('input[aria-label="Replay position"]',input => Number(input.getAttribute("max")));
+    await database.db.insert(schema.werewolfEvents).values(events.slice(firstIndex+1).map(event => ({gameId:id,sequence:event.sequence,event})));
+    await database.db.update(schema.games).set({status:"completed",endedAt:new Date().toISOString()}).where(eq(schema.games.id,id));
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max)>${firstMax}`,{timeout:15_000});
+    expect(await page.$eval('[data-werewolf-stage]',stage => Number(stage.getAttribute("data-cursor")))).toBe(firstCursor);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${firstCursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+    await page.reload({waitUntil:"domcontentloaded"});await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+    await watchText(page,first.payload.speech);
+  } catch (error) {
+    console.error("Retrospective growth fixture",await page.evaluate("document.body.innerText"));
+    await page.screenshot({path:"/tmp/retrospective-growth-failed.png"});throw error;
+  } finally {await page.close();}
+},60_000);
 
 test("published wolf forms transform each night including a lone survivor and night deaths have a seek-safe claw outcome", async () => {
   const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");

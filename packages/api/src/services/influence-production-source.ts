@@ -168,7 +168,8 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
   const retrospectiveByEntry = new Map(history.events.flatMap(({ envelope }) => envelope.sequence <= throughEventSequence && envelope.type === "retrospective.statement_recorded"
     ? envelope.sourcePointers.filter(pointer => pointer.kind === "transcript_entry").map(pointer => [pointer.sequence, { eventSequence: envelope.sequence, ...envelope.payload }] as const) : []));
   const acceptedRetrospectives = history.events.filter(event => event.sequence <= throughEventSequence && event.envelope.type === "retrospective.statement_recorded");
-  if (retrospectiveByEntry.size !== acceptedRetrospectives.length || [...retrospectiveByEntry.keys()].some(sequence => !selectedRows.some(row => row.entrySequence === sequence)))
+  if (acceptedRetrospectives.some(({envelope}) => envelope.sourcePointers.filter(pointer => pointer.kind === "transcript_entry").length !== 1)
+    || retrospectiveByEntry.size !== acceptedRetrospectives.length || [...retrospectiveByEntry.keys()].some(sequence => !selectedRows.some(row => row.entrySequence === sequence)))
     throw new InfluenceProductionSourceError("Accepted retrospective speech is missing its captured dialogue");
   const publicationCutoff = options.refreshVisuals || !supplied ? new Date().toISOString() : supplied.publicationCutoff;
   const acceptedCutoff = supplied?.acceptedCutoff ?? publicationCutoff;

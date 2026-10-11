@@ -41,8 +41,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Done |
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Done |
 | RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Done |
-| RT-14 | Integrated regression proof and documentation | RT-09–13 | In progress |
-| RT-15 | Review, model-quality and deployment acceptance | RT-14 | Todo |
+| RT-14 | Integrated regression proof and documentation | RT-09–13 | Done |
+| RT-15 | Review, model-quality and deployment acceptance | RT-14 | In progress |
 
 Build and prove an Influence vertical path through outcome → statements → terminal using fixtures first, then bring Werewolf to the same boundary with its own authority. Complete both before release. Do not deploy intermediate code that closes ownership at the outcome while later tasks assume it remains active.
 
@@ -374,3 +374,11 @@ Local validation: 69 export tests passed. Real Studio browser tests froze and en
 Fresh local sessions declare a closed explicit game identity. Influence and Werewolf artifacts retain the full canonical epilogue; Werewolf writes a dedicated session directory with events, report, state/frontier, stats and provider diagnostics. Existing local journals now retain compact action/usage/cost receipts independently of private failure evidence. Chatty output identifies coverage/source, ordinal and exact accepted speech. The bounded local retrospective tool dispatches by identity; Werewolf has its own audience-history adapter and resources, never the Influence reducer. Invalid identity, malformed history and extra inspection arguments fail clearly. API readback keeps polling after the competitive outcome and emits each final statement once.
 
 Local validation: 46 focused simulation/journal/MCP tests passed, plus the added API growing-tail report test. Typecheck/lint passed, including corrections to the RT-12 test fixture types. A provider-free CLI Werewolf trial completed six statements; the local MCP reader consumed its saved artifacts and verified the same order and event sequences 61–66. Docs/JSDoc describe the artifact format, unsupported local-model capacity and separate real-model acceptance. No paid or deployed call occurred.
+
+## RT-14 completion record
+
+The integrated local baselines passed: `bun run test` reported 2,554 passes, five existing skips and zero failures across 266 files; `bun run test:postgres` reported 2,009 passes and zero failures across 178 files in the task-specific local database. The classic and format Influence browser journeys passed, as did Werewolf faction/draw result presentation and a new growing-tail journey. That journey proves that results remain visible, committed speeches extend the replay without moving its paused position, and a canonical speech link reconnects to the same statement. RT-12's two Studio-to-encoded-export proofs remain applicable. Browser fixture failures were corrected before the green targeted runs; the harness databases and children were cleaned.
+
+A source-integrity regression reproduced two dialogue pointers on one accepted Influence statement concealing another statement's missing dialogue. The production reader now requires exactly one captured dialogue pointer per statement, in addition to its existing exact actor/text/event and complete-prefix checks. After this final service change, all 26 production source/Studio PostgreSQL tests and `bun run check` passed. The full baselines above preceded this guard; its affected suites were rerun afterward. Evidence logs are `/private/tmp/rt14-provider-free.log`, `/private/tmp/rt14-postgres.log`, `/private/tmp/rt14-browser-growth-confirmed.log`, `/private/tmp/rt14-source-integrity-final.log` and `/private/tmp/rt14-check-final.log`.
+
+Current concepts, Werewolf behavior, MCP/local artifacts, Studio/export and runtime operations now describe the complete feature. The [architecture learning](../solutions/architecture-patterns/retrospective-final-boundary-and-frozen-speech.md) records the single final boundary and frozen speech provenance. Real model quality, staging and production are unverified and remain RT-15 operator work. No paid game provider, media generation or deployment occurred.

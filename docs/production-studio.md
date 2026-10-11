@@ -65,3 +65,9 @@ Encoded cuts from both games and direct Studio → frozen selection → CLI → 
 Retained operator review proves the full interface headlessly before opening fresh native Chrome windows with no viewport emulation. Native resize and committed previews are checked before handoff. An automated macOS fullscreen request remained pending in the earlier headful/emulated proof; matching physical bounds did not resolve it. Direct native input was blocked by the locked Mac, so native fullscreen remains an explicit manual trial rather than a passed claim. The headless fullscreen seek/menu assertions remain intact.
 
 A2.3's cross-game job console, exporter readiness/concurrency optimization, broad public transport migration, unpublished-candidate playback, richer scene-use navigation and harmonize schema alignment remain separate work.
+
+## Retrospective speech
+
+Fresh completed Influence and Werewolf sources include every accepted retrospective speech after the competitive result. These are ordinary **speech** moments marked **Retrospective**, with canonical actor, speaker ordinal and event reference in the inspector. Tag them individually or give all final speeches the same tag to make a retrospective-only cut. Including the result remains a separate selection choice; the editor never adds it between speakers.
+
+The owning source reader verifies the full completion proof and exact speech provenance. A failed or running epilogue remains watchable through replay/inspection/recovery, but cannot create a completed export. Full exports include the accepted epilogue, while frozen selected exports retain only their reviewed IDs, text, source/media versions and recording hashes. Later tags and published visuals cannot expand that selection. See [retrospective runtime](game-retrospective-runtime.md) and [local export](local-replay-export.md).

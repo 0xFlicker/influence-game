@@ -1,6 +1,6 @@
 # Game retrospective contract
 
-RT-01 establishes the contracts in [retrospective.ts](../packages/engine/src/retrospective.ts), their Influence/Werewolf canonical reducers, and the private input schema. RT-02 adds the [frozen context compilers](game-retrospective-context.md), speaker order and capacity admission. RT-03 adds [strict agent invocations](game-retrospective-invocation.md). These are the first layers of the [implementation plan](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md). [RT-04](game-retrospective-runtime.md) now implements Influence generation and the new terminal transition. Werewolf runtime, settlement proof, API/MCP delivery, replay and export remain subsequent tasks. Do not deploy this intermediate layer as the finished retrospective feature.
+The contracts in [retrospective.ts](../packages/engine/src/retrospective.ts), each game's canonical reducer and the immutable private input schema drive the implemented feature. The [frozen context compilers](game-retrospective-context.md) supply speaker order/capacity admission, and [strict invocations](game-retrospective-invocation.md) accept only final speech. Both existing runners, completion settlement, API/MCP delivery, replay, Studio/export and simulations use this boundary. See [runtime and recovery](game-retrospective-runtime.md) and the [task ledger](plans/2026-10-10-004-feat-game-retrospectives-implementation-plan.md) for local proof and separately scoped model/deployment acceptance.
 
 ## Outcome and final execution boundary
 

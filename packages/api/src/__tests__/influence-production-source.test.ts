@@ -15,13 +15,16 @@ import { setupTestDB } from "./test-utils.js";
 
 let db: DrizzleDB;
 beforeEach(async () => { db = await setupTestDB(); });
-async function fixture(id = "production-influence", resolved = true) {
+async function fixture(id = "production-influence", resolved = true, duplicatePointer = false) {
   const gameId = await insertGame(db, { id, slug: id, status: "completed", config: { visualMode: true, privateConfig: "CONFIG_SENTINEL" } });
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId,
     persona: JSON.stringify({ name: id === "atlas" ? "Atlas" : id, personality: "Frozen character", avatarUrl: `/avatars/${id}.png` }), agentConfig: "{}" })));
   const ownerEpoch = await insertOwner(db, gameId);
   const events = withRetrospective(withJuryWinner(resolved ? createResolvedRoundCanonicalEventFixture(gameId) : createCanonicalEventFixture(gameId), "mira"), 1000);
-  await appendGameEvents(db, { gameId, ownerEpoch, events });
+  const statements = events.filter(event => event.type === "retrospective.statement_recorded");
+  const altered = duplicatePointer ? events.map(event => event === statements[0] ? {...event,sourcePointers:[...event.sourcePointers,
+    {...statements[1]!.sourcePointers[0]!,actorId:statements[0]!.payload.actorId}]} : event === statements[1] ? {...event,sourcePointers:[]} : event) : events;
+  await appendGameEvents(db, { gameId, ownerEpoch, events:altered });
   await insertRetrospectiveTranscriptFixture(db, events);
   return { gameId, events, ownerEpoch };
 }
@@ -50,6 +53,15 @@ test("complete retrospective catalog requires exact captured canonical speech an
   await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("canonical speech");
   await db.delete(schema.transcripts).where(eq(schema.transcripts.id, speech.id));
   await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("missing its captured dialogue");
+});
+
+test("two dialogue pointers for one statement cannot conceal another statement's missing captured dialogue",async () => {
+  const {gameId,events} = await fixture("duplicate-retrospective-pointer",true,true);
+  const first = events.find(event => event.type === "retrospective.statement_recorded")!;
+  if (first.type !== "retrospective.statement_recorded") throw new Error("Missing fixture statement");
+  await db.update(schema.transcripts).set({fromPlayerId:first.payload.actorId,speakerPlayerId:first.payload.actorId,
+    text:first.payload.speech,firstDurableEventSequence:first.sequence}).where(eq(schema.transcripts.entrySequence,1001));
+  await expect(readInfluenceProductionSource(db,gameId)).rejects.toThrow("captured dialogue");
 });
 
 test("bounded source and moment pages share one accepted snapshot and independent thought identity", async () => {
