@@ -2,14 +2,14 @@ import { test, expect } from "bun:test";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { projectWerewolfWatch } from "@influence/engine/werewolf/watch";
 import { buildExportCues } from "./cues";
 import { attachSpeech } from "./speech";
 import { sha256, type ReplayAssets } from "./assets";
 
 test("recordings require an exact speaker and text identity; missing files never become silent speech", async () => {
-  const events = await werewolfResultsFixture("village", "speech-export");
+  const events = await completedWerewolfResultsFixture("village", "speech-export", 1, 6);
   const projected = projectWerewolfWatch(events, "omniscient", 1, 64);
   const cues = buildExportCues(
     {
@@ -27,7 +27,8 @@ test("recordings require an exact speaker and text identity; missing files never
       thoughts: [],
     },
   );
-  const cue = cues.find((c) => c.speech)!;
+  const cue = cues.find((c) => c.picture.kind === "werewolf" && c.picture.cue.moment.entry.kind === "speech"
+    && c.picture.cue.moment.entry.purpose === "retrospective")!;
   expect(cue).toBeDefined();
   const attachment = {
     messageId: cue.speech!.messageId,

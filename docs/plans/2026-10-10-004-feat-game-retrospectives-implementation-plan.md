@@ -39,8 +39,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Done |
 | RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Done |
 | RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Done |
-| RT-12 | Frozen export, recordings and renderer parity | RT-11 | In progress |
-| RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Todo |
+| RT-12 | Frozen export, recordings and renderer parity | RT-11 | Done |
+| RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | In progress |
 | RT-14 | Integrated regression proof and documentation | RT-09–13 | Todo |
 | RT-15 | Review, model-quality and deployment acceptance | RT-14 | Todo |
 
@@ -362,3 +362,9 @@ Local validation: 111 focused replay/Cut tests passed; a further 17 endgame/Were
 Both catalogs represent the epilogue as ordinary speech with explicit retrospective purpose and canonical actor/event/ordinal provenance. Influence requires exact captured text and owning event identity, and a completed source requires the full retrospective proof. Labels remain independent; retrospective-only source-ordered cuts include no implicit result. Studio exposes the provenance in its inspector. Existing completion fixtures now provide full tails, and historical terminal rows no longer assert unverified results.
 
 Local validation: 150 PostgreSQL tests passed across seven files, 24 engine catalog tests passed, 66 replay export tests passed, and typecheck/lint passed. The broader prior PostgreSQL run was not green: it found outdated permission/tool inventories and outcome-only fixtures; the affected tests are included in this green run. An import error in that earlier run was caused by editing the shared fixture module while Bun had already loaded it. Final full-baseline acceptance remains RT-14. No provider or deployed action occurred.
+
+## RT-12 completion record
+
+The existing compiler, frozen descriptor, recording attachment and offline bundle paths carry ordinary retrospective speech without a second exporter or generation path. Full classic/format Influence and both Werewolf audience exports retain result → all speeches; retrospective-only selections retain exact source-ordered IDs/text with independent result inclusion. Tests verify original solo portraits, recording identity/timing, no inserted results and no growth when more source moments become available.
+
+Local validation: 69 export tests passed. Real Studio browser tests froze and encoded one retrospective speech for each game at 640×360/24fps. Exact reviewed IDs/settings/source hashes were retained; three screenshot/movie samples per cut matched within the existing pixel threshold. Offline verification passed reverse/random seeks, three contiguous ranges, fresh browsers and encoded frame/audio presence. The isolated database and browser/API/Next children were cleaned. Initial attempts exposed a pre-existing fixture tag entering the cut and a catalog-page lookup stopping before the Werewolf tail; the final tests use unique tags and complete pagination. No provider call, new media or deployed action occurred.

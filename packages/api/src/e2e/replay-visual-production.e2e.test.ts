@@ -327,19 +327,33 @@ test.skipIf(!interfaceProof)("Actual Studio interface proves the editing loop on
 
 // Optional encoded proof extends the required browser workflow using this same
 // isolated API/database and Next child. No additional server or provider runs.
-test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen Werewolf thought cut agrees with the encoded movie", async () => {
-  const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.werewolf.id}?audience=omniscient`);
+for (const proof of ["thinking", "influence-retrospective", "werewolf-retrospective"] as const) {
+test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")(`Actual Studio frozen ${proof} cut agrees with the encoded movie`, async () => {
+  const kind = proof === "influence-retrospective" ? "influence" : "werewolf", audience = kind === "influence" ? "public" : "omniscient";
+  const id = studioFixture[kind].id;
+  const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${id}?audience=${audience}`);
   let step = "source";
   try {
     await page.setViewport({width: 1800, height: 1100});
     await page.waitForSelector('[data-composition-frame]');
-    const thoughtRow = await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
-    const thoughtId = await thoughtRow!.evaluate(node => node.closest('[data-moment-id]')!.getAttribute('data-moment-id'));
+    let thoughtId: string | undefined, fromCursor = 1;
+    do {
+      const response = await fetch(`http://127.0.0.1:${api.port}/api/admin/production/games/${id}/source?audience=${audience}&thinking=on&fromCursor=${fromCursor}`, {headers:{Authorization:`Bearer ${studioFixture.producer.token}`}});
+      expect(response.status).toBe(200);
+      const source = await response.json() as {catalog:ProductionCatalog;nextCursor?:number|null};
+      thoughtId = source.catalog.moments.find(moment => proof === "thinking" ? moment.kind === "thinking" : moment.purpose === "retrospective")?.id;
+      if (thoughtId || !source.nextCursor) break;
+      fromCursor = source.nextCursor;
+    } while (true);
+    if (!thoughtId) throw new Error(`Missing ${proof} in the complete canonical catalog`);
     await page.click(`[data-moment-id="${thoughtId}"] button`);
     await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(thoughtId)} && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thoughtId)}`);
     step = "thought tag";
-    await clickButton(page, "Add tag"); await clickButton(page, "Save tags");
+    await clickButton(page, "Add tag");
+    await setStudioInput(page, "Tag value 1", proof);
+    await clickButton(page, "Save tags");
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
+    await openStudioDialog(page, "Selected cut rule"); await setStudioInput(page, "Cut tag value", proof); await closeStudioDialog(page);
     step = "presentation";
     await openStudioDialog(page, "Presentation");
     for(const [label,value] of [["readingRate",4],["thinkingRate",4],["motionScale",2],["conversationGapMs",0]] as const) {
@@ -358,22 +372,23 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
     // monitor fit is proved separately by the actual interface check.
     await page.evaluate("(()=>{const preview=document.querySelector('[data-preview-frame]');preview.parentElement.style.setProperty('--monitor-height','362px');preview.style.width='640px';preview.style.height='360px';})()");
     expect(await page.$eval('[data-preview-frame]',node=>({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))).toEqual({width:640,height:360});
-    const response = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
+    const frozenResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
     step = "freeze";
     await openStudioDialog(page, "Export selected cut");
     await clickButton(page, "Download selected export");
-    const descriptor = await (await response).json() as ProductionExportDescriptor;
+    const descriptor = await (await frozenResponse).json() as ProductionExportDescriptor;
     await closeStudioDialog(page);
     expect(descriptor.settings.width).toBe(640); expect(descriptor.settings.fps).toBe(24); expect(descriptor.settings.music).toBe(false);
     step = "encode/parity";
     await verifyStudioEncodedParity({descriptor,token:studioFixture.producer.token,origin:`http://127.0.0.1:${api.port}`,
-      output:await mkdtemp(temporaryPath("production-studio-ui-encoded-proof-")),captureFrame:frame=>captureStudioFrame(page,frame)});
+      output:await mkdtemp(temporaryPath("production-studio-ui-encoded-proof-")),captureFrame:frame=>captureStudioFrame(page,frame),purpose:proof === "thinking" ? "thinking" : "retrospective"});
   } catch (error) {
     console.error(`[Studio encoded: ${step}]`, await page.evaluate("document.body.innerText"));
     await page.screenshot({path:temporaryPath("production-studio-encoded-failure.png")});
     throw error;
   } finally {await page.close();}
 }, 360_000);
+}
 
 test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes reviewed IDs and rejects changed cuts", async () => {
   const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.influence.id}`);
