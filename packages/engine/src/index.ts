@@ -7,6 +7,9 @@
 // Core types
 export * from "./types";
 export * from "./retrospective";
+export * from "./retrospective-context";
+export * from "./influence-retrospective";
+export * from "./werewolf/retrospective";
 export {
   costHouseProviderUsage,
   costHouseSummaryGame,

@@ -710,3 +710,6 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 
 
 House game discovery uses Public/Unlisted for both games. The API launchers expose `--visibility public|unlisted`; this never changes transcript scope, Mystery/Omniscient, captured thinking, or producer-only raw reasoning access. Private decision traces remain private evidence even though Private game visibility has been removed. No model-output or canonical event contract changed.
+
+
+RT-02 adds provider-free frozen retrospective context compilers (see [context and order](game-retrospective-context.md)). Canonical facts and untrusted dialogue keep distinct source references; all earlier accepted speeches remain verbatim. Model context contains only the next speaker’s original character/strategy and excludes opponents’ thinking, native reasoning, diary entries, authorization snapshots and provider internals. Capacity receipts identify model/actor and byte bounds without publishing private inputs. Current simulators still end at the result. Future invocations retain direct House calls and exact types without `as any`.

@@ -20,7 +20,8 @@ function input(): RetrospectiveInputV1 {
   return { version: 1, outcome: { ...outcome }, sections: [
     { phase: "opening", fromEventSequence: 1, throughEventSequence: 2, summary: "Everyone introduced themselves." },
     { phase: "result", fromEventSequence: 3, throughEventSequence: 4, summary: "Atlas won; Echo and Mira exited." },
-  ], dialogue: [{ eventSequence: 2, actorId: "echo", text: "I promised Mira my vote." }] };
+  ], dialogue: [{ eventSequence: 2, source: { kind: "canonical_event", sequence: 2 }, actorId: "echo",
+    scope: "public", audiencePlayerIds: [], text: "I promised Mira my vote." }] };
 }
 const rosterIds = ["atlas", "echo", "mira"];
 const boundary = (eventSequence: number) => ({ outcome, rosterIds, eventSequence });

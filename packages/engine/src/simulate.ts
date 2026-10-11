@@ -5,7 +5,7 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
- * Retrospective RT-01 supplies validated postgame contracts only; this runner
+ * Retrospective RT-01/02 supplies contracts and frozen context/order helpers; this runner
  * still stops at the outcome until its later execution task is connected.
  * See docs/game-retrospective-contract.md. Keep exact types without `as any`
  * and call House methods directly when wiring future model turns.

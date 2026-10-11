@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { createRetrospectiveDefinition, assertRetrospectiveInputBinding, type RetrospectiveInputV1 } from "@influence/engine";
+import { createRetrospectiveDefinition, assertRetrospectiveInputBinding, freezeInfluenceRetrospective,
+  GameState, Phase, type RetrospectiveInputV1 } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { insertGame } from "./durable-run-test-utils.js";
@@ -16,6 +17,28 @@ function row(gameId: string) {
 }
 
 describe("immutable retrospective input storage", () => {
+  test("compiled context round-trips through private JSONB with exact source references and no cognition", async () => {
+    const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-compiled-input" });
+    const seats = ["atlas", "echo"].map(id => ({ id, name: id, personality: "Original character", backstory: "Original story", influenceStrategy: `${id}-PRIVATE_STRATEGY` }));
+    const game = new GameState(seats, { gameId });
+    game.startRound(); game.recordPhaseEntered(Phase.INTRODUCTION);
+    const anchor = game.getCanonicalEvents().at(-1)!.sequence;
+    game.eliminatePlayer("echo");
+    const frozen = freezeInfluenceRetrospective({ events: game.getCanonicalEvents(), seats,
+      transcript: [{ round: 1, phase: Phase.INTRODUCTION, timestamp: 1, from: "Echo", speakerPlayerId: "echo", entrySequence: 1,
+        scope: "public", text: "  My exact words. 😀  ", thinking: "PRIVATE_THINKING", reasoningContext: "PRIVATE_REASONING" }],
+      transcriptThroughSequence: 1, dialogueAnchors: [{ entrySequence: 1, eventSequence: anchor }],
+      capacities: { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 100_000 }] } });
+    await db.insert(schema.gameRetrospectiveInputs).values({ gameId, outcomeEventSequence: frozen.input.outcome.eventSequence,
+      outcomeEventHash: frozen.input.outcome.eventHash, inputHash: frozen.definition.inputHash, input: frozen.input });
+    const [stored] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+    expect(stored?.input).toEqual(frozen.input);
+    expect(() => assertRetrospectiveInputBinding(stored?.input, frozen.definition)).not.toThrow();
+    expect(stored?.input.dialogue[0]?.source).toEqual({ kind: "transcript_entry", sequence: 1 });
+    expect(stored?.input.dialogue[0]?.text).toBe("  My exact words. 😀  ");
+    expect(JSON.stringify(stored?.input)).not.toContain("PRIVATE_");
+  });
+
   test("preserves existing games and stores one immutable private input without creating speech rows", async () => {
     const db = await setupTestDB(), gameId = await insertGame(db, { id: "retrospective-storage", status: "in_progress" });
     const values = row(gameId);

@@ -29,7 +29,16 @@ export interface RetrospectiveInputV1 {
     throughEventSequence: number;
     summary: string;
   }>;
-  dialogue: Array<{ eventSequence: number; actorId: string; text: string }>;
+  dialogue: Array<{
+    /** Canonical event or owning-turn boundary anchoring this quote in the account. */
+    eventSequence: number;
+    source: { kind: "canonical_event" | "transcript_entry"; sequence: number };
+    actorId: string;
+    scope: "public" | "mingle" | "huddle" | "whisper" | "pack" | "alliance";
+    /** null means the source does not disclose the original audience. */
+    audiencePlayerIds: string[] | null;
+    text: string;
+  }>;
 }
 
 export interface RetrospectiveDefinitionV1 {
@@ -94,7 +103,7 @@ export interface RetrospectiveStateV1 {
 
 const id = { type: "string", minLength: 1, pattern: "\\S" };
 const hash = { type: "string", pattern: "^sha256:[0-9a-f]{64}$" };
-const sequence = { type: "integer", minimum: 1 };
+const sequence = { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER };
 const ordinal = { type: "integer", minimum: 0, maximum: MAX_NEW_GAME_PLAYERS - 1 };
 const speech = { type: "string", minLength: 1, maxLength: RETROSPECTIVE_MAX_SPEECH_CHARACTERS, pattern: "\\S" };
 const version = { const: RETROSPECTIVE_CONTRACT_VERSION };
@@ -129,7 +138,10 @@ const inputSchema = objectSchema({
   sections: { type: "array", minItems: 1, items: objectSchema({
     phase: id, fromEventSequence: sequence, throughEventSequence: sequence, summary: id,
   }) },
-  dialogue: { type: "array", items: objectSchema({ eventSequence: sequence, actorId: id, text: id }) },
+  dialogue: { type: "array", items: objectSchema({ eventSequence: sequence,
+    source: objectSchema({ kind: { enum: ["canonical_event", "transcript_entry"] }, sequence }), actorId: id,
+    scope: { enum: ["public", "mingle", "huddle", "whisper", "pack", "alliance"] },
+    audiencePlayerIds: { anyOf: [{ type: "null" }, { type: "array", uniqueItems: true, items: id }] }, text: id }) },
 });
 
 export class RetrospectiveContractError extends Error {
@@ -153,7 +165,8 @@ export function assertRetrospectiveInput(value: unknown): asserts value is Retro
     }
     next = section.throughEventSequence + 1;
   }
-  if (next !== value.outcome.eventSequence + 1 || value.dialogue.some(entry => entry.eventSequence > value.outcome.eventSequence)) {
+  if (next !== value.outcome.eventSequence + 1 || value.dialogue.some(entry => entry.eventSequence > value.outcome.eventSequence
+    || entry.source.kind === "canonical_event" && entry.source.sequence !== entry.eventSequence)) {
     throw new RetrospectiveContractError("Retrospective input must cover exactly the original outcome prefix");
   }
 }

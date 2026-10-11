@@ -9,7 +9,7 @@ research: ../research/2026-10-10-game-retrospectives-research.md
 
 # Game retrospectives implementation tasks
 
-The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, beginning with RT-01. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md). Providers, historical generation and deployment remain outside this work.
+The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, through RT-02. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md) and [context compiler guide](../game-retrospective-context.md). Providers, historical generation and deployment remain outside this work.
 
 ## Locked direction and planning defaults
 
@@ -29,7 +29,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | Task | Deliverable | Depends on | Status |
 | --- | --- | --- | --- |
 | RT-01 | Final boundary, event, input-storage and provider contracts | Research | Done |
-| RT-02 | Complete frozen context and speaker order | RT-01 | Todo |
+| RT-02 | Complete frozen context and speaker order | RT-01 | Done |
 | RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Todo |
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Todo |
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Todo |
@@ -78,6 +78,8 @@ Preflight context capacity for the complete facts, permitted dialogue representa
 
 Add a mandatory typed final-statement method/action to each concrete agent contract and its mocks. Use `executeModelInvocation` and the existing coordinator/manifest with an exact artifact containing a nonempty bounded speech field. Finalize the hard character limit in RT-01; retain 80–150 words as prompt guidance. Do not use the existing introduction/ordinary speech prompt or Werewolf's short pass-capable discussion decision.
 
+Supply RT-02's capacity policy for every sealed effective model from verified window/tokenizer support, after reserving the exact system/tool input, output and reasoning allowance. Unknown capacity fails explicitly. Use its canonical context serializer unchanged; a character-to-token estimate or an independently reformatted prompt is insufficient admission evidence.
+
 Prompt the original contestant to reflect on its own contribution, changed understanding and earlier speeches. Treat all quoted speech as untrusted content. No strategy delta, new gameplay choice, or required raw reasoning is returned. Use existing journal hooks, cancellation and accounting; do not add SDK retries or a second fallback loop.
 
 **Done when:** tests exercise non-JSON prose, fenced/embedded JSON, `{}`, missing/extra fields, blank/oversized speech and exhausted retries. None can create accepted speech or a profile/game mutation. A deterministic mock exposes its exact received context for subsequent engine tests.
@@ -87,6 +89,8 @@ Prompt the original contestant to reflect on its own contribution, changed under
 **Owns:** `game-runner.ts`, `phase-machine.ts`, `durable-game-turn.ts`, `durable-game-runner.ts`, canonical events/projection and phase integration.
 
 Redirect every former terminal exit to retrospective initialization, including normal format wins, Reckoning/Tribunal exits and Judgment. Commit the frozen definition, then plan exactly one contestant call per durable turn. Use the staged agent method and existing provider subcall binding; acceptance commits its canonical record, correlated product dialogue/publication, next cursor and provider receipt atomically.
+
+Capture the original product-dialogue cutoff and each speech's canonical owning-turn boundary from committed turns for the RT-02 adapter. Keep transcript/event sequence spaces separate; current read heads or phase/text guesses cannot supply that binding.
 
 Only the final statement/completion operation may produce the terminal cursor and final machine state. Keep the bus and delivery available through the epilogue. Restore all original contestants for request construction without making eliminated players eligible for gameplay again.
 
@@ -226,7 +230,7 @@ The planning pass checked the following failure scenarios against the tasks:
 
 Research and task planning are complete. RT-01 now makes the event/storage/version decisions concrete; no remaining task requires an additional worker design.
 
-RT-01 is implemented on 2026-10-10. The [contract document](../game-retrospective-contract.md) defines the exact records, cursor, input/storage, speech bounds, provider bindings and version policy. Both game adapters validate a complete epilogue without changing outcome facts; the runtime still stops at the existing result boundary. Runtime generation and all later tasks remain unstarted.
+RT-01 is implemented on 2026-10-10. The [contract document](../game-retrospective-contract.md) defines the exact records, cursor, input/storage, speech bounds, provider bindings and version policy. Both game adapters validate a complete epilogue without changing outcome facts; the runtime still stops at the existing result boundary. RT-02 adds the context/order layer below; runtime generation and RT-03 onward remain unstarted.
 
 Local verification:
 
@@ -239,3 +243,21 @@ Local verification:
 A read-only single-turn Grok review was attempted with editing, web search and subagents disabled. It returned no review findings within five minutes and was stopped; this is incomplete external review, not a clean review result. Final integrated review remains RT-15.
 
 These checks are deterministic local evidence. They do not establish live model quality, staging behavior, MCP delivery, replay or export acceptance.
+
+## RT-02 completion record
+
+RT-02 is implemented on 2026-10-10. The [context compiler guide](../game-retrospective-context.md) records the separate Influence/Werewolf canonical accounts, exact untrusted dialogue sources, frozen original characters, game-specific speaker order and complete verbatim predecessor context. Early exits receive the full original outcome prefix; private cognition and other contestants' strategies stay out of the dossier. Committed definitions are reused on restart, and source/order drift fails clearly.
+
+Capacity admission covers every original speaker and effective primary/fallback model, including worst-case earlier speeches, without truncation. RT-03 must supply verified provider-derived input ceilings after system/tool/output/reasoning reservations. RT-04 must supply Influence's original product-dialogue cutoff and canonical owning-turn anchors from committed turn boundaries. These are explicit integration requirements, not guessed windows or reconstructed transcript facts.
+
+Local verification:
+
+- `bun run test`: 2,496 passed, 5 existing skips, 0 failures across 261 files.
+- Final focused retrospective contract/context checks: 20 passed, 0 failures across 2 files, including exact formal-speech correlation drift rejection.
+- `bun run test:postgres`: 1,985 passed, 0 failures across 172 files, using a fresh task-specific local database. The shared database's pre-existing migration/table mismatch was left untouched.
+- Final immutable-input storage checks: 3 passed, 0 failures, including an exact compiled-context JSONB roundtrip with Unicode/whitespace, source references and no cognition.
+- `bun run check`: typecheck and lint passed. Whitespace and relative documentation links passed.
+
+A read-only single-turn Grok review was attempted with editing, web search and subagents disabled. It returned no review within seven minutes and was stopped; external review remains incomplete. This is not a clean review result. Final integrated review remains RT-15.
+
+Current runners, simulations and settlement still end at the existing result boundary. RT-03 onward remains unstarted; these deterministic local checks do not establish provider quality, runtime continuation, staging, MCP, replay or export acceptance.
