@@ -10,6 +10,7 @@ import {selectVisualShot} from "@influence/engine/visual-mode";
 import type {PresentationDirector} from "@/components/watch/watch-director";
 import {VisualSceneView} from "@/app/games/[slug]/components/visual-scene-view";
 import {SoloPresentation} from "@/app/games/[slug]/components/solo-presentation";
+import {PortraitRoom} from "@/app/games/[slug]/components/portrait-room";
 import {VotePresentation} from "@/app/games/[slug]/components/vote-presentation";
 import type {VisualPresentationBeat} from "@/app/games/[slug]/components/visual-presentation";
 import type {WerewolfWatchCue} from "./werewolf-watch-model";
@@ -71,6 +72,14 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
     player: {...actor, persona: ""},
     speech: {id:cue.key, playerId:actor.id, speaker:actor.name, text, portrait:{avatarUrl:actor.avatarUrl, persona:""}},
   } : null;
+  const room: Extract<VisualPresentationBeat, {kind:"portrait-room"}> | null = beat && moment.spoken &&
+    (cue.moment.entry.kind === "discussion" || cue.moment.entry.kind === "speech" && moment.pack) ? {
+      kind: "portrait-room", roomNumber: null,
+      roomLabel: moment.pack ? `Night ${cue.moment.snapshot.day} · Pack conversation` : `Day ${cue.moment.snapshot.day} · Village conversation`,
+      participants: cue.moment.snapshot.players.filter(player => player.alive && (!moment.pack || player.role === "werewolf"))
+        .map(player => ({id: player.id, name: player.name, avatarUrl: player.avatarUrl, personaKey: player.personaKey, persona: ""})),
+      speech: {...beat.speech, speaker: moment.speaker},
+    } : null;
   if (cue.transformation && elapsed < lead) return <WerewolfTransformationStage cue={cue} elapsed={elapsed} reduced={reduced} onReady={onReady ?? ignoreReadiness} />;
   if (!cue.nightAction && cue.moment.entry.kind === "night" && cue.moment.entry.killedId) return <WerewolfNightOutcome cue={cue} elapsed={elapsed} reduced={reduced} />;
   if (cue.nightAction?.kind === "hunt") return <WerewolfHuntStage cue={cue} scene={timedOut ? null : scene} onReady={onReady ?? ignoreReadiness} />;
@@ -80,7 +89,7 @@ export function WerewolfContentFrame({cue, scene, elapsed, reduced, navigationRe
     elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced}
     paused={paused} silent={cue.ballot.current.targetId === null} onImageReady={() => onReady?.(true)} />;
   return <>
-    {visual ? <VisualSceneView paused={paused} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} onReadyChange={onReady} /> : beat ? <SoloPresentation beat={beat} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed}
+    {visual ? <VisualSceneView paused={paused} navigationRevision={navigationRevision} scene={scene} focusPlayerId={moment.actor?.id} speech={moment.spoken && moment.actor ? {id: cue.key, playerId: moment.actor.id, speaker: moment.speaker, text: moment.text, portrait: {avatarUrl: moment.actor.avatarUrl, persona: "", personaKey: moment.actor.personaKey}} : null} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} onReadyChange={onReady} /> : room ? <PortraitRoom beat={room} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed} reducedMotion={reduced} controlsInset={0} speechPresentation="scene" onImageReady={() => onReady?.(true)} /> : beat ? <SoloPresentation beat={beat} elapsedMs={sceneElapsed} readingElapsedMs={readingElapsed}
       speechPresentation="scene" reducedMotion={reduced} hideSpeech={!moment.spoken} onImageReady={() => onReady?.(true)} /> : <div className="flex-1 bg-black" />}
 
     {!moment.spoken && <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 mx-auto max-h-[80%] max-w-xl overflow-y-auto rounded-xl border border-white/15 bg-black/90 p-5 text-center">

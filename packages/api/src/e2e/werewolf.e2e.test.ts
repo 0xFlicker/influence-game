@@ -1,6 +1,8 @@
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
@@ -286,9 +288,24 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   await database.db.insert(schema.userRoles).values({ userId: admin.userId, roleId: producer.id }).onConflictDoNothing();
   const inventory = await readReplayVisualProduction(database.db, game.id);
   const lobby = inventory.scenes.find(scene => scene.roomId === "lobby")!;
-  await renderMissingReplayScene(database.db, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
-  const job = await claimVisualMediaJob(database.db, "browser-fixture");
-  if (!job) throw new Error("Fixture render job missing");
+  const job = await (async () => {
+    // Keep enqueue and claim on one locked session so the running API worker
+    // cannot take this provider-free fixture between the two operations.
+    const client = postgres(database.databaseUrl, { max: 1 });
+    const fixtureDb = drizzle(client, { schema });
+    try {
+      await fixtureDb.execute(sql`SELECT pg_advisory_lock(hashtext('visual-media-worker'))`);
+      const receipt = await renderMissingReplayScene(fixtureDb, game.id, admin.userId, { key: lobby.key, previewHash: lobby.previewHash, requestId: "browser-lobby" });
+      expect(receipt.accepted).toBe(true);
+      const claimed = await claimVisualMediaJob(fixtureDb, "browser-fixture");
+      if (!claimed) throw new Error("Fixture render job missing");
+      expect(claimed.id).toBe(receipt.jobId!);
+      return claimed;
+    } finally {
+      // Closing the session releases its advisory lock, including on failure.
+      await client.end();
+    }
+  })();
   // Initiative is seeded randomly per game. Keep the opening/reply actors in
   // verified panels while reserving an unrelated character for fallback checks.
   const replay = (await readWerewolfPresentation(database.db, game.id, "mystery")).presentation;
@@ -429,6 +446,74 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     console.error("Admin browser failure", page.url(), await page.evaluate("document.body.innerText"));
     throw error;
   } finally { await page.close(); }
+}, 120_000);
+
+test("Werewolf without visual mode shows village and pack portrait rooms on desktop and mobile", async () => {
+  const game = await createWerewolfGame(database.db, admin.userId, {preset: "two_wolves", agentProfileIds: [], maxDays: 1});
+  const claim = await claimWerewolfGame(database.db, game.id);
+  if (!claim.ok) throw new Error(claim.error);
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), {async decide({request}) {
+    if (request.action === "open_thread") return {kind: "opening", text: "Tell me who you suspect and why.", cue: null, recipientIds: []};
+    return request.legalTargetIds.length ? {kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private fixture"}
+      : {kind: "speech", text: "I want to hear everyone's reasoning.", cue: null};
+  }});
+  const page = await browser.newPage();
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(String(error)));
+  try {
+    for (const audience of ["mystery", "omniscient"] as const) {
+      const projection = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/watch?audience=${audience}&fromCursor=1&limit=64`)).json() as import("@influence/engine/werewolf/watch-contract").WerewolfWatchWindow;
+      expect(Object.keys(projection.media)).toHaveLength(0);
+      const discussion = projection.moments.find(moment => moment.entry.kind === "discussion" && moment.entry.contribution.text)!;
+      const pack = projection.moments.find(moment => moment.entry.kind === "speech" && moment.entry.audience === "pack" && moment.entry.text);
+      if (!discussion) throw new Error("Missing room discussion fixture");
+      await page.setViewport({width: 1440, height: 1000});
+      await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=${audience}`, {waitUntil: "domcontentloaded"});
+      await skipWerewolfOpening(page);
+      await pauseWerewolf(page);
+      await seekWatch(page, discussion.cursor);
+      await page.waitForSelector("[data-portrait-room]");
+      const expectedVillage = discussion.snapshot.players.filter(player => player.alive).map(player => player.id);
+      expect(await page.$$eval("[data-room-player]", elements => elements.map(element => element.getAttribute("data-room-player")))).toEqual(expectedVillage);
+      expect(discussion.entry.kind).toBe("discussion");
+      if (discussion.entry.kind !== "discussion") throw new Error("Expected discussion");
+      expect(await page.$eval('[data-active-speaker="true"]', element => element.getAttribute("data-room-player"))).toBe(discussion.entry.contribution.actorId);
+      await page.screenshot({path: "/tmp/werewolf-portrait-room-desktop.png"});
+      for (const viewport of [{width: 390, height: 844}, {width: 844, height: 390}]) {
+        await page.setViewport(viewport);
+        await page.waitForFunction(`(() => {
+          const stage = document.querySelector("[data-portrait-room]").getBoundingClientRect();
+          return [...document.querySelectorAll("[data-room-player] img")].every(image => {
+            const bounds = image.getBoundingClientRect();
+            return bounds.width > 0 && bounds.top >= stage.top && bounds.bottom <= stage.bottom;
+          });
+        })()`);
+        expect(await page.$eval('[data-active-speaker="true"] p', element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        if (viewport.width === 390) expect(await page.$$eval("[data-room-player] p", elements => {
+          const bubble = elements[0]!.ownerDocument.querySelector("[data-speech-bubble]")!.getBoundingClientRect();
+          return elements.every(element => {
+            const name = element.getBoundingClientRect();
+            return name.right <= bubble.left || name.left >= bubble.right || name.bottom <= bubble.top || name.top >= bubble.bottom;
+          });
+        })).toBe(true);
+        expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBe(true);
+        await page.screenshot({path: `/tmp/werewolf-portrait-room-${viewport.width}.png`});
+      }
+      if (audience === "mystery") {
+        expect(pack).toBeUndefined();
+        expect(await page.$('[aria-label*="Pack conversation"]')).toBeNull();
+      } else {
+        if (!pack) throw new Error("Missing pack fixture");
+        await page.setViewport({width: 1440, height: 1000});
+        await seekWatch(page, pack.cursor);
+        await page.waitForSelector('[aria-label*="Pack conversation"]');
+        const expectedPack = pack.snapshot.players.filter(player => player.alive && player.role === "werewolf").map(player => player.id);
+        expect(await page.$$eval("[data-room-player]", elements => elements.map(element => element.getAttribute("data-room-player")))).toEqual(expectedPack);
+        await page.screenshot({path: "/tmp/werewolf-pack-portrait-room.png"});
+      }
+    }
+    expect(errors).toEqual([]);
+  } finally {await page.close();}
 }, 90_000);
 
 test("shared House replay handles failed portraits and reduced motion", async () => {
