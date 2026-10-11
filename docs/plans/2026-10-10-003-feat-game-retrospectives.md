@@ -7,7 +7,7 @@ date: 2026-10-10
 
 # Postgame contestant retrospectives
 
-The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies and proof. RT-01–14 are implemented and locally verified on `codex/game-retrospectives`, covering the [exact contract](../game-retrospective-contract.md), [frozen context/order](../game-retrospective-context.md), runtime, API/MCP, replay, Studio, export and simulation artifacts. Real-model quality and deployed acceptance remain RT-15 operator work.
+The operator agreed on 2026-10-10 that retrospective completion becomes the new final execution boundary, driven by the core engine and existing game worker. The [integration research](../research/2026-10-10-game-retrospectives-research.md) and [implementation task plan](2026-10-10-004-feat-game-retrospectives-implementation-plan.md) record the researched contracts, dependencies and proof. RT-01–14 are implemented and locally verified on `codex/game-retrospectives`, covering the [exact contract](../game-retrospective-contract.md), [frozen context/order](../game-retrospective-context.md), runtime, API/MCP, replay, Studio, export and simulation artifacts. The [authorized paid quality trials](../reviews/2026-10-11-game-retrospectives-model-quality.md) completed all 20 statements but exposed factual and watchability concerns. Model-quality and deployed acceptance remain RT-15 work.
 
 ## Goal and scope
 

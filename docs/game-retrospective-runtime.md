@@ -54,7 +54,7 @@ Labels and recipes remain independent of semantic purpose. A retrospective-only 
 
 ## Local acceptance and operator boundary
 
-The implementation branch's evidence is provider-free/local: native malformed-output fixtures, canonical game/journal/recovery checks, authenticated REST/MCP authority checks, browser navigation and frozen encoded export. Read-only Grok review is tracked in the task ledger. Real statements still require the verified hosted capacity lane. Local LM Studio capacity is unsupported and fails clearly at retrospective initialization.
+The implementation branch has provider-free/local evidence for native malformed-output fixtures, canonical game/journal/recovery checks, authenticated REST/MCP authority checks, browser navigation and frozen encoded export. Read-only Grok review is tracked in the task ledger. The separately authorized [paid model-quality trials](reviews/2026-10-11-game-retrospectives-model-quality.md) exercise real hosted statements in local fresh games and record factual/voice concerns; they do not establish deployed acceptance. Local LM Studio capacity is unsupported and fails clearly at retrospective initialization.
 
 An operator can inspect an active/paused outcome with the bounded retrospective reader, then deliberately resume the same failure/head through the eligible results control or `games:read games:resume` MCP grant. Recovery resumes required generation under the sealed route; existing statements are preserved. The command does not replace accepted speech or complete a historical game.
 

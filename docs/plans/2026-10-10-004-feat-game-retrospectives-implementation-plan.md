@@ -42,7 +42,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Done |
 | RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Done |
 | RT-14 | Integrated regression proof and documentation | RT-09–13 | Done |
-| RT-15 | Review, model-quality and deployment acceptance | RT-14 | Operator acceptance pending |
+| RT-15 | Review, model-quality and deployment acceptance | RT-14 | Model-quality findings; staging pending |
 
 Build and prove an Influence vertical path through outcome → statements → terminal using fixtures first, then bring Werewolf to the same boundary with its own authority. Complete both before release. Do not deploy intermediate code that closes ownership at the outcome while later tasks assume it remains active.
 
@@ -389,4 +389,10 @@ The read-only Grok source audit concluded with no confirmed actionable defects. 
 
 A final consolidated browser run on implementation commit `035a9ead` passed all four selected classic/format Influence, Werewolf faction/draw and paused growing-tail journeys, with zero failures (`/private/tmp/rt15-browser-consolidated.log`). Generated Next changes were restored and isolated harness resources cleaned. This supplements RT-14's targeted runs and RT-12's encoded proof. Current high-level acceptance, replay specification and local-model docs now reflect the delivered implementation.
 
-Local implementation/review work is complete. RT-15 remains operator acceptance pending: separately authorize paid whole-game statement-quality trials with a supported sealed route/spending limit, coordinate the Production Studio base and integration into staging's `main`, then verify deployed continuation/recovery/drain, current delivery/MCP and export. Production retains manual approval. No paid game trial, merge, push or deployment occurred.
+Local implementation/review work is complete. The operator subsequently authorized paid whole-game statement-quality trials on 2026-10-11 with a combined $10 cap. The [quality report](../reviews/2026-10-11-game-retrospectives-model-quality.md) records hosted local trial evidence and the quality findings that still need resolution. RT-15 remains pending: accept model quality, coordinate the Production Studio base and integration into staging's `main`, then verify deployed continuation/recovery/drain, current delivery/MCP and export. Production retains manual approval. No merge, push or deployment occurred.
+
+## RT-15 paid model-quality trial record
+
+On 2026-10-11 one full six-player Influence format game and six/eight-player Werewolf games completed all 20 required statements using hosted `openai:gpt-6-luna` with low reasoning. Native accepted speech, original roster/order, unchanged frozen context, exact prior statements and local MCP readback passed. Native usage reconciled with the journals. Four gameplay HTTP 429 attempts recovered; all retrospective statements succeeded on their first attempt. Known usage estimates total $0.387776, with a $3.327543 conservative final bound retaining the rate-limit reservations and a $3.478246 peak held bound, below the combined $10 cap.
+
+Manual quality review confirmed an incorrect Influence Tribunal vote, two short-Werewolf self-attribution errors and a longer-Werewolf claim to participate in an elimination after the speaker's own death. Repeated framing and weak reactions to earlier statements remain concerns. The [report](../reviews/2026-10-11-game-retrospectives-model-quality.md) retains examples, canonical references, game/context identities, usage/cost evidence and the recommended follow-up. Local raw evidence is gitignored under `packages/engine/docs/simulations/rt15-quality-2026-10-11/`. This completes the authorized trial/report stage, not model-quality acceptance or RT-15 deployment acceptance. No source/prompt change, accepted-speech replacement, new media, merge, push or deployment occurred.
