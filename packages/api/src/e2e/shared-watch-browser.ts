@@ -170,11 +170,19 @@ export async function checkBallotCollection(page: Page, presentation: WerewolfPr
   await page.keyboard.press('4');
   await page.waitForSelector('[data-vote-target="abstain"]');
   await page.keyboard.press('Space');
+  await page.waitForSelector('button[aria-label="Play replay"]');
+  const entry = presentation.view.entries[index]!;
+  if (entry.kind !== "vote") throw new Error("Ballot collection fixture needs a canonical vote");
+  const total = entry.result.ballots.length;
+  // Rewind from the known last ballot, rather than sampling a collection
+  // animation that may advance between the pause input and its React commit.
+  await seekWatch(page, index + 1, total - 1);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total}`);
   expect(await page.$('[data-speech-bubble]')).toBeNull();
   expect(await page.$eval('[data-werewolf-stage]', e=>Number(e.getAttribute('data-cursor')))).toBe(index+1);
   await page.screenshot({path:'/tmp/werewolf-hear-more-ledger.png'});
-  const revealed = (await page.$$('[data-ledger-voter]')).length;
+  await page.evaluate("document.activeElement?.blur()");
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length < ${revealed}`);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total - 1}`);
   await page.keyboard.press('2');
 }

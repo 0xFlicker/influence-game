@@ -1,5 +1,5 @@
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +28,7 @@ afterEach(async () => {
   await rm(reportDir, { recursive: true, force: true });
 });
 
-async function fixture(disagree = false) {
+async function buildFixture(disagree = false) {
   const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "", avatarUrl: null }));
   const events: WerewolfEvent[] = [startWerewolf("report-game", players, werewolfConfig("two_wolves", 1), "report-seed")];
   const initial = replayWerewolf(events);
@@ -49,6 +49,18 @@ async function fixture(disagree = false) {
     },
   });
   return { initial, final, events };
+}
+
+let agreedFixture: Awaited<ReturnType<typeof buildFixture>>;
+let disagreedFixture: Awaited<ReturnType<typeof buildFixture>>;
+beforeAll(async () => {
+  // Reporter tests consume canonical readback; build each full match once,
+  // outside their five-second reporting deadlines on slower CI CPUs.
+  agreedFixture = await buildFixture();
+  disagreedFixture = await buildFixture(true);
+}, 30_000);
+function fixture(disagree = false) {
+  return structuredClone(disagree ? disagreedFixture : agreedFixture);
 }
 
 describe("Werewolf API simulation", () => {

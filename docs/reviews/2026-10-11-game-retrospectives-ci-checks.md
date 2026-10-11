@@ -1,7 +1,7 @@
 ---
 title: Game retrospectives PR 173 CI repair
 date: 2026-10-11
-status: locally_verified_remote_rerun_pending
+status: local_verification_record
 branch: codex/game-retrospectives
 reviewed_head: 356203f3bf09eb256c25362f01a1bc874c615b91
 pull_request: https://github.com/0xFlicker/influence-game/pull/173
@@ -40,3 +40,12 @@ All repairs are in test fixtures, browser assertions/helpers and this review rec
 Transient evidence is in `/private/tmp/rt15-ci-*.log`. Browser harnesses own isolated databases and server cleanup; the disposable `influence_rt15_ci_20261011_b44a` PostgreSQL database was dropped after its successful run. Generated Next configuration is restored before committing.
 
 Fresh remote CI remains required after pushing the repair. The [pre-PR review](2026-10-11-game-retrospectives-pre-pr-review.md) still governs the pending external source review, revised-prompt model qualification and staging acceptance. This repair does not run paid trials, merge main or deploy staging/production.
+
+## Second CI run: `09d31f24`
+
+Remote CI confirmed that Public identity, Format viewer, layered authentication, API/PostgreSQL, typecheck/lint and both PR builds passed. Two jobs still failed:
+
+- [Provider-free tests](https://github.com/0xFlicker/influence-game/actions/runs/38179951681/job/114590202988): ten Werewolf API reporter tests exceeded the default five-second deadline while repeatedly building the same complete match. Their unfinished async work then tried writing reports after per-test cleanup, producing secondary `ENOENT` errors. The failed-pack fixture already had a longer deadline and passed in 9.9 seconds. Reporter tests now build the two deterministic canonical games once in a bounded 30-second `beforeAll`, then clone each readback for test isolation. The reporting assertions retain their original deadlines and coverage. The focused suite passes all 14 tests with 140 assertions; individual reporter tests complete in milliseconds after setup.
+- [API browser stories](https://github.com/0xFlicker/influence-game/actions/runs/38179951687/job/114590202955): 59 passed, five optional proofs skipped, and Werewolf admin failed while expecting a sampled ballot-ledger count to decrease after rewind. Pausing and ledger rendering can commit after the sampling read. The helper now waits for the paused control, seeks the last canonical ballot, verifies all receipts, and rewinds to verify exactly one fewer receipt. It still exercises collection animation, abstention visibility, unchanged recorded cursor and silent abstention presentation.
+
+The final full provider-free baseline passed: 2,580 tests, five existing skips, zero failures, 19,852 assertions across 268 files. The repaired Werewolf admin journey passed with 52 assertions; final workspace typecheck/lint and diff whitespace passed. Evidence uses `/private/tmp/rt15-ci-r2-*.log`. The initial sandboxed full baseline could not bind its local HTTP/proxy fixtures; the successful run used the required loopback access. A complete API browser rerun and the new remote CI run also verify the repair in full-suite context; their live results are separate from this commit-time local evidence.
