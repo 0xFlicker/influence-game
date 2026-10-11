@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import {
   type AdminGameSummary,
   type AdminPostgameMediaAction,
@@ -31,7 +30,7 @@ function mediaBaseline(detail: AdminPostgameMediaResponse): MediaBaseline {
     : { status: detail.status, renderVersion: detail.renderVersion, attemptNumber: detail.attemptNumber, updatedAt: detail.timestamps.updatedAt };
 }
 
-/** Both episode and trailer dialogs use this session-owned request. These endpoints
+/** Both episode and trailer tools use this session-owned request. These endpoints
  * have no request receipt: an uncertain response needs an explicit GET before retry. */
 export function usePostgameMediaOperation(gameId: string) {
   const session = useAdminSession(), resource = `/api/admin/games/${encodeURIComponent(gameId)}/postgame/media`;
@@ -105,61 +104,18 @@ export function AdminPostgameMediaPill({
 export function AdminPostgameMediaPanel({
   game,
   canManage,
-  onClose,
 }: {
   game: Pick<AdminGameSummary, "id" | "slug">;
   canManage: boolean;
-  onClose: () => void;
 }) {
   const media = usePostgameMediaOperation(game.id);
   const { data: detail, error, reason, setReason, pending: submitting, confirming, setConfirming, action, actionLabel, notice } = media;
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeRef.current?.focus();
-    return () => {
-      previousFocus?.focus();
-    };
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <aside
-        className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-neutral-950 p-5 shadow-2xl sm:p-6"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="postgame-media-panel-title"
+      <section
+        aria-label="Trailer media"
         data-testid="admin-postgame-media-panel"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs tracking-wide text-white/35">{game.slug}</p>
-            <h2 id="postgame-media-panel-title" className="mt-1 text-xl font-semibold text-white">Trailer media</h2>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close trailer media diagnostics"
-            className="h-10 w-10 rounded-md border border-white/10 text-xl text-white/60 hover:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-amber-500"
-          >
-            x
-          </button>
-        </div>
+        <p className="text-xs tracking-wide text-white/35">{game.slug}</p>
 
         {!detail && !error ? <p className="mt-8 text-sm text-white/40">Loading media state...</p> : null}
         {error ? <p className="mt-5 rounded-md border border-red-800/40 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{error}</p> : null}
@@ -202,8 +158,7 @@ export function AdminPostgameMediaPanel({
         ) : detail && ACTIVE_STATUSES.has(detail.status) ? (
           <p className="mt-6 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-white/50">A render attempt is already active. Duplicate requests are disabled.</p>
         ) : null}
-      </aside>
-    </div>
+      </section>
   );
 }
 

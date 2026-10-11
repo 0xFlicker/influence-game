@@ -15,6 +15,7 @@ import { GameState, Phase, type GameTurnIntentV1 } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
+import { createEpisodeRoutes } from "../routes/episodes.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
 import { createProductionStudioRoutes } from "../routes/production-studio.js";
@@ -101,6 +102,7 @@ beforeAll(async () => {
   app.route("/", createAuthRoutes(database.db, { managedAuthMode: "full", compatibilityBridgeEnabled: false }));
   app.route("/", createVisualReplayProductionRoutes(database.db)); app.route("/", createVisualRoutes(database.db));
   app.route("/", createAdminRoutes(database.db));
+  app.route("/", createEpisodeRoutes(database.db));
   app.route("/", createProductionStudioRoutes(database.db));
   // No game or media worker is started; the test completes one job with deterministic pixels below.
   api = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
@@ -175,6 +177,61 @@ const keyboardMonitor = '[aria-label="Preview keyboard controls"]';
 async function keyboardFailure(page:Page, phase:string) {
   console.error('STUDIO_KEYBOARD_FAILURE',phase,await page.evaluate("({focus:document.activeElement?.outerHTML.slice(0,180),frame:document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'),moment:document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment'),transport:document.querySelector('[aria-label=\"Playback controls\"]')?.textContent,metadataOpen:document.querySelector('[aria-label=\"Moment properties\"] details')?.open,layers:Array.from(document.querySelectorAll('dialog[open],[role=listbox],[role=menu]')).map(node=>({role:node.getAttribute('role'),label:node.getAttribute('aria-label'),visible:node.getClientRects().length})),properties:document.querySelector('[aria-label=\"Moment properties\"]')?.innerText.slice(0,200)})"));
 }
+
+test("Studio tools keeps one dialog, section navigation and drafts on desktop and narrow screens", async () => {
+  for (const fixture of [studioFixture.influence,studioFixture.werewolf]) {
+    const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${fixture.id}`);
+    let writes=0;
+    page.on('request',request=>{if (['POST','PATCH','DELETE'].includes(request.method()) && new URL(request.url()).pathname.startsWith('/api/admin/')) writes++;});
+    try {
+      await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]'); await captureStudioFrame(page,100);
+      await clickStudioButton(page,'Tools'); await page.waitForSelector('dialog[open] nav[aria-label="Studio tools"]');
+      const dialog = (await page.$('dialog[open]'))!;
+      const sections = ['Recordings','Source settings','Keyboard hints','Scene versions…','Episode presentation','Trailer & poster','Game production and recovery','Workspace','Presentation'];
+      for (const section of sections) {
+        await clickStudioButton(page,section,'nav[aria-label="Studio tools"]');
+        expect(await page.evaluate(node=>node===node.ownerDocument.querySelector('dialog[open]'),dialog)).toBe(true);
+        expect(await page.$$eval('dialog[open]',nodes=>nodes.length)).toBe(1);
+        expect(await page.$$eval('dialog[open] [aria-label="Close panel"]',nodes=>nodes.length)).toBe(1);
+        expect(await page.$$eval('dialog[open] button',nodes=>nodes.some(node=>node.textContent?.trim()==='Done'))).toBe(false);
+        expect(await page.$eval('nav[aria-label="Studio tools"] [aria-current="page"]',node=>node.textContent)).toBe(section);
+      }
+      await keyboardFrame(page,100);
+      await clickStudioButton(page,'Episode presentation','nav[aria-label="Studio tools"]');
+      const title = '[aria-label="Edit episode presentation"] label input:not([type="checkbox"])';
+      await page.waitForSelector(title); const initialTitle = await page.$eval(title,node=>(node as {value:string}).value);
+      await page.type(title,' operator draft');
+      await clickStudioButton(page,'Recordings','nav[aria-label="Studio tools"]');
+      await clickStudioButton(page,'Episode presentation','nav[aria-label="Studio tools"]');
+      expect(await page.$eval(title,node=>(node as {value:string}).value)).toBe(`${initialTitle} operator draft`);
+      await closeStudioDialog(page); expect(await page.evaluate("document.activeElement?.textContent==='Tools'")).toBe(true);
+      await clickStudioButton(page,'Tools'); await clickStudioButton(page,'Episode presentation','nav[aria-label="Studio tools"]');
+      expect(await page.$eval(title,node=>(node as {value:string}).value)).toBe(`${initialTitle} operator draft`);
+
+      for (const viewport of [{width:390,height:700},{width:320,height:360}]) {
+        await page.setViewport(viewport);
+        for (const section of sections) {
+          await clickStudioButton(page,section,'nav[aria-label="Studio tools"]');
+          expect(await page.$eval('dialog[open]',node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
+          expect(await page.$eval('dialog[open]',node=>node.getBoundingClientRect().bottom)).toBeLessThanOrEqual(viewport.height);
+        }
+      }
+      await page.setViewport({width:1440,height:920}); await page.screenshot({path:temporaryPath(`production-studio-tools-${fixture===studioFixture.influence ? 'influence' : 'werewolf'}-desktop.png`)});
+      await page.setViewport({width:390,height:700}); await page.screenshot({path:temporaryPath(`production-studio-tools-${fixture===studioFixture.influence ? 'influence' : 'werewolf'}-narrow.png`)});
+      await openStudioSelect(page,'Aspect ratio'); await page.keyboard.press('Escape'); expect(await page.$('dialog[open]')).not.toBeNull();
+      await page.keyboard.press('Escape'); await page.waitForFunction("!document.querySelector('dialog[open]')"); await keyboardFrame(page,100);
+      expect(writes).toBe(0);
+      expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent==='Play'))).toBe(true);
+      await dialog.dispose();
+    } finally {await page.close();}
+  }
+  const restricted = await createAuthenticatedPage(browser,token,`${webUrl}/admin/production/games/${gameId}`);
+  try {
+    await restricted.waitForSelector('[data-composition-frame]'); await clickStudioButton(restricted,'Tools');
+    expect(await restricted.$$eval('nav[aria-label="Studio tools"] button',nodes=>nodes.some(node=>['Episode presentation','Trailer & poster'].includes(node.textContent!)))).toBe(false);
+    expect(await restricted.$('nav[aria-label="Studio tools"] button[aria-current="page"]')).not.toBeNull();
+  } finally {await restricted.close();}
+},120_000);
 
 test("Studio keyboard transport shares Player time and preserves native controls in both games", async () => {
   for (const fixture of [studioFixture.influence,studioFixture.werewolf]) {
@@ -372,6 +429,13 @@ test("Studio keyboard ignores unavailable media without queuing commands and kee
     expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent==='Play'))).toBe(true);
     page.off('request',intercept); await page.setRequestInterception(false);
     await page.goto(`${webUrl}/admin/production/games/${studioFixture.werewolf.id}`,{waitUntil:'domcontentloaded'}); await page.waitForSelector('[data-composition-frame]');
+    await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
+    await openStudioDialog(page,'Source settings');
+    await openStudioSelect(page,'Production audience');
+    expect(await page.$eval('[role="option"][aria-selected="true"]',node=>node.textContent?.includes('Omniscient'))).toBe(true);
+    await page.keyboard.press('Escape');
+    await closeStudioDialog(page);
+    await page.goto(`${webUrl}/admin/production/games/${studioFixture.werewolf.id}?audience=mystery`,{waitUntil:'domcontentloaded'}); await page.waitForSelector('[data-composition-frame]');
     expect(await page.$('[data-moment-id]:has([data-kind="thinking"])')).toBeNull();
     await page.focus(keyboardMonitor); await page.keyboard.press(']');
     await page.keyboard.press('t'); await page.waitForFunction("document.activeElement?.matches('[data-add-tag],input[aria-label^=\"Tag\"]')");
@@ -684,7 +748,7 @@ test("Checkbox labels save Werewolf Smart thoughts immediately and enter the sam
   const id = studioFixture.werewolf.id;
   const saved = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
   await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
-  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}`);
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}?audience=mystery`);
   try {
     await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
     expect(await page.$$('[data-moment-id] [data-kind="thinking"]')).toHaveLength(0);
@@ -1011,7 +1075,7 @@ test("Actual studio samples canonical source, keeps fresh-mount drafts, freezes 
     await openStudioDialog(page,"Export selected cut"); await clickButton(page,"Download selected export");
     const afterReturn = await (await afterReturnResponse).json() as ProductionExportDescriptor;
     expect(afterReturn.momentIds).toEqual([studioFixture.influence.speechId]); expect(afterReturn.recordings).toEqual([]);
-    await page.goto(`${webUrl}/admin/production/games/${studioFixture.werewolf.id}`, {waitUntil: "domcontentloaded"}); await page.waitForSelector("[data-production-preview]");
+    await page.goto(`${webUrl}/admin/production/games/${studioFixture.werewolf.id}?audience=mystery`, {waitUntil: "domcontentloaded"}); await page.waitForSelector("[data-production-preview]");
     expect(await page.$$('[data-moment-id] [data-kind="thinking"]')).toHaveLength(0);
     await chooseStudioOption(page, "Production audience", "Omniscient");
     await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');

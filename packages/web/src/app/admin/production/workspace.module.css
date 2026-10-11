@@ -151,12 +151,16 @@
 .dialog { position:fixed; inset:0; margin:auto; width:min(38rem,calc(100vw - 2rem)); max-height:calc(100dvh - 2rem); padding:0; background:rgb(var(--surface)); color:rgb(var(--text-primary)); border:1px solid rgb(var(--border-strong)); border-radius:12px; box-shadow:var(--shadow-elevated); overflow:visible; }
 .dialog[open] { display:flex; flex-direction:column; }
 .dialog::backdrop { background:rgb(var(--void)/.8); backdrop-filter:blur(5px); }
-.wideDialog { width:min(56rem,calc(100vw - 2rem)); }
+.settingsDialog { width:min(64rem,calc(100vw - 2rem)); height:min(46rem,calc(100dvh - 2rem)); }
+.dialogLayout { display:grid; grid-template-columns:180px minmax(0,1fr); min-height:0; flex:1; }
+.dialogSidebar { display:flex; flex-direction:column; gap:4px; padding:12px; overflow:auto; border-right:1px solid rgb(var(--border-active)); }
+.studio .dialogSidebar button { text-align:left; white-space:normal; min-height:40px; padding:10px; background:transparent; border-color:transparent; color:rgb(var(--text-secondary)); }
+.studio .dialogSidebar button[aria-current=page] { color:rgb(var(--text-primary)); background:rgb(var(--accent-rgb)/.12); border-color:rgb(var(--accent-rgb)/.3); }
+.studio .dialogSidebar button:hover:not(:disabled):not([aria-current=page]) { color:rgb(var(--text-primary)); background:rgb(var(--text-primary)/.05); }
 .dialog>header { display:flex; align-items:center; justify-content:space-between; padding:15px 20px; border-bottom:1px solid rgb(var(--border-active)); flex:none; }
 .dialog>header h2 { font-size:17px; font-weight:600; letter-spacing:-.3px; }
-.dialog>header button { font-size:22px; padding:0; width:32px; border:0; background:transparent; }
+.dialog>header button { font-size:22px; padding:0; width:44px; height:44px; border:0; background:transparent; }
 .dialogBody { padding:20px; overflow:auto; min-height:0; overscroll-behavior:contain; display:flex; flex-direction:column; gap:18px; }
-.dialog>footer { padding:12px 20px; border-top:1px solid rgb(var(--border-active)); display:flex; justify-content:flex-end; flex:none; }
 .dialogIntro { font-size:12px; line-height:1.6; color:rgb(var(--text-secondary)); max-width:65ch; }
 .settingsGrid { display:grid; grid-template-columns:1fr 1fr; gap:22px 18px; }
 .settingField { display:flex; flex-direction:column; gap:8px; font-size:12px; }
@@ -250,7 +254,11 @@
   .dialog { width:calc(100vw - 20px); max-height:calc(100dvh - 20px); }
   .dialog>header { padding:12px 15px; }
   .dialogBody { padding:15px; }
-  .dialog>footer { padding:10px 15px; }
+}
+@media(max-width:600px) {
+  .dialogLayout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  .dialogSidebar { flex-direction:row; border-right:0; border-bottom:1px solid rgb(var(--border-active)); padding:8px; overflow-x:auto; }
+  .studio .dialogSidebar button { white-space:nowrap; flex:none; min-height:44px; }
 }
 @media(max-height:650px) and (min-width:701px) {
   .commandBar { padding-top:7px; padding-bottom:7px; }

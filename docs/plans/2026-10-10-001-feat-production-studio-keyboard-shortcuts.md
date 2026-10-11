@@ -73,7 +73,7 @@ Defer J/K/L shuttling, reverse playback, held-key acceleration, custom remapping
 
 Recommended: one small **Keyboard shortcuts · ?** button at the right of the timeline header, adjacent to Timeline zoom. It is always discoverable without adding another permanent pane or consuming monitor space. On narrow screens use a keyboard icon with an accessible name and a 44px touch target; it opens the same dialog and supports an attached hardware keyboard.
 
-Reuse `StudioDialog` for the help panel: compact width, internally scrolling body on short screens, paired action/`kbd` rows grouped as Playback, Navigation, Editing and Panels. It stays inside the Studio fullscreen subtree and returns focus on dismissal. The close and Done controls remain familiar. Include the character-shortcut preference and a short explanation that T edits tags while saving matching tags builds a cut.
+Reuse `StudioDialog` for the help panel: internally scrolling body on short screens, paired action/`kbd` rows grouped as Playback, Navigation, Editing and Panels. It stays inside the Studio fullscreen subtree and returns focus on dismissal. The subsequent operator tools-panel refinement uses one X and a persistent section list, superseding the duplicate close/Done design. Include the character-shortcut preference and a short explanation that T edits tags while saving matching tags builds a cut.
 
 Show compact key hints in relevant button tooltips/accessibility descriptions: Play (Space), Mute (M), Fullscreen (F), Export (E), Save tags (Cmd/Ctrl+Enter). Add `aria-keyshortcuts` to the action controls with the correct key syntax. One finite binding definition should generate the help rows and display hints so copy cannot drift from behavior.
 

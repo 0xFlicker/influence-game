@@ -61,13 +61,11 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   await waitFor(() => expect(view.getByText("Loading the complete accepted source prefix and media metadata…")).toBeTruthy());
   expect(view.queryByRole("button", { name: "Game production and recovery" })).toBeNull();
   fireEvent.click(view.getByRole("button", { name: "Tools" }));
-  fireEvent.click(view.getByRole("button", { name: "Episode tools" }));
-  const episodeTools = view.getByRole("dialog", { name: "Episode tools" });
-  expect(within(episodeTools).getByRole("button", { name: "Episode presentation" })).toBeTruthy();
-  expect(within(episodeTools).getByRole("button", { name: "Trailer & poster" })).toBeTruthy();
-  fireEvent.click(within(episodeTools).getByRole("button", { name: "Game production and recovery" }));
-  expect(view.queryByRole("dialog", { name: "Episode tools" })).toBeNull();
-  expect(view.getByRole("dialog", { name: "Game production and recovery" })).toBeTruthy();
+  const tools = view.getByRole("dialog", { name: "Source settings" }), sections = within(view.getByRole("navigation", {name:"Studio tools"}));
+  expect(sections.getByRole("button", { name: "Episode presentation" })).toBeTruthy();
+  expect(sections.getByRole("button", { name: "Trailer & poster" })).toBeTruthy();
+  fireEvent.click(sections.getByRole("button", { name: "Game production and recovery" }));
+  expect(view.getByRole("dialog", { name: "Game production and recovery" })).toBe(tools);
   await waitFor(() => expect(view.getByRole("region", { name: "Game production recovery" })).toBeTruthy());
   const privateDraft = "draft:/api/admin/production/games/wolf:omniscient:moment:pm1:thought";
   act(() => {session.set(privateDraft,{revision:1,rows:[["label.smart","true"]]}); session.set(`${privateDraft}:conflict`,{tags:{private:"evidence"}}); session.set(`${privateDraft}:error`,"Private conflict");});
@@ -75,7 +73,7 @@ test("cached Producer capabilities cannot retain editorial or Werewolf recovery 
   expect(session.get(privateDraft)).toBeUndefined(); expect(session.get(`${privateDraft}:conflict`)).toBeUndefined(); expect(session.get(`${privateDraft}:error`)).toBeUndefined();
   expect(view.queryByText("Loading the complete accepted source prefix and media metadata…")).toBeNull();
   expect(view.queryByText("Game production and recovery")).toBeNull();
-  expect(view.queryByRole("button", { name: "Episode tools" })).toBeNull();
+  expect(view.queryByRole("navigation", { name: "Studio tools" })).toBeNull();
   expect(view.queryByRole("dialog", { name: "Game production and recovery" })).toBeNull();
   expect(view.queryByRole("region", { name: "Game production recovery" })).toBeNull();
   expect(view.getByRole("button", { name: "Episode presentation" })).toBeTruthy();

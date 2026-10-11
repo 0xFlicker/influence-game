@@ -90,7 +90,7 @@ describe("AdminPostgameMedia", () => {
   it("preserves the exact lowercase slug in the media panel", () => {
     const Wrapper = adminTestWrapper();
     const html = renderToString(
-      <Wrapper><AdminPostgameMediaPanel game={adminGame()} canManage={false} onClose={() => {}} /></Wrapper>,
+      <Wrapper><AdminPostgameMediaPanel game={adminGame()} canManage={false} /></Wrapper>,
     );
 
     expect(html).toContain(">vast-plum-bay</p>");

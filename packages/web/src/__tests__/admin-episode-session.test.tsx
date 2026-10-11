@@ -15,8 +15,6 @@ let dom: Window, session: AdminSession;
 beforeEach(() => {
   dom = new Window({ url: "http://localhost" });
   for (const name of names) Object.defineProperty(globalThis, name, { configurable: true, value: dom[name] });
-  dom.HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
-  dom.HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
   setApiBase("");
 });
 afterEach(async () => {
@@ -32,8 +30,8 @@ function Capture({ children }: { children: React.ReactNode }) {
   return children;
 }
 const resource = "/api/admin/games/g/episode", mediaResource = "/api/admin/games/g/postgame/media";
-const editor = <Capture><EpisodeEditor gameId="g" onClose={() => {}} onSaved={async () => {}} /></Capture>;
-const trailer = <Capture><AdminPostgameMediaPanel game={{ id: "g", slug: "saved-slug" }} canManage onClose={() => {}} /></Capture>;
+const editor = <Capture><EpisodeEditor gameId="g" onSaved={async () => {}} /></Capture>;
+const trailer = <Capture><AdminPostgameMediaPanel game={{ id: "g", slug: "saved-slug" }} canManage /></Capture>;
 function episode(revision = 1): EpisodePreview & { failure: null } {
   return { episode: { title: "Saved title", description: "Saved description", episodeNumber: null, cast: [], coverUrl: null,
     status: "ready", locked: false, revision, frameOrder: [] }, frames: [], media: { schemaVersion: 1, mediaType: "house_highlights_trailer", status: "not_requested" }, failure: null };
@@ -121,7 +119,7 @@ test("a rejected PATCH keeps the operator draft and explains the revision confli
   expect((view.getByText("Save presentation") as HTMLButtonElement).disabled).toBe(true);
 });
 
-test("episode and trailer dialogs share an unknown operation and its GET reconciliation", async () => {
+test("episode and trailer tools share an unknown operation and its GET reconciliation", async () => {
   let value = media("ready"), writes = 0;
   respond(async (url, init) => {
     if (init?.method === "POST") { writes++; value = media("queued", 2); return new Response("Trailer response lost", { status: 503 }); }

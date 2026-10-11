@@ -112,8 +112,6 @@ test("W7A create, visible pause, discover, repair, publish and explicitly resume
       await text(page, "Paused accepted prefix");
       const openRecovery = async () => {
         await clickStudioButton(page, "Tools");
-        await clickStudioButton(page, "Episode tools");
-        await page.waitForSelector('dialog[open][aria-label="Episode tools"]');
         await clickStudioButton(page, "Game production and recovery");
         await page.waitForSelector('dialog[open][aria-label="Game production and recovery"]');
         await text(page, "Paused for visuals");

@@ -5,7 +5,7 @@ import type { Page } from "puppeteer";
 
 type Bounds = {x: number; y: number; width: number; height: number; bottom: number};
 type Layout = {viewport: {width: number; height: number}; page: {width: number; height: number}; monitor: Bounds; editor: Bounds; timeline: Bounds};
-type StudioDialog = "Presentation" | "Local recordings" | "Export selected cut" | "Selected cut rule" | "Scene versions & production" | "Source settings" | "Studio tools";
+type StudioDialog = "Presentation" | "Local recordings" | "Export selected cut" | "Selected cut rule" | "Scene versions & production" | "Source settings" | "Workspace";
 
 /** Native clicks stay inside the current top-layer dialog, when one is open. */
 export async function clickStudioButton(page: Page, text: string, scope = "") {
@@ -25,8 +25,8 @@ export async function setStudioInput(page: Page, label: string, value: string) {
 
 export async function openStudioDialog(page: Page, title: StudioDialog) {
   if (await page.$(`dialog[open][aria-label="${title}"]`)) return;
-  const trigger = {Presentation: "Presentation", "Local recordings": "Recordings", "Export selected cut": "Export…", "Selected cut rule": "Cut rule", "Scene versions & production": "Scene versions…", "Source settings": "Source settings", "Studio tools": "Tools"}[title];
-  if (["Presentation", "Local recordings", "Source settings"].includes(title)) await clickStudioButton(page, "Tools");
+  const trigger = {Presentation: "Presentation", "Local recordings": "Recordings", "Export selected cut": "Export…", "Selected cut rule": "Cut rule", "Scene versions & production": "Scene versions…", "Source settings": "Source settings", "Workspace": "Workspace"}[title];
+  if (!await page.$('dialog[open]') && ["Presentation", "Local recordings", "Source settings", "Workspace"].includes(title)) await clickStudioButton(page, "Tools");
   if (title === "Selected cut rule") {
     const expression = "Array.from(document.querySelectorAll('button')).find(node => node.textContent?.trim().startsWith('Cut rule') && node.getClientRects().length > 0)";
     await page.waitForFunction(expression);
@@ -42,7 +42,7 @@ export async function openStudioDialog(page: Page, title: StudioDialog) {
 }
 
 export async function closeStudioDialog(page: Page) {
-  await clickStudioButton(page, "Done");
+  await page.click('dialog[open] > header [aria-label="Close panel"]');
   await page.waitForFunction("!document.querySelector('dialog[open]')");
 }
 
@@ -318,7 +318,8 @@ export async function proveStudioInterface(page: Page, narrow: Page, fixture: {t
   await clickStudioButton(page,"Fullscreen"); await page.waitForFunction("document.fullscreenElement?.hasAttribute('data-production-workspace')");
   await openStudioDialog(page,"Source settings"); await closeStudioDialog(page);
   await clickStudioButton(page,"Fullscreen"); await page.waitForFunction("!document.fullscreenElement");
-  await page.goto(fixture.werewolfUrl,{waitUntil:"domcontentloaded"}); await page.waitForSelector("[data-composition-frame]");
+  const mysteryUrl = new URL(fixture.werewolfUrl); mysteryUrl.searchParams.set("audience","mystery");
+  await page.goto(mysteryUrl.toString(),{waitUntil:"domcontentloaded"}); await page.waitForSelector("[data-composition-frame]");
   await page.click('[aria-label="Moment type filters"] button:nth-child(2)');
   expect(await page.$$('[data-moment-id]')).toHaveLength(0);
   expect(await page.evaluate("document.body.innerText.includes('Thinking is unavailable in Mystery')")).toBe(true);
