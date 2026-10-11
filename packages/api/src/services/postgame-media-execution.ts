@@ -118,7 +118,7 @@ export function signedRenderWake(body: string, secret: string, timestamp = Math.
 
 // Every sweep repairs lost notification/launcher/STOPPED delivery, including
 // expired leases. Terminal failed/waiting_music jobs deliberately stay terminal.
-export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; execution?: RenderExecution } = {}) {
+export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS.ProcessEnv; fetch?: typeof fetch; execution?: RenderExecution; repair?: boolean } = {}) {
   const env = options.env ?? process.env;
   const execution = options.execution ?? renderExecutionConfig(env);
   if (execution.mode !== "remote") return 0;
@@ -133,7 +133,7 @@ export async function dispatchRenderWakes(db: DrizzleDB, options: { env?: NodeJS
     const lock = await tx.execute(sql`SELECT pg_try_advisory_xact_lock(198724, 1) AS acquired`);
     if (!lock[0]?.acquired) return 0;
     const [pending] = await tx.select({ id: schema.postgameMediaWakeOutbox.id }).from(schema.postgameMediaWakeOutbox).where(isNull(schema.postgameMediaWakeOutbox.deliveredAt)).limit(1);
-    if (!pending) {
+    if (!pending && options.repair !== false) {
       const [work] = await tx.select({ gameId: schema.gamePostgameMedia.gameId }).from(schema.gamePostgameMedia).where(or(
         eq(schema.gamePostgameMedia.status, "queued"),
         and(inArray(schema.gamePostgameMedia.status, ["claimed", "rendering", "composing", "uploading"]), sql`${schema.gamePostgameMedia.leaseExpiresAt} <= ${new Date().toISOString()}`),
