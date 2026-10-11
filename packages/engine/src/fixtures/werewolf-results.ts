@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "./retrospective-agent";
 import { observeWerewolf } from "../werewolf/observation";
 import { ProviderUnavailableError } from "../provider-execution";
 import { applyWerewolfEvent, nextWerewolfStep, replayWerewolf, startWerewolf, werewolfConfig, werewolfEvent } from "../werewolf/rules";
@@ -12,7 +13,7 @@ export async function werewolfResultsFixture(scenario: WerewolfResultScenario, g
   const roles = replayWerewolf(events).roles;
   const wolves = players.filter(p => roles[p.id] === "werewolf").map(p=>p.id);
   const doctor = players.find(p=>roles[p.id] === "doctor")?.id;
-  const agent: WerewolfAgent = {async decide({request,observation}) {
+  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request,observation}) {
     const legal = request.legalTargetIds;
     const village = legal.filter(id=>roles[id] !== "werewolf");
     if (request.action === "open_thread") return {kind:"opening",text:null,cue:null,recipientIds:[]};

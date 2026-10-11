@@ -8,6 +8,8 @@
 export * from "./types";
 export * from "./retrospective";
 export * from "./retrospective-context";
+export * from "./retrospective-invocation";
+export * from "./fixtures/retrospective-agent";
 export * from "./influence-retrospective";
 export * from "./werewolf/retrospective";
 export {

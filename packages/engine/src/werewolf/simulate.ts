@@ -25,6 +25,7 @@
  * No `as any` and no Influence House calls: the rules own every transition.
  */
 import { parseArgs } from "node:util";
+import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -57,7 +58,7 @@ const output = resolve(values.out ?? `docs/simulations/${events[0]!.gameId}.json
 await mkdir(dirname(output), { recursive: true });
 const persist = async () => { await writeFile(`${output}.tmp`, JSON.stringify(events, null, 2)); await rename(`${output}.tmp`, output); };
 await persist();
-let delegate: WerewolfAgent = { async decide({ request }) {
+let delegate: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   const state = replayWerewolf(events);
   if (request.action === "vote" && request.voteMode === "plurality") return {
     kind: "target", targetId: state.aliveIds[(state.aliveIds.indexOf(request.actorId) + 1) % state.aliveIds.length]!, thinking: "Scripted cyclic ballot",
@@ -70,7 +71,7 @@ if (values["model-catalog"]) {
   if (!runtimes) throw new Error("The selected provider is not configured");
   delegate = new WerewolfModelAgent({ runtimes });
 }
-const agent: WerewolfAgent = { async decide(input) {
+const agent: WerewolfAgent = { getRetrospectiveStatement: input => delegate.getRetrospectiveStatement(input), async decide(input) {
   const decision = await delegate.decide(input);
   if (values.chatty) console.log(JSON.stringify({ visibility: "private", day: input.observation.board.day,
     actionSlot: input.actionSlot, discussion: input.observation.board.discussion, request: input.request, decision }));

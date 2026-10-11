@@ -1,11 +1,14 @@
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { seededRandom } from "../seeded-random";
 import { ProviderUnavailableError } from "../provider-execution";
+import type { RetrospectiveSpeakerContext } from "../retrospective-context";
+import type { RetrospectiveSpeechV1 } from "../retrospective";
 import { observeWerewolf, type WerewolfObservation } from "./observation";
 import { nextWerewolfStep, replayWerewolf, validateWerewolfAction, werewolfActionPlans, werewolfEvent } from "./rules";
 import type { WerewolfDecision, WerewolfEvent, WerewolfRequest, WerewolfState } from "./types";
 
 export interface WerewolfAgent {
+  getRetrospectiveStatement(input: { gameId: string; actionSlot: number; day: number; context: RetrospectiveSpeakerContext; signal?: AbortSignal }): Promise<RetrospectiveSpeechV1>;
   decide(input: { gameId: string; actionSlot: number; request: WerewolfRequest; observation: WerewolfObservation; signal?: AbortSignal }): Promise<WerewolfDecision>;
 }
 

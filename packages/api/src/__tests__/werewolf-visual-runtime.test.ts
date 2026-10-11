@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import { beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -20,7 +21,7 @@ async function fixture(preset: "one_wolf" | "two_wolves" = "two_wolves") {
   const controller=new AbortController();
   return {game,store,controller,epoch:claim.claim.ownerEpoch};
 }
-const agent:WerewolfAgent={async decide({request}){
+const agent:WerewolfAgent={ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
   if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
   if(request.legalTargetIds.length)return {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture"};
   return {kind:"speech",text:"Fixture contribution",cue:null};
@@ -130,7 +131,7 @@ async function advanceTo(f: Awaited<ReturnType<typeof fixture>>, action: "pack_t
 
 for (const protectedTarget of [true,false]) test(`first daytime lobby uses ${protectedTarget ? "the full protected cast" : "only night survivors"}`,async()=>{
   const f=await fixture();let target:string|null=null;
-  const nightAgent:WerewolfAgent={async decide(input){
+  const nightAgent:WerewolfAgent={ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide(input){
     if(input.request.action==="attack")target=input.request.legalTargetIds[0]!;
     if(input.request.action==="protect")return {kind:"target",targetId:protectedTarget ? target : input.request.legalTargetIds.find(id=>id!==target)!,thinking:"Fixture protection"};
     return agent.decide(input);

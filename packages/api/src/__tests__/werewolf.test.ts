@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
 import { readHouseParticipation } from "../services/house-participation.js";
 import {readHouseGameThinking} from "../services/house-game-inspection.js";
@@ -20,7 +21,7 @@ import { adoptInProgressDurableGamesOnStartup } from "../services/startup-durabl
 let db: DrizzleDB;
 const ownerId = "werewolf-owner";
 const manifest = [{ catalogId: DEFAULT_MODEL_CATALOG_ID }];
-const scripted: WerewolfAgent = { async decide({ request }) {
+const scripted: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
   return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_THINKING" }
     : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "SECRET_PACK" : "Who changed their mind?" };
@@ -260,7 +261,7 @@ describe("Werewolf House integration", () => {
     if (!replacement.ok) throw new Error(replacement.error);
     // This fixture exercises one accepted provider value; the batch test below covers all ballots.
     const replayAgent = agent(replacement.claim.ownerEpoch);
-    const resumed = await advanceWerewolf(createWerewolfStore(db, game.id, replacement.claim.ownerEpoch), { decide: input =>
+    const resumed = await advanceWerewolf(createWerewolfStore(db, game.id, replacement.claim.ownerEpoch), { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: input =>
       input.request.actorId === step.request.actorId ? replayAgent.decide(input) : scripted.decide(input) });
     const committed = (await store.read())[state.sequence];
     expect(committed?.type === "werewolf.action_accepted" && committed.payload.decision).toEqual(accepted);
@@ -312,7 +313,7 @@ describe("Werewolf House integration", () => {
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     let start = replayWerewolf(await store.read());
-    const reachBallot: WerewolfAgent = { decide: async input => {
+    const reachBallot: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       if (finalVote && input.request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
       if (finalVote && input.request.action === "vote") return { kind: "target", targetId: null, thinking: "Hear more" };
       return scripted.decide(input);
@@ -354,7 +355,7 @@ describe("Werewolf House integration", () => {
     const advancing = advanceWerewolf({ ...store, append: async (event) => {
       if (++commits === 2) throw new Error("Interrupted between private commitments");
       await store.append(event);
-    } }, { decide: async input => {
+    } }, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       const decision = await tracked.decide(input);
       if (++decisionsReady === plans.length - 1) peersReady.resolve();
       return decision;

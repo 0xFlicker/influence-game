@@ -416,6 +416,8 @@ export interface ProviderManifestCallEntry<TResponse, TValue>
 
 export interface ExecuteProviderManifestCallOptions<TResponse, TValue> {
   entries: readonly ProviderManifestCallEntry<TResponse, TValue>[];
+  /** Admission for fresh dispatch only; accepted journal replay needs no transport. */
+  beforeDispatch?(): Promise<void>;
   cancellationSignal?: AbortSignal;
   validateAcceptedValue?(value: unknown): ProviderAcceptedValueValidation<TValue>;
 }
@@ -630,6 +632,8 @@ export class ProviderLogicalCallExecution {
       };
     }
 
+    options.cancellationSignal?.throwIfAborted();
+    await options.beforeDispatch?.();
     let lastAttemptError: ProviderAttemptError | undefined;
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;

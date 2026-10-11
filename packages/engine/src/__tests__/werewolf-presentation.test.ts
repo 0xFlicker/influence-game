@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
 import { expect, test } from "bun:test";
 import { projectWerewolfPresentation } from "../werewolf/presentation";
 import { startWerewolf, werewolfConfig, replayWerewolf } from "../werewolf/rules";
@@ -6,7 +7,7 @@ import { runWerewolf, type WerewolfAgent } from "../werewolf/runner";
 for (const preset of ["one_wolf", "two_wolves"] as const) test(`${preset}: complete presentation preserves every audience-local moment and its causal roster`, async () => {
   const players = Array.from({ length: preset === "one_wolf" ? 6 : 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "", backstory: "", strategy: "SECRET STRATEGY", avatarUrl: null }));
   const events = [startWerewolf("replay", players, werewolfConfig(preset, 2), "replay-fixture")];
-  const agent: WerewolfAgent = { decide: async ({ request }) => request.action === "open_thread" ? { kind: "opening", text: null, cue: "Pauses", recipientIds: [] } : request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "SECRET REASON" } : { kind: "speech", text: request.action === "pack_talk" ? "SECRET PACK" : "Hello", cue: null } };
+  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => request.action === "open_thread" ? { kind: "opening", text: null, cue: "Pauses", recipientIds: [] } : request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "SECRET REASON" } : { kind: "speech", text: request.action === "pack_talk" ? "SECRET PACK" : "Hello", cue: null } };
   await runWerewolf({ read: async () => structuredClone(events), append: async event => { events.push(structuredClone(event)); } }, agent);
   const state = replayWerewolf(events);
   for (const audience of ["mystery", "omniscient"] as const) {

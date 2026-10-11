@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { advanceWerewolf, nextWerewolfStep, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
@@ -80,7 +81,7 @@ test("invalid paused candidates cannot strand the following page or acquire reco
   expect(second.items.map(row => row.id)).toEqual(["a-valid"]);
 });
 
-const agent: WerewolfAgent = { async decide({ request }) {
+const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
   if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Fixture" };
   return { kind: "speech", text: "Fixture contribution", cue: null };

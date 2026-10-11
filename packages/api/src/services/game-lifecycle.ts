@@ -1,3 +1,4 @@
+import { fixtureInfluenceRetrospective } from "@influence/engine";
 import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
@@ -307,6 +308,7 @@ function mockResponse(message: string): AgentResponse {
 }
 
 class ApiTestMockAgent implements IAgent {
+  getRetrospectiveStatement = fixtureInfluenceRetrospective;
   readonly id: UUID;
   readonly name: string;
 

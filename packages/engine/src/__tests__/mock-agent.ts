@@ -12,6 +12,7 @@ import {
   type HouseAllianceProposerSelectionResult,
 } from "../house-interviewer";
 import type { UUID } from "../types";
+import { RetrospectiveStatementFixture } from "../fixtures/retrospective-agent";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 import { applyStrategyCandidate, cloneCompactStrategyState, createOpeningStrategyState, markStrategyReconciliationRequired } from "../strategy-state";
 
@@ -47,6 +48,8 @@ export class ScriptedHouseInterviewer extends TemplateHouseInterviewer {
 }
 
 export class MockAgent implements IAgent {
+  readonly retrospective = new RetrospectiveStatementFixture();
+  getRetrospectiveStatement: IAgent["getRetrospectiveStatement"] = async (_phase, context, options) => this.retrospective.emit(context, options?.signal);
   readonly id: UUID;
   readonly name: string;
   private compactStrategy = createOpeningStrategyState();

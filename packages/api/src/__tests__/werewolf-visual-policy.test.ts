@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -24,7 +25,7 @@ afterEach(() => { if (secret === undefined)
 else
   process.env.JWT_SECRET = secret; });
 beforeEach(async () => { process.env.JWT_SECRET = "w7-test-secret"; db = await setupTestDB(); await db.insert(schema.users).values({ id: "operator" }); });
-const agent: WerewolfAgent = { async decide({ request }) {
+const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "open_thread")
       return { kind: "opening", text: null, cue: null, recipientIds: [] };
     if (request.legalTargetIds.length)

@@ -1,3 +1,4 @@
+import { fixtureInfluenceRetrospective } from "@influence/engine";
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
@@ -45,6 +46,7 @@ function mockResponse(message: string): AgentResponse {
 }
 
 class PassportProofAgent implements IAgent {
+  getRetrospectiveStatement = fixtureInfluenceRetrospective;
   readonly id: UUID;
   readonly name: string;
   private started = false;

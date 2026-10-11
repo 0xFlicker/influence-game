@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
@@ -54,7 +55,7 @@ async function checkFailedPackNegotiations() {
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
-  const agent: WerewolfAgent = { async decide({ request, observation }) {
+  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "vote") {
       if (request.voteMode === "majority") return { kind: "target", targetId: null, thinking: "Hear more" };
       const ids = observation.board.players.filter(player => player.alive).map(player => player.id);
@@ -278,7 +279,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(database.db, game.id); if (!claim.ok) throw new Error(claim.error);
   let ballotRequests = 0;
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { async decide({ request }) {
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "vote" && request.voteMode === "majority" && ballotRequests++ < 2) return {kind:"target", targetId:null, thinking:"I need more evidence"};
     if (request.action === "open_thread") return { kind: "opening", text: "Who can explain their suspicion?", cue: null, recipientIds: request.legalTargetIds.slice(0, 2) };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private decision" } : { kind: "speech", text: "A short contribution", cue: null };
@@ -559,7 +560,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
 test("Werewolf thinking isolates the speaker before speech on desktop and mobile", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -613,7 +614,7 @@ test("opening stops stay distinct from recorded cursors in both audiences", asyn
 test("Werewolf autoplays with device preferences and Mystery preserves the saved choice", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -649,7 +650,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
 test("House entry is anonymous, rejects invalid audiences and shares a later source moment without restarting", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1,visibility:"unlisted"});
   const claim = await claimWerewolfGame(database.db,game.id); if(!claim.ok) throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}) {
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
     if(request.action === "open_thread") return {kind:"opening",text:"What have you learned?",recipientIds:request.legalRecipientIds.slice(0,3),cue:null};
     if(request.action === "vote" && request.voteMode === "majority") return {kind:"target",targetId:null,thinking:"Hear more"};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture decision"} : {kind:"speech",text:"I want to compare the evidence.",cue:null};
@@ -821,7 +822,7 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
 test("House replay music follows transport, remembers volume and stays visible on mobile", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim=await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:"Let us compare the accounts carefully before we decide who should leave the village today.",cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind about anyone in this village.",cue:null};
   }});
@@ -1206,7 +1207,7 @@ test("Decisions inspector keeps Mystery public and Omniscient thinking independe
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch);
-  const agent: WerewolfAgent = { async decide({ request, observation }) {
+  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
     // The inspector requires a doctor with both private night and public day
     // history. Self-protection prevents random roles from killing that fixture

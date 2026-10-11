@@ -1,10 +1,12 @@
 import { canonicalJson, hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import {
-  assertRetrospectiveInputBinding, createRetrospectiveDefinition, prepareRetrospectiveRequest,
+  assertRetrospectiveInput, assertRetrospectiveInputBinding, assertRetrospectiveRequest, createRetrospectiveDefinition, prepareRetrospectiveRequest,
   RETROSPECTIVE_MAX_SPEECH_CHARACTERS, RetrospectiveContractError,
+  retrospectiveSpeechArtifact,
   type RetrospectiveDefinitionV1, type RetrospectiveInputV1, type RetrospectiveRequestV1,
   type RetrospectiveStateV1,
 } from "./retrospective";
+import { exactStructuredOutputRegistry } from "./structured-output";
 
 /** Private game-setup snapshot. Never put the whole roster's strategies in a prompt. */
 export interface RetrospectiveSpeaker {
@@ -43,10 +45,12 @@ export class RetrospectiveContextCapacityError extends RetrospectiveContractErro
     readonly actorId: string | null,
     readonly requiredBytes: number | null,
     readonly availableBytes: number | null,
+    options?: ErrorOptions,
   ) {
     super(reason === "capacity_unavailable" ? "Retrospective requires an admitted input budget for every effective model"
       : `Retrospective context for ${actorId} requires ${requiredBytes} bytes; ${modelId} admits ${availableBytes}`);
     this.name = "RetrospectiveContextCapacityError";
+    if (options?.cause !== undefined) this.cause = options.cause;
   }
 }
 
@@ -109,6 +113,36 @@ export function materializeRetrospectiveContext(
 /** Canonical serialization is shared by capacity admission and the eventual invocation. */
 export function serializeRetrospectiveContext(context: RetrospectiveSpeakerContext): string {
   return canonicalJson(context);
+}
+
+/** Recheck the model-facing request and exact predecessor text before dispatch. */
+export function assertRetrospectiveSpeakerContext(context: RetrospectiveSpeakerContext): void {
+  const exact = (value: unknown, keys: string[]) => value !== null && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length === keys.length && Object.keys(value).every(key => keys.includes(key));
+  if (!exact(context, ["version", "request", "self", "game", "priorStatements"])
+    || !exact(context.self, ["id", "name", "personality", "backstory", "strategy"])) {
+    throw new RetrospectiveContractError("Invalid retrospective speaker context shape");
+  }
+  assertRetrospectiveRequest(context.request);
+  assertRetrospectiveInput(context.game);
+  speakerSnapshot(context.self);
+  if (context.version !== 1
+    || context.self.id !== context.request.actorId || context.game.outcome.gameId !== context.request.gameId
+    || hashCanonicalJson(context.game) !== context.request.inputHash || !Array.isArray(context.priorStatements)) {
+    throw new RetrospectiveContractError("Retrospective speaker context does not match its frozen request");
+  }
+  const references = context.priorStatements.map(statement => {
+    if (!exact(statement, ["eventSequence", "ordinal", "actorId", "speech"])
+      || statement.eventSequence <= context.game.outcome.eventSequence
+      || exactStructuredOutputRegistry.decodeAcceptedValue(retrospectiveSpeechArtifact, { speech: statement.speech }).status !== "valid") {
+      throw new RetrospectiveContractError("Invalid retrospective predecessor context");
+    }
+    const { eventSequence, ordinal, actorId, speech } = statement;
+    return { eventSequence, ordinal, actorId, speechHash: hashCanonicalJson({ speech }) };
+  });
+  if (canonicalJson(references) !== canonicalJson(context.request.priorStatements)) {
+    throw new RetrospectiveContractError("Retrospective predecessor speech differs from its accepted references");
+  }
 }
 
 export function preflightRetrospectiveContext(

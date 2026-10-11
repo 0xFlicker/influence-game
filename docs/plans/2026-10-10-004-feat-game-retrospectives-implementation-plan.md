@@ -9,7 +9,7 @@ research: ../research/2026-10-10-game-retrospectives-research.md
 
 # Game retrospectives implementation tasks
 
-The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, through RT-02. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md) and [context compiler guide](../game-retrospective-context.md). Providers, historical generation and deployment remain outside this work.
+The agreed design makes retrospective completion the final boundary of the existing game execution. This document turns the [high-level plan](2026-10-10-003-feat-game-retrospectives.md) and [source research](../research/2026-10-10-game-retrospectives-research.md) into ordered implementation tasks. Implementation is authorized on `codex/game-retrospectives`, through RT-03. Its contracts and proof are recorded in the [contract document](../game-retrospective-contract.md), [context compiler guide](../game-retrospective-context.md) and [invocation guide](../game-retrospective-invocation.md). Live provider trials, historical generation and deployment remain outside this work.
 
 ## Locked direction and planning defaults
 
@@ -30,7 +30,7 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | --- | --- | --- | --- |
 | RT-01 | Final boundary, event, input-storage and provider contracts | Research | Done |
 | RT-02 | Complete frozen context and speaker order | RT-01 | Done |
-| RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Todo |
+| RT-03 | Strict final-statement invocation and deterministic fixtures | RT-01, RT-02 | Done |
 | RT-04 | Influence durable retrospective turns | RT-01–03 | Todo |
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Todo |
 | RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Todo |
@@ -230,7 +230,7 @@ The planning pass checked the following failure scenarios against the tasks:
 
 Research and task planning are complete. RT-01 now makes the event/storage/version decisions concrete; no remaining task requires an additional worker design.
 
-RT-01 is implemented on 2026-10-10. The [contract document](../game-retrospective-contract.md) defines the exact records, cursor, input/storage, speech bounds, provider bindings and version policy. Both game adapters validate a complete epilogue without changing outcome facts; the runtime still stops at the existing result boundary. RT-02 adds the context/order layer below; runtime generation and RT-03 onward remain unstarted.
+RT-01 is implemented on 2026-10-10. The [contract document](../game-retrospective-contract.md) defines the exact records, cursor, input/storage, speech bounds, provider bindings and version policy. Both game adapters validate a complete epilogue without changing outcome facts; the runtime still stops at the existing result boundary. RT-02 and RT-03 add context/order and invocation layers below; runtime wiring remains subsequent work.
 
 Local verification:
 
@@ -260,4 +260,23 @@ Local verification:
 
 A read-only single-turn Grok review was attempted with editing, web search and subagents disabled. It returned no review within seven minutes and was stopped; external review remains incomplete. This is not a clean review result. Final integrated review remains RT-15.
 
-Current runners, simulations and settlement still end at the existing result boundary. RT-03 onward remains unstarted; these deterministic local checks do not establish provider quality, runtime continuation, staging, MCP, replay or export acceptance.
+At RT-02 completion, runners, simulations and settlement still ended at the existing result boundary. RT-03 adds invocation below; these deterministic local checks do not establish provider quality, runtime continuation, staging, MCP, replay or export acceptance.
+
+## RT-03 completion record
+
+RT-03 is implemented on 2026-10-10. It adds mandatory typed final-statement methods to both concrete agent contracts and their deterministic agents. The [invocation guide](../game-retrospective-invocation.md) records the dedicated postgame prompt, exact `{speech}` native artifact, unchanged canonical context, verified capacity policy and existing provider journal/retry/cancellation/accounting path. Accepted replay validates the context and speech without counting or generating remotely. Staged Influence speech retains its planned durable subcall and bypasses scene generation. No strategy, gameplay or profile mutation occurs.
+
+Capacity policy covers every sealed primary/fallback catalog ID. The six hosted OpenAI models use documented exact input/context limits, native fixed-prefix token counting and a conservative UTF-8 byte bound, with output/reasoning reserved. Unverified model/profile routes fail explicitly. RT-04/05 must supply this policy to RT-02's whole-roster initialization preflight, then call the new methods; these drivers remain unimplemented.
+
+Focused deterministic proof covers non-JSON, fenced/embedded JSON, empty/missing/extra fields, blank/null/oversized Unicode speech, bounded retry exhaustion, fallback admission, cancellation, context drift, exact frozen self/prior text, no mutation, accepted replay without transport, usage and planned staging. Custom endpoints cannot borrow hosted OpenAI limits. Caller cancellation retains its reason; an internal native-count deadline produces typed capacity failure.
+
+Local verification:
+
+- `bun run test`: 2,529 passed, 5 existing skips, 0 failures across 262 files. The initial sandbox run could not bind loopback fixture servers; rerunning with local network access passed.
+- Final focused retrospective contract/context/invocation, provider adapter/execution and visual-boundary checks: 117 passed, 0 failures across 6 files, including all 34 retrospective invocation tests and the final internal-deadline proof.
+- `bun run test:postgres`: 1,985 passed, 0 failures across 172 files, on a fresh disposable local database. The shared database was left untouched; the disposable database was removed after the suite exited.
+- `bun run check`: typecheck and lint passed. Whitespace and relative documentation links passed.
+
+A read-only single-turn Grok review was attempted outside the sandbox with tools, web search and subagents disabled. It returned no review after more than three minutes and was stopped. This is incomplete external review, not a clean review result; final integrated review remains RT-15.
+
+Current runners, simulations and settlement still end at the competitive result. RT-04 onward remains unimplemented. These checks are deterministic local evidence, not live provider quality, deployed runtime, MCP, replay or export acceptance.

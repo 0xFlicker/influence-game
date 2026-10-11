@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
 import { describe, expect, test } from "bun:test";
 import { exactStructuredOutputRegistry } from "../structured-output";
 import { ProviderUnavailableError } from "../provider-execution";
@@ -20,7 +21,7 @@ function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays = 10) {
   return { players, events, store };
 }
 
-const quietAgent: WerewolfAgent = {
+const quietAgent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective,
   decide: async ({ request }) => request.action === "open_thread" ? { kind: "opening", text: null, cue: null, recipientIds: [] } : request.legalTargetIds.length
     ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE RATIONALE" }
     : { kind: "speech", cue: null, text: null },
@@ -67,7 +68,7 @@ describe("Werewolf authority and recovery", () => {
     const doctor = Object.keys(roles).find((id) => roles[id] === "doctor")!;
     const seer = Object.keys(roles).find((id) => roles[id] === "seer")!;
     const wolf = Object.keys(roles).find((id) => roles[id] === "werewolf")!;
-    const agent: WerewolfAgent = { decide: async (input) => {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async (input) => {
       if (input.request.action === "attack" || input.request.action === "protect") return { kind: "target", targetId: doctor, thinking: "" };
       if (input.request.action === "investigate") return { kind: "target", targetId: wolf, thinking: "" };
       return quietAgent.decide(input);
@@ -101,7 +102,7 @@ describe("Werewolf authority and recovery", () => {
     const roles = replayWerewolf(ctx.events).roles;
     const seer = Object.keys(roles).find((id) => roles[id] === "seer")!;
     const doctor = Object.keys(roles).find((id) => roles[id] === "doctor")!;
-    const agent: WerewolfAgent = { decide: async (input) => {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async (input) => {
       if (input.request.action === "attack" && input.request.legalTargetIds.includes(seer)) return { kind: "target", targetId: seer, thinking: "" };
       if (input.request.action === "protect") return { kind: "target", targetId: doctor, thinking: "" };
       if (input.request.action === "vote") {
@@ -132,7 +133,7 @@ describe("Werewolf authority and recovery", () => {
     const roles = replayWerewolf(ctx.events).roles;
     const wolves = Object.keys(roles).filter((id) => roles[id] === "werewolf");
     const sacrificed = wolves[0]!;
-    const agent: WerewolfAgent = { decide: async (input) => {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async (input) => {
       const nonWolves = input.request.legalTargetIds.filter((id) => roles[id] !== "werewolf");
       if (input.request.action === "attack") {
         const victim = nonWolves.find((id) => roles[id] === "doctor") ?? nonWolves[0]!;
@@ -154,7 +155,7 @@ describe("Werewolf authority and recovery", () => {
 
   test("pack speech is visible only to wolves and Omniscient, and false claims remain speech", async () => {
     const ctx = setup();
-    const state = await until(ctx, (s) => s.phase === "pack" && s.actions.length === 1, {
+    const state = await until(ctx, (s) => s.phase === "pack" && s.actions.length === 1, { getRetrospectiveStatement: fixtureWerewolfRetrospective,
       decide: async (input) => input.request.action === "pack_talk"
         ? { kind: "speech", cue: null, text: "I will pretend I checked Person 0 as the Seer." }
         : quietAgent.decide(input),
@@ -179,7 +180,7 @@ describe("Werewolf authority and recovery", () => {
 
   test("day vote ties eliminate nobody and the day cap is an explicit draw", async () => {
     const ctx = setup("two_wolves", 1);
-    const agent: WerewolfAgent = { decide: async (input) => {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async (input) => {
       if (input.request.action === "vote") {
         const alive = input.observation.board.players.filter((p) => p.alive).map((p) => p.id);
         const next = alive[(alive.indexOf(input.request.actorId) + 1) % alive.length]!;
@@ -202,7 +203,7 @@ describe("Werewolf pack negotiation", () => {
     const villagers = start.aliveIds.filter(id => start.roles[id] !== "werewolf");
     const proposals: string[][] = [];
     const calls: string[] = [];
-    const agent: WerewolfAgent = { decide: async input => {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       const { request, observation } = input;
       calls.push(request.action);
       if (request.action === "pack_talk" || request.action === "attack") {
@@ -261,7 +262,7 @@ describe("Werewolf pack negotiation", () => {
     expect(projectWerewolfView(partial, "omniscient")).toEqual(before);
     expect(plans.map(plan => observeWerewolf(partial, plan.request.actorId))).toEqual(observations);
     expect(werewolfActionPlans(partial)).toEqual(plans.slice(1));
-    await expect(advanceWerewolf(ctx.store, { decide: async () => ({ kind: "target", targetId: "not-a-player", thinking: "" }) })).rejects.toThrow("Illegal Werewolf target");
+    await expect(advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "target", targetId: "not-a-player", thinking: "" }) })).rejects.toThrow("Illegal Werewolf target");
     expect(replayWerewolf(ctx.events)).toEqual(partial);
     const sealed = await advanceWerewolf(ctx.store, quietAgent);
     expect(projectWerewolfView(sealed, "omniscient")).toEqual(before);
@@ -280,7 +281,7 @@ describe("Werewolf pack negotiation", () => {
     const atBallot = (state: WerewolfState) => state.phase === "pack" && state.actions.length === 2;
     await until(uninterrupted, atBallot);
     await until(restarted, atBallot);
-    const unavailable: WerewolfAgent = { decide: async () => { throw new ProviderUnavailableError("Attempts exhausted", "malformed_output"); } };
+    const unavailable: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { throw new ProviderUnavailableError("Attempts exhausted", "malformed_output"); } };
     const expected = await advanceWerewolf(uninterrupted.store, unavailable);
     let commits = 0;
     await expect(advanceWerewolf({ ...restarted.store, append: async event => {
@@ -301,7 +302,7 @@ describe("Werewolf pack negotiation", () => {
     let start = replayWerewolf(ctx.events);
     if (preset === "two_wolves") {
       const victim = start.aliveIds.find(id => start.roles[id] === "werewolf")!;
-      start = await until(ctx, state => state.day === 2 && state.phase === "pack", { decide: async input => input.request.action === "vote"
+      start = await until(ctx, state => state.day === 2 && state.phase === "pack", { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => input.request.action === "vote"
         ? { kind: "target", targetId: input.request.legalTargetIds.includes(victim) ? victim : input.request.legalTargetIds[0]!, thinking: "" }
         : quietAgent.decide(input) });
     } else start = await until(ctx, state => state.phase === "pack");
@@ -347,13 +348,13 @@ describe("Werewolf exact decision contracts", () => {
   test("malformed decisions cannot mutate the accepted prefix", async () => {
     const ctx = setup();
     const original = structuredClone(ctx.events);
-    const bad: WerewolfAgent = { decide: async () => ({ kind: "target", targetId: "p0", thinking: "" }) };
+    const bad: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "target", targetId: "p0", thinking: "" }) };
     await expect(advanceWerewolf(ctx.store, bad)).rejects.toThrow();
     expect(ctx.events).toEqual(original);
   });
   test("typed provider exhaustion records legal absence and targets, while code errors fail", async () => {
     const ctx = setup("one_wolf", 2);
-    const unavailable: WerewolfAgent = { decide: async () => { throw new ProviderUnavailableError("Malformed attempts exhausted", "malformed_output"); } };
+    const unavailable: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { throw new ProviderUnavailableError("Malformed attempts exhausted", "malformed_output"); } };
     const result = await runWerewolf(ctx.store, unavailable);
     expect(result.outcome).not.toBeNull();
     for (const event of ctx.events) {
@@ -368,7 +369,7 @@ describe("Werewolf exact decision contracts", () => {
       }
     }
     const broken = setup();
-    await expect(advanceWerewolf(broken.store, { decide: async () => { throw new Error("Programming error"); } })).rejects.toThrow("Programming error");
+    await expect(advanceWerewolf(broken.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { throw new Error("Programming error"); } })).rejects.toThrow("Programming error");
     expect(broken.events).toHaveLength(1);
   });
 });

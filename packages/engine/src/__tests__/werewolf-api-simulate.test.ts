@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,7 +32,7 @@ async function fixture(disagree = false) {
   const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "", avatarUrl: null }));
   const events: WerewolfEvent[] = [startWerewolf("report-game", players, werewolfConfig("two_wolves", 1), "report-seed")];
   const initial = replayWerewolf(events);
-  const final = await runWerewolf({ read: async () => events, append: async event => { events.push(event); } }, {
+  const final = await runWerewolf({ read: async () => events, append: async event => { events.push(event); } }, { getRetrospectiveStatement: fixtureWerewolfRetrospective,
     async decide({ request }) {
       if (disagree && request.action === "attack") {
         const state = replayWerewolf(events);

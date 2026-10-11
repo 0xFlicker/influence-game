@@ -19,6 +19,8 @@ import type {
   StrategicLens,
 } from "./types";
 import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
+import type { RetrospectiveSpeakerContext } from "./retrospective-context";
+import type { RetrospectiveSpeechV1 } from "./retrospective";
 import type { FormatPressureProjection } from "./format-pressure";
 import type { LaunchFormatId } from "./formats";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
@@ -1105,6 +1107,8 @@ export interface IAgent {
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */
   getIntroduction(context: PhaseContext): Promise<AgentResponse>;
+  /** Dedicated postgame statement. Phase context supplies execution metadata only. */
+  getRetrospectiveStatement(context: PhaseContext, retrospective: RetrospectiveSpeakerContext, options?: AgentCallOptions): Promise<RetrospectiveSpeechV1>;
   /** Called to collect a lobby message */
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */

@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "../fixtures/retrospective-agent";
 import { describe, expect, test } from "bun:test";
 import { exactStructuredOutputRegistry } from "../structured-output";
 import { ProviderUnavailableError } from "../provider-execution";
@@ -15,7 +16,7 @@ async function setup(preset: "one_wolf" | "two_wolves" = "two_wolves", maxDays =
   const store: WerewolfStore = { read: async () => structuredClone(events), append: async event => {
     applyWerewolfEvent(replayWerewolf(events), event); events.push(event);
   } };
-  const quiet: WerewolfAgent = { decide: async ({ request, observation }) => request.action === "vote" && request.voteMode === "plurality"
+  const quiet: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request, observation }) => request.action === "vote" && request.voteMode === "plurality"
     ? { kind: "target", targetId: observation.board.players.filter(p => p.alive).map(p => p.id)[(observation.board.players.filter(p => p.alive).findIndex(p => p.id === request.actorId) + 1) % observation.board.players.filter(p => p.alive).length]!, thinking: "" }
     : request.action === "attack" || request.action === "protect"
     ? { kind: "target", targetId: protectedTarget, thinking: "" }
@@ -32,7 +33,7 @@ async function checkpoint(ctx: Awaited<ReturnType<typeof setup>>, targetId: stri
   const originalView = projectWerewolfView(state, "mystery");
   const observer = state.aliveIds[0]!;
   const originalObservation = observeWerewolf(state, observer);
-  const agent: WerewolfAgent = { decide: async ({ request }) => ({ kind: "target", targetId: voters.includes(request.actorId) ? targetId : null, thinking: "PRIVATE BALLOT" }) };
+  const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => ({ kind: "target", targetId: voters.includes(request.actorId) ? targetId : null, thinking: "PRIVATE BALLOT" }) };
   while (!state.resolved) {
     const step = nextWerewolfStep(state);
     if (step.kind === "action") {
@@ -101,9 +102,9 @@ describe("Werewolf day vote checkpoints", () => {
     let state = ctx.state;
     while (state.phase !== "vote") state = await advanceWerewolf(ctx.store, ctx.quiet);
     const before = structuredClone(ctx.events);
-    await expect(advanceWerewolf(ctx.store, { decide: async ({ request }) => ({ kind: "target", targetId: request.actorId, thinking: "" }) })).rejects.toThrow("Illegal");
+    await expect(advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => ({ kind: "target", targetId: request.actorId, thinking: "" }) })).rejects.toThrow("Illegal");
     expect(ctx.events).toEqual(before);
-    const unavailable: WerewolfAgent = { decide: async () => { throw new ProviderUnavailableError("Exhausted", "malformed_output"); } };
+    const unavailable: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { throw new ProviderUnavailableError("Exhausted", "malformed_output"); } };
     state = await advanceWerewolf(ctx.store, unavailable);
     const next = nextWerewolfStep(state);
     if (next.kind !== "event" || next.event.type !== "werewolf.day_vote_resolved") throw new Error("Missing checkpoint");
@@ -119,12 +120,12 @@ describe("Werewolf day vote checkpoints", () => {
     let state = ctx.state;
     while (!(state.phase === "vote" && state.discussion?.ended)) state = await advanceWerewolf(ctx.store, ctx.quiet);
     const before = structuredClone(ctx.events);
-    await expect(advanceWerewolf(ctx.store, { decide: async () => ({ kind: "target", targetId: null, thinking: "Hear more" }) })).rejects.toThrow("Illegal");
+    await expect(advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => ({ kind: "target", targetId: null, thinking: "Hear more" }) })).rejects.toThrow("Illegal");
     expect(ctx.events).toEqual(before);
     const target = state.aliveIds.find(id => state.roles[id] === "villager")!;
     const ids = [target, ...state.aliveIds.filter(id => id !== target)];
     const choices = [ids[1]!, ids[0]!, ids[0]!, ids[0]!, ids[2]!, ids[1]!, ids[3]!, ids[4]!];
-    state = await advanceWerewolf(ctx.store, { decide: async ({ request }) => ({ kind: "target", targetId: choices[ids.indexOf(request.actorId)]!, thinking: "" }) });
+    state = await advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async ({ request }) => ({ kind: "target", targetId: choices[ids.indexOf(request.actorId)]!, thinking: "" }) });
     const step = nextWerewolfStep(state);
     if (step.kind !== "event" || step.event.type !== "werewolf.day_vote_resolved") throw new Error("final resolution");
     expect(step.event.payload).toMatchObject({ voteMode: "plurality", requiredVotes: null, eliminatedId: target, dayEnded: true });
@@ -147,7 +148,7 @@ describe("Werewolf day vote checkpoints", () => {
     if (step.kind !== "action" || step.request.action !== "vote") throw new Error("final ballot");
     const artifact = werewolfDecisionArtifact(step.request);
     expect(exactStructuredOutputRegistry.decodeJsonDocument(artifact, '{"targetId":null,"thinking":"wait"}').status).toBe("invalid");
-    state = await advanceWerewolf(ctx.store, { decide: async () => { throw new ProviderUnavailableError("Exhausted", "malformed_output"); } });
+    state = await advanceWerewolf(ctx.store, { getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async () => { throw new ProviderUnavailableError("Exhausted", "malformed_output"); } });
     const resolution = nextWerewolfStep(state);
     if (resolution.kind !== "event" || resolution.event.type !== "werewolf.day_vote_resolved") throw new Error("resolution");
     expect(resolution.event.payload).toMatchObject({ voteMode: "plurality", eliminatedId: null, dayEnded: true });

@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective } from "@influence/engine";
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -41,7 +42,7 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
     const state = replayWerewolf(await readWerewolfEvents(db, g.id));
     const wolfId = state.aliveIds.find(id => state.roles[id] === "werewolf")!;
-    const agent: WerewolfAgent = { async decide({ request }) {
+    const agent: WerewolfAgent = { getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
       if (unprotectedHunt && request.action === "protect") return { kind: "target", targetId: wolfId, thinking: "PRIVATE_REASON" };
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Leans back", recipientIds: [] };
       if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_REASON" };
