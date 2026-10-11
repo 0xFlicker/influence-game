@@ -40,8 +40,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Done |
 | RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Done |
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Done |
-| RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | In progress |
-| RT-14 | Integrated regression proof and documentation | RT-09–13 | Todo |
+| RT-13 | Local/API simulations and local MCP artifacts | RT-04–08 | Done |
+| RT-14 | Integrated regression proof and documentation | RT-09–13 | In progress |
 | RT-15 | Review, model-quality and deployment acceptance | RT-14 | Todo |
 
 Build and prove an Influence vertical path through outcome → statements → terminal using fixtures first, then bring Werewolf to the same boundary with its own authority. Complete both before release. Do not deploy intermediate code that closes ownership at the outcome while later tasks assume it remains active.
@@ -368,3 +368,9 @@ Local validation: 150 PostgreSQL tests passed across seven files, 24 engine cata
 The existing compiler, frozen descriptor, recording attachment and offline bundle paths carry ordinary retrospective speech without a second exporter or generation path. Full classic/format Influence and both Werewolf audience exports retain result → all speeches; retrospective-only selections retain exact source-ordered IDs/text with independent result inclusion. Tests verify original solo portraits, recording identity/timing, no inserted results and no growth when more source moments become available.
 
 Local validation: 69 export tests passed. Real Studio browser tests froze and encoded one retrospective speech for each game at 640×360/24fps. Exact reviewed IDs/settings/source hashes were retained; three screenshot/movie samples per cut matched within the existing pixel threshold. Offline verification passed reverse/random seeks, three contiguous ranges, fresh browsers and encoded frame/audio presence. The isolated database and browser/API/Next children were cleaned. Initial attempts exposed a pre-existing fixture tag entering the cut and a catalog-page lookup stopping before the Werewolf tail; the final tests use unique tags and complete pagination. No provider call, new media or deployed action occurred.
+
+## RT-13 completion record
+
+Fresh local sessions declare a closed explicit game identity. Influence and Werewolf artifacts retain the full canonical epilogue; Werewolf writes a dedicated session directory with events, report, state/frontier, stats and provider diagnostics. Existing local journals now retain compact action/usage/cost receipts independently of private failure evidence. Chatty output identifies coverage/source, ordinal and exact accepted speech. The bounded local retrospective tool dispatches by identity; Werewolf has its own audience-history adapter and resources, never the Influence reducer. Invalid identity, malformed history and extra inspection arguments fail clearly. API readback keeps polling after the competitive outcome and emits each final statement once.
+
+Local validation: 46 focused simulation/journal/MCP tests passed, plus the added API growing-tail report test. Typecheck/lint passed, including corrections to the RT-12 test fixture types. A provider-free CLI Werewolf trial completed six statements; the local MCP reader consumed its saved artifacts and verified the same order and event sequences 61–66. Docs/JSDoc describe the artifact format, unsupported local-model capacity and separate real-model acceptance. No paid or deployed call occurred.

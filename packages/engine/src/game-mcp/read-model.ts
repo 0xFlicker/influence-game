@@ -9,6 +9,11 @@ import {
 } from "../canonical-events";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "../game-projection";
 import type { Phase, UUID } from "../types";
+import { decodeSimulationIdentity } from "../simulation-identity";
+import { replayWerewolf } from "../werewolf/rules";
+import type { WerewolfEvent } from "../werewolf/types";
+import { projectWerewolfWatch } from "../werewolf/watch";
+import { retrospectiveProgress } from "../retrospective-progress";
 import {
   toGameMcpFormatSurface,
   type GameMcpFormatSurface,
@@ -45,6 +50,7 @@ export interface GameMcpSessionSummary {
 }
 
 export interface GameMcpGameSummary {
+  gameKind: "influence" | "werewolf" | null;
   sessionId: string;
   gameNumber: number;
   sessionPath: string;
@@ -455,6 +461,7 @@ export class GameMcpReadModel {
     const session = this.requireSession(sessionId);
     const eventsPath = this.gamePaths(session.sessionPath, gameNumber).eventsPath;
     if (!eventsPath) throw new Error(`No canonical event log for session ${sessionId} game ${gameNumber}`);
+    if (this.sessionGameKind(session) !== "influence") throw new Error("Influence canonical reads require explicit Influence session identity; use the Werewolf adapter for Werewolf");
     return this.readJsonlRecords(eventsPath).map(({ line, record }) => {
       const event = extractCanonicalEvent(record);
       return {
@@ -505,6 +512,53 @@ export class GameMcpReadModel {
     gameNumber: number,
   ): GameMcpFormatSurface<CanonicalGameProjection> {
     return this.readProjectionRecord(sessionId, gameNumber).projection;
+  }
+
+  readWerewolfEvents(sessionId: string, gameNumber: number): WerewolfEvent[] {
+    const session = this.requireSession(sessionId);
+    if (this.sessionGameKind(session) !== "werewolf") throw new Error("Werewolf reads require explicit Werewolf session identity");
+    const path = this.gamePaths(session.sessionPath,gameNumber).eventsPath;
+    if (!path) throw new Error("No Werewolf event artifact");
+    const events = this.readJsonlRecords(path).map(({record}) => {
+      if (Object.keys(record).join() !== "werewolfEvent" || !isRecord(record.werewolfEvent)) throw new Error("Invalid Werewolf artifact event envelope");
+      return record.werewolfEvent as unknown as WerewolfEvent;
+    });
+    replayWerewolf(events); // The owning reducer validates every accepted event and transition.
+    return events;
+  }
+
+  readWerewolfProjection(sessionId: string,gameNumber: number) {
+    return replayWerewolf(this.readWerewolfEvents(sessionId,gameNumber));
+  }
+
+  readWerewolfHistory(sessionId: string,gameNumber: number,audience: "mystery"|"omniscient",fromCursor = 1,limit = 32) {
+    if (!Number.isSafeInteger(fromCursor) || fromCursor < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 64)
+      throw new Error("Invalid bounded Werewolf history range");
+    return projectWerewolfWatch(this.readWerewolfEvents(sessionId,gameNumber),audience,fromCursor,limit);
+  }
+
+  readRetrospective(sessionId: string,gameNumber: number,afterOrdinal = -1,limit = 12) {
+    if (!Number.isSafeInteger(afterOrdinal) || afterOrdinal < -1 || afterOrdinal > 11 || !Number.isSafeInteger(limit) || limit < 1 || limit > 12)
+      throw new Error("Invalid bounded retrospective range");
+    const game = this.readGame(sessionId,gameNumber), kind = game.gameKind;
+    if (!kind) throw new Error("Simulation lacks explicit game identity");
+    const state = kind === "werewolf" ? this.readWerewolfProjection(sessionId,gameNumber) : this.readCanonicalProjection(sessionId,gameNumber);
+    const progress = retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,
+      "playerOrder" in state ? state.playerOrder.length : state.players.length);
+    const statements = state.retrospective?.statements.filter(statement => statement.ordinal > afterOrdinal).slice(0,limit).map(statement => ({
+      ordinal:statement.ordinal,actorId:statement.actorId,speech:statement.speech,
+      citation:{sessionId,gameNumber,sourceKind:"events" as const,sourcePath:game.eventsPath!,
+        resourceUri:gameMcpGameArtifactUri(sessionId,gameNumber,"events"),eventSequence:statement.eventSequence},
+    })) ?? [];
+    const result = () => ({gameKind:kind,gameId:state.gameId,progress,speakerIds:state.retrospective?.definition.speakerIds ?? [],
+      definitionHash:state.retrospective?.definition.definitionHash ?? null,statements,
+      nextAfterOrdinal:statements.at(-1)?.ordinal ?? afterOrdinal,
+      hasMore:(statements.at(-1)?.ordinal ?? afterOrdinal) < progress.statementCount-1});
+    while (new TextEncoder().encode(JSON.stringify(result())).byteLength > 64*1024) {
+      if (statements.length <= 1) throw new Error("Retrospective entry exceeds local response bound");
+      statements.pop();
+    }
+    return result();
   }
 
   readProjectionRecord(sessionId: string, gameNumber: number): GameMcpProjectionResult {
@@ -728,6 +782,7 @@ export class GameMcpReadModel {
   private buildGameSummary(session: SessionEntry, gameNumber: number): GameMcpGameSummary {
     const paths = this.gamePaths(session.sessionPath, gameNumber);
     return {
+      gameKind: this.sessionGameKind(session),
       sessionId: session.sessionId,
       gameNumber,
       sessionPath: session.sessionPath,
@@ -746,6 +801,11 @@ export class GameMcpReadModel {
       eventCount: null,
       lastEventSequence: null,
     };
+  }
+
+  private sessionGameKind(session: SessionEntry): "influence" | "werewolf" | null {
+    const path = maybePath(session.sessionPath,"session.json");
+    return path ? decodeSimulationIdentity(JSON.parse(readFileSync(path,"utf8"))) : null;
   }
 
   private readGame(sessionId: string, gameNumber: number): GameMcpGameSummary {
@@ -829,6 +889,10 @@ export class GameMcpReadModel {
   }
 
   private searchEvents(game: GameMcpGameSummary, query: string): GameMcpSearchResult[] {
+    if (game.gameKind === "werewolf") return this.readWerewolfEvents(game.sessionId,game.gameNumber)
+      .map(event => ({citation:{sessionId:game.sessionId,gameNumber:game.gameNumber,sourceKind:"events" as const,
+        resourceUri:game.eventsUri!,sourcePath:game.eventsPath!,eventSequence:event.sequence},text:JSON.stringify(event)}))
+      .filter(result => result.text.toLowerCase().includes(query));
     return this.readCanonicalEventRecords(game.sessionId, game.gameNumber)
       .map(({ citation, event }) => ({ citation, event, text: JSON.stringify(event) }))
       .filter((result) => result.text.toLowerCase().includes(query));

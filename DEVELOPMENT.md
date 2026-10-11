@@ -1,5 +1,7 @@
 # Development Guide
 
+Retrospectives run inside the existing game engine and worker. Use [runtime and recovery guidance](docs/game-retrospective-runtime.md) for the new final boundary. A deterministic local artifact trial is `bun run simulate:werewolf --max-days 1 --out /tmp/werewolf-retrospective --chatty --transcript`; `--out` is a fresh session directory. The local MCP server dispatches by `session.json` game identity and supports `read_game_retrospective` for both games and `read_werewolf_history` for explicit audience traversal. Reads never generate. Preserve exact types without `as any` and call House methods directly.
+
 This document covers development practices for the Influence game prototype and how the Founding Engineer and Lead Game Designer collaborate concurrently.
 
 ## Werewolf development

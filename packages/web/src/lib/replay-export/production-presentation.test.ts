@@ -1,4 +1,5 @@
 import {expect,test} from "bun:test";
+import {Phase} from "@influence/engine";
 import {completedWerewolfResultsFixture,werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfWatch,projectWerewolfProductionProvenance} from "@influence/engine/werewolf/watch";
 import {werewolfThinkingActions} from "@influence/engine/werewolf/thinking";
@@ -80,8 +81,8 @@ for (const kernel of ["classic","format"] as const) {
   test(`${kernel} Influence exports the same exact epilogue in full and speech-only cuts`,async () => {
     const gameId = `retro-export-${kernel}`;
     const players = ["a","b"].map(id => ({id,name:id.toUpperCase(),persona:"",status:"alive" as const,shielded:false}));
-    const winner:ViewerDecisionEvent = {sequence:1,timestamp:"2026-10-10T00:00:00Z",round:1,phase:"JURY_VOTE",type:"jury.winner_determined",payload:{winnerId:"b",votes:{a:"b"}}};
-    const frames:GameWatchReplayFrame[] = [winner,...players.map((_,index) => ({...winner,sequence:index+2,phase:"RETROSPECTIVE",type:"retrospective.statement_recorded" as const}))]
+    const winner:ViewerDecisionEvent = {sequence:1,timestamp:"2026-10-10T00:00:00Z",round:1,phase:Phase.JURY_VOTE,type:"jury.winner_determined",payload:{winnerId:"b",votes:{a:"b"}}};
+    const frames:GameWatchReplayFrame[] = [winner,...players.map((_,index) => ({...winner,sequence:index+2,phase:Phase.RETROSPECTIVE,type:"retrospective.statement_recorded" as const}))]
       .map(event => ({schemaVersion:3,gameId,slug:gameId,sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp)+event.sequence,
         round:1,phase:event.phase!,players,counts:{totalPlayers:2,alivePlayers:2,eliminatedPlayers:0,unknownPlayers:0},
         ...(event.sequence === 1 && {viewerDecisionEvent:winner})}));

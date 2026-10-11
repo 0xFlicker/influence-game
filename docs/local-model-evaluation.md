@@ -478,3 +478,15 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 ## Retrospective contract implementation status
 
 [RT-01](game-retrospective-contract.md), [RT-02](game-retrospective-context.md) and [RT-03](game-retrospective-invocation.md) add contract/context fixtures and strict final-statement methods for both games. Run `bun test packages/engine/src/__tests__/retrospective-context.test.ts packages/engine/src/__tests__/retrospective-invocation.test.ts` to inspect context/order, exact native output, capacity and journal replay. Invocation tests mock all HTTP locally and spend nothing. Verified admission currently supports the six exact hosted OpenAI catalog models through native prefix counting; LM Studio/Katana windows or tokenizers are not guessed. Every sealed fallback must be admitted, and prior speeches are never truncated. [RT-04](game-retrospective-runtime.md) now extends Influence runner execution automatically after a canonical win. RT-05 also extends Werewolf through its own validated retrospective stage. Simulator artifact/report integration remains RT-13; real trials still require separate authorization. The runtime uses the same effective provider manifest and complete frozen context. Do not add `as any`, permissive output parsing or indirect House calls when wiring that stage.
+
+## Retrospective evaluation
+
+Fresh game simulations execute the same required postgame stage as the API worker. A provider-free artifact proof is:
+
+```sh
+bun run simulate:werewolf --max-days 1 --seed retrospective-artifact-proof --out /tmp/werewolf-retrospective --chatty --transcript
+```
+
+`--out` names a dedicated session directory. Inspect its explicit `session.json`, full event log and final `game-1.json`; local MCP `read_game_retrospective` returns the accepted order/text and canonical event references. `read_werewolf_history` supplies a bounded audience projection using Werewolf's reducer. Influence batches also write an explicit session identity, and `--chatty` exposes retrospective coordinates and accepted speech. Provider receipts keep usage/cost separate from public prose.
+
+Real speech generation requires verified capacity for every sealed model. Unsupported local/provider windows fail explicitly; do not truncate the whole-game context or invent a final statement to finish a run. LM Studio capacity is currently unsupported for this stage. The deterministic command proves local execution and artifacts, not real-model voice, accuracy or watchability. Paid/provider trials and deployed continuation are separate opt-in validation. API Influence's launcher retains its first-advance behavior; the existing worker owns the complete epilogue and House retrospective inspection follows it. Keep no `as any`, strict output validation and direct House calls.

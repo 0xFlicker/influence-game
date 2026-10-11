@@ -91,6 +91,7 @@ describe("Werewolf API simulation", () => {
     expect(result.report).not.toContain("SECRET_PACK");
     expect(result.report).not.toContain("PRIVATE_THINKING");
     expect(result.report).toContain("Compare the claims.");
+    expect(result.report.match(/\[Retrospective \d+\]/g)).toHaveLength(8);
     expect(result.report).toContain("Ballots:");
     expect(result.report).toContain("Alive (7)");
     expect(await readFile(result.outputPath, "utf8")).toBe(`${lines.join("\n")}\n`);
@@ -123,6 +124,23 @@ describe("Werewolf API simulation", () => {
       expect(result.report.split("\n").some(line => line.trimStart().startsWith(`${player.name}:`))).toBe(false);
       if (final.roles[player.id] === "werewolf") expect(result.report).toContain(`[Pack] ${player.name} [werewolf]: SECRET_PACK`);
     }
+  });
+
+  test("an established result does not end the API report before every retrospective speech commits", async () => {
+    const {events} = await fixture();
+    const outcomeIndex = events.findIndex(event => event.type === "werewolf.completed");
+    const firstSpeechIndex = events.findIndex(event => event.type === "werewolf.retrospective_statement_recorded");
+    const prefixes = [events.slice(0,outcomeIndex+1),events.slice(0,firstSpeechIndex+1),events];
+    let polls = 0;
+    globalThis.fetch = Object.assign(async () => {
+      const index = polls++, state = replayWerewolf(prefixes[index]!);
+      return Response.json({slug:"report-slug",status:index === 2 ? "completed" : "in_progress",view:projectWerewolfView(state,"mystery")});
+    },{preconnect:originalFetch.preconnect});
+    const result = await runWerewolfApiSimulation(runArgs(["--game","report-game"]),{sleep:async () => {},log:() => {}});
+    expect(polls).toBe(3);
+    expect(result.report.match(/Result:/g)).toHaveLength(1);
+    expect(result.report.match(/\[Retrospective \d+\]/g)).toHaveLength(8);
+    expect(result.report.indexOf("Result:")).toBeLessThan(result.report.indexOf("[Retrospective 1]"));
   });
 
   test("Omniscient explains failed pack ballots and still prints Doctor and Seer actions", async () => {

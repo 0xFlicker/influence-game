@@ -81,6 +81,16 @@ function optionalSearchSources(args: Record<string, unknown>): GameMcpSourceKind
   );
 }
 
+function retrospectiveArgs(value: unknown, history = false) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid inspection arguments");
+  const args = value as Record<string,unknown>, allowed = history ? ["sessionId","gameNumber","audience","fromCursor","limit"] : ["sessionId","gameNumber","afterOrdinal","limit"];
+  if (Object.keys(args).some(key => !allowed.includes(key)) || typeof args.sessionId !== "string" || !args.sessionId || args.sessionId.length > 200
+    || !Number.isSafeInteger(args.gameNumber) || Number(args.gameNumber) < 1 || Number(args.gameNumber) > 10000
+    || history && args.audience !== "mystery" && args.audience !== "omniscient") throw new Error("Invalid inspection arguments");
+  for (const key of history ? ["fromCursor","limit"] : ["afterOrdinal","limit"]) if (args[key] !== undefined && !Number.isSafeInteger(args[key])) throw new Error("Invalid inspection arguments");
+  return args;
+}
+
 export class GameMcpJsonRpcServer {
   constructor(private readonly readModel: GameMcpReadModel) {}
 
@@ -121,6 +131,7 @@ export class GameMcpJsonRpcServer {
         },
         instructions: [
           "Read-only local/producer analysis server for simulation artifacts.",
+          "Fresh sessions declare gameKind in session.json. Influence and Werewolf use separate owning reducers. read_game_retrospective returns only bounded public statements; read_werewolf_history applies an explicit audience.",
           "Raw turn logs and game JSON may include producer-visible thinking/reasoningContext; MCP clients in this trusted local analysis context are free to inspect it.",
           "Do not expose this stdio server to untrusted clients or treat search/resource output as player-visible.",
         ].join(" "),
@@ -232,8 +243,9 @@ export class GameMcpJsonRpcServer {
       const artifact = (artifactMatch[3] === "game-json" ? "game_json" : artifactMatch[3]) as GameMcpArtifactKind;
       const game = this.readModel.listGames({ sessionId }).find((candidate) => candidate.gameNumber === gameNumber);
       if (!game) throw new Error(`Unknown game ${gameNumber} in session ${sessionId}`);
+      const gameKind = this.readModel.listGames({sessionId}).find(game => game.gameNumber === gameNumber)?.gameKind;
       const text = artifact === "events"
-        ? this.readModel.readEvents(sessionId, gameNumber).map((event) => JSON.stringify(event)).join("\n")
+        ? (gameKind === "werewolf" ? this.readModel.readWerewolfEvents(sessionId,gameNumber) : this.readModel.readEvents(sessionId, gameNumber)).map((event) => JSON.stringify(event)).join("\n")
         : artifact === "turns"
           ? this.readModel.readTurnRecords(sessionId, gameNumber).map((record) => JSON.stringify(record.record)).join("\n")
           : artifact === "progress"
@@ -242,7 +254,7 @@ export class GameMcpJsonRpcServer {
               ? this.readModel.readTranscript(sessionId, gameNumber)
               : artifact === "game_json"
                 ? this.readModel.readGameJson(sessionId, gameNumber)
-                : JSON.stringify(this.readModel.readProjection(sessionId, gameNumber), null, 2);
+                : JSON.stringify(gameKind === "werewolf" ? this.readModel.readWerewolfProjection(sessionId,gameNumber) : this.readModel.readProjection(sessionId, gameNumber), null, 2);
       const mimeType = artifact === "projection" || artifact === "game_json"
         ? "application/json"
         : artifact === "transcript"
@@ -256,6 +268,16 @@ export class GameMcpJsonRpcServer {
     if (method === "tools/list") {
       return {
         tools: [
+          {
+            name:"read_game_retrospective",
+            description:"Read bounded exact public retrospective statements and canonical source references for either game; no private dossier or generation.",
+            inputSchema:{type:"object",additionalProperties:false,properties:{sessionId:{type:"string",minLength:1,maxLength:200},gameNumber:{type:"integer",minimum:1,maximum:10000},afterOrdinal:{type:"integer",minimum:-1,maximum:11},limit:{type:"integer",minimum:1,maximum:12}},required:["sessionId","gameNumber"]},
+          },
+          {
+            name:"read_werewolf_history",
+            description:"Read a bounded Werewolf audience timeline using its own validated event adapter.",
+            inputSchema:{type:"object",additionalProperties:false,properties:{sessionId:{type:"string",minLength:1,maxLength:200},gameNumber:{type:"integer",minimum:1,maximum:10000},audience:{enum:["mystery","omniscient"]},fromCursor:{type:"integer",minimum:1},limit:{type:"integer",minimum:1,maximum:64}},required:["sessionId","gameNumber","audience"]},
+          },
           {
             name: "list_sessions",
             description: "List simulation sessions available in the corpus root.",
@@ -358,6 +380,12 @@ export class GameMcpJsonRpcServer {
       const request = asRecord(params);
       const name = String(request.name ?? "");
       const args = asRecord(request.arguments);
+      if (name === "read_game_retrospective" || name === "read_werewolf_history") {
+        const exact = retrospectiveArgs(request.arguments,name === "read_werewolf_history");
+        const sessionId = requiredString(exact,"sessionId"), gameNumber = requiredNumber(exact,"gameNumber");
+        return content(name === "read_game_retrospective" ? this.readModel.readRetrospective(sessionId,gameNumber,optionalNumber(exact,"afterOrdinal"),optionalNumber(exact,"limit"))
+          : this.readModel.readWerewolfHistory(sessionId,gameNumber,exact.audience as "mystery"|"omniscient",optionalNumber(exact,"fromCursor"),optionalNumber(exact,"limit")));
+      }
       if (name === "list_sessions") {
         return content(this.readModel.listSessions({
           status: optionalString(args, "status") as GameMcpSessionStatus | undefined,

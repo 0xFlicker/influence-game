@@ -9,7 +9,7 @@ import { attachSpeech } from "./speech";
 import { sha256, type ReplayAssets } from "./assets";
 
 test("recordings require an exact speaker and text identity; missing files never become silent speech", async () => {
-  const events = await completedWerewolfResultsFixture("village", "speech-export", 1, 6);
+  const events = await completedWerewolfResultsFixture("village", "speech-export", 1);
   const projected = projectWerewolfWatch(events, "omniscient", 1, 64);
   const cues = buildExportCues(
     {

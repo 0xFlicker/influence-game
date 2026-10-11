@@ -23,12 +23,20 @@
  * counts as live spectator telemetry, separate from public history and player context.
  * Choices and private reasoning stay sealed until the full checkpoint resolves.
  * No `as any` and no Influence House calls: the rules own every transition.
+ * --out names a dedicated session directory. session.json declares Werewolf;
+ * game-1.json and game-1-events.jsonl retain the full completed epilogue or typed
+ * failure frontier. --chatty prints coverage/ordinal/prior counts separately from
+ * accepted public speech. Provider receipts retain usage/cost without model prose.
  */
 import { parseArgs } from "node:util";
 import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { simulationIdentity } from "../simulation-identity";
+import { createLocalProviderExecutionJournal } from "../simulate";
+import { retrospectiveProgress } from "../retrospective-progress";
 import { createLlmProviderRuntimesFromEnv } from "../llm-client";
 import { normalizeProviderManifest, resolveProviderManifest } from "../model-catalog";
 import { getHousePersonaDetails, HOUSE_AGENT_NAMES } from "../house-personas";
@@ -54,9 +62,24 @@ const names = HOUSE_AGENT_NAMES.slice(0, count);
 const archetypes = ["honest", "strategic", "deceptive", "paranoid", "social", "observer", "diplomat", "loyalist"] as const;
 const players = names.map((name, i) => ({ id: `seat-${i + 1}`, name, personality: getHousePersonaDetails(archetypes[i]!).personalityBlurb, backstory: "", strategy: defaultWerewolfStrategy(archetypes[i]!), avatarUrl: null }));
 const events = [startWerewolf(`werewolf-${randomUUID()}`, players, config, values.seed)];
-const output = resolve(values.out ?? `docs/simulations/${events[0]!.gameId}.json`);
-await mkdir(dirname(output), { recursive: true });
-const persist = async () => { await writeFile(`${output}.tmp`, JSON.stringify(events, null, 2)); await rename(`${output}.tmp`, output); };
+const directory = resolve(values.out ?? join(import.meta.dir,"../../docs/simulations",events[0]!.gameId));
+await mkdir(directory, { recursive: true });
+await writeFile(join(directory,"session.json"),JSON.stringify(simulationIdentity("werewolf"),null,2));
+const output = join(directory,"game-1.json"), eventPath = join(directory,"game-1-events.jsonl"), providerPath = join(directory,"game-1-provider-attempts.json");
+const journalOptions:Parameters<typeof createLocalProviderExecutionJournal>[0] = {gameId:events[0]!.gameId,ownerEpoch:`local-werewolf:${events[0]!.gameId}`,
+  onChange:artifact => writeFileSync(providerPath,JSON.stringify(artifact,null,2))};
+const journal = createLocalProviderExecutionJournal(journalOptions);
+const persist = async (failure?:unknown) => {
+  const state = replayWerewolf(events), completed = state.retrospective?.completedAtEventSequence != null;
+  await writeFile(`${output}.tmp`, JSON.stringify({gameKind:"werewolf",status:failure ? "failed" : completed ? "completed" : "running",events,
+    retrospective:retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,state.players.length),
+    ...(failure !== undefined && {failure:{name:failure instanceof Error ? failure.name : "Error",message:failure instanceof Error ? failure.message : String(failure)}})}, null, 2));
+  await rename(`${output}.tmp`, output);
+  await writeFile(`${eventPath}.tmp`,events.map(werewolfEvent => JSON.stringify({werewolfEvent})).join("\n")+"\n");
+  await rename(`${eventPath}.tmp`,eventPath);
+  await writeFile(providerPath,JSON.stringify(journal.snapshot(),null,2));
+  await writeFile(join(directory,"stats.json"),JSON.stringify({partial:!completed && failure === undefined,requestedGames:1,completedGames:completed ? 1 : 0,failedGames:failure ? 1 : 0}));
+};
 await persist();
 let delegate: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   const state = replayWerewolf(events);
@@ -69,26 +92,35 @@ if (values["model-catalog"]) {
   const manifest = resolveProviderManifest(normalizeProviderManifest([{ catalogId: values["model-catalog"], reasoningPolicy: "low" }]));
   const runtimes = createLlmProviderRuntimesFromEnv(manifest, process.env);
   if (!runtimes) throw new Error("The selected provider is not configured");
-  delegate = new WerewolfModelAgent({ runtimes });
+  journalOptions.providerManifest = runtimes;
+  delegate = new WerewolfModelAgent({ runtimes, hooks:journal.hooks, ownerEpoch:`local-werewolf:${events[0]!.gameId}` });
 }
-const agent: WerewolfAgent = { prepareRetrospectiveCapacity: signal => delegate.prepareRetrospectiveCapacity(signal), getRetrospectiveStatement: input => delegate.getRetrospectiveStatement(input), async decide(input) {
+const agent: WerewolfAgent = { prepareRetrospectiveCapacity: signal => delegate.prepareRetrospectiveCapacity(signal), getRetrospectiveStatement: async input => {
+  if (values.chatty) console.log(JSON.stringify({action:"retrospective-statement",actorId:input.context.self.id,ordinal:input.context.request.ordinal,
+    coverage:{sections:input.context.game.sections.length,dialogue:input.context.game.dialogue.length,
+      throughEventSequence:input.context.game.outcome.eventSequence},priorCount:input.context.priorStatements.length}));
+  return delegate.getRetrospectiveStatement(input);
+}, async decide(input) {
   const decision = await delegate.decide(input);
   if (values.chatty) console.log(JSON.stringify({ visibility: "private", day: input.observation.board.day,
     actionSlot: input.actionSlot, discussion: input.observation.board.discussion, request: input.request, decision }));
   return decision;
 } };
 let cursor = 0;
+const reportLines:string[] = [];
 const report = () => {
   const view = projectWerewolfView(replayWerewolf(events), audience);
   for (const entry of view.entries.slice(cursor)) {
     const line = werewolfReportEntry(entry, view, values.transcript);
-    if (line !== null) console.log(line);
+    if (line !== null) {reportLines.push(line);console.log(line);}
   }
   cursor = view.cursor;
+  writeFileSync(join(directory,"game-1.txt"),reportLines.join("\n")+"\n");
 };
 report();
-const state = await runWerewolf({ read: async () => structuredClone(events), append: async (event) => {
+let state;
+try { state = await runWerewolf({ read: async () => structuredClone(events), append: async (event) => {
   applyWerewolfEvent(replayWerewolf(events), event); events.push(event); await persist(); report();
-} }, agent, undefined);
+} }, agent, undefined); } catch (failure) {await persist(failure);throw failure;}
 console.log(`Completed: ${state.outcome?.faction ?? "draw"}`);
 console.log(`Private canonical log: ${output}`);

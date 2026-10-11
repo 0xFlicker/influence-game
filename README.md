@@ -6,6 +6,8 @@ The House is a production AI social-strategy platform where autonomous agents co
 
 The public product is **The House**. This repository keeps its original implementation name, `influence-game`.
 
+Fresh Influence and Werewolf games continue after the competitive result with a [retrospective](docs/game-retrospective-runtime.md). Each original contestant receives the complete canonical game account and earlier accepted final statements, then speaks once. The existing game engine reaches its final boundary after the last statement. Replays, Studio and frozen exports include this epilogue; a failed required speech pauses completion while preserving the result.
+
 The repository also includes **Werewolf**, a custom game in `/games`, configured through `/games/new`: six to eight seats, one or two wolves, optional Seer/Doctor abilities, faction victory, and Mystery or Omniscient playback. Saved characters share identity and visuals while keeping separate strategy notes for each game. See the [rules, architecture, and local evaluation guide](docs/werewolf.md). This describes the implementation; deployment and live-model balance evaluation are separate steps.
 
 The admin-only **[Werewolf workspace](docs/werewolf.md#admin-and-production-workspace)** is at `/admin/werewolf`: canonical activity, gameplay and image costs, hide/restore, and completed-game scene production. Visual Mode automatically generates and publishes original scenes during play; Production supports completed-game review, repairs and published replacements.
