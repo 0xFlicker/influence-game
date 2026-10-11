@@ -60,6 +60,8 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
     !sealedGameIds.has(gameId)
     &&
     latestFailureByGame.get(gameId) !== "competition_settlement_repair_required"
+    && latestFailureByGame.get(gameId) !== "retrospective_paused"
+    && !latestFailureByGame.get(gameId)?.startsWith("retrospective_failed:")
   ));
 }
 
@@ -102,6 +104,9 @@ export async function getSupportedRecovery(
     .limit(1))[0];
   if (latestOwner?.failureReason === "competition_settlement_repair_required") {
     return { ok: false, gameId, reason: latestOwner.failureReason };
+  }
+  if (latestOwner?.failureReason === "retrospective_paused" || latestOwner?.failureReason?.startsWith("retrospective_failed:")) {
+    return { ok: false, gameId, reason: "explicit_retrospective_recovery_required" };
   }
 
   const checkpoints = await db

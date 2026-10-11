@@ -1,4 +1,6 @@
 import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
+import { RetrospectiveExecutionError } from "@influence/engine";
+import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { abortAllWerewolf, abortWerewolf, activeWerewolfCount, isWerewolfRunning, startWerewolfRuntime } from "./werewolf-runtime.js";
 import { VisualPreparationBlocked, pauseForVisualRepair } from "./visual-policy.js";
 import { createVisualGameRuntime } from "./visual-game-runtime.js";
@@ -973,6 +975,15 @@ async function runGameAsync(
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
   } catch (err) {
+    if (err instanceof RetrospectiveExecutionError && ownerEpoch && !runner.aborted) {
+      const paused = await pauseRetrospectiveExecution(db, gameId, ownerEpoch, err);
+      if (paused) {
+        await tryRefreshGameWatchStateSummary(db, gameId, "retrospective_failure");
+        broadcastRaw(gameId, { type: "game_status", gameId, status: "suspended", terminal: false, reasonCode: "retrospective_failed",
+          message: "Retrospective paused after a required step failed. The competitive result is unchanged." });
+      }
+      return;
+    }
     if (err instanceof VisualPreparationBlocked) {
       await pauseForVisualRepair(db, err);
       await tryRefreshGameWatchStateSummary(db, gameId, "visual_preparation");

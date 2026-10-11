@@ -8,6 +8,7 @@ import type { WerewolfDecision, WerewolfRequest } from "./types";
 import { werewolfRoleCoaching } from "./strategy";
 import { werewolfConversationTurn } from "./conversation";
 import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "../retrospective-invocation";
+import { retrospectiveAttemptsPerModel } from "../retrospective-budget";
 import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "../retrospective";
 
 const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue.";
@@ -108,7 +109,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
       semantic: { version: 1, kind: "werewolf_action", eventSequence: input.actionSlot },
     });
     const result = await executeModelInvocation({
-      call, runtimes: this.runtimes, ...prepared, maxAttempts: 3, cancellationSignal: input.signal,
+      call, runtimes: this.runtimes, ...prepared, maxAttempts: retrospectiveAttemptsPerModel("werewolf"), cancellationSignal: input.signal,
       requestSignalFactory: () => AbortSignal.timeout(120_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },

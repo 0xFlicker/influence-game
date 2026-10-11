@@ -56,7 +56,7 @@ test("required speech failure and cancelled capacity admission leave the same fr
   expect(replayWerewolf(events).retrospective).toBeNull();
   await advanceWerewolf(store, unavailable);
   const before = structuredClone(events);
-  await expect(advanceWerewolf(store, unavailable)).rejects.toThrow("Required speech exhausted");
+  await expect(advanceWerewolf(store, unavailable)).rejects.toMatchObject({ stage: "statement", code: "malformed_output" });
   expect(events).toEqual(before); expect(werewolfExecutionFinished(replayWerewolf(events))).toBeFalse();
 });
 

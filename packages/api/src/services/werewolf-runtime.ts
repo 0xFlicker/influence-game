@@ -1,4 +1,5 @@
-import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError } from "@influence/engine";
+import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
@@ -75,6 +76,10 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
     .then(() => {})
     .catch(async (error) => {
+      if (error instanceof RetrospectiveExecutionError && !controller.signal.aborted && !heartbeatFailure) {
+        await pauseRetrospectiveExecution(db, gameId, ownerEpoch, error);
+        return;
+      }
       if (error instanceof WerewolfVisualBlocked) return;
       if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);
       try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !controller.signal.aborted && !heartbeatFailure); }

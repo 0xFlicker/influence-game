@@ -35,8 +35,8 @@ Implementation uses the chat's existing clean worktree at `/Users/user/.codex/wo
 | RT-05 | Werewolf validated retrospective stage | RT-01–03 | Done |
 | RT-06 | Existing runtime and settlement final boundary | RT-04, RT-05 | Done |
 | RT-07 | Early canonical results and continued delivery | RT-04–06 | Done |
-| RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | In progress |
-| RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | Todo |
+| RT-08 | Recovery, failure, drain and cost accounting | RT-04–07 | Done |
+| RT-09 | Shared API/MCP inspection and producer recovery | RT-07, RT-08 | In progress |
 | RT-10 | Introduction-style replay epilogue for both games | RT-07, RT-09 | Todo |
 | RT-11 | Studio provenance and ordinary speech selection | RT-06, RT-10 | Todo |
 | RT-12 | Frozen export, recordings and renderer parity | RT-11 | Todo |
@@ -334,3 +334,11 @@ These are local deterministic results. Read/delivery, explicit failure recovery,
 Canonical outcomes now drive result availability independently of execution status. Results/watch DTOs expose safe retrospective progress; House reads and web result links preserve the selected canonical prefix, and correlated retrospective dialogue cannot run ahead of its fact boundary. Invalid history and terminal rows without canonical evidence cannot claim a result. Post-outcome stops pause both games, preserve the immutable outcome/frontier and leave final completion delivery to settlement. Result pages keep observation active through the epilogue.
 
 Validation: the final focused PostgreSQL run passed 115 tests across seven files, including authenticated pauses, early results, invalid logs, Mystery disclosure, pinned dialogue pagination and forged cursor rejection. The larger preceding REST/inspection run passed all REST cases after updating obsolete terminal-row fixtures; its one remaining inspection assertion was corrected and included in the final green run. Typecheck/lint passed. Generated strict House schemas were refreshed and exercised. The required provider-free baseline is running; full integrated PostgreSQL/provider-free baselines remain required before feature acceptance. This is local deterministic evidence, with no provider trial or deployment.
+
+## RT-08 completion record
+
+Required admission/statement failures now checkpoint a typed slot and suspend under the existing owner fence. Startup and legacy recovery exclude exhausted/explicitly paused epilogues. The shared resume mutation validates immutable input, cursor, expected head/failure identity, deployment admission and idempotency, then returns work to the existing worker without changing accepted speeches or the sealed provider route. Journal retry budgets survive owner changes, including a crash after exhausted native retries but before the runtime suspension catch; explicit recovery grants a fresh bounded policy for that slot while preserving all reservations and receipts.
+
+Creation records the required roster-sized speech/retry forecast and the model editor explains the additional whole-game/prior-statement cost. Existing spend diagnostics attribute the tail to `retrospective-statement`. Drain retains dispatched retrospective ownership until cancellation completes.
+
+Validation: 172 PostgreSQL tests passed across recovery, runtime, settlement, REST creation and cost accounting. A subsequent final journal/recovery run passed 40 tests, including native malformed-output exhaustion, owner loss before suspension, zero fresh dispatch before explicit resume, and exactly one new accepted response after resume. The receipt tests prove one spend record across accepted replay. Engine coaching/runtime fixtures passed 17 tests after updating their old rules wording. Typecheck/lint passed. The required provider-free baseline passed 2542 tests with five existing skips before the final journal fence extension; its final repeat is running. Full integrated PostgreSQL and browser/export proof remain required before feature acceptance. No paid provider call or deployed mutation occurred.

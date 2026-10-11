@@ -24,7 +24,7 @@ test.each(["seer", "doctor", "villager", "werewolf"] as const)("%s receives only
       const context = JSON.parse(body.messages.at(-1).content);
       expect(body.messages[0].role).toBe("system");
       expect(body.messages[0].content).toContain(WEREWOLF_RULES);
-      expect(body.messages[0].content).toContain("Roles remain secret until game end.");
+      expect(body.messages[0].content).toContain("Roles remain secret until the competitive outcome.");
       expect(body.messages[0].content).toContain("There are no daytime investigations.");
       const completedNights = before.board.entries.filter(entry => entry.kind === "night").length;
       expect(context.seerTiming).toMatchObject({ completedNights, maximumPossibleResults: completedNights });

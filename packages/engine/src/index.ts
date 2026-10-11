@@ -8,6 +8,8 @@
 export * from "./types";
 export * from "./retrospective";
 export * from "./retrospective-progress";
+export * from "./retrospective-failure";
+export * from "./retrospective-budget";
 export * from "./retrospective-context";
 export * from "./retrospective-invocation";
 export * from "./fixtures/retrospective-agent";
@@ -652,6 +654,7 @@ export {
   ProviderAttemptError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
+  ProviderJournalEntryExhaustedError,
   ProviderUnavailableError,
   ProviderExecutionCoordinator,
   createProviderEvidenceFetch,

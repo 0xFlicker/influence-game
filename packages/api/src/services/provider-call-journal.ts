@@ -1,4 +1,5 @@
 import { assertWerewolfProviderTurn } from "./werewolf-games.js";
+import { ProviderJournalEntryExhaustedError, retrospectiveAttemptsPerModel } from "@influence/engine";
 import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
@@ -425,6 +426,18 @@ async function reserveAttempt(
   await db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
     await assertDurableTurnSubcall(tx, options, intent.coordinate, "dispatch");
+    if (intent.coordinate.action === "retrospective-statement") {
+      const [game] = await tx.select({ config: schema.games.config, gameKind: schema.games.gameKind }).from(schema.games).where(eq(schema.games.id, options.gameId));
+      if (!game || !intent.preparedRequest.catalogId) throw new Error("Retrospective dispatch requires its sealed model identity");
+      const resume = (JSON.parse(game.config) as { retrospectiveResume?: { logicalCallId?: string | null; retryAfterAttemptOrdinal?: number } }).retrospectiveResume;
+      const floor = resume?.logicalCallId === callId ? resume.retryAfterAttemptOrdinal ?? 0 : 0;
+      const previous = await tx.select({ ordinal: schema.providerCallAttempts.attemptOrdinal, disposition: schema.providerCallAttempts.disposition })
+        .from(schema.providerCallAttempts).where(and(eq(schema.providerCallAttempts.logicalCallId, callId), eq(schema.providerCallAttempts.catalogId, intent.preparedRequest.catalogId)));
+      const policyAttempts = previous.filter(attempt => attempt.ordinal > floor);
+      if (policyAttempts.length >= retrospectiveAttemptsPerModel(game.gameKind) || policyAttempts.some(attempt => attempt.disposition === "exhausted")) {
+        throw new ProviderJournalEntryExhaustedError(intent.preparedRequest.catalogId);
+      }
+    }
     await assertProviderDispatchPolicy(tx, options, intent);
     const existingCall = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];

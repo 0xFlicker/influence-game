@@ -1,4 +1,5 @@
 import { readHouseParticipation } from "../services/house-participation.js";
+import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
 import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
@@ -245,6 +246,7 @@ export function createGameRoutes(db: DrizzleDB) {
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
       providerManifest: frozenProviderManifest,
+      retrospectiveForecast: forecastRetrospectiveBudget("influence", maxPlayers, frozenProviderManifest),
       ...(frozenProviderManifest.some((entry) => (
         resolveModelSelection(entry).model.providerProfileId === "openai"
       )) && {

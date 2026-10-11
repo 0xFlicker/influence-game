@@ -64,6 +64,7 @@ import type {
 } from "./game-runner.types";
 import { Phase } from "./types";
 import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "./retrospective-invocation";
+import { retrospectiveAttemptsPerModel } from "./retrospective-budget";
 import type { RetrospectiveSpeakerContext } from "./retrospective-context";
 import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "./retrospective";
 import type {
@@ -2671,7 +2672,7 @@ export class InfluenceAgent implements IAgent {
       },
     } });
     const result = await executeModelInvocation({
-      call, runtimes: this.providerManifest, ...prepared, maxAttempts: this.structuredCallMaxAttempts ?? 2,
+      call, runtimes: this.providerManifest, ...prepared, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
       cancellationSignal: options?.signal, requestSignalFactory: () => AbortSignal.timeout(120_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },

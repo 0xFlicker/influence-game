@@ -1,6 +1,7 @@
 import { seededRandom } from "./seeded-random";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { freezeInfluenceRetrospective } from "./influence-retrospective";
+import { throwRetrospectiveFailure } from "./retrospective-failure";
 import { materializeRetrospectiveContext, preflightRetrospectiveContext, type FrozenRetrospectiveGame } from "./retrospective-context";
 import { assertRetrospectiveInputBinding, retrospectiveCompletionProof, type RetrospectiveInputV1 } from "./retrospective";
 import { durableProviderLogicalCallId, providerLogicalCallId } from "./provider-execution";
@@ -2235,6 +2236,7 @@ export class GameRunner {
     transcriptThroughSequence: number;
     dialogueAnchors: Array<{ entrySequence: number; eventSequence: number }>;
   }): Promise<FrozenRetrospectiveGame> {
+    try {
     const setups = [];
     for (const agent of this.agents.values()) setups.push(await agent.prepareRetrospectiveSetup(this.retrospectiveCancellation.signal));
     const budgets = new Map<string, number>();
@@ -2249,6 +2251,7 @@ export class GameRunner {
       capacities: { effectiveModelIds: [...effectiveModelIds], models: [...budgets].map(([modelId, maxContextBytes]) => ({ modelId, maxContextBytes })) } });
     for (const setup of setups) preflightRetrospectiveContext(frozen, setup.capacities);
     return frozen;
+    } catch (error) { throwRetrospectiveFailure(error, "initialize", this.retrospectiveCancellation.signal); }
   }
 
   private async runDurableRetrospective(): Promise<void> {
@@ -2311,7 +2314,8 @@ export class GameRunner {
       semantic: phase.providerSemanticCoordinate ?? { version: 1, kind: "phase_call", phase: Phase.RETROSPECTIVE,
         round: ctx.gameState.round, canonicalEventSequence: phase.providerCallBoundaryEventSequence ?? 0, callSlot: context.request.ordinal + 1 },
     });
-    const response = await agent.getRetrospectiveStatement(phase, context, { signal: this.retrospectiveCancellation.signal });
+    const response = await agent.getRetrospectiveStatement(phase, context, { signal: this.retrospectiveCancellation.signal })
+      .catch(error => throwRetrospectiveFailure(error, "statement", this.retrospectiveCancellation.signal));
     if (this._aborted) throw new Error("Game run aborted");
     await ctx.beforeAcceptedCommit?.();
     const dialogueSequence = ctx.logger.nextProductDialogueSequence;

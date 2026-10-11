@@ -4,6 +4,7 @@ import { ProviderUnavailableError, providerLogicalCallId } from "../provider-exe
 import { materializeRetrospectiveContext, type RetrospectiveSpeakerContext, type RetrospectiveCapacityPolicy } from "../retrospective-context";
 import { assertRetrospectiveInputBinding, retrospectiveCompletionProof, type RetrospectiveInputV1, type RetrospectiveSpeechV1 } from "../retrospective";
 import { compileWerewolfRetrospective, freezeWerewolfRetrospective } from "./retrospective";
+import { throwRetrospectiveFailure } from "../retrospective-failure";
 import { observeWerewolf, type WerewolfObservation } from "./observation";
 import { nextWerewolfStep, replayWerewolf, validateWerewolfAction, werewolfActionPlans, werewolfEvent } from "./rules";
 import type { WerewolfDecision, WerewolfEvent, WerewolfRequest, WerewolfState } from "./types";
@@ -31,7 +32,8 @@ export function werewolfExecutionFinished(state: WerewolfState): boolean {
 /** Dedicated post-outcome stage; no gameplay request, observation or fallback. */
 async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, events: WerewolfEvent[], state: WerewolfState, signal?: AbortSignal) {
   if (!state.retrospective) {
-    const frozen = freezeWerewolfRetrospective({ events, capacities: await agent.prepareRetrospectiveCapacity(signal) });
+    const frozen = await (async () => freezeWerewolfRetrospective({ events, capacities: await agent.prepareRetrospectiveCapacity(signal) }))()
+      .catch(error => throwRetrospectiveFailure(error, "initialize", signal));
     signal?.throwIfAborted();
     await store.append(werewolfEvent(state, { type: "werewolf.retrospective_started", payload: frozen.definition }), frozen.input);
   } else if (state.retrospective.statements.length === state.retrospective.definition.speakerIds.length) {
@@ -44,7 +46,8 @@ async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, 
     const context = materializeRetrospectiveContext({ input, definition: state.retrospective.definition, speakers: source.speakers }, state.retrospective);
     await store.prepareRetrospective?.(state, context);
     signal?.throwIfAborted();
-    const speech = await agent.getRetrospectiveStatement({ gameId: state.gameId, day: state.day, actionSlot: state.sequence + 1, context, signal });
+    const speech = await agent.getRetrospectiveStatement({ gameId: state.gameId, day: state.day, actionSlot: state.sequence + 1, context, signal })
+      .catch(error => throwRetrospectiveFailure(error, "statement", signal));
     signal?.throwIfAborted();
     await store.append(werewolfEvent(state, { type: "werewolf.retrospective_statement_recorded", payload: {
       version: 1, definitionHash: context.request.definitionHash, actorId: context.self.id, ordinal: context.request.ordinal,

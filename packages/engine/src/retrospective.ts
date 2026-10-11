@@ -1,4 +1,6 @@
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
+import { RETROSPECTIVE_MAX_SPEECH_CHARACTERS } from "./retrospective-budget";
+export { RETROSPECTIVE_MAX_SPEECH_CHARACTERS } from "./retrospective-budget";
 import { MAX_NEW_GAME_PLAYERS } from "./types";
 import {
   createExactStructuredOutputArtifact,
@@ -8,7 +10,6 @@ import {
 
 export const RETROSPECTIVE_CONTRACT_VERSION = 1 as const;
 export const RETROSPECTIVE_PROMPT_VERSION = "retrospective.v1" as const;
-export const RETROSPECTIVE_MAX_SPEECH_CHARACTERS = 2000;
 export const RETROSPECTIVE_MAX_INPUT_BYTES = 256 * 1024;
 
 /** Exact canonical outcome event, distinct from the eventual final event head. */

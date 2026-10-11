@@ -1,4 +1,5 @@
 import { queueEpisodeCopy } from "./episode-presentation.js";
+import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { queueHouseCuts } from "./house-cut-queue.js";
 import { insertRetrospectiveInput } from "./game-retrospective-inputs.js";
@@ -110,7 +111,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
     await queueEpisodeCopy(tx, gameId);
   });

@@ -492,7 +492,8 @@ export interface ProviderSpeechAbsence {
     | "wrong_tool"
     | "undecodable_structured_output"
     | "budget_exhausted"
-    | "circuit_open";
+    | "circuit_open"
+    | "journal_exhausted";
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";

@@ -482,7 +482,8 @@ export function providerAcceptedDecisionId(acceptedAttemptId: string): UUID {
 export type ProviderUnavailableKind =
   | ProviderAttemptFailureKind
   | "budget_exhausted"
-  | "circuit_open";
+  | "circuit_open"
+  | "journal_exhausted";
 
 /** Gameplay-facing exhaustion shared by failed, disallowed, and over-budget manifests. */
 export class ProviderUnavailableError extends Error {
@@ -545,6 +546,14 @@ export class ProviderCircuitOpenError extends ProviderUnavailableError {
   ) {
     super(`Provider circuit is open for ${scopeKey}`, "circuit_open");
     this.name = "ProviderCircuitOpenError";
+  }
+}
+
+/** A durable entry spent its bounded retry policy before an interrupted owner returned. */
+export class ProviderJournalEntryExhaustedError extends ProviderUnavailableError {
+  constructor(readonly catalogId: string) {
+    super(`Provider entry ${catalogId} exhausted its durable retrospective retries; explicit recovery is required`, "journal_exhausted");
+    this.name = "ProviderJournalEntryExhaustedError";
   }
 }
 
@@ -655,6 +664,7 @@ export class ProviderLogicalCallExecution {
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;
     let lastCompatibilityError: ProviderEntryIncompatibleError | undefined;
+    let lastJournalError: ProviderJournalEntryExhaustedError | undefined;
     for (const [manifestPosition, entry] of options.entries.entries()) {
       options.cancellationSignal?.throwIfAborted();
       const compatibility = entry.compatibility?.();
@@ -684,6 +694,10 @@ export class ProviderLogicalCallExecution {
           acceptedAttemptOrdinal: accepted.attemptOrdinal,
         };
       } catch (error) {
+        if (error instanceof ProviderJournalEntryExhaustedError) {
+          lastJournalError = error;
+          continue;
+        }
         if (error instanceof ProviderAttemptError) {
           lastAttemptError = error;
           continue;
@@ -704,7 +718,7 @@ export class ProviderLogicalCallExecution {
     // A primary entry is intentionally uncapped, so a normal exhausted
     // manifest always has an attempt error. Preserve that gameplay-facing
     // typed outcome rather than replacing it with a later budget skip.
-    throw lastAttemptError ?? lastCircuitError ?? lastBudgetError ??
+    throw lastAttemptError ?? lastJournalError ?? lastCircuitError ?? lastBudgetError ??
       lastCompatibilityError ??
       new Error("Provider manifest exhausted without an attempt");
   }

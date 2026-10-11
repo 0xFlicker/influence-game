@@ -1,12 +1,14 @@
 import { expect, test } from "bun:test";
 import OpenAI from "openai";
 import { eq } from "drizzle-orm";
-import { createProviderAdapter, modelCatalogEntryById, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, type LlmProviderRuntime } from "@influence/engine";
+import { createProviderAdapter, modelCatalogEntryById, fixtureRetrospectiveCapacity, fixtureWerewolfRetrospective, RetrospectiveExecutionError, type LlmProviderRuntime } from "@influence/engine";
 import { advanceWerewolf, replayWerewolf, runWerewolf, WerewolfModelAgent, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { claimWerewolfGame, createWerewolfGame, createWerewolfStore, releaseWerewolfOwner } from "../services/werewolf-games.js";
 import { createApiProviderExecutionHooks } from "../services/provider-call-journal.js";
+import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
+import { pauseRetrospectiveExecution, resumeGameRetrospective } from "../services/game-retrospective-recovery.js";
 
 const scripted: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
   async decide({ request }) {
@@ -76,6 +78,9 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const call = (await db.select().from(schema.providerLogicalCalls))[0]!;
   expect(resumed.retrospective!.statements[ordinal]!.providerLogicalCallId).toBe(call.id);
   expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
+  const cost = await getAdminGameCostDetail(db, game.id);
+  if (!cost.ok) throw new Error(cost.error);
+  expect(cost.detail.breakdowns.action).toMatchObject({ "retrospective-statement": { callCount: 1, totalTokens: 140 } });
   expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
   const final = await runWerewolf(nextStore, scripted);
   expect(final.outcome).toEqual(outcome); expect(final.retrospective!.statements).toHaveLength(final.players.length);
@@ -112,4 +117,54 @@ test("input insertion rolls back when the same start transaction cannot append i
   const restarted = await advanceWerewolf(store, scripted);
   expect(restarted.retrospective!.statements).toHaveLength(0);
   expect(await db.select().from(schema.gameRetrospectiveInputs)).toHaveLength(1);
+}, 30_000);
+
+test("a crash after exhausted native retries cannot spend again before explicit recovery", async () => {
+  const db = await setupTestDB();
+  await db.insert(schema.users).values({ id: "rt08-journal-owner" });
+  const game = await createWerewolfGame(db, "rt08-journal-owner", { preset: "one_wolf", agentProfileIds: [], maxDays: 1,
+    providerManifest: [{ catalogId: "openai:gpt-5-nano" }] });
+  const first = await claimWerewolfGame(db, game.id);
+  if (!first.ok) throw Error(first.error);
+  const store = createWerewolfStore(db, game.id, first.claim.ownerEpoch);
+  let state = replayWerewolf(await store.read());
+  while (!state.retrospective) state = await advanceWerewolf(store, scripted);
+  let generations = 0, valid = false;
+  const client = new OpenAI({ apiKey: "fixture", baseURL: "https://api.openai.com/v1", maxRetries: 0, fetch: async (url, init) => {
+    if (String(url).includes("input_tokens")) return Response.json({ object: "response.input_tokens", input_tokens: 900 });
+    generations++;
+    const body = JSON.parse(String(init?.body));
+    return Response.json({ id: `rt08-native-${generations}`, object: "response", created_at: 0, status: "completed", model: body.model,
+      output: [{ type: "function_call", id: `rt08-output-${generations}`, call_id: `rt08-call-${generations}`, status: "completed", name: "submit_retrospective", arguments: JSON.stringify(valid ? { speech: "I finally see what changed the outcome." } : {}) }],
+      usage: { input_tokens: 100, output_tokens: 40, total_tokens: 140 } });
+  } });
+  const entry = modelCatalogEntryById("openai:gpt-5-nano")!;
+  const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client), catalogId: entry.id,
+    providerProfileId: entry.providerProfileId, modelId: entry.modelId, modelCapabilities: entry.capabilities,
+    reasoningPolicy: "high", toolChoiceMode: "named", position: 0, role: "primary" };
+  const model = (ownerEpoch: string) => new WerewolfModelAgent({ runtimes: [runtime], hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }), ownerEpoch });
+  await expect(advanceWerewolf(store, model(first.claim.ownerEpoch))).rejects.toMatchObject({ code: "malformed_output" });
+  expect(generations).toBe(3);
+  // Simulate loss after journal terminalization and before the runtime catch.
+  await releaseWerewolfOwner(db, game.id, first.claim.ownerEpoch);
+  const next = await claimWerewolfGame(db, game.id);
+  if (!next.ok) throw Error(next.error);
+  const resumed = createWerewolfStore(db, game.id, next.claim.ownerEpoch);
+  let failure: RetrospectiveExecutionError | null = null;
+  try { await advanceWerewolf(resumed, model(next.claim.ownerEpoch)); }
+  catch (error) { if (!(error instanceof RetrospectiveExecutionError)) throw error; failure = error; }
+  expect(failure).toMatchObject({ code: "journal_exhausted" });
+  expect(generations).toBe(3);
+  expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(3);
+  expect(await pauseRetrospectiveExecution(db, game.id, next.claim.ownerEpoch, failure!)).toBeTrue();
+  const suspension = JSON.parse((await db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.config).retrospectiveFailure;
+  await resumeGameRetrospective(db, { gameId: game.id, expectedHead: suspension.head, expectedFailureId: suspension.id, idempotencyKey: "native-recovery" });
+  const finalOwner = await claimWerewolfGame(db, game.id);
+  if (!finalOwner.ok) throw Error(finalOwner.error);
+  valid = true;
+  const final = await advanceWerewolf(createWerewolfStore(db, game.id, finalOwner.claim.ownerEpoch), model(finalOwner.claim.ownerEpoch));
+  expect(generations).toBe(4);
+  expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(4);
+  expect(final.retrospective!.statements[0]!.speech).toBe("I finally see what changed the outcome.");
+  expect(final.outcome).toEqual(state.outcome);
 }, 30_000);
