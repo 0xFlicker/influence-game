@@ -112,10 +112,16 @@ export async function readWerewolfWatch(db: DrizzleDB, id: string, audience: Wer
 export function materializeWerewolfWatch(projection: ReturnType<typeof projectWerewolfWatch>, game: { id: string; slug: string; status: string; visualPaused: boolean }, audience: WerewolfAudience, publicationCutoff: string, rows: Awaited<ReturnType<typeof publishedWerewolfScenes>>, references: Awaited<ReturnType<typeof werewolfReferenceMetadata>>, productionSnapshot?: object): WerewolfWatchWindow {
   const media: WerewolfWatchWindow["media"] = {};
   const bindings = new Map<string, {mediaKey: string | null; wolfForms: Record<string, string>}>();
-  const portrait = (playerId: string) => productionSnapshot
+  const referenceByPlayer = new Map(references.map(reference => [reference.profile.id, reference]));
+  const character = (playerId: string) => productionSnapshot
     ? `/api/admin/production/games/${encodeURIComponent(game.id)}/source/characters/${encodeURIComponent(playerId)}?snapshot=${encodeURIComponent(JSON.stringify(productionSnapshot))}`
     : `/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(playerId)}?audience=${audience}&cursor=1&publishedBefore=${encodeURIComponent(publicationCutoff)}`;
-  const body = (id: string) => references.find(ref => ref.profile.id === id)?.kind === "full_body" ? `${portrait(id)}&image=body` : null;
+  // Studio/export prepare every advertised URL before rendering. A reference
+  // absent from the pin must use the shared stage's existing fallback instead
+  // of advertising a 404 or reading today's mutable Agent Profile.
+  const portrait = (id: string) => productionSnapshot && !referenceByPlayer.get(id)?.bundled && !referenceByPlayer.get(id)?.portraitHash
+    ? null : character(id);
+  const body = (id: string) => referenceByPlayer.get(id)?.kind === "full_body" ? `${character(id)}&image=body` : null;
   const moments = projection.moments.map(({staging, ...moment}) => {
     const binding = JSON.stringify(staging);
     let bound = bindings.get(binding);

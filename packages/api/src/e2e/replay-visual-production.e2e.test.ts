@@ -12,6 +12,7 @@ import type { ProductionCatalog } from "@influence/engine/production-moments";
 import type { ProductionExportDescriptor } from "@influence/engine/production-moments/export";
 import { resolveCliApiSession } from "@influence/engine/cli-api-session";
 import { GameState, Phase, type GameTurnIntentV1 } from "@influence/engine";
+import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { schema } from "../db/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
@@ -156,9 +157,22 @@ async function clickButton(page: Page, label: string, scope = "") {
   await clickStudioButton(page, label, scope);
 }
 async function captureStudioFrame(page: Page, frame: number, waitForPaint = true): Promise<Uint8Array> {
+  await page.bringToFront();
   await page.evaluate(`(() => {const input = document.querySelector('[aria-label="Seek frame"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(String(frame))}); input.dispatchEvent(new Event('input', {bubbles:true}));})()`);
   await page.waitForFunction(`Number(document.querySelector('[data-preview-frame]')?.getAttribute('data-preview-frame')) === ${frame} && Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame')) === ${frame}`);
   await page.evaluate("(async () => {await document.fonts.ready; await Promise.all(Array.from(document.querySelectorAll('[data-preview-frame] img')).map(image => image.decode()));})()");
+  // Player renders frame metadata before its initial measured layout becomes
+  // visible. Sampling that invisible mount captures black at the right number.
+  await page.waitForFunction(`(() => {
+    const canvas = document.querySelector('[data-composition-frame]');
+    if (!canvas || Number(canvas.getAttribute('data-composition-frame')) !== ${frame}) return false;
+    const bounds = canvas.getBoundingClientRect(); if (!bounds.width || !bounds.height) return false;
+    for (let element = canvas; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    }
+    return true;
+  })()`);
   if (waitForPaint) await page.evaluate("new Promise(accept => requestAnimationFrame(() => requestAnimationFrame(() => accept())))");
   const png = await (await page.$("[data-composition-frame]"))!.screenshot();
   await Bun.write(temporaryPath(`production-studio-frame-${frame}-${Date.now()}.png`), png);
@@ -1423,3 +1437,60 @@ test("Producer preserves exact lost-request controls, reviews and explicitly pub
     console.error("[Production browser]", await page.evaluate("document.body.innerText")); throw error;
   } finally { await page.close(); }
 }, 120_000);
+
+test("Studio opens, seeks and freezes a Werewolf thought with missing frozen art using the replay fallback", async () => {
+  const id = "studio-werewolf-missing-art", events = await werewolfResultsFixture("saved",id,2);
+  const started = events.find(event=>event.type==="werewolf.started")!, actor = started.payload.players[0]!;
+  actor.agentProfileId = "studio-missing-art-profile"; actor.contentRevisionId = null;
+  await database.db.insert(schema.agentProfiles).values({id:actor.agentProfileId,userId:studioFixture.producer.userId,
+    name:"Today's changed character",personality:"Changed",avatarUrl:"/api/uploads/local?key=unsubmitted-current.png"});
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:"2026-09-01T00:00:00.000Z",config:"{}"});
+  await database.db.insert(schema.werewolfEvents).values(events.map(event=>({gameId:id,sequence:event.sequence,event})));
+  const page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}`);
+  const unexpected: string[] = []; page.on("request",request=>{if(request.url().includes("unsubmitted-current")) unexpected.push(request.url());});
+  try {
+    await page.setViewport({width:1800,height:1100}); await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$('[aria-label="Timeline playhead"]')).not.toBeNull();
+    expect(await page.$eval('[aria-label="Timeline playhead"]',node=>Number(node.getAttribute("aria-valuemax")))).toBeGreaterThan(1);
+    const sourceResponse = await fetch(`http://127.0.0.1:${api.port}/api/admin/production/games/${id}/source?audience=omniscient&thinking=on`,
+      {headers:{Authorization:`Bearer ${studioFixture.producer.token}`}});
+    const source = await sourceResponse.json() as {catalog:ProductionCatalog};
+    const thoughtId = source.catalog.moments.find(moment=>moment.kind==="thinking" && moment.actorId===actor.id)!.id;
+    await page.click(`[data-moment-id="${thoughtId}"] > button:first-child`);
+    await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thoughtId)}`);
+    expect(await page.$$eval('[data-preview-frame] img',(images,name)=>images.filter(image=>image.getAttribute('alt')===name)
+      .some(image=>image.getAttribute('src')?.startsWith('/avatars/personas/')),actor.name)).toBe(true);
+    await markStudioLabel(page);
+    await page.waitForFunction(`document.querySelector('[data-moment-id="${thoughtId}"]')?.textContent?.includes('Smart')`);
+    await openStudioDialog(page,"Presentation");
+    for (const [label,value] of [["readingRate",4],["thinkingRate",4],["motionScale",2],["conversationGapMs",0]] as const) {
+      await setStudioInput(page,label,String(value));
+    }
+    await page.evaluate("Array.from(document.querySelectorAll('label')).find(label=>label.textContent?.trim()==='Music')?.querySelector('input')?.click()");
+    await closeStudioDialog(page); await openStudioDialog(page,"Export selected cut");
+    await chooseStudioOption(page,"Output size","640 pixels · draft"); await chooseStudioOption(page,"Frames per second","24 fps");
+    await closeStudioDialog(page); await configureStudioCut(page,"Smart","None"); await clickStudioButton(page,"Selected cut");
+    await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && !!document.querySelector('[data-composition-frame]')");
+    await page.click(`[data-moment-id="${thoughtId}"] > button:first-child`);
+    const frame = await page.$eval('[data-preview-frame]',node=>Number(node.getAttribute('data-preview-frame')));
+    const first = await sampleStudioFrame(page,frame); await captureStudioFrame(page,0);
+    expect(await sampleStudioFrame(page,frame)).toBe(first);
+    await page.screenshot({path:temporaryPath("production-studio-missing-art-desktop.png")});
+    await page.setViewport({width:390,height:844}); await page.waitForSelector('[data-composition-frame]');
+    expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+    await page.screenshot({path:temporaryPath("production-studio-missing-art-narrow.png")});
+    await page.setViewport({width:1800,height:1100});
+    const frozenResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
+    await openStudioDialog(page,"Export selected cut"); await clickStudioButton(page,"Download selected export");
+    const response = await frozenResponse; expect(response.status()).toBe(200);
+    const descriptor = await response.json() as ProductionExportDescriptor; await closeStudioDialog(page);
+    expect(descriptor.momentIds).toEqual([thoughtId]); expect(unexpected).toEqual([]);
+    if (process.env.STUDIO_ENCODED_PROOF === "1") {
+      await page.evaluate("(()=>{const stage=document.querySelector('[data-preview-frame]').parentElement;stage.style.flex='none';stage.style.width='642px';stage.style.height='362px';})()");
+      await page.waitForFunction("(()=>{const r=document.querySelector('[data-preview-frame]').getBoundingClientRect();return r.width===640 && r.height===360;})()");
+      await verifyStudioEncodedParity({descriptor,token:studioFixture.producer.token,origin:`http://127.0.0.1:${api.port}`,
+        output:await mkdtemp(temporaryPath("production-studio-missing-art-encoded-")),captureFrame:frame=>captureStudioFrame(page,frame)});
+    }
+    expect(unexpected).toEqual([]);
+  } finally {await page.close();}
+},360_000);

@@ -188,7 +188,7 @@ afterAll(async () => {
     ["servers", async () => { if (servers) await stopTestServers(servers); }],
     ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
   ]);
-});
+}, 60_000);
 
 describe("E2E: Dual Crown season surfaces", () => {
   test("renders public, owner, archive, receipt, and producer views at desktop and mobile widths", async () => {

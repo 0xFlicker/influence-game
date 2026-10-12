@@ -2,6 +2,8 @@
 
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
+Werewolf characters whose frozen portrait is unavailable use the replay stage's existing House portrait or name-card fallback in Studio and local export. Available frozen full-body art still appears even without a portrait. The game-start identity remains authoritative. Preview/export use the same pinned availability and rendering; **Refresh published visuals** explicitly admits later available frozen bytes. A failed read of an asset already included in the pin remains an error.
+
 Werewolf Studio opens in **Omniscient** when the link has no audience choice, making accepted thinking available immediately. Choose **Tools → Source settings → Mystery** to edit the Mystery view; an explicit `audience=mystery` link retains that choice. Public replay keeps its existing audience behavior.
 
 With the existing local PostgreSQL/development configuration, run `bun run dev:api` and `bun run dev:web` in separate terminals. API startup applies the current migrations, including the sparse moment-annotation table. Sign in with the appropriate current grants at `http://localhost:3001/admin/production`. The gateway and web are sufficient for editing and local export.
