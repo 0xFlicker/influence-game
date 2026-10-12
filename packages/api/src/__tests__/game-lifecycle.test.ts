@@ -6,6 +6,7 @@
  * Validates: transcript persistence, result recording, status transitions.
  */
 
+import { fixtureInfluenceRetrospective, fixtureInfluenceRetrospectiveSetup, fixtureInfluenceRetrospectiveSpeaker } from "@influence/engine";
 import { describe, test, expect, beforeAll } from "bun:test";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
@@ -431,6 +432,9 @@ describe("preflightSelectedModel", () => {
 function r(message: string): AgentResponse { return { thinking: "", message }; }
 
 class LifecycleMockAgent implements IAgent {
+  getRetrospectiveStatement = fixtureInfluenceRetrospective;
+  prepareRetrospectiveSetup = fixtureInfluenceRetrospectiveSetup;
+  getRetrospectiveSpeaker = fixtureInfluenceRetrospectiveSpeaker;
   readonly id: UUID;
   readonly name: string;
 

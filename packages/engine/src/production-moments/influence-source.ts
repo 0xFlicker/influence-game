@@ -9,6 +9,7 @@ export interface InfluenceProductionTranscript {
   anonymous?: boolean; speakerPlayerId?: string | null; fromPlayerId?: string | null;
   acceptedBallot?: { voterId: string; targetId: string; purpose: "empower" | "eliminate" | "winner" };
   thinking?: string | null;
+  retrospectiveSource?: { eventSequence: number; ordinal: number };
 }
 export interface InfluenceProductionFrame {
   sequence: number; timestamp: number; round: number; phase: string;
@@ -24,9 +25,9 @@ export interface InfluenceProductionThought {
   defaultThinking: boolean;
 }
 
-export const INFLUENCE_PRODUCTION_FORMAT_PHASES = ["INTRODUCTION", "LOBBY", "VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_MINGLE", "FORMAT_RESOLVE", "END"] as const;
+export const INFLUENCE_PRODUCTION_FORMAT_PHASES = ["INTRODUCTION", "LOBBY", "VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_MINGLE", "FORMAT_RESOLVE", "RETROSPECTIVE", "END"] as const;
 export const INFLUENCE_PRODUCTION_PHASE_ORDER = [
-  "INIT", "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_MINGLE", "FORMAT_RESOLVE", "WHISPER", "MINGLE", "POST_VOTE_MINGLE", "RUMOR", "POWER", "REVEAL", "PRE_COUNCIL_HUDDLE", "COUNCIL", "PLEA", "ACCUSATION", "DEFENSE", "DIARY_ROOM", "OPENING_STATEMENTS", "JURY_QUESTIONS", "CLOSING_ARGUMENTS", "JURY_VOTE", "END", "SUSPENDED",
+  "INIT", "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_MINGLE", "FORMAT_RESOLVE", "WHISPER", "MINGLE", "POST_VOTE_MINGLE", "RUMOR", "POWER", "REVEAL", "PRE_COUNCIL_HUDDLE", "COUNCIL", "PLEA", "ACCUSATION", "DEFENSE", "DIARY_ROOM", "OPENING_STATEMENTS", "JURY_QUESTIONS", "CLOSING_ARGUMENTS", "JURY_VOTE", "RETROSPECTIVE", "END", "SUSPENDED",
 ] as const;
 const FORMAT_AUTHORITY_PHASES = new Set(["VOTE", "FORMAT_MENU", "FORMAT_PICK", "FORMAT_RESOLVE"]);
 
@@ -96,11 +97,14 @@ export function buildInfluenceProductionSources(input: {
     const named = roster.filter(player => player.name === token);
     const actorId = token ? roster.find(player => player.id === token)?.id ?? (named.length === 1 ? named[0]!.id : token) : undefined;
     const latestFrame = frames.findLast(frame => frame.round === message.round && frame.timestamp <= message.timestamp);
-    const sequence = message.firstDurableEventSequence ?? latestFrame?.sequence ?? null;
+    if (message.phase === "RETROSPECTIVE" && (!message.retrospectiveSource || !actorId || message.anonymous)
+      || message.phase !== "RETROSPECTIVE" && message.retrospectiveSource) throw new Error("Retrospective dialogue requires exact canonical provenance");
+    const sequence = message.retrospectiveSource?.eventSequence ?? message.firstDurableEventSequence ?? latestFrame?.sequence ?? null;
     append({ kind: "influence-transcript", transcriptId: String(message.id), order: { anchor: 0, offset: 0 },
       presentation: message.acceptedBallot ? "ballot" : actorId || message.anonymous ? "speech" : "scene",
       ...(message.acceptedBallot ? { ballot: { voterId: message.acceptedBallot.voterId, purpose: message.acceptedBallot.purpose } } : {}),
       ...(actorId ? { actorId } : {}), thinking: actorId ? message.thinking : undefined, defaultThinking: Boolean(actorId),
+      ...(message.retrospectiveSource ? { retrospectiveSource: message.retrospectiveSource } : {}),
     }, message.round, message.phase, sequence, "classic", message.dialogueKind === "house_summary");
   }
 

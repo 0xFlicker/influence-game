@@ -176,7 +176,7 @@ export async function readHouseGame(
               casting,
               entries,
               capabilities: {
-                results: game.status === "completed",
+                results: Boolean(frames[after - 1]?.snapshot.outcome),
                 thinking: audience === "omniscient",
                 manualReread:
                   game.status === "suspended" || game.status === "waiting",
@@ -190,7 +190,7 @@ export async function readHouseGame(
                   ? werewolfMomentHref(game.slug, audience, after)
                   : gameReplayHref(game.slug, undefined, audience),
                 results:
-                  game.status === "completed"
+                  frames[after - 1]?.snapshot.outcome
                     ? gameResultsHref(game.slug)
                     : null,
               },
@@ -201,14 +201,18 @@ export async function readHouseGame(
       }
       const { facts, dialogue } = await loadHouseInfluenceHistory(tx, game),
         c = paging(input, game, audience, [facts.length, dialogue.length]);
+      const priorRetrospective = dialogue.slice(0, c.after[1]).findLast(entry => entry.retrospectiveSource !== null)?.retrospectiveSource;
+      if (view === "replay" && priorRetrospective && priorRetrospective.eventSequence > (facts[c.after[0]! - 1]?.sequence ?? 0)) throw new HouseInspectionError("invalid_cursor", "Dialogue cursor advances beyond its canonical retrospective prefix");
       return fitPage(
         (count) => {
           // Two independent lanes, alternating page allocation; no invented merged chronology.
           let f = c.after[0]!,
             d = c.after[1]!;
           for (let n = 0; n < count; n++) {
-            if (f < c.through[0]! && (n % 2 === 0 || d >= c.through[1]!)) f++;
-            else if (d < c.through[1]!) d++;
+            const source = dialogue[d]?.retrospectiveSource;
+            const dialogueReady = d < c.through[1]! && (!source || source.eventSequence <= (facts[f - 1]?.sequence ?? 0));
+            if (f < c.through[0]! && (n % 2 === 0 || !dialogueReady)) f++;
+            else if (dialogueReady) d++;
           }
           const factCount = f - c.after[0]!,
             dialogueCount = d - c.after[1]!;
@@ -237,7 +241,7 @@ export async function readHouseGame(
               d,
             ),
             capabilities: {
-              results: game.status === "completed",
+              results: facts.slice(0, f).some(fact => fact.eventType === "jury.winner_determined"),
               thinking: true,
               manualReread:
                 game.status === "suspended" || game.status === "waiting",
@@ -251,7 +255,7 @@ export async function readHouseGame(
                 ? gameReplaySequenceHref(game.slug, snapshot.sequence)
                 : gameReplayHref(game.slug),
               results:
-                game.status === "completed" ? gameResultsHref(game.slug) : null,
+                facts.slice(0, f).some(fact => fact.eventType === "jury.winner_determined") ? gameResultsHref(game.slug) : null,
             },
           };
         },

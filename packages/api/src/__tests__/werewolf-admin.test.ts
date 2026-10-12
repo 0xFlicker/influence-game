@@ -1,3 +1,7 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
+import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import type { ProductionCatalog } from "@influence/engine/production-moments";
+import type { WerewolfProductionSnapshot } from "../services/werewolf-production-source.js";
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -41,7 +45,7 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
     const state = replayWerewolf(await readWerewolfEvents(db, g.id));
     const wolfId = state.aliveIds.find(id => state.roles[id] === "werewolf")!;
-    const agent: WerewolfAgent = { async decide({ request }) {
+    const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
       if (unprotectedHunt && request.action === "protect") return { kind: "target", targetId: wolfId, thinking: "PRIVATE_REASON" };
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Leans back", recipientIds: [] };
       if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_REASON" };
@@ -51,6 +55,46 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
   }
   return g;
 }
+test("v7 completed games retain admin and Studio editing access without changing their saved history", async () => {
+  const id = "existing-v7", events = await werewolfResultsFixture("saved", id);
+  const initial = events[0]!;
+  if (initial.type !== "werewolf.started") throw new Error("Fixture requires its setup event");
+  initial.payload.config.rulesVersion = 7;
+  const config = JSON.stringify({ rulesVersion: 7, visibility: "public" });
+  await db.insert(schema.games).values({ id, slug: id, gameKind: "werewolf", status: "completed", maxPlayers: initial.payload.players.length,
+    startedAt: "2026-10-01T00:00:00.000Z", endedAt: "2026-10-01T01:00:00.000Z", config });
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({ gameId: id, sequence: event.sequence, event })));
+  const headers = await operator("producer"), admin = createWerewolfAdminRoutes(db), studio = createProductionStudioRoutes(db);
+  const listing = await admin.request("/api/admin/werewolf", { headers });
+  expect(listing.status).toBe(200);
+  expect(await listing.json()).toMatchObject([{ id, error: null, progress: { phase: "complete" } }]);
+  const detail = await admin.request(`/api/admin/werewolf/${id}`, { headers });
+  expect(detail.status).toBe(200);
+  expect(await detail.json()).toMatchObject({ snapshot: { rulesVersion: 7, phase: "complete" } });
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const response = await studio.request(`/api/admin/production/games/${id}/source?audience=${audience}&thinking=off`, { headers });
+    expect(response.status).toBe(200);
+    const source = await response.json() as { snapshot: WerewolfProductionSnapshot; catalog: ProductionCatalog; window: { rulesVersion: number } };
+    expect(source.window.rulesVersion).toBe(7);
+    expect(source.snapshot.throughEventSequence).toBe(events.at(-1)!.sequence);
+    expect(source.catalog.moments.length).toBeGreaterThan(0);
+    if (audience !== "omniscient") continue;
+    const moment = source.catalog.moments.find(moment => moment.kind === "speech")!;
+    for (const expectedRevision of [0, 1]) {
+      const tags = { cut: `revision-${expectedRevision + 1}` };
+      const save = await studio.request(`/api/admin/production/games/${id}/moments/${encodeURIComponent(moment.id)}/annotation`, {
+        method: "POST", headers, body: JSON.stringify({ audience, thinking: false, snapshot: source.snapshot, expectedRevision, tags }),
+      });
+      expect(save.status).toBe(200);
+      expect(await save.json()).toMatchObject({ momentId: moment.id, revision: expectedRevision + 1, tags });
+    }
+  }
+  expect(await readWerewolfEvents(db, id)).toEqual(events);
+  const [saved] = await db.select().from(schema.games).where(eq(schema.games.id, id));
+  expect(saved).toMatchObject({ config, status: "completed", endedAt: "2026-10-01T01:00:00.000Z" });
+  expect(await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, id))).toEqual([]);
+});
+
 test("admin discovery is Werewolf-only, includes hidden games, enforces current permissions and exposes canonical activity", async () => {
   const g = await game(), headers = await operator("admin", ["view_admin", "hide_game"]), app = createWerewolfAdminRoutes(db);
   await db.insert(schema.games).values({ id: "influence", slug: "influence", config: "{}" });
@@ -58,7 +102,7 @@ test("admin discovery is Werewolf-only, includes hidden games, enforces current 
   const read = await app.request(`/api/admin/werewolf/${g.id}`, { headers });
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("private, no-store");
   const detail = await read.json() as { snapshot: { rulesVersion: number } };
-  expect(detail.snapshot.rulesVersion).toBe(7);
+  expect(detail.snapshot.rulesVersion).toBe(8);
   expect(JSON.stringify(detail)).not.toContain("PRIVATE_PACK");
   expect(JSON.stringify(detail)).not.toContain('"entries"');
   const activity = await app.request(`/api/admin/werewolf/${g.id}/activity`, { headers });

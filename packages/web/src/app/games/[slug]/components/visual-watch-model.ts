@@ -1,6 +1,6 @@
 import {voteSceneIdentity} from "./vote-ledger-model";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
-import type { GamePlayer, TranscriptEntry } from "@/lib/api";
+import type { GamePlayer, GameWatchReplayFrame, TranscriptEntry } from "@/lib/api";
 import { visualSpeechDurationMs } from "@influence/engine/visual-speech";
 import type { PresentationCue } from "./types";
 import type { VisualPresentationBeat } from "./visual-presentation";
@@ -24,7 +24,7 @@ function isMingleDialogue(message: TranscriptEntry) {
 /** Reserve solo staging from committed transcript metadata, never image load timing. */
 export function isSoloTranscript(message: TranscriptEntry): boolean {
   return Boolean(!message.anonymous && (message.acceptedBallot || ((message.speakerPlayerId || message.fromPlayerId)
-    && (message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && !isMingleDialogue(message))))));
+    && (message.phase === "RETROSPECTIVE" || message.presentationPurpose === "farewell" || message.phase === "INTRODUCTION" || message.scope === "diary" || (!message.visualScene && !isMingleDialogue(message))))));
 }
 
 export function transcriptPresentationDurationMs(message: TranscriptEntry, players: readonly GamePlayer[] = []) {
@@ -45,7 +45,7 @@ export interface VisualWatchData {
   scenes: Array<Omit<AcceptedVisualScene, "annotatedImageUrl"> & { afterDialogueSequence: number; mediaVersionId?: string | null; publicationRevision?: number }>;
 }
 
-export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[], priorMessages: readonly TranscriptEntry[] = []): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
+export function visualWatchPresentation(data: VisualWatchData, cue: PresentationCue | null, message: TranscriptEntry | null, players: readonly GamePlayer[], priorMessages: readonly TranscriptEntry[] = [], frames: readonly GameWatchReplayFrame[] = []): { rooms: AcceptedVisualScene[]; beat: VisualPresentationBeat | null } {
   const rooms: AcceptedVisualScene[] = [];
   if (message?.entrySequence !== undefined) {
     for (const scene of data.scenes) {
@@ -57,7 +57,7 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     }
   }
   let beat: VisualPresentationBeat | null = null;
-  const portrait = (id: string, text: string, purpose: "Introduction" | "Ballot" | "Diary" | "Farewell" | "Conversation" | "Plea", caption?: string) => {
+  const portrait = (id: string, text: string, purpose: Extract<VisualPresentationBeat, {kind: "portrait"}>["purpose"], caption?: string) => {
     const player = players.find((entry) => entry.id === id);
     if (player) beat = { kind: "portrait", purpose, caption, player: { ...player, avatarUrl: data.portraits[id] ?? player.avatarUrl, fullBodyReferenceUrl: data.fullBodies?.[id], headRectangle: data.fullBodyHeads?.[id] }, speech: { id: cue?.key ?? String(message?.id), playerId: id, speaker: player.name, text } };
   };
@@ -119,6 +119,14 @@ export function visualWatchPresentation(data: VisualWatchData, cue: Presentation
     const ballot = message.acceptedBallot;
     const target = players.find((player) => player.id === ballot.targetId);
     if (target) portrait(ballot.voterId, target.name, "Ballot", ballot.purpose === "winner" ? "Vote for winner" : `Vote to ${ballot.purpose}`);
+  }
+  else if (message.phase === "RETROSPECTIVE" && speakerId) {
+    const prefix = frames.filter(frame => frame.sequence <= (message.firstDurableEventSequence ?? cue?.canonicalSequence ?? 0));
+    const winner = prefix.findLast(frame => frame.viewerDecisionEvent?.type === "jury.winner_determined")?.viewerDecisionEvent;
+    const exit = prefix.find(frame => frame.viewerDecisionEvent?.type === "player.eliminated" && frame.viewerDecisionEvent.payload.playerId === speakerId);
+    const part = winner?.type === "jury.winner_determined" && winner.payload.winnerId === speakerId ? "Winner"
+      : exit ? `Eliminated · Round ${exit.round}` : winner ? "Finalist" : "Contestant";
+    portrait(speakerId, message.text, "Retrospective", `Retrospective · ${part}`);
   }
   else if (message.presentationPurpose === "farewell" && speakerId) portrait(speakerId, message.text, "Farewell");
   else if (message.phase === "INTRODUCTION" && speakerId) portrait(speakerId, message.text, "Introduction");

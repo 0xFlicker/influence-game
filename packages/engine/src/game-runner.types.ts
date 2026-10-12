@@ -19,6 +19,8 @@ import type {
   StrategicLens,
 } from "./types";
 import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
+import type { RetrospectiveSpeakerContext } from "./retrospective-context";
+import type { RetrospectiveSpeechV1 } from "./retrospective";
 import type { FormatPressureProjection } from "./format-pressure";
 import type { LaunchFormatId } from "./formats";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
@@ -177,7 +179,13 @@ export interface DurableGameTurnStore {
   load(gameId: UUID): Promise<DurableGameTurnSnapshotV1 | null>;
   initialize(input: DurableGameTurnInitializationV1): Promise<DurableGameTurnSnapshotV1>;
   planNextTurn(intent: GameTurnIntentV1): Promise<DurableGameTurnPlanV1>;
-  commitTurn(draft: GameTurnCommitDraftV1): Promise<DurableGameTurnCommittedV1>;
+  commitTurn(draft: GameTurnCommitDraftV1, retrospectiveInput?: import("./retrospective").RetrospectiveInputV1): Promise<DurableGameTurnCommittedV1>;
+  /** Original outcome turn and its committed dialogue bindings; no current-head guessing. */
+  readRetrospectiveSource(gameId: UUID): Promise<{
+    input: import("./retrospective").RetrospectiveInputV1 | null;
+    transcriptThroughSequence: number;
+    dialogueAnchors: Array<{ entrySequence: number; eventSequence: number }>;
+  }>;
 }
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
@@ -484,7 +492,8 @@ export interface ProviderSpeechAbsence {
     | "wrong_tool"
     | "undecodable_structured_output"
     | "budget_exhausted"
-    | "circuit_open";
+    | "circuit_open"
+    | "journal_exhausted";
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -1105,6 +1114,13 @@ export interface IAgent {
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */
   getIntroduction(context: PhaseContext): Promise<AgentResponse>;
+  /** Dedicated postgame statement. Phase context supplies execution metadata only. */
+  getRetrospectiveStatement(context: PhaseContext, retrospective: RetrospectiveSpeakerContext, options?: AgentCallOptions): Promise<RetrospectiveSpeechV1>;
+  prepareRetrospectiveSetup(signal?: AbortSignal): Promise<{
+    speaker: import("./retrospective-context").RetrospectiveSpeaker;
+    capacities: import("./retrospective-context").RetrospectiveCapacityPolicy;
+  }>;
+  getRetrospectiveSpeaker(): import("./retrospective-context").RetrospectiveSpeaker;
   /** Called to collect a lobby message */
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */

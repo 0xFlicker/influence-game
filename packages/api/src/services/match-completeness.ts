@@ -16,7 +16,6 @@ import { schema } from "../db/index.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
-  getPersistedGameProjectionBeforeTerminalOutcome,
   type ProjectionReplayStatus,
 } from "./game-projection-read-model.js";
 import {
@@ -159,7 +158,6 @@ export interface MatchFactLaneStatus {
   lastTrustedSequence: number;
   projectionLastSequence: number | null;
   /** Settlement-safe note when terminal settlement is pending. */
-  settlementSafeProjection: boolean;
   diagnostics: MatchLaneDiagnostic[];
   followUpCapabilities: MatchFollowUpCapability[];
 }
@@ -275,7 +273,6 @@ export interface MatchCompletenessComposeInput {
   projection: {
     status: ProjectionReplayStatus;
     lastSequence: number | null;
-    settlementSafe: boolean;
   };
   completionSettlement: GameCompletionSettlementSummary;
   transcriptState: LockedTranscriptState | null;
@@ -359,15 +356,7 @@ function buildFactLane(
     diagnostics.push({
       code: "projection_failed",
       severity: "error",
-      message: "Projection replay failed. Prefer trusted event prefix and settlement-safe reads.",
-    });
-  }
-  if (projection.settlementSafe) {
-    diagnostics.push({
-      code: "settlement_safe_projection",
-      severity: "info",
-      message:
-        "Terminal settlement is pending or repair-required; projection excludes unsettled terminal outcomes.",
+      message: "Projection replay failed. Prefer the trusted event prefix.",
     });
   }
 
@@ -436,7 +425,6 @@ function buildFactLane(
     projectionStatus: projection.status,
     lastTrustedSequence: eventLog.lastTrustedSequence,
     projectionLastSequence: projection.lastSequence,
-    settlementSafeProjection: projection.settlementSafe,
     diagnostics,
     followUpCapabilities: input.access.hasCanonicalAccess ? followUpCapabilities : [],
   };
@@ -994,12 +982,7 @@ export async function readMatchManifest(
 
       const persistedEvents = await getPersistedGameEvents(tx, context.gameId);
       const completionSettlement = await getGameCompletionSettlementSummary(tx, context.gameId);
-      const sealedNonfinal =
-        completionSettlement.state === "pending" ||
-        completionSettlement.state === "repair_required";
-      const projection = sealedNonfinal
-        ? getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents)
-        : getPersistedGameProjection(persistedEvents);
+      const projection = getPersistedGameProjection(persistedEvents);
 
       const transcriptState = isCurrentTranscriptCapture(context.transcriptCaptureVersion)
         ? await readGameTranscriptState(tx, context.gameId)
@@ -1056,7 +1039,6 @@ export async function readMatchManifest(
         projection: {
           status: projection.status,
           lastSequence: projection.summary?.lastSequence ?? null,
-          settlementSafe: sealedNonfinal,
         },
         completionSettlement,
         transcriptState,

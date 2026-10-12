@@ -17,7 +17,7 @@ import type {
   TranscriptEntry,
 } from "./game-runner.types";
 import type { LaunchFormatId } from "./formats";
-import { Phase, type AllianceHuddleFactAtom } from "./types";
+import { MAX_NEW_GAME_PLAYERS, Phase, type AllianceHuddleFactAtom } from "./types";
 import type { ProviderSemanticCoordinateV1 } from "./provider-execution";
 
 export const DURABLE_GAME_TURN_CONTRACT_VERSION = 1 as const;
@@ -184,6 +184,9 @@ export interface DiaryProgressV1 {
 
 /** Closed program counter; handler-local state cannot hide in an arbitrary bag. */
 export type GameExecutionCursorV1 =
+  | { version: 1; kind: "retrospective"; stage: "initialize" }
+  | { version: 1; kind: "retrospective"; stage: "statement"; definitionHash: string; ordinal: number }
+  | { version: 1; kind: "retrospective"; stage: "complete"; definitionHash: string }
   | { version: 1; kind: "phase_enter"; actor: RuntimeActorCoordinate }
   | { version: 1; kind: "parallel_batch"; batch: ParallelBatchKind }
   | {
@@ -441,6 +444,9 @@ export function validateGameExecutionStateV1(
   }
   if (!isJsonObject(value.xstateSnapshot)) errors.push("xstateSnapshot must be a JSON object");
   errors.push(...validateCursor(value.cursor));
+  if (value.status === "terminal" && (!isRecord(value.cursor) || value.cursor.kind !== "terminal")) {
+    errors.push("terminal execution requires the final commit_game cursor");
+  }
   errors.push(...validateContinuity(
     value.playerContinuityCapsules,
     value.houseNarrativeContinuity,
@@ -579,6 +585,15 @@ function validateCursor(value: unknown): string[] {
   }
   const errors: string[] = [];
   switch (value.kind) {
+    case "retrospective":
+      if (value.stage === "initialize") {
+        if (!exactRecord(value, ["version", "kind", "stage"])) errors.push("retrospective initialize cursor fields are not exact");
+      } else if (value.stage === "statement" || value.stage === "complete") {
+        if (!exactRecord(value, value.stage === "statement" ? ["version", "kind", "stage", "definitionHash", "ordinal"] : ["version", "kind", "stage", "definitionHash"])) errors.push("retrospective cursor fields are not exact");
+        if (typeof value.definitionHash !== "string" || !HASH_PATTERN.test(value.definitionHash)) errors.push("retrospective definitionHash must be a sha256 digest");
+        if (value.stage === "statement" && (!Number.isSafeInteger(value.ordinal) || Number(value.ordinal) < 0 || Number(value.ordinal) >= MAX_NEW_GAME_PLAYERS)) errors.push("retrospective ordinal is invalid");
+      } else errors.push("retrospective stage is invalid");
+      break;
     case "phase_enter":
       if (!exactRecord(value, ["version", "kind", "actor"])) return ["phase_enter cursor fields are not exact"];
       if (typeof value.actor !== "string" || !RUNTIME_ACTORS.has(value.actor)) errors.push("phase_enter actor is invalid");

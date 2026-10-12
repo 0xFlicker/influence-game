@@ -10,6 +10,7 @@ import {
 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
+import { withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "../__tests__/durable-run-test-utils.js";
 import {computeVoteBombTallies,resolveVoteBomb,computeMajorityEliminationTallies,resolveMajorityElimination} from "@influence/engine/format-rules";
 
 const FIXTURE_TIME = "2026-07-27T00:00:00.000Z";
@@ -28,24 +29,25 @@ const FORMAT_FIXTURES = [
   },
 ] as const;
 
-export async function seedFormatAwareGameViewerFixtures(db: DrizzleDB): Promise<void> {
+export async function seedFormatAwareGameViewerFixtures(db: DrizzleDB, firstRetrospectiveDialogueSequence = 1): Promise<void> {
   for (const fixture of FORMAT_FIXTURES) {
-    await insertFormatFixture(db, fixture.slug, fixture.formats);
+    await insertFormatFixture(db, fixture.slug, fixture.formats, firstRetrospectiveDialogueSequence);
   }
-  await insertClassicFixture(db);
+  await insertClassicFixture(db, firstRetrospectiveDialogueSequence);
 }
 
 async function insertFormatFixture(
   db: DrizzleDB,
   slug: string,
   formats: readonly LaunchFormatId[],
+  firstRetrospectiveDialogueSequence: number,
 ): Promise<void> {
   const gameId = `e2e-${slug}`;
   const players = fixturePlayers(gameId);
-  const events = createFormatEvents(gameId, players, formats);
-  // The winner row is presentation metadata. Canonical event projections remain
-  // authoritative for the round facts and replay choreography asserted below.
   const winnerId = players[0]!.id;
+  const events = withRetrospective(withJuryWinner(createFormatEvents(gameId, players, formats), winnerId), firstRetrospectiveDialogueSequence);
+  // Completed fixtures need canonical outcome and epilogue proof. The result row
+  // alone cannot establish either boundary.
 
   await db.insert(schema.games).values({
     id: gameId,
@@ -79,6 +81,7 @@ async function insertFormatFixture(
     finishedAt: "2026-07-27T00:10:00.000Z",
   });
   await persistEvents(db, gameId, events);
+  await insertRetrospectiveTranscriptFixture(db, events);
 
   // Keep the local construction honest: the fixture must contain real canonical
   // events rather than a browser-only results payload.
@@ -236,7 +239,7 @@ function recordFormatRound(
   return eliminatedId;
 }
 
-async function insertClassicFixture(db: DrizzleDB): Promise<void> {
+async function insertClassicFixture(db: DrizzleDB, firstRetrospectiveDialogueSequence: number): Promise<void> {
   const gameId = EDGE_SMOKE_DUSK_EXPECTED.slug;
   const players = Object.values(EDGE_SMOKE_DUSK_PLAYERS);
   await db.insert(schema.games).values({
@@ -263,7 +266,9 @@ async function insertClassicFixture(db: DrizzleDB): Promise<void> {
     tokenUsage: zeroTokenUsage(),
     finishedAt: "2026-07-27T00:10:00.000Z",
   });
-  await persistEvents(db, gameId, createEdgeSmokeDuskEvents(gameId));
+  const events = withRetrospective(createEdgeSmokeDuskEvents(gameId), firstRetrospectiveDialogueSequence);
+  await persistEvents(db, gameId, events);
+  await insertRetrospectiveTranscriptFixture(db, events);
 }
 
 async function insertPlayers(

@@ -19,6 +19,7 @@ function makeTempCorpus(): string {
 function makeSession(corpusDir: string, sessionId: string): string {
   const dir = join(corpusDir, sessionId);
   mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir,"session.json"),JSON.stringify({schema:"house.simulation-session",version:1,gameKind:"influence"}));
   return dir;
 }
 

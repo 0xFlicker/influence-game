@@ -36,6 +36,7 @@ export class TranscriptLogger {
   private streamBuffer: GameStreamEvent[] | null = null;
   /** 1-based product dialogue sequence counter (dialogue scopes only). */
   private dialogueSequence = 0;
+  get nextProductDialogueSequence(): number { return this.dialogueSequence + 1; }
 
   private readonly visualScenes = new Map<string, NonNullable<TranscriptDialogueContext["visualScene"]>>();
   setVisualSceneForSpeaker(playerId: string, scene: TranscriptDialogueContext["visualScene"]): void {

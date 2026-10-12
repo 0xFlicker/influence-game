@@ -1,4 +1,5 @@
 import { hasModerationAccess } from "../services/moderation-intake.js";
+import { hasRetrospectiveRecoveryAccess } from "../services/retrospective-recovery-policy.js";
 import {
   invalidMcpOAuthScopeSetReason,
   mcpOAuthScopeSetIncludesAll,
@@ -42,6 +43,7 @@ export interface GameMcpEligibilitySnapshot {
   clientScopes: readonly McpOAuthScope[];
   hasProducerRole: boolean;
   hasModerationRole?: boolean;
+  hasRetrospectiveRecoveryAccess?: boolean;
 }
 
 export type GameMcpEligibilityResolver = (
@@ -57,9 +59,10 @@ export function createGameMcpEligibilityResolver(
       request.clientId,
     );
     const hasModerationRole = await hasModerationAccess(db, request.userId);
+    const recovery = await hasRetrospectiveRecoveryAccess(db, request.userId);
     if (!request.needsProducerRole) {
       const clientScopes = await clientScopesPromise;
-      return clientScopes ? { clientScopes, hasProducerRole: false, hasModerationRole } : null;
+      return clientScopes ? { clientScopes, hasProducerRole: false, hasModerationRole, hasRetrospectiveRecoveryAccess: recovery } : null;
     }
 
     const [clientScopes, hasProducerRole] = await Promise.all([
@@ -67,7 +70,7 @@ export function createGameMcpEligibilityResolver(
       hasCurrentProducerRoleForUserId(db, request.userId),
     ]);
     if (!clientScopes || hasProducerRole === null) return null;
-    return { clientScopes, hasProducerRole, hasModerationRole };
+    return { clientScopes, hasProducerRole, hasModerationRole, hasRetrospectiveRecoveryAccess: recovery };
   };
 }
 
@@ -76,6 +79,7 @@ interface GameMcpToolScopeAlternative {
   catalogBaselineScopes: readonly McpOAuthScope[];
   clientEnvelopeScopes: readonly McpOAuthScope[];
   requiredRole?: McpOAuthRequiredRole;
+  requiredRecoveryAccess?: true;
 }
 
 export interface GameMcpToolAccessSpec {
@@ -87,6 +91,7 @@ const SHARED_GAME_READ_TOOLS = [
   "list_games",
   "read_game",
   "read_game_results",
+  "read_game_retrospective",
   "read_game_cuts",
   "read_game_thinking",
   "get_rules",
@@ -166,6 +171,7 @@ const PRODUCER_TOOLS = [
 ] as const;
 
 export type GameMcpToolName =
+  | "resume_game_retrospective"
   | "read_moderation" | "act_on_moderation"
   | typeof SHARED_GAME_READ_TOOLS[number]
   | typeof GAME_READ_TOOLS[number]
@@ -187,6 +193,8 @@ const GAME_READ_ALTERNATIVE: GameMcpToolScopeAlternative = {
   catalogBaselineScopes: ["games:read"],
   clientEnvelopeScopes: ["games:read"],
 };
+const RETROSPECTIVE_RECOVERY_ALTERNATIVE: GameMcpToolScopeAlternative = { requiredRecoveryAccess: true, requiredScopes: ["games:read", "games:resume"],
+  catalogBaselineScopes: ["games:read"], clientEnvelopeScopes: ["games:read", "games:resume"] };
 
 const AGENT_READ_ALTERNATIVE: GameMcpToolScopeAlternative = {
   requiredScopes: ["agents:read"],
@@ -213,6 +221,7 @@ const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
 };
 
 export const GAME_MCP_TOOL_ACCESS = {
+  resume_game_retrospective: { name: "resume_game_retrospective", scopeAlternatives: [RETROSPECTIVE_RECOVERY_ALTERNATIVE] },
   read_moderation: { name: "read_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read"] }] },
   act_on_moderation: { name: "act_on_moderation", scopeAlternatives: [{ requiredRole: "moderator", requiredScopes: ["moderation:read", "moderation:write"], catalogBaselineScopes: ["moderation:read"], clientEnvelopeScopes: ["moderation:read", "moderation:write"] }] },
   ...specsFor(SHARED_GAME_READ_TOOLS, [PRODUCER_ALTERNATIVE, GAME_READ_ALTERNATIVE]),
@@ -338,6 +347,7 @@ interface GameMcpToolAccessContext {
   clientScopes: ReadonlySet<McpOAuthScope>;
   hasProducerRole: boolean;
   hasModerationRole?: boolean;
+  hasRetrospectiveRecoveryAccess?: boolean;
 }
 
 function accessContext(
@@ -349,6 +359,7 @@ function accessContext(
     clientScopes: new Set(eligibility.clientScopes),
     hasProducerRole: eligibility.hasProducerRole,
     hasModerationRole: eligibility.hasModerationRole,
+    hasRetrospectiveRecoveryAccess: eligibility.hasRetrospectiveRecoveryAccess,
   };
 }
 
@@ -356,6 +367,7 @@ function roleAllows(
   alternative: GameMcpToolScopeAlternative,
   context: GameMcpToolAccessContext,
 ): boolean {
+  if (alternative.requiredRecoveryAccess) return context.hasRetrospectiveRecoveryAccess === true;
   if (alternative.requiredRole === "moderator") return context.hasModerationRole === true;
   return alternative.requiredRole !== "producer" || context.hasProducerRole;
 }

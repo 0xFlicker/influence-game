@@ -1,5 +1,5 @@
 import { and, eq, inArray, or } from "drizzle-orm";
-import { replayWerewolf } from "@influence/engine/werewolf";
+import { replayWerewolf, werewolfExecutionFinished } from "@influence/engine/werewolf";
 import type { WerewolfAudience } from "@influence/engine/werewolf/observation";
 import { projectWerewolfProductionProvenance, projectWerewolfProductionWatch } from "@influence/engine/werewolf/watch";
 import { assembleProductionCatalog } from "@influence/engine/production-moments";
@@ -71,7 +71,7 @@ export async function buildWerewolfProductionSourceSnapshot(tx: DrizzleDB | Visu
   if (game.status !== "completed" && !pause) throw new WerewolfGameError("Production preview requires a completed game or a validated visual pause");
   const allEvents = await readWerewolfEvents(tx, game.id);
   const accepted = replayWerewolf(allEvents);
-  if (game.status === "completed" && !accepted.outcome) throw new WerewolfGameError("Completed game has no canonical result");
+  if (game.status === "completed" && !werewolfExecutionFinished(accepted)) throw new WerewolfGameError("Completed game has no retrospective completion proof");
   if (options.snapshot && options.snapshot.gameId !== game.id) throw new WerewolfGameError("Production snapshot belongs to another game");
   const throughEventSequence = options.snapshot?.throughEventSequence ?? accepted.sequence;
   if (!allEvents.some(event => event.sequence === throughEventSequence)) throw new WerewolfGameError("Production source prefix is unavailable");

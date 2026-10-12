@@ -58,6 +58,7 @@ export function revealedWinnerCue(cues: readonly PresentationCue[], cursor: numb
 export function compileRevealedWinnerCues(cues: readonly PresentationCue[]): (EndgamePresentationCue | null)[] {
   let winner: EndgamePresentationCue | null = null;
   return cues.map(cue => {
+    if (cue.phase === "RETROSPECTIVE") winner = null;
     if (cue.source === "endgame" && cue.kind === "endgame_winner") winner = cue;
     return winner;
   });

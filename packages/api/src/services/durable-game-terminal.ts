@@ -20,6 +20,7 @@ import {
   type SettleCapturedGameCompletionResult,
 } from "./game-completion-settlement.js";
 import { createDurableGameRunnerStore } from "./durable-game-runner-store.js";
+import { assertInfluenceRetrospectiveCompletion } from "./game-retrospective-completion.js";
 
 export type DurableGameTerminalErrorCode =
   | "game_not_found"
@@ -126,6 +127,9 @@ export async function settleDurableTerminalGame(
       error instanceof Error ? error.message : `Game ${input.gameId} has an invalid provider manifest`,
     );
   }
+
+  try { await assertInfluenceRetrospectiveCompletion(db, input.gameId, finalEvent.sequence); }
+  catch (error) { throw new DurableGameTerminalError("terminal_result_invalid", error instanceof Error ? error.message : "Retrospective completion is invalid"); }
 
   const completedResults = buildCompletedGameResults({
     events: snapshot.canonicalEvents,

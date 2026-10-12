@@ -28,6 +28,7 @@ import {
 } from "./exposure-bench";
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
+import { applyRetrospectiveRecord, type RetrospectiveRecordV1 } from "./retrospective";
 import {
   resolveFormatManifest,
   toFormatResolutionPayloadV2,
@@ -408,6 +409,21 @@ export class GameState {
   }
 
   /** Record the accepted phase boundary used by viewer/replay choreography. */
+  recordRetrospective<T extends "retrospective.started" | "retrospective.statement_recorded" | "retrospective.completed">(
+    type: T, payload: Extract<CanonicalGameEvent, { type: T }>["payload"],
+    sourcePointers: CanonicalGameEvent["sourcePointers"] = [],
+  ): CanonicalGameEvent {
+    const projection = this.getDomainProjection();
+    applyRetrospectiveRecord(projection.retrospective, {
+      kind: type === "retrospective.started" ? "started" : type === "retrospective.completed" ? "completed" : "statement",
+      payload,
+    } as RetrospectiveRecordV1, { outcome: projection.retrospectiveOutcomeSource, rosterIds: projection.playerOrder,
+      eventSequence: projection.lastSequence + 1 });
+    return this.appendCanonicalEvent(type, payload, {
+      phase: Phase.RETROSPECTIVE, visibility: "public", source: "engine", sourcePointers,
+    });
+  }
+
   recordPhaseEntered(phase: Phase): void {
     this.appendCanonicalEvent("game.phase_entered", {
       phase,

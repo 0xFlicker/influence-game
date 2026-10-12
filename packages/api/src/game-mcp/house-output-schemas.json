@@ -11,6 +11,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -149,6 +151,7 @@
                       "day",
                       "introduction",
                       "night",
+                      "retrospective",
                       "vote"
                     ],
                     "type": "string"
@@ -231,7 +234,7 @@
                   },
                   "rulesVersion": {
                     "type": "number",
-                    "const": 7
+                    "const": 8
                   },
                   "preset": {
                     "enum": [
@@ -367,6 +370,7 @@
                         "day",
                         "introduction",
                         "night",
+                        "retrospective",
                         "vote"
                       ],
                       "type": "string"
@@ -449,7 +453,7 @@
                     },
                     "rulesVersion": {
                       "type": "number",
-                      "const": 7
+                      "const": 8
                     },
                     "preset": {
                       "enum": [
@@ -1209,7 +1213,219 @@
           "dialogue": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/MatchTranscriptEntryDto"
+              "type": "object",
+              "properties": {
+                "retrospectiveSource": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "eventSequence": {
+                          "type": "number"
+                        },
+                        "ordinal": {
+                          "type": "number"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "eventSequence",
+                        "ordinal"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "authority": {
+                  "type": "string",
+                  "const": "transcript"
+                },
+                "visibility": {
+                  "$ref": "#/definitions/TranscriptVisibilityClass"
+                },
+                "entrySequence": {
+                  "type": [
+                    "null",
+                    "number"
+                  ]
+                },
+                "rowId": {
+                  "type": "number"
+                },
+                "timestamp": {
+                  "type": "number"
+                },
+                "timestampIso": {
+                  "type": "string"
+                },
+                "round": {
+                  "type": "number"
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "dialogueKind": {
+                  "type": [
+                    "null",
+                    "string"
+                  ]
+                },
+                "speaker": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MatchTranscriptSpeakerDto"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "audience": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/MatchTranscriptAudienceDto"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "safeContext": {
+                  "anyOf": [
+                    {
+                      "description": "Versioned viewer-safe dialogue context stored on modern transcript rows.",
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "number",
+                          "const": 1
+                        },
+                        "roomId": {
+                          "type": "number"
+                        },
+                        "allianceId": {
+                          "type": "string"
+                        },
+                        "scheduleId": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "window": {
+                          "type": "string"
+                        },
+                        "sessionAudiencePlayerIds": {
+                          "description": "Session-time membership snapshot for huddles (IDs only).",
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "formalSpeechCorrelationKey": {
+                          "description": "Deterministic formal-speech correlation key shared with accepted public\nspeech events. Enables U6 parity without fuzzy text matching. Optional so\nordinary dialogue and legacy rows remain valid. Not part of product-dialogue\ndigest identity (CanonicalDialogueContextV2 omits it).",
+                          "type": "string"
+                        },
+                        "anonymous": {
+                          "type": "boolean"
+                        },
+                        "presentationPurpose": {
+                          "const": "farewell",
+                          "type": "string"
+                        },
+                        "acceptedBallot": {
+                          "type": "object",
+                          "properties": {
+                            "voterId": {
+                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
+                              "type": "string"
+                            },
+                            "targetId": {
+                              "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
+                              "type": "string"
+                            },
+                            "purpose": {
+                              "enum": [
+                                "eliminate",
+                                "empower",
+                                "winner"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "purpose",
+                            "targetId",
+                            "voterId"
+                          ]
+                        },
+                        "visualScene": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "roomId": {
+                              "$ref": "#/definitions/VisualRoomId"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "roomId"
+                          ]
+                        },
+                        "decisionId": {
+                          "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "version"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "legacyContext": {
+                  "$ref": "#/definitions/MatchTranscriptLegacyContextDto"
+                },
+                "contentTrust": {
+                  "type": "string",
+                  "const": "untrusted_game_authored"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "audience",
+                "authority",
+                "contentTrust",
+                "dialogueKind",
+                "entrySequence",
+                "phase",
+                "retrospectiveSource",
+                "round",
+                "rowId",
+                "safeContext",
+                "scope",
+                "speaker",
+                "text",
+                "timestamp",
+                "timestampIso",
+                "visibility"
+              ]
             }
           },
           "capabilities": {
@@ -1474,6 +1690,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -1778,6 +2033,59 @@
             ]
           },
           {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "speech"
+              },
+              "day": {
+                "type": "number"
+              },
+              "actorId": {
+                "type": "string"
+              },
+              "audience": {
+                "enum": [
+                  "pack",
+                  "public"
+                ],
+                "type": "string"
+              },
+              "text": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "cue": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "purpose": {
+                "type": "string",
+                "const": "retrospective"
+              },
+              "ordinal": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "actorId",
+              "audience",
+              "cue",
+              "day",
+              "kind",
+              "ordinal",
+              "purpose",
+              "text"
+            ]
+          },
+          {
+            "additionalProperties": false,
             "type": "object",
             "properties": {
               "kind": {
@@ -1810,7 +2118,6 @@
                 ]
               }
             },
-            "additionalProperties": false,
             "required": [
               "actorId",
               "audience",
@@ -2254,6 +2561,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2364,6 +2672,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2448,6 +2757,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2537,6 +2847,7 @@
           "JURY_QUESTIONS",
           "CLOSING_ARGUMENTS",
           "JURY_VOTE",
+          "RETROSPECTIVE",
           "END"
         ]
       },
@@ -2580,6 +2891,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2664,6 +2976,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2755,6 +3068,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2866,6 +3180,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -2951,6 +3266,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3031,6 +3347,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3121,6 +3438,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3233,6 +3551,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3329,6 +3648,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3428,6 +3748,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3525,6 +3846,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3619,6 +3941,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3704,6 +4027,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3803,6 +4127,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -3918,6 +4243,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4022,6 +4348,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4112,6 +4439,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4192,6 +4520,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4285,6 +4614,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4569,6 +4899,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4673,6 +5004,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4799,6 +5131,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4884,6 +5217,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -4972,198 +5306,6 @@
           "unknown"
         ],
         "type": "string"
-      },
-      "MatchTranscriptEntryDto": {
-        "description": "Dialogue-only owner transcript entry. Constructed by allowlist only —\nnever by stripping fields from a raw DB/engine row.",
-        "type": "object",
-        "properties": {
-          "authority": {
-            "type": "string",
-            "const": "transcript"
-          },
-          "visibility": {
-            "$ref": "#/definitions/TranscriptVisibilityClass"
-          },
-          "entrySequence": {
-            "type": [
-              "null",
-              "number"
-            ]
-          },
-          "rowId": {
-            "type": "number"
-          },
-          "timestamp": {
-            "type": "number"
-          },
-          "timestampIso": {
-            "type": "string"
-          },
-          "round": {
-            "type": "number"
-          },
-          "phase": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "dialogueKind": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "speaker": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/MatchTranscriptSpeakerDto"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "audience": {
-            "anyOf": [
-              {
-                "$ref": "#/definitions/MatchTranscriptAudienceDto"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "text": {
-            "type": "string"
-          },
-          "safeContext": {
-            "anyOf": [
-              {
-                "description": "Versioned viewer-safe dialogue context stored on modern transcript rows.",
-                "type": "object",
-                "properties": {
-                  "version": {
-                    "type": "number",
-                    "const": 1
-                  },
-                  "roomId": {
-                    "type": "number"
-                  },
-                  "allianceId": {
-                    "type": "string"
-                  },
-                  "scheduleId": {
-                    "type": "string"
-                  },
-                  "sessionId": {
-                    "type": "string"
-                  },
-                  "window": {
-                    "type": "string"
-                  },
-                  "sessionAudiencePlayerIds": {
-                    "description": "Session-time membership snapshot for huddles (IDs only).",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "formalSpeechCorrelationKey": {
-                    "description": "Deterministic formal-speech correlation key shared with accepted public\nspeech events. Enables U6 parity without fuzzy text matching. Optional so\nordinary dialogue and legacy rows remain valid. Not part of product-dialogue\ndigest identity (CanonicalDialogueContextV2 omits it).",
-                    "type": "string"
-                  },
-                  "anonymous": {
-                    "type": "boolean"
-                  },
-                  "presentationPurpose": {
-                    "const": "farewell",
-                    "type": "string"
-                  },
-                  "acceptedBallot": {
-                    "type": "object",
-                    "properties": {
-                      "voterId": {
-                        "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
-                        "type": "string"
-                      },
-                      "targetId": {
-                        "description": "Influence Game - Core Types\n\nStandalone prototype types — no ElizaOS dependency.",
-                        "type": "string"
-                      },
-                      "purpose": {
-                        "enum": [
-                          "eliminate",
-                          "empower",
-                          "winner"
-                        ],
-                        "type": "string"
-                      }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                      "purpose",
-                      "targetId",
-                      "voterId"
-                    ]
-                  },
-                  "visualScene": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "roomId": {
-                        "$ref": "#/definitions/VisualRoomId"
-                      }
-                    },
-                    "additionalProperties": false,
-                    "required": [
-                      "id",
-                      "roomId"
-                    ]
-                  },
-                  "decisionId": {
-                    "description": "Durable private-decision id for narrative correlation. Optional; forward-path\nonly. Outside product-dialogue digests. Not exposed on match-transcript DTOs.",
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false,
-                "required": [
-                  "version"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "legacyContext": {
-            "$ref": "#/definitions/MatchTranscriptLegacyContextDto"
-          },
-          "contentTrust": {
-            "type": "string",
-            "const": "untrusted_game_authored"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "audience",
-          "authority",
-          "contentTrust",
-          "dialogueKind",
-          "entrySequence",
-          "phase",
-          "round",
-          "rowId",
-          "safeContext",
-          "scope",
-          "speaker",
-          "text",
-          "timestamp",
-          "timestampIso",
-          "visibility"
-        ]
       },
       "TranscriptVisibilityClass": {
         "enum": [
@@ -5261,6 +5403,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -5503,6 +5647,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -5845,6 +6028,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -5902,7 +6087,7 @@
                   },
                   "schemaVersion": {
                     "type": "number",
-                    "const": 2
+                    "const": 3
                   },
                   "game": {
                     "type": "object",
@@ -5944,6 +6129,9 @@
                   },
                   "results": {
                     "$ref": "#/definitions/CompletedGameResultsRead"
+                  },
+                  "retrospective": {
+                    "$ref": "#/definitions/RetrospectiveProgress"
                   }
                 },
                 "additionalProperties": false,
@@ -5952,6 +6140,7 @@
                   "gameKind",
                   "ok",
                   "results",
+                  "retrospective",
                   "schemaVersion"
                 ]
               },
@@ -5968,7 +6157,7 @@
                   },
                   "schemaVersion": {
                     "type": "number",
-                    "const": 1
+                    "const": 2
                   },
                   "game": {
                     "type": "object",
@@ -5980,8 +6169,7 @@
                         "type": "string"
                       },
                       "status": {
-                        "type": "string",
-                        "const": "completed"
+                        "$ref": "#/definitions/GameStatus"
                       },
                       "completedAt": {
                         "type": [
@@ -6078,7 +6266,7 @@
                       },
                       "rulesVersion": {
                         "type": "number",
-                        "const": 7
+                        "const": 8
                       },
                       "day": {
                         "type": "number"
@@ -6109,6 +6297,9 @@
                       "rulesVersion",
                       "source"
                     ]
+                  },
+                  "retrospective": {
+                    "$ref": "#/definitions/RetrospectiveProgress"
                   }
                 },
                 "additionalProperties": false,
@@ -6117,6 +6308,7 @@
                   "gameKind",
                   "ok",
                   "results",
+                  "retrospective",
                   "schemaVersion"
                 ]
               }
@@ -6148,6 +6340,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -6429,6 +6660,9 @@
               "player.last_message_recorded",
               "power.action_set",
               "power.candidates_resolved",
+              "retrospective.completed",
+              "retrospective.started",
+              "retrospective.statement_recorded",
               "round.result_recorded",
               "round.started",
               "shields.expired",
@@ -6799,6 +7033,7 @@
                   "POWER",
                   "PRE_COUNCIL_HUDDLE",
                   "PRE_VOTE_HUDDLE",
+                  "RETROSPECTIVE",
                   "REVEAL",
                   "RUMOR",
                   "VOTE",
@@ -8695,6 +8930,80 @@
           "signature"
         ]
       },
+      "RetrospectiveProgress": {
+        "description": "Public progress from an already validated canonical prefix; never the private dossier.",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/RetrospectiveOutcomeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "in_progress",
+              "pending",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "statementCount": {
+            "type": "number"
+          },
+          "requiredStatements": {
+            "type": "number"
+          },
+          "nextActorId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "nextActorId",
+          "outcome",
+          "requiredStatements",
+          "statementCount",
+          "status"
+        ]
+      },
+      "RetrospectiveOutcomeSource": {
+        "description": "Exact canonical outcome event, distinct from the eventual final event head.",
+        "type": "object",
+        "properties": {
+          "gameId": {
+            "type": "string"
+          },
+          "gameKind": {
+            "enum": [
+              "influence",
+              "werewolf"
+            ],
+            "type": "string"
+          },
+          "eventSequence": {
+            "type": "number"
+          },
+          "eventHash": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "eventHash",
+          "eventSequence",
+          "gameId",
+          "gameKind"
+        ]
+      },
       "EpisodePresentation": {
         "type": "object",
         "properties": {
@@ -8789,7 +9098,6 @@
         ]
       },
       "WerewolfRole": {
-        "description": "Werewolf owns its rules and event vocabulary; Influence phases do not apply.",
         "enum": [
           "doctor",
           "seer",
@@ -9072,12 +9380,16 @@
     },
     "$schema": "http://json-schema.org/draft-07/schema#"
   },
-  "HouseCutsRead": {
+  "HouseRetrospectiveRead": {
     "anyOf": [
       {
         "additionalProperties": false,
         "type": "object",
         "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
           "game": {
             "type": "object",
             "properties": {
@@ -9087,47 +9399,163 @@
               "slug": {
                 "type": "string"
               },
-              "kind": {
+              "gameKind": {
                 "enum": [
                   "influence",
                   "werewolf"
                 ],
                 "type": "string"
+              },
+              "status": {
+                "$ref": "#/definitions/GameStatus"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "href": {
+                "type": "string"
               }
             },
             "additionalProperties": false,
             "required": [
+              "createdAt",
+              "gameKind",
+              "href",
               "id",
-              "kind",
-              "slug"
+              "slug",
+              "status"
             ]
           },
-          "audience": {
+          "gameKind": {
             "enum": [
-              "mystery",
-              "omniscient",
-              "public"
+              "influence",
+              "werewolf"
             ],
             "type": "string"
           },
-          "status": {
-            "enum": [
-              "failed",
-              "not_prepared",
-              "pending",
-              "ready"
-            ],
-            "type": "string"
+          "outcome": {
+            "$ref": "#/definitions/RetrospectiveOutcomeSource"
           },
-          "publication": {
+          "source": {
+            "type": "object",
+            "properties": {
+              "sequence": {
+                "type": "number"
+              },
+              "hash": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "hash",
+              "sequence"
+            ]
+          },
+          "initialized": {
+            "type": "boolean"
+          },
+          "progress": {
+            "$ref": "#/definitions/RetrospectiveProgress"
+          },
+          "speakers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/Speaker"
+            }
+          },
+          "statements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actorId": {
+                  "type": "string"
+                },
+                "ordinal": {
+                  "type": "number"
+                },
+                "eventSequence": {
+                  "type": "number"
+                },
+                "speech": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "actorId",
+                "eventSequence",
+                "href",
+                "ordinal",
+                "speech"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pollCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recovery": {
             "anyOf": [
               {
-                "$ref": "#/definitions/HouseCutsPublication"
+                "type": "object",
+                "properties": {
+                  "expectedHead": {
+                    "type": "object",
+                    "properties": {
+                      "sequence": {
+                        "type": "number"
+                      },
+                      "hash": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "required": [
+                      "hash",
+                      "sequence"
+                    ]
+                  },
+                  "expectedFailureId": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "reasonCode": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "expectedFailureId",
+                  "expectedHead",
+                  "reasonCode"
+                ]
               },
               {
                 "type": "null"
               }
             ]
+          },
+          "resultsHref": {
+            "type": "string"
+          },
+          "contentTrust": {
+            "type": "string",
+            "const": "untrusted_game_authored"
           },
           "followUps": {
             "type": "array",
@@ -9137,10 +9565,20 @@
           }
         },
         "required": [
-          "audience",
+          "contentTrust",
           "game",
-          "publication",
-          "status"
+          "gameKind",
+          "initialized",
+          "nextCursor",
+          "outcome",
+          "pollCursor",
+          "progress",
+          "recovery",
+          "resultsHref",
+          "schemaVersion",
+          "source",
+          "speakers",
+          "statements"
         ]
       },
       {
@@ -9153,6 +9591,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -9182,100 +9622,75 @@
       }
     ],
     "definitions": {
-      "HouseCutsPublication": {
+      "GameStatus": {
+        "enum": [
+          "cancelled",
+          "completed",
+          "in_progress",
+          "suspended",
+          "waiting"
+        ],
+        "type": "string"
+      },
+      "RetrospectiveOutcomeSource": {
+        "description": "Exact canonical outcome event, distinct from the eventual final event head.",
         "type": "object",
         "properties": {
-          "version": {
+          "gameId": {
             "type": "string"
           },
-          "audience": {
+          "gameKind": {
             "enum": [
-              "mystery",
-              "omniscient",
-              "public"
+              "influence",
+              "werewolf"
             ],
             "type": "string"
           },
-          "cuts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/definitions/PublishedHouseCut"
-            }
+          "eventSequence": {
+            "type": "number"
+          },
+          "eventHash": {
+            "type": "string"
           }
         },
         "additionalProperties": false,
         "required": [
-          "audience",
-          "cuts",
-          "version"
+          "eventHash",
+          "eventSequence",
+          "gameId",
+          "gameKind"
         ]
       },
-      "PublishedHouseCut": {
+      "RetrospectiveProgress": {
+        "description": "Public progress from an already validated canonical prefix; never the private dossier.",
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "context": {
-            "type": "string"
-          },
-          "angle": {
-            "type": "string"
-          },
-          "payoff": {
-            "type": [
-              "null",
-              "string"
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/RetrospectiveOutcomeSource"
+              },
+              {
+                "type": "null"
+              }
             ]
           },
-          "quotes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "text": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "text"
-              ]
-            }
+          "status": {
+            "enum": [
+              "completed",
+              "in_progress",
+              "pending",
+              "unavailable"
+            ],
+            "type": "string"
           },
-          "participants": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false,
-              "required": [
-                "id",
-                "name"
-              ]
-            }
+          "statementCount": {
+            "type": "number"
           },
-          "sourceRefs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "requiredStatements": {
+            "type": "number"
           },
-          "replayHref": {
+          "nextActorId": {
             "type": [
               "null",
               "string"
@@ -9284,19 +9699,163 @@
         },
         "additionalProperties": false,
         "required": [
-          "angle",
-          "context",
-          "id",
-          "participants",
-          "payoff",
-          "quotes",
-          "replayHref",
-          "sourceRefs",
-          "title"
+          "nextActorId",
+          "outcome",
+          "requiredStatements",
+          "statementCount",
+          "status"
+        ]
+      },
+      "Speaker": {
+        "type": "object",
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "number"
+          },
+          "avatarUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "part": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "gameKind": {
+                    "type": "string",
+                    "const": "influence"
+                  },
+                  "won": {
+                    "type": "boolean"
+                  },
+                  "eliminatedRound": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "eliminatedRound",
+                  "gameKind",
+                  "won"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "gameKind": {
+                    "type": "string",
+                    "const": "werewolf"
+                  },
+                  "role": {
+                    "enum": [
+                      "doctor",
+                      "seer",
+                      "villager",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "won": {
+                    "type": "boolean"
+                  },
+                  "alive": {
+                    "type": "boolean"
+                  },
+                  "eliminatedDay": {
+                    "type": [
+                      "null",
+                      "number"
+                    ]
+                  },
+                  "eliminatedBy": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "night",
+                          "vote"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "alive",
+                  "eliminatedBy",
+                  "eliminatedDay",
+                  "gameKind",
+                  "role",
+                  "won"
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "actorId",
+          "avatarUrl",
+          "name",
+          "ordinal",
+          "part"
         ]
       },
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -9495,6 +10054,802 @@
     },
     "$schema": "http://json-schema.org/draft-07/schema#"
   },
+  "HouseRetrospectiveResume": {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "status": {
+            "enum": [
+              "admission_closed",
+              "conflict",
+              "entry_too_large",
+              "invalid_cursor",
+              "invalid_input",
+              "not_accessible",
+              "not_completed",
+              "not_started",
+              "unavailable",
+              "unsupported_game_kind"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "schemaVersion",
+          "status"
+        ]
+      },
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "gameKind": {
+            "enum": [
+              "influence",
+              "werewolf"
+            ],
+            "type": "string"
+          },
+          "gameId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/definitions/GameStatus"
+          },
+          "alreadyResumed": {
+            "type": "boolean",
+            "default": true
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "alreadyResumed",
+          "gameId",
+          "gameKind",
+          "schemaVersion",
+          "status"
+        ]
+      }
+    ],
+    "definitions": {
+      "HouseFollowUp": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseInspectionInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_thinking"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_results"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "get_rules"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameKind"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          }
+        ]
+      },
+      "HouseInspectionInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "current",
+              "replay"
+            ],
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "gameIdOrSlug"
+        ]
+      },
+      "HouseThinkingInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "audience",
+          "gameIdOrSlug",
+          "position"
+        ]
+      },
+      "GameStatus": {
+        "enum": [
+          "cancelled",
+          "completed",
+          "in_progress",
+          "suspended",
+          "waiting"
+        ],
+        "type": "string"
+      }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "HouseCutsRead": {
+    "anyOf": [
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "status": {
+            "enum": [
+              "admission_closed",
+              "conflict",
+              "entry_too_large",
+              "invalid_cursor",
+              "invalid_input",
+              "not_accessible",
+              "not_completed",
+              "not_started",
+              "unavailable",
+              "unsupported_game_kind"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "schemaVersion",
+          "status"
+        ]
+      },
+      {
+        "additionalProperties": false,
+        "type": "object",
+        "properties": {
+          "game": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "influence",
+                  "werewolf"
+                ],
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "slug"
+            ]
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "failed",
+              "not_prepared",
+              "pending",
+              "ready"
+            ],
+            "type": "string"
+          },
+          "publication": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/HouseCutsPublication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/HouseFollowUp"
+            }
+          }
+        },
+        "required": [
+          "audience",
+          "game",
+          "publication",
+          "status"
+        ]
+      }
+    ],
+    "definitions": {
+      "HouseFollowUp": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseInspectionInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_thinking"
+              },
+              "arguments": {
+                "$ref": "#/definitions/HouseThinkingInput"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_cuts"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "audience": {
+                    "enum": [
+                      "mystery",
+                      "omniscient",
+                      "public"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_results"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "get_rules"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameKind"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          }
+        ]
+      },
+      "HouseInspectionInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "view": {
+            "enum": [
+              "current",
+              "replay"
+            ],
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "gameIdOrSlug"
+        ]
+      },
+      "HouseThinkingInput": {
+        "type": "object",
+        "properties": {
+          "gameIdOrSlug": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "audience",
+          "gameIdOrSlug",
+          "position"
+        ]
+      },
+      "HouseCutsPublication": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "audience": {
+            "enum": [
+              "mystery",
+              "omniscient",
+              "public"
+            ],
+            "type": "string"
+          },
+          "cuts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/PublishedHouseCut"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "audience",
+          "cuts",
+          "version"
+        ]
+      },
+      "PublishedHouseCut": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "angle": {
+            "type": "string"
+          },
+          "payoff": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "quotes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "text"
+              ]
+            }
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          },
+          "sourceRefs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replayHref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "angle",
+          "context",
+          "id",
+          "participants",
+          "payoff",
+          "quotes",
+          "replayHref",
+          "sourceRefs",
+          "title"
+        ]
+      }
+    },
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
   "HouseCatalogRead": {
     "anyOf": [
       {
@@ -9507,6 +10862,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -9601,6 +10958,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -9829,6 +11225,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -9935,6 +11333,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -10217,6 +11654,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -10286,6 +11725,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {
@@ -10523,6 +12001,8 @@
           },
           "status": {
             "enum": [
+              "admission_closed",
+              "conflict",
               "entry_too_large",
               "invalid_cursor",
               "invalid_input",
@@ -10580,6 +12060,45 @@
     "definitions": {
       "HouseFollowUp": {
         "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "tool": {
+                "type": "string",
+                "const": "read_game_retrospective"
+              },
+              "arguments": {
+                "type": "object",
+                "properties": {
+                  "gameIdOrSlug": {
+                    "type": "string"
+                  },
+                  "gameKind": {
+                    "enum": [
+                      "influence",
+                      "werewolf"
+                    ],
+                    "type": "string"
+                  },
+                  "cursor": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "gameIdOrSlug"
+                ]
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "arguments",
+              "tool"
+            ]
+          },
           {
             "type": "object",
             "properties": {

@@ -699,3 +699,7 @@ access is the authority boundary. The audit contains label, account ID, request
 ID, timestamp and this limitation, without credentials. This CLI is not emergency
 recovery; resetting the marker or restoring lost sysop authority requires a
 separately approved operator recovery procedure.
+
+## Retrospective contract layer
+
+[RT-01](game-retrospective-contract.md) adds an immutable private input table and validated retrospective records. Current runners/settlement remain at their existing boundary until later tasks are integrated; this intermediate branch is not a retrospective release. No new worker or queue is introduced. Provider generation, recovery controls, early result reads and completion accounting are subsequent tasks.

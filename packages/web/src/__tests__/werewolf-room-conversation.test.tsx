@@ -6,6 +6,7 @@ import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
+import {SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
 const original = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -28,7 +29,7 @@ function discussion(): WerewolfWatchMoment {
   return {
     cursor: 20, chapterId: "day:2", sceneId: "day:2:thread:1", mediaKey: null,
     snapshot: {
-      gameId: "room", rulesVersion: 7, preset: "two_wolves", audience: "mystery", day: 2,
+      gameId: "room", rulesVersion: 8, preset: "two_wolves", audience: "mystery", day: 2,
       maxDays: 5, phase: "day", cursor: 20, discussion: null, outcome: null,
       players: [
         {id: "a", name: "Arden", avatarUrl: "/arden.png", personaKey: "observer", alive: true},
@@ -122,4 +123,29 @@ test("introductions stay solo and a broken room portrait settles its named fallb
   fireEvent.load(image);
   expect(ready).toHaveBeenCalledWith(true);
   expect(view.getByText("Arden, who do you suspect?")).not.toBeNull();
+});
+
+test("a dead contestant's retrospective stays solo after the result, including with a published scene", () => {
+  const moment = discussion();
+  moment.chapterId = "retrospective";
+  moment.snapshot.phase = "retrospective";
+  moment.snapshot.outcome = {faction: "village", winnerIds: ["a", "b", "d"], reason: "wolves_eliminated"};
+  moment.snapshot.players = moment.snapshot.players.map(player => ({...player,
+    role: player.id === "c" ? "werewolf" : "villager",
+    elimination: player.id === "c" ? {day: 2, kind: "vote"} : null,
+  }));
+  moment.entry = {kind: "speech", day: 2, audience: "public", actorId: "c",
+    purpose: "retrospective", ordinal: 0, text: "You caught me. I should have defended my vote.", cue: null};
+  const scene: AcceptedVisualScene = {
+    id: "village", roomId: "mingle-1", version: 1, imageUrl: "/village.png", annotatedImageUrl: "",
+    participantIds: ["a", "b", "c", "d"],
+    anchors: [{playerId: "c", label: 1, head: {x: .5, y: .5, width: .1, height: .1}, confidence: "clear"}],
+  };
+  const view = render(<WerewolfContentFrame cue={werewolfMomentCues(moment)[0]!} scene={scene}
+    elapsed={SOLO_READ_START_MS} reduced />);
+  expect(view.container.querySelector("[data-portrait-room]")).toBeNull();
+  expect(view.getByRole("img", {name: "Vesper"})).not.toBeNull();
+  expect(view.getByText("You caught me. I should have defended my vote.")).not.toBeNull();
+  expect(view.getByText("werewolf")).not.toBeNull();
+  expect(view.getByText("Retrospective · Defeated faction · Voted out · Day 2")).not.toBeNull();
 });

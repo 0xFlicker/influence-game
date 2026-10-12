@@ -3,11 +3,32 @@ import { buildInfluenceProductionSources, type InfluenceProductionFrame } from "
 import { buildWerewolfProductionSources } from "./werewolf-source";
 import { assembleProductionCatalog, selectProductionMoments } from "./index";
 import { createFormatKernelViewerScenario } from "../fixtures/format-kernel-viewer";
-import { werewolfResultsFixture } from "../fixtures/werewolf-results";
+import { completedWerewolfResultsFixture, werewolfResultsFixture } from "../fixtures/werewolf-results";
 import { werewolfThinkingActions } from "../werewolf/thinking";
 import { projectWerewolfProductionProvenance, projectWerewolfWatch } from "../werewolf/watch";
 import { Phase } from "../types";
 import type { ViewerDecisionEvent } from "../viewer-decision-events";
+
+test("retrospectives are ordinary speech moments with canonical provenance and independent explicit cuts", async () => {
+  const events = await completedWerewolfResultsFixture("village", "rt11-wolf");
+  for (const audience of ["mystery", "omniscient"] as const) {
+    const window = projectWerewolfWatch(events, audience), provenance = projectWerewolfProductionProvenance(events, audience);
+    const catalog = assembleProductionCatalog({gameId: window.gameId, gameKind: "werewolf", audience,
+      sources: buildWerewolfProductionSources({gameId: window.gameId, audience, moments: window.moments, provenance, thoughts: [], opening: false})});
+    const retrospective = catalog.moments.filter(moment => moment.purpose === "retrospective"), result = catalog.moments.find(moment => moment.kind === "result")!;
+    expect(retrospective).toHaveLength(6);
+    expect(retrospective.every(moment => moment.kind === "speech" && moment.defaultIncluded && moment.order.anchor > result.order.anchor)).toBeTrue();
+    expect(retrospective.map(moment => moment.retrospectiveSource!.ordinal)).toEqual([0,1,2,3,4,5]);
+    const annotations = Object.fromEntries(retrospective.map(moment => [moment.id, {cut: "retrospective"}]));
+    expect(selectProductionMoments(catalog, {mode: "tagged", thinking: false, predicate: {cut: "retrospective"}}, annotations)).toEqual(retrospective);
+    expect(selectProductionMoments(catalog, {mode: "ids", thinking: false, ids: [...retrospective].reverse().map(moment => moment.id)})).toEqual(retrospective);
+  }
+  const transcripts = [{id: 10, timestamp: 10, round: 1, phase: "RETROSPECTIVE", scope: "public", fromPlayerId: "atlas", retrospectiveSource: {eventSequence: 10, ordinal: 0}}];
+  const sources = buildInfluenceProductionSources({gameId: "rt11-influence", gameKernel: "format", frames: [], transcripts});
+  const catalog = assembleProductionCatalog({gameId: "rt11-influence", gameKind: "influence", audience: "public", sources});
+  expect(catalog.moments).toHaveLength(1); expect(catalog.moments[0]).toMatchObject({kind: "speech", purpose: "retrospective", actorId: "atlas", retrospectiveSource: {eventSequence: 10, ordinal: 0}});
+  expect(() => buildInfluenceProductionSources({gameId: "rt11-influence", gameKernel: "format", frames: [], transcripts: [{...transcripts[0]!, retrospectiveSource: undefined}]})).toThrow("canonical provenance");
+});
 
 test("classic historical prose subparts stay inside a stable transcript-backed moment", () => {
   const transcripts = [

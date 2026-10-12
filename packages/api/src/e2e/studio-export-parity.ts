@@ -13,9 +13,10 @@ interface PreparedParityManifest {
 /** Uses the browser's actual frozen selection and the harness's existing local API.
  * The caller retains its browser/API/database until this bounded proof completes.
  */
-export async function verifyStudioEncodedParity({descriptor, token, origin, output, captureFrame}: {
+export async function verifyStudioEncodedParity({descriptor, token, origin, output, captureFrame, purpose = "thinking"}: {
   descriptor:ProductionExportDescriptor;token:string;origin:string;output:string;
   captureFrame:(frame:number)=>Promise<Uint8Array>;
+  purpose?:"thinking"|"retrospective";
 }) {
   await mkdir(output,{recursive:true});
   const repoRoot = resolve(import.meta.dir,"../../../.."),selection = join(output,"studio.selection.json"),video = join(output,"studio.mp4");
@@ -30,7 +31,9 @@ export async function verifyStudioEncodedParity({descriptor, token, origin, outp
     child.once("error",error=>{clearTimeout(timer);reject(error);});
     child.once("close",code=>{
       clearTimeout(timer);
-      if(child.pid) try {process.kill(-child.pid,"SIGKILL");} catch(error) {
+      // Successful commands own browser teardown. Do not signal a stale group ID
+      // after exit; it may no longer belong to this child.
+      if(code!==0 && child.pid) try {process.kill(-child.pid,"SIGKILL");} catch(error) {
         if(!(error instanceof Error && "code" in error && error.code === "ESRCH")) {reject(error);return;}
       }
       if(code===0) accept();else reject(new Error(`Studio encoded proof exited ${code}: ${failure}`));
@@ -42,10 +45,14 @@ export async function verifyStudioEncodedParity({descriptor, token, origin, outp
     || manifest.boundary.selectionHash!==descriptor.hash || manifest.cues.some(cue=>!descriptor.momentIds.includes(cue.momentId ?? "")))
     throw new Error("Encoded bundle differs from the Studio's frozen IDs or settings");
   const first = manifest.timeline[0]!,thought = first.thought;
-  if(!thought || manifest.cues.some(cue=>cue.picture.kind!=="thinking" || cue.speech!==null) || manifest.audio.clips.length)
+  if(purpose === "thinking" && (!thought || manifest.cues.some(cue=>cue.picture.kind!=="thinking" || cue.speech!==null) || manifest.audio.clips.length))
     throw new Error("Thought-only Studio bridge leaked omitted speech or audio");
-  const frames = [...new Set([thought.enterMs/2,thought.readAtMs+500,(thought.returnAtMs+thought.duration)/2]
-    .map(offset=>Math.min(manifest.range.untilFrame-1,Math.ceil((first.startMs+thought.insertAt+offset)*manifest.fps/1000))))];
+  if(purpose === "retrospective" && (manifest.cues.some(cue=>!cue.speech || !["influence","werewolf"].includes(cue.picture.kind)) || manifest.audio.clips.length))
+    throw new Error("Retrospective Studio bridge lost selected speech or added unselected audio");
+  const offsets = purpose === "thinking" ? [thought!.enterMs/2,thought!.readAtMs+500,(thought!.returnAtMs+thought!.duration)/2]
+    : [1000,manifest.range.untilFrame/manifest.fps*500,manifest.range.untilFrame/manifest.fps*1000-1000];
+  const frames = [...new Set(offsets
+    .map(offset=>Math.min(manifest.range.untilFrame-1,Math.ceil((first.startMs+(thought?.insertAt ?? 0)+offset)*manifest.fps/1000))))];
   const differences: {frame:number;meanDifference:number;studio:string;encoded:string}[] = [];
   for(const frame of frames) {
     const studio = join(output,`studio-${frame}.png`),encoded = join(output,`encoded-${frame}.png`);

@@ -73,7 +73,8 @@ function resultsFixture(): CompletedGameResultsResponse {
   return {
     ok: true,
     gameKind: "influence",
-    schemaVersion: 1,
+    schemaVersion: 3,
+    retrospective: { outcome: null, status: "completed", statementCount: results.players.length, requiredStatements: results.players.length, nextActorId: null },
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",

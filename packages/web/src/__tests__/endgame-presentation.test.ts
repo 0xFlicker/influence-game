@@ -40,6 +40,20 @@ test("jury ballots precede the winner and cannot be confused with elimination vo
   expect(visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cues[2]!, null, players).beat).toMatchObject({ kind: "winner", winner: { id: "Ione" } });
 });
 
+test("winner holds end at the retrospective boundary and canonical parts survive backward seeks", () => {
+  const jury = frame({ ...base, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: {votes: {}, winnerId: "Ione"} });
+  const retrospective: TranscriptEntry = {id: 40, gameId: "endgame", round: 4, phase: Phase.RETROSPECTIVE, firstDurableEventSequence: 40,
+    fromPlayerId: "Arden", fromPlayerName: "Arden", scope: "public", toPlayerIds: null, text: "I now understand why I left.", timestamp: 40};
+  const scene = {id: "retrospective", round: 4, phase: Phase.RETROSPECTIVE, roomType: "endgame" as const, messages: [retrospective]};
+  const tail = buildClassicPresentationCues([scene], [ardenOut, jury], players);
+  const winner = buildEndgamePresentationCues([jury]).at(-1)!;
+  expect(compileRevealedWinnerCues([winner, ...tail])).toEqual([winner, null]);
+  const data = {enabled: false, status: null, portraits: {}, scenes: []};
+  expect(visualWatchPresentation(data, tail[0]!, retrospective, players, [], [ardenOut, jury]).beat).toMatchObject({purpose: "Retrospective", caption: "Retrospective · Eliminated · Round 3"});
+  expect(visualWatchPresentation(data, tail[0]!, {...retrospective, fromPlayerId: "Ione"}, players, [], [ardenOut, jury]).beat).toMatchObject({caption: "Retrospective · Winner"});
+  expect(visualWatchPresentation(data, winner, null, players).beat?.kind).toBe("winner");
+});
+
 test("winner standings use canonical exits and remain hidden until the result cue", () => {
   const jury = frame({ ...base, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: { votes: { Arden: "Ione", Marnie: "Kaiya" }, winnerId: "Ione" } });
   const cues = buildEndgamePresentationCues([finalFour, ardenOut, finalThree, marnieOut, jury]);

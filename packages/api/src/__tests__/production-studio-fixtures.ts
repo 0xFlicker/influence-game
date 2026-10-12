@@ -1,21 +1,20 @@
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { Phase } from "@influence/engine";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { seedFormatAwareGameViewerFixtures } from "../e2e/format-aware-game-viewer-fixture.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
-import { appendGameEvents } from "../services/game-events.js";
 import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } from "../services/game-turn-commit.js";
 import { readInfluenceProductionSource } from "../services/influence-production-source.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { acceptVisualScene, prepareVisualScene, storeVisualArtifact } from "../services/visual-scene-store.js";
 import { readWerewolfProductionSource } from "../services/werewolf-production-source.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
-import { insertOwner, withJuryWinner } from "./durable-run-test-utils.js";
+import { insertOwner } from "./durable-run-test-utils.js";
 
 /** Provider-free browser/export data. Caller must own an isolated database and
  * lifecycle, or call setupTestDB() before mutations in shared PostgreSQL tests.
@@ -30,15 +29,12 @@ export async function seedProductionStudioFixture(db: DrizzleDB) {
   await grantTestAuthority(db, producerId, [], "producer");
   await grantTestAuthority(db, producerId, ["view_admin", "start_game", "manage_postgame_media"], "studio-fixture-production-operator");
   await grantTestAuthority(db, legacyId, ["view_admin", "start_game"], "studio-legacy-visual");
-  await seedFormatAwareGameViewerFixtures(db);
+  // Reserve the two original thought/speech entries added below. The shared
+  // seed already supplies one complete, canonically linked retrospective tail.
+  await seedFormatAwareGameViewerFixtures(db, 3);
   const gameId = "e2e-dark-coral-horn";
   const history = await getPersistedGameEvents(db, gameId), atlas = `${gameId}-atlas`;
-  const [owner] = await db.select().from(schema.gameRunOwners).where(eq(schema.gameRunOwners.gameId, gameId));
-  if (!owner || history.status !== "complete") throw new Error("Production fixture needs the existing trusted format events");
-  await db.update(schema.gameRunOwners).set({ status: "active", closedAt: null }).where(eq(schema.gameRunOwners.id, owner.id));
-  await appendGameEvents(db, { gameId, ownerEpoch: owner.ownerEpoch,
-    events: withJuryWinner(history.events.map(event => event.envelope), atlas).slice(history.events.length) });
-  await db.update(schema.gameRunOwners).set({ status: "closed", closedAt: new Date().toISOString() }).where(eq(schema.gameRunOwners.id, owner.id));
+  if (history.status !== "complete") throw new Error("Production fixture needs the existing trusted format events");
   const seats = await db.select({ id: schema.gamePlayers.id, persona: schema.gamePlayers.persona }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, gameId));
   const portraitImage = await readFile(new URL("../../../web/public/avatars/personas/observer.png", import.meta.url));
   const portraitId = await storeVisualArtifact(db, gameId, portraitImage);

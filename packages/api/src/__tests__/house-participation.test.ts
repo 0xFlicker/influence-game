@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf } from "@influence/engine/werewolf";
 import type { HouseParticipation } from "@influence/engine/house-participation";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -23,8 +23,8 @@ beforeEach(async () => {
     {id:"other-agent",userId:"other",name:"Other",personality:"Other"},
   ]);
 });
-async function wolf(id:string, scenario:Parameters<typeof werewolfResultsFixture>[0]="village", visibility="public", date="2026-10-05T12:00:00.000Z", allSeats=false) {
-  const events = await werewolfResultsFixture(scenario,id);
+async function wolf(id:string, scenario:Parameters<typeof completedWerewolfResultsFixture>[0]="village", visibility="public", date="2026-10-05T12:00:00.000Z", allSeats=false) {
+  const events = await completedWerewolfResultsFixture(scenario,id);
   const opening = events[0]!;
   if (opening.type !== "werewolf.started") throw new Error("fixture");
   const end = replayWerewolf(events);
@@ -50,7 +50,7 @@ test("owner/public routes share frozen participation, enforce discovery visibili
   const history = await owner.json() as HouseParticipation[];
   expect(history.map(h=>h.gameSlug)).toEqual(["unlisted","public","influence"]);
   expect(history[1]).toMatchObject({gameKind:"werewolf",result:{outcome:"win",faction:"village",alive:false}});
-  expect(history[2]).toMatchObject({gameKind:"influence",result:{outcome:"win",placement:1,totalPoints:null}});
+  expect(history[2]).toMatchObject({gameKind:"influence",result:null}); // A terminal row alone is not canonical outcome evidence.
   expect(await db.select().from(schema.gamePlayers)).toHaveLength(1); // no Werewolf lobby seats
   const response = await createPublicPlayerRoutes(db).request("/api/players/history-owner");
   expect(response.status).toBe(200);
@@ -92,10 +92,10 @@ test("invalid terminal evidence is unavailable and unfinished games never become
     expect(await readHouseParticipation(db,"owner")).toEqual([]);
   }
 });
-test("historical Influence nonwinners do not receive invented last place", async () => {
+test("historical Influence without canonical evidence does not invent an outcome or placement", async () => {
   await influence("historical","2026-10-01T00:00:00.000Z");
   await db.insert(schema.gamePlayers).values({id:"winner",gameId:"historical",persona:JSON.stringify({name:"Winner"}),agentConfig:"{}"});
   await db.update(schema.gameResults).set({winnerId:"winner"}).where(eq(schema.gameResults.gameId,"historical"));
   const rows=await readHouseParticipation(db,"owner");
-  expect(rows[0]).toMatchObject({gameKind:"influence",totalPlayers:2,result:{outcome:"loss",placement:null,eliminated:null}});
+  expect(rows[0]).toMatchObject({gameKind:"influence",totalPlayers:2,result:null});
 });

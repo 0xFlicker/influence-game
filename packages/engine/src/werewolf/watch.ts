@@ -40,11 +40,11 @@ function projectWatchHistory(events: readonly WerewolfEvent[], audience: Werewol
       else if (entry.kind === "pack_vote") { sceneId = `${chapterId}:pack:${entry.result.attempt}`; packAttempt = entry.result.attempt + 1; }
       else if (entry.kind === "night") sceneId = `${chapterId}:dawn`;
       else if (entry.kind === "result") sceneId = "ending";
-      else if (entry.kind === "speech") { chapterId = "introduction"; sceneId = "introduction"; }
+      else if (entry.kind === "speech") { chapterId = entry.purpose === "retrospective" ? "retrospective" : "introduction"; sceneId = chapterId; }
       const staging = before ?? state;
       const nightActions = resolvedNightActions(staging, entry, audience);
       if (isWerewolfPlayable(entry) && navigation.at(-1)?.sceneId !== sceneId) {
-        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
+        const label = entry.kind === "discussion" ? `Day ${entry.day} · Thread ${entry.contribution.thread}` : entry.kind === "vote" ? `Day ${entry.day} · Vote` : chapterId === "introduction" ? "Introductions" : chapterId === "retrospective" ? "Retrospective" : chapterId === "ending" ? "Ending" : `Cycle ${entry.day} · ${entry.kind === "night" ? "Dawn" : "Pack"}`;
         for (const [step, action] of nightActions.entries()) {
           const roleLabel = action.kind === "protect" ? "Doctor" : action.kind === "investigate" ? "Seer" : "Hunt";
           navigation.push({cursor, step, chapterId, sceneId: `${chapterId}:${action.kind}`, label: `Night ${entry.day} · ${roleLabel}`});

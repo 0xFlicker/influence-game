@@ -12,7 +12,7 @@ import type { ProductionCatalog } from "@influence/engine/production-moments";
 import type { ProductionExportDescriptor } from "@influence/engine/production-moments/export";
 import { resolveCliApiSession } from "@influence/engine/cli-api-session";
 import { GameState, Phase, type GameTurnIntentV1 } from "@influence/engine";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { schema } from "../db/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
@@ -621,18 +621,29 @@ test.skipIf(!interfaceProof)("Actual Studio interface proves the editing loop on
 
 // Optional encoded proof extends the required browser workflow using this same
 // isolated API/database and Next child. No additional server or provider runs.
-test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen Werewolf thought cut agrees with the encoded movie", async () => {
-  const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${studioFixture.werewolf.id}?audience=omniscient`);
+for (const proof of ["thinking", "influence-retrospective", "werewolf-retrospective"] as const) {
+test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")(`Actual Studio frozen ${proof} cut agrees with the encoded movie`, async () => {
+  const kind = proof === "influence-retrospective" ? "influence" : "werewolf", audience = kind === "influence" ? "public" : "omniscient";
+  const id = studioFixture[kind].id;
+  const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${id}?audience=${audience}`);
   let step = "source";
   try {
     await page.setViewport({width: 1800, height: 1100});
     await page.waitForSelector('[data-composition-frame]');
-    const thoughtRow = await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
-    const thoughtId = await thoughtRow!.evaluate(node => node.closest('[data-moment-id]')!.getAttribute('data-moment-id'));
+    let thoughtId: string | undefined, fromCursor = 1;
+    do {
+      const response = await fetch(`http://127.0.0.1:${api.port}/api/admin/production/games/${id}/source?audience=${audience}&thinking=on&fromCursor=${fromCursor}`, {headers:{Authorization:`Bearer ${studioFixture.producer.token}`}});
+      expect(response.status).toBe(200);
+      const source = await response.json() as {catalog:ProductionCatalog;nextCursor?:number|null};
+      thoughtId = source.catalog.moments.find(moment => proof === "thinking" ? moment.kind === "thinking" : moment.purpose === "retrospective")?.id;
+      if (thoughtId || !source.nextCursor) break;
+      fromCursor = source.nextCursor;
+    } while (true);
+    if (!thoughtId) throw new Error(`Missing ${proof} in the complete canonical catalog`);
     await page.click(`[data-moment-id="${thoughtId}"] button[aria-label="Seek to moment"]`);
     await page.waitForFunction(`document.querySelector('[data-selected-moment]')?.getAttribute('data-selected-moment')===${JSON.stringify(thoughtId)} && document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(thoughtId)}`);
     step = "thought tag";
-    await addStudioTag(page); await clickButton(page, "Save labels");
+    await markStudioLabel(page);
     await page.waitForFunction("document.body.innerText.includes('Saved revision 1')");
     step = "presentation";
     await openStudioDialog(page, "Presentation");
@@ -646,7 +657,7 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
     await chooseStudioOption(page, "Output size", "640 pixels · draft"); await chooseStudioOption(page, "Frames per second", "24 fps");
     await closeStudioDialog(page);
     step = "selected view";
-    await configureStudioCut(page,"Smart","None");
+    await configureStudioCut(page,proof === "thinking" ? "Smart" : "None",proof === "thinking" ? "None" : "Smart");
     await clickButton(page, "Selected cut");
     await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view') === 'cut' && document.querySelector('[data-composition-frame]')");
     // Match the encoded geometry for this comparison only. The ordinary bounded
@@ -654,22 +665,24 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")("Actual Studio's frozen We
     await page.evaluate("(()=>{const stage=document.querySelector('[data-preview-frame]').parentElement;stage.style.flex='none';stage.style.width='642px';stage.style.height='362px';})()");
     await page.waitForFunction("(()=>{const r=document.querySelector('[data-preview-frame]').getBoundingClientRect();return r.width===640 && r.height===360;})()");
     expect(await page.$eval('[data-preview-frame]',node=>({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height}))).toEqual({width:640,height:360});
-    const response = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
+    const frozenResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
     step = "freeze";
     await openStudioDialog(page, "Export selected cut");
     await clickButton(page, "Download selected export");
-    const descriptor = await (await response).json() as ProductionExportDescriptor;
+    const descriptor = await (await frozenResponse).json() as ProductionExportDescriptor;
     await closeStudioDialog(page);
+    expect(descriptor.momentIds).toEqual([thoughtId]);
     expect(descriptor.settings.width).toBe(640); expect(descriptor.settings.fps).toBe(24); expect(descriptor.settings.music).toBe(false);
     step = "encode/parity";
     await verifyStudioEncodedParity({descriptor,token:studioFixture.producer.token,origin:`http://127.0.0.1:${api.port}`,
-      output:await mkdtemp(temporaryPath("production-studio-ui-encoded-proof-")),captureFrame:frame=>captureStudioFrame(page,frame)});
+      output:await mkdtemp(temporaryPath("production-studio-ui-encoded-proof-")),captureFrame:frame=>captureStudioFrame(page,frame),purpose:proof === "thinking" ? "thinking" : "retrospective"});
   } catch (error) {
     console.error(`[Studio encoded: ${step}]`, await page.evaluate("document.body.innerText"));
     await page.screenshot({path:temporaryPath("production-studio-encoded-failure.png")});
     throw error;
   } finally {await page.close();}
 }, 360_000);
+}
 
 test("Moment rows seek readable content while target icons seek the start in both games", async () => {
   for (const fixture of [studioFixture.influence,studioFixture.werewolf]) {
@@ -1439,7 +1452,7 @@ test("Producer preserves exact lost-request controls, reviews and explicitly pub
 }, 120_000);
 
 test("Studio opens, seeks and freezes a Werewolf thought with missing frozen art using the replay fallback", async () => {
-  const id = "studio-werewolf-missing-art", events = await werewolfResultsFixture("saved",id,2);
+  const id = "studio-werewolf-missing-art", events = await completedWerewolfResultsFixture("saved",id,2);
   const started = events.find(event=>event.type==="werewolf.started")!, actor = started.payload.players[0]!;
   actor.agentProfileId = "studio-missing-art-profile"; actor.contentRevisionId = null;
   await database.db.insert(schema.agentProfiles).values({id:actor.agentProfileId,userId:studioFixture.producer.userId,

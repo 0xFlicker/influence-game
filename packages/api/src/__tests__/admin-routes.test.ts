@@ -17,6 +17,7 @@ import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import {
   createCheckpointCapsule,
   createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   enrichCapsuleForV1Candidate,
   insertGame,
   insertOwner,
@@ -133,7 +134,7 @@ async function createPendingSettlementFixture(
   const ownerEpoch = await insertOwner(db, gameId, {
     expiresAt: "2099-01-01T00:00:00.000Z",
   });
-  const events = createCanonicalEventFixture(gameId);
+  const events = createCompletedCanonicalEventFixture(gameId);
   await appendGameEvents(db, { gameId, ownerEpoch, events });
   const finalEvent = events.at(-1)!;
   await captureGameCompletionSettlement(db, {
@@ -245,7 +246,7 @@ describe("producer role seed", () => {
     );
 
     expect(resolved.roles).toEqual(["producer"]);
-    expect(resolved.permissions).toEqual(["manage_game_assets"]);
+    expect(resolved.permissions).toEqual(["manage_game_assets", "resume_game_retrospective"]);
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
     expect(resolved.permissions).not.toContain("retry_game_settlement");

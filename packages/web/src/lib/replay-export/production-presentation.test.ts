@@ -1,5 +1,6 @@
 import {expect,test} from "bun:test";
-import {werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {Phase} from "@influence/engine";
+import {completedWerewolfResultsFixture,werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {projectWerewolfWatch,projectWerewolfProductionProvenance} from "@influence/engine/werewolf/watch";
 import {werewolfThinkingActions} from "@influence/engine/werewolf/thinking";
 import type {WerewolfEvent} from "@influence/engine/werewolf/types";
@@ -8,13 +9,13 @@ import {buildWerewolfProductionSources} from "@influence/engine/production-momen
 import {bindInfluenceProductionPresentation,bindWerewolfProductionPresentation} from "./production-presentation";
 import {buildInfluenceProductionSources} from "@influence/engine/production-moments/influence-source";
 import {createFormatKernelViewerScenario,FORMAT_KERNEL_VIEWER_SCENARIO_IDS} from "@influence/engine/fixtures/format-kernel-viewer";
-import type {GameWatchReplayFrame} from "../api";
+import type {GameWatchReplayFrame,TranscriptEntry,ViewerDecisionEvent} from "../api";
 import {buildExportCues} from "./cues";
 import {compilePresentation} from "./presentation";
 import {parseTimingProfile} from "./timing";
 
 async function fixture(audience:"mystery"|"omniscient") {
-  const events = await werewolfResultsFixture("saved", "production-binding");
+  const events = await completedWerewolfResultsFixture("saved", "production-binding");
   const windows = [];
   let next = 1;
   do {
@@ -49,6 +50,58 @@ test("Werewolf default moment compilation preserves existing full movie coverage
     expect(compiled.cues.map(cue => cue.timing.baseDurationMs)).toEqual(input.base.map(cue => cue.timing.baseDurationMs));
   }
 });
+test("Werewolf full and retrospective-only cuts retain exact speeches, source order and recording timing",async () => {
+  for (const audience of ["mystery","omniscient"] as const) {
+    const input = await fixture(audience), moments = await bindWerewolfProductionPresentation(input);
+    const retrospective = input.catalog.moments.filter(moment => moment.purpose === "retrospective");
+    const count = input.source.windows[0]!.moments.at(-1)!.snapshot.players.length;
+    expect(retrospective).toHaveLength(count);
+    const ids = retrospective.map(moment => moment.id);
+    const cut = compilePresentation({...settings,source:moments,selectedIds:ids});
+    expect(cut.momentIds).toEqual(ids);
+    expect(cut.cues.map(cue => cue.speech?.speakerId)).toEqual(retrospective.map(moment => moment.actorId));
+    expect(cut.cues.every(cue => cue.picture.kind === "werewolf" && cue.picture.cue.moment.entry.kind === "speech"
+      && cue.picture.cue.moment.entry.purpose === "retrospective")).toBeTrue();
+    expect(cut.cues.some(cue => cue.timing.kind === "result")).toBeFalse();
+    const full = compilePresentation({...settings,source:moments,selectedIds:input.catalog.moments
+      .filter(moment => moment.defaultIncluded && moment.kind !== "thinking").map(moment => moment.id)});
+    expect(full.cues.slice(-count).map(cue => cue.speech)).toEqual(cut.cues.map(cue => cue.speech));
+    expect(full.cues.findIndex(cue => cue.timing.kind === "result")).toBeLessThan(full.cues.length-count);
+    const recorded = moments.map(moment => moment.id !== ids[0] ? moment : {...moment,segments:moment.segments.map(cue => ({...cue,
+      timing:{...cue.timing,recording:{assetId:"accepted-voice",durationMs:20_000}}}))});
+    const withVoice = compilePresentation({...settings,source:recorded,selectedIds:ids});
+    expect(withVoice.timeline[0]!.endMs).toBeGreaterThanOrEqual(20_000);
+    expect(withVoice.cues[0]!.speech).toEqual(cut.cues[0]!.speech);
+    // Later source discovery cannot expand the explicit reviewed IDs.
+    const later = compilePresentation({...settings,source:[...moments,{id:"later",segments:[cut.cues[0]!]}],selectedIds:ids});
+    expect(later).toEqual(cut);
+  }
+});
+for (const kernel of ["classic","format"] as const) {
+  test(`${kernel} Influence exports the same exact epilogue in full and speech-only cuts`,async () => {
+    const gameId = `retro-export-${kernel}`;
+    const players = ["a","b"].map(id => ({id,name:id.toUpperCase(),persona:"",status:"alive" as const,shielded:false}));
+    const winner:ViewerDecisionEvent = {sequence:1,timestamp:"2026-10-10T00:00:00Z",round:1,phase:Phase.JURY_VOTE,type:"jury.winner_determined",payload:{winnerId:"b",votes:{a:"b"}}};
+    const frames:GameWatchReplayFrame[] = [winner,...players.map((_,index) => ({...winner,sequence:index+2,phase:Phase.RETROSPECTIVE,type:"retrospective.statement_recorded" as const}))]
+      .map(event => ({schemaVersion:3,gameId,slug:gameId,sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp)+event.sequence,
+        round:1,phase:event.phase!,players,counts:{totalPlayers:2,alivePlayers:2,eliminatedPlayers:0,unknownPlayers:0},
+        ...(event.sequence === 1 && {viewerDecisionEvent:winner})}));
+    const messages:TranscriptEntry[] = players.map((player,ordinal) => ({id:ordinal+1,gameId,round:1,phase:"RETROSPECTIVE",scope:"public",
+      fromPlayerId:player.id,fromPlayerName:player.name,toPlayerIds:null,text:`${player.name}'s exact final statement.`,timestamp:Date.parse(winner.timestamp)+ordinal+2,
+      entrySequence:ordinal+1,firstDurableEventSequence:ordinal+2,dialogueKind:"public_speech",retrospectiveSource:{eventSequence:ordinal+2,ordinal}}));
+    const source = {kind:"influence" as const,game:{id:gameId,slug:gameId,status:"completed" as const,players,gameKernel:kernel},messages,frames,thoughts:{},
+      visual:{enabled:false,status:null,portraits:{},scenes:[],publicationSnapshot:{}}};
+    const catalog = assembleProductionCatalog({gameId,gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId,gameKernel:kernel,transcripts:messages,frames})});
+    const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
+    const ids = catalog.moments.filter(moment => moment.purpose === "retrospective").map(moment => moment.id);
+    const cut = compilePresentation({...settings,source:bound,selectedIds:ids});
+    expect(cut.cues.map(cue => cue.speech?.text)).toEqual(messages.map(message => message.text));
+    expect(cut.cues.every(cue => cue.picture.kind === "influence" && cue.picture.beat?.kind === "portrait" && cue.picture.beat.purpose === "Retrospective")).toBeTrue();
+    const full = compilePresentation({...settings,source:bound,selectedIds:catalog.moments.filter(moment => moment.defaultIncluded).map(moment => moment.id)});
+    expect(full.cues.slice(-2).map(cue => cue.speech)).toEqual(cut.cues.map(cue => cue.speech));
+    expect(full.cues.findIndex(cue => cue.timing.kind === "result")).toBeLessThan(full.cues.length-2);
+  });
+}
 test("individual accepted thoughts sharing a reveal stay independent and contain no speech",async () => {
   const input = await fixture("omniscient");
   const moments = await bindWerewolfProductionPresentation(input);

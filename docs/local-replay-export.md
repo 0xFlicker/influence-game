@@ -161,3 +161,9 @@ Implementation validation on 2026-10-07:
 The full-game runs establish complete traversal at a smaller verification resolution. Later targeted checks cover frozen layout, transformations, camera motion, nominee selection, winner padding and range audio. They do not claim a full 1080p game was manually watched end to end. The attachment proof uses known test tones, not synthesized voices or a subjective assessment of voice/music quality. Real voice recordings and final viewing/listening remain operator acceptance work.
 
 Refresh validation on 2026-10-08: prepared and then overwrote a fresh `hazy-ruby-sand` Omniscient bundle (117 cues, 9 opening cues, 59 thinking intervals). Twenty rendered samples—including solo and scene thinking focus—matched reverse-order output, three contiguous ranges and a fresh browser. A 45.3-second 640×360/12fps H.264/AAC excerpt includes the opening and first thinking/speech sequence; a decoded MP4 frame confirms the head focus and vignette. The existing full-length movie was left untouched.
+
+## Retrospective coverage
+
+For fresh completed games, full movies render gameplay, the competitive result and all accepted final speeches. Studio can freeze a retrospective-only cut by tagging its ordinary speech moments; result inclusion is independent. Original solo portraits, canonical part/outcome labels, captions, reading timing and optional exact-identity recordings use the same shared sampled frame as replay and Studio.
+
+Export requires a completed retrospective proof. Existing games without captured statements cannot gain one through export; reads perform no generation or historical adaptation. Frozen bundles pin text, moment IDs, source heads, media versions and recording hashes. Offline sampling and encoding use those exact bytes and IDs without re-evaluating current tags or fetching newer source history.

@@ -22,6 +22,7 @@ import { evaluateProductDialogueRecoveryGate as recoveryGate } from "../services
 import { initialGameTranscriptStateValues as initialState } from "../services/transcript-capture.js";
 import {
   createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   createCheckpointCapsule,
   enrichCapsuleForV1Candidate,
   insertCanonicalEventRows,
@@ -408,7 +409,7 @@ describe("U2 terminal settlement reconcile", () => {
 
   test("settlement with live prefix is exact-once and seals terminal digest", async () => {
     const gameId = await insertCurrentCaptureGame(db, "in_progress");
-    const events = createCanonicalEventFixture(gameId);
+    const events = createCompletedCanonicalEventFixture(gameId);
     const ownerEpoch = await insertOwner(db, gameId, {
       lastPersistedEventSequence: events.length,
       expiresAt: "2099-01-01T00:00:00.000Z",
@@ -531,7 +532,7 @@ describe("U2 terminal settlement reconcile", () => {
 
   test("same-sequence content conflict becomes repair-required", async () => {
     const gameId = await insertCurrentCaptureGame(db, "in_progress");
-    const events = createCanonicalEventFixture(gameId);
+    const events = createCompletedCanonicalEventFixture(gameId);
     const ownerEpoch = await insertOwner(db, gameId, {
       lastPersistedEventSequence: events.length,
       expiresAt: "2099-01-01T00:00:00.000Z",

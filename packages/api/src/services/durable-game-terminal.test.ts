@@ -10,11 +10,10 @@ import {
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
-  createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
-  withJuryWinner,
 } from "../__tests__/durable-run-test-utils.js";
 import { setupTestDB } from "../__tests__/test-utils.js";
 import { hashCanonicalEvent } from "./game-events.js";
@@ -119,13 +118,13 @@ describe("durable game terminal settlement", () => {
       .where(eq(schema.gamePublications.gameId, fixture.gameId));
     expect(publications).toEqual([
       { publicationSequence: 1, availableAt: "2026-06-20T00:00:00.500Z" },
-      { publicationSequence: 2, availableAt: "2026-06-20T00:00:01.001Z" },
+      { publicationSequence: 2, availableAt: new Date(Date.parse(fixture.finalEvent.timestamp) + 1).toISOString() },
     ]);
     const execution = (await db.select({
       nextPublicationAvailableAt: schema.gameExecutionStates.nextPublicationAvailableAt,
     }).from(schema.gameExecutionStates)
       .where(eq(schema.gameExecutionStates.gameId, fixture.gameId)))[0]!;
-    expect(execution.nextPublicationAvailableAt).toBe("2026-06-20T00:00:01.001Z");
+    expect(execution.nextPublicationAvailableAt).toBe(new Date(Date.parse(fixture.finalEvent.timestamp) + 1).toISOString());
 
     const owners = await db.select({
       ownerEpoch: schema.gameRunOwners.ownerEpoch,
@@ -236,7 +235,7 @@ async function createTerminalFixture(
   }).where(eq(schema.games.id, gameId));
   await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(gameId));
 
-  const events = withJuryWinner(createCanonicalEventFixture(gameId), "atlas");
+  const events = createCompletedCanonicalEventFixture(gameId);
   const finalEvent = events.at(-1)!;
   const finalEventHash = hashCanonicalEvent(finalEvent);
   const priorOwnerEpoch = await insertOwner(db, gameId, {

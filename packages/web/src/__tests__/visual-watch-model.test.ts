@@ -13,6 +13,12 @@ const data: VisualWatchData = { enabled: true, status: null, portraits: { a: "/f
   { id: "old", roomId: "lobby", version: 1, afterDialogueSequence: 2, imageUrl: "/old.png", participantIds: ["a"], anchors: [] },
   { id: "new", roomId: "lobby", version: 2, afterDialogueSequence: 5, imageUrl: "/new.png", participantIds: ["a"], anchors: [] },
 ] };
+test("accepted retrospectives use introduction portraits and solo pacing even when room art is bound", () => {
+  const retrospective: TranscriptEntry = { ...message, phase: "RETROSPECTIVE" };
+  const picture = visualWatchPresentation(data, null, retrospective, [{...player, status: "eliminated"}]);
+  expect(picture.beat).toMatchObject({kind: "portrait", purpose: "Retrospective", player: {status: "eliminated", avatarUrl: "/frozen.png"}, speech: {text: message.text}});
+  expect(transcriptPresentationDurationMs(retrospective)).toBe(soloPresentationDurationMs(message.text));
+});
 test("selects saved scene versions by dialogue sequence, including backward seeking", () => {
   expect(visualWatchPresentation(data, null, message, [player]).beat).toMatchObject({ kind: "scene", sceneId: "old" });
   expect(visualWatchPresentation(data, null, { ...message, entrySequence: 6, visualScene: { id: "new", roomId: "lobby" } }, [player]).beat).toMatchObject({ kind: "scene", sceneId: "new" });

@@ -19,6 +19,23 @@ const EMPTY_HEADS = {
   publicationSequence: 0,
 } as const;
 
+test("retrospective cursor is closed, nonterminal, and bound to a frozen definition/ordinal", () => {
+  const definitionHash = `sha256:${"a".repeat(64)}`;
+  for (const cursor of [
+    { version: 1, kind: "retrospective", stage: "initialize" },
+    { version: 1, kind: "retrospective", stage: "statement", definitionHash, ordinal: 0 },
+    { version: 1, kind: "retrospective", stage: "complete", definitionHash },
+  ]) expect(validateGameExecutionStateV1({ ...state(), cursor }).ok).toBe(true);
+  for (const cursor of [
+    { version: 1, kind: "retrospective", stage: "statement", definitionHash },
+    { version: 1, kind: "retrospective", stage: "statement", definitionHash, ordinal: 12 },
+    { version: 1, kind: "retrospective", stage: "complete", definitionHash, ordinal: 0 },
+    { version: 1, kind: "retrospective", stage: "initialize", definitionHash },
+    { version: 1, kind: "retrospective", stage: "skip" },
+  ]) expect(validateGameExecutionStateV1({ ...state(), cursor }).ok).toBe(false);
+  expect(validateGameExecutionStateV1({ ...state(), status: "terminal", cursor: { version: 1, kind: "retrospective", stage: "complete", definitionHash } }).ok).toBe(false);
+});
+
 function state(): GameExecutionStateV1 {
   return {
     version: 1,

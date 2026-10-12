@@ -805,8 +805,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: true,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
-      hasProducerRole: false, hasModerationRole: false,
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
       userId: "producer-eligibility-user",
@@ -815,7 +815,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       needsProducerRole: true,
     })).resolves.toEqual({
       clientScopes: ["agents:read", "games:read"],
-      hasProducerRole: true, hasModerationRole: false,
+      hasProducerRole: true, hasModerationRole: false, hasRetrospectiveRecoveryAccess: true,
     });
     await expect(resolveEligibility({
       userId: "missing-eligibility-user",
@@ -823,8 +823,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       resource: GAMES_AUTH.resource,
       needsProducerRole: false,
     })).resolves.toEqual({
-      clientScopes: ["agents:read", "agents:write", "games:read", "producer", "moderation:read", "moderation:write", "assets:manage"],
-      hasProducerRole: false, hasModerationRole: false,
+      clientScopes: ["agents:read", "agents:write", "games:read", "games:resume", "producer", "moderation:read", "moderation:write", "assets:manage"],
+      hasProducerRole: false, hasModerationRole: false, hasRetrospectiveRecoveryAccess: false,
     });
     await expect(resolveEligibility({
       userId: "missing-eligibility-user",
@@ -859,6 +859,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_game_results",
       "read_game_thinking",
       "read_game_cuts",
+      "read_game_retrospective",
       "list_seasons",
       "read_player_profile",
       "read_season_standings",
@@ -1299,6 +1300,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_game_results",
       "read_game_thinking",
       "read_game_cuts",
+      "read_game_retrospective",
       "list_seasons",
       "read_player_profile",
       "read_season_standings",
@@ -2950,7 +2952,6 @@ describe("ProductionGameMcpJsonRpcServer", () => {
             projectionStatus: "complete" as const,
             lastTrustedSequence: 4,
             projectionLastSequence: 4,
-            settlementSafeProjection: true,
             diagnostics: [],
             followUpCapabilities: [{
               kind: "canonical_events" as const,

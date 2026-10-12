@@ -27,6 +27,7 @@ const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
 const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
@@ -41,6 +42,7 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
 export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = INFLUENCE_PRODUCTION_FORMAT_PHASES;
@@ -333,6 +335,10 @@ export function getMatchWatchRouteDecision(
       mode: "live",
       reason: "live_game",
     };
+  }
+
+  if (game.status === "suspended" && game.watchState?.retrospective.outcome) {
+    return { eligible: true, mode: "replay", reason: "replay_transcript" };
   }
 
   if (game.status === "completed") {
@@ -753,7 +759,7 @@ function currentAgentPatch(
   return fallback !== undefined ? { currentAgent: fallback } : {};
 }
 
-function selectReplayWatchFrame(
+export function selectReplayWatchFrame(
   frames: readonly GameWatchReplayFrame[],
   playbackState: MatchWatchPlaybackState,
 ): GameWatchReplayFrame | null {

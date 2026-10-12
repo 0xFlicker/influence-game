@@ -28,6 +28,7 @@ import {
 } from "@/lib/api";
 import { CREATE_GAME_PLAYER_COUNTS } from "@/lib/game-creation";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
+import { retrospectiveAttemptsPerModel } from "@influence/engine/retrospective-budget";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)
@@ -908,6 +909,9 @@ export function CreateGameForm({ initialKind }: { initialKind?: HouseGameKind } 
 
       {/* Provider route */}
       <SectionCard title="Models">
+        <p className="mb-4 text-sm text-white/60">The retrospective adds {isWerewolf ? village.playerCount : form.playerCount} required final statements after the result,
+          with up to {retrospectiveAttemptsPerModel(isWerewolf ? "werewolf" : "influence")} attempts per model for each statement.
+          Each call includes the whole game and earlier statements. These calls share the fallback limits below with gameplay.</p>
         <ProviderRouteEditor
           entries={form.providerRoute}
           models={models}

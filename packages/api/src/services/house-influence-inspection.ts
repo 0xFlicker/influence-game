@@ -1,5 +1,4 @@
 import { canonicalEventIsVisibleTo } from "@influence/engine";
-import { getGameCompletionSettlementState } from "./game-completion-settlement.js";
 import { asc, eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { getGameWatchReplayFrames } from "./game-watch-state.js";
@@ -26,11 +25,6 @@ export async function loadHouseInfluenceHistory(
         "unavailable",
         "Canonical history is invalid",
       );
-    const settlement = await getGameCompletionSettlementState(db, game.id);
-    const terminal = persisted.events.find(
-      (e) => e.eventType === "jury.winner_determined",
-    )?.sequence;
-    const held = settlement === "pending" || settlement === "repair_required";
     const publicSequences = new Set(
       persisted.events
         .filter((event) => canonicalEventIsVisibleTo(event.envelope, "public"))
@@ -43,12 +37,6 @@ export async function loadHouseInfluenceHistory(
         (frame) =>
           publicSequences.has(frame.sequence) ||
           frame.viewerDecisionEvent !== undefined,
-      )
-      .filter(
-        (f) =>
-          !held ||
-          ((terminal === undefined || f.sequence < terminal) &&
-            f.eventType !== "jury.vote_cast"),
       )
       .map((frame) => ({
         schemaVersion: frame.schemaVersion,
@@ -94,6 +82,9 @@ export async function loadHouseInfluenceHistory(
         asc(schema.transcripts.timestamp),
         asc(schema.transcripts.id),
       );
+    const retrospectiveByEntry = new Map(persisted.events.flatMap(({ envelope }) => envelope.type === "retrospective.statement_recorded"
+      ? envelope.sourcePointers.filter(pointer => pointer.kind === "transcript_entry").map(pointer => [pointer.sequence,
+        { eventSequence: envelope.sequence, ordinal: envelope.payload.ordinal, actorId: envelope.payload.actorId, speech: envelope.payload.speech }] as const) : []));
     // Same scope boundary as durable public publications. Thinking is a separate opt-in read.
     // Legacy rows precede sequenced capture so appending current entries cannot shift them.
     // Legacy system prose has no typed public-kind proof and cannot enter this lane.
@@ -117,7 +108,10 @@ export async function loadHouseInfluenceHistory(
           dto.speaker = { playerId: null, name: "Anonymous" };
           dto.audience = null;
         }
-        return dto;
+        const retrospective = row.entrySequence === null ? null : retrospectiveByEntry.get(row.entrySequence) ?? null;
+        if (retrospective && ((row.speakerPlayerId ?? row.fromPlayerId) !== retrospective.actorId || dto.text !== retrospective.speech)) throw new HouseInspectionError("unavailable", "Retrospective dialogue does not match its canonical statement");
+        if (retrospective) dto.speaker = { playerId: retrospective.actorId, name: names.get(retrospective.actorId) ?? facts.at(-1)?.players.find(player => player.id === retrospective.actorId)?.name ?? null };
+        return { ...dto, retrospectiveSource: retrospective ? { eventSequence: retrospective.eventSequence, ordinal: retrospective.ordinal } : null };
       });
     return { facts, dialogue };
   } catch (error) {
