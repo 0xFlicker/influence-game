@@ -22,7 +22,7 @@ The agreed design makes retrospective completion the final boundary of the exist
 - Completion settlement, ratings/rewards, learning entitlements, final cost capture, transcript sealing, full-export readiness, and automatic downstream postgame work occur after the epilogue. This deliberately avoids a second settlement system. Exhausted speech failure suspends that completion until explicit recovery.
 - First delivery covers fresh game runs. Historical backfill and replacement of accepted statements are excluded. Read paths never generate content.
 
-Implementation uses the chat's existing clean worktree at `/Users/user/.codex/worktrees/b44a/influence-game`, on `codex/game-retrospectives` based on the Studio branch's committed revision. The active development checkout and its uncommitted Studio work remain untouched.
+Delivery is split into [Production Studio PR #174](https://github.com/0xFlicker/influence-game/pull/174) on `codex/production-studio` against `main`, then [retrospective PR #173](https://github.com/0xFlicker/influence-game/pull/173) against `codex/production-studio`. Merge Studio first, then retarget #173 to main. The Studio checkout was verified clean before its fast-forward; every original Studio commit remains in history. The retrospective diff contains its own runtime, API/MCP, replay and export integration, with no new Studio editor or CLI-login implementation.
 
 ## Task ledger and dependencies
 

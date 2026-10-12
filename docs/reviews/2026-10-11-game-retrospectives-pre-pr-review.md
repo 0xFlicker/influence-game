@@ -9,6 +9,8 @@ main_revision: f303df40
 
 # Main integration and pre-PR review
 
+This record describes the original combined branch. Delivery has since been split: [Studio PR #174](https://github.com/0xFlicker/influence-game/pull/174) targets main, and #173 is stacked on `codex/production-studio`. Its inherited Studio/Werewolf changes are reviewed in #174. Earlier head-specific proof below remains historical; new split validation is reported in the PR descriptions.
+
 `codex/game-retrospectives` merges `origin/main` at `f303df40`. The merge preserves main’s on-demand renderer-wake contract and Werewolf village/pack portrait rooms, plus the branch’s required retrospective final boundary, solo epilogue presentation and Studio/export behavior. The branch includes its committed Production Studio and Werewolf-flow prerequisites; the PR against main contains those changes too.
 
 ## Resolved integration findings
