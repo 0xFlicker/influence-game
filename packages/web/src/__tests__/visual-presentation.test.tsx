@@ -100,6 +100,21 @@ test("a missing scene stays readable with a portrait bubble instead of blocking 
   expect(view.container.querySelector("[data-headshot-fallback]")).not.toBeNull();
 });
 
+test.each([6, 7, 8])("a %s-person room keeps larger mobile portraits and seats listeners into the back", count => {
+  const seats = portraitRoomSeats(390, count, 2, 150);
+  expect(seats[2]).toMatchObject({x: 0, z: 60, scale: 1, diameter: 100});
+  expect(seats[2]!.y).toBeCloseTo(0);
+  expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-280);
+  expect(Math.max(...seats.map(seat => Math.abs(seat.x)))).toBeGreaterThan(140);
+});
+
+test.each([3, 4, 5])("a mobile room still spreads %s survivors into depth", count => {
+  const seats = portraitRoomSeats(390, count, 1, 150, true);
+  expect(seats[1]).toMatchObject({x: 0, z: 60, scale: 1});
+  expect(seats[1]!.diameter).toBeGreaterThanOrEqual(100);
+  expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-200);
+});
+
 test("a replay without a winner tableau holds a readable last frame only at the tail", () => {
   const portrait: VisualPresentationBeat = { kind: "portrait", purpose: "Farewell", player: { id: "p1", name: "Arden", persona: "diplomat" }, speech };
   const view = render(<VisualPresentationFrame beat={portrait} rooms={[]} elapsedMs={60_000} holdAtTail reducedMotion />);

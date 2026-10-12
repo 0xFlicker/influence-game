@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+# Chromium ignores Bun's proxy option. Preserve TLS/SNI for ts.net assets and
+# bypass only local Remotion's bundle server; never disable certificate checks.
+[ "${POSTGAME_MEDIA_HTTP_PROXY:-}" = "http://127.0.0.1:1055" ] || exit 78
+exec /usr/bin/chromium --proxy-server="$POSTGAME_MEDIA_HTTP_PROXY" '--proxy-bypass-list=localhost;127.0.0.1;[::1]' "$@"

@@ -1,3 +1,4 @@
+import { renderExecutionConfig } from "@influence/engine/render-execution-config";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -605,3 +606,152 @@ function restoreEnv(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
 }
+
+describe("on-demand renderer admission and durable wakes", () => {
+  let db: DrizzleDB;
+  const digest = `sha256:${"a".repeat(64)}`;
+  const identity = { generation: "release-one", workerDigest: digest, workerInstanceId: "task-one" };
+  const execution = { ...renderExecutionConfig({}), mode: "remote" as const, environment: "staging" as const };
+  const env = { POSTGAME_MEDIA_WAKE_URL: "https://wake.example.test/", POSTGAME_MEDIA_WAKE_SECRET: "test-wake-key", POSTGAME_MEDIA_WAKE_ENVIRONMENT: "prod" };
+  beforeEach(async () => { db = await setupTestDB(); });
+
+  test("wake creation is atomic, covers requeue and avoids lease-heartbeat notifications", async () => {
+    const gameId = await insertQueuedMedia(db, "atomic-wake");
+    const wakes = () => db.select().from(schema.postgameMediaWakeOutbox);
+    expect(await wakes()).toHaveLength(1);
+    await expect(db.transaction(async tx => {
+      await tx.update(schema.gamePostgameMedia).set({ attemptNumber: 2 }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+      throw new Error("abort enqueue");
+    })).rejects.toThrow("abort enqueue");
+    expect(await wakes()).toHaveLength(1);
+    await db.update(schema.gamePostgameMedia).set({ status: "waiting_music" }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+    await db.update(schema.gamePostgameMedia).set({ status: "queued" }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(await wakes()).toHaveLength(2);
+    const claim = await claimPostgameMedia(db, "worker");
+    expect(claim).not.toBeNull();
+    await heartbeatPostgameMedia(db, { gameId, attemptNumber: claim!.attemptNumber, leaseToken: claim!.leaseToken });
+    expect(await wakes()).toHaveLength(2);
+  });
+
+  test("drain fences new claims while admitted leases can renew; rollback needs a fresh epoch", async () => {
+    const { mutateRenderRelease, claimRemotePostgameMedia, rendererControl } = await import("../services/postgame-media-execution.js");
+    await insertQueuedMedia(db, "drain-lease");
+    expect(await mutateRenderRelease(db, { operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: null })).toBe(true);
+    expect((await claimRemotePostgameMedia(db, "worker", { ...identity, workerDigest: `sha256:${"b".repeat(64)}` })).admitted).toBe(false);
+    const result = await claimRemotePostgameMedia(db, "worker", identity);
+    expect(result.claim).not.toBeNull();
+    expect(await mutateRenderRelease(db, { operation: "drain", generation: identity.generation, workerDigest: digest, previousGeneration: identity.generation })).toBe(true);
+    expect((await rendererControl(db, identity)).admitted).toBe(false);
+    expect((await claimRemotePostgameMedia(db, "worker", identity)).admitted).toBe(false);
+    const claim = result.claim!;
+    expect(await heartbeatPostgameMedia(db, { gameId: claim.gameId, attemptNumber: claim.attemptNumber, leaseToken: claim.leaseToken })).toBe(true);
+    expect(await finalizePostgameMedia(db, finalizeFixture(claim.gameId, claim))).toEqual({ ok: true });
+    expect(await mutateRenderRelease(db, { operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: identity.generation })).toBe(false);
+    expect(await mutateRenderRelease(db, { operation: "accept", generation: "rollback-new-epoch", workerDigest: digest, previousGeneration: identity.generation })).toBe(true);
+    expect((await rendererControl(db, identity)).admitted).toBe(false);
+    expect(await mutateRenderRelease(db, { operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: "rollback-new-epoch" })).toBe(false);
+  });
+
+  test("remote to local requires drain, no leases, fresh epoch and fences stale API mode", async () => {
+    const { mutateRenderRelease, claimRemotePostgameMedia, claimLocalPostgameMedia, getRenderRelease } = await import("../services/postgame-media-execution.js");
+    await insertQueuedMedia(db, "mode-handoff");
+    const accept = { operation: "accept" as const, generation: identity.generation, workerDigest: digest, previousGeneration: null };
+    expect(await mutateRenderRelease(db, accept)).toBe(true);
+    expect((await claimLocalPostgameMedia(db, "old-local")).admitted).toBe(false);
+    const lease = (await claimRemotePostgameMedia(db, "worker", identity)).claim!;
+    const local = { operation: "accept-local" as const, generation: "fresh-local", workerDigest: digest, previousGeneration: identity.generation };
+    expect(await mutateRenderRelease(db, local)).toBe(false);
+    await mutateRenderRelease(db, { ...accept, operation: "drain", previousGeneration: identity.generation });
+    expect(await mutateRenderRelease(db, local)).toBe(false);
+    await finalizePostgameMedia(db, finalizeFixture(lease.gameId, lease));
+    expect(await mutateRenderRelease(db, local)).toBe(true);
+    expect((await getRenderRelease(db)).mode).toBe("local");
+    expect((await claimRemotePostgameMedia(db, "worker", identity)).admitted).toBe(false);
+    expect((await claimLocalPostgameMedia(db, "new-local")).admitted).toBe(true);
+    expect(await mutateRenderRelease(db, { ...accept, previousGeneration: "fresh-local" })).toBe(false);
+  });
+
+  test("candidate configuration mismatch cannot mutate or drain accepted renderer ownership", async () => {
+    const { mutateRenderRelease, getRenderRelease } = await import("../services/postgame-media-execution.js");
+    await mutateRenderRelease(db, { operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: null });
+    const saved = process.env.POSTGAME_MEDIA_CONTROL_TOKEN;
+    process.env.POSTGAME_MEDIA_CONTROL_TOKEN = "release-test";
+    try {
+      const app = createPostgameMediaWorkerRoutes(db, { execution });
+      const post = (body: unknown) => app.request("/api/internal/postgame-media/release", { method: "POST", headers: { Authorization: "Bearer release-test", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      expect((await post({ operation: "drain", generation: identity.generation, workerDigest: digest, previousGeneration: identity.generation, configDigest: `sha256:${"f".repeat(64)}` })).status).toBe(409);
+      expect((await getRenderRelease(db)).draining).toBe(false);
+      expect((await post({ operation: "accept-local", generation: "bad-local", workerDigest: digest, previousGeneration: identity.generation, configDigest: execution.configDigest })).status).toBe(409);
+      const read = await app.request("/api/internal/postgame-media/release", { headers: { Authorization: "Bearer release-test" } });
+      expect((await read.json() as { execution: unknown }).execution).toEqual(execution);
+    } finally { restoreEnv("POSTGAME_MEDIA_CONTROL_TOKEN", saved); }
+  });
+
+  test("same-mode replacement is fenced by drain and zero active leases", async () => {
+    const { mutateRenderRelease, claimRemotePostgameMedia } = await import("../services/postgame-media-execution.js");
+    await insertQueuedMedia(db, "same-mode-replace");
+    const first = { operation: "accept" as const, generation: identity.generation, workerDigest: digest, previousGeneration: null };
+    await mutateRenderRelease(db, first);
+    const next = { ...first, generation: "release-two", previousGeneration: identity.generation };
+    expect(await mutateRenderRelease(db, next)).toBe(false);
+    const lease = (await claimRemotePostgameMedia(db, "worker", identity)).claim!;
+    await mutateRenderRelease(db, { ...first, operation: "drain", previousGeneration: identity.generation });
+    expect(await mutateRenderRelease(db, next)).toBe(false);
+    await finalizePostgameMedia(db, finalizeFixture(lease.gameId, lease));
+    expect(await mutateRenderRelease(db, next)).toBe(true);
+  });
+
+  test("a drain holding the release row lock wins against an in-flight claim", async () => {
+    const { mutateRenderRelease, claimRemotePostgameMedia } = await import("../services/postgame-media-execution.js");
+    await insertQueuedMedia(db, "drain-race");
+    await mutateRenderRelease(db, { operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: null });
+    let claim: ReturnType<typeof claimRemotePostgameMedia> | undefined;
+    await db.transaction(async tx => {
+      await tx.select().from(schema.postgameMediaRenderRelease).where(eq(schema.postgameMediaRenderRelease.id, 1)).for("update");
+      claim = claimRemotePostgameMedia(db, "worker", identity);
+      await tx.update(schema.postgameMediaRenderRelease).set({ draining: true }).where(eq(schema.postgameMediaRenderRelease.id, 1));
+    });
+    expect((await claim!).admitted).toBe(false);
+  });
+
+  test("wake delivery retries the durable ID and repairs enqueue-at-exit or expired-lease loss", async () => {
+    const { dispatchRenderWakes, signedRenderWake } = await import("../services/postgame-media-execution.js");
+    const gameId = await insertQueuedMedia(db, "wake-retry");
+    const payloads: string[] = [];
+    const send = (ok: boolean) => (async (_input, init) => {
+      const body = String(init?.body);
+      payloads.push(body);
+      const headers = new Headers(init?.headers);
+      expect(headers.get("X-Render-Signature")).toBe(signedRenderWake(body, env.POSTGAME_MEDIA_WAKE_SECRET, headers.get("X-Render-Timestamp")!)["X-Render-Signature"]);
+      return new Response(null, { status: ok ? 202 : 503 });
+    }) as typeof fetch;
+    await expect(dispatchRenderWakes(db, { env, execution, fetch: send(false) })).rejects.toThrow("503");
+    await dispatchRenderWakes(db, { env, execution, fetch: send(true) });
+    expect(payloads[0]).toBe(payloads[1]);
+    // Task may have claimed null and decided to exit before this requeue.
+    await db.update(schema.gamePostgameMedia).set({ status: "claimed", leaseExpiresAt: new Date(0).toISOString() }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(await dispatchRenderWakes(db, { env, execution, fetch: send(true) })).toBe(1);
+    await db.update(schema.gamePostgameMedia).set({ status: "failed" }).where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(await dispatchRenderWakes(db, { env, execution, fetch: send(true) })).toBe(0);
+    expect(await dispatchRenderWakes(db, { env: {} })).toBe(0);
+  });
+
+  test("release-control credentials cannot be substituted with renderer credentials", async () => {
+    const saved = { mode: process.env.POSTGAME_MEDIA_EXECUTION_MODE, control: process.env.POSTGAME_MEDIA_CONTROL_TOKEN, worker: process.env.POSTGAME_MEDIA_WORKER_TOKEN };
+    process.env.POSTGAME_MEDIA_EXECUTION_MODE = "remote";
+    process.env.POSTGAME_MEDIA_CONTROL_TOKEN = "separate-release-token";
+    process.env.POSTGAME_MEDIA_WORKER_TOKEN = "render-only-token";
+    try {
+      const app = createPostgameMediaWorkerRoutes(db, { execution });
+      const request = (token: string) => app.request("/api/internal/postgame-media/release", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ operation: "accept", generation: identity.generation, workerDigest: digest, previousGeneration: null, configDigest: execution.configDigest }) });
+      expect((await request("render-only-token")).status).toBe(401);
+      expect((await request("separate-release-token")).status).toBe(200);
+      const control = await app.request("/api/internal/postgame-media/control", { method: "POST", headers: { Authorization: "Bearer render-only-token" } });
+      expect(await control.json()).toEqual({ admitted: false, generation: identity.generation, draining: false });
+    } finally {
+      restoreEnv("POSTGAME_MEDIA_EXECUTION_MODE", saved.mode);
+      restoreEnv("POSTGAME_MEDIA_CONTROL_TOKEN", saved.control);
+      restoreEnv("POSTGAME_MEDIA_WORKER_TOKEN", saved.worker);
+    }
+  });
+});
