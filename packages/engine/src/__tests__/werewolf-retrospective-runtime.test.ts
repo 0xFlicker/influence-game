@@ -9,6 +9,34 @@ import { projectWerewolfView } from "../werewolf/observation";
 import { ProviderUnavailableError } from "../provider-execution";
 import { createRetrospectiveDefinition, type RetrospectiveInputV1 } from "../retrospective";
 
+test("v7 retains its original completion boundary without appending or dispatching a retrospective", async () => {
+  const events = await werewolfResultsFixture("village", "v7-existing");
+  const source = compileWerewolfRetrospective(events);
+  const initial = events[0]!;
+  if (initial.type !== "werewolf.started") throw new Error("Fixture requires its setup event");
+  initial.payload.config.rulesVersion = 7;
+  const original = structuredClone(events);
+  const state = events.reduce((previous, event) => applyWerewolfEvent(previous, event), null as ReturnType<typeof applyWerewolfEvent> | null)!;
+  expect(state.config.rulesVersion).toBe(7);
+  expect(state.phase).toBe("complete");
+  expect(state.retrospective).toBeNull();
+  expect(state.retrospectiveOutcomeSource).toBeNull();
+  expect(werewolfExecutionFinished(state)).toBeTrue();
+  const unexpected = async (): Promise<never> => { throw new Error("A completed v7 game must not dispatch or append"); };
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: unexpected, getRetrospectiveStatement: unexpected, decide: unexpected };
+  const store: WerewolfStore = { read: async () => structuredClone(events), append: unexpected };
+  expect(await advanceWerewolf(store, agent)).toEqual(state);
+  expect(await runWerewolf(store, agent)).toEqual(state);
+  expect(() => compileWerewolfRetrospective(events)).toThrow("canonical outcome");
+  expect(() => applyWerewolfEvent(state, { gameId: state.gameId, sequence: state.sequence + 1,
+    type: "werewolf.retrospective_started", payload: createRetrospectiveDefinition(source.input, source.speakerIds) })).toThrow("rules v7");
+  const corrupt = structuredClone(initial);
+  const playerId = state.players[0]!.id;
+  corrupt.payload.roles[playerId] = initial.payload.roles[playerId] === "werewolf" ? "villager" : "werewolf";
+  expect(() => applyWerewolfEvent(null, corrupt)).toThrow("role assignment");
+  expect(events).toEqual(original);
+});
+
 test.each<WerewolfResultScenario>(["village", "wolves", "saved", "disagreement", "unavailable"])("%s: resumes every postgame boundary with complete context and exact priors", async scenario => {
   const events = await werewolfResultsFixture(scenario, `rt05-${scenario}`), before = replayWerewolf(events);
   let input: RetrospectiveInputV1 | null = null, admissions = 0;
