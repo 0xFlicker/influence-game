@@ -1,5 +1,4 @@
 "use client";
-import { useEffect, useRef } from "react";
 import type { EpisodePresentation, EpisodePreview } from "@/lib/api";
 import { accessDenied, useAdminRead, useAdminSession, useAdminValue, type Operation } from "./admin-session";
 import { usePostgameMediaOperation } from "./admin-postgame-media";
@@ -11,8 +10,9 @@ function savedEditMatches(body: Record<string, unknown>, episode: EpisodePresent
     && body.coverUrl === episode.coverUrl && JSON.stringify(body.frameOrder) === JSON.stringify(episode.frameOrder);
 }
 
-export function EpisodeEditor({ gameId, onClose, onSaved }: { gameId: string; onClose: () => void; onSaved: () => Promise<void> }) {
-  const dialog = useRef<HTMLDialogElement>(null), session = useAdminSession();
+/** Inline form; Studio owns its dialog, navigation and focus restoration. */
+export function EpisodeEditor({ gameId, onSaved }: { gameId: string; onSaved: () => Promise<void> }) {
+  const session = useAdminSession();
   const resource = `/api/admin/games/${encodeURIComponent(gameId)}/episode`;
   const query = useAdminRead<EpisodeRead>(resource), media = usePostgameMediaOperation(gameId);
   const draftKey = `draft:${resource}`, saveKey = `operation:${resource}:save`, namingKey = `operation:${resource}:naming`;
@@ -28,11 +28,6 @@ export function EpisodeEditor({ gameId, onClose, onSaved }: { gameId: string; on
   const framesById = new Map(data?.frames.map(frame => [frame.id, frame]));
   const ordered = draft?.frameOrder.flatMap(id => framesById.get(id) ?? []) ?? [];
   const frames = [...ordered, ...(data?.frames.filter(frame => !draft?.frameOrder.includes(frame.id)) ?? [])];
-  useEffect(() => {
-    const node = dialog.current!, prior = document.activeElement as HTMLElement | null;
-    node.showModal();
-    return () => { node.close(); prior?.focus(); };
-  }, []);
   const fail = (error: unknown) => {
     if (!accessDenied(error)) setNotice({ kind: "error", text: error instanceof Error ? error.message : "Episode request failed." });
   };
@@ -87,8 +82,7 @@ export function EpisodeEditor({ gameId, onClose, onSaved }: { gameId: string; on
     setNotice({ kind: observed ? "success" : "error", text });
     if (observed) await onSaved();
   }
-  return <dialog ref={dialog} className="episode-editor" aria-label="Edit episode presentation" onCancel={event => { event.preventDefault(); onClose(); }}>
-    <div className="flex justify-between gap-4"><h2 className="text-xl font-semibold">Episode presentation</h2><button onClick={onClose}>Close</button></div>
+  return <section className="episode-editor" aria-label="Edit episode presentation">
     {!draft && !query.error && <p>Loading presentation…</p>}
     {conflict && <p role="alert">This draft belongs to an earlier episode revision. Review the saved presentation before saving. <button disabled={disabled} onClick={() => session.delete(draftKey)}>Discard older draft</button></p>}
     {saveOperation?.phase === "unknown" && <p role="alert">The save outcome is unknown. <button disabled={query.isFetching} onClick={() => void checkSaved(saveKey)}>Check saved presentation</button></p>}
@@ -109,5 +103,5 @@ export function EpisodeEditor({ gameId, onClose, onSaved }: { gameId: string; on
     {notice && <p role={notice.kind === "error" ? "alert" : "status"} className="mt-3">{notice.text}</p>}
     {media.error && <p role="alert">{media.error}</p>}
     {media.notice && <p role={media.notice.kind === "error" ? "alert" : "status"} className="mt-3">{media.notice.text}</p>}
-  </dialog>;
+  </section>;
 }

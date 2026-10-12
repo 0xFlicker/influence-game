@@ -673,6 +673,8 @@ A local developer bridge that validates a producer-capable token before delegati
 
 The independently selectable editorial unit in Production Studio. Durable transcript/event/action identity is provenance; a single response can yield separate thinking, speech and accepted actions. Stable IDs use game identity, finite source references and semantic parts, never replay cursor, text, timing, pagination or media revision. A thought's camera/pages/fades and the authored opening's shots remain internal segments. Exact flat tag matching selects permitted moments in game-owned source order after the complete accepted history has been reduced. Mystery never catalogs private thinking or nighttime decisions. See `docs/production-studio.md`.
 
+Studio labels are reusable flat tags with exact values (`label.smart=true`, `label.fourth_wall=true`, `label.mistake=true`, `label.aggressive=true`). A finite cut recipe applies All / None / any checked label within each kind, over the existing normal full-export or empty baseline. Kind policies override that baseline without changing catalog authority, source order or Mystery privacy. Browser filters and Source playback preferences do not define cut membership.
+
 ## Frozen production selection
 
 A local, checksummed descriptor of exact permitted moment IDs, selected tag values/revisions, accepted source/media boundary, copy, presentation settings and validated local recording evidence. It is a snapshot rather than a persistent cut project. Later tag membership changes do not alter those exact IDs. Export reauthorizes the source and prepares only selected movie payloads; publication and gameplay resume remain separate operations.

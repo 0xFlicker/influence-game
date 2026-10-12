@@ -357,6 +357,9 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     expect(await page.$eval(studioLink, node => node.getBoundingClientRect().width)).toBeGreaterThan(0);
     await page.click(studioLink);
     await page.waitForSelector('[data-preview-frame]');
+    await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
+    await chooseStudioOption(page, "Production audience", "Mystery");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience') === 'mystery' && !!document.querySelector('[data-preview-frame]')");
     await clickStudioButton(page, "Properties");
     await openStudioDialog(page, "Scene versions & production");
     await openStudioSelect(page, "Inspect scene");
@@ -461,6 +464,9 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     expect(await page.$('[aria-label="Scene inspector"]')).toBeNull();
     expect(await page.$('[data-production-preview]')).toBeNull();
     expect(await page.$('[aria-label="Game production recovery"]')).toBeNull();
+    await text(page,"Trailer & poster");
+    // Admin retains its existing manage_postgame_media grant while private
+    // Werewolf production evidence remains Producer/Sysop-only.
     await text(page,"Episode presentation");
     await page.goto(overviewUrl, {waitUntil:"domcontentloaded"}); await text(page,"Game overview");
     await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));

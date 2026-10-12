@@ -140,6 +140,24 @@ test("frozen tagged export resolves exact IDs after tag membership changes and r
   expect((await request(`${root(f.gameId)}/selection/validate`, { ...invalid, hash: descriptorHash(invalid) })).status).toBe(400);
 });
 
+test("recipe freezes independent labels in one snapshot and survives later predicate changes", async () => {
+  const f = await influence(); await producer();
+  const thoughtUrl = `${root(f.gameId)}/moments/${encodeURIComponent(f.thought.id)}/annotation`;
+  const speechUrl = `${root(f.gameId)}/moments/${encodeURIComponent(f.speech.id)}/annotation`;
+  expect((await request(thoughtUrl, annotationBody(f.source, 0, {"label.smart":"true", "label.fourth_wall":"true", note:"retained"}))).status).toBe(200);
+  expect((await request(speechUrl, annotationBody(f.source, 0, {"label.aggressive":"true"}))).status).toBe(200);
+  const selection = {mode:"recipe",thinking:true,base:"empty",policies:{thinking:{mode:"any",labels:["fourth_wall","smart"]},speech:{mode:"any",labels:["smart","aggressive"]}}} as const;
+  const body = {snapshot:f.source.snapshot,audience:"public",thinking:true,selection,expectedMomentIds:[f.thought.id,f.speech.id],settings,copy:{title:"Exact reviewed cut"}};
+  const response = await request(`${root(f.gameId)}/selection`,body); expect(response.status).toBe(200);
+  const frozen = await response.json() as ProductionExportDescriptor;
+  expect(frozen.selection).toEqual(selection); expect(frozen.momentIds).toEqual(body.expectedMomentIds);
+  expect(frozen.annotations[0]!.tags).toEqual({"label.smart":"true", "label.fourth_wall":"true",note:"retained"});
+  expect((await request(thoughtUrl,annotationBody(f.source,1,{note:"retained"}))).status).toBe(200);
+  expect((await request(`${root(f.gameId)}/selection`,body)).status).toBe(409);
+  expect((await request(`${root(f.gameId)}/selection/validate`,frozen)).status).toBe(200);
+  expect((await request(`${root(f.gameId)}/selection/validate`,{...frozen,selection:{...selection,base:"full"}})).status).toBe(400);
+});
+
 test("a completed game cannot export a handcrafted descriptor from its previously valid paused prefix", async () => {
   const f = await wolf(); await producer();
   const boundary = f.events.findIndex((_event, index) => werewolfActionPlans(replayWerewolf(f.events.slice(0, index + 1)))

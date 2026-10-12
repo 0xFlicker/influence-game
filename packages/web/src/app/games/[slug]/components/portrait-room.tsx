@@ -29,12 +29,12 @@ export function portraitRoomSeats(width: number, count: number, speakerIndex: nu
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, hideSpeech = false, onImageReady }: {
+export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, hideSpeech = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
-  hideSpeech?: boolean;
   onImageReady?: () => void;
+  hideSpeech?: boolean;
 }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);

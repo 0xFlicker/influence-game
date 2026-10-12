@@ -4,6 +4,7 @@ import {projectWerewolfWatch} from "@influence/engine/werewolf/watch";
 import {buildExportCues,type ExportCue} from "./cues";
 import {compilePresentation,thinkingSegment,thinkingPicture,retainPresentationAnchor} from "./presentation";
 import {compileTiming,parseTimingProfile,sampleTiming} from "./timing";
+import {votePresentationTiming} from "../../app/games/[slug]/components/vote-presentation-timing";
 
 async function fixture() {
   const events = await werewolfResultsFixture("village","moment-pictures");
@@ -46,6 +47,54 @@ test("separating thoughts preserves full duration and speech-off coverage",async
   expect(cut.timeline.at(-1)!.endMs).toBe(combined.at(-1)!.endMs);
   const speechOnly = compilePresentation({...settings,source:[{id:"thought",segments:[thought]},{id:"speech",segments:[speech]}],selectedIds:["speech"]});
   expect(speechOnly.timeline[0]!.endMs).toBe(speech.timing.baseDurationMs);
+});
+test("content anchors sample readable thinking and speech after edited entrances",async () => {
+  const {speech,thought} = await fixture();
+  const source = [{id:"thought",segments:[thought]},{id:"speech",segments:[speech]}];
+  for (const fps of [24,30,60]) for (const motionScale of [.1,1,2]) {
+    const compiled = compilePresentation({...settings,source,selectedIds:["thought","speech"],fps,
+      profile:parseTimingProfile({motionScale,readingRate:3,thinkingRate:2,establishingHoldMs:173,conversationGapMs:111})});
+    for (const [index,moment] of compiled.moments.entries()) {
+      const frame = retainPresentationAnchor(source,compiled,{momentId:moment.id,at:"content"})!;
+      expect(frame).toBeGreaterThan(moment.startFrame);
+      expect(frame).toBeLessThan(moment.endFrame);
+      const time = compiled.timeline[index]!, ms = frame * 1000 / fps;
+      const sample = sampleTiming(time,ms);
+      if (moment.id === "thought") {
+        expect(sample.thought?.opacity).toBe(1);
+        expect(sample.thought?.focus).toBe(1);
+        expect(sample.thought!.elapsedMs).toBeLessThan(1000 / fps + .001);
+      } else {
+        expect(sample.thought).toBeNull();
+        expect(sample.elapsedMs).toBeGreaterThanOrEqual(speech.timing.speech!.readAtMs);
+        expect(sample.elapsedMs).toBeLessThan(speech.timing.speech!.hideAtMs);
+      }
+      expect(retainPresentationAnchor(source,compiled,{momentId:moment.id,offsetFrames:0})).toBe(moment.startFrame);
+    }
+  }
+  const cut = compilePresentation({...settings,source,selectedIds:["thought"]});
+  expect(sampleTiming(cut.timeline[0]!,cut.moments[0]!.contentFrame * 1000 / settings.fps).thought?.opacity).toBe(1);
+  expect(cut.cues[0]!.speech).toBeNull();
+});
+test("silent content anchors stay in their first authored shot and within one-frame cues",async () => {
+  const {speech} = await fixture();
+  const silent = (kind:"opening"|"ballot"|"tally"|"scene"|"result", duration=2200):ExportCue => ({...speech,speech:null,
+    timing:{key:kind,kind,baseDurationMs:duration,speech:null,thinking:null}});
+  const kinds = ["opening","ballot","tally","scene","result"] as const;
+  const source = kinds.map(kind => ({id:kind,segments:[silent(kind)]}));
+  source[0]!.segments.push(silent("opening",4000));
+  const compiled = compilePresentation({...settings,source,selectedIds:source.map(moment=>moment.id)});
+  const opening = compiled.moments[0]!;
+  expect(opening.contentFrame).toBeGreaterThan(opening.startFrame);
+  expect(opening.contentFrame).toBeLessThan(compiled.timeline[0]!.endFrame);
+  const ballot = compiled.moments[1]!, ballotTime = compiled.timeline[2]!;
+  expect(votePresentationTiming(sampleTiming(ballotTime,ballot.contentFrame * 1000 / settings.fps).elapsedMs,2200).revealed).toBe(true);
+  for (const moment of compiled.moments) {
+    expect(moment.contentFrame).toBeGreaterThanOrEqual(moment.startFrame);
+    expect(moment.contentFrame).toBeLessThan(moment.endFrame);
+  }
+  const single = compilePresentation({...settings,source:[{id:"tiny",segments:[silent("scene",1)]}],selectedIds:["tiny"]});
+  expect(single.moments[0]!.contentFrame).toBe(0);
 });
 test("selection keeps already reduced state when earlier movie content is omitted",async () => {
   const {cues} = await fixture();

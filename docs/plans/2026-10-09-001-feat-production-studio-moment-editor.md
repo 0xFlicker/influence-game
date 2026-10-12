@@ -498,6 +498,8 @@ Local integration checks completed so far:
 
 ### Normal local game testing — 2026-10-10
 
+The operator's real-use feedback now has an authorized implementation follow-up: [timeline, editorial labels and sizing refinements](2026-10-10-002-feat-production-studio-editing-refinements.md). Its compact interactive prototype was approved on 2026-10-10. That follow-up tracks current local proofs and remaining delivered acceptance separately; it does not replace the original ST-01–ST-15 history below.
+
 - The retained fixture reached its two-hour timeout and cleaned up its owned services/database. That timeout is the retained-review lifecycle; it does not count as another passing automated test or delivered operator acceptance.
 - The normal local web process held a stale Tailwind file reference to the removed `replay-visual-production-panel.tsx`. Restarting only the House web process with `bun run dev:web` restored HTTP 200 at `http://localhost:3001/admin/production`; the existing API and game data were left running. The regular House sign-in flow is open for a Producer/Sysop account, without fixture authentication.
 - Read-only metadata inspection of `influence_dev` found 47 completed Influence games and six completed Werewolf games, with migration 0113's annotation table present. Read-only Studio source calls passed for `young-olive-oak` and `bare-jade-shard`, returning 256 and 151 moments respectively in their first bounded pages. This establishes existing-game source availability, not a signed-in editing/export test on those games. No provider calls, game mutations, deployment or real external writes were performed. Production-site testing and ST-14 delivered acceptance remain pending.

@@ -16,6 +16,28 @@ const transcript = (overrides: Partial<Extract<ProductionSource, { kind: "influe
 const influence = (sources: readonly ProductionSource[]) => assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
 
 describe("stable ProductionMoment catalog", () => {
+  test("recipes override each kind, reuse labels with OR, and retain source order", () => {
+    const catalog = influence([transcript(), transcript({transcriptId: "second", order: order(2), defaultThinking: false}), transcript({transcriptId: "third", order: order(3)})]);
+    const [thought, speech, extraThought, extraSpeech, unmarkedThought, lastSpeech] = catalog.moments;
+    const annotations: Record<string, Record<string, string>> = {[thought!.id]: {"label.smart": "true", "label.fourth_wall": "true"}, [speech!.id]: {"label.smart": "true"}, [extraThought!.id]: {"label.fourth_wall": "true"}, [extraSpeech!.id]: {"label.aggressive": "true"}};
+    const recipe = decodeProductionSelection({mode: "recipe", thinking: true, base: "full", policies: {thinking: {mode: "any", labels: ["fourth_wall", "smart"]}}});
+    expect(selectProductionMoments(catalog, recipe, annotations).map(m => m.id)).toEqual([thought!.id, speech!.id, extraThought!.id, extraSpeech!.id, lastSpeech!.id]);
+    expect(selectProductionMoments(catalog, {mode: "recipe", thinking: true, base: "empty", policies: {thinking: {mode: "any", labels: ["smart", "fourth_wall"]}}}, annotations).map(m => m.id)).toEqual([thought!.id, extraThought!.id]);
+    expect(selectProductionMoments(catalog, {mode: "recipe", thinking: true, base: "full", policies: {thinking: {mode: "any", labels: []}}}, annotations).map(m => m.kind)).toEqual(["speech", "speech", "speech"]);
+    expect(selectProductionMoments(catalog, {mode: "recipe", thinking: true, base: "full", policies: {speech: {mode: "none"}, thinking: {mode: "all"}}}).map(m => m.id)).toEqual([thought!.id, extraThought!.id, unmarkedThought!.id]);
+    expect(selectProductionMoments(catalog, {mode: "full", thinking: true}).map(m => m.id)).toEqual([thought!.id, speech!.id, extraSpeech!.id, unmarkedThought!.id, lastSpeech!.id]);
+    expect(selectProductionMoments(catalog, {...recipe, thinking: false}, annotations).every(m => m.kind !== "thinking")).toBe(true);
+  });
+
+  test("recipe validation is finite and matching is exact, without rewriting frozen shapes", () => {
+    const recipe = {mode: "recipe", thinking: true, base: "empty", policies: {thinking: {mode: "any", labels: ["mistake", "smart"]}}};
+    expect(JSON.stringify(decodeProductionSelection(recipe))).toBe(JSON.stringify(recipe));
+    const catalog = influence([transcript()]), thought = catalog.moments[0]!;
+    const nonmatches: Record<string, string>[] = [{"label.smart": "True"}, {smart: "true"}, {"label.fourth-wall": "true"}];
+    for (const tags of nonmatches) expect(selectProductionMoments(catalog, decodeProductionSelection(recipe), {[thought.id]: tags})).toEqual([]);
+    for (const patch of [{base: "other"}, {policies: null}, {policies: {unknown: {mode: "all"}}}, {policies: {thinking: {mode: "any", labels: ["smart", "smart"]}}}, {policies: {thinking: {mode: "any", labels: ["constructor"]}}}, {policies: {thinking: {mode: "all", labels: []}}}, {policies: {thinking: {mode: "any", labels: ["smart"], extra: true}}}, {policies: JSON.parse('{"__proto__":{"mode":"all"}}')}]) expect(() => decodeProductionSelection({...recipe, ...patch})).toThrow();
+    for (const mode of [{mode: "full", thinking: true}, {mode: "tagged", thinking: true, predicate: {cut: "youtube"}}, {mode: "ids", thinking: false, ids: []}]) expect(JSON.stringify(decodeProductionSelection(mode))).toBe(JSON.stringify(mode));
+  });
   test("one response produces independently selectable thought and speech", () => {
     const catalog = influence([transcript()]);
     const thought = catalog.moments.find(m => m.kind === "thinking")!;
@@ -101,6 +123,7 @@ describe("stable ProductionMoment catalog", () => {
     const mystery = assembleProductionCatalog({ gameId: "w", gameKind: "werewolf", audience: "mystery", sources });
     expect(mystery.moments.map(m => m.kind)).toEqual(["speech", "outcome"]);
     expect(JSON.stringify(mystery)).not.toContain("PRIVATE");
+    expect(selectProductionMoments(mystery, {mode: "recipe", thinking: true, base: "empty", policies: {thinking: {mode: "all"}, action: {mode: "all"}}})).toEqual([]);
     expect(mystery.moments[0]!.id).toBe(omniscient.moments[0]!.id);
     const privateIds = omniscient.moments.filter(m => m.kind === "thinking" || m.kind === "action" || m.actorId === "wolf").map(m => m.id);
     for (const id of privateIds) expect(() => resolveProductionMomentIds(mystery, [id])).toThrow("Unavailable production moment");

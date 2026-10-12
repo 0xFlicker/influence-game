@@ -67,7 +67,7 @@ export async function seedProductionStudioFixture(db: DrizzleDB) {
   const thought = influence.catalog.moments.find(moment => moment.kind === "thinking" && moment.source.kind === "influence-transcript" && moment.source.transcriptId === String(speechRow.id));
   const speech = influence.catalog.moments.find(moment => moment.kind === "speech" && moment.source.kind === "influence-transcript" && moment.source.transcriptId === String(speechRow.id));
   if (!thought || !speech) throw new Error("Production fixture needs independent thought and speech");
-  await db.insert(schema.productionMomentAnnotations).values({ gameId, momentKey: thought.id, tags: { cut: "youtube" }, revision: 1, updatedById: producerId });
+  await db.insert(schema.productionMomentAnnotations).values({ gameId, momentKey: thought.id, tags: { cut: "youtube", "label.smart": "true" }, revision: 1, updatedById: producerId });
   const werewolfId = "studio-fixture-werewolf", wolfEvents = await werewolfResultsFixture("saved", werewolfId, 2);
   await db.insert(schema.games).values({ id: werewolfId, slug: werewolfId, gameKind: "werewolf", status: "completed", startedAt: "2026-09-01T00:00:00.000Z", config: "{}" });
   await db.insert(schema.werewolfEvents).values(wolfEvents.map(event => ({ gameId: werewolfId, sequence: event.sequence, event })));
