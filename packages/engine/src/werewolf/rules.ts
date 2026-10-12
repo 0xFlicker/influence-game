@@ -17,7 +17,7 @@ export const WEREWOLF_MAX_RECIPIENTS = 3;
 export const WEREWOLF_PACK_ATTEMPTS = 3;
 
 export class WerewolfRulesVersionError extends Error {
-  constructor() { super("This game uses an unsupported Werewolf rules version. Start a new game to use game retrospectives (rules v8)."); }
+  constructor() { super("This game uses an unsupported Werewolf rules version. Supported versions are v7 and v8."); }
 }
 
 export const WEREWOLF_RULES = `Werewolf is a fictional social deduction game. Win with your faction, even if you die.
@@ -53,8 +53,8 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 export function assignWerewolfRoles(players: readonly WerewolfPlayer[], config: WerewolfConfig, seed: string): Record<string, WerewolfRole> {
-  if (config.rulesVersion !== 8) throw new WerewolfRulesVersionError();
-  const validConfig = werewolfConfig(config.preset, config.maxDays, config.setup);
+  if (config.rulesVersion !== 7 && config.rulesVersion !== 8) throw new WerewolfRulesVersionError();
+  const validConfig = { ...werewolfConfig(config.preset, config.maxDays, config.setup), rulesVersion: config.rulesVersion };
   if (!same(config, validConfig)) throw new Error("Invalid Werewolf rules configuration");
   if (players.length !== (config.setup?.playerCount ?? WEREWOLF_PRESETS[config.preset].players)) throw new Error("Werewolf roster does not match preset");
   if (!seed || new Set(players.map((p) => p.id)).size !== players.length) throw new Error("Werewolf requires a seed and distinct seat IDs");
@@ -334,6 +334,7 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     case "werewolf.retrospective_completed": retrospectiveRecord = { kind: "completed", payload: event.payload }; break;
   }
   if (retrospectiveRecord) {
+    if (previous.config.rulesVersion !== 8) throw new Error("Werewolf rules v7 finishes at the competitive outcome and cannot accept retrospective events");
     if (retrospectiveRecord.kind === "started" && !same(retrospectiveRecord.payload.speakerIds, werewolfRetrospectiveSpeakerIds(previous))) throw new Error("Werewolf retrospective speaker order differs from its canonical deaths and frozen survivor shuffle");
     const retrospective = applyRetrospectiveRecord(previous.retrospective, retrospectiveRecord, {
       outcome: previous.retrospectiveOutcomeSource, rosterIds: previous.players.map(player => player.id), eventSequence: event.sequence,
@@ -405,8 +406,8 @@ export function applyWerewolfEvent(previous: WerewolfState | null, event: Werewo
     }
     case "werewolf.completed": {
       state.outcome = structuredClone(event.payload);
-      state.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "werewolf", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
-      state.phase = "retrospective";
+      if (state.config.rulesVersion === 8) state.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "werewolf", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
+      state.phase = state.config.rulesVersion === 8 ? "retrospective" : "complete";
       state.history.push({ kind: "result", day: state.day, outcome: structuredClone(event.payload) });
     }
   }

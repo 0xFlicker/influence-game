@@ -25,7 +25,7 @@ export type WerewolfPublicEntry =
 
 export interface WerewolfView {
   gameId: string;
-  rulesVersion: 8;
+  rulesVersion: WerewolfState["config"]["rulesVersion"];
   preset: "one_wolf" | "two_wolves";
   setup?: import("./types").WerewolfSetup;
   audience: WerewolfAudience;

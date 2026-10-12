@@ -1,4 +1,4 @@
-import type { WerewolfDayResult, WerewolfFaction, WerewolfNightResult, WerewolfOutcome, WerewolfRole } from "./types";
+import type { WerewolfConfig, WerewolfDayResult, WerewolfFaction, WerewolfNightResult, WerewolfOutcome, WerewolfRole } from "./types";
 
 export interface WerewolfResultSource { sequence: number; cursor: number }
 export type WerewolfResultRecap = { id: string; day: number; source: WerewolfResultSource } & (
@@ -11,7 +11,7 @@ export interface WerewolfResultPlayer {
   elimination: { day: number; kind: "night" | "vote"; source: WerewolfResultSource } | null;
 }
 export interface WerewolfResults {
-  rulesVersion: 8; day: number; maxDays: number; outcome: WerewolfOutcome;
+  rulesVersion: WerewolfConfig["rulesVersion"]; day: number; maxDays: number; outcome: WerewolfOutcome;
   source: WerewolfResultSource; players: WerewolfResultPlayer[]; recap: WerewolfResultRecap[];
 }
 export function werewolfOutcomeTitle(outcome: WerewolfOutcome): string {

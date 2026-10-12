@@ -26,7 +26,8 @@ export interface WerewolfStore {
 }
 
 export function werewolfExecutionFinished(state: WerewolfState): boolean {
-  return state.outcome !== null && state.retrospective !== null && state.retrospective.completedAtEventSequence !== null;
+  return state.outcome !== null && (state.config.rulesVersion === 7
+    || state.retrospective !== null && state.retrospective.completedAtEventSequence !== null);
 }
 
 /** Dedicated post-outcome stage; no gameplay request, observation or fallback. */
