@@ -53,7 +53,7 @@ export type ExportPicture =
       roleLabel?: string;
       scene: AcceptedVisualScene | null;
       sourceElapsedMs: number;
-      room?: {number: number | null; players: import("../api").GamePlayer[]};
+      room?: {number: number | null; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
     }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | {

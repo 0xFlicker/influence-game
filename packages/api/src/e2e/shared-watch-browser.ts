@@ -127,10 +127,9 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   });
   await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
   await page.goto(`${url}?audience=omniscient`, {waitUntil:'domcontentloaded'});
-  await page.waitForSelector("[data-werewolf-stage], [data-werewolf-opening]");
-  const skipOpening = await page.$("[data-werewolf-opening]");
-  if (skipOpening) await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening')?.click()");
-  await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);
+  // Wait for the new audience's opening instead of accepting the previous
+  // session's stage during navigation and missing the new opening entirely.
+  await skipWerewolfOpening(page);await pauseWerewolf(page);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
@@ -165,11 +164,19 @@ export async function checkBallotCollection(page: Page, presentation: WerewolfPr
   await page.keyboard.press('4');
   await page.waitForSelector('[data-vote-target="abstain"]');
   await page.keyboard.press('Space');
+  await page.waitForSelector('button[aria-label="Play replay"]');
+  const entry = presentation.view.entries[index]!;
+  if (entry.kind !== "vote") throw new Error("Ballot collection fixture needs a canonical vote");
+  const total = entry.result.ballots.length;
+  // Rewind from the known last ballot, rather than sampling a collection
+  // animation that may advance between the pause input and its React commit.
+  await seekWatch(page, index + 1, total - 1);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total}`);
   expect(await page.$('[data-speech-bubble]')).toBeNull();
   expect(await page.$eval('[data-werewolf-stage]', e=>Number(e.getAttribute('data-cursor')))).toBe(index+1);
   await page.screenshot({path:'/tmp/werewolf-hear-more-ledger.png'});
-  const revealed = (await page.$$('[data-ledger-voter]')).length;
+  await page.evaluate("document.activeElement?.blur()");
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length < ${revealed}`);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total - 1}`);
   await page.keyboard.press('2');
 }
