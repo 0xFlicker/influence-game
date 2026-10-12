@@ -27,7 +27,7 @@ function CloseIcon() {
   );
 }
 
-export function Nav() {
+export function Nav({ menu = false }: { menu?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
@@ -113,6 +113,8 @@ export function Nav() {
       )}
     </>
   );
+
+  if (menu) return <nav aria-label="The House" className="flex flex-col items-start gap-4 text-sm"><Link href="/" className="text-lg font-bold">{HOUSE_VENUE.name}</Link>{navLinks}</nav>;
 
   return (
     <nav

@@ -2,97 +2,40 @@ import { resolve, dirname } from "node:path";
 import { readFile } from "node:fs/promises";
 import { sha256, type ReplayAssets } from "./assets";
 import type { ExportCue } from "./cues";
-export interface SpeechAlignment {
-  textStart: number;
-  textEnd: number;
-  startMs: number;
-  endMs: number;
-}
-export interface SpeechAttachment {
-  messageId: string;
-  speakerId: string | null;
-  textHash: string;
-  file: string;
-  alignment?: SpeechAlignment[];
-}
-export function validateAlignment(
-  value: unknown,
-  text: string,
-  durationMs: number,
-): SpeechAlignment[] {
-  if (!Array.isArray(value) || !value.length)
-    throw new Error("Speech alignment must contain spans");
-  let lastText = 0,
-    lastTime = 0;
-  const spans: SpeechAlignment[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object")
-      throw new Error("Invalid speech alignment span");
-    const span = item as SpeechAlignment;
-    if (
-      Object.keys(span).sort().join() !== "endMs,startMs,textEnd,textStart" ||
-      !Number.isSafeInteger(span.textStart) ||
-      !Number.isSafeInteger(span.textEnd) ||
-      span.textStart !== lastText ||
-      span.textEnd <= span.textStart ||
-      span.textEnd > text.length ||
-      !Number.isFinite(span.startMs) ||
-      !Number.isFinite(span.endMs) ||
-      span.startMs < lastTime ||
-      span.endMs <= span.startMs ||
-      span.endMs > durationMs
-    )
-      throw new Error(
-        "Speech alignment must cover text in order within the recording",
-      );
-    spans.push(span);
-    lastText = span.textEnd;
-    lastTime = span.endMs;
-  }
-  if (lastText !== text.length)
-    throw new Error("Speech alignment does not cover the whole message");
-  return spans;
-}
+import {validateAlignment,validateSpeechManifest,type ProductionRecording} from "./speech-contract";
+import {stableProductionJson} from "@influence/engine/production-moments/export";
+export {validateAlignment} from "./speech-contract";
+export type {SpeechAlignment, SpeechAttachment} from "./speech-contract";
 export async function attachSpeech(
   path: string,
   cues: ExportCue[],
   assets: Pick<ReplayAssets, "cache" | "table">,
+  permittedSpeech: readonly ExportCue[] = cues,
+  frozen?:readonly ProductionRecording[],
 ) {
   const value: unknown = JSON.parse(await readFile(path, "utf8"));
-  if (!Array.isArray(value))
-    throw new Error("Speech manifest must be an array");
-  const seen = new Set<string>();
-  for (const item of value) {
-    if (!item || typeof item !== "object")
-      throw new Error("Invalid speech attachment");
-    const entry = item as SpeechAttachment;
-    if (
-      Object.keys(entry).some(
-        (key) =>
-          !["messageId", "speakerId", "textHash", "file", "alignment"].includes(
-            key,
-          ),
-      ) ||
-      typeof entry.messageId !== "string" ||
-      typeof entry.file !== "string" ||
-      seen.has(entry.messageId)
-    )
-      throw new Error("Invalid or duplicate speech attachment");
-    seen.add(entry.messageId);
-    const matches = cues.filter(
-      (cue) => cue.speech?.messageId === entry.messageId,
-    );
-    if (matches.length !== 1)
-      throw new Error(
-        `Speech message is missing or ambiguous: ${entry.messageId}`,
-      );
-    const cue = matches[0]!,
-      speech = cue.speech!;
-    if (
-      speech.speakerId !== entry.speakerId ||
-      sha256(speech.text) !== entry.textHash
-    )
-      throw new Error(`Speech speaker/text mismatch: ${entry.messageId}`);
+  const validated = await validateSpeechManifest(value,permittedSpeech,sha256);
+  if (frozen?.some(recording => !validated.some(({entry}) => entry.messageId === recording.messageId))) throw new Error("Frozen recording is missing from the local speech manifest");
+  const selectedSpeech = new Map<string,ExportCue>();
+  for (const cue of cues) {
+    if (!cue.speech) continue;
+    if (selectedSpeech.has(cue.speech.messageId)) throw new Error(`Selected speech message is ambiguous: ${cue.speech.messageId}`);
+    selectedSpeech.set(cue.speech.messageId,cue);
+  }
+  const frozenByMessage = new Map(frozen?.map(recording => [recording.messageId,recording]));
+  for (const recording of frozen ?? []) {
+    if (selectedSpeech.get(recording.messageId)?.momentId !== recording.momentId)
+      throw new Error(`Frozen recording has no matching selected moment: ${recording.messageId}`);
+  }
+  for (const {entry,cue} of validated) {
+    const speech = cue.speech!;
+    // Validate the complete authorized speech catalog first. Omitted files are never opened or cached.
+    const selectedCue = selectedSpeech.get(entry.messageId);
+    if (!selectedCue) continue;
+    const expected = frozenByMessage.get(entry.messageId);
+    if (frozen && !expected) continue;
+    if (expected && (expected.messageId !== entry.messageId || expected.speakerId !== entry.speakerId || expected.textHash !== entry.textHash
+      || stableProductionJson(expected.alignment) !== stableProductionJson(entry.alignment))) throw new Error(`Frozen speech reference changed: ${entry.messageId}`);
     const assetId = await assets.cache(
         resolve(dirname(path), entry.file),
         true,
@@ -100,9 +43,10 @@ export async function attachSpeech(
       asset = assets.table[assetId]!;
     if (asset.mediaType !== "audio")
       throw new Error("Speech attachment must be audio");
-    cue.timing.recording = { assetId, durationMs: asset.durationMs! };
+    if (expected && (asset.sha256 !== expected.sha256 || Math.abs(asset.durationMs!-expected.durationMs) > 50)) throw new Error(`Frozen recording bytes/duration changed: ${entry.messageId}`);
+    selectedCue.timing.recording = { assetId, durationMs: expected?.durationMs ?? asset.durationMs! };
     if (entry.alignment)
-      cue.alignment = validateAlignment(
+      selectedCue.alignment = validateAlignment(
         entry.alignment,
         speech.text,
         asset.durationMs!,

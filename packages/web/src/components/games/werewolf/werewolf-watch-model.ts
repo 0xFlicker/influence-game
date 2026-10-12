@@ -3,7 +3,7 @@ import type {WatchPolicy} from "@/components/watch/watch-director";
 import {replayMoment} from "./replay-moment";
 import {SCENE_SPEECH_START_MS, SCENE_READ_START_MS, SCENE_EXIT_HOLD_MS} from "@/app/games/[slug]/components/scene-speech-timing";
 import {VISUAL_SPEECH_FADE_MS} from "@influence/engine/visual-speech";
-import {SOLO_READ_START_MS, soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
+import {SOLO_READ_START_MS, SOLO_SPEECH_START_MS, SOLO_EXIT_MS, soloPresentationDurationMs} from "@/app/games/[slug]/components/solo-presentation-timing";
 import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS, NIGHT_CLAW_MS} from "./werewolf-night-motion";
@@ -17,6 +17,10 @@ export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   speech: cue => {
     if (cue?.ballot) return null;
     if (!cue || !["speech", "discussion"].includes(cue.moment.entry.kind)) return null;
+    if (cue.moment.entry.kind === "speech" && cue.moment.entry.purpose === "retrospective") return {
+      showAtMs: SOLO_SPEECH_START_MS, readAtMs: SOLO_READ_START_MS,
+      hideAtMs: cue.baseDurationMs - SOLO_EXIT_MS, hiddenAtMs: cue.baseDurationMs,
+    };
     const hideAtMs = cue.baseDurationMs - SCENE_EXIT_HOLD_MS - VISUAL_SPEECH_FADE_MS;
     const lead = cue.transformation?.durationMs ?? 0;
     return {showAtMs: lead + SCENE_SPEECH_START_MS, readAtMs: lead + SCENE_READ_START_MS, hideAtMs, hiddenAtMs: hideAtMs + VISUAL_SPEECH_FADE_MS};

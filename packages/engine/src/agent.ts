@@ -63,6 +63,10 @@ import type {
   FormatDecisionProvenance,
 } from "./game-runner.types";
 import { Phase } from "./types";
+import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "./retrospective-invocation";
+import { retrospectiveAttemptsPerModel } from "./retrospective-budget";
+import type { RetrospectiveSpeakerContext } from "./retrospective-context";
+import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "./retrospective";
 import type {
   AllianceHuddleActionKind,
   AllianceHuddleFactAtom,
@@ -1625,6 +1629,7 @@ type LlmCallOptions = {
 };
 
 export const AGENT_TOOL_SEMANTIC_ACTION_IDS = [
+  "retrospective-statement",
   "whispers",
   "mingle-intent",
   "alliance-action",
@@ -2640,6 +2645,42 @@ export class InfluenceAgent implements IAgent {
   // ---------------------------------------------------------------------------
   // Phase-specific actions (normal rounds)
   // ---------------------------------------------------------------------------
+
+  getRetrospectiveSpeaker() {
+    return { id: this.id, name: this.name,
+      personality: this.personalityPrompt ?? PERSONALITY_PROMPTS[this.personality],
+      backstory: this.backstory, strategy: this.strategyInstructions ?? "" };
+  }
+
+  async prepareRetrospectiveSetup(signal?: AbortSignal) {
+    return { speaker: this.getRetrospectiveSpeaker(), capacities: await prepareRetrospectiveCapacityPolicy(this.providerManifest, signal) };
+  }
+
+  async getRetrospectiveStatement(ctx: PhaseContext, retrospective: RetrospectiveSpeakerContext, options?: AgentCallOptions): Promise<RetrospectiveSpeechV1> {
+    options?.signal?.throwIfAborted();
+    if (ctx.phase !== Phase.RETROSPECTIVE || ctx.gameId !== retrospective.request.gameId
+      || ctx.selfId !== this.id || retrospective.self.id !== this.id || retrospective.self.name !== this.name
+      || retrospective.game.outcome.gameKind !== "influence") {
+      throw new RetrospectiveContractError("Retrospective does not match this Influence agent's execution boundary");
+    }
+    const prepared = prepareRetrospectiveInvocation(retrospective, this.providerManifest, options?.signal);
+    const call = this.startProviderCall({ action: "retrospective-statement", privateTrace: {
+      gameId: ctx.gameId, action: "retrospective-statement", actor: { id: this.id, name: this.name, role: "player" },
+      phase: ctx.phase, round: ctx.round, semanticCoordinate: ctx.providerSemanticCoordinate ?? {
+        version: 1, kind: "phase_call", phase: ctx.phase, round: ctx.round,
+        canonicalEventSequence: ctx.providerCallBoundaryEventSequence ?? 0, callSlot: retrospective.request.ordinal + 1,
+      },
+    } });
+    const result = await executeModelInvocation({
+      call, runtimes: this.providerManifest, ...prepared, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
+      cancellationSignal: options?.signal, requestSignalFactory: () => AbortSignal.timeout(120_000),
+      validate: (_outcome, value) => value ? { status: "usable", value }
+        : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },
+    });
+    this.rememberProviderMetadata(result.value, this.providerManifest[result.manifestPosition]!, result.acceptedAttemptId, result.liveOutcome);
+    if (result.liveOutcome) this.recordTokenUsage(result.liveOutcome, `${this.name}/retrospective-statement`);
+    return result.value;
+  }
 
   async getIntroduction(ctx: PhaseContext): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);

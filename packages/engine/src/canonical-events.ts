@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import type { LaunchFormatId } from "./formats";
 import type { LegacyAllianceHuddleOutcomeV1Metadata } from "./alliance-huddle-outcome";
+import { assertRetrospectiveRecordPayload, type RetrospectiveDefinitionV1, type RetrospectiveStatementV1, type RetrospectiveCompletionV1 } from "./retrospective";
 import {
   getFormatRegistration,
   isRegisteredFormatId,
@@ -75,6 +76,9 @@ export interface AcceptedActionRegistryEntry {
 }
 
 export type CanonicalGameEventType =
+  | "retrospective.started"
+  | "retrospective.statement_recorded"
+  | "retrospective.completed"
   | "game.roster_initialized"
   | "game.phase_entered"
   | "round.started"
@@ -375,6 +379,9 @@ export type JudgmentSpeechProvenance = "agent" | "timeout" | "fallback";
 export type FormalSpeechProvenance = JudgmentSpeechProvenance;
 
 const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
+  "retrospective.started",
+  "retrospective.statement_recorded",
+  "retrospective.completed",
   "game.roster_initialized",
   "game.phase_entered",
   "round.started",
@@ -587,6 +594,9 @@ export type TwoNamesPleaRecordedPayload = {
 };
 
 export type CanonicalGameEvent =
+  | CanonicalEventEnvelope<"retrospective.started", RetrospectiveDefinitionV1>
+  | CanonicalEventEnvelope<"retrospective.statement_recorded", RetrospectiveStatementV1>
+  | CanonicalEventEnvelope<"retrospective.completed", RetrospectiveCompletionV1>
   | CanonicalEventEnvelope<"visual.operation_recorded", import("./visual-mode").VisualOperationEvent>
   | CanonicalEventEnvelope<"visual.cue_recorded", { playerId: string; turnId: string; sceneId: string | null; arrangementKey?: string; roomId: import("./visual-mode").VisualRoomId | null; cue: import("./visual-mode").PerformanceCue }>
   | CanonicalEventEnvelope<
@@ -1291,6 +1301,14 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
     );
   } else if (typeof value.type === "string" && value.type.startsWith("format.two_names_")) {
     errors.push(...validateTwoNamesEventPayload(value.type, value.payload));
+  } else if (value.type === "retrospective.started" || value.type === "retrospective.statement_recorded" || value.type === "retrospective.completed") {
+    const kind = value.type === "retrospective.started" ? "started" : value.type === "retrospective.completed" ? "completed" : "statement";
+    try {
+      assertRetrospectiveRecordPayload(kind, value.payload);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+    if (value.phase !== "RETROSPECTIVE" || value.visibility !== "public") errors.push("Retrospective events require the public RETROSPECTIVE phase");
   }
   if (!Array.isArray(value.sourcePointers) || !value.sourcePointers.every(isSourcePointer)) {
     errors.push("sourcePointers must be an array of source pointer records");

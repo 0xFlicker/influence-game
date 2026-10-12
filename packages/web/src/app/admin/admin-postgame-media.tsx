@@ -1,14 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  getAdminPostgameMedia,
-  requestAdminPostgameMedia,
   type AdminGameSummary,
   type AdminPostgameMediaAction,
   type AdminPostgameMediaArtifactMetadata,
   type AdminPostgameMediaResponse,
 } from "@/lib/api";
+import { accessDenied, useAdminRead, useAdminSession, useAdminValue, type Operation } from "./admin-session";
 
 const ACTIVE_STATUSES = new Set(["queued", "claimed", "rendering", "composing", "uploading"]);
 
@@ -23,6 +21,59 @@ export function postgameMediaActionFor(
 
 export function postgameMediaRequiresConfirmation(detail: AdminPostgameMediaResponse): boolean {
   return detail.status === "ready" || Boolean(detail.status !== "not_requested" && detail.currentReady);
+}
+
+type MediaBaseline = { status: string; renderVersion: number; attemptNumber: number; updatedAt: string | null };
+type MediaNotice = { kind: "success" | "error"; text: string };
+function mediaBaseline(detail: AdminPostgameMediaResponse): MediaBaseline {
+  return detail.status === "not_requested" ? { status: detail.status, renderVersion: 0, attemptNumber: 0, updatedAt: null }
+    : { status: detail.status, renderVersion: detail.renderVersion, attemptNumber: detail.attemptNumber, updatedAt: detail.timestamps.updatedAt };
+}
+
+/** Both episode and trailer tools use this session-owned request. These endpoints
+ * have no request receipt: an uncertain response needs an explicit GET before retry. */
+export function usePostgameMediaOperation(gameId: string) {
+  const session = useAdminSession(), resource = `/api/admin/games/${encodeURIComponent(gameId)}/postgame/media`;
+  const key = `operation:${resource}`, baselineKey = `ui:${resource}:baseline`;
+  const query = useAdminRead<AdminPostgameMediaResponse>(resource);
+  const [operation] = useAdminValue<Operation | undefined>(key, undefined);
+  const [reason, setReason] = useAdminValue(`draft:${resource}:reason`, "");
+  const [confirming, setConfirming] = useAdminValue(`ui:${resource}:confirmation`, false);
+  const [notice, setNotice] = useAdminValue<MediaNotice | null>(`ui:${resource}:notice`, null);
+  const action = query.data ? postgameMediaActionFor(query.data) : null;
+  const actionLabel = query.data?.status === "failed" ? "Retry" : action === "rerender" ? "Rerender" : "Backfill";
+  const pending = operation?.phase === "submitting", unknown = operation?.phase === "unknown";
+  async function submit(inputReason: string = reason) {
+    if (!query.data || !action || !inputReason.trim() || pending || unknown || query.denied) return;
+    if (postgameMediaRequiresConfirmation(query.data) && !confirming) { setConfirming(true); return; }
+    setNotice(null); session.set(baselineKey, mediaBaseline(query.data));
+    try {
+      const result = await session.execute<{ outcome: string }>(key, `${resource}/${action}`,
+        { reason: inputReason.trim(), confirmation: action.toUpperCase() }, false, { accessResource: resource });
+      if (!result) return;
+      setNotice({ kind: "success", text: `${actionLabel} requested (${result.outcome}).` });
+      setReason(""); setConfirming(false); await query.refresh();
+    } catch (error) {
+      if (!accessDenied(error)) setNotice({ kind: "error", text: error instanceof Error ? error.message : "Trailer request failed." });
+    }
+  }
+  async function checkSaved() {
+    const current = session.get<Operation>(key);
+    if (current?.phase !== "unknown") return;
+    const next = await query.refresh();
+    if (next.error || !next.data || session.get(key) !== current) return;
+    const baseline = session.get<MediaBaseline>(baselineKey);
+    if (!baseline) { setNotice({ kind: "error", text: "The prior trailer state is unavailable. Inspect the current render before retrying." }); return; }
+    const changed = JSON.stringify(mediaBaseline(next.data)) !== JSON.stringify(baseline);
+    session.set<Operation>(key, { ...current, phase: changed ? "accepted" : "rejected",
+      ...(changed ? { result: { observed: true }, error: undefined } : { error: "No new trailer request is visible. Review the current state before retrying." }) });
+    setConfirming(false);
+    setNotice({ kind: changed ? "success" : "error", text: changed
+      ? "Trailer state changed since the request. Review its current status; no second request was sent."
+      : "No new trailer request is visible. Review the current state before retrying." });
+    if (changed) setReason("");
+  }
+  return { ...query, operation, reason, setReason, confirming, setConfirming, notice, action, actionLabel, pending, unknown, submit, checkSaved };
 }
 
 export function AdminPostgameMediaPill({
@@ -53,120 +104,24 @@ export function AdminPostgameMediaPill({
 export function AdminPostgameMediaPanel({
   game,
   canManage,
-  onClose,
 }: {
-  game: Pick<AdminGameSummary, "slug">;
+  game: Pick<AdminGameSummary, "id" | "slug">;
   canManage: boolean;
-  onClose: () => void;
 }) {
-  const [detail, setDetail] = useState<AdminPostgameMediaResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reason, setReason] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const requestIdRef = useRef(0);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const gameKey = game.slug;
-
-  const load = useCallback(() => {
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    setLoading(true);
-    setError(null);
-    getAdminPostgameMedia(gameKey)
-      .then((next) => {
-        if (requestIdRef.current === requestId) setDetail(next);
-      })
-      .catch((loadError) => {
-        if (requestIdRef.current === requestId) {
-          setError(loadError instanceof Error ? loadError.message : "Failed to load trailer media diagnostics.");
-        }
-      })
-      .finally(() => {
-        if (requestIdRef.current === requestId) setLoading(false);
-      });
-  }, [gameKey]);
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    closeRef.current?.focus();
-    load();
-    return () => {
-      requestIdRef.current += 1;
-      previousFocus?.focus();
-    };
-  }, [load]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
-  const action = useMemo(() => detail ? postgameMediaActionFor(detail) : null, [detail]);
-  const actionLabel = detail?.status === "failed" ? "Retry" : action === "rerender" ? "Rerender" : "Backfill";
-  const requiresReadyConfirmation = detail ? postgameMediaRequiresConfirmation(detail) : false;
-
-  async function submitAction(): Promise<void> {
-    if (!action || !reason.trim()) return;
-    if (requiresReadyConfirmation && !confirming) {
-      setConfirming(true);
-      return;
-    }
-
-    setSubmitting(true);
-    setError(null);
-    setFeedback(null);
-    try {
-      const result = await requestAdminPostgameMedia(gameKey, action, reason.trim());
-      setFeedback(`${actionLabel} requested (${result.outcome}).`);
-      setReason("");
-      setConfirming(false);
-      load();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : `Failed to request ${action}.`);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+  const media = usePostgameMediaOperation(game.id);
+  const { data: detail, error, reason, setReason, pending: submitting, confirming, setConfirming, action, actionLabel, notice } = media;
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <aside
-        className="h-full w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-neutral-950 p-5 shadow-2xl sm:p-6"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="postgame-media-panel-title"
+      <section
+        aria-label="Trailer media"
         data-testid="admin-postgame-media-panel"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs tracking-wide text-white/35">{game.slug}</p>
-            <h2 id="postgame-media-panel-title" className="mt-1 text-xl font-semibold text-white">Trailer media</h2>
-          </div>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            aria-label="Close trailer media diagnostics"
-            className="h-10 w-10 rounded-md border border-white/10 text-xl text-white/60 hover:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-amber-500"
-          >
-            x
-          </button>
-        </div>
+        <p className="text-xs tracking-wide text-white/35">{game.slug}</p>
 
-        {loading && !detail ? <p className="mt-8 text-sm text-white/40">Loading media state...</p> : null}
+        {!detail && !error ? <p className="mt-8 text-sm text-white/40">Loading media state...</p> : null}
         {error ? <p className="mt-5 rounded-md border border-red-800/40 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{error}</p> : null}
-        {feedback ? <p className="mt-5 rounded-md border border-emerald-800/40 bg-emerald-950/30 p-3 text-sm text-emerald-200" role="status">{feedback}</p> : null}
+        {notice ? <p className="mt-5 rounded-md border border-white/20 p-3 text-sm" role={notice.kind === "error" ? "alert" : "status"}>{notice.text}</p> : null}
+        {media.unknown && <p role="alert" className="mt-5 text-sm text-amber-200">The request outcome is unknown. Check saved trailer state before retrying. <button onClick={() => void media.checkSaved()} disabled={media.isFetching}>Check saved trailer state</button></p>}
+        {!media.unknown && <button className="mt-3 text-sm text-white/60" disabled={media.isFetching || submitting} onClick={() => void media.refresh()}>Refresh trailer state</button>}
 
         {detail ? <AdminPostgameMediaDiagnostics detail={detail} /> : null}
 
@@ -177,8 +132,9 @@ export function AdminPostgameMediaPanel({
             <textarea
               id="postgame-media-reason"
               value={reason}
-              onChange={(event) => {
-                setReason(event.target.value);
+              disabled={submitting || media.unknown}
+              onInput={(event) => {
+                setReason(event.currentTarget.value);
                 setConfirming(false);
               }}
               rows={3}
@@ -192,8 +148,8 @@ export function AdminPostgameMediaPanel({
             ) : null}
             <button
               type="button"
-              onClick={() => void submitAction()}
-              disabled={submitting || reason.trim().length === 0}
+              onClick={() => void media.submit()}
+              disabled={submitting || media.unknown || reason.trim().length === 0}
               className="mt-3 min-h-10 rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? "Requesting..." : confirming ? `Confirm ${actionLabel.toLowerCase()}` : `${actionLabel} trailer`}
@@ -202,8 +158,7 @@ export function AdminPostgameMediaPanel({
         ) : detail && ACTIVE_STATUSES.has(detail.status) ? (
           <p className="mt-6 rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-white/50">A render attempt is already active. Duplicate requests are disabled.</p>
         ) : null}
-      </aside>
-    </div>
+      </section>
   );
 }
 

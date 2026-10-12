@@ -29,6 +29,8 @@ import { createUUID, GameState } from "../game-state";
 import { seededRandom } from "../seeded-random";
 import { createOpeningStrategyState } from "../strategy-state";
 import { Phase } from "../types";
+import { replayCanonicalEvents } from "../game-projection";
+import type { RetrospectiveInputV1 } from "../retrospective";
 import { MockAgent } from "./mock-agent";
 import { TEST_GAME_CONFIG } from "./full-game-test-support";
 
@@ -41,6 +43,17 @@ const DIALOGUE_SCOPES = new Set<TranscriptEntry["scope"]>([
 ]);
 
 class MemoryDurableTurnStore implements DurableGameTurnStore {
+  private retrospectiveInput: RetrospectiveInputV1 | null = null;
+  async readRetrospectiveSource() {
+    const snapshot = this.snapshot!;
+    const outcome = replayCanonicalEvents(snapshot.canonicalEvents).retrospectiveOutcomeSource!;
+    const turn = [...this.committed.values()].find(item => item.snapshot.execution.heads.eventSequence >= outcome.eventSequence)!;
+    const transcriptThroughSequence = turn.snapshot.execution.heads.dialogueSequence;
+    const dialogueAnchors = snapshot.transcriptEntries.flatMap(entry => entry.entrySequence !== undefined && entry.entrySequence <= transcriptThroughSequence
+      ? [{ entrySequence: entry.entrySequence, eventSequence: Math.min(outcome.eventSequence,
+        [...this.committed.values()].find(item => item.snapshot.execution.heads.dialogueSequence >= entry.entrySequence!)!.snapshot.execution.heads.eventSequence) }] : []);
+    return { input: structuredClone(this.retrospectiveInput), transcriptThroughSequence, dialogueAnchors };
+  }
   snapshot: DurableGameTurnSnapshotV1 | null = null;
   initializeCalls = 0;
   readonly plannedActions: string[] = [];
@@ -111,11 +124,12 @@ class MemoryDurableTurnStore implements DurableGameTurnStore {
     return { version: 1, status: "execute", intent: structuredClone(intent) };
   }
 
-  async commitTurn(draft: GameTurnCommitDraftV1): Promise<DurableGameTurnCommittedV1> {
+  async commitTurn(draft: GameTurnCommitDraftV1, retrospectiveInput?: RetrospectiveInputV1): Promise<DurableGameTurnCommittedV1> {
     assertGameTurnCommitDraftV1(draft);
     const existing = this.committed.get(draft.turnId);
     if (existing) return structuredClone(existing);
     await this.beforeCommit?.(draft);
+    if (retrospectiveInput) this.retrospectiveInput = structuredClone(retrospectiveInput);
     const base = this.snapshot;
     if (!base) throw new Error("commit before initialization");
     const committedAt = "2026-08-27T00:00:00.000Z";
@@ -466,6 +480,89 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("GameRunner durable logical turns", () => {
+  it("keeps an exhausted required statement at its exact unfinished slot", async () => {
+    const store = new MemoryDurableTurnStore();
+    const ids = [createUUID(), createUUID(), createUUID()];
+    const initial = ids.map((id, i) => new ObservedAgent(id, `Player ${i}`));
+    const game = new GameRunner(initial, TEST_GAME_CONFIG, undefined, { durableTurnStore: store });
+    store.onCommit = draft => { if (draft.nextExecution.cursor.kind === "retrospective" && draft.nextExecution.cursor.stage === "statement") game.abort(); };
+    await expectAborted(game.run());
+    const frozen = structuredClone(store.snapshot!);
+    const next = ids.map((id, i) => new ObservedAgent(id, `Player ${i}`));
+    const actorId = replayCanonicalEvents(frozen.canonicalEvents).retrospective!.definition.speakerIds[0]!;
+    let calls = 0;
+    next.find(agent => agent.id === actorId)!.getRetrospectiveStatement = async () => { calls++; throw new Error("required statement unavailable"); };
+    store.onCommit = undefined;
+    await expect(new GameRunner(next, TEST_GAME_CONFIG, undefined, { gameId: frozen.execution.gameId, durableTurnStore: store }).run()).rejects.toThrow("required statement unavailable");
+    expect(calls).toBe(1);
+    expect(store.snapshot).toEqual(frozen);
+    expect(store.committedActions.filter(action => action === "retrospective-statement")).toHaveLength(0);
+    expect(store.committedDrafts.flatMap(draft => draft.publications).some(publication => publication.kind === "completion")).toBeFalse();
+  });
+
+  it("commits the outcome, every exact retrospective prefix, and completion across restarts", async () => {
+    const store = new MemoryDurableTurnStore();
+    const ids = [createUUID(), createUUID(), createUUID(), createUUID(), createUUID()];
+    const agents = endgameAgents(ids);
+    const first = new GameRunner(agents, TEST_GAME_CONFIG, undefined, { durableTurnStore: store });
+    store.onCommit = (draft) => { if (draft.nextExecution.cursor.kind === "retrospective") first.abort(); };
+    await expectAborted(first.run());
+    const gameId = store.snapshot!.execution.gameId;
+    const outcome = replayCanonicalEvents(store.snapshot!.canonicalEvents).retrospectiveOutcomeSource!;
+    expect(outcome).not.toBeNull();
+    expect(store.snapshot!.execution.status).toBe("ready");
+    expect(store.snapshot!.execution.cursor).toEqual({ version: 1, kind: "retrospective", stage: "initialize" });
+    expect(store.committedDrafts.flatMap(draft => draft.publications).some(publication => publication.kind === "completion")).toBeFalse();
+    expect(agents.flatMap(agent => agent.retrospective.contexts)).toHaveLength(0);
+
+    let frozenOrder: string[] = [];
+    let initialized = false;
+    for (let accepted = 0; accepted <= ids.length; accepted++) {
+      const nextAgents = endgameAgents(ids);
+      if (initialized) for (const agent of nextAgents) agent.prepareRetrospectiveSetup = async () => { throw new Error("Frozen context must not read capacity again"); };
+      const runner = new GameRunner(nextAgents, TEST_GAME_CONFIG, undefined, { gameId, durableTurnStore: store });
+      store.onCommit = (draft, snapshot) => {
+        const state = replayCanonicalEvents(snapshot.canonicalEvents).retrospective!;
+        if (state && state.statements.length === accepted) runner.abort();
+      };
+      await expectAborted(runner.run());
+      const projection = replayCanonicalEvents(store.snapshot!.canonicalEvents);
+      const retrospective = projection.retrospective!;
+      expect(projection.retrospectiveOutcomeSource).toEqual(outcome);
+      expect(retrospective.statements).toHaveLength(accepted);
+      expect(retrospective.completedAtEventSequence).toBeNull();
+      if (!initialized) frozenOrder = retrospective.definition.speakerIds;
+      expect(retrospective.definition.speakerIds).toEqual(frozenOrder);
+      const contexts = nextAgents.flatMap(agent => agent.retrospective.contexts);
+      expect(contexts).toHaveLength(accepted === 0 ? 0 : 1);
+      if (accepted > 0) {
+        const context = contexts[0]!;
+        expect(context.self.id).toBe(frozenOrder[accepted - 1]!);
+        expect(context.priorStatements).toEqual(retrospective.statements.slice(0, -1).map(({ eventSequence, ordinal, actorId, speech }) => ({ eventSequence, ordinal, actorId, speech })));
+        expect(context.game.outcome).toEqual(outcome);
+        const speech = retrospective.statements.at(-1)!;
+        const event = store.snapshot!.canonicalEvents[speech.eventSequence - 1]!;
+        const dialogue = store.snapshot!.transcriptEntries.find(entry => entry.entrySequence === event.sourcePointers[0]?.sequence);
+        expect(dialogue).toMatchObject({ phase: Phase.RETROSPECTIVE, speakerPlayerId: context.self.id, text: speech.speech });
+      }
+      expect(store.committedDrafts.flatMap(draft => draft.publications).some(publication => publication.kind === "completion")).toBeFalse();
+      initialized = true;
+    }
+    const finishAgents = endgameAgents(ids);
+    store.onCommit = undefined;
+    store.throwAfterCommitAction = "retrospective-complete";
+    const result = await new GameRunner(finishAgents, TEST_GAME_CONFIG, undefined, { gameId, durableTurnStore: store }).run();
+    const final = replayCanonicalEvents(store.snapshot!.canonicalEvents);
+    expect(result.winner).toBe(frozenOrder.at(-1));
+    expect(final.retrospectiveOutcomeSource).toEqual(outcome);
+    expect(final.retrospective!.completedAtEventSequence).not.toBeNull();
+    expect(finishAgents.flatMap(agent => agent.retrospective.contexts)).toHaveLength(0);
+    expect(store.committedActions.filter(action => action === "retrospective-initialize")).toHaveLength(1);
+    expect(store.committedActions.filter(action => action === "retrospective-statement")).toHaveLength(ids.length);
+    expect(store.committedActions.filter(action => action === "retrospective-complete")).toHaveLength(1);
+    expect(store.committedDrafts.flatMap(draft => draft.publications).filter(publication => publication.kind === "completion")).toHaveLength(1);
+  });
+
   it("resumes committed Mingle movement without replaying the prior beat", async () => {
     const store = new MemoryDurableTurnStore();
     const ids = Array.from({ length: 5 }, () => createUUID());

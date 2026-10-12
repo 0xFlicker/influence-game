@@ -737,7 +737,7 @@ export function GameViewer({
               ? {
                   ...g,
                   status: ev.status,
-                  currentPhase: ev.status === "suspended" ? "SUSPENDED" : g.currentPhase,
+                  currentPhase: g.currentPhase,
                   ...(ev.message && { errorInfo: ev.message }),
                 }
               : g,
@@ -841,16 +841,18 @@ export function GameViewer({
     gamePresentation.route === "format"
     && replayFrames.some((frame) => frame.viewerDecisionEvent);
 
-  if (game.status === "suspended" && !game.visualPaused) {
+  if (completedMode === "results") return <CompletedResultsReview gameId={game.slug} game={game} />;
+
+  if (game.status === "suspended" && !game.visualPaused && !game.watchState?.retrospective.outcome) {
     const health = game.kernelHealth;
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
         <div className="text-xs px-2 py-1 rounded-full border border-amber-900/60 bg-amber-900/30 text-amber-300 font-medium">
-          Failed
+          Paused
         </div>
-        <h2 className="text-xl font-semibold text-white">Game failed</h2>
+        <h2 className="text-xl font-semibold text-white">Game paused</h2>
         <p className="text-white/50 text-sm max-w-md">
-          This game failed and cannot be resumed.
+          Execution is paused. Committed play remains available for inspection.
         </p>
         {game.errorInfo && (
           <p className="text-amber-200/60 text-xs max-w-md">{game.errorInfo}</p>
@@ -930,9 +932,6 @@ export function GameViewer({
     );
   }
 
-  if (game.status === "completed" && completedMode === "results") {
-    return <CompletedResultsReview gameId={game.slug} game={game} />;
-  }
 
   if (
     game.status === "completed"

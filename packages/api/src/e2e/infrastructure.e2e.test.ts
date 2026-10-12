@@ -148,6 +148,22 @@ describe("e2e infrastructure smoke test", () => {
     await page.close();
   }, 15000);
 
+  test("closeBrowser ends its owned process when graceful shutdown stalls", async () => {
+    const owned = browser!;
+    const close = owned.close.bind(owned), child = owned.process();
+    if (!child) throw new Error("Fixture browser has no owned process");
+    owned.close = () => new Promise<void>(() => { /* Deliberately stall graceful shutdown. */ });
+    try {
+      await closeBrowser(owned);
+      expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+      expect(owned.connected).toBe(false);
+    } finally {
+      owned.close = close;
+      await closeBrowser(owned);
+      browser = null;
+    }
+  }, 15000);
+
   test("destroyIsolatedTestDb drops its per-run database", async () => {
     const throwaway = await createIsolatedTestDb();
     expect(throwaway.databaseUrl).toContain("postgresql://");

@@ -536,7 +536,7 @@ describe("WebSocket Manager", () => {
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]!);
     expect(parsed.type).toBe("watch_state");
-    expect(parsed.state.schemaVersion).toBe(5);
+    expect(parsed.state.schemaVersion).toBe(6);
     expect(parsed.state.gameId).toBe("game-123");
     expect(parsed.state.eventCursor.sequence).toBe(7);
     expect(parsed.throughPublicationSequence).toBe(12);
@@ -560,7 +560,7 @@ describe("WebSocket Manager", () => {
       type: "watch_state",
       throughPublicationSequence: 19,
       state: {
-        schemaVersion: 5,
+        schemaVersion: 6,
         gameId: "game-watch",
         eventCursor: { sequence: 11 },
         projection: { availability: "available" },
@@ -666,7 +666,8 @@ describe("WebSocket Manager", () => {
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
+    retrospective: { outcome: null, status: "unavailable", statementCount: 0, requiredStatements: 2, nextActorId: null },
     gameId,
     slug: `test-${gameId}`,
     status: "in_progress",

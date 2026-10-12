@@ -18,7 +18,8 @@ import { parseArgs } from "node:util";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
-import { apiFetch, authHeaders, resolveSessionToken } from "../api-simulation-client";
+import { apiFetch, authHeaders } from "../api-simulation-client";
+import { resolveCliApiSession } from "../cli-api-session";
 import { DEFAULT_MODEL_CATALOG_ID, normalizeProviderManifest, resolveProviderManifest } from "../model-catalog";
 import { requireSafeHttpBaseUrl } from "../game-mcp/oauth";
 import { WEREWOLF_PRESETS, werewolfConfig } from "./rules";
@@ -28,7 +29,7 @@ import { werewolfReportEntry } from "./report";
 export function parseWerewolfApiArgs(argv: string[], env: Record<string, string | undefined> = process.env) {
   const { values } = parseArgs({ args: argv, options: {
     "api-url": { type: "string", default: env.INFLUENCE_API_BASE_URL ?? "http://127.0.0.1:3000" },
-    "web-url": { type: "string", default: "http://localhost:3001" },
+    "web-url": { type: "string", default: env.INFLUENCE_WEB_BASE_URL ?? "http://localhost:3001" },
     visibility: { type: "string", default: env.INFLUENCE_API_SIM_VISIBILITY ?? "public" },
     preset: { type: "string", default: "one_wolf" }, "max-days": { type: "string", default: "10" },
     "model-catalog": { type: "string", default: DEFAULT_MODEL_CATALOG_ID },
@@ -87,7 +88,7 @@ export async function runWerewolfApiSimulation(args: ReturnType<typeof parseWere
   const resume = (id: string) => `bun run simulate:werewolf:api --game ${quote(id)} --api-url ${quote(args.apiUrl)} --web-url ${quote(args.webUrl)} --audience ${args.audience}${args.transcript ? " --transcript" : ""}`;
   try {
     if (!game) {
-      const token = await resolveSessionToken(args.apiUrl, ["create_game", "start_game"]);
+      const token = await resolveCliApiSession({apiOrigin: args.apiUrl, webOrigin: args.webUrl, requiredPermissions: ["create_game", "start_game"]});
       creationRequested = true;
       const created = await apiFetch<{ id: string; slug: string }>(args.apiUrl, "/api/werewolf", {
         method: "POST", headers: authHeaders(token),
@@ -200,8 +201,9 @@ Omniscient labels every speaker with their role, including introductions and pac
 Reports auto-save under packages/engine/docs/simulations; --out selects a new file.
 Existing files are never overwritten. There is no House rewrite. Reading the saved conversation adds no model calls.
 Run bun run dev:api, bun run dev:game-worker and bun run dev:web in separate terminals.
-Run bun run mcp:game:login once,
-or set INFLUENCE_API_SESSION_TOKEN. The login account needs create_game and start_game.
+Reuses a checked API session shared with local replay export; opens browser sign-in when needed.
+INFLUENCE_API_SESSION_TOKEN supplies an explicit session for unattended tooling.
+The login account needs create_game and start_game.
 Game inference is paid/configured on the server; reports add no model calls.
 A day cap may end in a draw. Closing this CLI does not stop the server game.`);
     else await runWerewolfApiSimulation(args);

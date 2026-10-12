@@ -11,6 +11,6 @@ export async function generateMetadata({ params }: { params: Promise<{ tab: stri
 
 export default async function AdminTabPage({ params }: { params: Promise<{ tab: string }> }) {
   const { tab } = await params;
-  if (!isAdminTab(tab) || tab === "games") notFound();
+  if (!isAdminTab(tab) || tab === "games" || tab === "production") notFound();
   return <AdminPageShell activeTab={tab} />;
 }

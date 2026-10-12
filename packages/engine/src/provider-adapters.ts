@@ -55,6 +55,7 @@ export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknow
   maxAttempts: number;
   cancellationSignal?: AbortSignal;
   requestSignalFactory?: () => AbortSignal | undefined;
+  beforeDispatch?(): Promise<void>;
   validate(
     outcome: ProviderModelOutcome,
     structuredValue: TStructuredValue | undefined,
@@ -87,6 +88,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
   let liveAcceptedOutcome: ProviderModelOutcome | undefined;
   let replayInvocation: ModelInvocation<TStructuredValue> | undefined;
   const result = await options.call.executeManifest<ProviderModelOutcome, TValue>({
+    ...(options.beforeDispatch && { beforeDispatch: options.beforeDispatch }),
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
       const invocation = () =>
@@ -376,6 +378,43 @@ abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
 
 export class OpenAIProviderAdapter extends OpenAICompatibleAdapter {
   readonly id = "openai";
+
+  async inputByteBudget(prefix: ModelInvocation, runtime: ProviderRuntimeDescriptor, signal?: AbortSignal): Promise<number> {
+    // Published model pages, verified 2026-10-10. Exact IDs only: no family or
+    // custom-provider inference. See docs/game-retrospective-invocation.md.
+    const limits: Record<string, { window: number; input: number; output: number }> = {
+      "gpt-5-nano": { window: 400_000, input: 272_000, output: 128_000 },
+      "gpt-5-mini": { window: 400_000, input: 272_000, output: 128_000 },
+      "gpt-5.4-nano": { window: 400_000, input: 272_000, output: 128_000 },
+      "gpt-5.4-mini": { window: 400_000, input: 272_000, output: 128_000 },
+      "gpt-5.6-luna": { window: 1_050_000, input: 922_000, output: 128_000 },
+      "gpt-6-luna": { window: 1_050_000, input: 922_000, output: 128_000 },
+    };
+    const limit = limits[runtime.modelId];
+    if (this.client.baseURL.replace(/\/$/, "") !== "https://api.openai.com/v1"
+      || runtime.providerProfileId !== "openai" || !runtime.modelCapabilities.supportsOpenAIResponses
+      || !limit || !Number.isSafeInteger(prefix.outputTokenLimit) || prefix.outputTokenLimit < 1 || prefix.outputTokenLimit > limit.output) {
+      throw new Error("Verified Responses context capacity is unavailable");
+    }
+    const native = compileOpenAIResponsesRequest(prefix, runtime);
+    // The installed SDK exposes post(), but predates this native count endpoint.
+    const count = await this.client.post<unknown, unknown>("/responses/input_tokens", {
+      body: { model: native.model, input: native.input, instructions: native.instructions,
+        tools: native.tools, tool_choice: native.tool_choice, parallel_tool_calls: native.parallel_tool_calls,
+        reasoning: native.reasoning, text: native.text, truncation: "disabled" },
+      maxRetries: 0, signal,
+    });
+    if (!count || typeof count !== "object" || Array.isArray(count)
+      || Object.keys(count).some(key => key !== "object" && key !== "input_tokens")
+      || !("object" in count) || count.object !== "response.input_tokens"
+      || !("input_tokens" in count) || !Number.isSafeInteger(count.input_tokens) || Number(count.input_tokens) < 1) {
+      throw new Error("Invalid native input-token count");
+    }
+    // Native counting owns system/tool/framing overhead. GPT text uses byte BPE:
+    // one token per UTF-8 byte is an upper bound, not a chars/token estimate.
+    // max_output_tokens includes BOTH visible output and reasoning.
+    return Math.min(limit.input, limit.window - prefix.outputTokenLimit) - Number(count.input_tokens);
+  }
 
   compile(
     invocation: ModelInvocation,

@@ -2,8 +2,9 @@
 import { VisualFailurePolicyControl } from "../../../visual-failure-policy-control";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch, resolveApiUrl } from "@/lib/api";
-import { useAdminRead, useAdminSession } from "../../../admin-session";
+import { resolveApiUrl } from "@/lib/api";
+import { useAdminRead, useAdminSession, useAdminValue,type Operation } from "../../../admin-session";
+import {ReconcileAttempt} from "../../../production-recovery-tools";
 import { usePermissions } from "@/hooks/use-permissions";
 
 import { SceneRepairPanel, type MediaRecords } from "./scene-repair-panel";
@@ -21,7 +22,7 @@ interface VisualExport {
   scenes: Array<{ id: string; roomId: string; boundarySequence: number; status: string; failure: string | null; imageArtifactId: string | null; candidateArtifactId: string | null; renderRevision: number; anchors: unknown[] | null }>;
   metrics: Array<{ provider: string; attempts: number; failed: number; uncertain: number; knownCostMicrousd: number; p50Ms: number | null; p95Ms: number | null }>;
   events: Array<{ id: string; event: { occurredAt: string; kind: string; outcome: string; message: string; operationId: string | null; sceneId: string | null; boundarySequence: number | null }; evidence: Failure | null }>;
-  accounting: { knownCostMicrousd: number; unpricedAttempts: number; uncertainAttempts: number; attempts: Array<{ id: string; operationId: string; operationKey: string; status: "pending" | "finished" | "needs_reconciliation" | "reconciled"; generation: number; provider: string; model: string; imageHash: string | null; request: unknown; localization: unknown; costMicrousd: number | null; receipt: { status: number | null; requestId: string | null; elapsedMs: number; usage: unknown; chargeUncertain: boolean; failure?: Failure } | null; reconciliation: unknown }> };
+  accounting: { knownCostMicrousd: number; unpricedAttempts: number; uncertainAttempts: number; attempts: Array<{ id: string; operationId: string; operationKey: string; sceneId:string|null; status: "pending" | "finished" | "needs_reconciliation" | "reconciled"; generation: number; provider: string; model: string; imageHash: string | null; request: unknown; localization: unknown; costMicrousd: number | null; receipt: { status: number | null; requestId: string | null; elapsedMs: number; usage: unknown; chargeUncertain: boolean; failure?: Failure } | null; reconciliation: unknown }> };
 }
 const button = "rounded border border-white/25 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40";
 const money = (value: number | null) => value === null ? "Unpriced" : `$${(value / 1_000_000).toFixed(4)}`;
@@ -55,44 +56,63 @@ function SceneImageDialog({ image, onClose }: { image: { url: string; label: str
     </div>
   </dialog>;
 }
-function EvidenceImage({ gameId, id, kind, onOpen }: { gameId: string; id: string; kind: "attempt" | "artifact"; onOpen: (url: string) => void }) {
+export function EvidenceImage({ gameId, id, kind, onOpen, apiPrefix = "/api/admin/games" }: { gameId: string; id: string; kind: "attempt" | "artifact"; onOpen: (url: string) => void; apiPrefix?: string }) {
   const session = useAdminSession();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   return <div className="mt-3">
     <button className={button} disabled={busy} onClick={async () => {
       setBusy(true); setError(null);
-      try { const result = await session.read<{ imageUrl: string }>(`/api/admin/games/${gameId}/visual/evidence/${kind}/${id}`); onOpen(result.imageUrl); }
+      try { const result = await session.read<{ imageUrl: string }>(`${apiPrefix}/${gameId}/visual/evidence/${kind}/${id}`); onOpen(result.imageUrl); }
       catch (failure) { setError(failure instanceof Error ? failure.message : "Evidence unavailable"); }
       finally { setBusy(false); }
     }}>{busy ? "Loading evidence…" : kind === "artifact" ? "View candidate image" : "View attempt image"}</button>
     {error && <p role="alert" className="text-red-300">{error}</p>}
   </div>;
 }
-export function VisualOperations({ gameId }: { gameId: string }) {
+export function VisualOperations({ gameId,hideIndependentMedia=false }: { gameId: string;hideIndependentMedia?:boolean }) {
+  const session=useAdminSession(),resource=`/api/admin/games/${gameId}/visual`,key=`operation:${resource}/control`;
+  const [operation]=useAdminValue<Operation|undefined>(key,undefined);
   const [openImage, setOpenImage] = useState<{ url: string; label: string } | null>(null);
   const { data, error: readError, denied, refresh: refetch } = useAdminRead<VisualExport>(`/api/admin/games/${gameId}/visual`, 3000);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [checking,setChecking]=useState(false);
+  const busy=checking || operation?.phase==="submitting" || operation?.phase==="unknown";
   const [failuresOnly, setFailuresOnly] = useState(false);
   const { hasPermission } = usePermissions();
   const canOperate = hasPermission("start_game");
   const preparedRepair = data?.scenes.some((scene) => scene.boundarySequence === data.pause?.boundarySequence && scene.status === "preparing" && scene.renderRevision > 0);
   const refresh = useCallback(async () => { await refetch(); }, [refetch]);
   const control = async (body: Record<string, unknown>, message: string) => {
-    setBusy(true); setError(null); setNotice(null);
-    try { await apiFetch(`/api/admin/games/${gameId}/visual/control`, { method: "POST", body: JSON.stringify(body) }); await refresh(); setNotice(message); }
+    setError(null); setNotice(null);
+    try { await session.execute(key,`${resource}/control`,body,false); await refresh(); setNotice(message); }
     catch (failure) { setError(failure instanceof Error ? failure.message : "Operation failed"); }
-    finally { setBusy(false); }
   };
+  async function checkSavedControl() {
+    if(operation?.phase!=="unknown" || checking) return;
+    setChecking(true);setError(null);
+    try {
+      const saved=await session.read<VisualExport>(resource);
+      if(session.get(key)!==operation) return;
+      const body=operation.body;
+      const accepted=body.action==="policy" ? saved.policy===body.policy : body.action==="resume" ? ["in_progress","completed"].includes(saved.gameStatus) && !saved.pause
+        : body.action==="repair_assets" ? saved.assets?.status==="preparing"
+        : saved.scenes.some(scene=>scene.id===body.sceneId && scene.status==="preparing" && scene.renderRevision===Number(body.expectedRevision)+1);
+      session.set<Operation>(key,{...operation,phase:accepted ? "accepted" : "rejected",error:accepted ? undefined : "No saved change is recorded. Review the current recovery state before trying again."});
+      await refresh();
+    } catch(failure) {setError(failure instanceof Error ? failure.message : "Saved recovery state unavailable");}
+    finally {setChecking(false);}
+  }
   if (denied) return <p role="alert">Visual production access is no longer available. <button className={button} onClick={() => void refresh()}>Check access again</button></p>;
-  return <div className="space-y-6">
+  return <div id="game-production-recovery" className="space-y-6">
     {openImage && <SceneImageDialog image={openImage} onClose={() => setOpenImage(null)} />}
     <Link href="/admin/games" className="text-sm text-white/50">← Games</Link>
     <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Visual production</h1><button className={button} onClick={() => void refresh()}>Refresh</button></div>
     {(readError || error) && <p role="alert" className="rounded border border-red-400/30 p-3 text-red-300">{readError ?? error}</p>}
     {notice && <p role="status" className="text-green-200">{notice}</p>}
+    {operation?.error && <p role="alert">{operation.error}</p>}
+    {operation?.phase==="unknown" && <button className={button} disabled={checking} onClick={()=>void checkSavedControl()}>Check saved recovery request</button>}
     {!data ? !readError && !error && <p role="status">Loading visual records…</p> : <>
       <section aria-label="Visual policy" className="space-y-3 rounded-xl border border-white/15 p-5">
         <p>Game: {data.gameStatus} · Assets: {data.assets?.status ?? "Not prepared"}</p>
@@ -134,7 +154,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
         <div className="space-y-2 p-4"><p>{scene.roomId} · boundary {scene.boundarySequence} · revision {scene.renderRevision}</p><p>{scene.status === "ready" ? "Image verified" : scene.status} · {scene.anchors?.length ?? 0} verified anchors</p>{scene.failure && <p className="text-sm text-amber-200">{scene.failure}</p>}
           {scene.candidateArtifactId && (scene.status !== "ready" || scene.candidateArtifactId !== scene.imageArtifactId) && <EvidenceImage key={scene.candidateArtifactId} gameId={gameId} id={scene.candidateArtifactId} kind="artifact" onOpen={(url) => setOpenImage({ url, label: `${scene.roomId} · boundary ${scene.boundarySequence} · candidate image` })} />}
           {data.pause && canOperate && scene.status !== "preparing" && <button className={button} disabled={busy} onClick={() => void control({ action: "repair_scene", sceneId: scene.id, expectedRevision: scene.renderRevision, mode: "regenerate" }, "Game recovery prepared. Resume is still required.")}>Prepare game recovery</button>}
-          <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canOperate} refresh={refresh} refreshError={readError} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />
+          {!hideIndependentMedia && <SceneRepairPanel gameId={gameId} sceneId={scene.id} originalFailed={scene.status === "failed"} media={data.media} canOperate={canOperate} refresh={refresh} refreshError={readError} attempts={data.accounting.attempts} onOpen={(url, label) => setOpenImage({ url, label })} />}
         </div>
       </article>)}</div>
       <h2 className="text-lg font-semibold">Operational timeline</h2>
@@ -148,12 +168,7 @@ export function VisualOperations({ gameId }: { gameId: string }) {
         {attempt.receipt?.failure && <p className="mt-2 text-amber-200">{attempt.receipt.failure.kind}: {attempt.receipt.failure.message}</p>}
         <details className="mt-3"><summary className="cursor-pointer text-sm">Request, receipt and verification evidence</summary><Evidence value={attempt} /></details>
         {attempt.imageHash && <EvidenceImage gameId={gameId} id={attempt.id} kind="attempt" onOpen={(url) => setOpenImage({ url, label: `${attempt.provider} · ${attempt.model} · attempt image` })} />}
-        {attempt.status === "needs_reconciliation" && canOperate && <form className="mt-3 flex flex-wrap gap-3" onSubmit={async (event) => {
-          event.preventDefault(); const form = new FormData(event.currentTarget); setError(null); setBusy(true);
-          try { await apiFetch(`/api/admin/games/${gameId}/visual/attempts/${attempt.id}/reconcile`, { method: "POST", body: JSON.stringify({ note: String(form.get("note")), costMicrousd: Math.round(Number(form.get("cost")) * 1_000_000) }) }); await refresh(); }
-          catch (failure) { setError(failure instanceof Error ? failure.message : "Reconciliation failed"); }
-          finally { setBusy(false); }
-        }}><input name="note" aria-label="Reconciliation evidence" required placeholder="Provider receipt or billing evidence" className="min-w-48 flex-1 rounded bg-white/10 px-3 py-2" /><input name="cost" aria-label="Confirmed cost in dollars" required type="number" min="0" step="0.000001" placeholder="USD" className="w-32 rounded bg-white/10 px-3 py-2" /><button disabled={busy} className={button}>Record reconciliation</button></form>}
+        {attempt.status === "needs_reconciliation" && canOperate && (!hideIndependentMedia || !attempt.sceneId) && <ReconcileAttempt gameId={gameId} attemptId={attempt.id} apiPrefix="/api/admin/games" refresh={refresh} readAttempt={async()=> (await session.read<VisualExport>(resource)).accounting.attempts.find(row=>row.id===attempt.id)} />}
       </article>)}
     </>}
   </div>;

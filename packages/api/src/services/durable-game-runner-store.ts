@@ -3,6 +3,9 @@ import {
   Phase,
   assertCanonicalGameEvent,
   assertGameExecutionStateV1,
+  assertRetrospectiveInputBinding,
+  replayCanonicalEvents,
+  type RetrospectiveInputV1,
   type DurableGameTurnInitializationV1,
   type DurableGameTurnPlanV1,
   type DurableGameTurnSnapshotV1,
@@ -74,6 +77,32 @@ export function createDurableGameRunnerStore(
 
   return {
     load,
+
+    async readRetrospectiveSource(gameId) {
+      const snapshot = cachedSnapshot ?? await load(gameId);
+      assertGameId(gameId);
+      if (!snapshot) throw new DurableGameRunnerStoreIntegrityError("Retrospective has no committed frontier");
+      const projection = replayCanonicalEvents(snapshot.canonicalEvents);
+      const outcome = projection.retrospectiveOutcomeSource;
+      if (!outcome) throw new DurableGameRunnerStoreIntegrityError("Retrospective requires a canonical outcome");
+      const turns = await db.select({ result: schema.gameTurns.commitResult }).from(schema.gameTurns)
+        .where(and(eq(schema.gameTurns.gameId, gameId), eq(schema.gameTurns.status, "committed")))
+        .orderBy(asc(schema.gameTurns.turnSequence));
+      const outcomeTurn = turns.find(turn => turn.result && turn.result.state.heads.eventSequence >= outcome.eventSequence)?.result;
+      if (!outcomeTurn) throw new DurableGameRunnerStoreIntegrityError("Outcome has no committed owning turn");
+      const transcriptThroughSequence = outcomeTurn.state.heads.dialogueSequence;
+      const rows = await db.select({ sequence: schema.transcripts.entrySequence, anchor: schema.transcripts.firstDurableEventSequence })
+        .from(schema.transcripts).where(eq(schema.transcripts.gameId, gameId));
+      const dialogueAnchors = rows.flatMap(row => row.sequence !== null && row.sequence <= transcriptThroughSequence
+        ? [{ entrySequence: row.sequence, eventSequence: Math.min(row.anchor ?? 0, outcome.eventSequence) }] : []);
+      const stored = (await db.select().from(schema.gameRetrospectiveInputs)
+        .where(eq(schema.gameRetrospectiveInputs.gameId, gameId)).limit(1))[0];
+      if (projection.retrospective) {
+        if (!stored) throw new DurableGameRunnerStoreIntegrityError("Canonical retrospective has no private input");
+        assertRetrospectiveInputBinding(stored.input, projection.retrospective.definition);
+      } else if (stored) throw new DurableGameRunnerStoreIntegrityError("Private retrospective input has no canonical definition");
+      return { input: stored?.input ?? null, transcriptThroughSequence, dialogueAnchors };
+    },
 
     async initialize(input: DurableGameTurnInitializationV1) {
       assertGameId(input.gameId);
@@ -149,7 +178,7 @@ export function createDurableGameRunnerStore(
       };
     },
 
-    async commitTurn(draft: GameTurnCommitDraftV1) {
+    async commitTurn(draft: GameTurnCommitDraftV1, retrospectiveInput?: RetrospectiveInputV1) {
       assertGameId(draft.gameId);
       let base = cachedSnapshot;
       if (!base || !headsMatch(base.execution.heads, draft.expectedBaseHeads)) {
@@ -163,6 +192,7 @@ export function createDurableGameRunnerStore(
       const result = await commitGameTurn(db, {
         ownerEpoch: authority.ownerEpoch,
         draft,
+        retrospectiveInput,
       });
       const snapshot: DurableGameTurnSnapshotV1 = {
         version: 1,

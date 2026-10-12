@@ -10,7 +10,7 @@ export interface ReplayManifest {
     import("../../components/watch/bubble-typography").BubbleTypography
   >;
   schema: "house.replay-export";
-  version: 1;
+  version: 2;
   game: {
     id: string;
     slug: string;
@@ -28,6 +28,8 @@ export interface ReplayManifest {
   assets: Record<string, CachedAsset>;
   staticFiles: Record<string, string>;
   boundary: {
+    sourceHash?: string;
+    selectionHash?: string;
     eventSequence?: number;
     transcriptCount?: number;
     cursor?: number;
@@ -58,14 +60,14 @@ export function validateManifest(value: ReplayManifest): void {
   if (
     !value ||
     value.schema !== "house.replay-export" ||
-    value.version !== 1 ||
+    value.version !== 2 ||
     !Array.isArray(value.cues) ||
     !value.cues.length ||
     value.cues.length !== value.timeline?.length ||
     !value.staticFiles ||
     !value.assets
   )
-    throw new Error("Invalid replay bundle");
+    throw new Error("Invalid or obsolete replay bundle; re-prepare it from the game with the current exporter");
   if (
     ![value.width, value.height].every(
       (n) => Number.isSafeInteger(n) && n >= 128 && n <= 7680 && n % 2 === 0,
@@ -79,6 +81,8 @@ export function validateManifest(value: ReplayManifest): void {
     if (value.thinking) throw new Error("Mystery cannot enable thinking");
     assertNoPrivateFields(value.cues.map((cue) => cue.picture));
   }
+  for (const hash of [value.boundary.sourceHash,value.boundary.selectionHash])
+    if (hash !== undefined && !/^sha256:[a-f0-9]{64}$/.test(hash)) throw new Error("Invalid production source/selection checksum");
   const keys = new Set<string>();
   let boundary = 0;
   for (const [index, cue] of value.cues.entries()) {
@@ -96,7 +100,8 @@ export function validateManifest(value: ReplayManifest): void {
       throw new Error("Invalid or discontinuous bundle timeline");
     keys.add(time.key);
     boundary = time.endMs;
-    if (cue.picture.kind !== value.game.kind && !(value.game.kind === "werewolf" && cue.picture.kind === "werewolf-opening"))
+    if (cue.picture.kind !== value.game.kind && !(value.game.kind === "werewolf" && cue.picture.kind === "werewolf-opening")
+      && !(cue.picture.kind === "thinking" && cue.picture.gameKind === value.game.kind))
       throw new Error("Mixed game kinds in bundle");
     if (value.game.audience === "mystery" && cue.picture.kind === "werewolf") {
       const moment = cue.picture.cue.moment;
@@ -110,6 +115,8 @@ export function validateManifest(value: ReplayManifest): void {
       )
         throw new Error("Mystery bundle contains private evidence");
     }
+    if (value.game.audience === "mystery" && (cue.picture.kind === "thinking" || cue.timing.thinking))
+      throw new Error("Mystery bundle contains private thinking");
   }
   if (
     !Number.isFinite(value.audio?.durationMs) ||

@@ -1,16 +1,17 @@
 import { readWerewolfVisualPause, queueWerewolfFormRepair } from "../services/werewolf-visual-policy.js";
 import { setVisualFailurePolicy, resumeVisualGame } from "../services/visual-policy.js";
 import { requirePermission } from "../middleware/auth.js";
-import { readWerewolfScenePreview } from "../services/werewolf-production.js";
-import { decodeVisualShotReview, readVisualReviewSources } from "../services/visual-shot-review.js";
+import { readVisualReviewSources } from "../services/visual-shot-review.js";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { and, eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { getPermissionsForUser } from "../db/rbac.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
-import { controlVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
-import { listReplayVisualGames, readReplayVisualProduction, renderMissingReplayScene, ReplayVisualError } from "../services/visual-replay-production.js";
+import { controlVisualMedia } from "../services/visual-media-repair.js";
+import { decodeVisualMediaControl } from "../services/visual-media-control.js";
+import { canDiscoverProduction, parseProductionLibraryQuery, ProductionLibraryInputError, readProductionLibrary } from "../services/production-library.js";
+import { readReplayVisualProduction, renderMissingReplayScene, ReplayVisualError } from "../services/visual-replay-production.js";
 import { reconcileVisualAttempt } from "../services/visual-render-journal.js";
 
 /** Paid replay production requires a current Producer or Sysop role, including on reads. */
@@ -27,19 +28,28 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
   });
   app.onError((error, c) => {
     if (error instanceof ReplayVisualError) return c.json({ error: error.message, code: error.code }, error.status);
+    if (error instanceof ProductionLibraryInputError) return c.json({ error: error.message }, 400);
     console.error("[replay-production]", error);
     return c.json({ error: "Replay production could not complete this request. Refresh to check its saved state." }, 500);
   });
   const root = "/api/admin/production";
-  app.use(`${root}/*`, requireAuth(db), producer);
-  app.get(`${root}/games`, async c => c.json(await listReplayVisualGames(db)));
-  app.get(`${root}/games/:id/visual`, async c => c.json(await readReplayVisualProduction(db, c.req.param("id"))));
-  app.get(`${root}/games/:id/visual/scenes/:scene/preview`, async c => {
-    const [game] = await db.select().from(schema.games).where(and(eq(schema.games.id, c.req.param("id")), eq(schema.games.gameKind, "werewolf")));
-    if (!game) return c.json({ error: "Werewolf game not found" }, 404);
-    const preview = await readWerewolfScenePreview(db, game.id, c.req.param("scene"));
-    return preview ? c.json(preview) : c.json({ error: "Scene not found" }, 404);
+  app.use(`${root}/*`, requireAuth(db));
+  app.get(`${root}/library`, async c => {
+    c.header("Cache-Control", "private, no-store");
+    const access = { roles: c.get("userRoles"), permissions: c.get("userPermissions") };
+    if (!canDiscoverProduction(access)) return c.json({ error: "Admin or production discovery access required" }, 403);
+    return c.json(await readProductionLibrary(db, parseProductionLibraryQuery(c.req.query()), access));
   });
+  app.get(`${root}/games/:id`,async c => {
+    c.header("Cache-Control","private, no-store");
+    const access = {roles:c.get("userRoles"),permissions:c.get("userPermissions")};
+    if (!canDiscoverProduction(access)) return c.json({error:"Admin or production discovery access required"},403);
+    const page = await readProductionLibrary(db,parseProductionLibraryQuery({id:c.req.param("id"),limit:"1"}),access);
+    return page.items[0] ? c.json(page.items[0]) : c.json({error:"Production game not found"},404);
+  });
+  // Discovery is deliberately separate; every existing detail or paid command remains producer-only.
+  app.use(`${root}/*`, producer);
+  app.get(`${root}/games/:id/visual`, async c => c.json(await readReplayVisualProduction(db, c.req.param("id"))));
   app.post(`${root}/games/:id/visual/control`, requirePermission("start_game"), async c => {
     let body: unknown;
     try { body = await c.req.json(); } catch { return c.json({error:"Invalid JSON"},400); }
@@ -72,7 +82,7 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
   app.post(`${root}/games/:id/visual/media`, async c => {
     let b: unknown;
     try { b = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
-    const control = decodeReplayMediaControl(b);
+    const control = decodeVisualMediaControl(b);
     if (!control) return c.json({ error: "Invalid scene media control" }, 400);
     const [game] = await db.select({ status: schema.games.status }).from(schema.games).where(eq(schema.games.id, c.req.param("id")));
     if (!game) return c.json({ error: "Game not found" }, 404);
@@ -100,6 +110,14 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     if (!artifact) return c.json({ error: "Image not found" }, 404);
     return c.json({ imageUrl: `data:image/png;base64,${Buffer.from(artifact.image).toString("base64")}` });
   });
+  app.get(`${root}/games/:id/visual/artifacts/:artifact`, async c => {
+    const [artifact] = await db.select({image:schema.visualArtifacts.image}).from(schema.visualArtifacts)
+      .where(and(eq(schema.visualArtifacts.gameId,c.req.param("id")),eq(schema.visualArtifacts.id,c.req.param("artifact"))));
+    if (!artifact) return c.json({error:"Image not found"},404);
+    c.header("Cache-Control","private, no-store");
+    c.header("Content-Type","image/png");
+    return c.body(new Uint8Array(artifact.image));
+  });
   app.post(`${root}/games/:id/visual/attempts/:attempt/reconcile`, async c => {
     let value: unknown;
     try { value = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
@@ -116,30 +134,4 @@ export function createVisualReplayProductionRoutes(db: DrizzleDB) {
     } catch (error) { return c.json({ error: error instanceof Error ? error.message : "Reconciliation failed" }, 409); }
   });
   return app;
-}
-
-function decodeReplayMediaControl(value: unknown): MediaControl | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const b = value as Record<string, unknown>;
-  const string = (key: string) => typeof b[key] === "string" && Boolean(b[key].trim()) && b[key].length <= 200;
-  if (!string("requestId") || !string("sceneId") || !Number.isSafeInteger(b.expectedVersion) || Number(b.expectedVersion) < 0) return null;
-  const fields = ["requestId", "sceneId", "expectedVersion", "action"];
-  if (b.action === "review") { try { b.review = decodeVisualShotReview(b.review); } catch { return null; } fields.push("review"); }
-  else if (b.action === "verify" || b.action === "harmonize") { if (!string("sourceVersionId")) return null; fields.push("sourceVersionId"); }
-  else if (b.action === "continue") { if (b.sourceJobId !== undefined && !string("sourceJobId")) return null; fields.push("sourceJobId"); }
-  else if (b.action === "publish") {
-    if (!string("versionId") || !Number.isSafeInteger(b.expectedPublication) || Number(b.expectedPublication) < 0) return null;
-    if (b.audience !== undefined && b.audience !== "public" && b.audience !== "private") return null;
-    fields.push("versionId", "expectedPublication", "audience");
-  } else if (b.action === "regenerate") {
-    if (b.regenerateForms !== undefined && typeof b.regenerateForms !== "boolean") return null;
-    const ids = b.acknowledgeUncertainAttempts;
-    if (ids !== undefined && (!Array.isArray(ids) || ids.length > 100
-      || ids.some(id => typeof id !== "string" || !id.trim() || id.length > 200)
-      || new Set(ids).size !== ids.length)) return null;
-    fields.push("regenerateForms", "acknowledgeUncertainAttempts");
-  }
-  else return null;
-  if (Object.keys(b).some(key => !fields.includes(key))) return null;
-  return b as MediaControl;
 }

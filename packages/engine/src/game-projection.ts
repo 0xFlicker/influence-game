@@ -3,6 +3,8 @@ import {
   withParticipantSnapshotFromSession,
 } from "./alliance-huddle-outcome";
 import { assertCanonicalGameEvent, isSupportedCanonicalPayloadVersion, type CanonicalGameEvent } from "./canonical-events";
+import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
+import { applyRetrospectiveRecord, type RetrospectiveOutcomeSource, type RetrospectiveStateV1 } from "./retrospective";
 import {
   LEGACY_FORMAT_MANIFEST,
   resolveFormatManifest,
@@ -44,6 +46,8 @@ export interface ProjectedRoomAllocation {
 }
 
 export interface CanonicalGameProjection {
+  retrospectiveOutcomeSource: RetrospectiveOutcomeSource | null;
+  retrospective: RetrospectiveStateV1 | null;
   gameId: UUID;
   lastSequence: number;
   round: number;
@@ -96,6 +100,8 @@ export interface CanonicalGameProjection {
 
 export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
   return {
+    retrospectiveOutcomeSource: null,
+    retrospective: null,
     gameId,
     lastSequence: 0,
     round: 0,
@@ -222,6 +228,20 @@ export function applyCanonicalEvent(
     throw new Error(`Canonical events must be contiguous and ordered; expected ${expectedSequence} but got ${event.sequence}`);
   }
 
+  const boundary = { outcome: projection.retrospectiveOutcomeSource, rosterIds: projection.playerOrder, eventSequence: event.sequence };
+  let retrospective = projection.retrospective;
+  switch (event.type) {
+    case "retrospective.started": retrospective = applyRetrospectiveRecord(retrospective, { kind: "started", payload: event.payload }, boundary); break;
+    case "retrospective.statement_recorded": retrospective = applyRetrospectiveRecord(retrospective, { kind: "statement", payload: event.payload }, boundary); break;
+    case "retrospective.completed": retrospective = applyRetrospectiveRecord(retrospective, { kind: "completed", payload: event.payload }, boundary); break;
+    default:
+      if (retrospective && event.type !== "visual.operation_recorded" && event.type !== "visual.cue_recorded"
+        && !(event.type === "game.phase_entered" && (event.payload.phase === "RETROSPECTIVE"
+          || retrospective.completedAtEventSequence !== null && event.payload.phase === "END"))) {
+        throw new Error("Gameplay cannot resume after retrospective initialization");
+      }
+  }
+  projection.retrospective = retrospective;
   projection.lastSequence = event.sequence;
   projection.phase = event.phase;
 
@@ -411,6 +431,9 @@ export function applyCanonicalEvent(
       if (!projection.jury.some((juror) => juror.playerId === event.payload.juryMember.playerId)) {
         projection.jury.push({ ...event.payload.juryMember });
       }
+      if (Object.values(projection.players).filter(player => player.status === "alive").length === 1) {
+        projection.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "influence", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
+      }
       break;
     }
     case "endgame.stage_set": {
@@ -441,6 +464,13 @@ export function applyCanonicalEvent(
         winnerId: event.payload.winnerId,
         method: event.payload.method,
       };
+      projection.retrospectiveOutcomeSource = { gameId: event.gameId, gameKind: "influence", eventSequence: event.sequence, eventHash: hashCanonicalJson(event) };
+      break;
+    }
+    case "retrospective.started":
+    case "retrospective.statement_recorded":
+    case "retrospective.completed": {
+      // Already validated above, before any projection mutation.
       break;
     }
     case "judgment.speech_recorded": {

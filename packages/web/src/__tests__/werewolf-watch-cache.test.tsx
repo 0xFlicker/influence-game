@@ -45,12 +45,12 @@ function fixture(speeches: number[], latestCursor = 128, status = "cancelled") {
         entry: speechAt.has(cursor)
           ? { kind: "speech", day: 1, actorId: "p", audience: "public", text: `Speech ${cursor}`, cue: null }
           : { kind: "phase", day: 1, phase: "day" },
-        snapshot: { gameId: "g", rulesVersion: 7, preset: "one_wolf", audience: "mystery", day: 1, maxDays: 5, phase: "day", discussion: null, cursor, players, outcome: null },
+        snapshot: { gameId: "g", rulesVersion: 8, preset: "one_wolf", audience: "mystery", day: 1, maxDays: 5, phase: "day", discussion: null, cursor, players, outcome: null },
         chapterId: "day:1", sceneId: `scene:${cursor}`, mediaKey: null,
       };
     });
     return Response.json({
-      gameId: "g", slug: "g", status, audience: "mystery", rulesVersion: 7,
+      gameId: "g", slug: "g", status, audience: "mystery", rulesVersion: 8,
       publicationCutoff: "2026-10-06T00:00:00.000Z", latestCursor,
       fromCursor: start, throughCursor: moments.at(-1)?.cursor ?? latestCursor,
       players: players.map(p => ({ ...p, personality: "", backstory: "" })),

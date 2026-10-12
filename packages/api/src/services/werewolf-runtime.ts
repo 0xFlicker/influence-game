@@ -1,3 +1,5 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity, RetrospectiveExecutionError } from "@influence/engine";
+import { pauseRetrospectiveExecution } from "./game-retrospective-recovery.js";
 import { WerewolfVisualBlocked } from "./werewolf-visual-policy.js";
 import { createWerewolfVisualPreparation } from "./werewolf-visual-runtime.js";
 import { eq } from "drizzle-orm";
@@ -28,7 +30,7 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   if (!game || game.gameKind !== "werewolf" || game.status !== "in_progress") throw new Error("Werewolf is not running");
   const controller = new AbortController();
   const config = JSON.parse(game.config) as Record<string, unknown>;
-  const mockAgent: WerewolfAgent = { async decide({ request, observation }) {
+  const mockAgent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
     if (request.action === "discuss" && observation.turnReminder?.stage === "reply"
       && request.actorId !== observation.turnReminder.respondentIds[0]) return { kind: "speech", cue: null, text: null };
@@ -61,9 +63,9 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
         await prepareScene.night(replayWerewolf(events.slice(0, -1)), last, replayWerewolf(events));
     };
     const append = store.append;
-    store.append = async event => {
+    store.append = async (event, retrospectiveInput) => {
       const before = event.type === "werewolf.night_resolved" ? replayWerewolf(await store.read()) : null;
-      await append(event);
+      await append(event, retrospectiveInput);
       if (before) await prepareScene.night(before, event, replayWerewolf(await store.read()));
     };
     store.prepare = async (state, request, sequence) => {
@@ -74,6 +76,10 @@ export async function startWerewolfRuntime(db: DrizzleDB, gameId: string, ownerE
   const promise = recoverVisuals().then(() => runWerewolf(store, agent, controller.signal))
     .then(() => {})
     .catch(async (error) => {
+      if (error instanceof RetrospectiveExecutionError && !controller.signal.aborted && !heartbeatFailure) {
+        await pauseRetrospectiveExecution(db, gameId, ownerEpoch, error);
+        return;
+      }
       if (error instanceof WerewolfVisualBlocked) return;
       if (!controller.signal.aborted) console.error(`[werewolf] Execution failed for ${gameId}`, error);
       try { await releaseWerewolfOwner(db, gameId, ownerEpoch, !controller.signal.aborted && !heartbeatFailure); }

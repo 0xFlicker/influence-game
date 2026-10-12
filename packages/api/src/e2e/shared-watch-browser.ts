@@ -25,7 +25,11 @@ export async function seekWatch(page:Page,cursor:number,step=0){
 }
 /** Enter recorded play deliberately; do not wait for a cast-length-dependent opening. */
 export async function skipWerewolfOpening(page: Page) {
- await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Skip opening')");
+ try {await page.waitForFunction("Array.from(document.querySelectorAll('button')).some(button => button.textContent === 'Skip opening')");}
+ catch(error) {
+  console.error("Opening entry diagnostics", await page.evaluate("({url:location.href,opening:document.querySelector('[data-werewolf-opening]')?.getAttribute('data-werewolf-opening'),cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor'),buttons:Array.from(document.querySelectorAll('button')).map(button=>({text:button.textContent,label:button.getAttribute('aria-label')})),alerts:Array.from(document.querySelectorAll('[role=alert],[role=status]')).map(node=>node.textContent),watchRequests:performance.getEntriesByType('resource').filter(entry=>new URL(entry.name).pathname.endsWith('/watch')).map(entry=>({url:entry.name,duration:entry.duration})),text:document.body.innerText})"));
+  throw error;
+ }
  await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening').click()");
  await page.waitForSelector('[data-werewolf-stage][data-cursor]');
 }
@@ -78,13 +82,19 @@ export async function checkSharedWerewolfWatch(page:Page,url:string,apiUrl:strin
  const vote=mystery.view.entries.findIndex(entry=>entry.kind==="vote");if(vote>=0){await seekWatch(page,vote+1);await page.waitForFunction("document.querySelector('[data-watch-context]')?.textContent?.includes('Vote')");}
  expect(await stage?.evaluate(node=>node.isConnected)).toBe(true);
  expect(await page.evaluate("Array.from(document.querySelectorAll('button')).some(e=>e.getAttribute('aria-label')==='Play replay')")).toBe(true);
- await seekWatch(page,mystery.latestCursor);await watchText(page,"Game complete");await seekWatch(page,1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
+ const resultCursor=mystery.view.entries.findIndex(entry=>entry.kind==="result")+1;
+ await seekWatch(page,resultCursor);await watchText(page,"Game result");
+ await page.click('button[aria-label="Play replay"]');
+ await page.waitForSelector('section[aria-label^="Retrospective:"]',{timeout:20000});await pauseWerewolf(page);
+ await seekWatch(page,mystery.latestCursor);await watchText(page,"Retrospective");
+ await page.waitForSelector('section[aria-label^="Retrospective:"] [data-speech-bubble]');
+ await seekWatch(page,1);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$eval('[data-werewolf-stage]',e=>Number(e.getAttribute('data-cursor')))).toBe(first);
  await page.goto(`${url}?audience=omniscient`,{waitUntil:'domcontentloaded'});await skipWerewolfOpening(page);await pauseWerewolf(page);await page.waitForFunction("Array.from(document.querySelectorAll('aside')).some(e=>e.textContent?.includes('werewolf'))");
  await page.evaluate("Array.from(document.querySelectorAll('[role=\"tab\"]')).find(e=>e.textContent==='Decisions')?.click()");
  await page.waitForSelector('[aria-label="Player decisions"]');
  const omni=await(await fetch(`${apiUrl}/api/werewolf/${slug}/presentation?audience=omniscient`)).json() as WerewolfPresentation;
- await seekWatch(page,omni.latestCursor);await watchText(page,"Game complete");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
+ await seekWatch(page,omni.latestCursor);await watchText(page,"Retrospective");await page.goto(`${url}?audience=mystery`,{waitUntil:'domcontentloaded'});await pauseWerewolf(page);expect(await page.evaluate("document.body.innerText.includes('Role unknown')")).toBe(false);
  expect(await page.$('[aria-label="Player thinking"]')).toBeNull();expect(await page.evaluate("document.body.innerText.includes('Show thinking')")).toBe(false);
  await page.setViewport({width:390,height:844});await seekWatch(page,1);await page.waitForSelector('[data-speech-bubble]');
  expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);await page.screenshot({path:"/tmp/shared-watch-mobile.png"});
@@ -123,10 +133,9 @@ export async function checkInSceneThinking(page: Page, url: string, apiUrl: stri
   });
   await page.evaluate("localStorage.removeItem('house:watch:viewer:v1')");
   await page.goto(`${url}?audience=omniscient`, {waitUntil:'domcontentloaded'});
-  await page.waitForSelector("[data-werewolf-stage], [data-werewolf-opening]");
-  const skipOpening = await page.$("[data-werewolf-opening]");
-  if (skipOpening) await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Skip opening')?.click()");
-  await page.waitForSelector('[data-werewolf-stage][data-cursor]');await pauseWerewolf(page);
+  // Wait for the new audience's opening instead of accepting the previous
+  // session's stage during navigation and missing the new opening entirely.
+  await skipWerewolfOpening(page);await pauseWerewolf(page);
   const cursor = await page.$eval('[data-werewolf-stage]', element => element.getAttribute('data-cursor'));
   await page.locator('button[aria-label="Player settings"]').click();
   await page.waitForSelector('[role="dialog"][aria-label="Player settings"]');
@@ -161,11 +170,19 @@ export async function checkBallotCollection(page: Page, presentation: WerewolfPr
   await page.keyboard.press('4');
   await page.waitForSelector('[data-vote-target="abstain"]');
   await page.keyboard.press('Space');
+  await page.waitForSelector('button[aria-label="Play replay"]');
+  const entry = presentation.view.entries[index]!;
+  if (entry.kind !== "vote") throw new Error("Ballot collection fixture needs a canonical vote");
+  const total = entry.result.ballots.length;
+  // Rewind from the known last ballot, rather than sampling a collection
+  // animation that may advance between the pause input and its React commit.
+  await seekWatch(page, index + 1, total - 1);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total}`);
   expect(await page.$('[data-speech-bubble]')).toBeNull();
   expect(await page.$eval('[data-werewolf-stage]', e=>Number(e.getAttribute('data-cursor')))).toBe(index+1);
   await page.screenshot({path:'/tmp/werewolf-hear-more-ledger.png'});
-  const revealed = (await page.$$('[data-ledger-voter]')).length;
+  await page.evaluate("document.activeElement?.blur()");
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length < ${revealed}`);
+  await page.waitForFunction(`document.querySelectorAll('[data-ledger-voter]').length === ${total - 1}`);
   await page.keyboard.press('2');
 }

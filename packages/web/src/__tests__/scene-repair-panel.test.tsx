@@ -6,7 +6,7 @@ import { SceneRepairPanel, type MediaRecords, type MediaAttempt } from "../app/a
 import { useVisualWatch } from "../app/games/[slug]/components/use-visual-watch";
 import { setApiBase } from "../lib/api";
 const originalFetch = globalThis.fetch;
-const globals = ["window", "document", "navigator", "localStorage", "HTMLElement", "Node", "Event"] as const;
+const globals = ["window", "document", "navigator", "localStorage", "Element", "HTMLElement", "Node", "Event", "requestAnimationFrame", "cancelAnimationFrame", "getComputedStyle"] as const;
 const saved = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;
 beforeEach(() => { dom = new HappyDOMWindow({ url: "http://localhost" }); for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: dom[key] }); setApiBase(""); });
@@ -15,6 +15,22 @@ const empty = (): MediaRecords => ({ jobs: [], versions: [], publications: [], r
 const props = (media = empty()) => ({ gameId: "game", sceneId: "scene", originalFailed: true, media, canOperate: true, refresh: async () => {}, refreshError: null, onOpen: () => {}, attempts: [] });
 const respond = (handler: (input: string, init?: RequestInit) => Promise<Response>) => { globalThis.fetch = Object.assign(handler, { preconnect: originalFetch.preconnect }) as typeof fetch; };
 const job = (status: string): MediaRecords["jobs"][number] => ({ id: "job", sceneId: "scene", version: 1, status, step: "harmonize", failure: null, candidateArtifactId: null, sourceImageId: null, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null });
+
+test("character framing reads the inspected immutable version and its references only on demand",async()=>{
+  const reads:string[]=[];
+  respond(async url=>{reads.push(url);return Response.json({imageUrl:"data:image/png;base64,fixture"});});
+  const version=(id:string,number:number):MediaRecords["versions"][number]=>({id,sceneId:"scene",version:number,imageArtifactId:`${id}-image`,annotatedArtifactId:`${id}-annotated`,verificationVersion:"fixture",localization:{count:1,anchors:[]},plan:{roomId:"lobby",cast:[{id:"actor",name:"Arden",referenceArtifactId:`${id}-reference`}]}});
+  const media={...empty(),versions:[version("newer",9),version("inspected",2)]};
+  const mounted=render(<SceneRepairPanel {...props(media)} versionId="inspected" />);
+  await waitFor(()=>expect(reads).toContain("/api/admin/games/game/visual/evidence/artifact/inspected-image"));
+  expect(reads.some(url=>url.includes("reference"))).toBe(false);
+  const detail=mounted.getByText("Preview exact character framing").closest("details")!;
+  await act(async()=>{detail.open=true;fireEvent(detail,new Event("toggle"));});
+  await waitFor(()=>expect(mounted.getByLabelText("Exact version framing still").getAttribute("data-framing-version")).toBe("inspected"));
+  expect(reads).toContain("/api/admin/games/game/visual/evidence/artifact/inspected-reference");
+  expect(reads.some(url=>url.includes("newer-reference") || url.endsWith("/preview"))).toBe(false);
+  expect(mounted.getByAltText("Arden frozen reference")).not.toBeNull();
+});
 
 test("one click queues one durable request, shows inline receipt and recovered progress", async () => {
   const requests: unknown[] = []; let finish: ((value: Response) => void) | undefined;
@@ -72,8 +88,9 @@ test("compares annotations, publishes explicitly, restores versions and preserve
   expect(writes[0]).toMatchObject({ action: "publish", versionId: "v1", expectedPublication: 0, expectedVersion: 1 });
   media = { ...media, publications: [{ id: "pub", sceneId: "scene", versionId: "v1", revision: 1, operatorId: "admin", createdAt: new Date().toISOString() }] };
   mounted.rerender(<SceneRepairPanel {...props(media)} refreshError="Offline" />);
-  expect(mounted.getByText(/Progress refresh failed/)).not.toBeNull(); expect(mounted.getByLabelText("Candidate version")).not.toBeNull();
-  fireEvent.change(mounted.getByLabelText("Candidate version"), { target: { value: "v0" } });
+  expect(mounted.getByText(/Progress refresh failed/)).not.toBeNull(); expect(mounted.getByRole("combobox", { name: /^Candidate version/ })).not.toBeNull();
+  fireEvent.click(mounted.getByRole("combobox", { name: /^Candidate version/ }));
+  fireEvent.click(await mounted.findByRole("option", { name: "v0 · Original gameplay image" }));
   await waitFor(() => expect((mounted.getByText("Restore for viewers") as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(mounted.getByText("Restore for viewers")); await waitFor(() => expect(writes).toHaveLength(2));
   expect(writes[1]).toMatchObject({ action: "publish", versionId: "v0", expectedPublication: 1 });
@@ -165,7 +182,8 @@ test("harmonization binds the selected panels and deduplicates clicks without pu
   const media = { ...empty(), jobs: [job("ready")], versions: [version(1), version(0)] };
   const mounted = render(<SceneRepairPanel {...props(media)} apiPrefix="/api/admin/production/games" />);
   fireEvent.click(mounted.getByText("Versions and review"));
-  fireEvent.change(mounted.getByLabelText("Candidate version"), { target: { value: "v0" } });
+  fireEvent.click(mounted.getByRole("combobox", { name: /^Candidate version/ }));
+  fireEvent.click(await mounted.findByRole("option", { name: "v0 · Original gameplay image" }));
   expect(writes).toEqual([]);
   fireEvent.click(mounted.getByText("Harmonize existing panels")); fireEvent.click(mounted.getByText("Harmonize existing panels"));
   expect(writes).toHaveLength(1);

@@ -6,7 +6,8 @@
  * the same Postgres-backed durable run path as the web UI.
  */
 
-import { apiFetch, authHeaders, resolveSessionToken } from "./api-simulation-client";
+import { apiFetch, authHeaders } from "./api-simulation-client";
+import { resolveCliApiSession } from "./cli-api-session";
 import {
   DEFAULT_MODEL_CATALOG_ID,
   normalizeProviderManifest,
@@ -22,6 +23,7 @@ import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "./types";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
+  webBaseUrl: string;
   games: number;
   players: number;
   provider: "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
@@ -76,6 +78,7 @@ export function parseArgs(
   let sawCliLegacyModelSelection = false;
   const args: ApiSimArgs = {
     apiBaseUrl: env.INFLUENCE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
+    webBaseUrl: env.INFLUENCE_WEB_BASE_URL ?? "http://localhost:3001",
     games: readPositiveInt(env.INFLUENCE_API_SIM_GAMES, 1),
     players: env.INFLUENCE_API_SIM_PLAYERS === undefined
       ? MIN_NEW_GAME_PLAYERS
@@ -103,6 +106,9 @@ export function parseArgs(
     const next = argv[i + 1];
     if ((arg === "--api-url" || arg === "--api-base-url") && next) {
       args.apiBaseUrl = next;
+      i++;
+    } else if ((arg === "--web-url" || arg === "--web-base-url") && next) {
+      args.webBaseUrl = next;
       i++;
     } else if (arg === "--games" && next) {
       args.games = parseInt(next, 10);
@@ -203,7 +209,11 @@ export function parseArgs(
 
 async function main(): Promise<void> {
   const args = parseArgs();
-  const sessionToken = await resolveSessionToken(args.apiBaseUrl);
+  const sessionToken = await resolveCliApiSession({
+    apiOrigin: args.apiBaseUrl,
+    webOrigin: args.webBaseUrl,
+    requiredPermissions: ["create_game", "fill_game", "start_game"],
+  });
   const providerManifest = args.providerManifest ?? normalizeProviderManifest([{
     catalogId: args.modelCatalogId ?? catalogIdFromProviderAndModel(args.provider, args.model),
     ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
@@ -376,8 +386,9 @@ Defaults:
   --max-rounds scales with player count for short API smoke games (6 players -> 7)
 
 Auth:
-  Uses INFLUENCE_API_SESSION_TOKEN when set, otherwise exchanges INFLUENCE_MCP_TOKEN
-  or ~/.influence-game/mcp-token.json through /api/auth/local-cli-session.
+  Reuses a checked API session shared with local replay export; opens browser sign-in when needed.
+  --web-base-url selects the House sign-in origin (default http://localhost:3001).
+  INFLUENCE_API_SESSION_TOKEN supplies an explicit session for unattended tooling.
 `);
 }
 

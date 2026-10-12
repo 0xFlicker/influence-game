@@ -29,11 +29,12 @@ export function portraitRoomSeats(width: number, count: number, speakerIndex: nu
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
-export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady }: {
+export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion, controlsInset, speechPresentation, onImageReady, hideSpeech = false }: {
   beat: Extract<VisualPresentationBeat, { kind: "portrait-room" }>;
   elapsedMs: number; readingElapsedMs: number; reducedMotion: boolean; controlsInset: number;
   speechPresentation?: "solo" | "scene";
   onImageReady?: () => void;
+  hideSpeech?: boolean;
 }) {
   const sampled = useSampledStage();
   const frame = useRef<HTMLElement>(null);
@@ -108,7 +109,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
       </div>;
     })}
     </div>
-    {!thought && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
+    {!thought && !hideSpeech && opacity > 0 && <div data-speech-bubble className="absolute z-[200] flex flex-col rounded-2xl border border-white/25 bg-black/90 px-5 py-4 shadow-xl"
       style={{...bubble, opacity, padding:speechFit.padding}}>
       <p className={`mb-2 h-5 shrink-0 truncate text-xs font-semibold leading-5 text-white/70 ${speechFit.typography && speechFit.typography.pages.length > 1 && !speechFit.typography.footerHeight ? "pr-12" : ""}`}>{beat.speech.speaker}</p>
       <TimedSpeech text={beat.speech.text} elapsedMs={speechTime} typography={speechFit.typography} className="text-base leading-relaxed" />

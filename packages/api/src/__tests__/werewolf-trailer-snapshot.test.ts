@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "bun:test";
 import { asc, eq } from "drizzle-orm";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { loadWerewolfTrailerSnapshot } from "../services/werewolf-trailer-snapshot.js";

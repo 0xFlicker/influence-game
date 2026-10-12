@@ -1,9 +1,18 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
+import { DEFAULT_CONFIG, GameRunner } from "@influence/engine";
+import { ApiTestMockAgent } from "../services/game-lifecycle.js";
+import { createDurableGameRunnerStore } from "../services/durable-game-runner-store.js";
+import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
+import { insertGame, insertOwner } from "../__tests__/durable-run-test-utils.js";
+import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import { runWerewolf, replayWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
+import {completedWerewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {projectWerewolfView} from "@influence/engine/werewolf/observation";
 import sharp from "sharp";
 import type { StoredVisualShot } from "@influence/engine/visual-mode";
 import { readWerewolfPresentation } from "../services/werewolf-presentation.js";
@@ -25,7 +34,9 @@ import { startTestServers, stopTestServers, type TestServerHandles } from "./tes
 import { cleanupE2eResources } from "./cleanup.js";
 import {checkSharedWerewolfWatch, checkConsecutiveReplies, checkInSceneThinking, checkBallotCollection, seekWatch, watchText, pauseWerewolf, skipWerewolfOpening} from "./shared-watch-browser.js";
 import type {WerewolfPresentation} from "@influence/engine/werewolf/presentation";
+import type {WerewolfDecisions} from "@influence/engine/werewolf/decisions";
 import { checkAdminContinuity } from "./admin-continuity-browser.js";
+import { clickStudioButton, openStudioDialog, closeStudioDialog, openStudioSelect, chooseStudioOption } from "./studio-interface-review.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 const originalMock = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
@@ -54,7 +65,7 @@ async function checkFailedPackNegotiations() {
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
-  const agent: WerewolfAgent = { async decide({ request, observation }) {
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "vote") {
       if (request.voteMode === "majority") return { kind: "target", targetId: null, thinking: "Hear more" };
       const ids = observation.board.players.filter(player => player.alive).map(player => player.id);
@@ -278,7 +289,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
   const claim = await claimWerewolfGame(database.db, game.id); if (!claim.ok) throw new Error(claim.error);
   let ballotRequests = 0;
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { async decide({ request }) {
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "vote" && request.voteMode === "majority" && ballotRequests++ < 2) return {kind:"target", targetId:null, thinking:"I need more evidence"};
     if (request.action === "open_thread") return { kind: "opening", text: "Who can explain their suspicion?", cue: null, recipientIds: request.legalTargetIds.slice(0, 2) };
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private decision" } : { kind: "speech", text: "A short contribution", cue: null };
@@ -320,6 +331,8 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     groups.push({ imageArtifactId: artifactId, annotatedArtifactId: artifactId, participantIds: members.map(p => p.id), visibleParticipantIds: members.map(p => p.id), pointers: [], anchors: members.map((p, index) => ({ playerId: p.id, label: index + 1, confidence: "clear", head: { x: .2 + .4 * index, y: .2, width: .12, height: .18 } })) });
   }
   await executeVisualMediaJob(database.db, job, new AbortController().signal, async () => ({ imageArtifactId: groups[0]!.imageArtifactId, localization: { count: 6, verifiedParticipantIds: groups.flatMap(g => g.visibleParticipantIds), anchors: [] }, shots: { mode: "groups", overview: null, groups } }));
+  const [candidate] = await database.db.select().from(schema.visualMediaVersions).where(eq(schema.visualMediaVersions.jobId, job.id));
+  if (!candidate) throw new Error("Fixture candidate version missing");
   const page = await createAuthenticatedPage(browser, admin.jwt, `${servers.webUrl}/admin/werewolf?q=${game.slug}&status=completed`, { privateKey: admin.wallet.privateKey });
   const mediaWrites: Array<{action:string;requestId:string;expectedVersion:number}> = [];
   page.on("request", request => { if(request.method() === "POST" && request.url().endsWith("/media")) { const body = JSON.parse(request.postData() ?? "{}"); mediaWrites.push(body); } });
@@ -327,7 +340,8 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.setViewport({ width: 1440, height: 1000 });
     await text(page, game.slug);
     await page.click(`a[href^="/admin/werewolf/${game.id}?"]`);
-    await text(page, "Game overview"); await text(page, "RULES V7");
+    await text(page, "Game overview"); await text(page, "RULES V8");
+    const overviewUrl = page.url();
     expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
     await checkAdminContinuity(page, game.id);
     await page.screenshot({ path: "/tmp/werewolf-admin-desktop.png", fullPage: true });
@@ -337,23 +351,46 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.waitForSelector('label select', { visible: true });
     await page.select('select', 'activity');
     await text(page, "Game activity"); await text(page, "A short contribution");
-    await page.select('select', 'production');
-    await text(page, "Village round table"); await text(page, "Private pack cellar");
-    if (inventory.scenes.some(scene => scene.roomId === "mingle-2")) await text(page, "Moonlit hunt");
-    else expect(await page.evaluate("document.body.innerText.includes('Moonlit hunt')")).toBe(false);
-    await page.waitForSelector('[aria-label="Character coverage"]');
+    // Production has one active editor, reachable from narrow game operations.
+    const studioLink = `a[href="/admin/production/games/${game.id}"]`;
+    await page.waitForSelector(studioLink, {visible:true});
+    expect(await page.$eval(studioLink, node => node.getBoundingClientRect().width)).toBeGreaterThan(0);
+    await page.click(studioLink);
+    await page.waitForSelector('[data-preview-frame]');
+    await page.waitForSelector('[data-moment-id] [data-kind="thinking"]');
+    await chooseStudioOption(page, "Production audience", "Mystery");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience') === 'mystery' && !!document.querySelector('[data-preview-frame]')");
+    await clickStudioButton(page, "Properties");
+    await openStudioDialog(page, "Scene versions & production");
+    await openStudioSelect(page, "Inspect scene");
+    expect(await page.$$eval('[role="listbox"] [role="option"]', options => options.some(option => option.textContent?.includes("Private pack cellar")))).toBe(false);
+    await page.keyboard.press("Escape");
+    await closeStudioDialog(page);
+    await chooseStudioOption(page, "Production audience", "Omniscient");
+    await page.waitForFunction("new URL(location.href).searchParams.get('audience') === 'omniscient' && !!document.querySelector('[data-moment-id] [data-kind=thinking]')");
+    await page.waitForSelector('[data-preview-frame]');
+    await clickStudioButton(page, "Properties");
+    await openStudioDialog(page, "Scene versions & production");
+    await openStudioSelect(page, "Inspect scene");
+    const sceneLabels = await page.$$eval('[role="listbox"] [role="option"]', options => options.map(option => option.textContent ?? ""));
+    expect(sceneLabels.some(label => label.includes("Private pack cellar"))).toBe(true);
+    expect(sceneLabels.some(label => label.includes("Moonlit hunt"))).toBe(inventory.scenes.some(scene => scene.roomId === "mingle-2"));
+    const lobbyOption = await page.evaluateHandle(`Array.from(document.querySelectorAll('[role="listbox"] [role="option"]')).find(node => node.lastElementChild?.textContent?.startsWith(${JSON.stringify(`${lobby.roomName} · ${lobby.round ?? "Opening"}`)}))`);
+    try {await lobbyOption.asElement()!.click();} finally {await lobbyOption.dispose();}
+    await page.waitForFunction(`new URL(location.href).searchParams.get('scene') === ${JSON.stringify(lobby.key)}`);
+    await page.waitForFunction("document.querySelector('[aria-label=\"Scene inspector\"]')?.textContent?.includes('Village round table')");
     expect(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")).toBe(true);
-    await page.waitForFunction("document.getAnimations().every(animation => animation.playState !== 'running')");
-    await click(page, "Preview character framing · 3 panels");
-    await page.waitForSelector('[aria-label="Character framing preview"] img');
-    await page.select('select[aria-label="Frame character"]', visualCast[4]!.id);
-    await page.waitForFunction(`Array.from(document.querySelectorAll('[aria-label="Character framing preview"] img')).some(image => image.complete && image.src === ${JSON.stringify(groupImageUrls[2])})`);
-    await page.select('select[aria-label="Frame character"]', visualCast.at(-1)!.id);
-    await page.waitForSelector('img[alt$="portrait fallback"]');
-    await page.screenshot({ path: "/tmp/werewolf-admin-production-mobile.png", fullPage: true });
     await click(page, "Versions and review");
     await text(page, "3 group shots");
     for (let panel = 1; panel <= 3; panel++) await page.waitForSelector(`img[alt="Candidate v1 · Panel ${panel}"]`);
+    await page.evaluate("Array.from(document.querySelectorAll('[aria-label=\"Scene inspector\"] summary')).find(node => node.textContent === 'Preview exact character framing')?.click()");
+    await page.waitForSelector('[data-framing-version] img');
+    expect(await page.$eval('[data-framing-version]', node => node.getAttribute('data-framing-version'))).toBe(candidate.id);
+    await page.select('select[aria-label="Frame character"]', visualCast[4]!.id);
+    await page.waitForFunction(`Array.from(document.querySelectorAll('[data-framing-version] img')).some(image => image.complete && image.src === ${JSON.stringify(groupImageUrls[2])})`);
+    await page.select('select[aria-label="Frame character"]', visualCast.at(-1)!.id);
+    await page.waitForSelector('[data-framing-version] img[alt$="frozen reference"]');
+    await page.screenshot({ path: "/tmp/werewolf-admin-production-mobile.png", fullPage: true });
     await click(page, "Correct images");
     await text(page, "Save reviewed version");
     for (const group of groups) {
@@ -407,7 +444,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
       throw error;
     } finally { await viewer.close(); }
 
-    await page.select('select', 'overview'); await text(page, "Game overview");
+    await page.goto(overviewUrl, {waitUntil:"domcontentloaded"}); await text(page, "Game overview");
     await click(page, "Hide game"); await text(page, "Restore listing");
     expect((await database.db.select().from(schema.games).where(eq(schema.games.id, game.id)))[0]!.hiddenAt).not.toBeNull();
     await click(page, "Restore listing"); await text(page, "Hide game");
@@ -422,10 +459,16 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));
     await database.db.insert(schema.userRoles).values({userId:admin.userId,roleId:adminRole.id});
     await click(page,"Refresh");
-    await page.select('label select','production');
-    await text(page,"Producer or Sysop access is required");
-    expect(await page.evaluate("document.querySelector('[aria-label=\"Character coverage\"]') === null")).toBe(true);
-    await page.select('label select','overview'); await text(page,"Game overview");
+    await page.goto(`${servers.webUrl}/admin/production/games/${game.id}`, {waitUntil:"domcontentloaded"});
+    await page.waitForSelector('[data-production-workspace]');
+    expect(await page.$('[aria-label="Scene inspector"]')).toBeNull();
+    expect(await page.$('[data-production-preview]')).toBeNull();
+    expect(await page.$('[aria-label="Game production recovery"]')).toBeNull();
+    await text(page,"Trailer & poster");
+    // Admin retains its existing manage_postgame_media grant while private
+    // Werewolf production evidence remains Producer/Sysop-only.
+    await text(page,"Episode presentation");
+    await page.goto(overviewUrl, {waitUntil:"domcontentloaded"}); await text(page,"Game overview");
     await database.db.delete(schema.userRoles).where(eq(schema.userRoles.userId,admin.userId));
     await click(page,"Refresh");
     await page.waitForFunction("!document.querySelector('[data-game-header]')");
@@ -452,7 +495,10 @@ test("Werewolf without visual mode shows village and pack portrait rooms on desk
   const game = await createWerewolfGame(database.db, admin.userId, {preset: "two_wolves", agentProfileIds: [], maxDays: 1});
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), {async decide({request}) {
+  await runWerewolf(createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch), {
+    prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity,
+    getRetrospectiveStatement: fixtureWerewolfRetrospective,
+    async decide({request}) {
     if (request.action === "open_thread") return {kind: "opening", text: "Tell me who you suspect and why.", cue: null, recipientIds: []};
     return request.legalTargetIds.length ? {kind: "target", targetId: request.legalTargetIds[0]!, thinking: "Private fixture"}
       : {kind: "speech", text: "I want to hear everyone's reasoning.", cue: null};
@@ -524,7 +570,12 @@ test("shared House replay handles failed portraits and reduced motion", async ()
     await page.emulateMediaFeatures([{name:"prefers-reduced-motion",value:"reduce"}]);
     await page.setRequestInterception(true);
     page.on("request",request=>{if(request.url().includes("/characters/")) void request.respond({status:404,body:"Missing frozen reference"});else void request.continue();});
+    console.info("Failed portrait replay fixture", {id:game.id,slug:game.slug,status:game.status,hidden:game.hiddenAt!==null});
     await checkSharedWerewolfWatch(page,`${servers.webUrl}/games/${game.slug}/replay`,servers.apiUrl);
+  } catch(error) {
+    console.error("Failed portrait replay diagnostics",await page.evaluate("({url:location.href,text:document.body.innerText,opening:document.querySelector('[data-werewolf-opening]')?.getAttribute('data-werewolf-opening'),cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor')})"));
+    await page.screenshot({path:"/tmp/werewolf-failed-portraits-diagnostic.png",fullPage:true});
+    throw error;
   } finally {await page.close();}
 },90_000);
 
@@ -611,7 +662,7 @@ test("shared replay fences delayed seeks and crosses silent live windows without
 test("Werewolf thinking isolates the speaker before speech on desktop and mobile", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -665,7 +716,7 @@ test("opening stops stay distinct from recorded cursors in both audiences", asyn
 test("Werewolf autoplays with device preferences and Mystery preserves the saved choice", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim = await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:null,cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind.",cue:null};
   }});
@@ -701,7 +752,7 @@ test("Werewolf autoplays with device preferences and Mystery preserves the saved
 test("House entry is anonymous, rejects invalid audiences and shares a later source moment without restarting", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1,visibility:"unlisted"});
   const claim = await claimWerewolfGame(database.db,game.id); if(!claim.ok) throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}) {
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}) {
     if(request.action === "open_thread") return {kind:"opening",text:"What have you learned?",recipientIds:request.legalRecipientIds.slice(0,3),cue:null};
     if(request.action === "vote" && request.voteMode === "majority") return {kind:"target",targetId:null,thinking:"Hear more"};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Fixture decision"} : {kind:"speech",text:"I want to compare the evidence.",cue:null};
@@ -778,7 +829,7 @@ test("House visibility creation works for both games on desktop and mobile", asy
 },180_000);
 
 test("House Werewolf results: anonymous endings, exact evidence, Mystery isolation and mobile", async () => {
-  const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
+  const {completedWerewolfResultsFixture:werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
   const {buildWerewolfResults} = await import("@influence/engine/werewolf/results");
   const page = await browser.newPage();
   page.setDefaultNavigationTimeout(90_000);
@@ -869,11 +920,45 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
   } finally {await page.close();}
 },90_000);
 
+test.each(["classic", "format"] as const)("%s Influence retrospective portraits follow canonical speech links and survive reload/backward seek", async gameKernel => {
+  const config = {...DEFAULT_CONFIG, visibility: "public", maxDiaryFollowUps: 0, diaryRoomAfterPhases: [], mingleSessionsPerRound: 1,
+    modelSelection: {catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" as const},
+    ...(gameKernel === "format" ? {formatManifest: ["save_or_eliminate" as const]} : {})};
+  const id = await insertGame(database.db, {status: "in_progress", config});
+  await database.db.update(schema.games).set({gameKernel, transcriptCaptureVersion: 1, formalSpeechCaptureVersion: 1}).where(eq(schema.games.id, id));
+  await database.db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(id));
+  const agents = ["Atlas", "Echo", "Nova"].map((name, index) => new ApiTestMockAgent(`${id}-${index}`, name));
+  await database.db.insert(schema.gamePlayers).values(agents.map(agent => ({id: agent.id, gameId: id, persona: JSON.stringify({name: agent.name, personality: "Fixture"}), agentConfig: '{}', status: "alive" as const})));
+  const ownerEpoch = await insertOwner(database.db, id, {expiresAt: "2099-01-01T00:00:00.000Z"});
+  await new GameRunner(agents, config, undefined, {gameId: id, durableTurnStore: createDurableGameRunnerStore(database.db, {gameId: id, ownerEpoch})}).run();
+  await database.db.update(schema.games).set({status: "completed"}).where(eq(schema.games.id, id));
+  const retrospective = await readHouseGameRetrospective(database.db, {gameIdOrSlug: id});
+  expect(retrospective.statements).toHaveLength(3);
+  const page = await browser.newPage();
+  try {
+    for (const index of [0, 2, 1]) {
+      const speech = retrospective.statements[index]!, speaker = retrospective.speakers[index]!;
+      await page.goto(`${servers.webUrl}${speech.href}`, {waitUntil: "domcontentloaded"});
+      await page.waitForSelector(`section[aria-label="Retrospective: ${speaker.name}"]`);
+      await page.waitForFunction(`document.querySelector('[data-speech-bubble]')?.textContent.includes(${JSON.stringify(speech.speech)})`);
+      expect(await page.$('[data-werewolf-stage]')).toBeNull();
+      await page.setViewport({width: index === 1 ? 390 : 1440, height: index === 1 ? 844 : 1000});
+      expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBeTrue();
+      if (index === 2) { await page.reload({waitUntil: "domcontentloaded"}); await page.waitForSelector(`section[aria-label="Retrospective: ${speaker.name}"]`); }
+    }
+    await page.screenshot({path: `/tmp/retrospective-${gameKernel}-mobile.png`});
+  } catch (error) {
+    console.log(`Retrospective ${gameKernel} browser state:`, await page.evaluate("document.body.innerText"));
+    await page.screenshot({path: `/tmp/retrospective-${gameKernel}-failed.png`});
+    throw error;
+  } finally {await page.close();}
+}, 120_000);
+
 
 test("House replay music follows transport, remembers volume and stays visible on mobile", async () => {
   const game = await createWerewolfGame(database.db, admin.userId, {preset:"one_wolf",agentProfileIds:[],maxDays:1});
   const claim=await claimWerewolfGame(database.db,game.id);if(!claim.ok)throw new Error(claim.error);
-  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{async decide({request}){
+  await runWerewolf(createWerewolfStore(database.db,game.id,claim.claim.ownerEpoch),{ prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,async decide({request}){
     if(request.action==="open_thread")return {kind:"opening",text:"Let us compare the accounts carefully before we decide who should leave the village today.",cue:null,recipientIds:[]};
     return request.legalTargetIds.length ? {kind:"target",targetId:request.legalTargetIds[0]!,thinking:"Private decision"} : {kind:"speech",text:"I want to hear what everyone has to say before I make up my mind about anyone in this village.",cue:null};
   }});
@@ -1131,6 +1216,45 @@ test("doctor, seer, hunt and outcome are separate scrub stops only for Omniscien
   } finally { await page.close(); }
 }, 60_000);
 
+test("a canonical retrospective grows after results without moving a paused replay and survives reconnect",async () => {
+  const id = "browser-retrospective-growth", events = await completedWerewolfResultsFixture("saved",id,1);
+  const firstIndex = events.findIndex(event => event.type === "werewolf.retrospective_statement_recorded");
+  const prefix = events.slice(0,firstIndex), first = events[firstIndex]!;
+  const initialView = projectWerewolfView(replayWerewolf(prefix),"mystery");
+  const resultCursor = initialView.entries.findIndex(entry => entry.kind === "result")+1, firstCursor = resultCursor+1;
+  await database.db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"in_progress",startedAt:new Date().toISOString(),config:JSON.stringify({providerManifest:[{catalogId:"openai:gpt-6-luna",reasoningPolicy:"low"}]})});
+  await database.db.insert(schema.werewolfEvents).values(prefix.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const claim = await claimWerewolfGame(database.db,id);
+  if (!claim.ok) throw new Error(claim.error);
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${resultCursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${resultCursor}"]`);await pauseWerewolf(page);
+    const originalMax = await page.$eval('input[aria-label="Replay position"]',input => Number(input.getAttribute("max")));
+    await database.db.insert(schema.werewolfEvents).values({gameId:id,sequence:first.sequence,event:first});
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max)>${originalMax}`,{timeout:15_000});
+    expect(await page.$eval('[data-werewolf-stage]',stage => Number(stage.getAttribute("data-cursor")))).toBe(resultCursor);
+    await page.click('button[aria-label="Play replay"]');
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`,{timeout:20_000});
+    if (first.type !== "werewolf.retrospective_statement_recorded") throw new Error("Missing first speech");
+    await watchText(page,first.payload.speech);
+    await pauseWerewolf(page);
+    const firstMax = await page.$eval('input[aria-label="Replay position"]',input => Number(input.getAttribute("max")));
+    await database.db.insert(schema.werewolfEvents).values(events.slice(firstIndex+1).map(event => ({gameId:id,sequence:event.sequence,event})));
+    await database.db.update(schema.games).set({status:"completed",endedAt:new Date().toISOString()}).where(eq(schema.games.id,id));
+    await page.waitForFunction(`Number(document.querySelector('input[aria-label="Replay position"]').max)>${firstMax}`,{timeout:15_000});
+    expect(await page.$eval('[data-werewolf-stage]',stage => Number(stage.getAttribute("data-cursor")))).toBe(firstCursor);
+    expect(await page.$('button[aria-label="Play replay"]')).not.toBeNull();
+    await page.goto(`${servers.webUrl}/games/${id}/replay?audience=mystery&cursor=${firstCursor}`,{waitUntil:"domcontentloaded"});
+    await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+    await page.reload({waitUntil:"domcontentloaded"});await page.waitForSelector(`[data-werewolf-stage][data-cursor="${firstCursor}"]`);
+    await watchText(page,first.payload.speech);
+  } catch (error) {
+    console.error("Retrospective growth fixture",await page.evaluate("document.body.innerText"));
+    await page.screenshot({path:"/tmp/retrospective-growth-failed.png"});throw error;
+  } finally {await page.close();}
+},60_000);
+
 test("published wolf forms transform each night including a lone survivor and night deaths have a seek-safe claw outcome", async () => {
   const {werewolfResultsFixture} = await import("@influence/engine/fixtures/werewolf-results");
   const {werewolfSceneInventory} = await import("@influence/engine/werewolf/visual-scenes");
@@ -1242,35 +1366,82 @@ test("published wolf forms transform each night including a lone survivor and ni
 },90_000);
 
 test("Decisions inspector keeps Mystery public and Omniscient thinking independent of stage preferences", async () => {
+  const progress=(step:string)=>console.info("Decisions readiness proof",step);
+  async function diagnose<T>(operation:Promise<T>):Promise<T> {
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try {
+      return await Promise.race([operation,new Promise<never>((_,reject)=>{
+        timer=setTimeout(()=>reject(new Error("Browser diagnostic exceeded two seconds")),2_000);
+      })]);
+    } finally {if(timer) clearTimeout(timer);}
+  }
   const { replayWerewolf } = await import("@influence/engine/werewolf");
+  progress("create game");
   const game = await createWerewolfGame(database.db, admin.userId, { preset: "two_wolves", agentProfileIds: [], maxDays: 1 });
+  progress("claim game");
   const claim = await claimWerewolfGame(database.db, game.id);
   if (!claim.ok) throw new Error(claim.error);
   const store = createWerewolfStore(database.db, game.id, claim.claim.ownerEpoch);
-  const agent: WerewolfAgent = { async decide({ request }) {
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request, observation }) {
     if (request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
+    // The inspector requires a doctor with both private night and public day
+    // history. Self-protection prevents random roles from killing that fixture
+    // before voting; split ballots let every living player reach the vote.
+    if(request.action==="protect") return {kind:"target",targetId:request.actorId,thinking:"PRIVATE_DECISION_THOUGHT"};
+    if(request.action==="vote") {
+      const alive=observation.board.players.filter(player=>player.alive);
+      const index=alive.findIndex(player=>player.id===request.actorId);
+      const target=alive[(index+1)%alive.length]?.id;
+      if(!target || !request.legalTargetIds.includes(target)) throw new Error("Fixture vote target is not legal");
+      return {kind:"target",targetId:target,thinking:"PRIVATE_DECISION_THOUGHT"};
+    }
     return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_DECISION_THOUGHT" }
       : { kind: "speech", text: "Hello village.", cue: null };
   } };
-  await runWerewolf(store, agent);
+  progress("run canonical fixture"); await runWerewolf(store, agent);
+  progress("read canonical fixture");
   const state = replayWerewolf(await store.read());
   const doctor = state.players.find(player => state.roles[player.id] === "doctor")!;
+  progress("create browser page");
   const page = await browser.newPage();
+  progress("browser page created");
+  const decisionReads: Array<{url:string;status:number;body:string}> = [];
+  page.on("response",response=>{if(response.request().method()==="GET" && new URL(response.url()).pathname.endsWith("/decisions")) void response.text().then(body=>decisionReads.push({url:response.url(),status:response.status(),body})).catch(error=>decisionReads.push({url:response.url(),status:response.status(),body:String(error)}));});
+  let currentAudience: "mystery" | "omniscient" = "mystery";
   try {
     await page.setViewport({ width: 1600, height: 1000 });
     for (const audience of ["mystery", "omniscient"] as const) {
+      currentAudience=audience;
+      progress(`${audience}: navigate`);
       await page.goto(`${servers.webUrl}/games/${game.slug}/replay?audience=${audience}`, { waitUntil: "domcontentloaded" });
+      progress(`${audience}: wait exact cast actor`);
+      // Transport mounts before the accepted watch window. Fence cast inspection
+      // on the actual intended actor, rather than the early Pause button.
+      await page.waitForFunction(`Array.from(document.querySelectorAll('button')).some(button => button.getAttribute('aria-label') === ${JSON.stringify(`Inspect ${doctor.name}`)} && button.getBoundingClientRect().width > 0)`);
+      progress(`${audience}: pause accepted player`);
       await pauseWerewolf(page);
+      progress(`${audience}: inspect exact actor`);
       await page.evaluate(`(() => {
-        const button = [...document.querySelectorAll("button")].find(button => button.textContent?.includes(${JSON.stringify(doctor.name)}) && button.getBoundingClientRect().width > 0);
+        const button = [...document.querySelectorAll("button")].find(button => button.getAttribute('aria-label') === ${JSON.stringify(`Inspect ${doctor.name}`)} && button.getBoundingClientRect().width > 0);
         if (!button) throw new Error("Missing cast player");
         button.click();
       })()`);
       await page.evaluate("[...document.querySelectorAll('[role=\"tab\"]')].find(tab => tab.textContent === 'Decisions').click()");
       await page.waitForSelector('[aria-label="Player decisions"]');
       await watchText(page, "No decisions yet.");
-      const view = await (await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=${audience}`)).json() as WerewolfPresentation;
-      await seekWatch(page, view.latestCursor);
+      progress(`${audience}: fetch presentation prerequisite`);
+      const presentationResponse=await fetch(`${servers.apiUrl}/api/werewolf/${game.slug}/presentation?audience=${audience}`,{signal:AbortSignal.timeout(10_000)});
+      progress(`${audience}: presentation HTTP ${presentationResponse.status}`);
+      const view=await presentationResponse.json() as WerewolfPresentation;
+      progress(`${audience}: fetch decisions prerequisite`);
+      const expectedResponse=await fetch(`${servers.apiUrl}/api/werewolf/${game.id}/decisions?audience=${audience}&cursor=${view.latestCursor}&actorId=${encodeURIComponent(doctor.id)}`,{signal:AbortSignal.timeout(10_000)});
+      progress(`${audience}: decisions HTTP ${expectedResponse.status}`);
+      expect(expectedResponse.status).toBe(200);
+      const expected=await expectedResponse.json() as WerewolfDecisions;
+      expect(expected.entries.some(entry=>entry.action==="vote" && entry.actorId===doctor.id)).toBe(true);
+      if(audience==="omniscient") expect(expected.entries.some(entry=>entry.action==="protect" && entry.actorId===doctor.id && entry.thinking==="PRIVATE_DECISION_THOUGHT")).toBe(true);
+      progress(`${audience}: seek latest accepted cursor`); await seekWatch(page, view.latestCursor);
+      progress(`${audience}: wait rendered decisions`);
       await page.waitForSelector('[aria-label="Player decisions"] li');
       const panel = await page.$eval('[aria-label="Player decisions"]', element => element.textContent!);
       if (audience === "mystery") {
@@ -1291,9 +1462,19 @@ test("Decisions inspector keeps Mystery public and Omniscient thinking independe
         await page.screenshot({ path: "/tmp/werewolf-decisions-mobile.png" });
         await page.setViewport({ width: 1600, height: 1000 });
       }
-      await seekWatch(page, 1);
+      progress(`${audience}: seek back`); await seekWatch(page, 1);
       await watchText(page, "No decisions yet.");
       expect(await page.$eval('[aria-label="Player decisions"]', element => element.textContent)).not.toContain("PRIVATE_DECISION_THOUGHT");
+      progress(`${audience}: accepted prefix and privacy checked`);
     }
+  } catch(error) {
+    progress(`${currentAudience}: failure; collecting diagnostics`);
+    console.error("Decisions inspector failure",{error:String(error),audience:currentAudience,doctorId:doctor.id,reads:decisionReads});
+    try {
+      const stage=await diagnose(page.evaluate("({url:location.href,cursor:document.querySelector('[data-werewolf-stage]')?.getAttribute('data-cursor'),text:document.body.innerText})"));
+      console.error("Decisions inspector diagnostics",stage);
+      await diagnose(page.screenshot({path:"/tmp/werewolf-decisions-diagnostic.png",fullPage:true}));
+    } catch(diagnosticError) {console.error("Decisions inspector diagnostic unavailable",String(diagnosticError));}
+    throw error;
   } finally { await page.close(); }
 }, 120_000);

@@ -1,7 +1,6 @@
 "use client";
 
 import { AccountInferencePanel } from "./account-inference-panel";
-import { ProductionPanel } from "./production-panel";
 import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
@@ -19,7 +18,6 @@ export function AdminTabs({ activeTab }: { activeTab: AdminTab }) {
       {/* Tab content */}
       {activeTab === "inference" && <AccountInferencePanel />}
       {activeTab === "games" && <AdminPanel />}
-      {activeTab === "production" && <ProductionPanel />}
       {activeTab === "providers" && <AdminProviderHealth />}
       {activeTab === "reviews" && <AdminOwnerLearningReviews />}
       {activeTab === "seasons" && <SeasonAdminPanel />}

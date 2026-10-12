@@ -1,5 +1,8 @@
 import { readHouseParticipation } from "../services/house-participation.js";
+import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { createGameResultsRoutes } from "./game-results.js";
+import { getPersistedGameEvents } from "../services/game-event-read-model.js";
+import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { createEpisodeRoutes } from "./episodes.js";
 import { readEpisodePresentations } from "../services/episode-presentation.js";
@@ -103,7 +106,7 @@ import type { Personality } from "@influence/engine";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 
-const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
+const PUBLIC_SUSPENDED_ERROR_INFO = "Execution is paused. Committed play remains available.";
 
 function publicErrorInfo(
   status: GameStatus,
@@ -243,6 +246,7 @@ export function createGameRoutes(db: DrizzleDB) {
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
       providerManifest: frozenProviderManifest,
+      retrospectiveForecast: forecastRetrospectiveBudget("influence", maxPlayers, frozenProviderManifest),
       ...(frozenProviderManifest.some((entry) => (
         resolveModelSelection(entry).model.providerProfileId === "openai"
       )) && {
@@ -749,6 +753,17 @@ export function createGameRoutes(db: DrizzleDB) {
         .limit(1))[0];
       if (sealed) return { outcome: "sealed" as const, state: sealed.state };
 
+      const persisted = await getPersistedGameEvents(tx, gameId);
+      if (persisted.status === "invalid") return { outcome: "invalid_history" as const };
+      const projection = getPersistedGameProjection(persisted);
+      if (projection.status === "failed") return { outcome: "invalid_history" as const };
+      if (projection.summary?.retrospective.outcome) {
+        await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: new Date().toISOString(), kernelHealth: "suspended", failureReason: "retrospective_paused" })
+          .where(and(eq(schema.gameRunOwners.gameId, gameId), eq(schema.gameRunOwners.status, "active")));
+        await tx.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
+        return { outcome: "paused" as const };
+      }
+
       const wasSuspended = game.status === "suspended";
       const reasonCode = wasSuspended ? "admin_void" : "admin_stop";
       const endedAt = new Date().toISOString();
@@ -780,6 +795,13 @@ export function createGameRoutes(db: DrizzleDB) {
         error: "A sealed completion cannot be stopped or voided.",
         code: "completion_settlement_sealed",
       }, 409);
+    }
+    if (cancellation.outcome === "invalid_history") return c.json({ error: "Canonical history needs repair before changing execution." }, 409);
+    if (cancellation.outcome === "paused") {
+      abortGame(gameId);
+      await tryRefreshGameWatchStateSummary(db, gameId, "retrospective_paused");
+      broadcastRaw(gameId, { type: "game_status", gameId, status: "suspended", terminal: false, reasonCode: "retrospective_paused", message: "Retrospective paused. The competitive result is unchanged." });
+      return c.json({ status: "suspended", reasonCode: "retrospective_paused" });
     }
 
     const { wasSuspended, reasonCode } = cancellation;

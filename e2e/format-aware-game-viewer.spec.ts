@@ -1337,7 +1337,7 @@ test.describe("format-aware game viewer", () => {
       });
       await page.goto(viewerUrl(`/games/${slug}/replay`), { waitUntil: "domcontentloaded" });
       await expect(
-        page.getByText(status === "suspended" ? "Game failed" : "Game unavailable", {
+        page.getByText(status === "suspended" ? "Game paused" : "Game unavailable", {
           exact: true,
         }),
       ).toBeVisible();
@@ -1680,7 +1680,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(viewerUrl("/games/deterministic-classic-suspended/replay"), {
       waitUntil: "domcontentloaded",
     });
-    await expect(page.getByText("Game failed", { exact: true })).toBeVisible();
+    await expect(page.getByText("Game paused", { exact: true })).toBeVisible();
     await expect(page.locator("[data-format-terminal-snapshot]")).toHaveCount(0);
 
     await installDeterministicClassicGame(page, {

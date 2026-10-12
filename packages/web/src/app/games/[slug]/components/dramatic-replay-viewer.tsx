@@ -13,7 +13,7 @@ import { gameReplaySequenceHref } from "@/lib/game-links";
 import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation } from "./visual-presentation";
-import { voteLedgerForCue } from "./vote-ledger-model";
+import { compileVoteLedgers } from "./vote-ledger-model";
 import { useVisualWatch } from "./use-visual-watch";
 import { visualWatchPresentation, paceVisualBallots } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
@@ -35,7 +35,8 @@ import {
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { buildStoryScenes, withHouseBridges } from "./house-story";
-import { buildEndgamePresentationCues, revealedWinnerCue } from "./endgame-presentation";
+import { buildEndgamePresentationCues, compileRevealedWinnerCues } from "./endgame-presentation";
+import { compileSafetyBounceLobbyLookup } from "./safety-bounce-scene-model";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   type MatchWatchPlaybackState,
@@ -145,6 +146,9 @@ function DramaticReplayTheater({
     ],
   );
   const presentationCues = useMemo(() => withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes), [canonicalPresentationCues, players, scenes]);
+  const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
+  const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
+  const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
   const {
     director,
     snapshot: directorSnapshot,
@@ -181,12 +185,9 @@ function DramaticReplayTheater({
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
-  const priorLobbyMessages = useMemo(() => !formatCue ? [] : classicCues
-    .filter(cue => cue.round === formatCue.round && cue.phase === "LOBBY"
-      && cue.canonicalSequence !== null && cue.canonicalSequence <= formatCue.canonicalSequence)
-    .map(cue => scenes[cue.sceneIndex]!.messages[cue.messageIndex]!), [classicCues, formatCue, scenes]);
+  const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinnerCue(presentationCues, directorSnapshot.cursor) ?? activeCue, currentMessage, players, priorLobbyMessages,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages, replayFrames,
   );
   const thinkingActor = visual.beat && "speech" in visual.beat ? visual.beat.speech?.playerId : null;
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
@@ -647,7 +648,7 @@ function DramaticReplayTheater({
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
           {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
-            voteLedger={voteLedgerForCue(presentationCues, directorSnapshot.cursor)} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
+            voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={fullscreen}><FormatPresentation

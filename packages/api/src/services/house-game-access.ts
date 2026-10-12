@@ -17,7 +17,9 @@ export class HouseInspectionError extends Error {
       | "not_started"
       | "not_completed"
       | "unavailable"
-      | "entry_too_large",
+      | "entry_too_large"
+      | "conflict"
+      | "admission_closed",
     message: string,
   ) {
     super(message);

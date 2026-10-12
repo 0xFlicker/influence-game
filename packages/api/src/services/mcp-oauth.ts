@@ -1,4 +1,5 @@
 import { hasModerationAccess } from "./moderation-intake.js";
+import { hasRetrospectiveRecoveryAccess } from "./retrospective-recovery-policy.js";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -366,7 +367,9 @@ export async function authorizeMcpOAuth(
   }
 
   const hasProducerRole = await hasCurrentProducerRole(db, user);
-  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole, await hasModerationAccess(db, user.id), await hasGameAssetPermission(db, user));
+  const preview = scopeGrantPreview(parsed.request.requestedScopes, hasProducerRole, await hasModerationAccess(db, user.id), {
+    manage_game_assets: await hasGameAssetPermission(db, user), resume_game_retrospective: await hasRetrospectiveRecoveryAccess(db, user.id),
+  });
   const defaultSelectedScope = normalizeMcpOAuthScopeSet(preview.defaultSelectedScopes);
 
   if (decision === "inspect") {
@@ -631,6 +634,7 @@ export async function exchangeMcpOAuthCode(
   if (codeScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
     return invalidGrant("Game asset permission is no longer active", codeAudit);
   }
+  if (codeScopes.scopes.has("games:resume") && !(await hasRetrospectiveRecoveryAccess(db, user.id))) return invalidGrant("Retrospective recovery permission is no longer active", codeAudit);
 
   const shouldIssueRefreshToken = await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
   const rawToken = generateOpaqueSecret();
@@ -786,6 +790,7 @@ async function refreshMcpOAuthAccessToken(
   if (tokenScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
     return invalidGrant("Game asset permission is no longer active", audit);
   }
+  if (tokenScopes.scopes.has("games:resume") && !(await hasRetrospectiveRecoveryAccess(db, user.id))) return invalidGrant("Retrospective recovery permission is no longer active", audit);
 
   const rawAccessToken = generateOpaqueSecret();
   const rawRefreshToken = generateOpaqueSecret();
@@ -998,6 +1003,7 @@ export async function introspectMcpAccessToken(
   if (tokenScopes.scopes.has("assets:manage") && !(await hasGameAssetPermission(db, user))) {
     return { active: false };
   }
+  if (tokenScopes.scopes.has("games:resume") && !(await hasRetrospectiveRecoveryAccess(db, user.id))) return { active: false };
 
   await db
     .update(schema.mcpOauthAccessTokens)
@@ -1387,15 +1393,15 @@ function scopeGrantPreview(
   requestedScopes: ReadonlySet<McpOAuthScope>,
   hasProducerRole: boolean,
   hasModeratorRole: boolean,
-  hasAssetPermission: boolean,
+  permissions: { manage_game_assets: boolean; resume_game_retrospective: boolean },
 ): ScopeGrantPreview {
   const requested = mcpOAuthScopesToArray(requestedScopes);
   const grantableScopes: McpOAuthScope[] = [];
   const blockedScopes: Array<{ scope: McpOAuthScope; reason: string }> = [];
   for (const scope of requested) {
     const definition = MCP_OAUTH_SCOPE_DEFINITIONS[scope];
-    if (definition.requiredPermission && !hasAssetPermission) {
-      blockedScopes.push({ scope, reason: "game asset management permission required" });
+    if (definition.requiredPermission && !permissions[definition.requiredPermission]) {
+      blockedScopes.push({ scope, reason: definition.requiredPermission === "manage_game_assets" ? "game asset management permission required" : "retrospective recovery permission required" });
       continue;
     }
     if (definition.requiredRole === "moderator" && !hasModeratorRole) { blockedScopes.push({ scope, reason: "moderator access required" }); continue; }

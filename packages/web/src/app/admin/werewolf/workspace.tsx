@@ -6,17 +6,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { WerewolfView } from "@influence/engine/werewolf/observation";
 import { werewolfReportEntry } from "@influence/engine/werewolf/report";
 import { apiFetch, type AdminGameCostSummary, type AdminGameCostDetail } from "@/lib/api";
-import { usePermissions } from "@/hooks/use-permissions";
-import { AdminPostgameMediaPanel } from "../admin-postgame-media";
-import { EpisodeEditor } from "../episode-editor";
 import "../../games/episodes.css";
-import { ReplayVisualProductionPanel, type Inventory } from "../replay-visual-production-panel";
-import { adminReadOptions, useAdminRead, useAdminSession, accessDenied } from "../admin-session";
+import { adminReadOptions, useAdminRead, useAdminSession } from "../admin-session";
 import { CostEvidence } from "../cost-evidence";
 import styles from "./workspace.module.css";
 
-type Section = "overview" | "production" | "costs" | "activity";
-const sections: Section[] = ["overview", "production", "costs", "activity"];
+type Section = "overview" | "costs" | "activity";
+const sections: Section[] = ["overview", "costs", "activity"];
 const root = "/api/admin/werewolf";
 type Row = { id: string; slug: string; status: string; createdAt: string; playerCount: number; hidden: boolean; progress: { day: number; phase: string } | null; error: string | null; cost: AdminGameCostSummary | null; production: { active: number; failed: number } };
 export type Detail = { id: string; slug: string; status: string; visualPaused?: boolean; hidden: boolean; createdAt: string; endedAt: string | null; snapshot: Pick<WerewolfView, "rulesVersion" | "day" | "phase" | "cursor" | "players" | "outcome">; capabilities: { stop: boolean; visibility: boolean; production: boolean } };
@@ -56,9 +52,6 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   const valid = suffix === "" || sections.includes(suffix as Section);
   const route = (suffix || "overview") as Section;
   const session = useAdminSession(), client = useQueryClient();
-  const { isAdmin, hasPermission } = usePermissions();
-  const [trailerOpen, setTrailerOpen] = useState(false);
-  const [episodeOpen, setEpisodeOpen] = useState(false);
   const { data, error, denied, refresh } = useAdminRead<Detail>(`${root}/${gameId}`, 10_000);
   const [displayed, setDisplayed] = useState<Section>(route);
   const [pending, setPending] = useState<Section | null>(null), [navigationError, setNavigationError] = useState<string | null>(null);
@@ -80,14 +73,10 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
   async function prepare(next: Section) {
     // UUID routes can load costs/activity alongside summary; a slug must resolve first.
     const uuid = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(gameId);
-    const summary = data ?? (next === "production" || !uuid ? await client.fetchQuery(adminReadOptions<Detail>(session, `${root}/${gameId}`)) : undefined);
+    const summary = data ?? (!uuid ? await client.fetchQuery(adminReadOptions<Detail>(session, `${root}/${gameId}`)) : undefined);
     const id = summary?.id ?? gameId;
     if (next === "costs") await client.fetchQuery(adminReadOptions<Costs>(session, `${root}/${id}/costs`));
     if (next === "activity") await client.fetchQuery(adminReadOptions<WerewolfView>(session, `${root}/${id}/activity`));
-    if (next === "production" && summary?.capabilities.production && (summary.status === "completed" || summary.visualPaused)) {
-      try { await client.fetchQuery(adminReadOptions<Inventory>(session, `/api/admin/production/games/${id}/visual`)); }
-      catch (cause) { if (!accessDenied(cause)) throw cause; void refresh(); }
-    }
   }
   useEffect(() => {
     if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(gameId) && (route === "costs" || route === "activity")) {
@@ -142,7 +131,7 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
     <Link href={`/admin/werewolf?${params}`} className={styles.back}>← Werewolf games</Link>
     {error && <Notice>{error} <button onClick={() => void refresh()}>Retry</button></Notice>}
     {!data ? !error && <p role="status" className={styles.empty}>Loading game workspace…</p> : <>
-      <header className={styles.heading} data-game-header><div><p className={styles.eyebrow}>{title(data.status)} · Rules v{data.snapshot.rulesVersion}{data.hidden ? " · Hidden" : ""}</p><h1>{data.slug}</h1><p>Current status · Day {data.snapshot.day} · {title(data.snapshot.phase)} · {data.snapshot.players.filter(p => p.alive).length} of {data.snapshot.players.length} alive</p></div><button onClick={() => void refresh()}>Refresh</button></header>
+      <header className={styles.heading} data-game-header><div><p className={styles.eyebrow}>{title(data.status)} · Rules v{data.snapshot.rulesVersion}{data.hidden ? " · Hidden" : ""}</p><h1>{data.slug}</h1><p>Current status · Day {data.snapshot.day} · {title(data.snapshot.phase)} · {data.snapshot.players.filter(p => p.alive).length} of {data.snapshot.players.length} alive</p></div><div className={styles.headingActions}>{(data.status === "completed" || data.visualPaused) && <Link className={styles.open} href={`/admin/production/games/${data.id}`}>Production Studio ↗</Link>}<button onClick={() => void refresh()}>Refresh</button></div></header>
       <label className={styles.mobileNav}>Workspace section<select value={pending ?? displayed} onChange={event => void navigate(event.target.value as Section)}>{sections.map(section => <option key={section} value={section}>{title(section)}</option>)}</select></label>
       <nav aria-label="Game workspace" className={styles.side}>{sections.map(section => <Link key={section} href={`${href(gameId, section)}?${params}`} aria-current={route === section ? "page" : undefined} onMouseEnter={() => prefetch(section)} onFocus={() => prefetch(section)} onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); void navigate(section); }}>{title(section)}{pending === section ? " …" : ""}</Link>)}</nav>
       <div className={styles.navigationStatus} aria-live="polite">{pending ? `Opening ${title(pending)} · showing ${title(displayed)}` : title(displayed)}{pending && <button onClick={() => { intent.current++; setPending(null); if (route !== displayed) window.history.replaceState(null, "", `${href(gameId, displayed)}?${params}`); }}>Cancel</button>}</div>
@@ -160,22 +149,6 @@ export function GameWorkspace({ gameId, children }: { gameId: string; children: 
           </>}
           {displayed === "activity" && <Activity gameId={data.id} currentCursor={data.snapshot.cursor} />}
           {displayed === "costs" && <GameCosts gameId={data.id} />}
-          {displayed === "production" && <>
-            {(hasPermission("manage_postgame_media") || hasPermission("manage_roles")) && <section className={styles.surface}>
-              <h2 tabIndex={-1}>Episode title &amp; description</h2>
-              <p>The House names new games automatically. Generate a name for this game, edit its description, or protect your changes.</p>
-              <div className={styles.actions}><button onClick={() => setEpisodeOpen(true)}>Edit episode</button></div>
-              {episodeOpen && <EpisodeEditor key={data.id} gameId={data.id} onClose={() => setEpisodeOpen(false)} onSaved={async () => { await refresh(); }} />}
-            </section>}
-            {isAdmin && data.status === "completed" && <section className={styles.surface}>
-              <h2 tabIndex={-1}>Trailer &amp; poster</h2>
-              <p>Check render progress, inspect failures, or retry a trailer after repairing its assets.</p>
-              <div className={styles.actions}><button onClick={() => setTrailerOpen(true)}>Trailer &amp; poster</button></div>
-              {trailerOpen && <AdminPostgameMediaPanel key={data.id} game={data}
-                canManage={hasPermission("manage_postgame_media") || hasPermission("manage_roles")}
-                onClose={() => setTrailerOpen(false)} />}
-            </section>}
-            <section className={styles.surface}><h2 tabIndex={-1}>Scene production</h2><p>Prepare lobby and private pack images from this game’s recorded cast. Good panels remain usable when others need repair.</p><p className={styles.small}>Draft images stay private. Publish a reviewed version for viewers to use in this game’s replay.</p></section>{!data.capabilities.production ? <p className={styles.empty}>Producer or Sysop access is required for image production.</p> : data.status !== "completed" && !data.visualPaused ? <p className={styles.empty}>Scene production becomes available when this game completes or pauses for visual repair.</p> : <ReplayVisualProductionPanel gameId={data.id} onLocked={() => {}} werewolf />}</>}
         </div>
       </div>
     </>}{children}

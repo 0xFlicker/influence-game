@@ -5,20 +5,8 @@ import {
   type ThoughtTiming,
 } from "../../components/watch/thinking-timing";
 
-export interface TimingAdjustments {
-  readingRate?: number;
-  thinkingRate?: number;
-  conversationGapMs?: number;
-  ballotHoldMs?: number;
-  tallyHoldMs?: number;
-  establishingHoldMs?: number;
-  motionScale?: number;
-  postSpeechHoldMs?: number;
-}
-export interface TimingProfile extends TimingAdjustments {
-  ending: "finish-score" | { holdMs: number };
-  overrides: Record<string, TimingAdjustments>;
-}
+import type {TimingProfile} from "@influence/engine/production-moments/settings";
+export {parseTimingProfile,type TimingAdjustments,type TimingProfile} from "@influence/engine/production-moments/settings";
 export interface SpeechRecording {
   assetId: string;
   durationMs: number;
@@ -26,9 +14,11 @@ export interface SpeechRecording {
 export interface TimingInput {
   key: string;
   baseDurationMs: number;
-  kind: "opening" | "speech" | "ballot" | "tally" | "scene" | "result";
+  kind: "opening" | "thinking" | "speech" | "ballot" | "tally" | "scene" | "result";
   speech: SpeechBoundaries | null;
   thinking: string | null;
+  /** Silent framing position for an independently selected thought. */
+  sourceElapsedMs?: number;
   recording?: SpeechRecording;
 }
 export interface TimeSegment {
@@ -55,65 +45,6 @@ export interface CompiledTiming {
   thought: ThoughtTiming | null;
   speech: SpeechBoundaries | null;
   recording?: SpeechRecording & { startMs: number };
-}
-
-const keys = [
-  "readingRate",
-  "thinkingRate",
-  "conversationGapMs",
-  "ballotHoldMs",
-  "tallyHoldMs",
-  "establishingHoldMs",
-  "motionScale",
-  "postSpeechHoldMs",
-] as const;
-function record(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error(`${label} must be an object`);
-  return value as Record<string, unknown>;
-}
-function adjustments(value: unknown): TimingAdjustments {
-  const input = record(value, "Timing adjustments");
-  for (const [key, amount] of Object.entries(input)) {
-    if (!keys.some((allowed) => allowed === key))
-      throw new Error(`Unknown timing field: ${key}`);
-    if (
-      typeof amount !== "number" ||
-      !Number.isFinite(amount) ||
-      amount < 0 ||
-      ((key.endsWith("Rate") || key === "motionScale") && amount === 0)
-    )
-      throw new Error(`Invalid timing value: ${key}`);
-  }
-  return input as TimingAdjustments;
-}
-/** Undefined means preserve the game's existing timing, not a new global preset. */
-export function parseTimingProfile(value: unknown = {}): TimingProfile {
-  const input = { ...record(value, "Timing profile") };
-  const ending = input.ending ?? "finish-score";
-  const overrides = record(input.overrides ?? {}, "Cue overrides");
-  delete input.ending;
-  delete input.overrides;
-  if (ending !== "finish-score") {
-    const fixed = record(ending, "Ending");
-    if (
-      Object.keys(fixed).length !== 1 ||
-      typeof fixed.holdMs !== "number" ||
-      !Number.isFinite(fixed.holdMs) ||
-      fixed.holdMs < 0
-    )
-      throw new Error("Ending requires a nonnegative holdMs");
-  }
-  return {
-    ...adjustments(input),
-    ending: ending as TimingProfile["ending"],
-    overrides: Object.fromEntries(
-      Object.entries(overrides).map(([key, settings]) => [
-        key,
-        adjustments(settings),
-      ]),
-    ),
-  };
 }
 
 /** Compile absolute boundaries before rounding. No drift from per-cue frame rounding. */
@@ -154,6 +85,8 @@ export function compileTiming(
       throw new Error(
         `Recording requires a spoken cue and positive duration: ${input.key}`,
       );
+    if (input.kind === "thinking" && (!input.thinking?.trim() || speech || input.recording))
+      throw new Error(`Thinking moment requires thought text without speech or recording: ${input.key}`);
     const segments: TimeSegment[] = [];
     let time = 0;
     const add = (
@@ -178,7 +111,7 @@ export function compileTiming(
     const thoughtDuration = thought?.duration ?? 0;
     const addThought = () => {
       if (thought)
-        add("thinking", thought.insertAt, thought.insertAt, thoughtDuration);
+        add("thinking", input.sourceElapsedMs ?? thought.insertAt, input.sourceElapsedMs ?? thought.insertAt, thoughtDuration);
     };
     if (speech) {
       add(
@@ -224,6 +157,8 @@ export function compileTiming(
         input.baseDurationMs,
         settings.conversationGapMs ?? 0,
       );
+    } else if (input.kind === "thinking") {
+      addThought();
     } else {
       addThought();
       const duration =

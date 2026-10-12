@@ -37,13 +37,8 @@ import {
 } from "../services/game-event-read-model.js";
 import {
   getPersistedGameProjection,
-  getPersistedGameProjectionBeforeTerminalOutcome,
 } from "../services/game-projection-read-model.js";
 import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
-import {
-  getGameCompletionSettlementState,
-} from "../services/game-completion-settlement.js";
-import type { GameCompletionSettlementState } from "../db/schema.js";
 import { MAX_TRACE_MANIFEST_LIMIT, PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import {
   CognitiveArtifactReadModel,
@@ -570,14 +565,8 @@ export class ProductionGameMcpReadModel {
     };
   }> {
     const game = await this.requireGame(gameIdOrSlug, access);
-    const [events, settlementState] = await Promise.all([
-      getPersistedGameEvents(this.db, game.id),
-      getGameCompletionSettlementState(this.db, game.id),
-    ]);
-    const projection = redactProjectionForSettlement(
-      events,
-      settlementState,
-    );
+    const events = await getPersistedGameEvents(this.db, game.id);
+    const projection = getPersistedGameProjection(events);
     return {
       schemaVersion: 2,
       game,
@@ -603,26 +592,13 @@ export class ProductionGameMcpReadModel {
     // state, while ballotPresentation is the resolution/UI lifecycle projected
     // by the engine. Participating-agent prompt context is a separate lane.
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    const [events, settlementState] = await Promise.all([
-      getPersistedGameEvents(this.db, game.id),
-      getGameCompletionSettlementState(this.db, game.id),
-    ]);
-    const terminalOutcomeSequence = firstTerminalOutcomeSequence(events.events);
-    const terminalSafeEvents = events.events.filter((row) =>
-      terminalEventIsVisibleForSettlement(
-        row.envelope,
-        settlementState,
-        terminalOutcomeSequence,
-      ));
-    const projection = getPersistedGameProjection({
-      ...events,
-      events: terminalSafeEvents,
-    });
+    const events = await getPersistedGameEvents(this.db, game.id);
+    const projection = getPersistedGameProjection(events);
     return {
       schemaVersion: 3,
       game,
       canonicalGameFacts: toGameMcpFormatSurface(buildRevealedRoundFacts({
-        events: terminalSafeEvents.map((event) => event.envelope),
+        events: events.events.map((event) => event.envelope),
         kernel: game.gameKernel,
         round: options.round,
         eventLogStatus: events.status,
@@ -708,11 +684,7 @@ export class ProductionGameMcpReadModel {
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const players = await this.loadGamePlayers(game.id);
     const playerNames = playerNameMap(players);
-    const [eventRead, settlementState] = await Promise.all([
-      getPersistedGameEvents(this.db, game.id),
-      getGameCompletionSettlementState(this.db, game.id),
-    ]);
-    const terminalOutcomeSequence = firstTerminalOutcomeSequence(eventRead.events);
+    const eventRead = await getPersistedGameEvents(this.db, game.id);
     if (isGamesSubjectAccess(access) && options.visibilityMode === "producer") {
       throw new Error("producer visibility requires MCP scope: producer");
     }
@@ -744,11 +716,6 @@ export class ProductionGameMcpReadModel {
       if (options.phase && String(event.phase ?? "") !== options.phase) continue;
       if (options.fromSequence !== undefined && event.sequence < options.fromSequence) continue;
       if (options.toSequence !== undefined && event.sequence > options.toSequence) continue;
-      if (!terminalEventIsVisibleForSettlement(
-        event,
-        settlementState,
-        terminalOutcomeSequence,
-      )) continue;
       const viewerDecision = visibilityMode === "producer"
         ? null
         : projectViewerDecisionEvent(event);
@@ -1913,41 +1880,6 @@ function producerTraceCursorBinding(access: ProductionGameMcpAccess): string {
     authProfile: access.authProfile,
     userId: access.userId ?? null,
   });
-}
-
-function settlementHoldsTerminalOutcome(
-  state: GameCompletionSettlementState | undefined,
-): boolean {
-  return state === "pending" || state === "repair_required";
-}
-
-function redactProjectionForSettlement(
-  events: Awaited<ReturnType<typeof getPersistedGameEvents>>,
-  state: GameCompletionSettlementState | undefined,
-): PersistedGameProjectionRead {
-  return settlementHoldsTerminalOutcome(state)
-    ? getPersistedGameProjectionBeforeTerminalOutcome(events)
-    : getPersistedGameProjection(events);
-}
-
-function terminalEventIsVisibleForSettlement(
-  event: Pick<CanonicalGameEvent, "type" | "sequence">,
-  state: GameCompletionSettlementState | undefined,
-  terminalOutcomeSequence: number | undefined,
-): boolean {
-  if (!settlementHoldsTerminalOutcome(state)) return true;
-  if (terminalOutcomeSequence !== undefined && event.sequence >= terminalOutcomeSequence) {
-    return false;
-  }
-  return event.type !== "jury.vote_cast"
-    && event.type !== "jury.winner_determined";
-}
-
-function firstTerminalOutcomeSequence(
-  events: readonly TrustedPersistedGameEvent[],
-): number | undefined {
-  return events.find((row) => row.envelope.type === "jury.winner_determined")
-    ?.envelope.sequence;
 }
 
 function redactGamesScopeProjection(

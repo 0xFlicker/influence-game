@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { completeCompetitionGame } from "../services/competition-completion.js";
 import { readHouseParticipation } from "../services/house-participation.js";
 import {readHouseGameThinking} from "../services/house-game-inspection.js";
@@ -20,7 +21,7 @@ import { adoptInProgressDurableGamesOnStartup } from "../services/startup-durabl
 let db: DrizzleDB;
 const ownerId = "werewolf-owner";
 const manifest = [{ catalogId: DEFAULT_MODEL_CATALOG_ID }];
-const scripted: WerewolfAgent = { async decide({ request }) {
+const scripted: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
   if (request.action === "open_thread") return { kind: "opening", text: "Who changed their mind?", cue: null, recipientIds: request.legalRecipientIds.slice(0, 3) };
   return request.legalTargetIds.length ? { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_THINKING" }
     : { kind: "speech", cue: null, text: request.action === "pack_talk" ? "SECRET_PACK" : "Who changed their mind?" };
@@ -45,7 +46,7 @@ describe("Werewolf House integration", () => {
     await db.update(schema.werewolfEvents).set({ event: initial }).where(eq(schema.werewolfEvents.gameId, game.id));
     const response = await createWerewolfRoutes(db).request(`/api/werewolf/${game.slug}`);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Start a new game to use ordered recipient threads (rules v7)." });
+    expect(await response.json()).toEqual({ error: "This game uses an unsupported Werewolf rules version. Start a new game to use game retrospectives (rules v8)." });
     expect(await game.store.read()).toEqual([initial]);
   });
   test("one character keeps separate strategies and freezes only Werewolf into its game", async () => {
@@ -185,8 +186,10 @@ describe("Werewolf House integration", () => {
     expect(JSON.stringify(all)).not.toContain("PRIVATE_THINKING");
     for (let cursor = 1; cursor < mystery.latestCursor; cursor++) {
       const view = await readWerewolfView(db, game.id, "mystery", cursor);
-      expect(view.players.every((p) => p.role === undefined)).toBe(true);
-      expect(view.outcome).toBeNull();
+      if (!view.entries.some(entry => entry.kind === "result")) {
+        expect(view.players.every((p) => p.role === undefined)).toBe(true);
+        expect(view.outcome).toBeNull();
+      } else expect(view.outcome).not.toBeNull();
     }
     expect((await app.request(`/api/werewolf/${game.slug}?audience=bad`)).status).toBe(400);
     expect((await app.request(`/api/werewolf/${game.slug}?cursor=-1`)).status).toBe(400);
@@ -260,7 +263,7 @@ describe("Werewolf House integration", () => {
     if (!replacement.ok) throw new Error(replacement.error);
     // This fixture exercises one accepted provider value; the batch test below covers all ballots.
     const replayAgent = agent(replacement.claim.ownerEpoch);
-    const resumed = await advanceWerewolf(createWerewolfStore(db, game.id, replacement.claim.ownerEpoch), { decide: input =>
+    const resumed = await advanceWerewolf(createWerewolfStore(db, game.id, replacement.claim.ownerEpoch), { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: input =>
       input.request.actorId === step.request.actorId ? replayAgent.decide(input) : scripted.decide(input) });
     const committed = (await store.read())[state.sequence];
     expect(committed?.type === "werewolf.action_accepted" && committed.payload.decision).toEqual(accepted);
@@ -312,7 +315,7 @@ describe("Werewolf House integration", () => {
     if (!claim.ok) throw new Error(claim.error);
     const store = createWerewolfStore(db, game.id, claim.claim.ownerEpoch);
     let start = replayWerewolf(await store.read());
-    const reachBallot: WerewolfAgent = { decide: async input => {
+    const reachBallot: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       if (finalVote && input.request.action === "open_thread") return { kind: "opening", text: null, cue: null, recipientIds: [] };
       if (finalVote && input.request.action === "vote") return { kind: "target", targetId: null, thinking: "Hear more" };
       return scripted.decide(input);
@@ -354,7 +357,7 @@ describe("Werewolf House integration", () => {
     const advancing = advanceWerewolf({ ...store, append: async (event) => {
       if (++commits === 2) throw new Error("Interrupted between private commitments");
       await store.append(event);
-    } }, { decide: async input => {
+    } }, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, decide: async input => {
       const decision = await tracked.decide(input);
       if (++decisionsReady === plans.length - 1) peersReady.resolve();
       return decision;
@@ -385,7 +388,7 @@ describe("Werewolf House integration", () => {
     expect(await readWerewolfView(db, game.id, "omniscient")).toEqual(beforeOmniscient);
     for (const id of start.aliveIds) expect(observeWerewolf(partial, id)).toEqual(observeWerewolf(start, id));
     const savedPlans = await db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.gameId, game.id));
-    expect(savedPlans.filter((plan) => plan.request.action === action && plan.sequence > start.sequence).map((plan) => plan.sequence).toSorted()).toEqual(plans.map((plan) => plan.sequence).toSorted());
+    expect(savedPlans.filter((plan) => !("version" in plan.request) && plan.request.action === action && plan.sequence > start.sequence).map((plan) => plan.sequence).toSorted()).toEqual(plans.map((plan) => plan.sequence).toSorted());
 
     await releaseWerewolfOwner(db, game.id, claim.claim.ownerEpoch);
     const replacement = await claimWerewolfGame(db, game.id);

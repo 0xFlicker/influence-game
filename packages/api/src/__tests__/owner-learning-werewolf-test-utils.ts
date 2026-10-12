@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { randomUUID } from "node:crypto";
 import { replayWerewolf, runWerewolf, type WerewolfAgent } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -19,7 +20,7 @@ export async function playedWerewolfReview(db: DrizzleDB, existingOwner?: string
   const initial = replayWerewolf(await store.read());
   const wolves = initial.players.filter(p => initial.roles[p.id] === "werewolf");
   const villager = initial.players.find(p => initial.roles[p.id] === "villager")!;
-  const agent: WerewolfAgent = { async decide({ request }) {
+  const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
     if (request.action === "open_thread") return { kind: "opening", recipientIds: request.legalRecipientIds.slice(0, 3), text: "What changed?", cue: null };
     if (["attack", "protect", "investigate", "vote"].includes(request.action)) return {
       kind: "target", targetId: request.action === "vote" ? (request.voteMode === "plurality" ? request.legalTargetIds[0]! : null) : request.legalTargetIds.includes(villager.id) ? villager.id : request.legalTargetIds[0]!,

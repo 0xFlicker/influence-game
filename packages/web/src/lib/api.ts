@@ -101,6 +101,7 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
+  decode?: (response:Response) => Promise<T>,
 ): Promise<T> {
   if (typeof window === "undefined" && process.env.NEXT_RUNTIME) {
     throw new Error(
@@ -146,9 +147,12 @@ export async function apiFetch<T>(
     }
     throw apiErrorFromResponse(res.status, text);
   }
-  const result = await res.json() as T;
+  const result = decode ? await decode(res) : await res.json() as T;
   if(requestIdentity) window.sessionStorage.removeItem(requestIdentity);
   return result;
+}
+export function apiFetchMedia(path:string,options?:RequestInit):Promise<Blob> {
+  return apiFetch<Blob>(path,options,response => response.blob());
 }
 
 /**
@@ -388,7 +392,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3 | 4 | 5;
+  schemaVersion: 6;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -410,6 +414,7 @@ export interface GameWatchState {
     unknownPlayers: number;
   };
   final: GameWatchFinalState;
+  retrospective: import("@influence/engine").RetrospectiveProgress;
   winner?: {
     id: string;
     name: string;
@@ -432,7 +437,7 @@ export interface GameWatchReplayFrame {
   viewerDecisionEvent?: ViewerDecisionEvent;
 }
 
-export type GameWatchStateSummary = Omit<GameWatchState, "players">;
+export type GameWatchStateSummary = Omit<GameWatchState, "players" | "schemaVersion" | "retrospective"> & { schemaVersion: 4 | 6 };
 
 export interface CreateGameParams {
   visualMode?: boolean;
@@ -786,10 +791,6 @@ export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games", { cache: "no-store" });
 }
 
-export async function listProductionGames(): Promise<ProductionGameSummary[]> {
-  return apiFetch("/api/admin/production/games", { cache: "no-store" });
-}
-
 export async function getAdminProviderFailures(
   idOrSlug: string,
   options: { cursor?: string; limit?: number } = {},
@@ -1076,8 +1077,7 @@ export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 export interface CompletedGameResultsResponse {
   gameKind: "influence";
   ok: true;
-  /** v2 adds kernel routing; v1 remains accepted for cached legacy fixtures. */
-  schemaVersion: 1 | 2;
+  schemaVersion: 3;
   game: {
     id: string;
     slug: string;
@@ -1088,13 +1088,15 @@ export interface CompletedGameResultsResponse {
     gameKernelDiagnostics?: GameKernelContradictionDiagnostic[];
   };
   results: CompletedGameResultsRead;
+  retrospective: import("@influence/engine").RetrospectiveProgress;
 }
 
 export interface WerewolfCompletedResultsResponse {
   ok: true;
   gameKind: "werewolf";
-  schemaVersion: 1;
+  schemaVersion: 2;
   game: { id: string; slug: string; status: GameStatus; completedAt: string | null; episode?: EpisodePresentation };
+  retrospective: import("@influence/engine").RetrospectiveProgress;
   results: import("@influence/engine/werewolf/results-contract").WerewolfResults & {
     players: Array<import("@influence/engine/werewolf/results-contract").WerewolfResultPlayer & { avatarUrl: string }>;
   };
@@ -1102,6 +1104,25 @@ export interface WerewolfCompletedResultsResponse {
 export type HouseGameResultsResponse = CompletedGameResultsResponse | WerewolfCompletedResultsResponse;
 export async function getHouseGameResults(gameIdOrSlug: string, signal?: AbortSignal): Promise<HouseGameResultsResponse> {
   return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/results`, {signal, cache: "no-store"});
+}
+export interface GameRetrospectiveResponse {
+  schemaVersion: 1; gameKind: "influence" | "werewolf";
+  game: { id: string; slug: string; gameKind: "influence" | "werewolf"; status: GameDetail["status"]; createdAt: string; href: string };
+  source: { sequence: number; hash: string }; outcome: import("@influence/engine").RetrospectiveOutcomeSource;
+  initialized: boolean; progress: import("@influence/engine").RetrospectiveProgress;
+  speakers: Array<{ actorId: string; name: string; ordinal: number; avatarUrl: string | null; part:
+    { gameKind: "influence"; won: boolean; eliminatedRound: number | null } | { gameKind: "werewolf"; role: "werewolf" | "villager" | "seer" | "doctor"; won: boolean; alive: boolean; eliminatedDay: number | null; eliminatedBy: "night" | "vote" | null } }>;
+  statements: Array<{ actorId: string; ordinal: number; eventSequence: number; speech: string; href: string }>;
+  nextCursor: string | null; pollCursor: string | null;
+  recovery: { expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; reasonCode: string } | null;
+  resultsHref: string; contentTrust: "untrusted_game_authored";
+}
+export async function getGameRetrospective(gameIdOrSlug: string, signal?: AbortSignal): Promise<GameRetrospectiveResponse> {
+  return apiFetch(`/api/games/${encodeURIComponent(gameIdOrSlug)}/retrospective`, { signal, cache: "no-store" });
+}
+export async function resumeGameRetrospective(input: { gameIdOrSlug: string; gameKind: "influence" | "werewolf";
+  expectedHead: { sequence: number; hash: string }; expectedFailureId: string | null; idempotencyKey: string }): Promise<{ schemaVersion: 1; gameId: string; gameKind: "influence" | "werewolf"; status: GameDetail["status"]; alreadyResumed: boolean }> {
+  return apiFetch(`/api/games/${encodeURIComponent(input.gameIdOrSlug)}/retrospective/resume`, { method: "POST", body: JSON.stringify(input) });
 }
 export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
   const result = await getHouseGameResults(gameIdOrSlug);
@@ -1864,7 +1885,7 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
-export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "games:resume" | "producer" | "moderation:read" | "moderation:write" | "assets:manage";
 
 export interface McpOAuthScopePreview {
   scope: McpOAuthScope;
@@ -2695,6 +2716,7 @@ export interface WsRoomMetadata {
 }
 
 export interface TranscriptEntry {
+  retrospectiveSource?: { eventSequence: number; ordinal: number };
   dialogueKind?: import("@influence/engine").TranscriptDialogueKind | null;
   firstDurableEventSequence?: number | null;
   speakerPlayerId?: string | null;
@@ -2813,7 +2835,7 @@ export type WsPublicationPayload =
       type: "game_status";
       gameId: string;
       status: "suspended" | "cancelled";
-      terminal: true;
+      terminal: boolean;
       reasonCode: string;
       message?: string;
     };

@@ -1,12 +1,13 @@
 import { decodeVisualShotReview, saveReviewedShots, type VisualShotReview } from "./visual-shot-review.js";
 import { assertVisualShot, VISUAL_HOUSE_STYLE, VISUAL_ROOMS } from "@influence/engine/visual-mode";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { VISUAL_LOCALIZATION_VERSION } from "./visual-scene-localization.js";
 import type { VisualTransaction } from "./visual-execution-boundary.js";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
+import { visualSceneOperationScope, visualUncertainAttemptScope } from "./visual-render-journal.js";
 
 const jobs = schema.visualRepairJobs, versions = schema.visualMediaVersions, publications = schema.visualMediaPublications;
 export type MediaControl = { requestId: string; sceneId: string; expectedVersion: number; previewKey?: string; previewHash?: string } & (
@@ -16,6 +17,24 @@ export type MediaControl = { requestId: string; sceneId: string; expectedVersion
 class Rejected extends Error { constructor(readonly code: string, message: string) { super(message); } }
 const reject = (code: string, message: string): never => { throw new Rejected(code, message); };
 const active = (status: string) => ["queued", "rendering", "verifying"].includes(status);
+
+type StoredScene = typeof schema.visualScenes.$inferSelect;
+type StagingPlan = Pick<StoredScene["plan"], "placements" | "allianceGroups" | "cues"> & {
+  cast: readonly Pick<StoredScene["plan"]["cast"][number], "id" | "name">[];
+  direction?: { purpose?: string } | null;
+};
+
+/** Canonical staging discovery needs cast identity and choreography, never reference bytes or prompts. */
+export function readVisualSceneStaging(db: DrizzleDB, gameId: string) {
+  const scenes = schema.visualScenes;
+  return db.select({ id: scenes.id, roomId: scenes.roomId, boundarySequence: scenes.boundarySequence,
+    afterDialogueSequence: scenes.afterDialogueSequence, status: scenes.status,
+    plan: sql<StagingPlan>`jsonb_build_object(
+      'cast', (SELECT COALESCE(jsonb_agg(jsonb_build_object('id', member->'id', 'name', member->'name')), '[]'::jsonb) FROM jsonb_array_elements(${scenes.plan}->'cast') member),
+      'placements', ${scenes.plan}->'placements', 'allianceGroups', ${scenes.plan}->'allianceGroups',
+      'cues', ${scenes.plan}->'cues', 'direction', jsonb_build_object('purpose', ${scenes.plan}->'direction'->'purpose'))`,
+  }).from(scenes).where(eq(scenes.gameId, gameId)).orderBy(asc(scenes.boundarySequence), asc(scenes.id));
+}
 
 /** A receipt survives retries and all authorized rejections, without touching game execution. */
 export async function controlVisualMedia(db: DrizzleDB, gameId: string, operatorId: string, input: MediaControl, options: { oneAtATime?: boolean } = {}): Promise<typeof schema.visualMediaRequests.$inferSelect.receipt> {
@@ -111,7 +130,7 @@ export async function controlVisualMedia(db: DrizzleDB, gameId: string, operator
         if (history.some(j => active(j.status))) return reject("already_pending", "A repair is already active for this scene");
         const uncertain = await tx.select({ id: schema.visualRenderAttempts.id }).from(schema.visualRenderAttempts)
           .innerJoin(schema.visualRenderOperations, eq(schema.visualRenderAttempts.operationId, schema.visualRenderOperations.id))
-          .where(and(eq(schema.visualRenderOperations.sceneId, scene.id), sql`${schema.visualRenderAttempts.reconciliation} IS NULL AND (${schema.visualRenderAttempts.receipt} IS NULL OR ${schema.visualRenderAttempts.receipt}->>'chargeUncertain' = 'true')`));
+          .where(and(visualSceneOperationScope(gameId,scene.id),visualUncertainAttemptScope()));
         const acknowledged = input.action === "regenerate" && input.acknowledgeUncertainAttempts !== undefined ? input.acknowledgeUncertainAttempts : [];
         if (!Array.isArray(acknowledged) || acknowledged.length > 100 || acknowledged.some(id => typeof id !== "string")
           || new Set(acknowledged).size !== acknowledged.length || acknowledged.some(id => !uncertain.some(attempt => attempt.id === id)))
@@ -197,6 +216,86 @@ export async function readVisualMedia(db: DrizzleDB, gameId: string) {
     db.select().from(schema.visualScenes).where(and(eq(schema.visualScenes.gameId, gameId), eq(schema.visualScenes.status, "ready"))),
   ]);
   return { jobs: jobRows, versions: [...versionRows, ...originals.filter(s => s.imageArtifactId && s.annotatedArtifactId && !versionRows.some(v => v.sceneId === s.id && v.version === 0)).map(originalVersion)], publications: publicationRows, requests };
+}
+
+type VersionPlanMetadata = {roomId:StoredScene["roomId"];cast:{id:string;name:string;referenceArtifactId:string;variant?:{resolved?:boolean}}[]};
+function metadataPlan(plan: typeof versions.plan | typeof schema.visualScenes.plan) {
+  return sql<VersionPlanMetadata>`jsonb_build_object('roomId', ${plan}->'roomId', 'cast', (SELECT COALESCE(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+    'id', member->'id', 'name', member->'name', 'referenceArtifactId', member->'referenceArtifactId',
+    'variant', CASE WHEN member ? 'variant' THEN jsonb_strip_nulls(jsonb_build_object('resolved', member->'variant'->'resolved')) END))), '[]'::jsonb)
+    FROM jsonb_array_elements(${plan}->'cast') member))`;
+}
+const versionMetadataColumns = {id:versions.id,sceneId:versions.sceneId,jobId:versions.jobId,version:versions.version,
+  imageArtifactId:versions.imageArtifactId,annotatedArtifactId:versions.annotatedArtifactId,shots:versions.shots,
+  verificationVersion:versions.verificationVersion,localization:versions.localization,createdAt:versions.createdAt,plan:metadataPlan(versions.plan)};
+const jobMetadataColumns = {id:jobs.id,sceneId:jobs.sceneId,reusePrefix:jobs.reusePrefix,version:jobs.version,status:jobs.status,step:jobs.step,failure:jobs.failure,
+  candidateArtifactId:jobs.candidateArtifactId,sourceImageId:jobs.sourceImageId,sourceVersionId:jobs.sourceVersionId,createdAt:jobs.createdAt,startedAt:jobs.startedAt,finishedAt:jobs.finishedAt};
+const publicationMetadataColumns = {id:publications.id,sceneId:publications.sceneId,versionId:publications.versionId,revision:publications.revision,
+  createdAt:publications.createdAt,operatorId:publications.operatorId,audience:publications.audience};
+
+/** At most one small summary per requested scene; history and render plans stay in their owners. */
+export async function readVisualSceneSummaries(db:DrizzleDB,gameId:string,sceneIds:readonly string[]) {
+  if (!sceneIds.length) return new Map<string,{latestVersion:number|null;publishedVersion:number|null;activeJob:{id:string;status:string;step:string;version:number}|null;attention:boolean;published:boolean}>();
+  if (sceneIds.length > 50) throw new Error("Scene summaries require at most 50 scene IDs");
+  const scenes=schema.visualScenes,ids=[...sceneIds];
+  const [latest,lastJobs,pending,published] = await Promise.all([
+    db.select({sceneId:scenes.id,version:sql<number|null>`COALESCE((SELECT max(${versions.version}) FROM ${versions} WHERE ${versions.gameId} = ${gameId} AND ${versions.sceneId} = ${scenes}.${sql.identifier("id")}), CASE WHEN ${scenes.status} = 'ready' AND ${scenes.imageArtifactId} IS NOT NULL AND ${scenes.annotatedArtifactId} IS NOT NULL THEN 0 END)`})
+      .from(scenes).where(and(eq(scenes.gameId,gameId),inArray(scenes.id,ids))).limit(ids.length),
+    db.selectDistinctOn([jobs.sceneId],{sceneId:jobs.sceneId,status:jobs.status}).from(jobs).where(and(eq(jobs.gameId,gameId),inArray(jobs.sceneId,ids))).orderBy(asc(jobs.sceneId),desc(jobs.version),desc(jobs.id)).limit(ids.length),
+    db.selectDistinctOn([jobs.sceneId],{sceneId:jobs.sceneId,id:jobs.id,status:jobs.status,step:jobs.step,version:jobs.version}).from(jobs)
+      .where(and(eq(jobs.gameId,gameId),inArray(jobs.sceneId,ids),inArray(jobs.status,["queued","rendering","verifying"]))).orderBy(asc(jobs.sceneId),desc(jobs.version),desc(jobs.id)).limit(ids.length),
+    db.selectDistinctOn([publications.sceneId],{sceneId:publications.sceneId,version:versions.version}).from(publications).innerJoin(versions,and(eq(versions.id,publications.versionId),eq(versions.gameId,gameId),eq(versions.sceneId,publications.sceneId)))
+      .where(and(eq(publications.gameId,gameId),inArray(publications.sceneId,ids),eq(publications.audience,"public"))).orderBy(asc(publications.sceneId),desc(publications.revision),desc(publications.id)).limit(ids.length),
+  ]);
+  return new Map(latest.map(row => {
+    const job=pending.find(job=>job.sceneId===row.sceneId),publication=published.find(publication=>publication.sceneId===row.sceneId);
+    return [row.sceneId,{latestVersion:row.version,publishedVersion:publication?.version ?? null,
+      activeJob:job ? {id:job.id,status:job.status,step:job.step,version:job.version} : null,
+      attention:["failed","needs_reconciliation"].includes(lastJobs.find(job=>job.sceneId===row.sceneId)?.status ?? ""),published:Boolean(publication)}];
+  }));
+}
+
+/** Only one scene's SQL pages and exact pinned versions cross this read boundary. */
+export async function readVisualSceneMedia(db:DrizzleDB,gameId:string,sceneId:string,options:{offset:number;limit:number;versionId?:string}) {
+  const {offset,limit,versionId}=options,scenes=schema.visualScenes,requests=schema.visualMediaRequests;
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new Error("Invalid scene media page");
+  const scope=and(eq(versions.gameId,gameId),eq(versions.sceneId,sceneId));
+  const originalPromise=db.select({id:scenes.id,sceneId:scenes.id,plan:metadataPlan(scenes.plan),imageArtifactId:scenes.imageArtifactId,
+    annotatedArtifactId:scenes.annotatedArtifactId,shots:scenes.shots,anchors:scenes.anchors,createdAt:scenes.createdAt}).from(scenes)
+    .where(and(eq(scenes.gameId,gameId),eq(scenes.id,sceneId),eq(scenes.status,"ready"),sql`${scenes.imageArtifactId} IS NOT NULL AND ${scenes.annotatedArtifactId} IS NOT NULL`,
+      sql`NOT EXISTS (SELECT 1 FROM ${versions} WHERE ${versions.gameId} = ${gameId} AND ${versions.sceneId} = ${sceneId} AND ${versions.version} = 0)`)).limit(1);
+  const [versionCount,versionPage,jobPage,publicationPage,requestPage,currentPublications,chosen,originalRows] = await Promise.all([
+    db.select({count:count()}).from(versions).where(scope),
+    db.select(versionMetadataColumns).from(versions).where(scope).orderBy(desc(versions.version),desc(versions.id)).limit(limit+1).offset(offset),
+    db.select(jobMetadataColumns).from(jobs).where(and(eq(jobs.gameId,gameId),eq(jobs.sceneId,sceneId))).orderBy(desc(jobs.version),desc(jobs.id)).limit(limit+1).offset(offset),
+    db.select(publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId))).orderBy(desc(publications.revision),desc(publications.id)).limit(limit+1).offset(offset),
+    db.select({id:requests.id,createdAt:requests.createdAt,receipt:requests.receipt,input:sql<{sceneId?:string;action?:string;acknowledgeUncertainAttempts?:unknown[]}>`jsonb_strip_nulls(jsonb_build_object('sceneId', ${requests.input}->'sceneId', 'action', ${requests.input}->'action', 'acknowledgeUncertainAttempts', ${requests.input}->'acknowledgeUncertainAttempts'))`})
+      .from(requests).where(and(eq(requests.gameId,gameId),sql`${requests.input}->>'sceneId' = ${sceneId}`)).orderBy(desc(requests.createdAt),desc(requests.id)).limit(limit+1).offset(offset),
+    db.selectDistinctOn([publications.audience],publicationMetadataColumns).from(publications).where(and(eq(publications.gameId,gameId),eq(publications.sceneId,sceneId)))
+      .orderBy(asc(publications.audience),desc(publications.revision),desc(publications.id)).limit(2),
+    db.select(versionMetadataColumns).from(versions).where(and(scope,versionId ? eq(versions.id,versionId) : undefined)).orderBy(desc(versions.version),desc(versions.id)).limit(1),
+    originalPromise,
+  ]);
+  const storedCount=versionCount[0]!.count,row=originalRows[0];
+  const visible=row?.shots ? [...new Set([...row.shots.groups,...(row.shots.overview ? [row.shots.overview] : [])].flatMap(shot=>shot.visibleParticipantIds))] : row?.plan.cast.map(member=>member.id) ?? [];
+  const original=row?.imageArtifactId && row.annotatedArtifactId ? {id:`original:${sceneId}`,sceneId,jobId:null,version:0,plan:row.plan,
+    imageArtifactId:row.imageArtifactId,annotatedArtifactId:row.annotatedArtifactId,shots:row.shots,
+    localization:{count:visible.length,anchors:row.anchors ?? [],verifiedParticipantIds:visible},verificationVersion:"gameplay-record",createdAt:row.createdAt} : null;
+  const selectedVersion=chosen[0] ?? (original && (!versionId || versionId===original.id) ? original : null);
+  const total=storedCount+(original ? 1 : 0),pageVersions=versionPage.slice(0,limit);
+  if (original && offset <= storedCount && storedCount < offset+limit) pageVersions.push(original);
+  const importantIds=currentPublications.map(publication=>publication.versionId).filter(id=>!pageVersions.some(version=>version.id===id) && id!==selectedVersion?.id);
+  const important=importantIds.length ? await db.select(versionMetadataColumns).from(versions).where(and(scope,inArray(versions.id,importantIds))).limit(2) : [];
+  for (const version of [selectedVersion,...important]) if (version && !pageVersions.some(row=>row.id===version.id)) pageVersions.push(version);
+  pageVersions.sort((a,b)=>b.version-a.version);
+  const pagePublications=publicationPage.slice(0,limit);
+  for (const publication of currentPublications) if (!pagePublications.some(row=>row.id===publication.id)) pagePublications.push(publication);
+  pagePublications.sort((a,b)=>b.revision-a.revision || b.id.localeCompare(a.id));
+  const next=(hasMore:boolean)=>hasMore ? offset+limit : null;
+  return {selectedVersion,media:{versions:pageVersions,jobs:jobPage.slice(0,limit),publications:pagePublications,
+    requests:requestPage.slice(0,limit).map(request=>({...request,input:{sceneId:request.input.sceneId,action:request.input.action,
+      ...(Array.isArray(request.input.acknowledgeUncertainAttempts) ? {acknowledgeUncertainAttempts:request.input.acknowledgeUncertainAttempts.filter((id):id is string=>typeof id==="string")} : {})}}))},
+    pages:{nextVersionOffset:next(offset+limit<total),nextJobOffset:next(jobPage.length>limit),nextPublicationOffset:next(publicationPage.length>limit),nextRequestOffset:next(requestPage.length>limit)}};
 }
 
 export async function mediaAttempts(tx: DrizzleDB | VisualTransaction, prefix: string, gameId: string) {

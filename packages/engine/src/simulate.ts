@@ -5,6 +5,14 @@
  * Influence Game — Batch Simulation Runner
  *
  * Runs multiple game simulations and outputs structured analysis.
+ * Retrospective RT-01/02/03 supplies contracts, frozen context/order and strict
+ * speech-only agent methods with verified capacity and accepted journal replay.
+ * Influence and Werewolf runners now include the retrospective after a canonical outcome.
+ * Complete artifacts/reports and local MCP tail inspection include each statement.
+ * Current prompt guidance targets candid 40–75 word final statements; the strict
+ * speech artifact retains its 2,000-code-point ceiling. See
+ * docs/game-retrospective-runtime.md; native HTTP is mocked in focused tests.
+ * Keep exact types without `as any` and call House methods directly when wiring turns.
  * This runner is Influence-only. Werewolf uses src/werewolf/simulate.ts:
  *   bun run simulate:werewolf --preset two_wolves --seed sample-1 --chatty
  * For a watchable API game plus a no-extra-inference text report, use
@@ -293,9 +301,15 @@
  * consume canonical `endgame.stage_set`, accepted Judgment speech, and jury events.
  * Changing, translating, duplicating, or omitting a House banner cannot change
  * the reported endgame type or accepted jury counts.
+ * Fresh sessions declare Influence in session.json. The same runner completes
+ * the retrospective before reporting success. --chatty prints its source hash,
+ * actor/ordinal and exact accepted speeches; provider-attempt artifacts retain
+ * compact usage/cost receipts. Private cognition never becomes a final statement.
+ * Preserve exact types without `as any` and call House methods directly.
  */
 
 import type OpenAI from "openai";
+import { simulationIdentity } from "./simulation-identity";
 import { createHash, randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
@@ -801,6 +815,7 @@ export interface LocalProviderAttemptArtifact {
   formatVersion: 1;
   gameId: string;
   ownerEpoch: string;
+  receipts: Array<{logicalCallId:string;action:string;catalogId?:string;attemptOrdinal:number;outcome:string;accounting?:ProviderAttemptRecord["accounting"]}>;
   failures: Array<{
     gameId: string;
     ownerEpoch: string;
@@ -842,6 +857,7 @@ export function createLocalProviderExecutionJournal(input: {
   const reservations = new Map<string, string>();
   const terminals = new Map<string, string>();
   const failures: LocalProviderAttemptArtifact["failures"] = [];
+  const receipts: LocalProviderAttemptArtifact["receipts"] = [];
   const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
   const usedCallsByCatalog = new Map<string, number>();
   const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
@@ -864,6 +880,7 @@ export function createLocalProviderExecutionJournal(input: {
     formatVersion: 1,
     gameId: input.gameId,
     ownerEpoch: input.ownerEpoch,
+    receipts: [...receipts],
     failures: [...failures],
     rateLimits: [...rateLimits.values()],
   });
@@ -929,6 +946,8 @@ export function createLocalProviderExecutionJournal(input: {
         if (existing) return;
         terminals.set(id, terminalHash);
         const callId = logicalId(record);
+        receipts.push({logicalCallId:callId,action:record.coordinate.action,catalogId:record.preparedRequest.catalogId,
+          attemptOrdinal:record.attemptOrdinal,outcome:record.outcome.kind,accounting:record.accounting});
         if (record.outcome.kind === "rate_limit") {
           const aggregate = rateLimits.get(callId) ?? {
             logicalCallId: callId,
@@ -1896,6 +1915,9 @@ function attachProgressLogger(
 ): void {
   runner.setCanonicalEventListener((event) => {
     writeCanonicalEvent(eventsPath, gameNumber, startedAt, event);
+    if (chatty && event.type === "retrospective.started") console.log(`[Retrospective] ${event.payload.speakerIds.length} speakers · outcome event ${event.payload.outcome.eventSequence} · complete input ${event.payload.inputHash}`);
+    if (chatty && event.type === "retrospective.statement_recorded") console.log(`[Retrospective ${event.payload.ordinal+1}] ${event.payload.actorId}: ${event.payload.speech}`);
+    if (chatty && event.type === "retrospective.completed") console.log(`[Retrospective complete] ${event.payload.statementCount} accepted statements`);
   });
 
   runner.setStreamListener((event) => {
@@ -2095,6 +2117,7 @@ async function main() {
   const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);
   const batchDir = join(import.meta.dir, "..", "docs", "simulations", `batch-${timestamp}`);
   mkdirSync(batchDir, { recursive: true });
+  writeFileSync(join(batchDir,"session.json"),JSON.stringify(simulationIdentity("influence"),null,2));
   console.log(`Artifacts: ${batchDir}`);
   console.log("");
 

@@ -67,7 +67,7 @@ export type WsPublicationPayload =
   | { type: "message"; entry: PublicWsTranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
-  | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string };
+  | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: boolean; reasonCode: string; message?: string };
 
 /** Sequenced durable frame. Catch-up and live delivery may overlap safely. */
 export interface WsPublicationEvent {

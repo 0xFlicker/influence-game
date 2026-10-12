@@ -1,5 +1,5 @@
 import { and, eq, isNotNull } from "drizzle-orm";
-import { applyWerewolfEvent, observeWerewolf, projectWerewolfView, werewolfDecisionArtifact, werewolfGameplayDecision,
+import { applyWerewolfEvent, observeWerewolf, projectWerewolfView, werewolfDecisionArtifact, werewolfGameplayDecision, werewolfExecutionFinished,
   type WerewolfEvent, type WerewolfObservation, type WerewolfState } from "@influence/engine/werewolf";
 import { exactStructuredOutputRegistry } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
@@ -84,7 +84,7 @@ export async function projectWerewolfReviewEvidence(db: DrizzleDB, selection: Ow
       }
       state = applyWerewolfEvent(state, event);
     }
-    if (!state?.outcome) throw new Error("Werewolf review requires a completed canonical outcome");
+    if (!state?.outcome || !werewolfExecutionFinished(state)) throw new Error("Werewolf review requires a completed retrospective");
     const player = state.players.find(player => player.id === selected.playerId && player.agentProfileId === selection.agentProfileId);
     if (!player) throw new Error("Werewolf reviewed character is absent from its frozen roster");
     const role = state.roles[player.id]!;

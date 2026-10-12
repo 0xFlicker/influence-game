@@ -14,7 +14,6 @@ import {
 } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
-  getPersistedGameProjectionBeforeTerminalOutcome,
   type DurableProjectionSummary,
   type ProjectionReplayDiagnostic,
   type ProjectionReplayStatus,
@@ -151,6 +150,7 @@ export interface DurableRunFinaleIntegrity {
 }
 
 export type DurableRunExecutionCursorSummary =
+  | { kind: "retrospective"; coordinate: "initialize" | "statement" | "complete" }
   | { kind: "phase_enter"; coordinate: string }
   | { kind: "parallel_batch"; coordinate: string }
   | {
@@ -633,6 +633,8 @@ function summarizeExecutionCursor(
   cursor: GameExecutionCursorV1,
 ): DurableRunExecutionCursorSummary {
   switch (cursor.kind) {
+    case "retrospective":
+      return { kind: cursor.kind, coordinate: cursor.stage };
     case "phase_enter":
       return { kind: cursor.kind, coordinate: cursor.actor };
     case "parallel_batch":
@@ -855,11 +857,7 @@ export async function getDurableRunInspection(
     evidence.summary.acceptedActionCorrelation = acceptedActionCorrelation.summary;
     const promptReuseRows = await tx.select().from(schema.gamePromptReuseRollups).where(eq(schema.gamePromptReuseRollups.gameId, game.id));
 
-    const sealedNonfinal = completionSettlement.state === "pending"
-      || completionSettlement.state === "repair_required";
-    const projection = sealedNonfinal
-      ? getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents)
-      : getPersistedGameProjection(persistedEvents);
+    const projection = getPersistedGameProjection(persistedEvents);
     const projectionSummary = projection.summary;
     const ownerSummary = summarizeOwnerAtInspection(owner);
     const kernelHealth = buildRedactedKernelHealth({

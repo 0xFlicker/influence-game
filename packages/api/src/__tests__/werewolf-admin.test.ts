@@ -1,3 +1,4 @@
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "@influence/engine";
 import { afterEach, beforeEach, expect, test, spyOn } from "bun:test";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
@@ -9,9 +10,11 @@ import { createWerewolfAdminRoutes } from "../routes/werewolf-admin.js";
 import { createWerewolfRoutes } from "../routes/werewolf.js";
 import { createVisualRoutes } from "../routes/visual.js";
 import { createVisualReplayProductionRoutes } from "../routes/visual-replay-production.js";
+import {createProductionStudioRoutes} from "../routes/production-studio.js";
 import { createWerewolfGame, claimWerewolfGame, createWerewolfStore, readWerewolfEvents } from "../services/werewolf-games.js";
 import { readReplayVisualProduction, renderMissingReplayScene } from "../services/visual-replay-production.js";
-import { readWerewolfScenePreview, werewolfReferences, werewolfReferenceMetadata } from "../services/werewolf-production.js";
+import { werewolfReferences, werewolfReferenceMetadata } from "../services/werewolf-production.js";
+import {readProductionScene} from "../services/production-scenes.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { controlVisualMedia, readVisualMedia } from "../services/visual-media-repair.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
@@ -39,7 +42,7 @@ async function game(completed = true, agentProfileIds: string[] = [], unprotecte
     const owner = await claimWerewolfGame(db, g.id); if (!owner.ok) throw Error(owner.error);
     const state = replayWerewolf(await readWerewolfEvents(db, g.id));
     const wolfId = state.aliveIds.find(id => state.roles[id] === "werewolf")!;
-    const agent: WerewolfAgent = { async decide({ request }) {
+    const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
       if (unprotectedHunt && request.action === "protect") return { kind: "target", targetId: wolfId, thinking: "PRIVATE_REASON" };
       if (request.action === "open_thread") return { kind: "opening", text: null, cue: "Leans back", recipientIds: [] };
       if (request.legalTargetIds.length) return { kind: "target", targetId: request.legalTargetIds[0]!, thinking: "PRIVATE_REASON" };
@@ -56,7 +59,7 @@ test("admin discovery is Werewolf-only, includes hidden games, enforces current 
   const read = await app.request(`/api/admin/werewolf/${g.id}`, { headers });
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("private, no-store");
   const detail = await read.json() as { snapshot: { rulesVersion: number } };
-  expect(detail.snapshot.rulesVersion).toBe(7);
+  expect(detail.snapshot.rulesVersion).toBe(8);
   expect(JSON.stringify(detail)).not.toContain("PRIVATE_PACK");
   expect(JSON.stringify(detail)).not.toContain('"entries"');
   const activity = await app.request(`/api/admin/werewolf/${g.id}/activity`, { headers });
@@ -131,16 +134,21 @@ test("pack and lobby production use canonical membership and publish privately t
   expect((await publicReplay.request(`${mediaPath}?audience=omniscient&cursor=${packCursor}`)).status).toBe(404);
   expect((await publicReplay.request(`/api/werewolf/${g.id}/presentation`)).status).toBe(404);
   await db.update(schema.games).set({ hiddenAt: null }).where(eq(schema.games.id, g.id));
-  const preview = await readWerewolfScenePreview(db, g.id, job.sceneId!); expect(preview?.players).toHaveLength(2); expect(preview?.scene.imageUrl).toStartWith("data:image/png;base64,");
+  const preview = await readProductionScene(db,g.id,pack.key,{audience:"omniscient",versionId:version.id});
+  expect(preview.selectedVersion?.plan.cast).toHaveLength(2);expect(preview.selectedVersion?.version).toBe(version.version);
+  expect(preview.selectedVersion?.imageArtifactId).toBe(artifact);expect(preview.selectedVersion?.localization.anchors).toEqual(anchors);
+  const evidence=await app.request(`/api/admin/production/games/${g.id}/visual/evidence/artifact/${preview.selectedVersion!.imageArtifactId}`,{headers});
+  const evidenceBody=await evidence.json() as {imageUrl:string};
+  expect(evidence.status).toBe(200);expect(evidenceBody.imageUrl).toStartWith("data:image/png;base64,");
   const publicApi = createVisualRoutes(db);
   expect((await publicApi.request(`/api/games/${g.id}/visual`)).status).toBe(404);
   expect((await publicApi.request(`/api/games/${g.id}/visual/artifacts/${artifact}`)).status).toBe(404);
   expect(await readViewerMedia(db, g.id)).toEqual({ publicationSnapshot: {}, bindings: {}, scenes: [] });
   expect((await publicApi.request(`/api/admin/games/${g.id}/visual/media`, { method: "POST", headers, body: "{}" })).status).toBe(409);
-  const path = `/api/admin/production/games/${g.id}/visual/scenes/${job.sceneId!}/preview`;
-  expect((await app.request(path)).status).toBe(401); expect((await app.request(path, { headers })).status).toBe(200);
+  const studio=createProductionStudioRoutes(db),path = `/api/admin/production/games/${g.id}/scenes/${pack.key}?audience=omniscient&versionId=${version.id}`;
+  expect((await studio.request(path)).status).toBe(401); expect((await studio.request(path, { headers })).status).toBe(200);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, "producer"));
-  expect((await app.request(path, { headers })).status).toBe(403);
+  expect((await studio.request(path, { headers })).status).toBe(403);
   expect(await readWerewolfEvents(db, g.id)).toEqual(before);
 });
 

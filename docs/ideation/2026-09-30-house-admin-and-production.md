@@ -3,7 +3,7 @@ title: House admin and production experience
 type: ideation
 status: active
 date: 2026-09-30
-updated: 2026-10-02
+updated: 2026-10-09
 ---
 
 # House admin and production experience
@@ -12,9 +12,9 @@ updated: 2026-10-02
 
 Make The House one coherent application for playing, watching, understanding and producing games. The goal is Werewolf parity with Influence through shared routes, UI modules and workflows. The user should not have to navigate a separate Werewolf application to do the same things. Game identity, art direction and actual rule differences remain visible where useful; implementation differences belong behind the House experience. Admin screens are user-facing product surfaces.
 
-The initial continuity work and shared replay integration are implemented locally. The current priority is completing Werewolf’s place in The House: a game people can discover, cast, watch, understand at the ending, inspect with MCP, review, and share. The broader production studio remains important, but its redesign is not a prerequisite for finishing that loop.
+The Werewolf integration pass delivered the shared House game journey: entry, casting, replay, results, MCP, owner review, Cuts, trailers, art/music, visual recovery and participation history. The operator reported the integration merged and deployed; the delivery retrospective records that release. Later player/export and recovery changes have their own validation and release status. A2 — the production studio — is now the next planning focus.
 
-The player shares its shell and playback infrastructure, and visuals/playback have improved for both games. Separate Werewolf routes and page orchestration remain integration debt. Results presentation still needs a stronger finish. The integration roadmap below records remaining product work separately from the four admin/production pillars; it is a living inventory, not a claim that every historical request has been recovered.
+The first A2 pass consolidates existing production into a usable workspace. It does not restart the Werewolf integration roadmap or require a new renderer. Source inspection on 2026-10-08 used `codex/exporter-production` at `8a1f4975`; the latest bad-image recovery improvements are on [PR #170](https://github.com/0xFlicker/influence-game/pull/170), not claimed deployed here. See [delivery learnings](../solutions/architecture-patterns/house-delivery-boundary-failures.md) for the earlier release evidence.
 
 This document owns the four-pillar task map, the Werewolf integration roadmap, and product boundaries. Each selected slice gets a scoped implementation plan. Updating this inventory is not authorization to implement every slice at once.
 
@@ -23,13 +23,13 @@ This document owns the four-pillar task map, the Werewolf integration roadmap, a
 | ID | Pillar | Status | Deliverable |
 | --- | --- | --- | --- |
 | A1 | Fix continuity and bring Werewolf into House admin | Implemented locally; acceptance evidence recorded | Persistent navigation and game workspace, continuous section changes, House styling, readable cost details |
-| A2 | Turn Production into a studio | Brainstorm retained; sequencing follows the Werewolf integration pass | Scene/asset browser, selected preview and inspector, job center, then timeline and playback |
+| A2 | Turn Production into a studio | Combined A2.1/A2.2 plan drafted 2026-10-09; foundation tasks and operator UX gate pending | Playable scene/moment editor with timeline, tagging and selected export, repair/publication; refinements and cross-game jobs follow |
 | A3 | Improve detail display across admin | Direction established; follows A1 evidence | Reusable compact metadata and domain receipts in remaining operational screens |
-| A4 | Improve game visualization for Influence and Werewolf | Shared player implemented; results and broader product integration remain | Consistent game workspaces with explicit game-specific state and presentation |
+| A4 | Improve game visualization for Influence and Werewolf | Shared viewer and integration delivered; targeted follow-through remains | Shared presentation, game-specific facts, audience boundaries; local full-game export and future presentation-time seeking |
 
 A1 implementation plan: [Admin continuity and Werewolf integration](../plans/2026-09-30-002-refactor-admin-continuity-and-production-studio.md).
 
-A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). A1 is implemented and locally validated; its task checklist retains comparative measurement and extended browser-matrix evidence follow-ups. The A2 studio and A3 general metadata work remain pending; A4 now includes the implemented shared player and the remaining integration roadmap below.
+A1 execution: [task specifications](../plans/2026-09-30-003-admin-continuity-tasks.md) and [review dispositions](../reviews/2026-09-30-admin-continuity-plan-review.md). A1 is implemented and locally validated; its task checklist retains comparative measurement and extended browser-matrix evidence follow-ups. A2 now consolidates the delivered workflows; A3 supplies small detail components as needed. A4 follow-through is tracked separately from the completed integration milestones.
 
 Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30-001-feat-werewolf-admin-production-workspace.md).
 
@@ -48,26 +48,51 @@ Operational baseline: [Implemented Werewolf admin workspace](../plans/2026-09-30
 
 ## A2 — production studio
 
-Pre-planning: [workflow and navigation brainstorm](2026-09-30-production-studio-brainstorm.md). The [public Werewolf visual replay side quest](../plans/2026-09-30-004-feat-werewolf-public-visual-replay.md) led to the implemented [shared House player integration](../plans/2026-10-01-001-refactor-shared-house-watch-player.md). Reuse that player in the studio. The separate prototype is not the target architecture.
+First-pass scope refreshed 2026-10-09: [workflow, source inventory and acceptance cases](2026-09-30-production-studio-brainstorm.md). The [A2.1/A2.2 technical plan and ST-01–15 tasks](../plans/2026-10-09-001-feat-production-studio-moment-editor.md) define architecture, dependency order, simplification dispositions and validation. This pillar is product direction, not authorization for paid work.
 
-Sequencing update (2026-10-02): finish the Werewolf product integrations below through existing production services and minimal contextual controls. Do not make MCP, results, House Cuts, trailers or owner review wait for the scene-browser/job-center redesign. Feed their concrete requirements into A2; preserve its eventual single production home for both games.
+**User outcome:** produce a deliberate release cut from either game: seek through a playable timeline, repair scenes, tag individual moments, preview the exact shortened edit and export it. The producer owns narrative judgment.
 
-**User outcome:** browse a game's material, select a moment, inspect what viewers would see, and make production decisions in context.
+### A2.1/A2.2 — one usable video-production workspace
 
-Desktop composition: scene/asset browser on the left, selected preview in the center, contextual inspector on the right, timeline and transport beneath. Mobile uses linked Browser, Preview and Inspector screens rather than shrinking the entire desktop interface.
+Recommend a shared production library and one dedicated studio per game. Game operations link to that studio; they do not keep another copy of the editor. Default to the library with search, game-kind/status filters and a Needs attention view. Preserve filters and selected scene/version in navigation. Read-only inspection must remain available while work runs.
 
-Working increments:
+A2.1/A2.2 includes a real scene/moment browser, large playable preview, timeline with playhead, and contextual tools. A2.1 supplies shared production foundations and repair tools; A2.2 supplies the timeline, playable source/cut preview, moment editing and selected export. They are planned and delivered together. Source replay and selected cut are explicitly labeled views; the latter shows the exact edit and its duration. Mobile keeps preview and transport together with accessible Browser/Details views.
 
-1. Stable browsing, addressable selection, preview, versions and contextual production actions.
-2. Job center aggregating existing visual and postgame media records, with a small studio activity tray. Keep current workers and retry authority; do not invent another scheduler.
-3. Player preview at a canonical presentation cursor, clearly distinguishing candidate assets from published presentation.
-4. Fast seeking, cue stepping, play/pause, speed and discoverable keyboard shortcuts. Spacebar must respect input/dialog focus.
+**A2.1/A2.2 simplification and consistency review:** explicitly audit scene management, generation and modeling across Influence, Werewolf and shared House services before extraction, and review the implemented slice again before acceptance. Establish the small shared scene/moment/asset/version contract and the game-owned inputs, identify duplicated orchestration and obsolete paths to remove, and record intentional differences. Future game formats should supply their facts and staging without copying a producer application. This review must produce concrete changes and dispositions; it is not a broad engine rewrite or speculative plugin framework.
 
-**Done when:** operators can find a scene, understand its coverage and version, follow work without staying on the originating panel, and preview/seek without causing generation or publication. Missing panels retain usable imagery and existing fallbacks.
+**Operator UX design gate, during initial A2.1/A2.2:** review an interactive desktop/mobile prototype showing the editor layout, selection, playhead, preview, tools, image recovery and message tagging/export selection. Approve how it works, not just its routes, before committing to the workspace structure. Implement the approved timeline interaction in A2.1/A2.2 and recheck it with the operator by actually making a shortened cut. A static preview or route-only review is not acceptance. Both milestones share the initial design gate and end-to-end acceptance.
 
-**Deferred editorial tooling:** optionally browse all House Cut candidates and swap, reject, edit or regenerate selections. These are new studio capabilities to evaluate later, not existing Influence behavior or prerequisites for W4. Normal House Cuts generation, selection and publication remain automatic.
+The first slice includes:
 
-**Questions for its planning:** what is the first useful browsing unit—scene, event or asset; which actions belong in the inspector; what review states need filters; how do game-specific events become presentation cues; what job types support cancellation or reconciliation? Do not block A1 on these questions.
+- Completed Influence and Werewolf games **and existing visual-repair entry points**. Werewolf's validated suspended boundary, including missing scenes or wolf-form-only work, must remain repairable. Retain Influence's existing visual recovery controls; do not assume the completed replay endpoint handles every live repair.
+- All saved panels and versions, verified coverage and framing, clearly labeled current viewer version versus unpublished candidate. Show where a reusable scene is used before publication.
+- Direct **Regenerate**, **Correct framing**, **Harmonize existing panels**, and **Publish** where supported. Rejecting a bad image cannot require marking heads, saving it as correct, or publishing it first. Keep usable source panels if a composite fails.
+- Contextual job/receipt status and safe recovery. An accepted request, a running job, a failed candidate and an uncertain provider charge are different states. Reuse the current durable request and lease machinery; do not create a new scheduler.
+- Explicit paid retry acknowledgement for uncertain charges using the existing fresh-regeneration contract. Preserve the old accounting evidence. Never interpret rejection as a refund or silently repeat an uncertain request.
+- Explicit resume after a required-visual repair. Publishing or changing failure policy does not resume gameplay.
+- An explicit home for episode copy, covers, trailers and posters, using the current tools and grants. The scene-workspace cutover must not strand those tools or batch naming.
+- Flat producer metadata on **moments**, with response/event references as provenance. Thinking, speech and actions from one response are independently selectable. Camera phases and text pages remain internal presentation details; tags cannot change game history or audience permissions.
+- A matching-moment cut, such as `cut=youtube`, includes the selected dialogue and thinking in chronological order. Remove the earlier opposite thinking/speech response-filter rule. Freeze selection, metadata and asset versions for export; the playable preview and exporter use one selection/timing contract. Full replay remains unchanged.
+- No continuity evaluator, warnings about narrative gaps, automatic context insertion or mandatory votes/results. The producer decides what belongs, including opening/ending material. Reconstruct canonical state from complete authorized source history even when its events are omitted from the movie.
+- Repeated seeking as an A2.1/A2.2 correctness requirement: drag, reverse, random jump and fresh-mount samples must agree. Fix concrete shared renderer/reducer defects and retain regressions. Preview/export pictures and audio must match the same cut, without dropped moments resurfacing or orphan camera effects.
+
+**Acceptance:** an operator opens a failed first render, rejects it without saving head annotations, requests a replacement, leaves and returns, reviews the saved result, publishes it, and explicitly resumes a paused game. The same workspace also repairs a completed Influence scene. Neither path needs a duplicate editor or raw receipt bookkeeping for ordinary image-quality rejection. A producer can independently tag moments, repeatedly seek and watch the shortened cut, reload it and export that exact selection with audience checks and deterministic audio/visual timing. Story quality is reviewed by the producer, not software.
+
+### A2.2 — timeline, playable preview and selected export (included)
+
+A2.2 is included in the current studio delivery alongside A2.1. It covers the functional timeline, playhead, playable source/cut preview, independent moment tagging and local selected export. These depend directly on the shared scene/moment and presentation contracts, so the technical plan treats them as one coordinated implementation. Richer scene-use navigation and unpublished-candidate playback remain explicitly deferred refinements, not the definition of A2.2. Retain the operator UX review when extending the editor.
+
+A2.1/A2.2 uses shared presentation time and stable moment/source identities, coordinated with the [presentation-time scrubber follow-up](../refactor-queue.md#shared-presentation-time-scrubber--2026-10-07). Public-player transport migration can remain separate. Studio cut audio must follow the sampled presentation/export clock; the ordinary viewer's ambient-music seek policy need not change as a side effect.
+
+The [local exporter](../local-replay-export.md) already renders shared content, openings and thinking. Extend that contract for selected cuts rather than building another movie renderer. Hosted rendering/publication, voice generation and waveform editing remain outside this slice. [Exporter performance work](../plans/2026-10-08-001-perf-replay-export-readiness-and-concurrency.md) remains separately planned.
+
+### A2.3 — cross-game work and release overview
+
+Aggregate existing image, naming, Cuts and trailer work into a job/attention view after the selected-game workflow works. Keep job-specific facts and supported retry/cancel/reconciliation actions; a combined screen does not imply a universal lifecycle or new cancellation API. Separate generated, reviewed, published and playable states rather than inventing a single readiness score.
+
+Normal episode naming, House Cuts selection/publication and approved trailer automation remain automatic. Manual Cut candidate replacement/editing, soundtrack authoring, voice generation and general-purpose video editing such as free clip rearrangement are later product decisions. The editor-style timeline, playhead, preview and tools are the agreed studio direction, not deferred design work. Human approval of an editorial algorithm or art/music direction is not a new per-game approval gate.
+
+**Initial implementation order:** the A2.1/A2.2 plan starts with a simplification/disposition record, stable moment provenance and a shared composition/Remotion Player proof. Annotation storage, bounded reads and source/cut compilation follow. Review the interactive operator prototype before committing workspace layout/component boundaries; technical foundations can proceed beforehand. The plan preserves game-owned recovery differences and existing grants, includes explicit deletion/cutover tasks and requires repeated-seeking plus preview/export proof. The operator UX gate and final consistency review remain pending.
 
 ## A3 — readable operational details
 
@@ -108,11 +133,11 @@ Remaining gaps are recorded for follow-through, not instructions to advertise an
 - Scrubbing is read-only; it cannot dispatch generation or mutate a game.
 - Generation, verification, review and publication are distinct states. Unknown job progress is not a percentage.
 - Use existing House styling and dependencies; no redesign-driven framework replacement, speculative plugin system or new feature flags.
-- Work remains in the existing Werewolf worktree. Primary-checkout work and existing dirty changes are preserved.
+- Work in the checkout selected for the active task and preserve unrelated changes. Historical worktree paths in implementation records are not current workspace instructions.
 
 ## Sequence and decision record
 
-A1 established the workspace; the shared-player side quest subsequently delivered part of A4 ahead of A2. As of 2026-10-02, prioritize the Werewolf integration sequence below before committing to the full studio rebuild. Extract A3 patterns from repeated evidence while doing that work. A2 then consolidates proven game and media workflows rather than guessing their requirements.
+A1 established the workspace; the shared-player side quest delivered part of A4 ahead of A2. The 2026-10-02 decision prioritized Werewolf integration, which has since shipped. On 2026-10-08, return to A2 with those proven workflows. The 2026-10-09 technical pass makes moment identity, shared presentation and production contracts early tasks; the operator reviews a concrete editor prototype before workspace construction. A2.1/A2.2 acceptance includes a repaired scene and a playable selected export. Extract A3 components where the actual inspectors repeat.
 
 Confirmed during source audit: the app already has a QueryClient provider and Motion; existing cost components can be extracted; the current Reviews destination is agent learning review and belongs under People. Comparative performance evidence remains recorded in the A1 checklist. The wheel effect is retained only for a future top-level interaction, not nested admin section changes.
 
@@ -125,20 +150,21 @@ The public Werewolf route now composes `components/watch/watch-shell.tsx`, `watc
 
 **Outcome:** Werewolf reaches Influence parity inside the same House experience across discovery, casting, viewing, results, analysis, owner improvement and sharing. Both games live under `/games/[slug]` and use the same House page families and workflows. Game-specific modules supply rules, knowledge, faction outcomes, strategic evaluation and scene treatments to those shared surfaces. This does not automatically mean adding ratings, seasons, a Daily Free queue or every Influence mechanic.
 
-This source pass was made on `codex/werewolf` at `62c7a54e`. “Implemented” below means present in this local worktree, supported by the linked implementation records; it is not a deployment or new paid-provider acceptance claim.
+The original roadmap was written on `codex/werewolf` at `62c7a54e`. Its dated slice notes preserve implementation checkpoints and product decisions. The integration subsequently shipped; see the delivery retrospective above. The current baseline below supersedes early technical gap descriptions. Outstanding calibration/device checks are not claims that the integration remains unimplemented.
 
 ### What we are building on
 
 | Area | Current baseline | Remaining boundary |
 | --- | --- | --- |
-| Entry and casting | Both games in `/games` and `/games/new`; shared agent selection and configuration; persistent Werewolf casting lobbies; shared character identity with separate strategy notes | Move the current `/werewolf/:slug` experience into the canonical `/games/[slug]` route family. Replace separate Werewolf page/card orchestration with House UI modules, and update game links, ownership/history and completion actions. This is a required integration slice, not optional URL cleanup. |
-| Gameplay | Canonical Werewolf rules v7, durable execution, sequential public threads, pack negotiation, role actions, simulation and cost evidence | Prompt tuning, additional roles and balance experiments are separate from product integration. |
-| Watch | Shared House shell, cast/inspector, transport, fullscreen, original speech, Omniscient thinking, fixed audience sessions, saved thinking/order and Werewolf autoplay | Finish result scenes and Werewolf night presentation; continue targeted playback regression coverage. |
-| Visual production | Automatic scene preparation, frozen character references, individual introductions, living-cast daytime scenes, multi-panel harmonization, producer repair/regeneration, verified publication and audience-filtered delivery | Wolf-form assets and bespoke pack/night outcome staging are still design work. Shared studio/library navigation is pending. |
-| Operations | Werewolf Overview/Production/Costs/Activity inside House admin | Broader cross-game production and evidence consolidation remains A2/A3. |
-| After the match | Werewolf canonical faction result and replay ending exist | Full House results, MCP match inspection, owner review, House Cuts and trailers need Werewolf integration. An ending card is not the whole completed-game experience. |
+| Entry and casting | Both kinds use `/games/[slug]`, shared creation/casting and Public/Unlisted visibility; separate match-frozen strategy blocks | Keep game rules and role setup distinct; consolidate production navigation in A2 |
+| Gameplay | Canonical Werewolf rules, durable execution, sequential public threads, pack negotiation and role actions | Balance, extra roles and continuous strategy evolution remain separate product decisions |
+| Watch | Shared shell, results, autoplay/preferences, audience-safe decisions/thinking, sequential dramatic thinking and speech, openings, music and night choreography | Presentation-time scrubber and further audio work remain explicit follow-ups; thinking order selection was removed |
+| Visual production | Shared render/repair, saved-panel harmonization, reusable wolf forms, approved day/night art, verified publication and required-visual recovery | A2 scene workspace; preserve no-image Doctor-save presentation and game-owned repair boundaries |
+| Operations | Shared admin shell with game-specific adapters and current per-game production screens | Unified studio discovery and capability-aware controls; A3 evidence presentation |
+| After the match | Results/history, MCP, owner learning, automatic Cuts, naming and trailers implemented | Editorial/coaching calibration continues; no new per-game manual approval gate |
+| Full-game export | Local CLI uses frozen permitted evidence, shared presentation and recorded audio inputs | Renderer performance plan, browser presentation-time integration, and any future studio export workflow are separate slices |
 
-Source pointers: `packages/api/src/services/werewolf-lobbies.ts`, `werewolf-games.ts`, `werewolf-visual-runtime.ts`, `werewolf-production.ts`, `werewolf-presentation.ts`; `packages/web/src/app/games/new/page.tsx`, `app/games/werewolf-game-card.tsx`, `app/rules/`, `app/werewolf/`, `components/watch/`; [visual mode](../visual-mode.md) and [shared-player implementation evidence](../reviews/2026-10-01-shared-house-watch-player-implementation.md).
+Current entry points: `packages/web/src/app/admin/production-panel.tsx`, `replay-visual-production-panel.tsx`, `werewolf/workspace.tsx`; API `services/visual-replay-production.ts`, `werewolf-production.ts`; [export usage](../local-replay-export.md). The [A2 source inventory](2026-09-30-production-studio-brainstorm.md#current-source-and-capability-inventory) records the current production boundaries.
 
 ### Integration slices and release follow-through
 
@@ -155,7 +181,7 @@ Source pointers: `packages/api/src/services/werewolf-lobbies.ts`, `werewolf-game
 | W7 | House-wide integration audit | Completion actions, game history, profile links, rules, production discovery and sharing land in the right game experience | Inventory now; close gaps as W1–W6 land |
 | W8 | Integration and release proof | One ordinary Werewolf journey works end to end, with failures/retries and Influence regressions checked | All selected launch slices, including creative approvals; explicit dispositions for deferred items |
 
-W0–W7 and H1–H3 are implemented locally, with the specific remaining gaps listed below. W8 deployment and acceptance remain open; the table records scope and dependencies, not a queue of unstarted work. These are high-level tasks, not simultaneous implementation projects. A4-EVIDENCE (evolving in-game strategy) remains separately scoped: captured thinking and frozen starting strategy already exist, but continuous strategy updates must not be fabricated to satisfy an inspector or review.
+W0–W7 and H1–H3 were delivered, with subsequent release evidence in the delivery retrospective. Remaining W8 work is broader acceptance/calibration, not the first deployment; the table records scope and dependencies, not a queue of unstarted work. These are high-level tasks, not simultaneous implementation projects. A4-EVIDENCE (evolving in-game strategy) remains separately scoped: captured thinking and frozen starting strategy already exist, but continuous strategy updates must not be fabricated to satisfy an inspector or review.
 
 ### W0 — one House experience, game modules underneath
 
@@ -292,6 +318,8 @@ Schedule this as a whole creative working session when selected, rather than cho
 
 Local implementation checkpoint (2026-10-05): existing-game regeneration and automatic preparation now share approved location art and reusable match-frozen wolf forms. Canonical hunts appear in Producer, including doctor saves and lone-wolf nights; Omniscient gets hunt/outcome scrub stops. Provider-free, PostgreSQL and browser proofs are recorded in the focused plan. The operator has tested and approved the populated night and pack scenes. Deterministic wolf entrances, published-form fallback and canonical death accents are implemented locally; the operator accepted the corrected solo-wolf motion/navigation on 2026-10-05. Night/dawn sound and physical-device checks remain.
 
+Current-policy annotation (2026-10-09): the Doctor-save generation statement in that historical checkpoint was superseded by PR164. Protected attacks and no-target nights do not enter generated-hunt inventory; the permitted save explanation remains visible using original character art. The current `docs/werewolf.md` contract controls studio discovery and repair.
+
 Focused draft: [W6 — Werewolf night production and playback](../plans/2026-10-05-003-feat-werewolf-night-production.md). Sequence: complete no-image choreography, match-frozen wolf forms, shared night production/repair, then concrete art and sound acceptance.
 
 Adjacent shared-player slice: [House replay music — Werewolf first](../plans/2026-10-05-002-feat-house-replay-music.md) is implemented locally after W5, with mute and volume always in the playback bar. The selected four Suno themes supply introductions, daytime and outcomes; pack use is an audition proposal, and night/dawn treatment remains open. Operator listening and physical-device acceptance remain; W6 numbering is unchanged.
@@ -308,7 +336,7 @@ Focused plans: [W7A — visual failure policy and Werewolf recovery](../plans/20
 
 **Creation cleanup (2026-10-02):** removed creation-time Speed-run/Live and Timing presets, the unused engine timer configuration and unused server event pacer. Keep Influence max rounds and Werewolf max days. Existing House player preferences own playback; do not reintroduce pacing choices at game creation.
 
-**Visual failure policy parity follow-up (approved direction):** both games should offer the same best-effort / require-visuals policy when Visual Mode is enabled. Werewolf currently continues with character art on rendering failure. Complete policy storage, runtime failure handling, a durable visual-owned pause, producer repair/resume, and reload/ownership-fence tests before exposing require-visuals there. Keep failure evidence and costs under either policy; a policy change must not silently resume a game or relax provider uncertainty. Use the existing House policy vocabulary and controls rather than a second Werewolf policy.
+**Visual failure policy parity delivered:** both games offer Best effort / Require visuals. Werewolf persists a canonical visual pause and supports producer repair followed by explicit resume, including wolf-form-only work. A2 must preserve this flow and its failure/cost evidence. A policy change cannot silently resume gameplay or settle provider uncertainty. See [recovery learnings](../solutions/architecture-patterns/werewolf-visual-recovery-at-canonical-boundaries.md).
 
 **Visibility parity implemented on the feature branch:** [Public and Unlisted games across The House](../plans/2026-10-02-003-feat-house-game-visibility.md) (implemented 2026-10-02; verification recorded in the plan) replaces the earlier Private-access proposal. The operator confirms no production Private games. Remove Private from both games; Public appears in discovery, Unlisted is link-only, and either is anonymously viewable. Share creation controls, filter Unlisted out of all public discovery, preserve direct links and enforce hidden/audience/publication boundaries consistently. Do not add private-game membership storage, invitation flows or authenticated-image infrastructure. Existing producer, account, owner-evidence and MCP permissions remain separate. Check nonproduction fixtures/data explicitly; no silent conversion or deletion of operator records.
 
@@ -329,11 +357,13 @@ For each selected slice, record the user-visible surface, canonical source/adapt
 
 Use this session and the implementation documents to refine a reusable new-game checklist: **House route/UI integration; art and music direction; human editorial approval; availability and discovery; casting/configuration; shared character + game strategy; execution/recovery; rules; viewer/knowledge boundaries; results/history; MCP; owner review; Cuts/shares; trailers/release assets; production/repair; costs/operations; release proof**. Treat it as a checklist with explicit game-specific decisions, not a new generic game/plugin framework. This inventory is the starting point for mining the full session, not a declaration that the extraction is complete.
 
-### Recommended sequence and decisions still open
+### Original integration sequence and current next step
+
+The following sequence records the original integration order; it is not a fresh backlog. Current next step: the [A2.1/A2.2 technical plan](../plans/2026-10-09-001-feat-production-studio-moment-editor.md), starting with foundation proofs and the operator editor prototype gate.
 
 1. Specify and implement W0’s shared routes/UI boundary first; inventory W1/W2 dependencies during that work. Then specify W1 facts/results and refresh W2’s MCP contract together; they can then be implemented in separate coherent slices.
 2. Plan W3 owner review and prototype W4 editorial selection against that evidence. They can proceed independently; continuous strategy memory is not a prerequisite. Put W4’s algorithms and sample analyses through the human review gate before adopting them.
 3. Hold the dedicated W9 art exploration session and select a visual direction. Deliver shareable Cuts, then develop W5 trailers and new music from approved material. Local music generation and human-operated Suno provide candidates; obtain the trailer/music approvals. W6 choreography can progress alongside these, with final artwork using the approved direction, without blocking text-based analysis or basic cards.
 4. Close W7 omissions throughout and perform W8 before release. Return to A2 with proven scene, Cut, trailer and review workflows; extract A3 detail primitives where repetition warrants them.
 
-Before those implementation plans: settle the results information hierarchy, review eligibility/revision semantics, Cuts/trailer spoiler policies and editorial cost budget, the concrete human approval checkpoints, the art/music exploration brief, and which W6 treatments belong in the first release. This update authorizes documentation only; it does not schedule model calls, change gameplay, publish artifacts or commit to the whole studio rebuild.
+The linked slice plans record the resulting results/review contracts, spoiler policies, editorial budgets and creative approvals. Preserve those decisions during A2. This first-pass update is documentation only; it does not schedule model calls, change gameplay, publish artifacts or commit to the whole studio rebuild.

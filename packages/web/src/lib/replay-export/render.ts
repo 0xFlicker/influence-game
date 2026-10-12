@@ -170,12 +170,15 @@ export async function renderReplay(
           timeoutInMilliseconds: 60000,
         });
         let percent = -1;
+        const scheduledAudio = manifest.audio.clips.some(clip => clip.endMs > manifest.range.fromFrame*1000/manifest.fps && clip.startMs < manifest.range.untilFrame*1000/manifest.fps);
         await renderMedia({
           composition,
           serveUrl,
           inputProps,
           codec: "h264",
           audioCodec: "aac",
+          // Layout Artifacts are not audio. Remotion can otherwise synthesize a silent AAC track.
+          muted:!scheduledAudio,
           outputLocation: partial,
           concurrency: 1,
           cancelSignal,
@@ -198,16 +201,12 @@ export async function renderReplay(
           video?.codec_name !== "h264" ||
           video.width !== manifest.width ||
           video.height !== manifest.height ||
-          Math.abs(Number(metadata.format.duration) - expected) >
-            Math.max(0.1, 2 / manifest.fps)
+          !Number.isFinite(Number(video.duration)) ||
+          Math.abs(Number(video.duration) - expected) > 1 / manifest.fps + .01
         )
           throw new Error("Encoded video failed output validation");
         if (
-          manifest.audio.clips.some(
-            (clip) =>
-              clip.endMs > (manifest.range.fromFrame * 1000) / manifest.fps &&
-              clip.startMs < (manifest.range.untilFrame * 1000) / manifest.fps,
-          ) &&
+          scheduledAudio &&
           !metadata.streams.some(
             (stream) =>
               stream.codec_type === "audio" && stream.codec_name === "aac",

@@ -1,5 +1,5 @@
 import { displayNameForFormat, getFormatRegistration } from "@influence/engine/format-rules";
-import type { PresentationCue } from "./types";
+import type { FormatPresentationCue, PresentationCue } from "./types";
 
 export interface RevealedVote {
   voterId: string;
@@ -36,22 +36,38 @@ function receipt(cue: PresentationCue): RevealedVote | null {
   return null;
 }
 
+/** Compile immutable receipt prefixes once; seeking never walks earlier movie content. */
+export function compileVoteLedgers(cues: readonly PresentationCue[]): (VoteLedgerState | null)[] {
+  const totals = new Map<string, number>();
+  const nextResults = new Map<number, Extract<FormatPresentationCue, {kind: "format_aggregate"}>>();
+  const eligibility: VoteLedgerState["eligibility"][] = Array(cues.length);
+  for (let index = cues.length - 1; index >= 0; index -= 1) {
+    const cue = cues[index]!;
+    const group = voteSceneIdentity(cue);
+    if (group && !cue.voteSummary) totals.set(group, (totals.get(group) ?? 0) + 1);
+    if (cue.source === "format") {
+      if (cue.voteSummary) eligibility[index] = voteEligibility(cue, nextResults.get(cue.canonicalSequence));
+      if (cue.kind === "format_aggregate") nextResults.set(cue.canonicalSequence, cue);
+    }
+  }
+  const revealed = new Map<string, RevealedVote[]>();
+  return cues.map((cue, index) => {
+    const current = receipt(cue), group = voteSceneIdentity(cue);
+    if (!current || !group) return null;
+    const votes = revealed.get(group) ?? [];
+    if (!cue.voteSummary) votes.push(current);
+    revealed.set(group, votes);
+    const total = cue.source === "format" && cue.kind === "format_roll_call" ? cue.rollCallCount : totals.get(group) ?? 0;
+    const title = cue.source === "format" && cue.visualBallot ? cue.visualBallot.revote ? "Empower revote" : "Empower vote"
+      : cue.source === "format" && cue.after.activeFormatId ? displayNameForFormat(cue.after.activeFormatId)
+        : current.choice === "winner" ? "Jury vote" : "Elimination vote";
+    return {title, votes: [...votes], current, total, complete: cue.voteSummary, eligibility: eligibility[index], polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate"};
+  });
+}
+
 /** Only accepted receipts at or before the presentation cursor can enter the ledger. */
 export function voteLedgerForCue(cues: readonly PresentationCue[], cursor: number): VoteLedgerState | null {
-  const cue = cues[cursor];
-  if (!cue) return null;
-  const current = receipt(cue), group = voteSceneIdentity(cue);
-  if (!current || !group) return null;
-  const votes = cues.slice(0, cursor + 1).filter(entry => !entry.voteSummary && voteSceneIdentity(entry) === group).flatMap(entry => {
-    const accepted = receipt(entry);
-    return accepted ? [accepted] : [];
-  });
-  const total = cue.source === "format" && cue.kind === "format_roll_call" ? cue.rollCallCount
-    : cues.filter(entry => !entry.voteSummary && voteSceneIdentity(entry) === group).length;
-  const title = cue.source === "format" && cue.visualBallot ? cue.visualBallot.revote ? "Empower revote" : "Empower vote"
-    : cue.source === "format" && cue.after.activeFormatId ? displayNameForFormat(cue.after.activeFormatId)
-      : current.choice === "winner" ? "Jury vote" : "Elimination vote";
-  return { title, votes, current, total, complete: cue.voteSummary, eligibility: cue.voteSummary ? voteEligibility(cues, cursor) : undefined, polarity: cue.source === "format" && cue.after.activeFormatId === "save_or_eliminate" };
+  return compileVoteLedgers(cues)[cursor] ?? null;
 }
 
 export function voteLedgerRows(votes: readonly RevealedVote[]) {
@@ -68,15 +84,12 @@ export function voteLedgerRows(votes: readonly RevealedVote[]) {
 }
 
 /** The compiler already validated the canonical resolution; never reconstruct its pool from prose. */
-function voteEligibility(cues: readonly PresentationCue[], cursor: number): VoteLedgerState["eligibility"] {
-  const cue = cues[cursor];
-  if (cue?.source !== "format") return undefined;
+function voteEligibility(cue: FormatPresentationCue, result: Extract<FormatPresentationCue, {kind: "format_aggregate"}> | undefined): VoteLedgerState["eligibility"] {
   if (cue.visualBallot && (cue.kind === "empowered_tally" || cue.kind === "empowered_tie")) {
     const highest = Math.max(...Object.values(cue.counts));
     return {ids: Object.keys(cue.counts).filter(id => cue.counts[id] === highest), label: "Highest count · eligible for power"};
   }
-  const result = cues.slice(cursor + 1).find(next => next.source === "format" && next.canonicalSequence === cue.canonicalSequence && next.kind === "format_aggregate");
-  if (result?.source !== "format" || result.kind !== "format_aggregate") return undefined;
+  if (!result) return undefined;
   const resolution = result.resolution;
   const registration = getFormatRegistration(resolution.formatId);
   const scoring = registration.capability === "sealed_elim" ? registration.presentation.scoring : null;

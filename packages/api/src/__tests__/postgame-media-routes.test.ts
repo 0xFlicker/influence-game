@@ -22,7 +22,7 @@ import { appendGameEvents } from "../services/game-events.js";
 import { getAdminPostgameMedia, getPublicPostgameMedia } from "../services/postgame-media.js";
 import { reconcilePostgameMediaForGame, requestPostgameMedia } from "../services/postgame-media-coordinator.js";
 import { claimPostgameMedia, finalizePostgameMedia, heartbeatPostgameMedia } from "../services/postgame-media-worker.js";
-import { insertGame, insertOwner } from "./durable-run-test-utils.js";
+import { insertGame, insertOwner, withRetrospective } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("postgame media worker routes and leases", () => {
@@ -512,7 +512,7 @@ async function insertOwnedCompletedMediaGame(
   await appendGameEvents(db, {
     gameId,
     ownerEpoch,
-    events: createEdgeSmokeDuskEvents(gameId),
+    events: withRetrospective(createEdgeSmokeDuskEvents(gameId)),
   });
   return { gameId, ownerIds: [directOwnerId, profileOwnerId] };
 }

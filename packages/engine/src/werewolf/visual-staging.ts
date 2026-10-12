@@ -4,6 +4,7 @@ import { werewolfHuntScene, type WerewolfScenePurpose } from "./visual-scenes";
 
 /** Private staging stays server-side; an audience-filtered entry is required. */
 export function werewolfVisualStaging(state: WerewolfState, event: WerewolfEvent, entry: WerewolfPublicEntry) {
+  if (entry.kind === "speech" && entry.purpose === "retrospective") return { boundary: event.sequence - 1, roomId: null, purpose: null, participantIds: [entry.actorId] } as const;
   if (entry.day === 0) return { boundary: event.sequence - 1, roomId: null, purpose: null, participantIds: [] } as const;
   if (entry.kind === "night") {
     // Mystery's entry deliberately has no attackTargetId, even though the event does.

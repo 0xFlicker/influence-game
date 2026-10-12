@@ -7,7 +7,7 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { readVisualRenderAccounting } from "./visual-render-journal.js";
 import { previewFinalsRebuild } from "./visual-rebuild-preview.js";
 
-/** Producer-only record: includes private diary cues, never used by the watch feed. */
+/** Existing view_admin record: includes private diary cues, never used by the watch feed. */
 export async function readVisualProductionExport(db: DrizzleDB, gameIdOrSlug: string) {
   const [game] = await db.select({ id: schema.games.id, config: schema.games.config, status: schema.games.status }).from(schema.games).where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug)));
   if (!game) throw new Error("Game not found");

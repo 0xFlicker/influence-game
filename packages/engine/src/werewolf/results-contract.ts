@@ -11,7 +11,7 @@ export interface WerewolfResultPlayer {
   elimination: { day: number; kind: "night" | "vote"; source: WerewolfResultSource } | null;
 }
 export interface WerewolfResults {
-  rulesVersion: 7; day: number; maxDays: number; outcome: WerewolfOutcome;
+  rulesVersion: 8; day: number; maxDays: number; outcome: WerewolfOutcome;
   source: WerewolfResultSource; players: WerewolfResultPlayer[]; recap: WerewolfResultRecap[];
 }
 export function werewolfOutcomeTitle(outcome: WerewolfOutcome): string {

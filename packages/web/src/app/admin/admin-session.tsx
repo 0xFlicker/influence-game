@@ -2,14 +2,15 @@
 
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, useCallback } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, apiFetch } from "@/lib/api";
+import { ApiError, apiFetch,apiFetchMedia } from "@/lib/api";
 
-export type Operation = { phase: "submitting" | "unknown" | "accepted" | "rejected"; url: string; body: Record<string, unknown>; result?: unknown; error?: string };
+export type Operation = { phase: "submitting" | "unknown" | "accepted" | "rejected"; url: string; method: "POST" | "PATCH"; accessResource: string; body: Record<string, unknown>; result?: unknown; error?: string };
 /** Browser-session ownership. Server receipts still own accepted work. Never persist credentials or image bytes. */
 export class AdminSession {
   active = true;
   private values = new Map<string, unknown>();
   private listeners = new Set<() => void>();
+  private activeReads = new Set<{ url: string; valid: boolean }>();
   constructor(readonly scope: string) {}
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   get<T>(key: string): T | undefined { return this.values.get(key) as T | undefined; }
@@ -18,41 +19,59 @@ export class AdminSession {
   clearMatching(predicate: (key: string) => boolean) { for (const key of this.values.keys()) if (predicate(key)) this.values.delete(key); this.emit(); }
   pending(prefix: string) { return [...this.values.entries()].some(([key, value]) => key.startsWith(prefix) && value && typeof value === "object" && "phase" in value && (value.phase === "submitting" || value.phase === "unknown")); }
   activate() { this.active = true; }
-  dispose() { this.active = false; this.values.clear(); this.emit(); }
+  dispose() { this.invalidateReadsMatching(() => true); this.active = false; this.values.clear(); this.emit(); }
+  invalidateReadsMatching(predicate: (url: string) => boolean) {
+    for (const read of this.activeReads) if (predicate(read.url)) read.valid = false;
+  }
   private emit() { for (const listener of this.listeners) listener(); }
   /** Fence private evidence reads too, without caching image bytes in the session. */
-  async read<T>(url: string, signal?: AbortSignal): Promise<T> {
+  async read<T>(url: string, signal?: AbortSignal, decode?:()=>Promise<T>): Promise<T> {
       const family = adminAccessResource(url), fence = `access-version:${family}`, denied = `access-denied:${family}`;
       const version = this.get<number>(fence) ?? 0;
+      const read = { url, valid: true };
+      this.activeReads.add(read);
       try {
-        const result = await apiFetch<T>(url, { signal, cache: "no-store" });
-        if (!this.active || signal?.aborted || version !== (this.get<number>(fence) ?? 0)) throw new Error("Administration access changed; refresh to retry");
+        const result = decode ? await decode() : await apiFetch<T>(url, { signal, cache: "no-store" });
+        if (!this.active || !read.valid || signal?.aborted || version !== (this.get<number>(fence) ?? 0)) throw new Error("Administration access changed; refresh to retry");
         this.set(denied, false);
         return result;
       } catch (error) {
+        if (!read.valid) throw new Error("Administration access changed; refresh to retry");
         if (this.active && !signal?.aborted && accessDenied(error)) {
           this.set(fence, (this.get<number>(fence) ?? 0) + 1);
           this.set(denied, true);
           this.clearMatching(key => (key.startsWith("operation:") || key.startsWith("draft:") || key.startsWith("ui:")) && key.includes(family));
         }
         throw error;
-      }
+      } finally { this.activeReads.delete(read); }
   }
-  async execute<T>(key: string, url: string, input: Record<string, unknown>, retryUnknown = true): Promise<T | undefined> {
+  readMedia(url:string,signal?:AbortSignal):Promise<Blob> {
+    return this.read(url,signal,() => apiFetchMedia(url,{signal,cache:"no-store"}));
+  }
+  async execute<T>(key: string, url: string, input: Record<string, unknown>, retryUnknown = true,
+    options: { method?: "POST" | "PATCH"; accessResource?: string } = {}): Promise<T | undefined> {
     const previous = this.get<Operation>(key);
     if (!this.active || previous?.phase === "submitting") return;
     if (previous?.phase === "unknown" && !retryUnknown) throw new Error("Check the saved receipt before submitting this operation again.");
     const body = previous?.phase === "unknown" ? previous.body : structuredClone(input);
     const target = previous?.phase === "unknown" ? previous.url : url;
-    const submitting: Operation = { phase: "submitting", url: target, body };
+    const method = previous?.phase === "unknown" ? previous.method : options.method ?? "POST";
+    const resource = previous?.phase === "unknown" ? previous.accessResource : adminAccessResource(options.accessResource ?? target);
+    const submitting: Operation = { phase: "submitting", url: target, method, accessResource: resource, body };
     this.set(key, submitting);
     try {
-      const result = await apiFetch<T>(target, { method: "POST", body: JSON.stringify(body) });
+      const result = await apiFetch<T>(target, { method, body: JSON.stringify(body) });
       if (!this.active || this.get(key) !== submitting) return;
-      this.set<Operation>(key, { phase: "accepted", url: target, body, result });
+      this.set<Operation>(key, { ...submitting, phase: "accepted", result });
       return result;
     } catch (error) {
-      if (this.get(key) === submitting) this.set<Operation>(key, { phase: error instanceof ApiError && error.status < 500 ? "rejected" : "unknown", url: target, body, error: error instanceof Error ? error.message : "Response unavailable" });
+      if (this.active && accessDenied(error)) {
+        const family = resource, fence = `access-version:${family}`;
+        this.set(fence,(this.get<number>(fence) ?? 0)+1);
+        this.set(`access-denied:${family}`,true);
+        this.clearMatching(candidate => (candidate.startsWith("operation:") || candidate.startsWith("draft:") || candidate.startsWith("ui:")) && candidate.includes(family));
+      }
+      if (this.get(key) === submitting) this.set<Operation>(key, { ...submitting, phase: error instanceof ApiError && error.status < 500 ? "rejected" : "unknown", error: error instanceof Error ? error.message : "Response unavailable" });
       throw error;
     }
   }
@@ -82,7 +101,8 @@ export function useAdminValue<T>(key: string, initial: T) {
 }
 export const accessDenied = (error: unknown) => error instanceof ApiError && (error.status === 401 || error.status === 403);
 export function adminAccessResource(url: string): string {
-  return url.match(/^\/api\/admin\/production\/games\/[^/]+/)?.[0]
+  return url.match(/^\/api\/admin\/production\/library(?=\?|$)/)?.[0]
+    ?? url.match(/^\/api\/admin\/production\/games\/[^/]+/)?.[0]
     ?? url.match(/^\/api\/admin\/werewolf\/[^/]+/)?.[0]
     ?? url.match(/^\/api\/admin\/games\/[^/]+\/visual/)?.[0]
     ?? url;

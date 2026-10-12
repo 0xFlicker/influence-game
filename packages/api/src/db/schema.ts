@@ -42,6 +42,7 @@ import {
   type PlayerContinuityCapsule,
   type ProviderAttemptAccountingFacts,
   type ProviderAttemptRecord,
+  type RetrospectiveInputV1,
 } from "@influence/engine";
 import type { AgentGender } from "../lib/agent-gender.js";
 import type {
@@ -70,6 +71,51 @@ import type {
 import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
+
+/** One frozen private context per game; canonical history owns all speech/progress. */
+export const gameRetrospectiveInputs = pgTable("game_retrospective_inputs", {
+  gameId: text("game_id").primaryKey().references(() => games.id, { onDelete: "cascade" }),
+  contractVersion: integer("contract_version").notNull().default(1),
+  outcomeEventSequence: integer("outcome_event_sequence").notNull(),
+  outcomeEventHash: text("outcome_event_hash").notNull(),
+  inputHash: text("input_hash").notNull(),
+  input: jsonb("input").notNull().$type<RetrospectiveInputV1>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  check("game_retrospective_inputs_version_check", sql`${table.contractVersion} = 1`),
+  check("game_retrospective_inputs_source_check", sql`${table.outcomeEventSequence} > 0 AND ${table.outcomeEventHash} ~ '^sha256:[0-9a-f]{64}$' AND ${table.inputHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("game_retrospective_inputs_shape_check", sql`
+    jsonb_typeof(${table.input}) = 'object'
+    AND ${table.input} ?& ARRAY['version', 'outcome', 'sections', 'dialogue']
+    AND (${table.input} - 'version' - 'outcome' - 'sections' - 'dialogue') = '{}'::jsonb
+    AND (${table.input}->'version') IS NOT DISTINCT FROM '1'::jsonb
+    AND jsonb_typeof(${table.input}->'sections') = 'array'
+    AND jsonb_typeof(${table.input}->'dialogue') = 'array'
+    AND jsonb_typeof(${table.input}->'outcome') = 'object'
+    AND (${table.input}->'outcome') ?& ARRAY['gameId', 'gameKind', 'eventSequence', 'eventHash']
+    AND ((${table.input}->'outcome') - 'gameId' - 'gameKind' - 'eventSequence' - 'eventHash') = '{}'::jsonb
+    AND jsonb_typeof(${table.input}->'outcome'->'eventSequence') = 'number'
+    AND (${table.input}->'outcome'->>'gameId') IS NOT DISTINCT FROM ${table.gameId}
+    AND (${table.input}->'outcome'->>'gameKind') IN ('influence', 'werewolf')
+    AND (${table.input}->'outcome'->>'eventSequence') IS NOT DISTINCT FROM ${table.outcomeEventSequence}::text
+    AND (${table.input}->'outcome'->>'eventHash') IS NOT DISTINCT FROM ${table.outcomeEventHash}
+  `),
+  check("game_retrospective_inputs_size_check", sql`octet_length(${table.input}::text) <= 262144`),
+]);
+
+/** Sparse editorial metadata; canonical history and cut projects do not live here. */
+export const productionMomentAnnotations = pgTable("production_moment_annotations", {
+  gameId: text("game_id").notNull().references(() => games.id, {onDelete:"cascade"}),
+  momentKey: text("moment_key").notNull(),
+  tags: jsonb("tags").notNull().$type<Record<string,string>>(),
+  revision: integer("revision").notNull(),
+  updatedById: text("updated_by_id").notNull().references(() => users.id),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).notNull().defaultNow(),
+}, table => [
+  primaryKey({columns:[table.gameId,table.momentKey]}),
+  check("production_moment_annotations_revision_positive",sql`${table.revision} > 0`),
+  check("production_moment_annotations_tags_object",sql`jsonb_typeof(${table.tags}) = 'object'`),
+]);
 export type PostgameMediaStatus =
   | "waiting_inputs"
   | "waiting_music"

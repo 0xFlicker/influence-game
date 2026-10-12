@@ -14,7 +14,7 @@ export function werewolfCutSource(events: readonly WerewolfEvent[], slug: string
     const { entry, cursor } = frame;
     if (!entry || entry.kind === "phase") continue;
     // Mystery discovery excludes the terminal result, which would color earlier copy.
-    if (audience === "mystery" && entry.kind === "result") continue;
+    if (audience === "mystery" && (entry.kind === "result" || entry.kind === "speech" && entry.purpose === "retrospective")) continue;
     // Keep the pack's choices, resolved outcome and first morning exchange together.
     // Membership is canonical; no speech text is interpreted as a phase or action.
     if (entry.kind === "night") resolvedNights.add(entry.day);
@@ -23,8 +23,8 @@ export function werewolfCutSource(events: readonly WerewolfEvent[], slug: string
       || (entry.kind === "discussion" && entry.contribution.thread === 1 && resolvedNights.has(entry.day));
     const group = nightPacket ? `night:${entry.day}` : entry.kind === "discussion" ? `day:${entry.day}:thread:${entry.contribution.thread}`
       : entry.kind === "vote" ? `day:${entry.day}:vote:${entry.result.thread}`
-      : entry.kind === "speech" ? `${entry.day}:${entry.audience}` : `${entry.day}:${entry.kind}`;
-    const base = { id: `w:${cursor}`, group, label: entry.day === 0 ? "Introductions" : `Day ${entry.day}`, position: cursor,
+      : entry.kind === "speech" ? entry.purpose === "retrospective" ? "retrospective" : `${entry.day}:${entry.audience}` : `${entry.day}:${entry.kind}`;
+    const base = { id: `w:${cursor}`, group, label: entry.kind === "speech" && entry.purpose === "retrospective" ? "Retrospective" : entry.day === 0 ? "Introductions" : `Day ${entry.day}`, position: cursor,
       replayHref: werewolfMomentHref(slug, audience, cursor) };
     if (entry.kind === "speech" || entry.kind === "discussion") {
       const actorId = entry.kind === "speech" ? entry.actorId : entry.contribution.actorId;
