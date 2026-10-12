@@ -331,7 +331,7 @@ test("Werewolf admin workspace supports desktop and mobile cost, activity, produ
     await page.setViewport({ width: 1440, height: 1000 });
     await text(page, game.slug);
     await page.click(`a[href^="/admin/werewolf/${game.id}?"]`);
-    await text(page, "Game overview"); await text(page, "RULES V8");
+    await text(page, "Game overview"); await text(page, "RULES V7");
     const overviewUrl = page.url();
     expect(new URL(page.url()).searchParams.get("q")).toBe(game.slug);
     await checkAdminContinuity(page, game.id);
