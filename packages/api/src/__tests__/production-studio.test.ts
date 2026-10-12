@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { Phase } from "@influence/engine";
+import { GameState, Phase } from "@influence/engine";
 import { completedWerewolfResultsFixture as werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
 import { replayWerewolf, werewolfActionPlans } from "@influence/engine/werewolf";
 import { werewolfConversationScene } from "@influence/engine/werewolf/visual-scenes";
@@ -42,11 +42,14 @@ function request(path: string, body?: unknown, authorization = token) {
   return app.request(path, { method: body === undefined ? "GET" : "POST", headers: { Authorization: `Bearer ${authorization}`, ...(body !== undefined && { "Content-Type": "application/json" }) },
     ...(body !== undefined && { body: JSON.stringify(body) }) });
 }
-async function influence(id = "studio-influence") {
+async function influence(id = "studio-influence", retrospective = true) {
   const gameId = await insertGame(db, { id, status: "completed" });
   await db.insert(schema.gamePlayers).values(["atlas", "echo", "mira", "nyx"].map(id => ({ id, gameId, persona: JSON.stringify({ name: id, personality: "Frozen" }), agentConfig: "{}" })));
   const ownerEpoch = await insertOwner(db, gameId);
-  const events = withRetrospective(withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira"), 1000);
+  const competition = withJuryWinner(createResolvedRoundCanonicalEventFixture(gameId), "mira");
+  const original = GameState.fromCanonicalEvents(competition);
+  original.recordPhaseEntered(Phase.END);
+  const events = retrospective ? withRetrospective(competition, 1000) : original.getCanonicalEvents();
   await appendGameEvents(db, { gameId, ownerEpoch, events });
   await insertRetrospectiveTranscriptFixture(db, events);
   const [transcript] = await db.insert(schema.transcripts).values({ gameId, round: 1, phase: Phase.LOBBY, scope: "public", fromPlayerId: "atlas",
@@ -126,6 +129,28 @@ test("missing frozen character art uses presentation fallback while available bo
   expect(refreshed.window.players.find(player=>player.id===legacy.id)?.avatarUrl).toBeNull();
   const tamperedBody = `${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify({...source.snapshot,availableCharacterAssets:[]}))}&image=body`;
   expect((await request(tamperedBody)).status).toBe(409);
+});
+
+test.each([true, false])("Influence without a retrospective remains editable in Studio (canonical history: %s)", async canonicalHistory => {
+  const f = await influence("studio-existing-influence", false);
+  if (!canonicalHistory) await db.delete(schema.gameEvents).where(eq(schema.gameEvents.gameId, f.gameId));
+  await producer();
+  const beforeGame = await db.select().from(schema.games).where(eq(schema.games.id, f.gameId));
+  const beforeEvents = await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, f.gameId));
+  const source = await request(`${root(f.gameId)}/source?audience=public&thinking=on`);
+  expect(source.status).toBe(200);
+  const value = await source.json() as Awaited<ReturnType<typeof readInfluenceProductionSource>>;
+  expect(value.catalog.moments.some(moment => moment.purpose === "retrospective")).toBeFalse();
+  expect(value.messages.some(message => message.text === "Accepted original speech")).toBeTrue();
+  for (const expectedRevision of [0, 1]) {
+    const tags = { cut: `revision-${expectedRevision + 1}` };
+    const save = await request(`${root(f.gameId)}/moments/${encodeURIComponent(f.speech.id)}/annotation`, annotationBody(value, expectedRevision, tags));
+    expect(save.status).toBe(200);
+    expect(await save.json()).toMatchObject({ momentId: f.speech.id, revision: expectedRevision + 1, tags });
+  }
+  expect(await db.select().from(schema.games).where(eq(schema.games.id, f.gameId))).toEqual(beforeGame);
+  expect(await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, f.gameId))).toEqual(beforeEvents);
+  expect(await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, f.gameId))).toEqual([]);
 });
 
 test("metadata grants never acquire editorial source, even with privileged JWT claims", async () => {

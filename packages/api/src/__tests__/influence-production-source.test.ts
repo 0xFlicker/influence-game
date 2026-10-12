@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { Phase, type GameTurnIntentV1 } from "@influence/engine";
 import { planVisualScene } from "@influence/engine/visual-scene-plan";
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import sharp from "sharp";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { buildInfluenceProductionSourceSnapshot, decodeInfluenceProductionSnapshot, readInfluenceProductionSource } from "../services/influence-production-source.js";
@@ -53,6 +53,13 @@ test("complete retrospective catalog requires exact captured canonical speech an
   await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("canonical speech");
   await db.delete(schema.transcripts).where(eq(schema.transcripts.id, speech.id));
   await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("missing its captured dialogue");
+});
+
+test("a completed Influence game that entered a retrospective still requires its completion proof", async () => {
+  const { gameId, events } = await fixture();
+  const started = events.find(event => event.type === "game.phase_entered" && event.payload.phase === Phase.RETROSPECTIVE)!;
+  await db.delete(schema.gameEvents).where(and(eq(schema.gameEvents.gameId, gameId), gt(schema.gameEvents.sequence, started.sequence)));
+  await expect(readInfluenceProductionSource(db, gameId)).rejects.toThrow("retrospective completion proof");
 });
 
 test("two dialogue pointers for one statement cannot conceal another statement's missing captured dialogue",async () => {

@@ -139,7 +139,10 @@ export async function buildInfluenceProductionSourceSnapshot(db: SourceDB, idOrS
     throw new InfluenceProductionSourceError("Influence accepted event head changed");
   const throughEventSequence = supplied?.throughEventSequence ?? history.lastTrustedSequence;
   const complete = history.events.length ? replayCanonicalEvents(history.events.map(event => event.envelope)) : null;
-  if (game.status === "completed" && (!complete?.retrospective?.completedAtEventSequence || complete.phase !== Phase.END))
+  const enteredRetrospective = Boolean(complete?.retrospective)
+    || history.events.some(({ envelope }) => envelope.phase === Phase.RETROSPECTIVE);
+  if (game.status === "completed" && enteredRetrospective
+    && (!complete?.retrospective?.completedAtEventSequence || complete.phase !== Phase.END))
     throw new InfluenceProductionSourceError("Completed game has no retrospective completion proof");
   if (throughEventSequence > history.lastTrustedSequence || throughEventSequence !== 0 && !history.events.some(event => event.sequence === throughEventSequence))
     throw new InfluenceProductionSourceError("Production snapshot is outside the accepted event prefix");

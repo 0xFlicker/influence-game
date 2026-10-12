@@ -2,6 +2,8 @@
 
 Open **Admin → Production**, choose a completed or validated visually paused Influence or Werewolf game, and open its studio. The library uses bounded metadata pages. A game played without generated imagery remains editable with portraits.
 
+Games played before retrospectives remain editable. Influence sources retain their original accepted history and dialogue, including older classic games without a canonical event log; Werewolf v7 retains its original outcome boundary. Retrospective completion proof is required only after the game enters its canonical retrospective. Opening Studio never migrates a game or generates missing final statements.
+
 Werewolf characters whose frozen portrait is unavailable use the replay stage's existing House portrait or name-card fallback in Studio and local export. Available frozen full-body art still appears even without a portrait. The game-start identity remains authoritative. Preview/export use the same pinned availability and rendering; **Refresh published visuals** explicitly admits later available frozen bytes. A failed read of an asset already included in the pin remains an error.
 
 Werewolf Studio opens in **Omniscient** when the link has no audience choice, making accepted thinking available immediately. Choose **Tools → Source settings → Mystery** to edit the Mystery view; an explicit `audience=mystery` link retains that choice. Public replay keeps its existing audience behavior.
