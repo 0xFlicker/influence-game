@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { Phase } from "@influence/engine";
@@ -19,6 +20,7 @@ import { createInitialGameExecutionStateV1, initializeGameExecutionAuthority } f
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { readInfluenceProductionSource } from "../services/influence-production-source.js";
 import { buildWerewolfProductionSourceSnapshot, readWerewolfProductionSource } from "../services/werewolf-production-source.js";
+import { readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { createResolvedRoundCanonicalEventFixture, insertGame, insertOwner, withJuryWinner, withRetrospective, insertRetrospectiveTranscriptFixture } from "./durable-run-test-utils.js";
 import { grantTestAuthority } from "./rbac-fixtures.js";
 import { setupTestDB } from "./test-utils.js";
@@ -67,6 +69,64 @@ function annotationBody(source: Awaited<ReturnType<typeof readInfluenceProductio
 function descriptorHash(descriptor: Omit<ProductionExportDescriptor, "hash">) {
   return `sha256:${createHash("sha256").update(stableProductionJson(descriptor)).digest("hex")}`;
 }
+
+test("missing frozen character art uses presentation fallback while available body art and the source pin remain exact", async () => {
+  await producer();
+  const id = "studio-missing-character-art", events = await werewolfResultsFixture("saved", id, 2);
+  const started = events.find(event => event.type === "werewolf.started")!;
+  const [legacy, bodyOnly, lostPortrait] = started.payload.players;
+  if (!legacy || !bodyOnly || !lostPortrait) throw new Error("Character fallback fixture needs three players");
+  legacy.agentProfileId = "legacy-without-revision"; legacy.contentRevisionId = null;
+  bodyOnly.agentProfileId = "body-only-profile"; bodyOnly.contentRevisionId = "body-only-revision";
+  lostPortrait.agentProfileId = "lost-portrait-profile"; lostPortrait.contentRevisionId = "lost-portrait-revision";
+  const bodyBytes = await readFile(new URL("../../../web/public/avatars/personas/observer.png", import.meta.url));
+  const portraitBytes = await readFile(new URL("../../../web/public/avatars/personas/honest.png", import.meta.url));
+  const bodyHash = createHash("sha256").update(bodyBytes).digest("hex"), portraitHash = createHash("sha256").update(portraitBytes).digest("hex");
+  await db.insert(schema.agentProfiles).values([legacy,bodyOnly,lostPortrait].map(player => ({
+    id:player.agentProfileId!,userId:"operator",name:`Today's ${player.name}`,personality:"Changed",avatarUrl:"/api/uploads/local?key=unsubmitted-current.png",
+  })));
+  await db.insert(schema.agentContentRevisions).values([
+    {id:bodyOnly.contentRevisionId,agentProfileId:bodyOnly.agentProfileId,userId:"operator",fingerprint:"body-only",snapshot:{fullBodyReferenceUrl:"/original-body.png",assets:{"/original-body.png":bodyHash}}},
+    {id:lostPortrait.contentRevisionId,agentProfileId:lostPortrait.agentProfileId,userId:"operator",fingerprint:"lost-portrait",snapshot:{avatarUrl:"/original-portrait.png",assets:{"/original-portrait.png":portraitHash}}},
+  ]);
+  await db.insert(schema.agentContentAssets).values({hash:bodyHash,bytes:bodyBytes});
+  await db.insert(schema.games).values({id,slug:id,gameKind:"werewolf",status:"completed",startedAt:"2026-09-01T00:00:00.000Z",config:"{}"});
+  await db.insert(schema.werewolfEvents).values(events.map(event => ({gameId:id,sequence:event.sequence,event})));
+  const source = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true});
+  for (const audience of ["mystery","omniscient"] as const) {
+    const read = await readWerewolfProductionSource(db,id,{audience,thinking:audience === "omniscient"});
+    for (const players of [read.window.players,...read.window.moments.flatMap(moment=>[moment.snapshot.players,...(moment.night ? [moment.night.before.players] : [])])]) {
+      for (const player of [legacy,bodyOnly,lostPortrait]) expect(players.find(identity=>identity.id===player.id)?.avatarUrl).toBeNull();
+      expect(players.find(player=>player.id===legacy.id)?.fullBodyReferenceUrl).toBeNull();
+      expect(players.find(player=>player.id===bodyOnly.id)?.fullBodyReferenceUrl).toContain(`/source/characters/${bodyOnly.id}?`);
+      expect(players.find(player=>player.id===bodyOnly.id)?.fullBodyReferenceUrl).toEndWith("&image=body");
+    }
+    expect(JSON.stringify(read.window)).not.toContain("unsubmitted-current");
+    if (audience === "mystery") expect(read.catalog.moments.some(moment=>moment.kind==="thinking")).toBe(false);
+  }
+  const publicWatch = await readWerewolfWatch(db,id,"mystery",1,10);
+  expect(publicWatch.players.find(player=>player.id===legacy.id)?.avatarUrl).toContain(`/api/werewolf/${id}/characters/${legacy.id}`);
+  const bodyUrl = source.window.players.find(player=>player.id===bodyOnly.id)!.fullBodyReferenceUrl!;
+  const body = await request(bodyUrl); expect(body.status).toBe(200); expect(Buffer.from(await body.arrayBuffer())).toEqual(bodyBytes);
+  const legacyUrl = `${root(id)}/source/characters/${legacy.id}?snapshot=${encodeURIComponent(JSON.stringify(source.snapshot))}`;
+  expect((await request(legacyUrl)).status).toBe(404);
+  const thought = source.catalog.moments.find(moment=>moment.kind==="thinking" && moment.actorId===legacy.id)!;
+  expect(thought).toBeTruthy();
+  const frozenResponse = await request(`${root(id)}/selection`,{snapshot:source.snapshot,audience:"omniscient",thinking:true,
+    selection:{mode:"ids",thinking:true,ids:[thought.id]},expectedMomentIds:[thought.id],settings,copy:{}});
+  expect(frozenResponse.status).toBe(200); const frozen = await frozenResponse.json() as ProductionExportDescriptor;
+  await db.insert(schema.agentContentAssets).values({hash:portraitHash,bytes:portraitBytes});
+  const pinned = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot});
+  expect(pinned.snapshot).toEqual(source.snapshot);
+  expect(pinned.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toBeNull();
+  expect((await request(`${root(id)}/selection/validate`,frozen)).status).toBe(200);
+  const refreshed = await readWerewolfProductionSource(db,id,{audience:"omniscient",thinking:true,snapshot:source.snapshot,refreshVisuals:true});
+  expect(refreshed.snapshot.throughEventSequence).toBe(source.snapshot.throughEventSequence);
+  expect(refreshed.window.players.find(player=>player.id===lostPortrait.id)?.avatarUrl).toContain(`/source/characters/${lostPortrait.id}`);
+  expect(refreshed.window.players.find(player=>player.id===legacy.id)?.avatarUrl).toBeNull();
+  const tamperedBody = `${root(id)}/source/characters/${bodyOnly.id}?snapshot=${encodeURIComponent(JSON.stringify({...source.snapshot,availableCharacterAssets:[]}))}&image=body`;
+  expect((await request(tamperedBody)).status).toBe(409);
+});
 
 test("metadata grants never acquire editorial source, even with privileged JWT claims", async () => {
   const f = await influence();
