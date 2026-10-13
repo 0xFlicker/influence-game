@@ -179,10 +179,16 @@ for (const id of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("
       counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0},viewerDecisionEvent:event}));
     const source = {kind:"influence" as const,game:{id:"g",slug:"g",status:"completed" as const,players,gameKernel:"format" as const},messages:[],frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],publicationSnapshot:{}}};
     const catalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:[],frames})});
-    const moments = await bindInfluenceProductionPresentation({source,catalog,thoughts:[]});
-    const base = buildExportCues(source);
-    const compiled = compilePresentation({...settings,source:moments,selectedIds:catalog.moments.map(moment => moment.id)});
-    expect(compiled.cues.map(cue => cue.picture)).toEqual(base.map(cue => cue.picture));
-    expect(compiled.cues.map(cue => cue.timing.baseDurationMs)).toEqual(base.map(cue => cue.timing.baseDurationMs));
+    const canonical = buildExportCues(source);
+    for (const roster of [players,[...players].reverse(),[...players.slice(1),players[0]!]]) {
+      const reordered = {...source,game:{...source.game,players:roster}};
+      const moments = await bindInfluenceProductionPresentation({source:reordered,catalog,thoughts:[]});
+      const base = buildExportCues(reordered);
+      const compiled = compilePresentation({...settings,source:moments,selectedIds:catalog.moments.map(moment => moment.id)});
+      expect(moments.map(moment=>moment.id)).toEqual(catalog.moments.map(moment=>moment.id));
+      expect(compiled.cues.map(cue => cue.picture)).toEqual(base.map(cue => cue.picture));
+      expect(compiled.cues.map(cue => cue.timing.baseDurationMs)).toEqual(base.map(cue => cue.timing.baseDurationMs));
+      expect(base.map(cue=>cue.picture.kind==="influence" ? cue.picture.cue : null)).toEqual(canonical.map(cue=>cue.picture.kind==="influence" ? cue.picture.cue : null));
+    }
   });
 }

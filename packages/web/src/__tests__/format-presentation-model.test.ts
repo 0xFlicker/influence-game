@@ -27,6 +27,20 @@ const roster = [
   { id: "echo", name: "Echo" },
 ];
 
+it("canonical eligibility preserves ballot reveal order when the identity roster is permuted", () => {
+  const canonical = FORMAT_KERNEL_VIEWER_ROSTER.map(player => player.id);
+  const decisions = createMajorityEliminationClearViewerDecisions();
+  const input = {gameId:FORMAT_KERNEL_VIEWER_GAME_ID,gameKernel:"format" as const,
+    decisions,eligiblePlayerIdsByRound:new Map(decisions.map(event=>[event.round,canonical] as const))};
+  const expected = compileFormatPresentationPrefix({...input,roster:FORMAT_KERNEL_VIEWER_ROSTER});
+  expect(expected.status).toBe("ready");
+  for (const permuted of [[...FORMAT_KERNEL_VIEWER_ROSTER].reverse(),[...FORMAT_KERNEL_VIEWER_ROSTER.slice(1),FORMAT_KERNEL_VIEWER_ROSTER[0]!]]) {
+    const result = compileFormatPresentationPrefix({...input,roster:permuted});
+    expect(result).toEqual(expected);
+    expect(result.cues.filter(cue=>cue.kind==="format_roll_call").map(cue=>cue.ballot.voterId)).toEqual(canonical);
+  }
+});
+
 function event<T extends ViewerDecisionEvent>(
   value: Omit<T, "timestamp" | "round"> & Partial<Pick<T, "timestamp" | "round">>,
 ): T {

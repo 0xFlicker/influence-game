@@ -625,6 +625,7 @@ for (const proof of ["thinking", "influence-retrospective", "werewolf-retrospect
 test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")(`Actual Studio frozen ${proof} cut agrees with the encoded movie`, async () => {
   const kind = proof === "influence-retrospective" ? "influence" : "werewolf", audience = kind === "influence" ? "public" : "omniscient";
   const id = studioFixture[kind].id;
+  const savedAnnotations = await database.db.select().from(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
   const page = await createAuthenticatedPage(browser, studioFixture.producer.token, `${webUrl}/admin/production/games/${id}?audience=${audience}`);
   let step = "source";
   try {
@@ -680,7 +681,13 @@ test.skipIf(process.env.STUDIO_ENCODED_PROOF !== "1")(`Actual Studio frozen ${pr
     console.error(`[Studio encoded: ${step}]`, await page.evaluate("document.body.innerText"));
     await page.screenshot({path:temporaryPath("production-studio-encoded-failure.png")});
     throw error;
-  } finally {await page.close();}
+  } finally {
+    try {await page.close();}
+    finally {
+      await database.db.delete(schema.productionMomentAnnotations).where(eq(schema.productionMomentAnnotations.gameId,id));
+      if (savedAnnotations.length) await database.db.insert(schema.productionMomentAnnotations).values(savedAnnotations);
+    }
+  }
 }, 360_000);
 }
 
@@ -1506,4 +1513,64 @@ test("Studio opens, seeks and freezes a Werewolf thought with missing frozen art
     }
     expect(unexpected).toEqual([]);
   } finally {await page.close();}
+},360_000);
+
+test("Studio opens, seeks and exports canonical Influence ballots with a reordered database roster", async () => {
+  const id = studioFixture.influence.id, origin = `http://127.0.0.1:${api.port}`;
+  const read = async () => {
+    const response = await fetch(`${origin}/api/admin/production/games/${id}/source?audience=public&thinking=on`,{headers:{Authorization:`Bearer ${studioFixture.producer.token}`}});
+    expect(response.status).toBe(200);
+    return await response.json() as {catalog:ProductionCatalog;game:{players:{id:string}[]};frames:{players:{id:string}[]}[];nextCursor?:number|null};
+  };
+  const before = await read(), canonical = before.frames[0]!.players.map(player=>player.id);
+  expect(before.nextCursor ?? null).toBeNull();
+  const seats = await database.db.select({id:schema.gamePlayers.id,joinedAt:schema.gamePlayers.joinedAt}).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId,id));
+  let page:Page|undefined;
+  try {
+    for (const [index,playerId] of [...canonical].reverse().entries()) await database.db.update(schema.gamePlayers)
+      .set({joinedAt:new Date(Date.UTC(2026,8,1,0,0,index)).toISOString()}).where(eq(schema.gamePlayers.id,playerId));
+    const reordered = await read();
+    expect(reordered.game.players.map(player=>player.id)).toEqual([...canonical].reverse());
+    expect(reordered.frames[0]!.players.map(player=>player.id)).toEqual(canonical);
+    expect(reordered.catalog.moments.map(moment=>moment.id)).toEqual(before.catalog.moments.map(moment=>moment.id));
+    const ballot = reordered.catalog.moments.find(moment=>moment.part.kind==="influence-presentation" && moment.part.presentation.kind==="format_roll_call")!;
+    expect(ballot.actorId).toBe(canonical[0]);
+    page = await createAuthenticatedPage(browser,studioFixture.producer.token,`${webUrl}/admin/production/games/${id}`);
+    await page.setViewport({width:1800,height:1100}); await page.waitForSelector('[data-composition-frame]');
+    expect(await page.$('[role="alert"]')).toBeNull();
+    await page.click(`[data-moment-id="${ballot.id}"] > button:first-child`);
+    await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(ballot.id)}`);
+    const frame = await page.$eval('[data-preview-frame]',node=>Number(node.getAttribute('data-preview-frame')));
+    const pixels = await sampleStudioFrame(page,frame); await captureStudioFrame(page,0);
+    expect(await sampleStudioFrame(page,frame)).toBe(pixels);
+    await configureStudioCut(page,"None","None"); await openStudioDialog(page,"Selected cut rule");
+    await page.click('dialog[open] details summary'); await chooseStudioOption(page,"Ballot inclusion","All"); await closeStudioDialog(page);
+    await openStudioDialog(page,"Presentation");
+    for (const [label,value] of [["readingRate",4],["thinkingRate",4],["motionScale",2],["conversationGapMs",0]] as const) await setStudioInput(page,label,String(value));
+    await page.evaluate("(()=>{const input=Array.from(document.querySelectorAll('label')).find(label=>label.textContent?.trim()==='Music')?.querySelector('input');if(input?.checked)input.click();})()");
+    await closeStudioDialog(page); await openStudioDialog(page,"Export selected cut");
+    await chooseStudioOption(page,"Output size","640 pixels · draft"); await chooseStudioOption(page,"Frames per second","24 fps"); await closeStudioDialog(page);
+    await clickStudioButton(page,"Selected cut");
+    await page.waitForFunction("document.querySelector('[data-preview-view]')?.getAttribute('data-preview-view')==='cut' && !!document.querySelector('[data-composition-frame]')");
+    await page.click(`[data-moment-id="${ballot.id}"] > button:first-child`);
+    await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(ballot.id)}`);
+    await page.screenshot({path:temporaryPath("production-studio-ballot-order-desktop.png")});
+    await page.setViewport({width:390,height:844}); expect(await page.evaluate("document.documentElement.scrollWidth<=innerWidth")).toBe(true);
+    await page.screenshot({path:temporaryPath("production-studio-ballot-order-narrow.png")}); await page.setViewport({width:1800,height:1100});
+    const frozenResponse = page.waitForResponse(response=>response.url().endsWith('/selection') && response.request().method()==='POST');
+    await openStudioDialog(page,"Export selected cut"); await clickStudioButton(page,"Download selected export");
+    const response = await frozenResponse; expect(response.status()).toBe(200);
+    const descriptor = await response.json() as ProductionExportDescriptor; await closeStudioDialog(page);
+    expect(descriptor.momentIds).toEqual(reordered.catalog.moments.filter(moment=>moment.kind==="ballot").map(moment=>moment.id));
+    if (process.env.STUDIO_ENCODED_PROOF === "1") {
+      await page.evaluate("(()=>{const stage=document.querySelector('[data-preview-frame]').parentElement;stage.style.flex='none';stage.style.width='642px';stage.style.height='362px';})()");
+      await page.waitForFunction("(()=>{const r=document.querySelector('[data-preview-frame]').getBoundingClientRect();return r.width===640 && r.height===360;})()");
+      const previewPage = page;
+      await verifyStudioEncodedParity({descriptor,token:studioFixture.producer.token,origin,purpose:"ballot",
+        output:await mkdtemp(temporaryPath("production-studio-ballot-order-encoded-")),captureFrame:frame=>captureStudioFrame(previewPage,frame)});
+    }
+  } finally {
+    try {await page?.close();}
+    finally {for (const seat of seats) await database.db.update(schema.gamePlayers).set({joinedAt:seat.joinedAt}).where(eq(schema.gamePlayers.id,seat.id));}
+  }
 },360_000);

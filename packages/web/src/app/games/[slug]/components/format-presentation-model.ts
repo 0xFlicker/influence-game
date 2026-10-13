@@ -168,7 +168,8 @@ export function compileFormatPresentationPrefix({
     }
 
     const eligiblePlayerIds = eligiblePlayerIdsByRound?.has(decision.round)
-      ? rosterIds.filter((id) => eligiblePlayerIdsByRound.get(decision.round)?.includes(id))
+      // Canonical frames own reveal order; database seat order is identity only.
+      ? eligiblePlayerIdsByRound.get(decision.round)!.filter((id) => rosterIds.includes(id))
       : rosterIds;
     const failure = applyDecision({
       gameId,
