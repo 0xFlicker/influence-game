@@ -155,6 +155,9 @@ bun run test:e2e:layered-auth
 bun run test:e2e:format-viewer
 bun run test:browser:api
 
+# Reproduce one of the three API browser CI jobs (choose 1, 2, or 3)
+bun run test:browser:api --shard=1/3
+
 # Manual suites; configure the named dependency before invoking
 doppler run -- bun run test:live-provider
 bun run test:external-smoke
@@ -178,6 +181,8 @@ E2E tests live in two places and require more infrastructure:
 | `packages/api/src/e2e/game-flow.live-provider.test.ts` | Bun + Puppeteer | PostgreSQL + configured provider | `doppler run -- bun run test:live-provider` |
 
 Browser Coverage runs with zero retries. API/web output is drained into bounded logs and CI uploads Playwright/Puppeteer evidence only on failure. Every harness owns a uniquely named database, terminates its child processes, and drops that database in cleanup.
+
+API browser CI uses Bun's deterministic file sharding across three jobs, each with its own runner and PostgreSQL service. Each job keeps the existing `--max-concurrency 1` runner; do not run shards concurrently in the same checkout because the web harnesses share Next's build directory. The matrix disables fail-fast so every shard can finish and report its own failure evidence. The unsharded command still discovers the full suite, including new `.e2e.test.ts` files.
 
 ### Staging release E2E contract
 
