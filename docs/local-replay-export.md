@@ -19,6 +19,8 @@ Defaults are 1920×1080, 30fps, normal motion, thinking off, and music at 30% wh
 
 Open **Admin → Production**, choose a completed game, save flat tags such as `cut=youtube` on individual thinking or speech moments, and watch **Selected cut**. Set the target geometry, timing and audio mix before choosing **Download selected export**. Paused games support a fixed-prefix preview but cannot be exported.
 
+When selected, Influence empowered tie-break thinking appears after the regular ballot roll call and aggregate, immediately before the tie-break scene. The same player’s earlier ballot keeps its own thinking. Studio preview and export share this canonical source ordering.
+
 ```sh
 bun run replay:export -- --selection ./episode-selection.json \
   --api-base-url http://127.0.0.1:3000 \

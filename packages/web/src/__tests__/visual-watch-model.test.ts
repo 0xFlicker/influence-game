@@ -146,6 +146,30 @@ test("an exact cast binding beats a newer room image with other participants", (
   expect(bound.rooms.find(room => room.roomId === "lobby")?.participantIds).toEqual(["a"]);
 });
 
+test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s keeps tie-break thinking out of regular voting and loads it once before the deciding choice", async scenarioId => {
+  const {influenceThinkingActor, influenceThinkingText} = await import("../app/games/[slug]/components/influence-thinking");
+  const scenario = createFormatKernelViewerScenario(scenarioId);
+  const players: GamePlayer[] = scenario.roster.map(p => ({...p,persona:"",status:"alive",shielded:false}));
+  const {cues} = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:scenario.roster,decisions:scenario.decisions});
+  const tie = cues.find(cue => cue.kind === "format_tiebreak")!;
+  if (tie.kind !== "format_tiebreak") throw new Error("Tie fixture required");
+  const deciding = cues.find(cue => cue.kind === "format_deciding_vote")!;
+  const card = {id:"tie",kind:"thinking" as const,source:"cognitive_artifact" as const,context:"current_phase" as const,
+    actorPlayerId:tie.tiebreakerId,eventSequence:tie.canonicalSequence,title:"Thinking",text:"My deciding choice",action:scenarioId === "two_names_used_tie" ? "format-two-names-tiebreak" : "format-tiebreak"};
+  const cards = [card,{...card,id:"regular",action:"format-ballot",text:"My regular ballot"},
+    {...card,id:"foreign",actorPlayerId:"other",text:"Another actor's thought"},
+    {...card,id:"earlier",eventSequence:tie.canonicalSequence - 1,text:"An earlier tie"}];
+  expect(influenceThinkingActor(tie, visualWatchPresentation(data,tie,null,players).beat)).toBe(tie.tiebreakerId);
+  expect(influenceThinkingText(cards,tie,tie.tiebreakerId)).toBe(card.text);
+  expect(influenceThinkingActor(deciding,visualWatchPresentation(data,deciding,null,players).beat)).toBeNull();
+  for (const cue of paceVisualBallots(cues,players).filter(cue => cue.kind === "format_roll_call")) {
+    expect(influenceThinkingText([card],cue,tie.tiebreakerId)).toBeNull();
+    if (cue.voteSummary) expect(influenceThinkingActor(cue,visualWatchPresentation(data,cue,null,players).beat)).toBeNull();
+  }
+  const regular = cues.find(cue => cue.kind === "format_roll_call")!;
+  expect(influenceThinkingText(cards,regular,tie.tiebreakerId)).toBe("My regular ballot");
+});
+
 test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s shows the deciding player with the full nominee pool before elimination", scenarioId => {
   const scenario = createFormatKernelViewerScenario(scenarioId);
   const players: GamePlayer[] = scenario.roster.map(p => ({ ...p, persona: "diplomat", status: "alive", shielded: false }));
