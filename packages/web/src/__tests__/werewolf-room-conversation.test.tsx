@@ -1,6 +1,6 @@
 import {afterEach, beforeEach, expect, mock, test} from "bun:test";
 import {Window} from "happy-dom";
-import {cleanup, fireEvent, render} from "@testing-library/react";
+import {act, cleanup, fireEvent, render as renderRoot} from "@testing-library/react";
 import type {WerewolfWatchMoment} from "@influence/engine/werewolf/watch-contract";
 import type {AcceptedVisualScene} from "@influence/engine/visual-mode";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
@@ -8,14 +8,16 @@ import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-mo
 import {SCENE_READ_START_MS} from "../app/games/[slug]/components/scene-speech-timing";
 import {SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
-const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
+const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: Window;
 beforeEach(() => {
   dom = new Window({url: "http://localhost"});
-  for (const key of globals) Object.defineProperty(globalThis, key, {configurable: true, value: key === "window" ? dom : dom[key]});
+  Object.defineProperty(dom.document, "fonts", {value: {ready: Promise.resolve()}});
+  for (const key of globals) Object.defineProperty(globalThis, key, {configurable: true, value: key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : dom[key]});
 });
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {});
   cleanup();
   dom.close();
   for (const key of globals) {
@@ -24,6 +26,13 @@ afterEach(() => {
     else Reflect.deleteProperty(globalThis, key);
   }
 });
+
+function render(element: Parameters<typeof renderRoot>[0]) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  // Exclude the hidden typography probes from visible speech assertions.
+  return renderRoot(element, {container, baseElement: container});
+}
 
 function discussion(): WerewolfWatchMoment {
   return {

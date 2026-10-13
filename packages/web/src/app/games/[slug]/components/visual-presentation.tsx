@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { VISUAL_ROOMS, type AcceptedVisualScene, type VisualRoomId } from "@influence/engine/visual-mode";
 import {NomineeSelection, type NomineeSelectionBeat} from "./nominee-selection";
 import { SoloPresentation } from "./solo-presentation";
@@ -35,6 +35,14 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   director: PresentationDirector;
   retainTail?: boolean;
 }) {
+  const cueKey = director.getSnapshot().activeKey;
+  const onSceneReadyChange = useCallback((ready: boolean) => {
+    if (cueKey) director.setReady(cueKey, ready);
+  }, [director, cueKey]);
+  useLayoutEffect(() => {
+    if (props.beat.kind !== "scene") onSceneReadyChange(true);
+    return () => onSceneReadyChange(true);
+  }, [props.beat.kind, onSceneReadyChange]);
   const [clock, setClock] = useState(() => ({ elapsedMs: director.getElapsedBaseMs(), paused: !director.getSnapshot().isPlaying }));
   useEffect(() => {
     let frame: number | null = null;
@@ -58,10 +66,10 @@ export function VisualPresentation({ director, retainTail = true, ...props }: Om
   const elapsedMs = director.getElapsedBaseMs();
   const holdAtTail = retainTail && state.cursor === state.cueKeys.length - 1 && !director.isAnimating()
     && elapsedMs >= (director.getActiveCue()?.baseDurationMs ?? Infinity);
-  return <VisualPresentationFrame {...props} {...clock} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
+  return <VisualPresentationFrame {...props} {...clock} onSceneReadyChange={onSceneReadyChange} holdAtTail={holdAtTail} elapsedMs={elapsedMs} readingElapsedMs={director.getSpeechElapsedBaseMs()} paused={!state.isPlaying && !director.isAnimating()} speechPresentation={director.getActiveCue()?.speechPresentation} navigationRevision={director.getNavigationRevision()} />;
 }
 
-export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [] }: {
+export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs, readingElapsedMs: readingTime = elapsedMs, holdAtTail = false, paused = false, reducedMotion = false, status, fullscreen = false, controlsInset = fullscreen ? 140 : 0, navigationRevision = 0, speechPresentation, currentStateEntry = false, voteLedger, roster = [], onSceneReadyChange }: {
   beat: VisualPresentationBeat;
   /** Only saved scene versions applicable at the current replay/presentation sequence. */
   rooms: readonly AcceptedVisualScene[];
@@ -79,6 +87,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
   status?: "preparing" | "recovery" | null;
   voteLedger?: VoteLedgerState | null;
   roster?: readonly FormatPresentationRosterPlayer[];
+  onSceneReadyChange?: (ready: boolean) => void;
 }) {
   const [pinnedRoom, setPinnedRoom] = useState<VisualRoomId | null>(null);
   // Older runs without a final tableau still leave a readable last frame.
@@ -118,7 +127,7 @@ export function VisualPresentationFrame({ beat, rooms, retainedScene, elapsedMs,
         {mingleRooms.map((room) => <button key={room.roomId} type="button" aria-pressed={pinnedRoom === room.roomId} onClick={() => setPinnedRoom(room.roomId)} className="rounded-full border border-white/20 px-3 py-1.5 text-sm aria-pressed:bg-white aria-pressed:text-black">{VISUAL_ROOMS[room.roomId].name}</button>)}
       </nav>}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {scene && <VisualSceneView controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
+        {scene && <VisualSceneView onReadyChange={onSceneReadyChange} controlsInset={controlsInset} scene={scene} speech={speech} elapsedMs={clockElapsedMs} readingElapsedMs={readingElapsedMs} speechPresentation={speechPresentation} navigationRevision={navigationRevision} reducedMotion={reducedMotion} />}
       </div>
     </div>;
   }

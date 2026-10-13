@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render as renderReact, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderRoot, within } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
@@ -11,14 +11,16 @@ import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/compone
 import { portraitRoomSeats } from "../app/games/[slug]/components/portrait-room";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
 
-const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
+const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;
 beforeEach(() => {
   dom = new HappyDOMWindow({ url: "http://localhost:3000" });
-  for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
+  Object.defineProperty(dom.document, "fonts", { value: { ready: Promise.resolve() } });
+  for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : dom[key] });
 });
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {});
   cleanup();
   dom.close();
   for (const key of globals) {
@@ -27,6 +29,12 @@ afterEach(() => {
     else Reflect.deleteProperty(globalThis, key);
   }
 });
+function renderReact(element: Parameters<typeof renderRoot>[0]) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  // Typography probes live outside the player and must not count as visible speech.
+  return renderRoot(element, { container, baseElement: container });
+}
 function loadScene(container: HTMLElement) {
   for (const image of container.querySelectorAll<HTMLImageElement>("[data-scene-preload]")) {
     Object.defineProperty(image, "naturalWidth", { configurable: true, value: 800 });
