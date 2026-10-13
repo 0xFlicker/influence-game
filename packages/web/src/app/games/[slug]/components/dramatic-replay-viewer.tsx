@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
+import {influenceThinkingActor, influenceThinkingText} from "./influence-thinking";
 import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {getPublicWatchIntelligence} from "@/lib/api";
@@ -189,7 +190,7 @@ function DramaticReplayTheater({
   const visual = visualWatchPresentation(
     visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages, replayFrames,
   );
-  const thinkingActor = visual.beat && "speech" in visual.beat ? visual.beat.speech?.playerId : null;
+  const thinkingActor = influenceThinkingActor(activeCue, visual.beat);
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
   const thoughtSequence = activeCue?.canonicalSequence;
   const messageThought = currentMessage?.thinking;
@@ -203,8 +204,8 @@ function DramaticReplayTheater({
     if (thoughtSequence == null) return null;
     const result = await getPublicWatchIntelligence(game.slug, {actorPlayerId:thinkingActor, round:thoughtRound, phase:thoughtPhase, throughEventSequence:thoughtSequence, throughTranscriptSequence:entrySequence ?? 0, limit:4}, signal);
     if (!result.ok) return null;
-    return result.intelligence.thinking.cards.filter(card => card.actorPlayerId === thinkingActor && (classicThought ? card.id === `transcript:${messageId}` : card.eventSequence === thoughtSequence)).map(card => card.text).join("\n\n") || null;
-  }, [game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought]);
+    return activeCue ? influenceThinkingText(result.intelligence.thinking.cards, activeCue, thinkingActor, messageId) : null;
+  }, [game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;

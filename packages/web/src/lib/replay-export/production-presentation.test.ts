@@ -171,6 +171,28 @@ test("Mystery refuses handcrafted private catalog references and contaminated so
   const contaminated = {...input.source,windows:[{...first,moments:first.moments.map((moment,index) => index ? moment : {...moment,staging:{}})}]};
   await expect(bindWerewolfProductionPresentation({...input,source:contaminated})).rejects.toThrow("private internal");
 });
+test.each(["majority_elimination_tie", "even_votes_tie", "safety_bounce_tie", "two_names_used_tie"] as const)("%s compiles tie-break thinking immediately before the deciding scene", async id => {
+  const scenario = createFormatKernelViewerScenario(id);
+  const players = scenario.roster.map(player => ({...player,persona:"",status:"alive" as const,shielded:false}));
+  const frames: GameWatchReplayFrame[] = scenario.decisions.map(event => ({schemaVersion:3,gameId:"g",slug:"g",sequence:event.sequence,eventType:event.type,timestamp:Date.parse(event.timestamp),round:event.round,phase:event.phase ?? "INIT",players,
+    counts:{totalPlayers:players.length,alivePlayers:players.length,eliminatedPlayers:0,unknownPlayers:0},viewerDecisionEvent:event}));
+  const resolution = scenario.decisions.find(event => event.type === "format.resolved")!;
+  if (resolution.type !== "format.resolved" || !resolution.payload.tiebreakerId) throw new Error("Tie fixture required");
+  const thoughts = [{eventSequence:resolution.sequence,actorId:resolution.payload.tiebreakerId,thinking:"My deciding choice",defaultThinking:true}];
+  const source = {kind:"influence" as const,game:{id:"g",slug:"g",status:"completed" as const,players,gameKernel:"format" as const},messages:[],frames,thoughts:{},visual:{enabled:false,status:null,portraits:{},scenes:[],publicationSnapshot:{}}};
+  const catalog = assembleProductionCatalog({gameId:"g",gameKind:"influence",audience:"public",sources:buildInfluenceProductionSources({gameId:"g",gameKernel:"format",transcripts:[],frames,thoughts})});
+  const bound = await bindInfluenceProductionPresentation({source,catalog,thoughts});
+  const compiled = compilePresentation({...settings,source:bound,selectedIds:catalog.moments.map(moment => moment.id)});
+  const position = compiled.cues.findIndex(cue => cue.picture.kind === "thinking");
+  expect(position).toBeGreaterThan(0);
+  expect(compiled.cues[position]!.picture).toMatchObject({kind:"thinking",actor:{id:resolution.payload.tiebreakerId}});
+  expect(compiled.cues[position]!.timing.thinking).toBe(thoughts[0]!.thinking);
+  expect(compiled.cues[position - 1]!.picture).toMatchObject({kind:"influence",cue:{kind:"format_aggregate"}});
+  expect(compiled.cues[position + 1]!.picture).toMatchObject({kind:"influence",cue:{kind:"format_tiebreak"},beat:{kind:"nominee-selection",selectedId:null}});
+  expect(compiled.cues[position + 2]!.picture).toMatchObject({kind:"influence",cue:{kind:"format_deciding_vote"},beat:{selectedId:resolution.payload.eliminatedId}});
+  expect(compiled.timeline[position]!.endMs).toBe(compiled.timeline[position + 1]!.startMs);
+});
+
 for (const id of FORMAT_KERNEL_VIEWER_SCENARIO_IDS.filter(id => !id.startsWith("malformed_"))) {
   test(`Influence semantic binding preserves default pictures: ${id}`,async () => {
     const scenario = createFormatKernelViewerScenario(id);

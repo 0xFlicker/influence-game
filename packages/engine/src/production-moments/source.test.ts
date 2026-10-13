@@ -60,6 +60,36 @@ test("sealed thought identity remains accepted-action provenance while reveal fo
   expect(() => buildInfluenceProductionSources({ gameId: "g", gameKernel: "format", transcripts: [], frames, thoughts: [{ ...thought, revealEventSequence: action.sequence }] })).toThrow("permitted ballot reveal");
 });
 
+test.each(["majority_elimination_tie", "even_votes_tie", "safety_bounce_tie", "two_names_used_tie"] as const)("%s places tie-break thinking after ballots and aggregate, immediately before the tie-break", scenarioId => {
+  const scenario = createFormatKernelViewerScenario(scenarioId);
+  const frames: InfluenceProductionFrame[] = scenario.decisions.map(event => ({ sequence: event.sequence, timestamp: Date.parse(event.timestamp), round: event.round, phase: event.phase ?? "INIT", players: scenario.roster, viewerDecisionEvent: event }));
+  const resolution = scenario.decisions.find(event => event.type === "format.resolved")!;
+  if (resolution.type !== "format.resolved" || !resolution.payload.tiebreakerId) throw new Error("Tie fixture required");
+  const actorId = resolution.payload.tiebreakerId;
+  const ballot = scenario.decisions.find(event => event.type === "format.ballot_cast" && event.payload.voterId === actorId);
+  const thoughts = [
+    { eventSequence: resolution.sequence, actorId, thinking: "My deciding choice", defaultThinking: true },
+    ...(ballot ? [{ eventSequence: ballot.sequence, actorId, thinking: "My regular ballot", defaultThinking: true }] : []),
+  ];
+  const sources = buildInfluenceProductionSources({ gameId: "g", gameKernel: "format", transcripts: [], frames, thoughts });
+  const catalog = assembleProductionCatalog({ gameId: "g", gameKind: "influence", audience: "public", sources });
+  const moments = selectProductionMoments(catalog, { mode: "full", thinking: true });
+  const index = moments.findIndex(moment => moment.kind === "thinking" && moment.source.kind === "influence-event" && moment.source.eventSequence === resolution.sequence);
+  expect(index).toBeGreaterThan(0);
+  expect(moments[index - 1]!.part).toMatchObject({ presentation: { kind: "format_aggregate" } });
+  expect(moments[index + 1]!.part).toMatchObject({ presentation: { kind: "format_tiebreak", actorId } });
+  expect(moments[index + 2]!.part).toMatchObject({ presentation: { kind: "format_deciding_vote", actorId } });
+  expect(moments.slice(index).some(moment => moment.kind === "ballot")).toBeFalse();
+  if (ballot) {
+    const regular = moments.findIndex(moment => moment.kind === "thinking" && moment.source.kind === "influence-event" && moment.source.eventSequence === ballot.sequence);
+    expect(regular).toBeLessThan(index);
+    expect(moments[regular + 1]!.part).toMatchObject({ presentation: { kind: "format_roll_call", voterId: actorId } });
+  }
+  expect(selectProductionMoments(catalog, { mode: "full", thinking: false }).some(moment => moment.kind === "thinking")).toBeFalse();
+  const prefix = buildInfluenceProductionSources({ gameId: "g", gameKernel: "format", transcripts: [], frames: frames.filter(frame => frame.sequence < resolution.sequence), thoughts: ballot ? [thoughts[1]!] : [] });
+  expect(prefix.some(source => source.kind === "influence-thinking")).toBeFalse();
+});
+
 test("source inventories reject ambiguous rows instead of accepting the last candidate", () => {
   const row = { id: 1, timestamp: 1, round: 1, phase: "INTRODUCTION", scope: "public", speakerPlayerId: "a" };
   expect(() => buildInfluenceProductionSources({ gameId: "g", gameKernel: "classic", frames: [], transcripts: [row, { ...row, timestamp: 2 }] })).toThrow("Ambiguous");

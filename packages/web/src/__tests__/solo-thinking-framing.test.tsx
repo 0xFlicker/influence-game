@@ -4,6 +4,8 @@ import {Window} from "happy-dom";
 import {SoloPresentation} from "../app/games/[slug]/components/solo-presentation";
 import type {VisualPresentationBeat} from "../app/games/[slug]/components/visual-presentation";
 import {WatchThinking} from "../components/watch/watch-thinking";
+import {SceneThinkingProvider} from "../components/watch/watch-thinking";
+import {NomineeSelection} from "../app/games/[slug]/components/nominee-selection";
 import {PresentationDirector, type WatchCue} from "../components/watch/watch-director";
 import {WerewolfContentFrame} from "../components/games/werewolf/werewolf-watch-stage";
 import {werewolfMomentCues} from "../components/games/werewolf/werewolf-watch-model";
@@ -35,6 +37,24 @@ const beat: Extract<VisualPresentationBeat,{kind:"portrait"}> = {
   speech:{id:"s",playerId:"p",speaker:"Player",text:"Hello, everyone."},
 };
 const load = async () => null;
+test("the tie-break scene shows the empowered thought before returning to the unselected nominee pool", async () => {
+  Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>1440},clientHeight:{configurable:true,get:()=>900}});
+  const chooser = {id:"p",name:"Player",persona:"",avatarUrl:"/portrait.png",status:"alive" as const,shielded:false};
+  const nominee = { ...chooser, id:"target",name:"Target" };
+  const thought = {speaker:chooser.name,text:"My deciding choice",elapsedMs:100,durationMs:2000,opacity:1,focus:1};
+  const content = (thinking: boolean) => <SceneThinkingProvider thought={thinking ? thought : null}>
+    <NomineeSelection beat={{kind:"nominee-selection",chooser,nominees:[nominee],selectedId:null}} elapsedMs={0} reducedMotion />
+  </SceneThinkingProvider>;
+  const view = render(content(true));
+  expect(view.container.querySelector("[data-in-scene-thinking]")?.textContent).toContain(thought.text);
+  expect(view.container.querySelector("[data-speech-bubble]")).toBeNull();
+  expect(view.container.querySelector("[data-selected=true]")).toBeNull();
+  view.rerender(content(false));
+  expect(view.container.querySelector("[data-in-scene-thinking]")).toBeNull();
+  expect(view.container.querySelector("[data-nominee=target]")).not.toBeNull();
+  expect(view.container.querySelector("[data-selected=true]")).toBeNull();
+  await act(async () => {});
+});
 for (const audience of ["mystery", "omniscient"] as const) test(`${audience}: role has its own label only in omniscient speech`, async () => {
   Object.defineProperties(dom.HTMLElement.prototype, {clientWidth:{configurable:true,get:()=>390},clientHeight:{configurable:true,get:()=>700}});
   const players = Array.from({length:6}, (_,i)=>({id:`p${i}`,name:`Player ${i}`,personality:"Careful",backstory:"",strategy:"",avatarUrl:null}));

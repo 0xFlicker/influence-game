@@ -227,7 +227,14 @@ export function buildInfluenceProductionSources(input: {
     if (!accepted || !reveal || reveal.sequence < accepted.sequence || !accepted.players.some(player => player.id === thought.actorId)) throw new Error("Invalid Influence thinking source/reveal provenance");
     if (releasedSequence !== undefined && reveal.sequence < releasedSequence) throw new Error("Influence thinking precedes its permitted ballot reveal");
     append({ kind: "influence-thinking", eventSequence: thought.eventSequence, actorId: thought.actorId, thinking: thought.thinking, defaultThinking: thought.defaultThinking, order: { anchor: 0, offset: 0 } }, reveal.round, reveal.phase, reveal.sequence, "format");
-    const sibling = rows.find(row => row.sequence === reveal.sequence && row.source.kind === "influence-event" && "voterId" in row.source.presentation && row.source.presentation.voterId === thought.actorId);
+    const isFormatTiebreak = accepted.viewerDecisionEvent?.type === "format.resolved"
+      && accepted.viewerDecisionEvent.payload.tiebreakerId === thought.actorId;
+    // Resolution thinking belongs to the deciding choice, even if this player
+    // also cast a regular ballot revealed by the same aggregate event.
+    const sibling = rows.find(row => row.sequence === reveal.sequence && row.source.kind === "influence-event"
+      && (isFormatTiebreak
+        ? row.source.presentation.kind === "format_tiebreak" && row.source.presentation.actorId === thought.actorId
+        : "voterId" in row.source.presentation && row.source.presentation.voterId === thought.actorId));
     if (sibling) { rows.at(-1)!.serial = sibling.serial - 0.5; rows.at(-1)!.lane = sibling.lane; }
   }
 
