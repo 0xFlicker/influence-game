@@ -108,9 +108,13 @@ jobs:
           retention-days: 7
 
   api-browser:
-    name: Browser Coverage / API browser stories
+    name: Browser Coverage / API browser stories (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services: *postgres
     steps:
       - uses: actions/checkout@v5
@@ -124,12 +128,12 @@ jobs:
       - name: Install Puppeteer Chrome
         run: bunx puppeteer browsers install chrome
       - name: Run isolated API browser stories serially
-        run: bun run test:browser:api
+        run: bun run test:browser:api --shard=${{ matrix.shard }}/3
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: browser-api-stories-${{ github.run_id }}-${{ github.run_attempt }}
+          name: browser-api-stories-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: test-results
           if-no-files-found: ignore
           retention-days: 7
