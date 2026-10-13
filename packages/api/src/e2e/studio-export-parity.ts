@@ -6,8 +6,8 @@ import type {ProductionExportDescriptor} from "@influence/engine/production-mome
 
 interface PreparedParityManifest {
   width:number;height:number;fps:number;range:{untilFrame:number};boundary:{selectionHash?:string};
-  cues:{momentId?:string;picture:{kind:string};speech:unknown|null}[];audio:{clips:unknown[]};
-  timeline:{startMs:number;thought:{enterMs:number;readAtMs:number;returnAtMs:number;duration:number;insertAt:number}|null}[];
+  cues:{momentId?:string;picture:{kind:string;cue?:{kind:string}};speech:unknown|null}[];audio:{clips:unknown[]};
+  timeline:{key:string;startMs:number;endMs:number;thought:{enterMs:number;readAtMs:number;returnAtMs:number;duration:number;insertAt:number}|null}[];
 }
 
 /** Uses the browser's actual frozen selection and the harness's existing local API.
@@ -16,7 +16,7 @@ interface PreparedParityManifest {
 export async function verifyStudioEncodedParity({descriptor, token, origin, output, captureFrame, purpose = "thinking"}: {
   descriptor:ProductionExportDescriptor;token:string;origin:string;output:string;
   captureFrame:(frame:number)=>Promise<Uint8Array>;
-  purpose?:"thinking"|"retrospective";
+  purpose?:"thinking"|"retrospective"|"ballot";
 }) {
   await mkdir(output,{recursive:true});
   const repoRoot = resolve(import.meta.dir,"../../../.."),selection = join(output,"studio.selection.json"),video = join(output,"studio.mp4");
@@ -39,17 +39,32 @@ export async function verifyStudioEncodedParity({descriptor, token, origin, outp
       if(code===0) accept();else reject(new Error(`Studio encoded proof exited ${code}: ${failure}`));
     });
   });
-  await run(process.execPath,["run","replay:export","--selection",selection,"--output",video,"--api-base-url",origin],true);
-  const bundle = join(output,"studio.bundle"), manifest:PreparedParityManifest = JSON.parse(await readFile(join(bundle,"manifest.json"),"utf8"));
+  const bundle = join(output,"studio.bundle"), manifestPath = join(bundle,"manifest.json");
+  await run(process.execPath,["run","replay:export","--selection",selection,"--output",video,"--api-base-url",origin,...(purpose === "ballot" ? ["--inspect"] : [])],true);
+  let manifest:PreparedParityManifest = JSON.parse(await readFile(manifestPath,"utf8"));
+  if (purpose === "ballot") {
+    // Freeze the complete cut, but encode one complete reveal within this
+    // harness's time budget using the existing exporter range contract.
+    const reveal = manifest.cues.findIndex(cue=>cue.picture.kind==="influence" && cue.picture.cue?.kind==="format_roll_call");
+    const until = manifest.timeline[reveal+1];
+    if (reveal < 0 || !until) throw new Error("Ballot Studio cut needs a complete bounded reveal");
+    await run(process.execPath,["run","replay:export","--bundle",bundle,"--output",video,"--until-cue",until.key]);
+    manifest = JSON.parse(await readFile(manifestPath,"utf8"));
+  }
   if(manifest.width!==descriptor.settings.width || manifest.height!==descriptor.settings.height || manifest.fps!==descriptor.settings.fps
     || manifest.boundary.selectionHash!==descriptor.hash || manifest.cues.some(cue=>!descriptor.momentIds.includes(cue.momentId ?? "")))
     throw new Error("Encoded bundle differs from the Studio's frozen IDs or settings");
-  const first = manifest.timeline[0]!,thought = first.thought;
+  const sampledIndex = purpose === "ballot" ? manifest.cues.findIndex(cue=>cue.picture.kind==="influence" && cue.picture.cue?.kind==="format_roll_call") : 0;
+  if (sampledIndex < 0) throw new Error("Ballot Studio cut has no accepted format reveal");
+  const first = manifest.timeline[sampledIndex]!,thought = first.thought;
   if(purpose === "thinking" && (!thought || manifest.cues.some(cue=>cue.picture.kind!=="thinking" || cue.speech!==null) || manifest.audio.clips.length))
     throw new Error("Thought-only Studio bridge leaked omitted speech or audio");
   if(purpose === "retrospective" && (manifest.cues.some(cue=>!cue.speech || !["influence","werewolf"].includes(cue.picture.kind)) || manifest.audio.clips.length))
     throw new Error("Retrospective Studio bridge lost selected speech or added unselected audio");
+  if(purpose === "ballot" && (manifest.cues.some(cue=>cue.speech!==null || cue.picture.kind!=="influence") || manifest.audio.clips.length))
+    throw new Error("Ballot Studio cut leaked omitted speech or audio");
   const offsets = purpose === "thinking" ? [thought!.enterMs/2,thought!.readAtMs+500,(thought!.returnAtMs+thought!.duration)/2]
+    : purpose === "ballot" ? [0,(first.endMs-first.startMs)/2,Math.max(0,first.endMs-first.startMs-1000/manifest.fps)]
     : [1000,manifest.range.untilFrame/manifest.fps*500,manifest.range.untilFrame/manifest.fps*1000-1000];
   const frames = [...new Set(offsets
     .map(offset=>Math.min(manifest.range.untilFrame-1,Math.ceil((first.startMs+(thought?.insertAt ?? 0)+offset)*manifest.fps/1000))))];
