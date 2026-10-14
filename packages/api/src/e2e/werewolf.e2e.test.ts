@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG, GameRunner } from "@influence/engine";
 import { ApiTestMockAgent } from "../services/game-lifecycle.js";
 import { createDurableGameRunnerStore } from "../services/durable-game-runner-store.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
-import { insertGame, insertOwner } from "../__tests__/durable-run-test-utils.js";
+import { insertGame, insertOwner, createCanonicalEventFixture, withJuryWinner, insertCanonicalEventRows } from "../__tests__/durable-run-test-utils.js";
 import { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
 import {readHouseGame} from "../services/house-game-inspection.js";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -918,6 +918,26 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
     expect(await page.$('[data-werewolf-stage]')).toBeNull();
     await page.screenshot({path:"/tmp/house-mcp-influence-moment.png"});
   } finally {await page.close();}
+},90_000);
+
+test("completed Influence results render without a retrospective", async () => {
+  const id = "browser-no-retrospective";
+  await insertGame(database.db, {id, slug:id, status:"completed", config:{visibility:"public"}});
+  await database.db.insert(schema.gamePlayers).values(["atlas","echo","mira","nyx"].map(playerId => ({
+    id:playerId, gameId:id, persona:JSON.stringify({name:playerId,personality:"Fixture"}), agentConfig:"{}",
+  })));
+  await insertCanonicalEventRows(database.db,id,await insertOwner(database.db,id),withJuryWinner(createCanonicalEventFixture(id),"atlas"));
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${servers.webUrl}/games/${id}/results`,{waitUntil:"networkidle0"});
+    await page.waitForSelector('[data-testid="completed-results-review"]');
+    const content = await page.$eval('[data-testid="completed-results-review"]', element => element.textContent);
+    expect(content).toContain("atlas");
+    expect(content).not.toContain("Retrospective in progress");
+    expect(content).not.toContain("completion proof");
+    await page.reload({waitUntil:"networkidle0"});
+    await page.waitForSelector('[data-testid="completed-results-review"]');
+  } finally { await page.close(); }
 },90_000);
 
 test.each(["classic", "format"] as const)("%s Influence retrospective portraits follow canonical speech links and survive reload/backward seek", async gameKernel => {

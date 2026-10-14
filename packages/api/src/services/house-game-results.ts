@@ -33,7 +33,7 @@ export async function readHouseGameResultsInTransaction(tx: Pick<DrizzleDB, "sel
     const players = results.players.map(player=>({...player,avatarUrl:`/api/werewolf/${encodeURIComponent(game.id)}/characters/${encodeURIComponent(player.id)}?audience=omniscient&cursor=${results.source.cursor}`}));
     return {ok:true as const,gameKind:"werewolf" as const,schemaVersion:2 as const,
       game:{id:game.id,slug:game.slug,status:game.status,completedAt:game.endedAt,episode:(await readEpisodePresentations(tx,[game])).get(game.id)!},results:{...results,players},
-      retrospective:retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,state.players.length)};
+      retrospective:retrospectiveProgress(state.retrospectiveOutcomeSource,state.retrospective,state.players.length,werewolfExecutionFinished(state))};
   } catch (error) {
     console.error(`[werewolf-results] Invalid completed history for ${game.id}:`,error);
     return {ok:false as const,status:"unavailable" as const,error:"Results are unavailable for this game. Try again later."};

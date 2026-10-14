@@ -4,6 +4,7 @@ import {
   createEmptyProjection,
   projectViewerDecisionEvent,
   resolveGameKernel,
+  Phase,
   retrospectiveProgress, type RetrospectiveProgress,
   type GameKernel,
   type GameKernelContradictionDiagnostic,
@@ -296,7 +297,11 @@ export async function buildGameWatchState(
     counts,
     final,
     retrospective: persistedEvents.status === "complete" && projection.status === "complete" && projectedSummary
-      ? projectedSummary.retrospective : retrospectiveProgress(null, null, players.length),
+      ? game.status === "completed" && projectedSummary.retrospective.status === "pending"
+        && !persistedEvents.events.some(event => event.envelope.phase === Phase.RETROSPECTIVE)
+        ? { ...projectedSummary.retrospective, status: "unavailable", requiredStatements: 0 }
+        : projectedSummary.retrospective
+      : retrospectiveProgress(null, null, players.length),
     ...(winner && { winner }),
   };
 }
