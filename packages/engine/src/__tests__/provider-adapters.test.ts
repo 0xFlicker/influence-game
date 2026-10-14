@@ -835,7 +835,7 @@ describe("provider-native adapters", () => {
     expect(body.max_output_tokens).toBe(4_096);
   });
 
-  it("decodes an exact Meta Muse Responses tool call and rejects a missing call", async () => {
+  it.each(["auto", "json_schema"] as const)("decodes an exact Meta Muse Responses tool call and rejects a missing call under %s mode", async (toolChoiceMode) => {
     const toolClient = {
       responses: {
         create: async () => ({
@@ -850,7 +850,7 @@ describe("provider-native adapters", () => {
       },
     } as unknown as OpenAI;
     const meta = runtime("meta-muse:muse-spark-1.3-contributor", toolClient);
-    meta.toolChoiceMode = "auto";
+    meta.toolChoiceMode = toolChoiceMode;
     expect(await executeVoteInvocation(meta)).toEqual({ target: "Atlas" });
 
     const outcome = normalizeOpenAIResponse({
@@ -872,7 +872,7 @@ describe("provider-native adapters", () => {
       },
     } as unknown as OpenAI;
     const proseMeta = runtime("meta-muse:muse-spark-1.3-contributor", proseClient);
-    proseMeta.toolChoiceMode = "auto";
+    proseMeta.toolChoiceMode = toolChoiceMode;
     const error = await rejectedProviderAttempt(executeVoteInvocation(proseMeta));
     expect(error.outcome.kind).toBe("wrong_tool");
   });

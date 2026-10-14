@@ -97,6 +97,15 @@ describe("retrospective contracts", () => {
     expect(() => assertRetrospectiveRequest({ ...request, extras: true })).toThrow("shape");
   });
 
+  test.each([" ", "\t\n", "\u00a0\u2003"])("canonical replay rejects blank speech %j without advancing the speaker", speech => {
+    const state = start();
+    const before = structuredClone(state);
+    expect(() => applyRetrospectiveRecord(state, {
+      kind: "statement", payload: { ...statement(state), speech },
+    }, boundary(6))).toThrow("must not be blank");
+    expect(state).toEqual(before);
+  });
+
   test("the final boundary requires all statements and their exact immutable prefix", () => {
     let state = start();
     expect(() => retrospectiveCompletionProof(state)).toThrow("whole original roster");

@@ -10,6 +10,8 @@ The prompt asks for a candid 40–75 word reflection addressing the other contes
 
 Both agents use `executeModelInvocation` and their existing coordinator and sealed provider manifest. Influence retains its configured structured-attempt limit (default two); Werewolf retains three attempts per entry. The coordinator alone owns retries, fallback traversal, cancellation, accounting and accepted-value replay. SDK retries are disabled. Exhaustion propagates a typed provider failure; no default speech is fabricated. RT-04/05/06 own representation and recovery of that failure.
 
+The provider speech schema omits `pattern` for Katana compatibility. Local semantic validation rejects blank provider speech within the bounded retry/fallback loop and rejects blank accepted journal values. Canonical statement validation independently rejects blank speech during event ingestion and replay without changing the provider schema. Tool response decoding follows the compiled request format: Meta Responses uses native tool calls even when the global tool-choice setting is `json_schema`.
+
 Influence retains its planned durable-turn/subcall coordinate when staged, or an explicit retrospective phase-call coordinate for standalone invocation. Werewolf retains its event action-slot coordinate. No provider-coordinate version or alternate journal is introduced. The staged inventory includes the method and bypasses scene generation, preserving existing art for later presentation work. Provider receipts account for every dispatched attempt; Influence's token tracker records newly accepted generation usage, including cached/reasoning tokens, without recounting replay.
 
 ## Dispatch without capacity admission

@@ -200,7 +200,10 @@ export function assertRetrospectiveInputBinding(input: unknown, definition: Retr
 
 export function assertRetrospectiveRecordPayload(kind: RetrospectiveRecordV1["kind"], value: unknown): void {
   if (kind === "started") assertRetrospectiveDefinition(value);
-  else if (kind === "statement") assertShape<RetrospectiveStatementV1>(statementSchema, value, "Retrospective statement");
+  else if (kind === "statement") {
+    assertShape<RetrospectiveStatementV1>(statementSchema, value, "Retrospective statement");
+    if (!/\S/.test(value.speech)) throw new RetrospectiveContractError("Retrospective speech must not be blank");
+  }
   else assertShape<RetrospectiveCompletionV1>(completionSchema, value, "Retrospective completion");
 }
 

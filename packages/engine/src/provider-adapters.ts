@@ -145,8 +145,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
             invocation: semanticCall,
             toolUsesJsonSchema:
               semanticCall.result.kind === "tool"
-              && prepared.transport !== "openai.responses"
-              && runtime.toolChoiceMode === "json_schema",
+              && asRecord(asRecord(prepared.body).response_format).type === "json_schema",
           });
           return outcome;
         },

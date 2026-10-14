@@ -147,6 +147,20 @@ describe("dedicated retrospective invocation", () => {
     expect(state).toEqual(before);
   });
 
+  test("Katana retries blank speech without a provider schema pattern", async () => {
+    const { context } = dossier();
+    const p = provider({ catalogId: "katana:glm-5-2",
+      arguments: index => JSON.stringify({ speech: index === 0 ? " \n " : speech }) });
+    const records: ProviderAttemptRecord[] = [];
+    const result = await execute(context, [p.runtime], { onTerminal: record => { records.push(record); } });
+    expect(result.value).toEqual({ speech });
+    expect(p.requests.map(request => request.path)).toEqual(["/v1/chat/completions", "/v1/chat/completions"]);
+    expect(JSON.stringify(p.requests[0]!.body)).not.toContain('"pattern"');
+    expect(records[0]!.disposition).toBe("retry_scheduled");
+    expect(records[0]!.acceptedValue).toBeUndefined();
+    expect(records[1]!.acceptedValue).toEqual({ speech });
+  });
+
   test("both concrete agents propagate exhaustion without speech or continuity changes", async () => {
     const first = dossier(), p = provider({ arguments: "{}" }), agent = influence(first.context, [p.runtime]);
     const continuity = agent.getContinuityCapsule();
