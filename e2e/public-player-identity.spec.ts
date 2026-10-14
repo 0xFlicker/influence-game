@@ -91,7 +91,8 @@ test.describe("local public player identity", () => {
         await expect(page.getByText("Waiting for the next move…", { exact: true })).toHaveCount(0);
         await page.screenshot({ path: `/tmp/game-pre-show-empty-${width}.png`, fullPage: true });
         await create.click();
-        await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=preshow-fixture$/);
+        // A cold Next route compilation can consume the default five-second wait.
+        await expect(page).toHaveURL(/\/agents\/create\?flow=join_game&gameId=preshow-fixture$/, { timeout: 30_000 });
         await expect(page.getByText("Your character starts here.")).toBeVisible();
 
         await page.evaluate(token => localStorage.setItem("influence_session", token), fixture.completeJwt);

@@ -184,6 +184,8 @@ Browser Coverage runs with zero retries. API/web output is drained into bounded 
 
 The authenticated browser harness checks web readiness through the existing `/health` rewrite to the isolated API. This checks the web listener and backend connection within the bounded startup deadline without requiring a cold homepage compilation to finish inside a short polling request. Browser stories still navigate and assert their actual pages.
 
+The pre-show Create flow allows 30 seconds for cold route compilation while asserting the exact agent-creation URL and destination content on desktop and mobile.
+
 API browser CI uses Bun's deterministic file sharding across three jobs, each with its own runner and PostgreSQL service. Each job keeps the existing `--max-concurrency 1` runner; do not run shards concurrently in the same checkout because the web harnesses share Next's build directory. The matrix disables fail-fast so every shard can finish and report its own failure evidence. The unsharded command still discovers the full suite, including new `.e2e.test.ts` files.
 
 ### Staging release E2E contract
