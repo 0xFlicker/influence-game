@@ -7,17 +7,20 @@ const tracks = {
   pack: {file: "wolves-at-the-festival-v1.mp3", title: "Wolves at the Festival"},
   village: {file: "lanterns-still-burning-v1.mp3", title: "Lanterns Still Burning"},
 };
-/** Only the currently presented public entry can introduce an outcome cue. */
+/** Only the result entry can introduce an outcome cue. Retrospective entries
+ * follow it, so they continue that same section rather than the introductions. */
 export function werewolfMusic(moment: WerewolfWatchMoment | null | undefined): MusicSection | null {
   if (!moment) return null;
   const {entry, snapshot} = moment;
   let track: keyof typeof tracks;
   let section: string;
   let repeat = true;
-  if (entry.kind === "result") {
-    if (!entry.outcome.faction) return null;
-    track = entry.outcome.faction === "village" ? "village" : "pack";
-    section = `outcome:${entry.outcome.faction}`; repeat = false;
+  let continueAtEnd = false;
+  if (entry.kind === "result" || entry.kind === "speech" && entry.purpose === "retrospective") {
+    const faction = entry.kind === "result" ? entry.outcome.faction : snapshot.outcome?.faction;
+    if (!faction) return null;
+    track = faction === "village" ? "village" : "pack";
+    section = `outcome:${faction}`; repeat = false; continueAtEnd = true;
   } else if (entry.kind === "pack_vote" || entry.kind === "speech" && entry.audience === "pack") {
     if (snapshot.audience !== "omniscient") return null;
     track = "pack"; section = `pack:${entry.day}`;
@@ -28,5 +31,5 @@ export function werewolfMusic(moment: WerewolfWatchMoment | null | undefined): M
   } else if (entry.kind === "discussion" || entry.kind === "vote" || entry.kind === "phase" && (entry.phase === "day" || entry.phase === "vote")) {
     track = "day"; section = `day:${entry.day}`;
   } else return null;
-  return {key: `${snapshot.gameId}:${snapshot.audience}:${section}`, src: `/music/werewolf/v1/${tracks[track].file}`, title: tracks[track].title, repeat, continueAtEnd: entry.kind === "result"};
+  return {key: `${snapshot.gameId}:${snapshot.audience}:${section}`, src: `/music/werewolf/v1/${tracks[track].file}`, title: tracks[track].title, repeat, continueAtEnd};
 }

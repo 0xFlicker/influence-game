@@ -13,19 +13,56 @@ import { SCENE_SPEECH_START_MS, sceneSpeechOpacity } from "./scene-speech-timing
 import { soloPresentationMotion } from "./solo-presentation-timing";
 import { SOLO_STUDIO_BACKDROP, StageBackdrop } from "./stage-backdrop";
 
+function portraitRoomTurn(count: number, index: number, speakerIndex: number, deep: boolean) {
+  // Rotate the saved circular order so the current speaker stays in front.
+  let offset = (index - Math.max(0, speakerIndex) + count) % count;
+  if (offset > count / 2) offset -= count;
+  return deep ? offset / count * Math.PI * 2 : offset / Math.max(1, Math.floor(count / 2)) * Math.PI * .39;
+}
+
+function portraitRoomSeat(turn: number, radius: number, diameter: number, roomDepth: number) {
+  const depth = Math.cos(turn);
+  return { x: Math.sin(turn) * radius, y: (1 - depth) * -roomDepth, z: depth * 60,
+    scale: .72 + (depth + 1) * .14, diameter };
+}
+
+function portraitRoomGeometry(width: number, count: number, deep: boolean) {
+  const diameter = Math.max(0, Math.min(count > 4 ? 140 : 210, deep ? Math.max(100, width / (count + .3)) : width / Math.max(3.3, count + .3)));
+  return { diameter, radius: Math.max(0, (width - (deep ? 0 : diameter) - 48) / 2) };
+}
+
 /** Small rooms form a semicircle; larger casts surround the centered speaker in depth. */
 export function portraitRoomSeats(width: number, count: number, speakerIndex: number, roomDepth = 35, deep = count > 5) {
-  const diameter = Math.max(0, Math.min(count > 4 ? 140 : 210, deep ? Math.max(100, width / (count + .3)) : width / Math.max(3.3, count + .3)));
-  const radius = Math.max(0, (width - (deep ? 0 : diameter) - 48) / 2);
-  return Array.from({ length: count }, (_, index) => {
-    // Rotate the saved circular order so the current speaker stays in front.
-    let offset = (index - Math.max(0, speakerIndex) + count) % count;
-    if (offset > count / 2) offset -= count;
-    const turn = deep ? offset / count * Math.PI * 2 : offset / Math.max(1, Math.floor(count / 2)) * Math.PI * .39;
-    const depth = Math.cos(turn);
-    return { x: Math.sin(turn) * radius, y: (1 - depth) * -roomDepth, z: depth * 60,
-      scale: .72 + (depth + 1) * .14, diameter };
-  });
+  const { diameter, radius } = portraitRoomGeometry(width, count, deep);
+  return Array.from({ length: count }, (_, index) =>
+    portraitRoomSeat(portraitRoomTurn(count, index, speakerIndex, deep), radius, diameter, roomDepth));
+}
+
+/**
+ * Seats between two speakers, rotating the ring as one body around its centre
+ * instead of sliding each avatar on the straight line to its new seat. In a
+ * deep ring every avatar shares the same shortest angular step, so their
+ * saved order and spacing hold for the whole move however far the next
+ * speaker sits from the last.
+ */
+export function portraitRoomTransitionSeats(width: number, count: number, previousSpeakerIndex: number, speakerIndex: number, progress: number, roomDepth = 35, deep = count > 5) {
+  const clamped = Math.max(0, Math.min(1, progress));
+  if (!deep) {
+    // Semicircle rooms keep their established slide between neighbouring seats.
+    const previous = portraitRoomSeats(width, count, previousSpeakerIndex, roomDepth, deep);
+    const target = portraitRoomSeats(width, count, speakerIndex, roomDepth, deep);
+    return target.map((seat, index) => {
+      const from = previous[index]!;
+      return { ...seat, x: from.x + (seat.x - from.x) * clamped, y: from.y + (seat.y - from.y) * clamped,
+        z: from.z + (seat.z - from.z) * clamped, scale: from.scale + (seat.scale - from.scale) * clamped };
+    });
+  }
+  const { diameter, radius } = portraitRoomGeometry(width, count, deep);
+  // One shared step brings the incoming speaker to the front the short way
+  // round; normalising each avatar separately would split the ring at the back.
+  const ringDelta = -portraitRoomTurn(count, speakerIndex, previousSpeakerIndex, deep);
+  return Array.from({ length: count }, (_, index) =>
+    portraitRoomSeat(portraitRoomTurn(count, index, previousSpeakerIndex, deep) + ringDelta * clamped, radius, diameter, roomDepth));
 }
 
 /** Saved audience membership supplies the cast; asset availability never changes the game. */
@@ -63,7 +100,11 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
   const beside = available < 340 && size.width >= 600;
   const deep = beat.participants.length > 5 || !beside && size.width < 600 && beat.participants.length >= 3;
   const roomDepth = deep ? available * (beside ? .2 : .29) : 35;
-  const seats = portraitRoomSeats(beside ? size.width * .5 : size.width, beat.participants.length, speakerIndex, roomDepth, deep);
+  const previousIndex = beat.participants.findIndex(player => player.id === previousSpeaker);
+  const progress = reducedMotion ? 1 : sceneCameraProgress(elapsedMs * 450 / 650);
+  const seats = previousIndex >= 0
+    ? portraitRoomTransitionSeats(beside ? size.width * .5 : size.width, beat.participants.length, previousIndex, speakerIndex, progress, roomDepth, deep)
+    : portraitRoomSeats(beside ? size.width * .5 : size.width, beat.participants.length, speakerIndex, roomDepth, deep);
   const centerX = size.width * (beside ? .72 : .5);
   const diameter = Math.min(seats[0]?.diameter ?? 0, available * (beside ? deep ? .3 : .44 : .34));
   const thought = useSceneThinking();
@@ -90,11 +131,7 @@ export function PortraitRoom({ beat, elapsedMs, readingElapsedMs, reducedMotion,
     <p className="absolute inset-x-0 top-4 text-center text-xs font-medium uppercase tracking-[.2em] text-white/60">{roomLabel}</p>
     <div aria-hidden="true" className="absolute rounded-[50%] border border-white/10 bg-black/15" style={{ left: centerX, top: centerY - (deep ? roomDepth * 2 : 0) + diameter * .1, width: Math.max(0, size.width * (beside ? .5 : 1) - 80), height: diameter * .7 + (deep ? roomDepth * 2 : 0), transform: "translateX(-50%) rotateX(35deg)" }} />
     {beat.participants.map((player, index) => {
-      const target = seats[index]!;
-      const previousIndex = beat.participants.findIndex(player => player.id === previousSpeaker);
-      const previous = previousIndex >= 0 ? portraitRoomSeats(beside ? size.width * .5 : size.width, beat.participants.length, previousIndex, roomDepth, deep)[index]! : target;
-      const progress = reducedMotion ? 1 : sceneCameraProgress(elapsedMs * 450 / 650);
-      const seat = {...target, x: previous.x + (target.x-previous.x)*progress, y: previous.y + (target.y-previous.y)*progress, z: previous.z + (target.z-previous.z)*progress, scale: previous.scale + (target.scale-previous.scale)*progress};
+      const seat = seats[index]!;
       const active = index === speakerIndex;
       const saved = resolveAgentAvatarUrl(player.avatarUrl, player.persona, player.name, player.personaKey);
       const source = failed.has(saved) ? resolveAgentAvatarUrl(null, player.persona, player.name, player.personaKey) : saved;

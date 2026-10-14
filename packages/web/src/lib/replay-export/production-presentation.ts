@@ -82,7 +82,7 @@ export async function bindWerewolfProductionPresentation(input: {
   if (validated.length !== expected.moments.length || validated.some((moment,index) => moment.id !== catalog.moments[index]?.id))
     throw new Error("Production catalog changed; reload its fixed source snapshot");
   const byCursor = new Map<number,ExportCue[]>();
-  for (const cue of base) if (cue.source.kind === "werewolf") {
+  for (const cue of base) if (cue.source.kind === "werewolf" && !(cue.picture.kind === "werewolf" && cue.picture.cue.reprise)) {
     const rows = byCursor.get(cue.source.cursor) ?? [];
     rows.push(cue); byCursor.set(cue.source.cursor,rows);
   }
