@@ -21,6 +21,20 @@ test("all introductions share one bed; missing moment, night, dawn and draw are 
  expect(werewolfMusic(null)).toBeNull();
  for (const entry of [{kind:"phase",phase:"night",day:1},{kind:"night",day:1,killedId:null,attackTargetId:"p1",protectedId:"p1"},{kind:"result",day:3,outcome:{faction:null,winnerIds:[],reason:"day_limit"}}] satisfies WerewolfPublicEntry[]) expect(werewolfMusic(moment(entry))).toBeNull();
 });
+test("retrospectives continue the winning faction's result music instead of returning to introductions",()=>{
+ const retro=(faction:"village"|"wolves"|null)=>{
+  const entry={kind:"speech" as const,day:3,actorId:"p1",audience:"public" as const,text:"Looking back…",cue:null,purpose:"retrospective" as const,ordinal:0};
+  const snapshot={...base.snapshot,outcome:faction?{faction,winnerIds:["p1"],reason:faction==="village"?"wolves_eliminated" as const:"wolf_parity" as const}:{faction:null,winnerIds:[],reason:"day_limit" as const}};
+  return {...base,entry,snapshot};
+ };
+ const result=(faction:"village"|"wolves")=>({...base,entry:{kind:"result" as const,day:3,outcome:{faction,winnerIds:["p1"],reason:faction==="village"?"wolves_eliminated" as const:"wolf_parity" as const}},snapshot:{...base.snapshot,outcome:{faction,winnerIds:["p1"],reason:faction==="village"?"wolves_eliminated" as const:"wolf_parity" as const}}});
+ expect(werewolfMusic(retro("village"))).toEqual(werewolfMusic(result("village")));
+ expect(werewolfMusic(retro("village"))?.title).toBe("Lanterns Still Burning");
+ expect(werewolfMusic(retro("wolves"))).toEqual(werewolfMusic(result("wolves")));
+ expect(werewolfMusic(retro("wolves"))?.title).toBe("Wolves at the Festival");
+ expect(werewolfMusic(retro("wolves"))?.key).not.toBe(werewolfMusic(moment({kind:"speech",day:0,actorId:"p1",audience:"public",text:"hello",cue:null}))?.key);
+ expect(werewolfMusic(retro(null))).toBeNull();
+});
 test("pack music is omniscient only; public wolf result starts a distinct one-shot section",()=>{
  const pack=moment({kind:"speech",day:1,actorId:"p1",audience:"pack",text:"hello",cue:null});
  expect(werewolfMusic(pack)).toBeNull();
