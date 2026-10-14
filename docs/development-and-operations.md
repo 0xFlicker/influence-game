@@ -363,6 +363,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_LLM_API_KEY` | No | `lm-studio` when `INFLUENCE_LLM_BASE_URL` is set | API key for the OpenAI-compatible endpoint |
 | `API_KAT_IMGNAI_KEY` | Required for Katana profile | -- | Katana / IMGNAI router API key, used only for explicit Katana model selections |
 | `API_KAT_IMGNAI_SECRET` | Required for Katana profile | -- | Katana / IMGNAI router API secret |
+| `META_MUSE_API_KEY` | Required for Meta Muse profile | -- | Meta Model API key for explicit `meta-muse:` selections (Doppler `dev`; add to `stg`/`prd` only at promotion) |
 | `INFLUENCE_AVATAR_GENERATION_ASSET_HOSTS` | No | `imgnai.com` | Comma-separated HTTPS host allowlist for downloading completed Katana avatar assets before copying them into Influence storage |
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |

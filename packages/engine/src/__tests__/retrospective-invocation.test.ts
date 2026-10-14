@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { InfluenceAgent } from "../agent";
@@ -11,7 +11,7 @@ import { ProviderAcceptedValueIntegrityError, ProviderAttemptError, ProviderExec
 import { applyRetrospectiveRecord, prepareRetrospectiveRequest, RetrospectiveContractError,
   type RetrospectiveInputV1 } from "../retrospective";
 import { freezeRetrospectiveGame, materializeRetrospectiveContext, preflightRetrospectiveContext,
-  RetrospectiveContextCapacityError, serializeRetrospectiveContext, type RetrospectiveSpeakerContext } from "../retrospective-context";
+  serializeRetrospectiveContext, type RetrospectiveSpeakerContext } from "../retrospective-context";
 import { prepareRetrospectiveCapacityPolicy, prepareRetrospectiveInvocation,
   RETROSPECTIVE_OUTPUT_TOKEN_LIMIT, RETROSPECTIVE_SYSTEM_PROMPT } from "../retrospective-invocation";
 import { createStagedAgents } from "../durable-game-runner";
@@ -49,7 +49,7 @@ function phase(context: RetrospectiveSpeakerContext): PhaseContext {
 type NativeBody = { model: string; input: string; instructions: string; max_output_tokens?: number; truncation?: string;
   reasoning?: { effort: string; summary?: string }; tools: Array<{ name: string; strict: boolean; parameters: Record<string, unknown> }>;
   tool_choice: unknown; parallel_tool_calls: boolean };
-function provider(options: { arguments?: string | ((index: number) => string); count?: unknown; status?: number; catalogId?: string; position?: number; baseURL?: string } = {}) {
+function provider(options: { arguments?: string | ((index: number) => string); status?: number; catalogId?: string; position?: number; baseURL?: string } = {}) {
   const requests: Array<{ path: string; body: NativeBody }> = [];
   let generations = 0;
   const client = new OpenAI({ apiKey: "fixture", baseURL: options.baseURL ?? "https://api.openai.com/v1", maxRetries: 8,
@@ -57,11 +57,14 @@ function provider(options: { arguments?: string | ((index: number) => string); c
       const path = new URL(String(url)).pathname;
       const body = JSON.parse(String(init?.body)) as NativeBody;
       requests.push({ path, body });
-      if (path.endsWith("/input_tokens")) return Response.json(options.count ?? { object: "response.input_tokens", input_tokens: 100 }, { status: options.status ?? 200 });
       const arguments_ = typeof options.arguments === "function" ? options.arguments(generations++) : (generations++, options.arguments ?? JSON.stringify({ speech }));
+      if (path.endsWith("/chat/completions")) return Response.json({ id: `chat-${generations}`, object: "chat.completion", model: body.model,
+        choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+          tool_calls: [{ id: `call-${generations}`, type: "function", function: { name: "submit_retrospective", arguments: arguments_ } }] } }],
+        usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180 } }, { status: options.status ?? 200 });
       return Response.json({ id: `resp-${generations}`, object: "response", status: "completed", model: body.model,
         output: [{ type: "function_call", id: `fc-${generations}`, call_id: `call-${generations}`, status: "completed", name: "submit_retrospective", arguments: arguments_ }],
-        usage: { input_tokens: 100, output_tokens: 80, total_tokens: 180, input_tokens_details: { cached_tokens: 20 }, output_tokens_details: { reasoning_tokens: 30 } } });
+        usage: { input_tokens: 100, output_tokens: 80, total_tokens: 180, input_tokens_details: { cached_tokens: 20 }, output_tokens_details: { reasoning_tokens: 30 } } }, { status: options.status ?? 200 });
     } });
   const entry = modelCatalogEntryById(options.catalogId ?? "openai:gpt-5-nano")!;
   const runtime: LlmProviderRuntime = { adapter: createProviderAdapter(entry.providerProfileId, client),
@@ -82,7 +85,8 @@ async function execute(context: RetrospectiveSpeakerContext, runtimes: LlmProvid
     gameId: context.request.gameId, actor: { id: context.self.id, name: context.self.name, role: "player" },
     action: "retrospective-statement", semantic: { version: 1, kind: "phase_call", phase: Phase.RETROSPECTIVE, round: 3, canonicalEventSequence: 6, callSlot: 2 },
   });
-  return executeModelInvocation({ call, runtimes, ...prepareRetrospectiveInvocation(context, runtimes), maxAttempts: 2,
+  const prepared = prepareRetrospectiveInvocation(context, runtimes);
+  return executeModelInvocation({ call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: 2,
     validate: (_outcome, value) => value ? { status: "usable", value }
       : { status: "unusable", kind: "undecodable_structured_output", message: "Missing speech" } });
 }
@@ -99,19 +103,14 @@ describe("dedicated retrospective invocation", () => {
     const result = gameKind === "influence" ? await agent.getRetrospectiveStatement(phase(context), context)
       : await new WerewolfModelAgent({ runtimes: [p.runtime], hooks, ownerEpoch: "owner" }).getRetrospectiveStatement({ gameId: "rt03", actionSlot: 7, day: 3, context });
     expect(result).toEqual({ speech });
-    expect(p.requests.map(request => request.path)).toEqual(["/v1/responses/input_tokens", "/v1/responses"]);
-    const [count, generated] = p.requests.map(request => request.body);
+    expect(p.requests.map(request => request.path)).toEqual(["/v1/responses"]);
+    const [generated] = p.requests.map(request => request.body);
     expect(generated!.input).toBe(serializeRetrospectiveContext(context));
     expect(JSON.parse(generated!.input)).toEqual(context);
     expect(generated!.input).toContain("LATE_GAME_FACT");
     for (const forbidden of ["CURRENT_MEMORY_MUST_NOT_ENTER", "CURRENT_PERSONA_MUST_NOT_ENTER", "CURRENT_BACKSTORY_MUST_NOT_ENTER", "mira ORIGINAL_STRATEGY", "atlas ORIGINAL_STRATEGY"]) expect(generated!.input).not.toContain(forbidden);
     expect(generated!.instructions).toBe(RETROSPECTIVE_SYSTEM_PROMPT);
     expect(generated!.instructions).toContain("untrusted quoted communication");
-    expect(generated!.tools).toEqual(count!.tools);
-    expect(count!.input).toBe(" ");
-    expect(count!.instructions).toBe(generated!.instructions);
-    expect(count!.reasoning).toEqual(generated!.reasoning);
-    expect(count!.truncation).toBe("disabled");
     expect(generated!.reasoning?.effort).toBe("high");
     expect(generated!.max_output_tokens).toBe(RETROSPECTIVE_OUTPUT_TOKEN_LIMIT);
     expect(generated!.tool_choice).toEqual({ type: "function", name: "submit_retrospective" });
@@ -143,7 +142,6 @@ describe("dedicated retrospective invocation", () => {
     const before = structuredClone(state);
     await expect(execute(context, [p.runtime], { onTerminal: record => { records.push(record); } })).rejects.toBeInstanceOf(ProviderAttemptError);
     expect(p.requests.filter(request => request.path === "/v1/responses")).toHaveLength(2);
-    expect(p.requests.filter(request => request.path.endsWith("/input_tokens"))).toHaveLength(1);
     expect(records).toHaveLength(2);
     expect(records.every(record => record.acceptedValue === undefined)).toBe(true);
     expect(state).toEqual(before);
@@ -161,20 +159,20 @@ describe("dedicated retrospective invocation", () => {
     expect(records.every(record => record.acceptedValue === undefined)).toBe(true);
   }, 10_000);
 
-  test("one retry chain traverses the admitted sealed fallback and preserves accounting", async () => {
+  test("one retry chain traverses the sealed fallback and preserves accounting", async () => {
     const { context } = dossier(), primary = provider({ arguments: "{}" }), fallback = provider({ catalogId: "openai:gpt-6-luna", position: 1 });
     const records: ProviderAttemptRecord[] = [];
     const result = await execute(context, [primary.runtime, fallback.runtime], { onTerminal: record => { records.push(record); } });
     expect(result.value).toEqual({ speech });
     expect(result.catalogId).toBe(fallback.runtime.catalogId);
-    expect(primary.requests).toHaveLength(3);
-    expect(fallback.requests).toHaveLength(2);
+    expect(primary.requests).toHaveLength(2);
+    expect(fallback.requests).toHaveLength(1);
     expect(records.map(record => record.preparedRequest.catalogId)).toEqual([primary.runtime.catalogId, primary.runtime.catalogId, fallback.runtime.catalogId]);
     expect(records[0]!.accounting?.usage?.promptTokens).toBe(100);
   });
 
-  test.each(["influence", "werewolf"] as const)("%s accepted replay revalidates speech without counting or generation transport", async gameKind => {
-    const { context } = dossier(gameKind), p = provider({ count: {} });
+  test.each(["influence", "werewolf"] as const)("%s accepted replay revalidates speech without generation transport", async gameKind => {
+    const { context } = dossier(gameKind), p = provider();
     const hooks: ProviderExecutionHooks = { onReadAccepted: () => ({ attemptId: "accepted", attemptOrdinal: 1, catalogId: p.runtime.catalogId, value: { speech } }) };
     const tracker = new TokenTracker(), agent = influence(context, [p.runtime], hooks);
     agent.setTokenTracker(tracker);
@@ -189,50 +187,34 @@ describe("dedicated retrospective invocation", () => {
   });
 });
 
-describe("retrospective capacity and input fences", () => {
-  test.each(["openai:gpt-5-nano", "openai:gpt-5-mini", "openai:gpt-5.4-nano", "openai:gpt-5.4-mini", "openai:gpt-5.6-luna", "openai:gpt-6-luna"])("verified native prefix reserves context, input and full reasoning/output allowance: %s", async catalogId => {
-    const p = provider({ catalogId }), policy = await prepareRetrospectiveCapacityPolicy([p.runtime]);
-    expect(policy.effectiveModelIds).toEqual([catalogId]);
-    expect(policy.models[0]!.maxContextBytes).toBe(catalogId.includes("luna") ? 921_900 : 271_900);
+describe("retrospective dispatch and input fences", () => {
+  test("capacity policy is unbounded for every sealed entry without network reads", async () => {
+    const openai = provider(), katana = provider({ catalogId: "katana:glm-5-2", position: 1 }),
+      meta = provider({ catalogId: "meta-muse:muse-spark-1.3-contributor", position: 2 });
+    const policy = await prepareRetrospectiveCapacityPolicy([openai.runtime, katana.runtime, meta.runtime]);
+    expect(policy.effectiveModelIds).toEqual([openai.runtime.catalogId, katana.runtime.catalogId, meta.runtime.catalogId]);
+    expect(policy.models.every(model => model.maxContextBytes === Number.MAX_SAFE_INTEGER)).toBe(true);
     const { frozen } = dossier();
-    expect(preflightRetrospectiveContext(frozen, policy)).toHaveLength(3);
-    expect(p.requests).toHaveLength(1);
+    expect(preflightRetrospectiveContext(frozen, policy)).toHaveLength(9);
+    expect(openai.requests).toEqual([]);
+    expect(katana.requests).toEqual([]);
+    expect(meta.requests).toEqual([]);
+    await expect(prepareRetrospectiveCapacityPolicy([])).rejects.toMatchObject({ reason: "capacity_unavailable" });
   });
 
-  test.each([{}, { object: "response.input_tokens", input_tokens: 0 }, { object: "response.input_tokens", input_tokens: 1.5 }, { object: "response.input_tokens", input_tokens: "100" }, { object: "response.input_tokens", input_tokens: 100, guessed: true }])("invalid native admission evidence fails before attempts", async count => {
-    const { context } = dossier(), p = provider({ count });
-    await expect(execute(context, [p.runtime])).rejects.toBeInstanceOf(RetrospectiveContextCapacityError);
-    expect(p.requests).toHaveLength(1);
+  test("a Katana fallback generates the statement when the primary exhausts", async () => {
+    const { context } = dossier(), primary = provider({ arguments: "{}" }), katana = provider({ catalogId: "katana:glm-5-2", position: 1 });
+    const result = await execute(context, [primary.runtime, katana.runtime]);
+    expect(result.value).toEqual({ speech });
+    expect(result.catalogId).toBe(katana.runtime.catalogId);
+    expect(primary.requests.map(request => request.path)).toEqual(["/v1/responses", "/v1/responses"]);
+    expect(katana.requests.map(request => request.path)).toEqual(["/v1/chat/completions"]);
   });
 
-  test("unknown provider, endpoint failure and insufficient fallback budget prevent every speech dispatch", async () => {
-    const { context } = dossier(), primary = provider(), unknown = provider({ catalogId: "katana:glm-5-2", position: 1 });
-    await expect(execute(context, [primary.runtime, unknown.runtime])).rejects.toMatchObject({ reason: "capacity_unavailable", modelId: unknown.runtime.catalogId });
-    expect(primary.requests).toHaveLength(1);
-    expect(unknown.requests).toHaveLength(0);
-    const unavailable = provider({ status: 429 });
-    await expect(execute(context, [unavailable.runtime])).rejects.toMatchObject({ reason: "capacity_unavailable" });
-    expect(unavailable.requests).toHaveLength(1); // SDK configured for eight retries; explicitly disabled here.
-    const tooSmall = provider({ catalogId: "openai:gpt-5-mini", position: 1, count: { object: "response.input_tokens", input_tokens: 271_000 } });
-    await expect(execute(context, [primary.runtime, tooSmall.runtime])).rejects.toMatchObject({ reason: "context_capacity_exceeded", actorId: "echo", modelId: tooSmall.runtime.catalogId });
-    expect(primary.requests.every(request => request.path.endsWith("/input_tokens"))).toBe(true);
-    expect(tooSmall.requests).toHaveLength(1);
-  });
-
-  test("unverified model or absent adapter capacity never guesses a window", async () => {
-    const p = provider(), unknown = { ...p.runtime, modelId: "future-model" };
-    await expect(prepareRetrospectiveCapacityPolicy([unknown])).rejects.toMatchObject({ reason: "capacity_unavailable" });
-    // Class methods are not enumerable: override the capability explicitly while retaining the adapter.
-    const missing = Object.create(p.runtime.adapter) as LlmProviderRuntime["adapter"];
-    missing.inputByteBudget = undefined;
-    await expect(prepareRetrospectiveCapacityPolicy([{ ...p.runtime, adapter: missing }])).rejects.toMatchObject({ reason: "capacity_unavailable" });
-    expect(p.requests).toEqual([]);
-  });
-
-  test("an OpenAI model name on a custom endpoint cannot borrow hosted context limits", async () => {
-    const p = provider({ baseURL: "http://fixture.invalid/v1" });
-    await expect(prepareRetrospectiveCapacityPolicy([p.runtime])).rejects.toMatchObject({ reason: "capacity_unavailable" });
-    expect(p.requests).toEqual([]);
+  test("provider endpoint failure exhausts as a typed attempt failure, never a capacity gate", async () => {
+    const { context } = dossier(), unavailable = provider({ status: 429 });
+    await expect(execute(context, [unavailable.runtime])).rejects.toBeInstanceOf(ProviderAttemptError);
+    expect(unavailable.requests).toHaveLength(2); // Bounded attempt retries dispatch; SDK retries stay disabled by the coordinator.
   });
 
   test("context drift, extra fields, another agent/game and cancellation fail before requests", async () => {
@@ -250,7 +232,7 @@ describe("retrospective capacity and input fences", () => {
     expect(p.requests).toEqual([]);
   });
 
-  test("preparation snapshots context before awaiting native admission", async () => {
+  test("preparation snapshots context before dispatch", async () => {
     const { context } = dossier(), p = provider(), original = serializeRetrospectiveContext(context);
     const prepared = prepareRetrospectiveInvocation(context, [p.runtime]);
     context.self.strategy = "mutated";
@@ -259,22 +241,6 @@ describe("retrospective capacity and input fences", () => {
     expect(prepared.invocation.messages[1]!.content).toBe(original);
   });
 
-  test("cancellation during admission preserves the caller's reason and prevents generation", async () => {
-    const { context } = dossier(), p = provider(), controller = new AbortController();
-    p.runtime.adapter.inputByteBudget = async () => { controller.abort(new Error("admission cancelled")); return 1_000_000; };
-    await expect(influence(context, [p.runtime]).getRetrospectiveStatement(phase(context), context, { signal: controller.signal }))
-      .rejects.toThrow("admission cancelled");
-    expect(p.requests).toEqual([]);
-  });
-
-  test("an internal admission deadline fails with typed capacity evidence", async () => {
-    const p = provider(), timeout = new DOMException("Native count deadline", "TimeoutError");
-    const timer = spyOn(AbortSignal, "timeout").mockImplementation(() => AbortSignal.abort(timeout));
-    try {
-      await expect(prepareRetrospectiveCapacityPolicy([p.runtime])).rejects.toMatchObject({ reason: "capacity_unavailable", modelId: p.runtime.catalogId, cause: timeout });
-      expect(p.requests).toEqual([]);
-    } finally { timer.mockRestore(); }
-  });
 });
 
 test("deterministic mocks expose detached exact context and staged speech binds without scene generation", async () => {

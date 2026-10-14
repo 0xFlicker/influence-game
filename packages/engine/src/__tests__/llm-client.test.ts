@@ -130,6 +130,39 @@ describe("LLM client env config", () => {
     expect(config).toBeNull();
   });
 
+  it("resolves explicit Meta Muse selections from META_MUSE_API_KEY only", () => {
+    const config = createLlmClientFromEnv(
+      {
+        INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1",
+        OPENAI_API_KEY: "openai-key",
+        META_MUSE_API_KEY: "meta-key",
+      },
+      { providerProfileId: "meta-muse" },
+    );
+
+    expect(config).not.toBeNull();
+    expect(config?.apiKeySource).toBe("META_MUSE_API_KEY");
+    expect(config?.baseURL).toBe("https://api.meta.ai/v1");
+    expect(config?.baseURLSource).toBe("meta-muse-profile");
+    expect(config?.providerLabel).toBe("Meta Muse");
+    expect(config?.providerProfileId).toBe("meta-muse");
+    expect(config?.toolChoiceMode).toBe("auto");
+    expect(config?.openAIReasoningSummary).toBeUndefined();
+    expect(config?.openAIServiceTier).toBeUndefined();
+    expect(config?.flexProcessingEnabled).toBe(false);
+  });
+
+  it("returns no Meta Muse client without META_MUSE_API_KEY", () => {
+    expect(createLlmClientFromEnv(
+      { OPENAI_API_KEY: "openai-key" },
+      { providerProfileId: "meta-muse" },
+    )).toBeNull();
+  });
+
+  it("does not implicitly use Meta Muse credentials for default games", () => {
+    expect(createLlmClientFromEnv({ META_MUSE_API_KEY: "meta-key" })).toBeNull();
+  });
+
   it("binds an ordered sealed manifest to one zero-retry client per provider profile", () => {
     const runtimes = createLlmProviderRuntimesFromEnv(
       resolveProviderManifest([

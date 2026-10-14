@@ -1328,6 +1328,28 @@ export function classifyResponsesTerminalOutcome(
   return undefined;
 }
 
+/**
+ * Some OpenAI-compatible routers embed a provider failure inside an HTTP 200
+ * chat completion choice (`finish_reason: "error"` with a choice `error`).
+ * That is a provider attempt failure, not a model outcome: classify it so
+ * the coordinator retries/falls back instead of decoding it as empty output.
+ */
+export function classifyChatCompletionTerminalOutcome(
+  response: unknown,
+): ProviderAttemptFailureOutcome | undefined {
+  const record = asRecord(response);
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const choice = asRecord(choices[0]);
+  const error = Object.keys(asRecord(choice.error)).length > 0 ? asRecord(choice.error) : asRecord(record.error);
+  const finishReason = readString(choice.finish_reason).toLowerCase();
+  if (finishReason !== "error" && Object.keys(error).length === 0) return undefined;
+  const metadata = asRecord(error.metadata);
+  const numericCode = typeof error.code === "number" && Number.isSafeInteger(error.code) ? error.code : undefined;
+  const code = (readString(error.code) || readString(metadata.error_type) || (numericCode !== undefined ? String(numericCode) : "")).toLowerCase();
+  const message = readString(error.message) || "Chat completion ended with an embedded provider error";
+  return classifyProviderFailureDetails({ ...(numericCode !== undefined && { status: numericCode }), code, message });
+}
+
 function sanitizePreparedRequest(
   request: ProviderPreparedRequest,
 ): SanitizedProviderRequestEvidence {

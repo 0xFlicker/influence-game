@@ -464,7 +464,7 @@ export interface GameProviderManifestEntry extends GameModelSelection {
 
 export interface ProviderModelInventoryEntry {
   catalogId: string;
-  providerProfileId: "openai" | "katana" | "lm-studio" | "custom-openai-compatible";
+  providerProfileId: "openai" | "katana" | "meta-muse" | "lm-studio" | "custom-openai-compatible";
   modelId: string;
   displayName: string;
   configured: boolean;

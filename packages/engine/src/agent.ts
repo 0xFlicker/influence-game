@@ -2672,12 +2672,12 @@ export class InfluenceAgent implements IAgent {
       },
     } });
     const result = await executeModelInvocation({
-      call, runtimes: this.providerManifest, ...prepared, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
+      call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: this.structuredCallMaxAttempts ?? retrospectiveAttemptsPerModel("influence"),
       cancellationSignal: options?.signal, requestSignalFactory: () => AbortSignal.timeout(120_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },
     });
-    this.rememberProviderMetadata(result.value, this.providerManifest[result.manifestPosition]!, result.acceptedAttemptId, result.liveOutcome);
+    this.rememberProviderMetadata(result.value, prepared.runtimes[result.manifestPosition]!, result.acceptedAttemptId, result.liveOutcome);
     if (result.liveOutcome) this.recordTokenUsage(result.liveOutcome, `${this.name}/retrospective-statement`);
     return result.value;
   }

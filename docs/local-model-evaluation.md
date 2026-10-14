@@ -72,6 +72,7 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 | `LM_STUDIO_API_KEY` | unset | Compatibility alias for LM Studio-specific shell setup. |
 | `API_KAT_IMGNAI_KEY` | unset | Katana router API key. Used only when a game or simulator run explicitly selects the Katana provider profile. |
 | `API_KAT_IMGNAI_SECRET` | unset | Katana router API secret paired with `API_KAT_IMGNAI_KEY`. |
+| `META_MUSE_API_KEY` | unset | Meta Model API key. Used only when a game or simulator run explicitly selects the Meta Muse provider profile. |
 | `INFLUENCE_LLM_PREFLIGHT` | enabled | API game start validates the selected provider/model before claiming the run. Set to `off` only for local provider experiments where the model metadata endpoint is incompatible. |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | `10000` | Timeout for the API start preflight metadata request. |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | `required` for local base URLs, otherwise `named` | Structured decision-call mode. Use `required` for LM Studio servers that reject named OpenAI tool forcing. Other accepted values: `named`, `auto`, `json_schema`. |
@@ -112,6 +113,9 @@ Game-ready catalog entries:
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
 | `katana:glm-5-2` | Katana / IMGNAI | `glm-5-2` | Qualified preferred secondary Daily fallback; speech, strict JSON Schema, and named tools pass |
 | `katana:grok-4-5` | Katana / IMGNAI | `grok-4-5` | Qualified tertiary Daily fallback; speech, strict JSON Schema, and named tools pass |
+| `meta-muse:muse-spark-1.3` | Meta Muse | `muse-spark-1.3` | Standard tier; Responses with auto tool choice and strict JSON Schema |
+| `meta-muse:muse-spark-1.3-contributor` | Meta Muse | `muse-spark-1.3-contributor` | Contributor tier (~95% cheaper; Meta may train on prompts/completions, disclosed in Privacy Policy) |
+| `meta-muse:muse-wonder-1.0` | Meta Muse | `muse-wonder-1.0` | Premium standard tier ($4/$20 per 1M); cap fallback calls |
 
 Known unsuitable catalog entries:
 
@@ -119,7 +123,7 @@ Known unsuitable catalog entries:
 |---|---|---|---|
 | `katana:q-naifu-a3b` | Katana / IMGNAI | `q-naifu-a3b` | Disabled after local API-backed evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks |
 
-Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change.
+Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change. Meta Muse is static-only because its model list mixes text models with image, voice, and segmentation models. Meta reasoning models can spend several hundred tokens before visible output even at low effort, and their reasoning summaries currently return empty, so transcript thinking evidence is thinner than hosted OpenAI's.
 
 Reasoning policy is explicit: `low`, `medium`, or `high` for fixed thinking depth, or `action-policy` (**Adaptive**) for the engine's per-action defaults. The admin UI does not offer `none`.
 

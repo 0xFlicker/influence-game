@@ -106,7 +106,10 @@ const id = { type: "string", minLength: 1, pattern: "\\S" };
 const hash = { type: "string", pattern: "^sha256:[0-9a-f]{64}$" };
 const sequence = { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER };
 const ordinal = { type: "integer", minimum: 0, maximum: MAX_NEW_GAME_PLAYERS - 1 };
-const speech = { type: "string", minLength: 1, maxLength: RETROSPECTIVE_MAX_SPEECH_CHARACTERS, pattern: "\\S" };
+// No `pattern` keyword: some provider routers (Katana/xAI) fail or drop
+// strict tool calls carrying it. Nonblank speech is enforced semantically
+// in decodeSpeech, which runs for both live payloads and accepted replay.
+const speech = { type: "string", minLength: 1, maxLength: RETROSPECTIVE_MAX_SPEECH_CHARACTERS };
 const version = { const: RETROSPECTIVE_CONTRACT_VERSION };
 
 function objectSchema(properties: Record<string, unknown>): Record<string, unknown> {
@@ -278,7 +281,11 @@ export function applyRetrospectiveRecord(
 
 function decodeSpeech(value: unknown): StructuredDomainDecodeResult<RetrospectiveSpeechV1> {
   const result = validateExactStructuredValue(speechSchema, value, "Retrospective speech");
-  return result.status === "invalid" ? result : { status: "valid", value: value as RetrospectiveSpeechV1 };
+  if (result.status === "invalid") return result;
+  if (!/\S/.test((value as RetrospectiveSpeechV1).speech)) {
+    return { status: "invalid", message: "Retrospective speech must not be blank" };
+  }
+  return { status: "valid", value: value as RetrospectiveSpeechV1 };
 }
 
 const speechSchema = objectSchema({ speech });
