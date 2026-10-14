@@ -46,8 +46,11 @@ test("Werewolf default moment compilation preserves existing full movie coverage
     const moments = await bindWerewolfProductionPresentation(input);
     const selectedIds = input.catalog.moments.filter(moment => moment.defaultIncluded && moment.kind !== "thinking").map(moment => moment.id);
     const compiled = compilePresentation({...settings,source:moments,selectedIds});
-    expect(compiled.cues.map(cue => cue.picture)).toEqual(input.base.map(cue => cue.picture));
-    expect(compiled.cues.map(cue => cue.timing.baseDurationMs)).toEqual(input.base.map(cue => cue.timing.baseDurationMs));
+    // The playback-only result reprise after the retrospectives binds to no catalog moment.
+    const coverage = input.base.filter(cue => !(cue.picture.kind === "werewolf" && cue.picture.cue.reprise));
+    expect(input.base.length - coverage.length).toBe(1);
+    expect(compiled.cues.map(cue => cue.picture)).toEqual(coverage.map(cue => cue.picture));
+    expect(compiled.cues.map(cue => cue.timing.baseDurationMs)).toEqual(coverage.map(cue => cue.timing.baseDurationMs));
   }
 });
 test("Werewolf full and retrospective-only cuts retain exact speeches, source order and recording timing",async () => {

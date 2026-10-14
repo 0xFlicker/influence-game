@@ -7,7 +7,9 @@ import {SOLO_READ_START_MS, SOLO_SPEECH_START_MS, SOLO_EXIT_MS, soloPresentation
 import {SILENT_BALLOT_DURATION_MS} from "@/app/games/[slug]/components/vote-presentation-timing";
 import type {RevealedVote, VoteLedgerState} from "@/app/games/[slug]/components/vote-ledger-model";
 import {WOLF_TRANSFORM_MS, WOLF_STAGGER_MS, NIGHT_CLAW_MS} from "./werewolf-night-motion";
-export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; ballot?: VoteLedgerState }
+export interface WerewolfWatchCue { key: string; baseDurationMs: number; moment: WerewolfWatchMoment; transformation?: {wolfIds: string[]; durationMs: number}; nightAction?: WerewolfNightAction; ballot?: VoteLedgerState;
+  /** Playback-only reprise of the result after the final retrospective. */
+  reprise?: boolean }
 export const werewolfWatchPolicy: WatchPolicy<WerewolfWatchCue> = {
   position: cue => cue.moment.cursor,
   scrubAtMs: cue => cue.transformation ? 0 : cue.moment.entry.kind === "night" && !cue.nightAction && cue.moment.entry.killedId ? NIGHT_CLAW_MS : cue.ballot ? cue.ballot.complete ? 0 : SOLO_READ_START_MS : werewolfWatchPolicy.speech(cue)?.readAtMs ?? 0,
@@ -46,7 +48,24 @@ export function werewolfCues(windows: readonly WerewolfWatchWindow[]): WerewolfW
     if (existing && JSON.stringify(existing) !== JSON.stringify(moment)) throw new Error("Committed Werewolf playback changed at an existing position");
     moments.set(moment.cursor, moment);
   }
-  return [...moments.values()].sort((a,b) => a.cursor - b.cursor).filter(m => isWerewolfPlayable(m.entry)).flatMap(werewolfMomentCues);
+  const cues = [...moments.values()].sort((a,b) => a.cursor - b.cursor).filter(m => isWerewolfPlayable(m.entry)).flatMap(werewolfMomentCues);
+  const last = cues.at(-1);
+  const outcome = last?.moment.snapshot.outcome;
+  const latest = windows.reduce<WerewolfWatchWindow | undefined>((chosen, window) =>
+    !chosen || window.throughCursor > chosen.throughCursor ? window : chosen, undefined);
+  // A finished retrospective closes on the result it followed, not on whoever
+  // happened to speak last. The reprise is presentation only: it reuses the
+  // final speaker's snapshot, whose outcome is already public, and carries no
+  // scrub stop or canonical cursor of its own.
+  if (last && outcome && latest?.status === "completed"
+    && last.moment.entry.kind === "speech" && last.moment.entry.purpose === "retrospective") {
+    const moment: WerewolfWatchMoment = {...last.moment, chapterId: "ending", sceneId: "ending",
+      transformWolfIds: undefined, wolfForms: undefined, night: undefined,
+      entry: {kind: "result", day: last.moment.entry.day, outcome}};
+    const [result] = werewolfMomentCues(moment);
+    if (result) cues.push({...result, key: `${result.key}:reprise`, reprise: true});
+  }
+  return cues;
 }
 
 /** Day receipts are canonically public together; reveal order is presentation only. */

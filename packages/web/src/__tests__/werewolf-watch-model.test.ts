@@ -2,7 +2,9 @@ import {expect, test} from "bun:test";
 import {startWerewolf, werewolfConfig} from "../../../engine/src/werewolf/rules";
 import {projectWerewolfWatch} from "../../../engine/src/werewolf/watch";
 import type {WerewolfWatchMoment} from "../../../engine/src/werewolf/watch-contract";
-import {werewolfDoctorSave, werewolfMomentCues, werewolfScrubStops, consumedSilentTail, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfDoctorSave, werewolfCues, werewolfMomentCues, werewolfScrubStops, consumedSilentTail, werewolfWatchPolicy} from "../components/games/werewolf/werewolf-watch-model";
+import {werewolfMusic} from "../components/games/werewolf/werewolf-music";
+import type {WerewolfWatchWindow} from "@influence/engine/werewolf/watch-contract";
 import {replayMoment} from "../components/games/werewolf/replay-moment";
 import {soloPresentationDurationMs, SOLO_READ_START_MS} from "../app/games/[slug]/components/solo-presentation-timing";
 
@@ -28,6 +30,28 @@ test("both Werewolf audiences reveal canonical parts only at the outcome and pla
     }
     if (audience === "mystery") for (const moment of window.moments.slice(0, outcomeIndex)) expect(moment.snapshot.players.every(player => player.role === undefined && player.elimination === undefined)).toBeTrue();
   }
+});
+test("a completed retrospective ends by showing the result again instead of its last speaker", async () => {
+  const {completedWerewolfResultsFixture, werewolfResultsFixture} = await import("../../../engine/src/fixtures/werewolf-results");
+  const projected = projectWerewolfWatch(await completedWerewolfResultsFixture("village", "reprise"), "mystery");
+  const window: WerewolfWatchWindow = {...projected, slug: "reprise", status: "completed", audience: "mystery",
+    publicationCutoff: "2026-10-09T00:00:00.000Z", media: {}};
+  const cues = werewolfCues([window]);
+  const reprise = cues.at(-1)!;
+  expect(reprise.reprise).toBe(true);
+  expect(reprise.moment.entry.kind).toBe("result");
+  if (reprise.moment.entry.kind === "result") expect(reprise.moment.entry.outcome.faction).toBe("village");
+  const before = cues.at(-2)!;
+  expect(before.moment.entry.kind === "speech" && before.moment.entry.purpose).toBe("retrospective");
+  expect(cues.filter(cue => cue.reprise)).toHaveLength(1);
+  expect(new Set(cues.map(cue => cue.key)).size).toBe(cues.length);
+  const original = cues.find(cue => cue.moment.entry.kind === "result")!;
+  expect(cues.indexOf(original)).toBeLessThan(cues.length - 1);
+  expect(werewolfMusic(reprise.moment)).toEqual(werewolfMusic(original.moment));
+  // A game still collecting retrospectives, and one with none, keep their existing endings.
+  expect(werewolfCues([{...window, status: "in_progress"}]).at(-1)?.reprise).toBeUndefined();
+  const unfinished = projectWerewolfWatch(await werewolfResultsFixture("village", "no-retrospective"), "mystery");
+  expect(werewolfCues([{...window, ...unfinished}]).at(-1)?.reprise).toBeUndefined();
 });
 function silent(cursor: number): WerewolfWatchMoment {
   return {...template, cursor, entry: {kind: "phase", day: 1, phase: "day"}};
