@@ -27,14 +27,13 @@ result. Anonymous spending has its own admin pool.
 Keep the active draft storage owner stable while authentication changes. This
 avoids replacing a new visitor's cards with an account recovery prompt during
 signup. Account reloads can recover that anonymous draft when no account draft
-exists. Authentication renders through a body portal so the creator's inert
-background siblings cannot disable the signup modal. Browser verification must
+exists. Authentication renders through a body portal. Browser verification must
 include the existing public-profile setup step after signup, then verify that a
 subsequent message debits the Free account instead of the Anonymous pool.
 
 ## Guided editor
 
-Creation now offers Advanced create and a full-screen assistant backed by the
+Creation now offers Advanced create and a page-height assistant backed by the
 same draft recovery and save contract. Profile generation precedes explicit
 character approval; image generation follows an appearance description. A
 stage-specific strict command schema, decoded on both server and client, controls
@@ -53,7 +52,7 @@ The House mark and opening scene persist through clarifications and failed
 turns. A character summary takes the top position once generated character
 content exists. On tall screens the cards grow up to the viewport midpoint.
 The chat log moves earlier bubbles out of view beneath the summary without a
-visible scrollbar. The full-screen stone hall, gold accents, and translucent bubbles
+visible scrollbar. The stone hall, gold accents, and translucent bubbles
 keep the creation flow legible without a hard divider.
 
 Starter pills share Advanced create's curated ingredients. Selected tags are
@@ -87,6 +86,25 @@ Browser fixtures must return the complete `{ command, reply }` contract, includi
 generation and leaves the approval button absent. The desktop/mobile journey
 also asserts that the composer and visual ingredients stay visible and disabled
 while appearance generation is pending.
+
+## Creator navigation and header overlap (2026-10-14)
+
+The assistant previously filled the viewport with a fixed form and marked all
+outside siblings `inert`. The site navigation was layered above the form, leaving
+its links visible but disabled and obscuring Advanced create and Close.
+
+Keep `/agents/create` in normal document flow: navigation, then a flex-growing
+creator. The mobile menu contributes its actual height, and short screens can
+scroll naturally. Only Advanced mode shows the surrounding breadcrumb and page
+heading. The assistant must not lock body scrolling, mark the page inert, or
+position itself against the visual viewport. Actual authentication, section-reader,
+portrait, and discard dialogs retain their own modal behavior.
+
+Advanced create and Close remain visible in the assistant header, including
+before an anonymous preview. Advanced create still requests an account for
+signed-out visitors; signed-in visitors switch modes with their draft intact.
+Browser coverage checks desktop/mobile layout, expanded mobile navigation, real
+navigation clicks, Close, and the signed-in Advanced/assistant round trip.
 
 ## Source-image load failure and portrait model check (2026-09-26)
 
