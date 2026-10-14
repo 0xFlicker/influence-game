@@ -145,10 +145,10 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
 
   return <>
     <header className="agent-creation-header relative z-10 flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-8">
-      <div><p className="text-xs uppercase tracking-[.2em] text-violet-300">Create your Agent</p><h1 className="text-lg font-semibold">{profile.name || "Who will you be?"}</h1></div>
-      <div className="flex gap-2">{(!anonymous || anonymousUsed) && <button type="button" disabled={locked} onClick={onAdvanced} className="min-h-11 rounded-lg px-3 text-sm text-white/65 disabled:opacity-40">Advanced create</button>}<button type="button" disabled={pending} onClick={onCancel} className="min-h-11 rounded-lg px-3 text-sm text-white/65">Close</button></div>
+      <div className="min-w-0"><p className="text-xs uppercase tracking-[.2em] text-violet-300">Create your Agent</p><h1 className="break-words text-lg font-semibold">{profile.name || "Who will you be?"}</h1></div>
+      <div className="flex shrink-0 gap-2"><button type="button" disabled={locked} onClick={onAdvanced} className="min-h-11 rounded-lg px-3 text-sm text-white/65 disabled:opacity-40">Advanced create</button><button type="button" disabled={pending} onClick={onCancel} className="min-h-11 rounded-lg px-3 text-sm text-white/65">Close</button></div>
     </header>
-    <main className="agent-creation-stage relative mx-auto flex min-h-[20rem] w-full max-w-6xl flex-1 flex-col px-4 sm:px-8">
+    <div className="agent-creation-stage relative mx-auto flex min-h-[20rem] w-full max-w-6xl flex-1 flex-col px-4 sm:px-8">
       <section aria-label="Character fixtures" className={`agent-creation-visual relative z-10 mx-auto w-full ${hasCharacter ? "agent-creation-visual-filled" : "agent-creation-visual-empty"} ${working && (stage === "appearance" || stage === "portrait") ? "agent-creation-visual-forming" : ""}`}>
       {working && (stage === "appearance" || stage === "portrait") ? <CharacterFormation name={profile.name} /> : !hasCharacter ? <div className="agent-creation-empty mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center py-4 text-center">
         <div className="agent-creation-empty-mark flex size-36 items-center justify-center rounded-full border border-amber-200/30 bg-[#100d18]/60 shadow-[0_0_90px_rgba(211,164,80,0.16)] sm:size-48">
@@ -177,7 +177,7 @@ export function AgentCreationChat({ profile, onGenerate, onAppearance, avatarUrl
           {working && <div role="status" aria-label="Assistant typing" className="agent-creation-bubble flex w-fit gap-1 rounded-2xl rounded-bl-sm border border-amber-100/15 bg-[#15111f]/75 px-4 py-3">{[0, 1, 2].map(dot => <span key={dot} aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-amber-100/70 motion-reduce:animate-none" style={{ animationDelay: `${dot * 180}ms` }} />)}</div>}
         </div>
       </div>
-    </main>
+    </div>
     <footer className="agent-creation-dock relative z-10 shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 sm:px-8">
       <div className="mx-auto w-full max-w-3xl space-y-3">
         {stage === "review" && !ended && !working && <button type="button" disabled={locked} onClick={approveCharacter} className="influence-button-primary min-h-11 rounded-lg px-4 text-sm">Yes, that feels right</button>}

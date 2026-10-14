@@ -148,8 +148,8 @@ export function AgentCreateContent({
         };
 
   return (
-    <div>
-      <header className="mb-7 sm:mb-9">
+    <div className={mode === "assistant" ? "flex min-h-0 flex-1 flex-col" : "w-full px-4 py-7 sm:px-6 sm:py-10 lg:px-8"}>
+      {mode === "advanced" && <header className="mb-7 sm:mb-9">
         <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-white/40">
           <Link href="/dashboard" className="transition-colors hover:text-text-primary">Dashboard</Link>
           <span aria-hidden="true">/</span>
@@ -159,7 +159,7 @@ export function AgentCreateContent({
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/50">
           {context.description}<AgentCreateRulesLink werewolf={target.data?.gameKind === "werewolf"} />
         </p>
-      </header>
+      </header>}
       {target.error && <p role="alert">Could not load the game to join. {target.error.message}</p>}
       <AgentForm
         publicPreview

@@ -71,6 +71,61 @@ afterAll(async () => { await cleanupE2eResources([
   ["database", async () => { if (database) await destroyIsolatedTestDb(database.databaseUrl); }],
 ]); }, 60_000);
 
+test("creator sits below working desktop/mobile navigation with visible Advanced create and Close", async () => {
+  const context = await browser.createBrowserContext();
+  const page = await context.newPage();
+  try {
+    for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+      await page.setViewport(viewport);
+      await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
+      await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])');
+      const assertLayout = async () => {
+        const layout = await page.$eval(".agent-creation-form", creator => {
+          const document = creator.ownerDocument;
+          const nav = document.querySelector("nav")!;
+          return {
+            navInert: Boolean(nav.closest("[inert]")),
+            creatorTop: creator.getBoundingClientRect().top,
+            navBottom: nav.getBoundingClientRect().bottom,
+            bodyOverflow: document.body.style.overflow,
+          };
+        });
+        const controls = await page.$$eval(".agent-creation-header button", buttons => buttons.map(button => {
+          const rect = button.getBoundingClientRect();
+          return { text: button.textContent, top: rect.top, bottom: rect.bottom,
+            hit: button.contains(button.ownerDocument.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)) };
+        }));
+        expect(layout.navInert).toBe(false);
+        expect(layout.bodyOverflow).not.toBe("hidden");
+        expect(layout.creatorTop).toBeGreaterThanOrEqual(layout.navBottom);
+        expect(controls.map(control => control.text)).toEqual(["Advanced create", "Close"]);
+        for (const control of controls) {
+          expect(control.top).toBeGreaterThanOrEqual(layout.navBottom);
+          expect(control.bottom).toBeLessThanOrEqual(viewport.height);
+          expect(control.hit).toBe(true);
+        }
+      };
+      await assertLayout();
+      if (viewport.width < 1280) {
+        await page.click('button[aria-label="Open menu"]');
+        await page.waitForSelector('button[aria-label="Close menu"]');
+        await assertLayout();
+      }
+      await page.screenshot({ path: temporaryPath(`public-creator-navigation-${viewport.width}.png`) });
+      await Promise.all([
+        page.waitForFunction("window.location.pathname === '/rules'"),
+        page.click(viewport.width < 1280 ? 'nav > div:last-child a[href="/rules"]' : 'nav a[href="/rules"]'),
+      ]);
+      await page.goto(`${webUrl}/agents/create`, { waitUntil: "networkidle0" });
+      await page.waitForSelector('textarea[aria-label="Message the character assistant"]:not([disabled])');
+      await Promise.all([
+        page.waitForFunction("window.location.pathname === '/games'"),
+        page.click(".agent-creation-header button:last-child"),
+      ]);
+    }
+  } finally { await context.close(); }
+}, 120_000);
+
 test("public hall → one tracked preview → image signup → free account messages, with draft preserved", async () => {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
@@ -119,6 +174,13 @@ test("public hall → one tracked preview → image signup → free account mess
     expect(allowance).toMatchObject({ textBalance: 99, imageBalance: 25, planId: "free" });
     expect(await database.db.select().from(schema.anonymousTextOperations)).toHaveLength(1);
     await page.screenshot({ path: temporaryPath("public-creator-after-signup-mobile.png") });
+    await page.click(".agent-creation-header button:first-child");
+    await page.waitForSelector('#agent-name');
+    expect(await page.evaluate("document.querySelector('#agent-name').value")).toBe("Mira Vale");
+    await page.evaluate("Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === 'Switch to assistant create')?.click()");
+    await page.waitForSelector('.agent-creation-header');
+    expect(await page.$eval('button[aria-label="Read Name"]', element => element.textContent)).toContain("Mira Vale");
+    expect(await page.$eval('nav', element => element.closest('[inert]'))).toBeNull();
   } catch (error) {
     await page.screenshot({ path: temporaryPath("public-creator-browser-failure.png") });
     console.error("[browser failure]", await page.evaluate("document.body.innerText"));

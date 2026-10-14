@@ -181,40 +181,6 @@ export function AgentForm({
     });
     return () => { active = false; };
   }, [anonymous, authReady]);
-  const formRef = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (!guided || !formRef.current) return;
-    const form = formRef.current;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const outside: { element: HTMLElement; inert: boolean }[] = [];
-    for (let branch: HTMLElement | null = form; branch && branch !== document.body; branch = branch.parentElement) {
-      for (const sibling of Array.from(branch.parentElement?.children ?? [])) {
-        if (sibling !== branch && sibling instanceof HTMLElement) {
-          outside.push({ element: sibling, inert: sibling.inert });
-          sibling.inert = true;
-        }
-      }
-    }
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const viewport = window.visualViewport;
-    const fitViewport = () => {
-      form.style.height = viewport ? `${viewport.height}px` : "100dvh";
-      form.style.top = viewport ? `${viewport.offsetTop}px` : "0px";
-    };
-    fitViewport();
-    viewport?.addEventListener("resize", fitViewport);
-    viewport?.addEventListener("scroll", fitViewport);
-    form.querySelector<HTMLButtonElement>("button")?.focus();
-    return () => {
-      for (const { element, inert } of outside) element.inert = inert;
-      document.body.style.overflow = overflow;
-      viewport?.removeEventListener("resize", fitViewport);
-      viewport?.removeEventListener("scroll", fitViewport);
-      form.style.height = ""; form.style.top = "";
-      if (previousFocus?.isConnected) previousFocus.focus();
-    };
-  }, [guided]);
   const isEditing = Boolean(initial);
   const comparingWerewolf = strategyComparison?.field === "werewolfStrategyStyle";
   const showWerewolfComparison = showLiveChanges && comparingWerewolf;
@@ -848,7 +814,7 @@ export function AgentForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} className={guided ? "agent-creation-form fixed inset-0 z-40 flex h-dvh flex-col overflow-y-auto text-white" : "pb-[22rem]"}>
+    <form onSubmit={handleSubmit} className={guided ? "agent-creation-form flex min-h-0 flex-1 flex-col text-white" : "pb-[22rem]"}>
       {pendingRestore && (
         <section className="mb-6 rounded-xl border border-phase/30 bg-phase/10 p-4" aria-label="Saved local draft">
           <p className="text-sm font-semibold text-text-primary">
