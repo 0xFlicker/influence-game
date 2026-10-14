@@ -699,16 +699,17 @@ test("Moment rows seek readable content while target icons seek the start in bot
       await page.setViewport({width:1440,height:920}); await page.waitForSelector('[data-composition-frame]');
       const thought = await page.$eval('[data-moment-id]:has([data-kind="thinking"])',node=>node.getAttribute('data-moment-id')!);
       const speech = await page.$eval('[data-moment-id]:has([data-kind="speech"])',node=>node.getAttribute('data-moment-id')!);
+      // Media readiness can replace rows; resolve the current button for each action.
       for (const [id,content] of [[thought,'[data-in-scene-thinking]'],[speech,'[data-speech-bubble]']] as const) {
-        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.locator(`[data-moment-id="${id}"] > button:first-child`).click();
         await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] ${content}')).opacity)===1`);
         const contentFrame = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
         expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(id);
         if (id === thought) expect(await page.$('[data-preview-frame] [data-speech-bubble]')).toBeNull();
-        await page.click(`[data-moment-id="${id}"] [aria-label="Seek to moment"]`);
+        await page.locator(`[data-moment-id="${id}"] [aria-label="Seek to moment"]`).click();
         await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))<${contentFrame}`);
         const startFrame = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
-        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.locator(`[data-moment-id="${id}"] > button:first-child`).click();
         await page.waitForFunction(`Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===${contentFrame}`);
         expect(contentFrame).toBeGreaterThan(startFrame);
         expect(await page.$$eval('[aria-label="Playback controls"] button',nodes=>nodes.some(node=>node.textContent?.trim()==='Play'))).toBe(true);
@@ -722,12 +723,12 @@ test("Moment rows seek readable content while target icons seek the start in bot
         await page.waitForFunction(`new URL(location.href).searchParams.get('thinking')===${JSON.stringify(enabled ? "on" : "off")} && document.querySelector('[data-composition-frame]')`);
         await closeStudioDialog(page);
         if (!enabled) {
-          await page.click(`[data-moment-id="${speech}"] > button:first-child`);
+          await page.locator(`[data-moment-id="${speech}"] > button:first-child`).click();
           await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(speech)}`);
           const before = await page.$eval('[data-composition-frame]',node=>Number(node.getAttribute('data-composition-frame')));
           await clickButton(page,"Play");
           await page.waitForFunction(`Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))>${before}`);
-          await page.click(`[data-moment-id="${thought}"] > button:first-child`);
+          await page.locator(`[data-moment-id="${thought}"] > button:first-child`).click();
           await page.waitForFunction("document.body.innerText.includes('Thinking is not playing in Source.') && Array.from(document.querySelectorAll('[aria-label=\"Playback controls\"] button')).some(node=>node.textContent?.trim()==='Play')");
           expect(await page.$eval('[data-selected-moment]',node=>node.getAttribute('data-selected-moment'))).toBe(thought);
           const stopped = await page.$eval('[data-preview-frame]',node=>Number(node.getAttribute('data-preview-frame')));
@@ -740,14 +741,14 @@ test("Moment rows seek readable content while target icons seek the start in bot
       if (!werewolf) {
         // Generated-scene speech has its own entrance, not the portrait offset.
         const id = studioFixture.influence.roomSpeechId;
-        await page.click(`[data-moment-id="${id}"] > button:first-child`);
+        await page.locator(`[data-moment-id="${id}"] > button:first-child`).click();
         await page.waitForFunction(`document.querySelector('[data-composition-moment]')?.getAttribute('data-composition-moment')===${JSON.stringify(id)} && Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-speech-bubble]')).opacity)===1`);
         await configureStudioCut(page,"Smart","None"); await clickButton(page,"Selected cut");
         await page.waitForSelector(`[data-moment-id="${thought}"]`);
-        await page.click(`[data-moment-id="${thought}"] > button:first-child`);
+        await page.locator(`[data-moment-id="${thought}"] > button:first-child`).click();
         await page.waitForFunction("Number(getComputedStyle(document.querySelector('[data-preview-frame] [data-in-scene-thinking]')).opacity)===1");
         expect(await page.$('[data-preview-frame] [data-speech-bubble]')).toBeNull();
-        await page.click(`[data-moment-id="${thought}"] [aria-label="Seek to moment"]`);
+        await page.locator(`[data-moment-id="${thought}"] [aria-label="Seek to moment"]`).click();
         await page.waitForFunction("Number(document.querySelector('[data-composition-frame]')?.getAttribute('data-composition-frame'))===0");
       }
     } finally {await page.close();}
