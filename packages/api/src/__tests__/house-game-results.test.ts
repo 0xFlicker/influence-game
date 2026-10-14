@@ -102,6 +102,7 @@ test("rules-v7 Werewolf without retrospectives retains results, Studio and trail
  expect(page.progress).toMatchObject({status:"unavailable",requiredStatements:0});
  expect(page.statements).toEqual([]);
  expect((await readWerewolfProductionSource(db,id,{audience:"mystery",thinking:false})).catalog.moments.length).toBeGreaterThan(0);
+ await db.insert(schema.houseCutJobs).values({gameId:id,audience:"mystery",status:"ready",publication:{version:"v1",audience:"mystery",cuts:[]}});
  expect(await loadWerewolfTrailerSnapshot(db,id)).toBeDefined();
 });
 
