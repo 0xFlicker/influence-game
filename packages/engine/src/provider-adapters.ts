@@ -32,6 +32,7 @@ import {
   type ExactStructuredOutputResult,
 } from "./structured-output";
 import {
+  classifyChatCompletionTerminalOutcome,
   classifyProviderError,
   classifyResponsesTerminalOutcome,
   type ProviderAttemptAccountingFacts,
@@ -144,8 +145,7 @@ export async function executeModelInvocation<TValue, TStructuredValue = unknown>
             invocation: semanticCall,
             toolUsesJsonSchema:
               semanticCall.result.kind === "tool"
-              && prepared.transport !== "openai.responses"
-              && runtime.toolChoiceMode === "json_schema",
+              && asRecord(asRecord(prepared.body).response_format).type === "json_schema",
           });
           return outcome;
         },
@@ -379,43 +379,6 @@ abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
 export class OpenAIProviderAdapter extends OpenAICompatibleAdapter {
   readonly id = "openai";
 
-  async inputByteBudget(prefix: ModelInvocation, runtime: ProviderRuntimeDescriptor, signal?: AbortSignal): Promise<number> {
-    // Published model pages, verified 2026-10-10. Exact IDs only: no family or
-    // custom-provider inference. See docs/game-retrospective-invocation.md.
-    const limits: Record<string, { window: number; input: number; output: number }> = {
-      "gpt-5-nano": { window: 400_000, input: 272_000, output: 128_000 },
-      "gpt-5-mini": { window: 400_000, input: 272_000, output: 128_000 },
-      "gpt-5.4-nano": { window: 400_000, input: 272_000, output: 128_000 },
-      "gpt-5.4-mini": { window: 400_000, input: 272_000, output: 128_000 },
-      "gpt-5.6-luna": { window: 1_050_000, input: 922_000, output: 128_000 },
-      "gpt-6-luna": { window: 1_050_000, input: 922_000, output: 128_000 },
-    };
-    const limit = limits[runtime.modelId];
-    if (this.client.baseURL.replace(/\/$/, "") !== "https://api.openai.com/v1"
-      || runtime.providerProfileId !== "openai" || !runtime.modelCapabilities.supportsOpenAIResponses
-      || !limit || !Number.isSafeInteger(prefix.outputTokenLimit) || prefix.outputTokenLimit < 1 || prefix.outputTokenLimit > limit.output) {
-      throw new Error("Verified Responses context capacity is unavailable");
-    }
-    const native = compileOpenAIResponsesRequest(prefix, runtime);
-    // The installed SDK exposes post(), but predates this native count endpoint.
-    const count = await this.client.post<unknown, unknown>("/responses/input_tokens", {
-      body: { model: native.model, input: native.input, instructions: native.instructions,
-        tools: native.tools, tool_choice: native.tool_choice, parallel_tool_calls: native.parallel_tool_calls,
-        reasoning: native.reasoning, text: native.text, truncation: "disabled" },
-      maxRetries: 0, signal,
-    });
-    if (!count || typeof count !== "object" || Array.isArray(count)
-      || Object.keys(count).some(key => key !== "object" && key !== "input_tokens")
-      || !("object" in count) || count.object !== "response.input_tokens"
-      || !("input_tokens" in count) || !Number.isSafeInteger(count.input_tokens) || Number(count.input_tokens) < 1) {
-      throw new Error("Invalid native input-token count");
-    }
-    // Native counting owns system/tool/framing overhead. GPT text uses byte BPE:
-    // one token per UTF-8 byte is an upper bound, not a chars/token estimate.
-    // max_output_tokens includes BOTH visible output and reasoning.
-    return Math.min(limit.input, limit.window - prefix.outputTokenLimit) - Number(count.input_tokens);
-  }
-
   compile(
     invocation: ModelInvocation,
     runtime: ProviderRuntimeDescriptor,
@@ -459,6 +422,8 @@ export class OpenAIProviderAdapter extends OpenAICompatibleAdapter {
       request.body as ChatCompletionCreateParamsNonStreaming,
       options,
     );
+    const terminal = classifyChatCompletionTerminalOutcome(response);
+    if (terminal) throw new ProviderNativeOutcomeError(terminal, response);
     try {
       return normalizeChatCompletion(response, request.transport);
     } catch {
@@ -495,12 +460,76 @@ export class KatanaProviderAdapter extends OpenAICompatibleAdapter {
       request.body as ChatCompletionCreateParamsNonStreaming,
       options,
     );
+    const terminal = classifyChatCompletionTerminalOutcome(response);
+    if (terminal) throw new ProviderNativeOutcomeError(terminal, response);
     try {
       return normalizeChatCompletion(response, request.transport);
     } catch {
       throw new ProviderNativeDecodeError(response);
     }
   }
+}
+
+/**
+ * Meta Model API (Muse Spark / Wonder) via its Responses endpoint.
+ * Only "auto" tool choice is accepted, so semantic required/named choices
+ * compile to "auto" here; exact tool decoding still requires exactly one
+ * correct tool call, and a missing call stays a typed structured failure.
+ */
+export class MetaMuseProviderAdapter extends OpenAICompatibleAdapter {
+  readonly id = "meta-muse";
+
+  compile(
+    invocation: ModelInvocation,
+    runtime: ProviderRuntimeDescriptor,
+  ): ProviderNativeRequest {
+    return {
+      transport: "meta-muse.responses",
+      body: compileMetaMuseResponsesRequest(invocation, runtime),
+    };
+  }
+
+  async dispatch(
+    request: ProviderNativeRequest,
+    options: Parameters<LlmProviderAdapter["dispatch"]>[1],
+  ): Promise<ProviderModelOutcome> {
+    const response = await this.client.responses.create(
+      request.body as ResponseCreateParamsNonStreaming,
+      options,
+    );
+    const terminal = classifyResponsesTerminalOutcome(response);
+    if (terminal) throw new ProviderNativeOutcomeError(terminal, response);
+    const reasoning = asRecord(asRecord(request.body).reasoning);
+    const requestedSummary = readString(reasoning.summary);
+    try {
+      return normalizeOpenAIResponse(
+        response,
+        requestedSummary === "auto" || requestedSummary === "concise" || requestedSummary === "detailed"
+          ? requestedSummary
+          : undefined,
+        "meta-muse.responses",
+      );
+    } catch {
+      throw new ProviderNativeDecodeError(response);
+    }
+  }
+}
+
+/** Meta reasoning tokens count against max_output_tokens and routinely
+ * exceed small House caps (512-token summaries length-failed 28/28 in the
+ * first live game), so Meta requests carry a minimum output budget. */
+export const META_MUSE_MIN_OUTPUT_TOKENS = 2_048;
+
+export function compileMetaMuseResponsesRequest(
+  invocation: ModelInvocation,
+  runtime: ProviderRuntimeDescriptor,
+): ResponseCreateParamsNonStreaming {
+  const body = compileOpenAIResponsesRequest(invocation, runtime) as unknown as Record<string, unknown>;
+  if ("tool_choice" in body) body.tool_choice = "auto";
+  if (typeof body.max_output_tokens === "number" && body.max_output_tokens < META_MUSE_MIN_OUTPUT_TOKENS) {
+    body.max_output_tokens = META_MUSE_MIN_OUTPUT_TOKENS;
+  }
+  return body as unknown as ResponseCreateParamsNonStreaming;
 }
 
 export class OpenAICompatibleChatAdapter extends OpenAICompatibleAdapter {
@@ -524,6 +553,8 @@ export class OpenAICompatibleChatAdapter extends OpenAICompatibleAdapter {
       request.body as ChatCompletionCreateParamsNonStreaming,
       options,
     );
+    const terminal = classifyChatCompletionTerminalOutcome(response);
+    if (terminal) throw new ProviderNativeOutcomeError(terminal, response);
     try {
       return normalizeChatCompletion(response, request.transport);
     } catch {
@@ -566,6 +597,7 @@ export function createProviderAdapter(
 ): LlmProviderAdapter {
   if (providerProfileId === "openai") return new OpenAIProviderAdapter(client);
   if (providerProfileId === "katana") return new KatanaProviderAdapter(client);
+  if (providerProfileId === "meta-muse") return new MetaMuseProviderAdapter(client);
   return new OpenAICompatibleChatAdapter(client);
 }
 
@@ -869,6 +901,7 @@ function assertImageInvocation(invocation: ModelInvocation, runtime: ProviderRun
 export function normalizeOpenAIResponse(
   response: OpenAIResponse,
   requestedSummaryMode?: "auto" | "concise" | "detailed",
+  transport = "openai.responses",
 ): ProviderModelOutcome {
   const output = Array.isArray(response.output) ? response.output : [];
   const textParts: string[] = [];
@@ -915,7 +948,7 @@ export function normalizeOpenAIResponse(
   const accounting = accountingFromResponse(response);
   const requestId = readString((response as unknown as Record<string, unknown>)._request_id);
   return {
-    transport: "openai.responses",
+    transport,
     nativeResponse: response,
     ...(readString(response.id) && { responseId: readString(response.id) }),
     ...(requestId && { requestId }),

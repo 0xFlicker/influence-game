@@ -66,6 +66,43 @@ describe("provider model inventory", () => {
       .toMatchObject({ configured: false, allowedReasoningPolicies: ["action-policy"] });
   });
 
+  test("lists configured Meta Muse text models and never non-text Meta models", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: USER_ID,
+      walletAddress: "0x9999999999999999999999999999999999999999",
+      displayName: "Provider Inventory User",
+    });
+    const app = new Hono().route("/", createProviderModelRoutes(
+      db,
+      { META_MUSE_API_KEY: "configured" } as NodeJS.ProcessEnv,
+      {
+        async listModelIds(providerProfileId) {
+          if (providerProfileId !== "meta-muse") throw new Error("unexpected provider");
+          return ["muse-wonder-1.0", "sam-3.1", "muse-spark-1.3-contributor", "muse-voice-transcribe-1.0", "muse-spark-1.3", "muse-image-1.0", "muse-spark-1.2"];
+        },
+      },
+    ));
+    const token = await createSessionToken(USER_ID, { roles: ["sysop"], permissions: [] });
+    const response = await app.request("/api/provider-models", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      status: string;
+      models: Array<{ catalogId: string; configured: boolean; available: boolean | null }>;
+    };
+    expect(body.status).toBe("complete");
+    expect(body.models.find((model) => model.catalogId === "meta-muse:muse-spark-1.3-contributor"))
+      .toMatchObject({ configured: true, available: true });
+    expect(body.models.find((model) => model.catalogId === "meta-muse:muse-wonder-1.0"))
+      .toMatchObject({ configured: true, available: true });
+    expect(body.models.some((model) => model.catalogId === "meta-muse:muse-image-1.0")).toBe(false);
+    expect(body.models.some((model) => model.catalogId === "meta-muse:sam-3.1")).toBe(false);
+    expect(body.models.some((model) => model.catalogId === "meta-muse:muse-voice-transcribe-1.0")).toBe(false);
+    expect(body.models.some((model) => model.catalogId === "meta-muse:muse-spark-1.2")).toBe(false);
+  });
+
   test("returns a bounded unavailable inventory without exposing provider failures", async () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values({

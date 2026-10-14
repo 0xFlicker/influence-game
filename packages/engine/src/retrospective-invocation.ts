@@ -19,46 +19,35 @@ function invocation(content: string): ModelInvocation<RetrospectiveSpeechV1> {
     outputTokenLimit: RETROSPECTIVE_OUTPUT_TOKEN_LIMIT, reasoning: { effort: "low" }, temperature: 0.8 };
 }
 
-/** Native read of the exact fixed system/tool prefix for every sealed runtime.
- * The space retains the real single-string Responses input shape and reserves
- * an extra token conservatively. No placeholder speeches are tokenized.
+/**
+ * Retrospective always dispatches through the sealed manifest. There is no
+ * context-capacity admission gate: if a provider rejects an attempt (for
+ * example a context window overflow on a very long game), the provider
+ * coordinator retries and falls back through the remaining manifest entries
+ * like every other invocation. The returned policy keeps the frozen-context
+ * preflight shape with unbounded budgets; its receipts still record each
+ * speaker's serialized size for observability.
  */
 export async function prepareRetrospectiveCapacityPolicy(
   runtimes: readonly LlmProviderRuntime[], signal?: AbortSignal,
 ): Promise<RetrospectiveCapacityPolicy> {
+  signal?.throwIfAborted();
   if (!runtimes.length || new Set(runtimes.map(runtime => runtime.catalogId)).size !== runtimes.length) {
     throw new RetrospectiveContextCapacityError("capacity_unavailable", null, null, null, null);
   }
-  const models = [];
-  const readSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000);
-  for (const runtime of runtimes) {
-    signal?.throwIfAborted();
-    try {
-      readSignal.throwIfAborted();
-      if (!runtime.adapter.inputByteBudget) throw new Error("Provider has no verified context admission");
-      const maxContextBytes = await runtime.adapter.inputByteBudget(invocation(" "), runtime, readSignal);
-      readSignal.throwIfAborted();
-      if (!Number.isSafeInteger(maxContextBytes) || maxContextBytes < 1) throw new Error("Invalid admitted context budget");
-      models.push({ modelId: runtime.catalogId, maxContextBytes });
-    } catch (error) {
-      signal?.throwIfAborted();
-      throw new RetrospectiveContextCapacityError("capacity_unavailable", runtime.catalogId, null, null, null, { cause: error });
-    }
-  }
-  return { effectiveModelIds: runtimes.map(runtime => runtime.catalogId), models };
+  return {
+    effectiveModelIds: runtimes.map(runtime => runtime.catalogId),
+    models: runtimes.map(runtime => ({ modelId: runtime.catalogId, maxContextBytes: Number.MAX_SAFE_INTEGER })),
+  };
 }
 
 export function prepareRetrospectiveInvocation(
   context: RetrospectiveSpeakerContext, runtimes: readonly LlmProviderRuntime[], signal?: AbortSignal,
-): { invocation: ModelInvocation<RetrospectiveSpeechV1>; beforeDispatch(): Promise<void> } {
+): { invocation: ModelInvocation<RetrospectiveSpeechV1>; runtimes: LlmProviderRuntime[]; beforeDispatch(): Promise<void> } {
   const frozen = structuredClone(context);
   assertRetrospectiveSpeakerContext(frozen);
   const content = serializeRetrospectiveContext(frozen);
-  const requiredBytes = new TextEncoder().encode(content).byteLength;
-  return { invocation: invocation(content), async beforeDispatch() {
-    const policy = await prepareRetrospectiveCapacityPolicy(runtimes, signal);
-    for (const model of policy.models) if (requiredBytes > model.maxContextBytes) {
-      throw new RetrospectiveContextCapacityError("context_capacity_exceeded", model.modelId, frozen.self.id, requiredBytes, model.maxContextBytes);
-    }
+  return { invocation: invocation(content), runtimes: [...runtimes], async beforeDispatch() {
+    signal?.throwIfAborted();
   } };
 }

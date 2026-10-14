@@ -26,7 +26,7 @@ interface ApiSimArgs {
   webBaseUrl: string;
   games: number;
   players: number;
-  provider: "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
+  provider: "openai" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
   model?: string;
   modelCatalogId?: string;
   providerManifest?: GameProviderManifest;
@@ -336,6 +336,7 @@ export function catalogIdFromProviderAndModel(
     throw new Error("--model is required for --provider lm-studio");
   }
   if (provider === "katana") return "katana:grok-4-3";
+  if (provider === "meta-muse") return "meta-muse:muse-spark-1.3-contributor";
   if (provider === "custom-openai-compatible") {
     throw new Error("--model is required for --provider custom-openai-compatible");
   }
@@ -356,7 +357,7 @@ function parseMaxRounds(value: string | undefined): number | "auto" | undefined 
 }
 
 function parseProvider(value: string | undefined): ApiSimArgs["provider"] | undefined {
-  if (value === "openai" || value === "lm-studio" || value === "katana" || value === "custom-openai-compatible") {
+  if (value === "openai" || value === "lm-studio" || value === "katana" || value === "meta-muse" || value === "custom-openai-compatible") {
     return value;
   }
   return undefined;

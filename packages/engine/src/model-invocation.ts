@@ -131,11 +131,6 @@ export interface ProviderAdapterDispatchOptions {
 
 export interface LlmProviderAdapter {
   readonly id: string;
-  /** Verified remaining UTF-8 text budget for a fixed invocation prefix. Missing
-   * support is an explicit admission failure. This read must not generate a
-   * completion or use SDK retries.
-   */
-  inputByteBudget?(prefix: ModelInvocation, runtime: ProviderRuntimeDescriptor, signal?: AbortSignal): Promise<number>;
   validate(
     invocation: ModelInvocation,
     runtime: ProviderRuntimeDescriptor,

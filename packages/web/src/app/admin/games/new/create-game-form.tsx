@@ -160,6 +160,33 @@ const GAME_MODELS: GameModelOption[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningPolicies: ["action-policy"],
   },
+  {
+    catalogId: "meta-muse:muse-spark-1.3",
+    displayName: "Meta Muse Spark 1.3",
+    sublabel: "Standard tier; no training on prompts",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
+  {
+    catalogId: "meta-muse:muse-spark-1.3-contributor",
+    displayName: "Meta Muse Spark 1.3 Contributor",
+    sublabel: "Cheapest play; Meta may train on game prompts",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
+  {
+    catalogId: "meta-muse:muse-wonder-1.0",
+    displayName: "Meta Muse Wonder 1.0",
+    sublabel: "Premium Meta tier; cap fallback calls",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
 ];
 
 const THINKING_DEPTHS: Array<{

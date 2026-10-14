@@ -39,9 +39,8 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   if (slot === "final") while (state.retrospective!.statements.length < state.players.length - 1) state = await advanceWerewolf(store, scripted);
   const ordinal = state.retrospective!.statements.length;
   const frozen = (await db.select().from(schema.gameRetrospectiveInputs))[0]!.input;
-  let generations = 0, counts = 0;
+  let generations = 0;
   const client = new OpenAI({ apiKey: "fixture", baseURL: "https://api.openai.com/v1", maxRetries: 0, fetch: async (url, init) => {
-    if (String(url).endsWith("/input_tokens")) { counts++; return Response.json({ object: "response.input_tokens", input_tokens: 100 }); }
     generations++;
     const body = JSON.parse(String(init?.body));
     const context = JSON.parse(body.input);
@@ -58,13 +57,13 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
     reasoningPolicy: "high", toolChoiceMode: "named", position: 0, role: "primary" };
   const makeAgent = (ownerEpoch: string): WerewolfAgent => {
     const model = new WerewolfModelAgent({ runtimes: [runtime], hooks: createApiProviderExecutionHooks(db, { gameId: game.id, ownerEpoch }), ownerEpoch });
-    return { ...scripted, async prepareRetrospectiveCapacity() { throw new Error("Frozen setup cannot read native capacity again"); }, getRetrospectiveStatement: input => model.getRetrospectiveStatement(input) };
+    return { ...scripted, async prepareRetrospectiveCapacity() { throw new Error("Frozen setup cannot rebuild capacity again"); }, getRetrospectiveStatement: input => model.getRetrospectiveStatement(input) };
   };
   await expect(advanceWerewolf({ ...store, async append(event, input) {
     if (event.type === "werewolf.retrospective_statement_recorded") throw new Error("Interrupted after accepted provider response");
     return store.append(event, input);
   } }, makeAgent(claim.claim.ownerEpoch))).rejects.toThrow("Interrupted after accepted");
-  expect(generations).toBe(1); expect(counts).toBe(1);
+  expect(generations).toBe(1);
   expect(replayWerewolf(await store.read()).sequence).toBe(state.sequence);
   const planned = (await db.select().from(schema.werewolfTurns).where(eq(schema.werewolfTurns.sequence, state.sequence + 1)))[0]!;
   expect(planned.request).toMatchObject({ actorId: state.retrospective!.definition.speakerIds[ordinal], ordinal });
@@ -75,7 +74,7 @@ test.each(["first", "final"] as const)("%s retrospective response survives owner
   const nextStore = createWerewolfStore(db, game.id, replacement.claim.ownerEpoch);
   const resumed = await advanceWerewolf(nextStore, makeAgent(replacement.claim.ownerEpoch));
   expect(resumed.retrospective!.statements[ordinal]!.speech).toBe("  I now understand the whole game. 😀\n ");
-  expect(generations).toBe(1); expect(counts).toBe(1);
+  expect(generations).toBe(1);
   const call = (await db.select().from(schema.providerLogicalCalls))[0]!;
   expect(resumed.retrospective!.statements[ordinal]!.providerLogicalCallId).toBe(call.id);
   expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
@@ -133,7 +132,6 @@ test("a crash after exhausted native retries cannot spend again before explicit 
   while (!state.retrospective) state = await advanceWerewolf(store, scripted);
   let generations = 0, valid = false;
   const client = new OpenAI({ apiKey: "fixture", baseURL: "https://api.openai.com/v1", maxRetries: 0, fetch: async (url, init) => {
-    if (String(url).includes("input_tokens")) return Response.json({ object: "response.input_tokens", input_tokens: 900 });
     generations++;
     const body = JSON.parse(String(init?.body));
     return Response.json({ id: `rt08-native-${generations}`, object: "response", created_at: 0, status: "completed", model: body.model,

@@ -20,6 +20,7 @@ function providerConfigured(
       && env.API_KAT_IMGNAI_SECRET?.trim(),
     );
   }
+  if (providerProfileId === "meta-muse") return Boolean(env.META_MUSE_API_KEY?.trim());
   if (providerProfileId === "lm-studio" || providerProfileId === "custom-openai-compatible") {
     return Boolean(env.INFLUENCE_LLM_BASE_URL?.trim());
   }

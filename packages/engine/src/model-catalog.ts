@@ -2,7 +2,7 @@ import type { OpenAIReasoningSummaryMode, LlmToolChoiceMode } from "./llm-client
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
 
-export type ProviderProfileId = "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
+export type ProviderProfileId = "openai" | "lm-studio" | "katana" | "meta-muse" | "custom-openai-compatible";
 export type ModelReasoningEffort = "low" | "medium" | "high";
 export type ModelReasoningPolicy = "action-policy" | ModelReasoningEffort;
 export type ModelEvaluationStatus = "game-ready" | "evaluation-candidate" | "disabled";
@@ -95,6 +95,15 @@ export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
     isLocal: false,
     defaultToolChoiceMode: "named",
   },
+  "meta-muse": {
+    id: "meta-muse",
+    label: "Meta Muse",
+    baseURL: "https://api.meta.ai/v1",
+    isLocal: false,
+    // Meta Model API accepts only "auto" tool choice (verified 2026-10-13);
+    // named/required choices return HTTP 400 on Chat Completions and Responses.
+    defaultToolChoiceMode: "auto",
+  },
   "custom-openai-compatible": {
     id: "custom-openai-compatible",
     label: "OpenAI-compatible",
@@ -158,6 +167,21 @@ const KATANA_GENERAL_CAPABILITIES: ModelRequestCapabilities = {
 const KATANA_JSON_SCHEMA_ONLY_CAPABILITIES: ModelRequestCapabilities = {
   ...KATANA_GENERAL_CAPABILITIES,
   supportsTools: false,
+};
+
+// Meta Muse dispatches through its own Responses adapter; the
+// supportsOpenAIResponses flag stays false because it gates hosted-OpenAI
+// byte-budget behavior. Image input stays unclaimed until verified on Meta.
+const META_MUSE_CAPABILITIES: ModelRequestCapabilities = {
+  supportsImageInput: false,
+  supportsReasoningEffort: true,
+  supportsToolReasoningEffort: true,
+  usesMaxCompletionTokens: true,
+  supportsTemperature: false,
+  supportsOpenAIResponses: false,
+  supportsPromptCacheRetention: false,
+  supportsStructuredOutput: true,
+  supportsTools: true,
 };
 
 export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
@@ -292,6 +316,39 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     capabilities: KATANA_GENERAL_CAPABILITIES,
     notes: "Approved low-cost tertiary fallback for provider-resilient Influence games.",
   },
+  {
+    id: "meta-muse:muse-spark-1.3",
+    providerProfileId: "meta-muse",
+    modelId: "muse-spark-1.3",
+    displayName: "Meta Muse Spark 1.3",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: META_MUSE_CAPABILITIES,
+    notes: "Standard tier: prompts and completions are not used to train Meta models.",
+  },
+  {
+    id: "meta-muse:muse-spark-1.3-contributor",
+    providerProfileId: "meta-muse",
+    modelId: "muse-spark-1.3-contributor",
+    displayName: "Meta Muse Spark 1.3 Contributor",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: META_MUSE_CAPABILITIES,
+    notes: "Contributor tier: ~95% cheaper; Meta may train on prompts and completions. Disclosed in the Privacy Policy; never send sensitive or personal information.",
+  },
+  {
+    id: "meta-muse:muse-wonder-1.0",
+    providerProfileId: "meta-muse",
+    modelId: "muse-wonder-1.0",
+    displayName: "Meta Muse Wonder 1.0",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: META_MUSE_CAPABILITIES,
+    notes: "Standard tier only; premium pricing ($4/$20 per 1M). Use manifest call caps.",
+  },
 ];
 
 const MODEL_BY_ID = new Map(MODEL_CATALOG.map((entry) => [entry.id, entry]));
@@ -301,6 +358,8 @@ const MODEL_BY_PROVIDER_AND_MODEL = new Map(
 
 function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEntry | undefined {
   const [profileId, ...modelParts] = catalogId.split(":");
+  // meta-muse is static-only: its model list mixes text models with image,
+  // voice, and segmentation models that must never become game LLMs.
   if (
     profileId !== "openai"
     && profileId !== "katana"
@@ -511,6 +570,7 @@ export function inferModelCapabilities(
   const catalogEntry = MODEL_BY_PROVIDER_AND_MODEL.get(`${providerProfileId}:${modelId}`);
   if (catalogEntry) return catalogEntry.capabilities;
   if (providerProfileId === "katana" && modelId.startsWith("grok-")) return KATANA_GROK_CAPABILITIES;
+  if (providerProfileId === "meta-muse" && modelId.startsWith("muse-")) return META_MUSE_CAPABILITIES;
   if (/^gpt-5\.[6-9]/.test(modelId)) return OPENAI_GPT56_CAPABILITIES;
   if (/^gpt-5\.[4-5]/.test(modelId)) return OPENAI_GPT54_CAPABILITIES;
   if (/^o\d/.test(modelId) || modelId.startsWith("gpt-5")) return OPENAI_GPT5_CAPABILITIES;

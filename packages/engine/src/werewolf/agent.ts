@@ -109,7 +109,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
       semantic: { version: 1, kind: "werewolf_action", eventSequence: input.actionSlot },
     });
     const result = await executeModelInvocation({
-      call, runtimes: this.runtimes, ...prepared, maxAttempts: retrospectiveAttemptsPerModel("werewolf"), cancellationSignal: input.signal,
+      call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: retrospectiveAttemptsPerModel("werewolf"), cancellationSignal: input.signal,
       requestSignalFactory: () => AbortSignal.timeout(120_000),
       validate: (_outcome, value) => value ? { status: "usable", value }
         : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },

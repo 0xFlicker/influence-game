@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_CATALOG_ID,
   MODEL_CATALOG,
+  PROVIDER_PROFILES,
   MAX_PROVIDER_MANIFEST_ENTRIES,
   MAX_PROVIDER_ENTRY_CALLS_PER_GAME,
   formatGameModelSelectionLabel,
@@ -82,6 +83,32 @@ describe("model catalog", () => {
     expect(glm?.allowedReasoningEfforts).toEqual([]);
     expect(gameReadyIds).toContain("katana:grok-4-5");
     expect(gameReadyIds).toContain("katana:glm-5-2");
+  });
+
+  it("lists Meta Muse text models as game-ready with auto tool choice", () => {
+    for (const [catalogId, modelId] of [
+      ["meta-muse:muse-spark-1.3", "muse-spark-1.3"],
+      ["meta-muse:muse-spark-1.3-contributor", "muse-spark-1.3-contributor"],
+      ["meta-muse:muse-wonder-1.0", "muse-wonder-1.0"],
+    ] as const) {
+      const entry = modelCatalogEntryById(catalogId);
+      expect(entry?.providerProfileId).toBe("meta-muse");
+      expect(entry?.modelId).toBe(modelId);
+      expect(entry?.evaluationStatus).toBe("game-ready");
+      expect(entry?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+      expect(entry?.capabilities.supportsStructuredOutput).toBe(true);
+      expect(entry?.capabilities.supportsTools).toBe(true);
+      expect(entry?.capabilities.supportsReasoningEffort).toBe(true);
+      expect(entry?.capabilities.supportsOpenAIResponses).toBe(false);
+      expect(entry?.capabilities.supportsImageInput).toBe(false);
+    }
+    const profile = PROVIDER_PROFILES["meta-muse"];
+    expect(profile.baseURL).toBe("https://api.meta.ai/v1");
+    expect(profile.defaultToolChoiceMode).toBe("auto");
+    // Non-text Meta models never become game LLMs through dynamic inference.
+    expect(modelCatalogEntryById("meta-muse:muse-image-1.0")).toBeUndefined();
+    expect(modelCatalogEntryById("meta-muse:sam-3.1")).toBeUndefined();
+    expect(modelCatalogEntryById("meta-muse:muse-voice-transcribe-1.0")).toBeUndefined();
   });
 
   it("lists openai:gpt-5.4-nano as game-ready with GPT-5.4 capabilities", () => {
