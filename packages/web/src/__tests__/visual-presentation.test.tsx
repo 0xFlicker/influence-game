@@ -8,7 +8,7 @@ import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
-import { portraitRoomSeats } from "../app/games/[slug]/components/portrait-room";
+import { portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
 
 const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
@@ -114,6 +114,34 @@ test.each([6, 7, 8])("a %s-person room keeps larger mobile portraits and seats l
   expect(seats[2]!.y).toBeCloseTo(0);
   expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-280);
   expect(Math.max(...seats.map(seat => Math.abs(seat.x)))).toBeGreaterThan(140);
+});
+
+test("a speaker jump across the circle rotates the whole ring instead of cutting across it", () => {
+  const count = 8;
+  const start = portraitRoomSeats(800, count, 0, 150, true);
+  const end = portraitRoomSeats(800, count, 4, 150, true);
+  expect(portraitRoomTransitionSeats(800, count, 0, 4, 0, 150, true)).toEqual(start);
+  const finished = portraitRoomTransitionSeats(800, count, 0, 4, 1, 150, true);
+  for (const [index, seat] of finished.entries()) {
+    expect(seat.x).toBeCloseTo(end[index]!.x);
+    expect(seat.y).toBeCloseTo(end[index]!.y);
+    expect(seat.z).toBeCloseTo(end[index]!.z);
+    expect(seat.scale).toBeCloseTo(end[index]!.scale);
+  }
+  const mid = portraitRoomTransitionSeats(800, count, 0, 4, .5, 150, true);
+  // Halfway through a half-turn the incoming speaker is at the side of the
+  // ring, not at its centre on the straight line between back and front.
+  expect(mid[4]!.z).toBeCloseTo(0);
+  expect(Math.abs(mid[4]!.x)).toBeGreaterThan(300);
+  // A rigid rotation keeps everyone on the ring at their seated spacing.
+  const radius = Math.max(...start.map(seat => Math.abs(seat.x)));
+  const angle = (seat: (typeof mid)[number]) => Math.atan2(seat.x / radius, seat.z / 60);
+  for (let index = 0; index < count; index++) {
+    const seat = mid[index]!;
+    expect((seat.x / radius) ** 2 + (seat.z / 60) ** 2).toBeCloseTo(1);
+    const next = mid[(index + 1) % count]!;
+    expect(Math.atan2(Math.sin(angle(next) - angle(seat)), Math.cos(angle(next) - angle(seat)))).toBeCloseTo(Math.PI / 4);
+  }
 });
 
 test.each([3, 4, 5])("a mobile room still spreads %s survivors into depth", count => {
