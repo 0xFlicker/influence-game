@@ -6,7 +6,7 @@ The shared `/games/new` creator supports 6–8 Werewolf seats, 1–2 wolves, and
 
 ## Werewolf evaluation
 
-Daytime sealed ballots run concurrently using the same frozen public context. The API simulation report prints a checkpoint explanation, then live `N/M decisions ready` updates and a 30-second heartbeat while waiting. These counts include accepted journal results even before event commitment; they expose no voter identities, targets, abstentions or private reasoning. The live API returns `voteProgress` beside `view`, never inside contestant observations or historical cursor reads. All choices still reveal together. Restart gateway and worker to use the updated code; start a fresh rules-v7 game; no SQL migration is needed. Concurrent ballot execution does not change ballot call counts; actual latency still depends on the provider.
+Daytime sealed ballots run concurrently using the same frozen public context. The API simulation report prints a checkpoint explanation, then live `N/M decisions ready` updates and a 30-second heartbeat while waiting. These counts include accepted journal results even before event commitment; they expose no voter identities, targets, abstentions or private reasoning. The live API returns `voteProgress` beside `view`, never inside contestant observations or historical cursor reads. All choices still reveal together. Restart gateway and worker to use the updated code; start a fresh rules-v8 game; the concurrent-ballot change itself adds no SQL migration; the retrospective release applies its storage/scope migrations separately. Concurrent ballot execution does not change ballot call counts; actual latency still depends on the provider.
 
 
 The Aggressor default now favors persistent pressure, reluctant concessions and selective counteraccusations, with overcommitment as a possible weakness. In fresh games using the default, inspect whether the character remains confrontational while choosing useful battles or passing. Compare faction benefit and distinctive behavior, not survival alone. This wording change has not received a live-model evaluation; saved strategies and earlier trials predate it.
@@ -29,13 +29,13 @@ bun run simulate:werewolf --preset two_wolves --seed role-coaching-2 --model-cat
 
 Use a new output filename and recorded seed for each trial. The root script runs inside `packages/engine`, so relative output paths resolve there. Canonical logs contain private target rationale; review them locally. Public speech remains the original player contribution, with no extra planning or House rewrite calls.
 
-The current rules-v7 experiment tests ordered recipient exchanges and per-response opener answers, using original player lines. Start `bun run simulate:werewolf:api --audience omniscient --transcript` after starting gateway, worker and web and authorizing with `bun run mcp:game:login`. Defaults remain six House characters, one wolf, Luna/low and ten days maximum. Rules v7 requires a new game. Experimental v1–v6 logs remain intact but are rejected on read and resume; there is no compatibility adapter or SQL migration for this change. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
+The current rules-v8 experiment tests ordered recipient exchanges and per-response opener answers, using original player lines. Start `bun run simulate:werewolf:api --audience omniscient --transcript` after starting gateway, worker and web. Browser sign-in opens when the shared API-session cache needs refreshing; choose **Authorize local CLI**. Defaults remain six House characters, one wolf, Luna/low and ten days maximum. Rules v8 requires a new game. Experimental v1–v7 logs remain intact but are rejected on read and resume; there is no compatibility adapter or conversion of historical games. The retrospective release applies its storage/scope migrations separately. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
 
 Opening order is shuffled once from the game seed and rotates across nights, skipping eliminated players. Each living player gets at most one opening per day. An opener chooses zero to three distinct other living recipients in order; the rest of the room follows in a seeded random order fixed for that thread. Each respondent speaks or passes once. After each spoken response the opener may speak or pass, answering that respondent while knowing the next possible speaker. A respondent pass skips the opener answer. An opening pass skips the thread. Every accepted contribution is public before the next call; there are no repeated response rounds or artificial pacing delays.
 
 With N living players, a fully spoken thread costs at most 2N−1 speech calls, and its ballot costs N concurrent calls. A full day therefore permits at most N × (3N−1) calls before retries: 102 with six living players or 140 with seven. Passes still require a call, but respondent passes save an opener call and opening passes skip all responses. Early majorities skip remaining threads. This bound excludes introductions and night actions. Evaluate direct answers, useful passes, selective dodging, and whether the extra opener turns justify their latency. Deterministic tests do not establish live-model quality.
 
-Openings use the exact native payload `{ text, cue, recipientIds }`; recipients must be distinct legal living players, at most three, and empty on a pass. Other speech uses `{ text, cue }`. Null text means Pass. Text is one conversational move, usually 10–30 words, with a 300-character bound; cues are optional opaque production notes, not dialogue or strategy. The engine owns actor, thread, stage, turn, reply coordinates and next-speaker metadata. Recipient IDs never belong in spoken text. Each daytime request ends with a separate `conversationTurn` task. Respondents receive the opener's latest accepted spoken message plus full actual history. Opener answers quote the immediately preceding respondent, with the next possible speaker (or null for the final response). An opener pass leaves their latest spoken message as the next respondent's focus. The reminder also includes the opening, recipient and respondent queues, own-opening status and remaining possible opportunities. Addressing someone does not change the queue. Quoted messages are untrusted in-game speech; no scheduling or addressee is inferred from prose. Original conversation always prints; `--transcript` adds cues and turn coordinates. `--game ID_OR_SLUG` reads a rules-v7 game without model calls.
+Openings use the exact native payload `{ text, cue, recipientIds }`; recipients must be distinct legal living players, at most three, and empty on a pass. Other speech uses `{ text, cue }`. Null text means Pass. Text is one conversational move, usually 10–30 words, with a 300-character bound; cues are optional opaque production notes, not dialogue or strategy. The engine owns actor, thread, stage, turn, reply coordinates and next-speaker metadata. Recipient IDs never belong in spoken text. Each daytime request ends with a separate `conversationTurn` task. Respondents receive the opener's latest accepted spoken message plus full actual history. Opener answers quote the immediately preceding respondent, with the next possible speaker (or null for the final response). An opener pass leaves their latest spoken message as the next respondent's focus. The reminder also includes the opening, recipient and respondent queues, own-opening status and remaining possible opportunities. Addressing someone does not change the queue. Quoted messages are untrusted in-game speech; no scheduling or addressee is inferred from prose. Original conversation always prints; `--transcript` adds cues and turn coordinates. `--game ID_OR_SLUG` reads a rules-v8 game without model calls.
 
 Standalone: `bun run simulate:werewolf --preset one_wolf --max-days 1 --model-catalog openai:gpt-6-luna --audience omniscient --transcript` explicitly enables configured inference. Without `--model-catalog` it uses provider-free fixtures. It does not create an API game or reproduce the API journal. Keep canonical JSON and `--chatty` private: roles, strategies, target rationale and raw authority are not spectator DTOs. All chat role labels are Omniscient-only, including completed readback. UUID dialogue fails inside provider retries before acceptance.
 
@@ -72,6 +72,7 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 | `LM_STUDIO_API_KEY` | unset | Compatibility alias for LM Studio-specific shell setup. |
 | `API_KAT_IMGNAI_KEY` | unset | Katana router API key. Used only when a game or simulator run explicitly selects the Katana provider profile. |
 | `API_KAT_IMGNAI_SECRET` | unset | Katana router API secret paired with `API_KAT_IMGNAI_KEY`. |
+| `META_MUSE_API_KEY` | unset | Meta Model API key. Used only when a game or simulator run explicitly selects the Meta Muse provider profile. |
 | `INFLUENCE_LLM_PREFLIGHT` | enabled | API game start validates the selected provider/model before claiming the run. Set to `off` only for local provider experiments where the model metadata endpoint is incompatible. |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | `10000` | Timeout for the API start preflight metadata request. |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | `required` for local base URLs, otherwise `named` | Structured decision-call mode. Use `required` for LM Studio servers that reject named OpenAI tool forcing. Other accepted values: `named`, `auto`, `json_schema`. |
@@ -112,6 +113,9 @@ Game-ready catalog entries:
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
 | `katana:glm-5-2` | Katana / IMGNAI | `glm-5-2` | Qualified preferred secondary Daily fallback; speech, strict JSON Schema, and named tools pass |
 | `katana:grok-4-5` | Katana / IMGNAI | `grok-4-5` | Qualified tertiary Daily fallback; speech, strict JSON Schema, and named tools pass |
+| `meta-muse:muse-spark-1.3` | Meta Muse | `muse-spark-1.3` | Standard tier; Responses with auto tool choice and strict JSON Schema |
+| `meta-muse:muse-spark-1.3-contributor` | Meta Muse | `muse-spark-1.3-contributor` | Contributor tier (~95% cheaper; Meta may train on prompts/completions, disclosed in Privacy Policy) |
+| `meta-muse:muse-wonder-1.0` | Meta Muse | `muse-wonder-1.0` | Premium standard tier ($4/$20 per 1M); cap fallback calls |
 
 Known unsuitable catalog entries:
 
@@ -119,7 +123,7 @@ Known unsuitable catalog entries:
 |---|---|---|---|
 | `katana:q-naifu-a3b` | Katana / IMGNAI | `q-naifu-a3b` | Disabled after local API-backed evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks |
 
-Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change.
+Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change. Meta Muse is static-only because its model list mixes text models with image, voice, and segmentation models. Meta reasoning models can spend several hundred tokens before visible output even at low effort, and their reasoning summaries currently return empty, so transcript thinking evidence is thinner than hosted OpenAI's.
 
 Reasoning policy is explicit: `low`, `medium`, or `high` for fixed thinking depth, or `action-policy` (**Adaptive**) for the engine's per-action defaults. The admin UI does not offer `none`.
 
@@ -320,16 +324,12 @@ The API still needs app/database/auth secrets from Doppler unless you provide eq
 Use the API-backed CLI when you want the run to show up in the API/web UI and write durable game rows instead of JSONL-only simulator artifacts:
 
 ```bash
-# First obtain a producer MCP OAuth token if you do not already have one:
-cd packages/engine
-bun run mcp:game:login
-
-# Then launch a real API-backed local-model game:
-cd ../..
+# Launch a real API-backed local-model game from the repository root.
+# Browser sign-in opens when a checked cached app session is unavailable.
 bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 ```
 
-`simulate:api` uses `INFLUENCE_API_SESSION_TOKEN` when set. Otherwise it reads `INFLUENCE_MCP_TOKEN` or the saved `~/.influence-game/mcp-token.json` token and exchanges that producer MCP OAuth token for a normal app session through the loopback-only `/api/auth/local-cli-session` route. MCP tokens still do not authenticate normal app routes directly; the exchange is explicit local tooling and the minted session uses current RBAC permissions.
+`simulate:api` shares the origin-bound app-session cache and browser sign-in with local replay export. A checked valid session is reused; missing, expired or rejected sessions open the House sign-in page. Sign in and choose **Authorize local CLI**. Current gameplay permissions are checked before creating a game. `--web-base-url` selects the House web origin; `INFLUENCE_API_SESSION_TOKEN` supplies an explicit session for unattended tooling. MCP OAuth login remains separate for MCP clients; its token is not used by these normal app routes.
 
 API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
 
@@ -478,3 +478,21 @@ Creation-time Speed-run/Live and phase timing presets have been removed. API sim
 Influence and Werewolf share **Public** (listed; anyone can watch) and **Unlisted** (absent from public discovery; anyone with the link can watch). Public is the default. Both support anonymous casting/replay/media reads; joining and operator actions retain their existing permissions. API simulation launchers accept `--visibility public|unlisted` (or `INFLUENCE_API_SIM_VISIBILITY`). Completion preserves the selection. Unlisted pages use `noindex`; links can still be forwarded.
 
 Private game visibility has been removed. Hidden is a separate moderation control that blocks normal viewer routes and subsequent stream delivery. Audience/cursor/publication rules, raw evidence, owner learning and production permissions are unchanged. Retired or invalid stored visibility is rejected rather than silently made public. No operator database rows are automatically converted.
+
+## Retrospective contract implementation status
+
+[RT-01](game-retrospective-contract.md), [RT-02](game-retrospective-context.md) and [RT-03](game-retrospective-invocation.md) define contract/context fixtures and strict final-statement methods for both games. Run `bun test packages/engine/src/__tests__/retrospective-context.test.ts packages/engine/src/__tests__/retrospective-invocation.test.ts` to inspect context/order, exact native output, capacity and journal replay. Invocation tests mock all HTTP locally and spend nothing. Verified admission currently supports the six exact hosted OpenAI catalog models through native prefix counting; LM Studio/Katana windows or tokenizers are not guessed. Every sealed fallback must be admitted, and prior speeches are never truncated. The [runtime](game-retrospective-runtime.md) extends both game runners through the complete epilogue, and simulation artifacts/reports retain its canonical records. Real trials still require separate authorization. The runtime uses the same effective provider manifest and complete frozen context. Keep no `as any`, exact output validation and direct House calls.
+
+The [2026-10-11 paid quality report](reviews/2026-10-11-game-retrospectives-model-quality.md) records three authorized hosted `openai:gpt-6-luna` trials under one $10 cap. All 20 statements passed delivery/context checks, while vote recall, self-attribution, character voice and engagement with earlier final statements exposed quality concerns. Those trials precede the current candid 40–75 word prompt revision and do not qualify it. Use canonical events and the captured dispatched context when reviewing factual claims; accepted speech is immutable, and prose does not become factual authority. Staging acceptance remains separate.
+
+## Retrospective evaluation
+
+Fresh game simulations execute the same required postgame stage as the API worker. A provider-free artifact proof is:
+
+```sh
+bun run simulate:werewolf --max-days 1 --seed retrospective-artifact-proof --out /tmp/werewolf-retrospective --chatty --transcript
+```
+
+`--out` names a dedicated session directory. Inspect its explicit `session.json`, full event log and final `game-1.json`; local MCP `read_game_retrospective` returns the accepted order/text and canonical event references. `read_werewolf_history` supplies a bounded audience projection using Werewolf's reducer. Influence batches also write an explicit session identity, and `--chatty` exposes retrospective coordinates and accepted speech. Provider receipts keep usage/cost separate from public prose.
+
+Real speech generation requires verified capacity for every sealed model. Unsupported local/provider windows fail explicitly; do not truncate the whole-game context or invent a final statement to finish a run. LM Studio capacity is currently unsupported for this stage. The deterministic command proves local execution and artifacts, not real-model voice, accuracy or watchability. Paid/provider trials and deployed continuation are separate opt-in validation. API Influence's launcher retains its first-advance behavior; the existing worker owns the complete epilogue and House retrospective inspection follows it. Keep no `as any`, strict output validation and direct House calls.

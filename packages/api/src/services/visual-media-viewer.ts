@@ -4,11 +4,11 @@ import { visualRoomForPhase } from "@influence/engine/visual-mode";
 import { schema, type DrizzleDB } from "../db/index.js";
 
 /** Viewer selection only; no accepted game or transcript records are rewritten. */
-export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: Record<string, number>) {
+export async function readViewerMedia(db: Pick<DrizzleDB, "select">, gameId: string, snapshot?: Record<string, number>, options: { includeHidden?: boolean; artifactUrl?: (id: string) => string; sceneIds?: readonly string[] } = {}) {
   const [game] = await db.select({ kind: schema.games.gameKind, hidden: schema.games.hiddenAt }).from(schema.games).where(eq(schema.games.id, gameId));
   // Werewolf uses its own audience/cursor-checked presentation and media routes.
-  if (!game || game.kind === "werewolf" || game.hidden) return { publicationSnapshot: {} as Record<string, number>, bindings: {} as Record<string, string>, scenes: [] };
-  const [scenes, publications, versions, dialogue, canonicalEvents] = await Promise.all([
+  if (!game || game.kind === "werewolf" || game.hidden && !options.includeHidden) return { publicationSnapshot: {} as Record<string, number>, bindings: {} as Record<string, string>, scenes: [] };
+  const [sceneRows, publications, versions, dialogue, canonicalEvents] = await Promise.all([
     db.select().from(schema.visualScenes).where(eq(schema.visualScenes.gameId, gameId)).orderBy(asc(schema.visualScenes.boundarySequence)),
     db.select().from(schema.visualMediaPublications).where(eq(schema.visualMediaPublications.gameId, gameId)).orderBy(asc(schema.visualMediaPublications.revision)),
     db.select().from(schema.visualMediaVersions).where(eq(schema.visualMediaVersions.gameId, gameId)),
@@ -18,6 +18,7 @@ export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: 
       .where(and(eq(schema.transcripts.gameId, gameId), eq(schema.gameTurns.status, "committed"))),
     db.select({ sequence: schema.gameEvents.sequence, envelope: schema.gameEvents.envelope }).from(schema.gameEvents).where(and(eq(schema.gameEvents.gameId, gameId), inArray(schema.gameEvents.eventType, ["game.roster_initialized", "endgame.stage_set", "game.phase_entered", "player.eliminated"]))).orderBy(asc(schema.gameEvents.sequence)),
   ]);
+  const scenes = options.sceneIds ? sceneRows.filter(scene => options.sceneIds!.includes(scene.id)) : sceneRows;
   const bindings: Record<string, string> = {};
   for (const row of dialogue) {
     if (!row.sequence || !row.speaker || row.scope === "diary" || row.scope === "thinking" || row.context?.presentationPurpose === "farewell" || row.context?.acceptedBallot) continue;
@@ -62,7 +63,7 @@ export async function readViewerMedia(db: DrizzleDB, gameId: string, snapshot?: 
     }
     bindings[row.sequence] = scene.id;
   }
-  const url = (id: string) => `/api/games/${gameId}/visual/artifacts/${id}`;
+  const url = options.artifactUrl ?? ((id: string) => `/api/games/${gameId}/visual/artifacts/${id}`);
   const selection = snapshot ?? Object.fromEntries(publications.map(p => [p.sceneId, p.revision]));
   return { publicationSnapshot: selection, bindings,
     scenes: scenes.flatMap(scene => {

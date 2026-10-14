@@ -189,7 +189,9 @@ async function runLiveProviderHealthProbe(
   const invocation: ModelInvocation = {
     messages: [{ role: "user", content: "Reply with OK." }],
     result: { kind: "text" },
-    outputTokenLimit: 16,
+    // Meta Muse reasoning models can spend ~500 tokens before visible text,
+    // so the usual 16-token probe would report a false length failure.
+    outputTokenLimit: target.providerProfileId === "meta-muse" ? 2_048 : 16,
   };
   const config = createClient(env, {
     providerProfileId: target.providerProfileId,

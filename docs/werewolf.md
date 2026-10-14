@@ -18,7 +18,7 @@ There is no cross-game strategy fallback. Empty Werewolf notes use the selected 
 
 Starting a custom game atomically freezes the eligible, published character content, its content-revision reference, its Werewolf strategy, the provider manifest, the roster, the rules version, and randomly assigned roles. There is no waiting lobby in this version. Choose zero to the preset's seat limit of distinct owned characters; House characters fill empty seats. Duplicate display names and unavailable or archived characters are rejected. Subsequent profile edits cannot change a running game. House fill uses shared personality descriptions and Werewolf archetype defaults, with no inherited Influence strategy hints.
 
-## Rules version 7
+## Rules version 8
 
 ### Seer and Doctor coaching
 
@@ -93,7 +93,7 @@ Each action has a stable `werewolf_action` semantic coordinate keyed by its next
 
 Daytime discussion reserves exactly one action coordinate and freezes that speaker’s current observation. Its accepted `werewolf.action_accepted` event immediately adds one public contribution and advances the thread state. Only then can the next player dispatch. Recovery reuses a provider result accepted before an interrupted commit, without another call or changed context. Public history positions count only public entries; private pack activity cannot leak through internal event coordinates. Original speech and cues are never rewritten.
 
-Pack ballots retain the frozen batch mechanism after sequential proposals. `werewolf.pack_vote_resolved` records the attempt, individual ballots, unanimous target or null, and agreement/attempt-limit end reason. Only that event reveals ballots to wolves and advances the Omniscient timeline; Mystery is unchanged. Retry observations include resolved ballots, never pending votes. Seeded fallback targets bind to each reserved action sequence. Rules v7 requires a new game. Experimental v1–v6 logs remain intact but are rejected on read and resume; there is no compatibility adapter or SQL migration for this change. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
+Pack ballots retain the frozen batch mechanism after sequential proposals. `werewolf.pack_vote_resolved` records the attempt, individual ballots, unanimous target or null, and agreement/attempt-limit end reason. Only that event reveals ballots to wolves and advances the Omniscient timeline; Mystery is unchanged. Retry observations include resolved ballots, never pending votes. Seeded fallback targets bind to each reserved action sequence. New games use rules v8 with retrospectives. Existing v7 games remain available in replay and Production Studio, finishing at their original competitive outcome without retrospective generation or rewritten history. Experimental v1–v6 logs remain unsupported. No SQL migration is required for v7 access. Restart gateway and game worker before launching a fresh game. The removed `--response-rounds` option and API `responseRounds` field now fail validation.
 
 Daytime vote checkpoints dispatch every living player's sealed decision concurrently. All slots are prepared before dispatch, every accepted result remains in the durable provider journal, and one canonical resolution reveals the full ledger. Restart after a partial commitment reuses those accepted values without redispatch. Concurrent dispatch changes ballot latency, not ballot counts. Ordered threads add opener-answer calls as described above.
 
@@ -193,7 +193,7 @@ bun run dev:web          # browser viewer, port 3001
 Then, in another terminal:
 
 ```sh
-bun run mcp:game:login # once, or when the saved login expires
+# Browser sign-in opens when the shared cached API session needs refreshing.
 bun run simulate:werewolf:api
 
 # Eight seats, two wolves, Seer and Doctor; include selected owned characters.
@@ -252,6 +252,8 @@ Omniscient viewers can toggle captured thinking in place. The shared House playe
 
 Single-person Werewolf reveals use the House studio portrait layout. Day vote checkpoints reveal accepted target ballots one at a time into the shared cumulative ledger, followed by silent portraits collecting into **Hear more**. Unavailable ballots have a separate **Unavailable** bucket. Neither label becomes spoken dialogue. The result follows the roll call; rewinding within it removes later receipts. The source cursor remains the checkpoint cursor throughout its presentation subcues.
 
+Without an available visual scene, daytime discussion and private pack conversation use the shared portrait-room layout: named circular portraits on a neutral studio backdrop, with the current speaker centered and highlighted. Larger casts spread around the room into the back rather than shrinking into a single row; side portraits may extend offscreen on phones, and names have room to wrap. Rear nameplates sit above their portraits to stay clear of the central speech bubble. The recorded snapshot supplies the living village cast; private pack rooms contain only its living wolves and appear only in Omniscient playback. Introductions, ballots and night actions retain their dedicated layouts. Room speech, thinking, camera motion and image readiness use the existing playback clock, including pause, seeking, reduced motion and replay export.
+
 Bubble typography measures the full contribution before display. Short messages use larger text (up to 28 px for speech, 22 px for thoughts) and a shorter bubble. Narrow/short scenes use lower type limits. Padding stays consistent within the layout; longer content reduces type to a readable minimum, then paginates. Every page shares the font and frame fitted to the tallest page, so the bubble does not resize during reading. The same fitting applies to Influence and Werewolf.
 
 ### Casting a custom village
@@ -297,3 +299,7 @@ Private game visibility has been removed. Hidden is a separate moderation contro
 Starting requires a current Game Operator (`gamer`), Admin, or Sysop role plus `start_game`; lobby ownership alone is insufficient. Starting an unfilled village asks for confirmation with the number of House AI seats to add. A full village starts directly.
 
 Use **Regenerate scene**, or **Correct images → Reject and regenerate**, to replace bad art without marking heads or saving/publishing the unwanted version. If a scene request has an uncertain charge, confirm another paid render in the same dialog. Its exact attempt IDs are retained in the accepted request, and the original accounting remains unresolved until real receipt evidence arrives. Active work still blocks regeneration. Review and publish the new version, then explicitly resume a game paused for required visuals. Wolf-form uncertainty retains its separate recovery policy.
+
+## Retrospective contract layer
+
+[Contracts](game-retrospective-contract.md) define Werewolf-owned retrospective start, accepted-statement and completion records after `werewolf.completed`, preserving the canonical faction result, roles and deaths. The reducer validates the explicit retrospective phase. The [context compiler](game-retrospective-context.md) supplies the complete canonical account, original speaker strategy and exact accepted priors, in death order followed by a separately seeded frozen survivor shuffle. Fresh rules-v8 games execute this tail inside the existing runner. The API retains ownership and closes only after full-roster proof. Required speech has no gameplay fallback; failure suspends the unchanged outcome and frontier. Authorized operators resume the same slot through the guarded API/MCP control. Replay uses original solo portraits with role/faction/exit labels; both audiences receive public final speeches only after the result. Studio and exports preserve ordinary speech selection and exact provenance. Local and API simulations report the complete epilogue; real-model/staging/production acceptance remains separate. See [runtime and recovery](game-retrospective-runtime.md).

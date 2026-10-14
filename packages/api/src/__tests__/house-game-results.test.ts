@@ -1,11 +1,12 @@
 import {beforeEach,expect,test} from "bun:test";
-import {eq} from "drizzle-orm";
-import {werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
+import {eq, gt} from "drizzle-orm";
+import {completedWerewolfResultsFixture as werewolfResultsFixture} from "@influence/engine/fixtures/werewolf-results";
 import {schema,type DrizzleDB} from "../db/index.js";
 import {setupTestDB} from "./test-utils.js";
 import {createGameRoutes} from "../routes/games.js";
 import {createWerewolfRoutes} from "../routes/werewolf.js";
 import type {readHouseGameResults} from "../services/house-game-results.js";
+import {createCompletedCanonicalEventFixture,insertCanonicalEventRows,insertOwner} from "./durable-run-test-utils.js";
 type WolfResponse = Extract<Awaited<ReturnType<typeof readHouseGameResults>>, {gameKind:"werewolf"}>;
 let db:DrizzleDB;
 beforeEach(async()=>{db=await setupTestDB();});
@@ -38,11 +39,14 @@ test("shared results route dispatches before Influence guard; anonymous Public a
 });
 test("results lifecycle never converts active, stopped or corrupt games into an outcome",async()=>{
  const {id,events}=await fixture(),app=createGameRoutes(db);
+ const outcome=events.find(event=>event.type === "werewolf.completed")!;
+ await db.delete(schema.werewolfEvents).where(gt(schema.werewolfEvents.sequence,outcome.sequence - 1));
  for(const status of ["waiting","in_progress","cancelled","suspended"] as const){
   await db.update(schema.games).set({status}).where(eq(schema.games.id,id));
   const res=await app.request(`/api/games/${id}/results`);expect(res.status).toBe(409);const body=await res.json();expect(body).toMatchObject({status:"not_completed",gameStatus:status});expect(body).not.toHaveProperty("results");
  }
  await db.update(schema.games).set({status:"completed"}).where(eq(schema.games.id,id));
+ await db.insert(schema.werewolfEvents).values(events.filter(event=>event.sequence>=outcome.sequence).map(event=>({gameId:id,sequence:event.sequence,event})));
  await db.delete(schema.werewolfEvents).where(eq(schema.werewolfEvents.sequence,events.length));
  const res=await app.request(`/api/games/${id}/results`);expect(res.status).toBe(409);expect(await res.json()).toMatchObject({status:"unavailable"});
  expect((await app.request('/api/games/missing/results')).status).toBe(404);
@@ -50,6 +54,8 @@ test("results lifecycle never converts active, stopped or corrupt games into an 
 test("Influence keeps its existing results payload with a House kind discriminator",async()=>{
  await db.insert(schema.games).values({id:"influence",slug:"influence",status:"completed",config:'{"visibility":"unlisted"}'});
  await db.insert(schema.gameResults).values({id:"influence-result",gameId:"influence",winnerId:null,roundsPlayed:1,finishedAt:new Date().toISOString(),tokenUsage:JSON.stringify({promptTokens:0,completionTokens:0,totalTokens:0,estimatedCost:0})});
+ const owner=await insertOwner(db,"influence");
+ await insertCanonicalEventRows(db,"influence",owner,createCompletedCanonicalEventFixture("influence"));
  const response=await createGameRoutes(db).request('/api/games/influence/results');
  expect(response.status).toBe(200);const body=await response.json();expect(body).toMatchObject({gameKind:"influence"});expect(body).toHaveProperty("results.availability");
 });

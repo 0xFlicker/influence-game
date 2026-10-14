@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { fixtureWerewolfRetrospective, fixtureRetrospectiveCapacity } from "../fixtures/retrospective-agent";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,30 +11,28 @@ import type { WerewolfEvent } from "../werewolf/types";
 import { werewolfReportEntry } from "../werewolf/report";
 
 const originalFetch = globalThis.fetch;
-let sessionToken: string | undefined, mcpToken: string | undefined;
+let sessionToken: string | undefined;
 let reportDir: string;
 let reportIndex = 0;
 const runArgs = (argv: string[] = []) => ({ ...parseWerewolfApiArgs(argv, {}), out: join(reportDir, `report-${reportIndex++}.txt`) });
 beforeEach(async () => {
   reportDir = await mkdtemp(join(tmpdir(), "werewolf-report-"));
   sessionToken = process.env.INFLUENCE_API_SESSION_TOKEN;
-  mcpToken = process.env.INFLUENCE_MCP_TOKEN;
-  delete process.env.INFLUENCE_API_SESSION_TOKEN;
-  process.env.INFLUENCE_MCP_TOKEN = "test-mcp-token";
+  process.env.INFLUENCE_API_SESSION_TOKEN = "test-session";
 });
 afterEach(async () => {
   globalThis.fetch = originalFetch;
-  for (const [key, value] of [["INFLUENCE_API_SESSION_TOKEN", sessionToken], ["INFLUENCE_MCP_TOKEN", mcpToken]] as const) {
+  for (const [key, value] of [["INFLUENCE_API_SESSION_TOKEN", sessionToken]] as const) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
   await rm(reportDir, { recursive: true, force: true });
 });
 
-async function fixture(disagree = false) {
+async function buildFixture(disagree = false) {
   const players = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, name: `Player ${i}`, personality: "Curious", backstory: "", strategy: "", avatarUrl: null }));
   const events: WerewolfEvent[] = [startWerewolf("report-game", players, werewolfConfig("two_wolves", 1), "report-seed")];
   const initial = replayWerewolf(events);
-  const final = await runWerewolf({ read: async () => events, append: async event => { events.push(event); } }, {
+  const final = await runWerewolf({ read: async () => events, append: async event => { events.push(event); } }, { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective,
     async decide({ request }) {
       if (disagree && request.action === "attack") {
         const state = replayWerewolf(events);
@@ -52,6 +51,18 @@ async function fixture(disagree = false) {
   return { initial, final, events };
 }
 
+let agreedFixture: Awaited<ReturnType<typeof buildFixture>>;
+let disagreedFixture: Awaited<ReturnType<typeof buildFixture>>;
+beforeAll(async () => {
+  // Reporter tests consume canonical readback; build each full match once,
+  // outside their five-second reporting deadlines on slower CI CPUs.
+  agreedFixture = await buildFixture();
+  disagreedFixture = await buildFixture(true);
+}, 30_000);
+function fixture(disagree = false) {
+  return structuredClone(disagree ? disagreedFixture : agreedFixture);
+}
+
 describe("Werewolf API simulation", () => {
   test("defaults to a full match with a safety cap and rejects invalid configuration before dispatch", () => {
     expect(parseWerewolfApiArgs([], {})).toMatchObject({ preset: "one_wolf", maxDays: 10, audience: "mystery", transcript: false, agentProfileIds: [], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
@@ -59,14 +70,13 @@ describe("Werewolf API simulation", () => {
     expect(parseWerewolfApiArgs(["--preset", "two_wolves", "--agent", "owned-1", "--agent", "owned-2"], {}).agentProfileIds).toEqual(["owned-1", "owned-2"]);
   });
 
-  test("creates exactly one Werewolf game using CLI auth, polls to completion, and reports canonical outcomes", async () => {
+  test("creates exactly one Werewolf game using a configured CLI session, polls to completion, and reports canonical outcomes", async () => {
     const { initial, final } = await fixture();
     const requests: { path: string; method: string; body?: unknown }[] = [];
     let polls = 0;
     globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
       const request = (input instanceof Request ? input : new Request(input.toString(), init)), path = new URL(request.url).pathname;
       requests.push({ path, method: request.method, ...(request.method === "POST" ? { body: await request.json() } : {}) });
-      if (path === "/api/auth/local-cli-session") return Response.json({ token: "test-session", user: { permissions: ["create_game", "start_game"] } });
       if (request.method === "POST") {
         expect(request.headers.get("Authorization")).toBe("Bearer test-session");
         return Response.json({ id: "report-game", slug: "report-slug" }, { status: 201 });
@@ -83,8 +93,8 @@ describe("Werewolf API simulation", () => {
       expect(partial).toContain("Cast (mystery)");
       expect(partial).not.toContain("Result:");
     }, log: line => { lines.push(line); } });
-    expect(requests.map(request => request.path)).toEqual(["/api/auth/local-cli-session", "/api/werewolf", "/api/werewolf/report-game", "/api/werewolf/report-game"]);
-    expect(requests[1]?.body).toMatchObject({ preset: "two_wolves", maxDays: 10, agentProfileIds: ["owned-1"], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
+    expect(requests.map(request => request.path)).toEqual(["/api/werewolf", "/api/werewolf/report-game", "/api/werewolf/report-game"]);
+    expect(requests[0]?.body).toMatchObject({ preset: "two_wolves", maxDays: 10, agentProfileIds: ["owned-1"], providerManifest: [{ catalogId: "openai:gpt-6-luna", reasoningPolicy: "low" }] });
     expect(result.status).toBe("completed");
     expect(result.report).toContain("http://localhost:3001/games/report-slug/replay?audience=mystery");
     expect(result.report).toContain("Night 1:");
@@ -93,6 +103,7 @@ describe("Werewolf API simulation", () => {
     expect(result.report).not.toContain("SECRET_PACK");
     expect(result.report).not.toContain("PRIVATE_THINKING");
     expect(result.report).toContain("Compare the claims.");
+    expect(result.report.match(/\[Retrospective \d+\]/g)).toHaveLength(8);
     expect(result.report).toContain("Ballots:");
     expect(result.report).toContain("Alive (7)");
     expect(await readFile(result.outputPath, "utf8")).toBe(`${lines.join("\n")}\n`);
@@ -101,7 +112,7 @@ describe("Werewolf API simulation", () => {
 
   test("watching an existing game requires no login, creation, or model call", async () => {
     const { final } = await fixture();
-    delete process.env.INFLUENCE_MCP_TOKEN;
+    delete process.env.INFLUENCE_API_SESSION_TOKEN;
     let count = 0;
     globalThis.fetch = Object.assign(async (input: string | URL | Request, init?: RequestInit) => {
       const request = (input instanceof Request ? input : new Request(input.toString(), init));
@@ -125,6 +136,23 @@ describe("Werewolf API simulation", () => {
       expect(result.report.split("\n").some(line => line.trimStart().startsWith(`${player.name}:`))).toBe(false);
       if (final.roles[player.id] === "werewolf") expect(result.report).toContain(`[Pack] ${player.name} [werewolf]: SECRET_PACK`);
     }
+  });
+
+  test("an established result does not end the API report before every retrospective speech commits", async () => {
+    const {events} = await fixture();
+    const outcomeIndex = events.findIndex(event => event.type === "werewolf.completed");
+    const firstSpeechIndex = events.findIndex(event => event.type === "werewolf.retrospective_statement_recorded");
+    const prefixes = [events.slice(0,outcomeIndex+1),events.slice(0,firstSpeechIndex+1),events];
+    let polls = 0;
+    globalThis.fetch = Object.assign(async () => {
+      const index = polls++, state = replayWerewolf(prefixes[index]!);
+      return Response.json({slug:"report-slug",status:index === 2 ? "completed" : "in_progress",view:projectWerewolfView(state,"mystery")});
+    },{preconnect:originalFetch.preconnect});
+    const result = await runWerewolfApiSimulation(runArgs(["--game","report-game"]),{sleep:async () => {},log:() => {}});
+    expect(polls).toBe(3);
+    expect(result.report.match(/Result:/g)).toHaveLength(1);
+    expect(result.report.match(/\[Retrospective \d+\]/g)).toHaveLength(8);
+    expect(result.report.indexOf("Result:")).toBeLessThan(result.report.indexOf("[Retrospective 1]"));
   });
 
   test("Omniscient explains failed pack ballots and still prints Doctor and Seer actions", async () => {

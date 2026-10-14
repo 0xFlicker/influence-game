@@ -161,11 +161,12 @@ test.each(["producer", "sysop"])("Production endpoints authorize current %s role
   expect((await app.request(root)).status).toBe(401);
   const read = await app.request(root, { headers }); expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("private, no-store");
   await db.insert(schema.games).values({ id: "not-completed", slug: "waiting-game", status: "waiting", config: "{}" });
-  const list = await app.request("/api/admin/production/games", { headers });
+  const list = await app.request("/api/admin/production/library?limit=1", { headers });
   expect(list.status).toBe(200); expect(list.headers.get("cache-control")).toBe("private, no-store");
-  const rows = await list.json() as Array<Record<string, unknown>>;
-  expect(rows).toHaveLength(1);
-  expect(rows[0]).toMatchObject({ id: gameId, slug: "recorded-without-visuals", status: "completed", hidden: false, playerCount: 6, episode: { status: "unrequested" }, completionSettlement: { state: "not_applicable" }, modelLabel: expect.any(String) });
+  const page = await list.json() as {items:Array<Record<string,unknown>>;nextCursor:string|null};
+  expect(page.items).toHaveLength(1);expect(page.nextCursor).toBeNull();
+  expect(page.items[0]).toMatchObject({ id: gameId, slug: "recorded-without-visuals", gameKind:"influence",status: "completed", hidden: false, playerCount: 6,
+    capabilities:{visualRead:true,sceneRepair:true,editorial:true} });
   const preview = (await readReplayVisualProduction(db, gameId)).scenes[0]!;
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: "{" })).status).toBe(400);
   expect((await app.request(`${root}/media`, { method: "POST", headers, body: "{" })).status).toBe(400);
@@ -173,13 +174,13 @@ test.each(["producer", "sysop"])("Production endpoints authorize current %s role
   const [artifact] = await db.select().from(schema.visualArtifacts);
   expect((await app.request(`${root}/evidence/artifact/${artifact!.id}`, { headers })).status).toBe(200);
   await db.delete(schema.userRoles).where(eq(schema.userRoles.roleId, role));
-  for (const path of [root, "/api/admin/production/games", `${root}/evidence/artifact/${artifact!.id}`]) expect((await app.request(path, { headers })).status).toBe(403);
+  for (const path of [root, "/api/admin/production/library", `${root}/evidence/artifact/${artifact!.id}`]) expect((await app.request(path, { headers })).status).toBe(403);
   expect((await app.request(`${root}/missing`, { method: "POST", headers, body: JSON.stringify({ key: preview.key, previewHash: preview.previewHash, requestId: "revoked" }) })).status).toBe(403);
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(1);
 });
 test("ordinary admin permissions cannot operate the Producer/Sysop panel", async () => {
   const headers = await operator("admin"), app = createVisualReplayProductionRoutes(db);
-  expect((await app.request("/api/admin/production/games", { headers })).status).toBe(403);
+  expect((await app.request("/api/admin/production/library", { headers })).status).toBe(403);
   expect((await app.request(`/api/admin/production/games/${gameId}/visual/missing`, { method: "POST", headers, body: "{}" })).status).toBe(403);
   expect((await readVisualMedia(db, gameId)).jobs).toHaveLength(0);
 });

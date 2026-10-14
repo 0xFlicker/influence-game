@@ -16,7 +16,7 @@ export const GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION = 4;
  */
 export type GameWatchStateSummary = Omit<
   GameWatchState,
-  "players" | "schemaVersion" | "gameKernel" | "gameKernelSource" | "gameKernelDiagnostics"
+  "players" | "schemaVersion" | "gameKernel" | "gameKernelSource" | "gameKernelDiagnostics" | "retrospective"
 > & {
   schemaVersion: 4;
 };
@@ -59,6 +59,7 @@ export function summarizeGameWatchState(state: GameWatchState): GameWatchStateSu
     gameKernelSource: _gameKernelSource,
     gameKernelDiagnostics: _gameKernelDiagnostics,
     schemaVersion: _schemaVersion,
+    retrospective: _retrospective,
     ...summary
   } = state;
   return {

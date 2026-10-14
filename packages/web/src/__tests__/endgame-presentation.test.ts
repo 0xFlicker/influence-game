@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Phase } from "@influence/engine";
 import type { GameWatchReplayFrame, ViewerDecisionEvent, TranscriptEntry } from "../lib/api";
-import { buildEndgamePresentationCues, revealedWinnerCue } from "../app/games/[slug]/components/endgame-presentation";
+import { buildEndgamePresentationCues, revealedWinnerCue, compileRevealedWinnerCues } from "../app/games/[slug]/components/endgame-presentation";
 import { visualWatchPresentation } from "../app/games/[slug]/components/visual-watch-model";
 import { findPresentationCueIndexForSequence } from "../app/games/[slug]/components/presentation-sequence";
 import { buildStoryScenes, isStoryDialogue, withHouseBridges } from "../app/games/[slug]/components/house-story";
@@ -40,6 +40,20 @@ test("jury ballots precede the winner and cannot be confused with elimination vo
   expect(visualWatchPresentation({ enabled: true, status: null, portraits: {}, scenes: [] }, cues[2]!, null, players).beat).toMatchObject({ kind: "winner", winner: { id: "Ione" } });
 });
 
+test("winner holds end at the retrospective boundary and canonical parts survive backward seeks", () => {
+  const jury = frame({ ...base, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: {votes: {}, winnerId: "Ione"} });
+  const retrospective: TranscriptEntry = {id: 40, gameId: "endgame", round: 4, phase: Phase.RETROSPECTIVE, firstDurableEventSequence: 40,
+    fromPlayerId: "Arden", fromPlayerName: "Arden", scope: "public", toPlayerIds: null, text: "I now understand why I left.", timestamp: 40};
+  const scene = {id: "retrospective", round: 4, phase: Phase.RETROSPECTIVE, roomType: "endgame" as const, messages: [retrospective]};
+  const tail = buildClassicPresentationCues([scene], [ardenOut, jury], players);
+  const winner = buildEndgamePresentationCues([jury]).at(-1)!;
+  expect(compileRevealedWinnerCues([winner, ...tail])).toEqual([winner, null]);
+  const data = {enabled: false, status: null, portraits: {}, scenes: []};
+  expect(visualWatchPresentation(data, tail[0]!, retrospective, players, [], [ardenOut, jury]).beat).toMatchObject({purpose: "Retrospective", caption: "Retrospective · Eliminated · Round 3"});
+  expect(visualWatchPresentation(data, tail[0]!, {...retrospective, fromPlayerId: "Ione"}, players, [], [ardenOut, jury]).beat).toMatchObject({caption: "Retrospective · Winner"});
+  expect(visualWatchPresentation(data, winner, null, players).beat?.kind).toBe("winner");
+});
+
 test("winner standings use canonical exits and remain hidden until the result cue", () => {
   const jury = frame({ ...base, phase: Phase.JURY_VOTE, sequence: 30, type: "jury.winner_determined", payload: { votes: { Arden: "Ione", Marnie: "Kaiya" }, winnerId: "Ione" } });
   const cues = buildEndgamePresentationCues([finalFour, ardenOut, finalThree, marnieOut, jury]);
@@ -53,6 +67,13 @@ test("winner standings use canonical exits and remain hidden until the result cu
   const closing = { source: "house" as const, kind: "house_bridge" as const, key: "closing", followingCueKey: "end", canonicalSequence: 31, round: 5, phase: "JURY_VOTE" as const, title: "Game over", baseDurationMs: 2000 };
   expect(revealedWinnerCue([...cues, closing], cues.length)).toBe(result);
   expect(revealedWinnerCue(cues, 0)).toBeNull();
+  const indexed = compileRevealedWinnerCues([...cues, closing]);
+  for (const cursor of [cues.length, 0, cues.length - 2, cues.length - 1, 1, cues.length]) {
+    const latest = [...cues, closing].slice(0,cursor+1).findLast(cue => cue.source === "endgame" && cue.kind === "endgame_winner");
+    const expected = latest?.source === "endgame" ? latest : null;
+    expect(indexed[cursor]).toBe(expected);
+    expect(compileRevealedWinnerCues([...cues, closing])[cursor]).toBe(expected);
+  }
   const beat = visualWatchPresentation({ enabled: true, status: null, portraits: { Kaiya: "/kaiya-head.png" }, fullBodies: { Ione: "/ione-body.png" }, scenes: [] }, result, null, players).beat;
   expect(beat).toMatchObject({ kind: "winner", winner: { id: "Ione", fullBodyReferenceUrl: "/ione-body.png" }, standings: [
     { id: "Kaiya", placement: 2, avatarUrl: "/kaiya-head.png", juryMember: false }, { id: "Marnie", placement: 3, juryMember: true }, { id: "Arden", placement: 4, juryMember: true },

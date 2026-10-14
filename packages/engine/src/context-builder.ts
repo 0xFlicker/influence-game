@@ -327,6 +327,11 @@ export class ContextBuilder {
     switch (event.type) {
       case "game.roster_initialized":
         return `${prefix}: Game roster: ${event.payload.players.map((p) => p.name).join(", ")}`;
+      case "retrospective.started":
+      case "retrospective.statement_recorded":
+      case "retrospective.completed":
+        // Dedicated postgame context uses the frozen dossier and exact speech prefix.
+        return "";
       case "game.phase_entered":
         return `${prefix}: ${event.payload.phase} began with ${event.payload.remainingPlayers.map((p) => p.name).join(", ")} remaining.`;
       case "round.started":

@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { completedWerewolfResultsFixture as werewolfResultsFixture, werewolfResultsFixture as werewolfOutcomeFixture } from "@influence/engine/fixtures/werewolf-results";
+import { buildWerewolfResults } from "@influence/engine/werewolf/results";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
 import { listHouseGames } from "../services/house-game-access.js";
@@ -166,9 +167,7 @@ test("pinned pages drain before following growth; empty polls are stable; cancel
     .where(eq(schema.games.id, id));
   const stopped = await readHouseGame(db, { gameIdOrSlug: id });
   expect(stopped.pollCursor).toBeNull();
-  await expect(readHouseInspectionResults(db, id)).rejects.toMatchObject({
-    code: "not_completed",
-  });
+  expect(await readHouseInspectionResults(db, id)).toMatchObject({ result: { game: { status: "cancelled" } } });
 });
 test("waiting games are valid empty reads, strict inputs and schemas reject extra evidence", async () => {
   await db.insert(schema.games).values({
@@ -472,13 +471,15 @@ test("byte budgets retain whole multibyte dialogue and reject a single oversized
   ).rejects.toMatchObject({ code: "entry_too_large" });
 });
 
-test("twenty-day results and long-game thinking remain bounded without truncating ballots", async () => {
-  const events = await werewolfResultsFixture("disagreement", "long", 20);
+test("twenty-day outcome and long-game thinking remain bounded without truncating ballots", async () => {
+  // This complete competitive account exceeds retrospective admission. It has
+  // an outcome but no finished-execution claim; RT-07 exposes early result reads.
+  const events = await werewolfOutcomeFixture("disagreement", "long", 20);
   await db.insert(schema.games).values({
     id: "long",
     slug: "long",
     gameKind: "werewolf",
-    status: "completed",
+    status: "in_progress",
     startedAt: new Date().toISOString(),
     config: "{}",
   });
@@ -489,12 +490,9 @@ test("twenty-day results and long-game thinking remain bounded without truncatin
       event,
     })),
   );
-  const result = houseContent(
-    "read_game_results",
-    await readHouseInspectionResults(db, "long"),
-  );
+  const result = buildWerewolfResults(events);
   expect(
-    Buffer.byteLength(JSON.stringify(result.structuredContent)),
+    Buffer.byteLength(JSON.stringify(result)),
   ).toBeLessThanOrEqual(256 * 1024);
   expect(JSON.stringify(result)).not.toContain("SECRET_THINKING");
   const latest = await readHouseGame(db, {

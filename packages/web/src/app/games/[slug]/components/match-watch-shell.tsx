@@ -33,6 +33,7 @@ import { MatchWatchAlliancePanel } from "./match-watch-alliance-panel";
 import {
   applyStructuredPostVotePressureSummaries,
   buildMatchWatchModel,
+  selectReplayWatchFrame,
   type MatchWatchModel,
   type MatchWatchPlayerCard,
   type MatchWatchPlayerStatusTag,
@@ -127,7 +128,9 @@ export function MatchWatchShell({
       }),
     [model, allianceFacts, allianceKey, evidenceKey, allianceLoadState, allianceError],
   );
-  const replayAtFinalResults = !live && Boolean(playbackState) && isReplayAtFinalResults(messages, playbackState?.visibleMessages);
+  const selectedSequence = live ? game.watchState?.eventCursor.sequence ?? 0
+    : playbackState ? selectReplayWatchFrame(replayFrames, playbackState)?.sequence ?? 0 : 0;
+  const replayAtFinalResults = isReplayAtFinalResults(replayFrames, selectedSequence);
   const gamePath = game.slug;
 
   useEffect(() => {
@@ -577,12 +580,10 @@ function ReplayDock({
 }
 
 export function isReplayAtFinalResults(
-  messages: readonly TranscriptEntry[],
-  visibleMessages: readonly TranscriptEntry[] | null | undefined,
+  frames: readonly Pick<GameWatchReplayFrame, "eventType" | "sequence">[],
+  selectedSequence: number,
 ): boolean {
-  if (messages.length === 0 || !visibleMessages || visibleMessages.length === 0) return false;
-  const lastVisible = visibleMessages.at(-1);
-  return lastVisible?.phase === "END" || visibleMessages.length >= messages.length;
+  return frames.some(frame => frame.eventType === "jury.winner_determined" && frame.sequence <= selectedSequence);
 }
 
 function statusClasses(card: MatchWatchPlayerCard): string {

@@ -1,11 +1,17 @@
 import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import { seededRandom } from "../seeded-random";
-import { ProviderUnavailableError } from "../provider-execution";
+import { ProviderUnavailableError, providerLogicalCallId } from "../provider-execution";
+import { materializeRetrospectiveContext, type RetrospectiveSpeakerContext, type RetrospectiveCapacityPolicy } from "../retrospective-context";
+import { assertRetrospectiveInputBinding, retrospectiveCompletionProof, type RetrospectiveInputV1, type RetrospectiveSpeechV1 } from "../retrospective";
+import { compileWerewolfRetrospective, freezeWerewolfRetrospective } from "./retrospective";
+import { throwRetrospectiveFailure } from "../retrospective-failure";
 import { observeWerewolf, type WerewolfObservation } from "./observation";
 import { nextWerewolfStep, replayWerewolf, validateWerewolfAction, werewolfActionPlans, werewolfEvent } from "./rules";
 import type { WerewolfDecision, WerewolfEvent, WerewolfRequest, WerewolfState } from "./types";
 
 export interface WerewolfAgent {
+  prepareRetrospectiveCapacity(signal?: AbortSignal): Promise<RetrospectiveCapacityPolicy>;
+  getRetrospectiveStatement(input: { gameId: string; actionSlot: number; day: number; context: RetrospectiveSpeakerContext; signal?: AbortSignal }): Promise<RetrospectiveSpeechV1>;
   decide(input: { gameId: string; actionSlot: number; request: WerewolfRequest; observation: WerewolfObservation; signal?: AbortSignal }): Promise<WerewolfDecision>;
 }
 
@@ -14,7 +20,44 @@ export interface WerewolfStore {
   /** Persist exact legal action and observation before requesting a model decision. */
   prepare?(state: WerewolfState, request: WerewolfRequest, sequence?: number): Promise<void>;
   /** Compare the committed sequence and current owner fence in the same transaction. */
-  append(event: WerewolfEvent): Promise<void>;
+  append(event: WerewolfEvent, retrospectiveInput?: RetrospectiveInputV1): Promise<void>;
+  readRetrospectiveInput?(): Promise<RetrospectiveInputV1 | null>;
+  prepareRetrospective?(state: WerewolfState, context: RetrospectiveSpeakerContext): Promise<void>;
+}
+
+export function werewolfExecutionFinished(state: WerewolfState): boolean {
+  return state.outcome !== null && (state.config.rulesVersion === 7
+    || state.retrospective !== null && state.retrospective.completedAtEventSequence !== null);
+}
+
+/** Dedicated post-outcome stage; no gameplay request, observation or fallback. */
+async function advanceRetrospective(store: WerewolfStore, agent: WerewolfAgent, events: WerewolfEvent[], state: WerewolfState, signal?: AbortSignal) {
+  if (!state.retrospective) {
+    const frozen = await (async () => freezeWerewolfRetrospective({ events, capacities: await agent.prepareRetrospectiveCapacity(signal) }))()
+      .catch(error => throwRetrospectiveFailure(error, "initialize", signal));
+    signal?.throwIfAborted();
+    await store.append(werewolfEvent(state, { type: "werewolf.retrospective_started", payload: frozen.definition }), frozen.input);
+  } else if (state.retrospective.statements.length === state.retrospective.definition.speakerIds.length) {
+    await store.append(werewolfEvent(state, { type: "werewolf.retrospective_completed", payload: retrospectiveCompletionProof(state.retrospective) }));
+  } else {
+    const source = compileWerewolfRetrospective(events);
+    const input = store.readRetrospectiveInput ? await store.readRetrospectiveInput() : source.input;
+    if (!input) throw new Error("Werewolf retrospective has no frozen input");
+    assertRetrospectiveInputBinding(input, state.retrospective.definition);
+    const context = materializeRetrospectiveContext({ input, definition: state.retrospective.definition, speakers: source.speakers }, state.retrospective);
+    await store.prepareRetrospective?.(state, context);
+    signal?.throwIfAborted();
+    const speech = await agent.getRetrospectiveStatement({ gameId: state.gameId, day: state.day, actionSlot: state.sequence + 1, context, signal })
+      .catch(error => throwRetrospectiveFailure(error, "statement", signal));
+    signal?.throwIfAborted();
+    await store.append(werewolfEvent(state, { type: "werewolf.retrospective_statement_recorded", payload: {
+      version: 1, definitionHash: context.request.definitionHash, actorId: context.self.id, ordinal: context.request.ordinal,
+      priorStatementsHash: context.request.priorStatementsHash, requestHash: hashCanonicalJson(context.request), speech: speech.speech,
+      providerLogicalCallId: providerLogicalCallId(state.gameId, { actor: { id: context.self.id, name: context.self.name, role: "player" },
+        action: "retrospective-statement", round: state.day, semantic: { version: 1, kind: "werewolf_action", eventSequence: state.sequence + 1 } }),
+    } }));
+  }
+  return replayWerewolf(await store.read());
 }
 
 export function werewolfFallback(state: WerewolfState, request: WerewolfRequest): WerewolfDecision {
@@ -30,7 +73,10 @@ export function werewolfFallback(state: WerewolfState, request: WerewolfRequest)
  * the deterministic reveal publishes the complete batch as one public entry. */
 export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent, signal?: AbortSignal): Promise<WerewolfState> {
   signal?.throwIfAborted();
-  const state = replayWerewolf(await store.read());
+  const events = await store.read();
+  const state = replayWerewolf(events);
+  if (werewolfExecutionFinished(state)) return state;
+  if (state.outcome) return advanceRetrospective(store, agent, events, state, signal);
   const step = nextWerewolfStep(state);
   if (step.kind === "complete") return state;
   if (step.kind === "action" && (step.request.action === "attack" || step.request.action === "vote")) {
@@ -93,6 +139,6 @@ export async function advanceWerewolf(store: WerewolfStore, agent: WerewolfAgent
 
 export async function runWerewolf(store: WerewolfStore, agent: WerewolfAgent, signal?: AbortSignal): Promise<WerewolfState> {
   let state = replayWerewolf(await store.read());
-  while (!state.outcome) state = await advanceWerewolf(store, agent, signal);
+  while (!werewolfExecutionFinished(state)) state = await advanceWerewolf(store, agent, signal);
   return state;
 }

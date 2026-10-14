@@ -95,7 +95,7 @@ describe("GameWatchState summaries", () => {
     });
   });
 
-  test("refreshes an older terminal fallback summary", async () => {
+  test("refreshes an older terminal summary without claiming an unverified winner", async () => {
     const gameId = await insertGame(db, {
       slug: "summary-terminal-fallback",
       status: "completed",
@@ -119,20 +119,13 @@ describe("GameWatchState summaries", () => {
       },
       final: {
         status: "final",
-        winner: {
-          id: "mira",
-          name: "Mira",
-          source: "best_available_terminal_result",
-        },
-      },
-      winner: {
-        id: "mira",
-        name: "Mira",
       },
     });
+    expect(read.summary.winner).toBeUndefined();
+    expect(read.summary.final.winner).toBeUndefined();
   });
 
-  test("persists no final or winner fields for a suspended terminal projection", async () => {
+  test("preserves the canonical winner while a suspended retrospective remains unfinished", async () => {
     const gameId = await insertGame(db, {
       slug: "summary-pending-completion-settlement",
       status: "suspended",
@@ -157,14 +150,14 @@ describe("GameWatchState summaries", () => {
     expect(row).toMatchObject({
       status: "suspended",
       finalStatus: "not_final",
-      winnerId: null,
-      winnerName: null,
+      winnerId: "mira",
+      winnerName: "Mira",
       roundsPlayed: null,
     });
     expect(read?.status).toBe("current");
     if (read?.status !== "current") throw new Error("Expected current summary");
-    expect(read.summary.final).toEqual({ status: "not_final" });
-    expect(read.summary.winner).toBeUndefined();
+    expect(read.summary.final).toMatchObject({ status: "not_final", winner: { id: "mira", source: "durable_projection" } });
+    expect(read.summary.winner).toMatchObject({ id: "mira", name: "Mira" });
   });
 
   test("stores only viewer-safe summary data", async () => {

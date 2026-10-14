@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { Browser, Page } from "puppeteer";
 import sharp from "sharp";
 import { schema } from "../db/index.js";
+import { createCompletedCanonicalEventFixture, insertCanonicalEventRows, insertOwner } from "../__tests__/durable-run-test-utils.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { CURRENT_PRIVACY_VERSION, CURRENT_TERMS_VERSION } from "../services/legal-acceptance.js";
 import { launchBrowser } from "./test-browser.js";
@@ -31,6 +32,9 @@ test("unlisted banner stays on results, discovers late images, and is visible lo
     const config = { visibility: "unlisted", variant: "classic", modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" } };
     await db.insert(schema.games).values({ id: gameId, slug, status: "completed", minPlayers: 4, maxPlayers: 4, config: JSON.stringify(config) });
     await db.insert(schema.gameResults).values({ id: randomUUID(), gameId, winnerId: null, roundsPlayed: 1, finishedAt: new Date().toISOString(), tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }) });
+    const events = createCompletedCanonicalEventFixture(gameId);
+    const ownerEpoch = await insertOwner(db, gameId, { status: "closed", lastPersistedEventSequence: events.length });
+    await insertCanonicalEventRows(db, gameId, ownerEpoch, events);
     const jwt = await createSessionToken(userId);
     servers = await startTestServers({ databaseUrl: testDb.databaseUrl, logDirectory: join(tmpdir(), "game-assets-browser-logs") });
     browser = await launchBrowser();

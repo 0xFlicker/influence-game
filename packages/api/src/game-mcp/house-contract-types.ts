@@ -1,4 +1,8 @@
 import type { HouseFollowUp } from "./house-follow-ups.js";
+import type { readHouseGameRetrospective } from "../services/house-game-retrospective.js";
+import type { resumeHouseGameRetrospective } from "../services/house-retrospective-recovery.js";
+export type HouseRetrospectiveRead = HouseEnvelope<Awaited<ReturnType<typeof readHouseGameRetrospective>> | HouseFailure>;
+export type HouseRetrospectiveResume = HouseEnvelope<Awaited<ReturnType<typeof resumeHouseGameRetrospective>> | HouseFailure>;
 import type {
   readHouseGame,
   readHouseGameThinking,
@@ -22,7 +26,9 @@ export interface HouseFailure {
     | "not_started"
     | "not_completed"
     | "unavailable"
-    | "entry_too_large";
+    | "entry_too_large"
+    | "conflict"
+    | "admission_closed";
   message: string;
 }
 type HouseEnvelope<T> = T & { followUps?: HouseFollowUp[] };

@@ -29,13 +29,13 @@ export function adminTabLabel(tab: AdminTab): string {
 
 export type AdminAccess = { permissions: readonly string[]; roles: readonly string[] };
 export type AdminArea = "Games" | "Production" | "Operations" | "People";
-export type AdminEntry = { label: string; href: string; area: AdminArea; access: "admin" | "werewolf" | "producer" | "roles" | "visual" | "operator" };
+export type AdminEntry = { label: string; href: string; area: AdminArea; access: "admin" | "werewolf" | "producer" | "production" | "roles" | "visual" | "operator" };
 export const ADMIN_ENTRIES: readonly AdminEntry[] = [
   { label: "Influence", href: "/admin/games", area: "Games", access: "admin" },
   { label: "Werewolf", href: "/admin/werewolf", area: "Games", access: "werewolf" },
   { label: "Seasons", href: "/admin/seasons", area: "Games", access: "visual" },
   { label: "Import game", href: "/admin/import", area: "Games", access: "admin" },
-  { label: "Production", href: "/admin/production", area: "Production", access: "producer" },
+  { label: "Production", href: "/admin/production", area: "Production", access: "production" },
   { label: "Inference", href: "/admin/inference", area: "Operations", access: "operator" },
   { label: "Providers", href: "/admin/providers", area: "Operations", access: "operator" },
   { label: "Free queue", href: "/admin/free-queue", area: "Operations", access: "admin" },
@@ -50,6 +50,7 @@ export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: Admin
   switch (entry.access) {
     case "operator": return user.roles.some(role => role === "admin" || role === "sysop");
     case "producer": return producer;
+    case "production": return producer || permission("view_admin") || permission("manage_roles");
     case "werewolf": return permission("view_admin") || producer;
     case "roles": return permission("manage_roles");
     case "visual": return permission("view_admin");
@@ -57,7 +58,6 @@ export function permitsAdminEntry(entry: Pick<AdminEntry, "access">, user: Admin
   }
 }
 export function adminRoute(path: string): AdminEntry | undefined {
-  if (/^\/admin\/games\/[^/]+\/visual(?:\/|$)/.test(path)) return { label: "Visual editor", href: path, area: "Production", access: "visual" };
   return ADMIN_ENTRIES.find(entry => path === entry.href || path.startsWith(`${entry.href}/`));
 }
 export function adminLanding(user: AdminAccess): string | null {

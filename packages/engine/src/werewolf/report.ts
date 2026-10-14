@@ -10,7 +10,7 @@ export function werewolfReportEntry(entry: WerewolfPublicEntry, { players, audie
   };
   switch (entry.kind) {
     case "phase": return `\n${entry.phase === "introduction" ? "INTRODUCTIONS" : entry.phase === "night" ? `NIGHT ${entry.day}` : `DAY ${entry.day} · ${entry.phase === "vote" ? "VOTING" : "DISCUSSION"}`}`;
-    case "speech": return `${entry.audience === "pack" ? "[Pack] " : ""}${speaker(entry.actorId)}: ${entry.text ?? "[pass]"}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
+    case "speech": return `${entry.purpose === "retrospective" ? `[Retrospective ${entry.ordinal+1}] ` : entry.audience === "pack" ? "[Pack] " : ""}${speaker(entry.actorId)}: ${entry.text ?? "[pass]"}${transcript && entry.cue ? ` [production note: ${entry.cue}]` : ""}`;
     case "discussion": {
       const c = entry.contribution;
       const heading = c.stage === "opening" ? `\nDay ${entry.day} · thread ${c.thread} · ${name(c.openerId)} opens${c.recipientIds.length ? ` · invited: ${c.recipientIds.map(name).join(" → ")}` : ""}\n` : "";

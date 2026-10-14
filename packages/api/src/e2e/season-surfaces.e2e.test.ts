@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
+import { createCompletedCanonicalEventFixture, insertCanonicalEventRows, insertOwner } from "../__tests__/durable-run-test-utils.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import {
@@ -106,6 +107,9 @@ beforeAll(async () => {
     }),
     finishedAt: "2026-07-10T19:00:00.000Z",
   });
+  const events = createCompletedCanonicalEventFixture(gameId);
+  const ownerEpoch = await insertOwner(testDb.db, gameId, { status: "closed", lastPersistedEventSequence: events.length });
+  await insertCanonicalEventRows(testDb.db, gameId, ownerEpoch, events);
   const receiptId = randomUUID();
   await testDb.db.insert(schema.competitionReceipts).values({
     id: receiptId,
@@ -188,7 +192,7 @@ afterAll(async () => {
     ["servers", async () => { if (servers) await stopTestServers(servers); }],
     ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
   ]);
-});
+}, 60_000);
 
 describe("E2E: Dual Crown season surfaces", () => {
   test("renders public, owner, archive, receipt, and producer views at desktop and mobile widths", async () => {

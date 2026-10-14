@@ -343,10 +343,13 @@ export function createLlmClientFromEnv(
   const katanaKey = env.API_KAT_IMGNAI_KEY?.trim();
   const katanaSecret = env.API_KAT_IMGNAI_SECRET?.trim();
   const explicitKatana = explicitProfileId === "katana";
+  const explicitMetaMuse = explicitProfileId === "meta-muse";
   const explicitOpenAI = explicitProfileId === "openai";
 
   const baseURLConfig = explicitKatana
     ? { value: PROVIDER_PROFILES.katana.baseURL!, key: "katana-profile" }
+    : explicitMetaMuse
+      ? { value: PROVIDER_PROFILES["meta-muse"].baseURL!, key: "meta-muse-profile" }
     : explicitOpenAI
       ? null
     : firstEnv(env, [
@@ -358,6 +361,8 @@ export function createLlmClientFromEnv(
     ? katanaKey && katanaSecret
       ? { value: `${katanaKey}:${katanaSecret}`, key: "API_KAT_IMGNAI_KEY+API_KAT_IMGNAI_SECRET" }
       : null
+    : explicitMetaMuse
+      ? firstEnv(env, ["META_MUSE_API_KEY"])
     : explicitOpenAI
       ? firstEnv(env, ["OPENAI_API_KEY"])
     : firstEnv(env, [

@@ -3,9 +3,11 @@ import type OpenAI from "openai";
 import type { LlmProviderRuntime } from "../llm-client";
 import {
   compileChatCompletionsRequest,
+  compileMetaMuseResponsesRequest,
   compileOpenAIResponsesRequest,
   createProviderAdapter,
   executeModelInvocation,
+  normalizeOpenAIResponse,
 } from "../provider-adapters";
 import type { ModelInvocation } from "../model-invocation";
 import { modelCatalogEntryById } from "../model-catalog";
@@ -94,7 +96,7 @@ const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
 };
 
 function runtime(
-  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2",
+  catalogId: "openai:gpt-5.6-luna" | "openai:gpt-6-luna" | "katana:grok-4-5" | "katana:grok-4-6" | "katana:glm-5-2" | "meta-muse:muse-spark-1.3-contributor",
   client: OpenAI,
   position = 0,
 ): LlmProviderRuntime {
@@ -758,6 +760,121 @@ describe("provider-native adapters", () => {
     expect(seenSignals[0]?.aborted).toBeTrue();
     expect(seenSignals[1]?.aborted).toBeFalse();
     expect(seenSignals[0]).not.toBe(seenSignals[1]);
+  });
+
+  it("retries an embedded Katana provider error instead of decoding it as a missing tool call", async () => {
+    let calls = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls++;
+            if (calls === 1) return {
+              id: "chat_embedded_error", object: "chat.completion", model: "grok-4-5",
+              choices: [{ finish_reason: "error", error: { code: 502, message: "Internal error during token parsing", metadata: { error_type: "provider_unavailable" } },
+                message: { role: "assistant", content: null, reasoning: "I will submit the tool call." } }],
+            };
+            return {
+              id: "chat_recovered", object: "chat.completion", model: "grok-4-5",
+              choices: [{
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant", content: null,
+                  tool_calls: [{ id: "call_recovered", type: "function", function: { name: "cast_vote", arguments: '{"target":"Atlas"}' } }],
+                },
+              }],
+              usage: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const katana = runtime("katana:grok-4-5", client);
+    expect(await executeVoteInvocation(katana, { maxAttempts: 2 })).toEqual({ target: "Atlas" });
+    expect(calls).toBe(2);
+  });
+
+  it("compiles Meta Muse tool invocations to Responses with auto tool choice", () => {
+    const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
+    meta.toolChoiceMode = "auto";
+    const body = compileMetaMuseResponsesRequest(invocation, meta) as unknown as Record<string, unknown>;
+
+    expect(body.model).toBe("muse-spark-1.3-contributor");
+    expect(body.tool_choice).toBe("auto");
+    expect(body.store).toBe(false);
+    expect(body.service_tier).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(Array.isArray(body.tools)).toBe(true);
+    const request = meta.adapter.compile(invocation, meta);
+    expect(request.transport).toBe("meta-muse.responses");
+  });
+
+  it("compiles Meta Muse structured invocations to strict json_schema text format", () => {
+    const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
+    meta.toolChoiceMode = "auto";
+    const body = compileMetaMuseResponsesRequest(structuredInvocation, meta) as unknown as Record<string, unknown>;
+
+    expect(body.text).toEqual({
+      format: {
+        type: "json_schema",
+        name: "pick_target",
+        strict: true,
+        schema: targetArtifact.schema,
+      },
+    });
+    expect(body.tool_choice).toBeUndefined();
+    // The 256-token fixture cap is floored so Meta reasoning tokens cannot
+    // starve visible structured output.
+    expect(body.max_output_tokens).toBe(2_048);
+  });
+
+  it("keeps larger Meta Muse output limits unchanged", () => {
+    const meta = runtime("meta-muse:muse-spark-1.3-contributor", {} as OpenAI);
+    meta.toolChoiceMode = "auto";
+    const body = compileMetaMuseResponsesRequest(invocation, meta) as unknown as Record<string, unknown>;
+    expect(body.max_output_tokens).toBe(4_096);
+  });
+
+  it.each(["auto", "json_schema"] as const)("decodes an exact Meta Muse Responses tool call and rejects a missing call under %s mode", async (toolChoiceMode) => {
+    const toolClient = {
+      responses: {
+        create: async () => ({
+          id: "resp_meta_tool",
+          status: "completed",
+          output: [
+            { type: "reasoning", id: "rs_meta", summary: [] },
+            { type: "function_call", call_id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' },
+          ],
+          usage: { input_tokens: 532, input_tokens_details: { cached_tokens: 10 }, output_tokens: 102, output_tokens_details: { reasoning_tokens: 32 }, total_tokens: 634 },
+        }),
+      },
+    } as unknown as OpenAI;
+    const meta = runtime("meta-muse:muse-spark-1.3-contributor", toolClient);
+    meta.toolChoiceMode = toolChoiceMode;
+    expect(await executeVoteInvocation(meta)).toEqual({ target: "Atlas" });
+
+    const outcome = normalizeOpenAIResponse({
+      id: "resp_meta_tool",
+      status: "completed",
+      output: [{ type: "function_call", call_id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' }],
+    } as never, undefined, "meta-muse.responses");
+    expect(outcome.transport).toBe("meta-muse.responses");
+    expect(outcome.toolCalls).toEqual([{ id: "call_meta", name: "cast_vote", arguments: '{"target":"Atlas"}' }]);
+
+    const proseClient = {
+      responses: {
+        create: async () => ({
+          id: "resp_meta_prose",
+          status: "completed",
+          output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "I vote for Atlas." }] }],
+          usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+        }),
+      },
+    } as unknown as OpenAI;
+    const proseMeta = runtime("meta-muse:muse-spark-1.3-contributor", proseClient);
+    proseMeta.toolChoiceMode = toolChoiceMode;
+    const error = await rejectedProviderAttempt(executeVoteInvocation(proseMeta));
+    expect(error.outcome.kind).toBe("wrong_tool");
   });
 });
 

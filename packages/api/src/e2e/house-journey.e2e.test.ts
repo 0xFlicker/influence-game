@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "puppeteer";
-import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
-import { werewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { DEFAULT_MODEL_CATALOG_ID, GameState } from "@influence/engine";
+import { werewolfResultsFixture, completedWerewolfResultsFixture } from "@influence/engine/fixtures/werewolf-results";
+import { insertCanonicalEventRows, insertOwner, withJuryWinner, withRetrospective } from "../__tests__/durable-run-test-utils.js";
 import { schema } from "../db/index.js";
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
@@ -24,6 +25,12 @@ beforeAll(async () => {
   await database.db.insert(schema.games).values({id:"history-influence",slug:"history-influence",status:"completed",config:JSON.stringify({providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]}),endedAt:"2026-10-04T12:00:00.000Z"});
   await database.db.insert(schema.gamePlayers).values({id:"history-seat",gameId:"history-influence",userId:owner.userId,agentProfileId:"history-agent",persona:JSON.stringify({name:"Frozen Influence"}),agentConfig:"{}"});
   await database.db.insert(schema.gameResults).values({id:"history-result",gameId:"history-influence",winnerId:"history-seat",roundsPlayed:3,finishedAt:date,tokenUsage:"{}"});
+  const influence = new GameState([{id:"history-seat",name:"Frozen Influence"},
+    {id:"history-atlas",name:"Atlas"},{id:"history-mira",name:"Mira"},{id:"history-vera",name:"Vera"}], {gameId:"history-influence"});
+  influence.startRound();
+  const influenceEvents = withRetrospective(withJuryWinner(influence.getCanonicalEvents(), "history-seat"));
+  const ownerEpoch = await insertOwner(database.db, "history-influence", {status:"closed",lastPersistedEventSequence:influenceEvents.length});
+  await insertCanonicalEventRows(database.db, "history-influence", ownerEpoch, influenceEvents);
   for (const [slug,status,visibility] of [
     ["old-lantern-village","completed","public"],["old-hidden-faces","completed","public"],
     ["new-village-casting","waiting","public"],["new-village-live","in_progress","public"],
@@ -31,7 +38,7 @@ beforeAll(async () => {
   ] as const) {
     await database.db.insert(schema.games).values({id:slug,slug,gameKind:"werewolf",status,endedAt:status === "completed" ? date : null,minPlayers:6,maxPlayers:6,startedAt:status === "waiting" ? null : new Date().toISOString(),hiddenAt:slug === "hidden-village" ? new Date().toISOString() : null,config:JSON.stringify({visibility,preset:"one_wolf",providerManifest:[{catalogId:DEFAULT_MODEL_CATALOG_ID}]})});
     if (status !== "waiting") {
-      const events = await werewolfResultsFixture("village",slug);
+      const events = status === "completed" ? await completedWerewolfResultsFixture("village",slug) : await werewolfResultsFixture("village",slug);
       if (events[0]?.type === "werewolf.started") events[0].payload.players[0]!.agentProfileId="history-agent";
       await database.db.insert(schema.werewolfEvents).values((status === "completed" ? events : events.slice(0,1)).map(event=>({gameId:slug,sequence:event.sequence,event})));
     }

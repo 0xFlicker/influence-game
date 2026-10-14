@@ -1,5 +1,5 @@
 import {WerewolfOpeningFrame, type OpeningVideoProps} from "../../components/games/werewolf/werewolf-opening-frame";
-import { useLayoutEffect, useState, useMemo, useRef } from "react";
+import { useLayoutEffect, useState, useMemo, useRef, type RefObject } from "react";
 import {
   AbsoluteFill,
   Freeze, OffthreadVideo, useVideoConfig,
@@ -11,6 +11,7 @@ import {
   delayRender,
   staticFile,
   useCurrentFrame,
+  useBufferState,
 } from "remotion";
 import { WerewolfContentFrame } from "../../components/games/werewolf/werewolf-watch-stage";
 import { VisualPresentationFrame } from "../../app/games/[slug]/components/visual-presentation";
@@ -26,10 +27,14 @@ import {
 import { audioGain, placeAudioClip } from "../../lib/replay-export/audio";
 import { samplePresentationEntrances } from "../../app/games/[slug]/components/presentation-entrances";
 import type { ExportCue } from "../../lib/replay-export/cues";
+import { VisualSceneView } from "../../app/games/[slug]/components/visual-scene-view";
+import { SoloPresentation } from "../../app/games/[slug]/components/solo-presentation";
+import { PortraitRoom } from "../../app/games/[slug]/components/portrait-room";
 
 function sceneFor(cue?: ExportCue) {
   if (!cue) return null;
   const picture = cue.picture;
+  if (picture.kind === "thinking") return picture.scene;
   if (picture.kind === "werewolf") return picture.scene;
   const beat = picture.kind === "influence" ? picture.beat : null;
   return beat?.kind === "scene"
@@ -47,9 +52,11 @@ function localize<T>(value: T): T {
 export function ReplayFrame({
   manifest,
   prepare = false,
+  preview = false,
 }: {
   manifest: ReplayManifest;
   prepare?: boolean;
+  preview?: boolean;
 }) {
   const frame = useCurrentFrame();
   const data = useMemo(() => localize(manifest), [manifest]);
@@ -118,7 +125,7 @@ export function ReplayFrame({
       <SceneThinkingProvider
         thought={
           sample.thought
-            ? { ...sample.thought, speaker: cue.speech?.speaker ?? "" }
+            ? { ...sample.thought, speaker: picture.kind === "thinking" ? picture.actor.name : cue.speech?.speaker ?? "" }
             : null
         }
       >
@@ -147,7 +154,7 @@ export function ReplayFrame({
               scene.version !== previousScene.version,
           }}
         >
-          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black">
+          <div className="flex h-full min-h-0 flex-col overflow-hidden bg-black" data-composition-frame={preview ? frame : undefined} data-composition-moment={preview ? cue.momentId : undefined}>
             {picture.kind !== "werewolf-opening" && <div className="z-20 shrink-0 truncate border-b border-white/10 bg-black/80 px-4 py-2 text-xs text-white/60">
               {cue.label}
             </div>}
@@ -155,7 +162,7 @@ export function ReplayFrame({
               ref={stage}
               className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
             >
-              {picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
+              {picture.kind === "thinking" ? <ThinkingFrame picture={picture} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} /> : picture.kind === "werewolf-opening" ? <WerewolfOpeningFrame cue={picture.cue} elapsedMs={sample.elapsedMs} reduced={data.reducedMotion} video={renderOpeningVideo} /> : picture.kind === "werewolf" ? (
                 <WerewolfContentFrame
                   cue={picture.cue}
                   scene={picture.scene}
@@ -215,12 +222,64 @@ export function ReplayFrame({
             </Sequence>
           );
         })}
-      <PreparedFrame
+      {preview && <PreviewFrameReady frame={frame} stage={stage} content={data} />}
+      {!preview && <PreparedFrame
         frame={frame}
         capture={prepare ? capture.values : undefined}
-      />
+      />}
     </AbsoluteFill>
   );
+}
+
+/** Actor and scene context contain no omitted response payload. */
+function ThinkingFrame({picture, elapsedMs, reduced}: {
+  picture: Extract<ExportCue["picture"], {kind: "thinking"}>;
+  elapsedMs: number;
+  reduced: boolean;
+}) {
+  const actor = picture.actor;
+  if (picture.room) return <PortraitRoom beat={{kind:"portrait-room",roomNumber:picture.room.number,
+    participants:picture.room.players,speech:{id:actor.id,playerId:actor.id,speaker:actor.name,text:""}}}
+    hideSpeech elapsedMs={elapsedMs} readingElapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
+  if (picture.scene) return <VisualSceneView scene={picture.scene} speech={null}
+    focusPlayerId={actor.id} focusActor={actor} elapsedMs={elapsedMs} reducedMotion={reduced} controlsInset={0} />;
+  return <SoloPresentation beat={{kind:"portrait", purpose:"Conversation", player:actor,
+    roleLabel:picture.roleLabel, speech:{id:actor.id, playerId:actor.id, speaker:actor.name, text:""}}}
+    hideSpeech elapsedMs={elapsedMs} imageOpacity={1} reducedMotion={reduced} controlsInset={0} />;
+}
+
+/** Player buffers at the requested frame. Stale media completion cannot resume a newer seek. */
+function PreviewFrameReady({frame, stage, content}: {frame: number; stage: RefObject<HTMLDivElement | null>; content: ReplayManifest}) {
+  const {delayPlayback} = useBufferState();
+  const [failure, setFailure] = useState<{frame: number; content: ReplayManifest; error: Error} | null>(null);
+  useLayoutEffect(() => {
+    const currentPictures = Array.from(stage.current?.querySelectorAll("img") ?? []);
+    // Ready frames are sampled immediately. A readiness wait must not throttle normal playback.
+    if (document.fonts.status === "loaded" && currentPictures.every(image => image.complete && image.naturalWidth > 0)) return;
+    const waiting = delayPlayback();
+    let active = true;
+    void (async () => {
+      await document.fonts.ready;
+      // Pagination/portrait layout can settle after the first image decode.
+      for (let pass = 0; pass < 2; pass++) {
+        const pictures = Array.from(stage.current?.querySelectorAll("img") ?? []);
+        await Promise.all(pictures.map(async image => {
+          try {await image.decode();}
+          catch (cause) {throw new Error(`Preview image could not load: ${image.currentSrc || image.src}`, {cause});}
+        }));
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        if (!active) return;
+      }
+      if (active) waiting.unblock();
+    })().catch(cause => {
+      if (!active) return;
+      setFailure({frame, content, error: cause instanceof Error ? cause : new Error(String(cause))});
+      waiting.unblock();
+    });
+    return () => {active = false; waiting.unblock();};
+  }, [frame, stage, content, delayPlayback]);
+  if (failure?.frame === frame && failure.content === content) throw failure.error;
+  return null;
 }
 /** Wait for real layout/fonts/images, never for game loading timers. */
 function PreparedFrame({

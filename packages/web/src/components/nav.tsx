@@ -27,7 +27,7 @@ function CloseIcon() {
   );
 }
 
-export function Nav() {
+export function Nav({ menu = false }: { menu?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin, roles, loading: permissionsLoading, hasPermission } = usePermissions();
@@ -114,9 +114,11 @@ export function Nav() {
     </>
   );
 
+  if (menu) return <nav aria-label="The House" className="flex flex-col items-start gap-4 text-sm"><Link href="/" className="text-lg font-bold">{HOUSE_VENUE.name}</Link>{navLinks}</nav>;
+
   return (
     <nav
-      className={`${pathname === "/agents/create" ? "relative z-50" : ""} border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm`}
+      className="shrink-0 border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm"
     >
       <div className="flex items-center justify-between">
         <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">

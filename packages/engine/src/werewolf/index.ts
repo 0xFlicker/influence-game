@@ -4,3 +4,4 @@ export * from "./observation";
 export * from "./runner";
 export * from "./agent";
 export * from "./strategy";
+export * from "./retrospective";

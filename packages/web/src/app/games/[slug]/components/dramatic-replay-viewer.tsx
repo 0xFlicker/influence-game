@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { FitPresentation } from "./fit-presentation";
 import { usePlayerFullscreen } from "@/components/watch/use-player-fullscreen";
 import {WatchThinking} from "@/components/watch/watch-thinking";
+import {influenceThinkingActor, influenceThinkingText} from "./influence-thinking";
 import {useWatchPreferences, type WatchPreferenceScope} from "@/components/watch/use-watch-preferences";
 import {WatchWaiting} from "@/components/watch/watch-waiting";
 import {getPublicWatchIntelligence} from "@/lib/api";
@@ -13,7 +14,7 @@ import { gameReplaySequenceHref } from "@/lib/game-links";
 import { WatchTransport } from "@/components/watch/watch-transport";
 import { useWatchKeyboard } from "@/components/watch/use-watch-keyboard";
 import { VisualPresentation } from "./visual-presentation";
-import { voteLedgerForCue } from "./vote-ledger-model";
+import { compileVoteLedgers } from "./vote-ledger-model";
 import { useVisualWatch } from "./use-visual-watch";
 import { visualWatchPresentation, paceVisualBallots } from "./visual-watch-model";
 import { MotionConfig } from "motion/react";
@@ -35,7 +36,8 @@ import {
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { buildStoryScenes, withHouseBridges } from "./house-story";
-import { buildEndgamePresentationCues, revealedWinnerCue } from "./endgame-presentation";
+import { buildEndgamePresentationCues, compileRevealedWinnerCues } from "./endgame-presentation";
+import { compileSafetyBounceLobbyLookup } from "./safety-bounce-scene-model";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import {
   type MatchWatchPlaybackState,
@@ -145,6 +147,9 @@ function DramaticReplayTheater({
     ],
   );
   const presentationCues = useMemo(() => withHouseBridges(paceVisualBallots(canonicalPresentationCues, players), scenes), [canonicalPresentationCues, players, scenes]);
+  const voteLedgers = useMemo(() => compileVoteLedgers(presentationCues), [presentationCues]);
+  const revealedWinners = useMemo(() => compileRevealedWinnerCues(presentationCues), [presentationCues]);
+  const lobbyMessages = useMemo(() => compileSafetyBounceLobbyLookup(classicCues, scenes), [classicCues, scenes]);
   const {
     director,
     snapshot: directorSnapshot,
@@ -181,14 +186,11 @@ function DramaticReplayTheater({
       : undefined;
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const visualData = useVisualWatch(game.id, true, live, activeCue?.key);
-  const priorLobbyMessages = useMemo(() => !formatCue ? [] : classicCues
-    .filter(cue => cue.round === formatCue.round && cue.phase === "LOBBY"
-      && cue.canonicalSequence !== null && cue.canonicalSequence <= formatCue.canonicalSequence)
-    .map(cue => scenes[cue.sceneIndex]!.messages[cue.messageIndex]!), [classicCues, formatCue, scenes]);
+  const priorLobbyMessages = formatCue ? lobbyMessages(formatCue.round, formatCue.canonicalSequence) : [];
   const visual = visualWatchPresentation(
-    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinnerCue(presentationCues, directorSnapshot.cursor) ?? activeCue, currentMessage, players, priorLobbyMessages,
+    visualData ?? { enabled: true, status: null, portraits: {}, scenes: [] }, revealedWinners[Math.min(directorSnapshot.cursor, presentationCues.length - 1)] ?? activeCue, currentMessage, players, priorLobbyMessages, replayFrames,
   );
-  const thinkingActor = visual.beat && "speech" in visual.beat ? visual.beat.speech?.playerId : null;
+  const thinkingActor = influenceThinkingActor(activeCue, visual.beat);
   const thinkingSpeaker = players.find(player => player.id === thinkingActor)?.name ?? "Player";
   const thoughtSequence = activeCue?.canonicalSequence;
   const messageThought = currentMessage?.thinking;
@@ -202,8 +204,8 @@ function DramaticReplayTheater({
     if (thoughtSequence == null) return null;
     const result = await getPublicWatchIntelligence(game.slug, {actorPlayerId:thinkingActor, round:thoughtRound, phase:thoughtPhase, throughEventSequence:thoughtSequence, throughTranscriptSequence:entrySequence ?? 0, limit:4}, signal);
     if (!result.ok) return null;
-    return result.intelligence.thinking.cards.filter(card => card.actorPlayerId === thinkingActor && (classicThought ? card.id === `transcript:${messageId}` : card.eventSequence === thoughtSequence)).map(card => card.text).join("\n\n") || null;
-  }, [game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought]);
+    return activeCue ? influenceThinkingText(result.intelligence.thinking.cards, activeCue, thinkingActor, messageId) : null;
+  }, [game.slug, thinkingActor, thoughtSequence, thoughtRound, thoughtPhase, messageThought, messageId, entrySequence, classicThought, activeCue]);
   const currentStateEntry = Boolean(live && formatCue && directorSnapshot.hydrationWatermark !== null
     && formatCue.canonicalSequence <= directorSnapshot.hydrationWatermark);
   const isPlaying = directorSnapshot.isPlaying;
@@ -642,12 +644,12 @@ function DramaticReplayTheater({
         } justify-center ${fullscreen ? isRoomPresentation || isSoloPresentation ? "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]" : "pb-[140px] pt-[env(safe-area-inset-top)]" : isSoloPresentation || isRoomPresentation ? "" : isTwoNamesPresentation ? "p-3" : "px-4 md:px-8 py-4 md:py-8"}`}
       >
         <WatchThinking director={director} cueKey={activeCue?.key ?? null} enabled={showThinking} speaker={thinkingSpeaker} load={loadThinking}>
-        <div className={`w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${fullscreen || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
+        <div className={`mx-auto w-full min-h-0 ${!usesFullHeightContent ? "my-auto" : ""} ${usesFullHeightContent ? "flex flex-1 flex-col" : ""} ${fullscreen || isSoloPresentation || isRoomPresentation ? "" : "max-w-3xl"}`}>
           {formatCompilationNotice ? (
             <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
           {visual?.beat ? <VisualPresentation fullscreen={fullscreen} director={director} retainTail={!live} currentStateEntry={currentStateEntry} beat={visual.beat} rooms={visual.rooms} reducedMotion={reducedMotion}
-            voteLedger={voteLedgerForCue(presentationCues, directorSnapshot.cursor)} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
+            voteLedger={voteLedgers[directorSnapshot.cursor] ?? null} roster={formatRoster.map(player => ({ ...player, avatarUrl: visualData?.portraits[player.id] ?? player.avatarUrl }))} /> : <>
           {formatCue && (
             <div className={`min-h-0 flex-1 ${formatCue.kind === "two_names_plea" ? "h-full" : ""}`}>
               <FitPresentation enabled={fullscreen}><FormatPresentation

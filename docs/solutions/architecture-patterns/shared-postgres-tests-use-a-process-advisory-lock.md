@@ -37,6 +37,10 @@ The lease serializes processes, not tests scheduled concurrently inside one proc
 
 The automatic API/PostgreSQL lane runs all ordinary API tests in one Bun process with `--max-concurrency 1`. Browser tests do not join this lease: each browser harness creates a uniquely named database, owns its API/web children, and drops that database during cleanup. This lets Browser Coverage run beside the required shared-DB lane without cross-truncation.
 
+An isolated browser database can still have competing consumers inside its own harness. The Werewolf admin fixture queues and claims its scripted image job on one single-connection session while holding the existing `visual-media-worker` advisory lock. This prevents the live API child from taking that fixture for provider rendering. The ordinary claim establishes the job lease before the session closes and releases the lock.
+
+The deployment-image check must wait for PostgreSQL over TCP (`pg_isready -h 127.0.0.1`). The official image's temporary initialization server accepts Unix sockets before it restarts, so socket readiness can let the check proceed before the final database server is available.
+
 ## Verification
 
 Run:

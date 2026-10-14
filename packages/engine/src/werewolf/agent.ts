@@ -7,6 +7,9 @@ import type { WerewolfAgent } from "./runner";
 import type { WerewolfDecision, WerewolfRequest } from "./types";
 import { werewolfRoleCoaching } from "./strategy";
 import { werewolfConversationTurn } from "./conversation";
+import { prepareRetrospectiveInvocation, prepareRetrospectiveCapacityPolicy } from "../retrospective-invocation";
+import { retrospectiveAttemptsPerModel } from "../retrospective-budget";
+import { RetrospectiveContractError, type RetrospectiveSpeechV1 } from "../retrospective";
 
 const SPEECH_GUIDANCE = "In spoken text, refer to players only by their character names. Never include player IDs, UUIDs, or other internal identifiers, even when quoting an earlier message. IDs belong only in structured targetId and recipientIds choices, not dialogue.";
 const UUID_IN_SPEECH = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
@@ -76,7 +79,9 @@ export function werewolfDecisionArtifact(request: WerewolfRequest) {
 }
 
 export class WerewolfModelAgent implements WerewolfAgent {
+  prepareRetrospectiveCapacity(signal?: AbortSignal) { return prepareRetrospectiveCapacityPolicy(this.runtimes, signal); }
   private readonly coordinator: ProviderExecutionCoordinator;
+  private readonly runtimes: readonly LlmProviderRuntime[];
 
   constructor(private readonly options: {
     runtimes: readonly LlmProviderRuntime[];
@@ -84,7 +89,32 @@ export class WerewolfModelAgent implements WerewolfAgent {
     ownerEpoch?: string;
   }) {
     if (!options.runtimes.length) throw new Error("Werewolf requires a provider runtime");
+    this.runtimes = options.runtimes.map(runtime => ({ ...runtime }));
     this.coordinator = new ProviderExecutionCoordinator({ hooks: options.hooks });
+  }
+
+  async getRetrospectiveStatement(input: Parameters<WerewolfAgent["getRetrospectiveStatement"]>[0]): Promise<RetrospectiveSpeechV1> {
+    input.signal?.throwIfAborted();
+    const context = input.context;
+    if (input.gameId !== context.request.gameId || context.game.outcome.gameKind !== "werewolf"
+      || !Number.isSafeInteger(input.actionSlot) || input.actionSlot <= context.game.outcome.eventSequence
+      || !Number.isSafeInteger(input.day) || input.day < 0) {
+      throw new RetrospectiveContractError("Retrospective does not match the Werewolf execution boundary");
+    }
+    const prepared = prepareRetrospectiveInvocation(context, this.runtimes, input.signal);
+    const call = this.coordinator.startCall({
+      gameId: input.gameId, ownerEpoch: this.options.ownerEpoch,
+      actor: { id: context.self.id, name: context.self.name, role: "player" },
+      action: "retrospective-statement", round: input.day,
+      semantic: { version: 1, kind: "werewolf_action", eventSequence: input.actionSlot },
+    });
+    const result = await executeModelInvocation({
+      call, runtimes: prepared.runtimes, invocation: prepared.invocation, beforeDispatch: prepared.beforeDispatch, maxAttempts: retrospectiveAttemptsPerModel("werewolf"), cancellationSignal: input.signal,
+      requestSignalFactory: () => AbortSignal.timeout(120_000),
+      validate: (_outcome, value) => value ? { status: "usable", value }
+        : { status: "unusable", kind: "undecodable_structured_output", message: "Missing retrospective statement" },
+    });
+    return result.value;
   }
 
   async decide(input: Parameters<WerewolfAgent["decide"]>[0]): Promise<WerewolfDecision> {
@@ -100,7 +130,7 @@ export class WerewolfModelAgent implements WerewolfAgent {
       semantic: { version: 1, kind: "werewolf_action", eventSequence: input.actionSlot },
     });
     const result = await executeModelInvocation({
-      call, runtimes: this.options.runtimes, maxAttempts: 3, cancellationSignal: input.signal,
+      call, runtimes: this.runtimes, maxAttempts: 3, cancellationSignal: input.signal,
       requestSignalFactory: () => AbortSignal.timeout(120_000),
       invocation: {
         messages: [

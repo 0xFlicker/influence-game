@@ -708,30 +708,20 @@ describe("MatchWatchShell", () => {
     expect(buildDiaryArchiveEntries(throughPower).map((diary) => diary.playerName)).toEqual(["Lyra", "Atlas"]);
   });
 
-  it("detects when replay playback has reached the final results moment", () => {
-    const transcript = [
-      entry({ id: 1, phase: "LOBBY", timestamp: 100 }),
-      entry({ id: 2, phase: "VOTE", timestamp: 200 }),
-      entry({ id: 3, phase: "END", text: "Atlas wins.", timestamp: 300 }),
-    ];
-
-    expect(isReplayAtFinalResults(transcript, [transcript[0]!, transcript[1]!])).toBe(false);
-    expect(isReplayAtFinalResults(transcript, transcript)).toBe(true);
-    expect(isReplayAtFinalResults(transcript, [transcript[0]!, transcript[2]!])).toBe(true);
-  });
-
-  it("keeps final results detection off before replay playback starts", () => {
-    const transcript = [entry({ id: 1, phase: "END", text: "Atlas wins.", timestamp: 100 })];
-
-    expect(isReplayAtFinalResults([], [])).toBe(false);
-    expect(isReplayAtFinalResults(transcript, [])).toBe(false);
-    expect(isReplayAtFinalResults(transcript, null)).toBe(false);
+  it("opens results only after the selected canonical outcome", () => {
+    const frames = [{ sequence: 2, eventType: "vote.recorded" }, { sequence: 3, eventType: "jury.winner_determined" }];
+    expect(isReplayAtFinalResults(frames, 2)).toBe(false);
+    expect(isReplayAtFinalResults(frames, 3)).toBe(true);
+    expect(isReplayAtFinalResults(frames, 4)).toBe(true);
+    expect(isReplayAtFinalResults(frames, 0)).toBe(false);
+    expect(isReplayAtFinalResults([], 10)).toBe(false);
   });
 });
 
 function watchState(): GameWatchState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 6,
+    retrospective: { outcome: null, status: "unavailable", statementCount: 0, requiredStatements: 2, nextActorId: null },
     gameId: "game-1",
     slug: "vast-violet-code",
     status: "in_progress",

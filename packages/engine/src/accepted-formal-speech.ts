@@ -218,7 +218,7 @@ export function createAcceptedFormalSpeech(
 // ---------------------------------------------------------------------------
 
 export function formalSpeechDisplayText(
-  speech: AcceptedFormalSpeech,
+  speech: Pick<AcceptedFormalSpeech, "kind" | "text" | "targetId" | "counterpartId">,
   names: { targetName?: string; counterpartName?: string },
 ): string {
   switch (speech.kind) {
@@ -279,7 +279,9 @@ export function commitAcceptedFormalSpeech(
   },
 ): CommitAcceptedFormalSpeechResult {
   const displayText = formalSpeechDisplayText(speech, options?.displayNames ?? {});
-  const sourcePointers = options?.sourcePointers ?? [];
+  const sourcePointers: CanonicalSourcePointer[] = [...options?.sourcePointers ?? [], {
+    kind: "transcript_entry", sequence: deps.logger.nextProductDialogueSequence, actorId: speech.playerId,
+  }];
 
   let event: CanonicalGameEvent;
   if (speech.lane === "endgame" && isEndgameSpeechKind(speech.kind)) {

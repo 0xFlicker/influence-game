@@ -3,6 +3,15 @@ import { cutSource } from "../house-cuts/source";
 import { cutInfluenceFixture, cutWerewolfFixture, cutFixtureReports } from "../house-cuts/fixtures";
 import { influenceCutSource } from "../house-cuts/influence-source";
 import { werewolfCutSource } from "../house-cuts/werewolf-source";
+import { completedWerewolfResultsFixture } from "../fixtures/werewolf-results";
+
+test("Mystery discovery excludes post-outcome retrospective evidence while Omniscient retains its exact chapter", async () => {
+  const events = await completedWerewolfResultsFixture("village", "rt10-cut");
+  const mystery = werewolfCutSource(events, "rt10-cut", "mystery"), omni = werewolfCutSource(events, "rt10-cut", "omniscient");
+  expect(mystery.evidence.some(entry => entry.group === "retrospective")).toBeFalse();
+  expect(omni.evidence.filter(entry => entry.group === "retrospective")).toHaveLength(6);
+  expect(omni.evidence.filter(entry => entry.group === "retrospective").every(entry => entry.label === "Retrospective" && entry.replayHref?.includes("cursor="))).toBeTrue();
+});
 import { discoverCuts, editCutSelection, planCutDiscovery, validateCutProposals, type CutWindow, type CutProposalBatch } from "../house-cuts/editorial";
 import { renderCutReview } from "../house-cuts/review-html";
 import { projectWerewolfWatch } from "../werewolf/watch";

@@ -16,7 +16,7 @@ import {
   planGameTurn,
 } from "../services/game-turn-commit.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
-import { getPersistedGameProjectionBeforeTerminalOutcome } from "../services/game-projection-read-model.js";
+import { getPersistedGamePublicProjection } from "../services/game-projection-read-model.js";
 import type { PersistedGameEventsRead } from "../services/game-event-read-model.js";
 import type { CanonicalGameEvent } from "@influence/engine";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
@@ -128,7 +128,7 @@ async function waitForRunnerToStop(gameId: string): Promise<void> {
 }
 
 describe("durable run inspection read model", () => {
-  test("replays the trusted pre-jury prefix while terminal settlement is non-final", () => {
+  test("exposes the canonical outcome while terminal settlement is non-final", () => {
     const gameId = "sealed-game";
     const initialEvents = createCanonicalEventFixture(gameId);
     const lastInitial = initialEvents.at(-1)!;
@@ -200,13 +200,12 @@ describe("durable run inspection read model", () => {
       },
     };
 
-    const safeProjection = getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents);
+    const safeProjection = getPersistedGamePublicProjection(persistedEvents);
 
-    expect(safeProjection.summary?.players.aliveIds.sort()).toEqual(["atlas", "echo", "nyx"]);
-    expect(safeProjection.summary?.players.eliminatedIds).toEqual(["mira"]);
-    expect(safeProjection.summary?.winner).toBeNull();
-    expect(safeProjection.summary?.acceptedOutcomes.juryWinner).toBeNull();
-    expect(safeProjection.summary?.voteState.juryVotes).toEqual({});
+    expect(safeProjection.summary?.players.aliveIds.sort()).toEqual(["atlas", "nyx"]);
+    expect(safeProjection.summary?.players.eliminatedIds).toEqual(["echo", "mira"]);
+    expect(safeProjection.summary?.winner?.id).toBe("atlas");
+    expect(safeProjection.summary?.acceptedOutcomes.juryWinner?.winnerId).toBe("atlas");
   });
 
   let db: DrizzleDB;

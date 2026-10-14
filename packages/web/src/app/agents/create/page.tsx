@@ -19,9 +19,9 @@ export default async function AgentCreatePage({
   const flow = createFlow(query.flow);
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-dvh flex flex-col">
       <Nav />
-      <main className="w-full flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
+      <main className="flex min-h-0 w-full flex-1 flex-col">
           <AgentCreateContent flow={flow} gameId={flow === "join_game" ? query.gameId : undefined} />
       </main>
     </div>

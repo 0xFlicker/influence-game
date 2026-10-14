@@ -12,7 +12,7 @@ import { acceptVisualScene, prepareVisualScene, storeVisualArtifact, type Stored
 import { controlVisualMedia, readVisualMedia, type MediaControl } from "../services/visual-media-repair.js";
 import { claimVisualMediaJob, executeVisualMediaJob } from "../services/visual-media-worker.js";
 import { readViewerMedia } from "../services/visual-media-viewer.js";
-import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, readVisualRenderAccounting, reconcileVisualAttempt } from "../services/visual-render-journal.js";
+import { reserveVisualRender, visualImageJournal, renderDurableVisualImage, readVisualRenderAccounting, readVisualSceneAttempts, reconcileVisualAttempt } from "../services/visual-render-journal.js";
 import { readVisualProductionExport } from "../services/visual-production-export.js";
 import { renderVisualCandidate } from "../services/visual-scene-renderer.js";
 import { createVisualRoutes } from "../routes/visual.js";
@@ -483,6 +483,34 @@ test("uncertain request acknowledgement cannot bypass an original render still i
   const [attempt] = await db.select().from(schema.visualRenderAttempts).where(eq(schema.visualRenderAttempts.operationId, op.id));
   expect(await send({ acknowledgeUncertainAttempts: [attempt!.id] })).toMatchObject({ code: "already_pending" });
   expect((await readVisualMedia(db, "media")).jobs).toHaveLength(0);
+});
+
+test("scene receipt acknowledgement accepts historical bindings and rejects conflicting scene or game ownership",async () => {
+  await db.update(schema.visualScenes).set({status:"failed"}).where(eq(schema.visualScenes.id,scene.id));
+  const other=await prepareVisualScene(db,{gameId:"media",boundarySequence:3,plan:planVisualScene({roomId:"mingle-1",backgroundArtifactId:imageId,cast:scene.plan.cast})});
+  await db.insert(schema.games).values({id:"foreign-game",slug:"foreign-game",status:"completed",config:"{}"});
+  await db.insert(schema.visualRepairJobs).values({id:"historical-job",gameId:"media",sceneId:scene.id,version:1,operatorId:"admin",mode:"regenerate",plan:scene.plan,
+    renderContext:{style:"Fixture",roomName:"Fixture",roomDirection:"Fixture"},status:"failed",createdAt:new Date().toISOString()});
+  for (const [id,gameId,sceneId,repairJobId,operationKey] of [
+    ["scene-prefix","media",null,null,`${scene.id}:render:historical`],
+    ["job-binding","media",null,"historical-job","historical-job-binding"],
+    ["job-prefix","media",null,null,"media:historical-job:render"],
+    ["foreign-scene","media",other.id,"historical-job","media:historical-job:conflicting-scene"],
+    ["foreign-game","foreign-game",null,"historical-job","media:historical-job:foreign-game"],
+  ] as const) {
+    await db.insert(schema.visualRenderOperations).values({id:`operation-${id}`,gameId,sceneId,repairJobId,operationKey,inputHash:"fixture-hash",request:{prompt:"Private fixture"}});
+    await db.insert(schema.visualRenderAttempts).values({id,operationId:`operation-${id}`,generation:1,provider:"openai",model:"fixture",requestHash:"fixture-hash"});
+  }
+  const receipt=await readVisualSceneAttempts(db,"media",scene.id,0,1),ids=receipt.uncertainAttemptIds;
+  expect(receipt.attempts).toHaveLength(1);expect(new Set(ids)).toEqual(new Set(["scene-prefix","job-binding","job-prefix"]));
+  expect(await send({expectedVersion:1})).toMatchObject({accepted:false,code:"needs_reconciliation"});
+  for (const id of ["foreign-scene","foreign-game"])
+    expect(await send({expectedVersion:1,acknowledgeUncertainAttempts:[...ids,id]})).toMatchObject({accepted:false,code:"invalid_attempt_acknowledgement"});
+  const result=await send({expectedVersion:1,requestId:"historical-bindings-ack",acknowledgeUncertainAttempts:ids});
+  expect(result).toMatchObject({accepted:true,code:"queued",version:2});expect(calls).toEqual([]);
+  expect((await readVisualSceneAttempts(db,"media",scene.id,0,1)).uncertainAttemptIds).toEqual([]);
+  const saved=await db.select().from(schema.visualRenderAttempts);
+  expect(saved.every(attempt=>attempt.receipt===null && attempt.reconciliation===null)).toBe(true);
 });
 
 test("fresh regeneration rejects unrelated acknowledgement even when the scene has no uncertainty", async () => {

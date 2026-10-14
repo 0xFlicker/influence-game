@@ -3,9 +3,26 @@ import type { DurableGameTurnSnapshotV1 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { recordVisualOperationEvent } from "./visual-diagnostics.js";
 import { visualExecutionBoundaryGuard } from "./visual-execution-boundary.js";
+import { readGameExecutionState } from "./game-turn-commit.js";
 
 export type VisualFailurePolicy = "best_effort" | "require_visuals";
 export const visualFailurePolicy = (config: Record<string, unknown>): VisualFailurePolicy => config.visualFailurePolicy === "require_visuals" ? "require_visuals" : "best_effort";
+
+/** Discovery validates the saved Influence pause against its committed execution head. */
+export async function readInfluenceVisualPause(db: Pick<DrizzleDB, "select">, gameId: string) {
+  const [game] = await db.select({ kind: schema.games.gameKind, status: schema.games.status, config: schema.games.config })
+    .from(schema.games).where(eq(schema.games.id, gameId));
+  if (!game || game.kind !== "influence" || game.status !== "suspended") return null;
+  const config = JSON.parse(game.config) as Record<string, unknown>;
+  const pause = config.visualPause;
+  if (config.visualMode !== true || !pause || typeof pause !== "object" || Array.isArray(pause)) return null;
+  const value = pause as Record<string, unknown>;
+  if (value.kind !== undefined || !Number.isSafeInteger(value.boundarySequence) || Number(value.boundarySequence) < 0
+    || typeof value.reason !== "string" || !value.reason.trim()) return null;
+  const execution = await readGameExecutionState(db, gameId);
+  if (!execution || execution.heads.turnSequence !== value.boundarySequence) return null;
+  return { boundarySequence: Number(value.boundarySequence), reason: value.reason };
+}
 
 export class VisualPreparationBlocked extends Error {
   constructor(message: string, readonly snapshot: DurableGameTurnSnapshotV1) {

@@ -59,6 +59,7 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   JURY_QUESTIONS: "Jury Questions",
   CLOSING_ARGUMENTS: "Closing Arguments",
   JURY_VOTE: "Jury Vote",
+  RETROSPECTIVE: "Retrospective",
   SUSPENDED: "Suspended",
   END: "Game Over",
 };
@@ -115,6 +116,7 @@ export const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
   CLOSING_ARGUMENTS: "endgame",
   JURY_VOTE: "endgame",
   END: "endgame",
+  RETROSPECTIVE: "endgame",
 };
 
 export const ROOM_TYPE_COLORS: Record<RoomType, string> = {

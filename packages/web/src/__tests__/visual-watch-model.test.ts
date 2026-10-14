@@ -13,6 +13,12 @@ const data: VisualWatchData = { enabled: true, status: null, portraits: { a: "/f
   { id: "old", roomId: "lobby", version: 1, afterDialogueSequence: 2, imageUrl: "/old.png", participantIds: ["a"], anchors: [] },
   { id: "new", roomId: "lobby", version: 2, afterDialogueSequence: 5, imageUrl: "/new.png", participantIds: ["a"], anchors: [] },
 ] };
+test("accepted retrospectives use introduction portraits and solo pacing even when room art is bound", () => {
+  const retrospective: TranscriptEntry = { ...message, phase: "RETROSPECTIVE" };
+  const picture = visualWatchPresentation(data, null, retrospective, [{...player, status: "eliminated"}]);
+  expect(picture.beat).toMatchObject({kind: "portrait", purpose: "Retrospective", player: {status: "eliminated", avatarUrl: "/frozen.png"}, speech: {text: message.text}});
+  expect(transcriptPresentationDurationMs(retrospective)).toBe(soloPresentationDurationMs(message.text));
+});
 test("selects saved scene versions by dialogue sequence, including backward seeking", () => {
   expect(visualWatchPresentation(data, null, message, [player]).beat).toMatchObject({ kind: "scene", sceneId: "old" });
   expect(visualWatchPresentation(data, null, { ...message, entrySequence: 6, visualScene: { id: "new", roomId: "lobby" } }, [player]).beat).toMatchObject({ kind: "scene", sceneId: "new" });
@@ -138,6 +144,30 @@ test("an exact cast binding beats a newer room image with other participants", (
   const bound = visualWatchPresentation({ ...data, bindings: { 6: "old" }, scenes: data.scenes.map(scene => scene.id === "new" ? { ...scene, participantIds: ["a", "eliminated-player"] } : scene) }, null, { ...message, entrySequence: 6, visualScene: undefined, phase: "PLEA" }, [player]);
   expect(bound.beat).toMatchObject({ kind: "scene", sceneId: "old" });
   expect(bound.rooms.find(room => room.roomId === "lobby")?.participantIds).toEqual(["a"]);
+});
+
+test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s keeps tie-break thinking out of regular voting and loads it once before the deciding choice", async scenarioId => {
+  const {influenceThinkingActor, influenceThinkingText} = await import("../app/games/[slug]/components/influence-thinking");
+  const scenario = createFormatKernelViewerScenario(scenarioId);
+  const players: GamePlayer[] = scenario.roster.map(p => ({...p,persona:"",status:"alive",shielded:false}));
+  const {cues} = compileFormatPresentationPrefix({gameId:"g",gameKernel:"format",roster:scenario.roster,decisions:scenario.decisions});
+  const tie = cues.find(cue => cue.kind === "format_tiebreak")!;
+  if (tie.kind !== "format_tiebreak") throw new Error("Tie fixture required");
+  const deciding = cues.find(cue => cue.kind === "format_deciding_vote")!;
+  const card = {id:"tie",kind:"thinking" as const,source:"cognitive_artifact" as const,context:"current_phase" as const,
+    actorPlayerId:tie.tiebreakerId,eventSequence:tie.canonicalSequence,title:"Thinking",text:"My deciding choice",action:scenarioId === "two_names_used_tie" ? "format-two-names-tiebreak" : "format-tiebreak"};
+  const cards = [card,{...card,id:"regular",action:"format-ballot",text:"My regular ballot"},
+    {...card,id:"foreign",actorPlayerId:"other",text:"Another actor's thought"},
+    {...card,id:"earlier",eventSequence:tie.canonicalSequence - 1,text:"An earlier tie"}];
+  expect(influenceThinkingActor(tie, visualWatchPresentation(data,tie,null,players).beat)).toBe(tie.tiebreakerId);
+  expect(influenceThinkingText(cards,tie,tie.tiebreakerId)).toBe(card.text);
+  expect(influenceThinkingActor(deciding,visualWatchPresentation(data,deciding,null,players).beat)).toBeNull();
+  for (const cue of paceVisualBallots(cues,players).filter(cue => cue.kind === "format_roll_call")) {
+    expect(influenceThinkingText([card],cue,tie.tiebreakerId)).toBeNull();
+    if (cue.voteSummary) expect(influenceThinkingActor(cue,visualWatchPresentation(data,cue,null,players).beat)).toBeNull();
+  }
+  const regular = cues.find(cue => cue.kind === "format_roll_call")!;
+  expect(influenceThinkingText(cards,regular,tie.tiebreakerId)).toBe("My regular ballot");
 });
 
 test.each(["two_names_used_tie", "majority_elimination_tie", "even_votes_tie", "safety_bounce_tie"] as const)("%s shows the deciding player with the full nominee pool before elimination", scenarioId => {

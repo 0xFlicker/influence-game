@@ -9,7 +9,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
-import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "./admin-postgame-media";
+import { AdminPostgameMediaPill } from "./admin-postgame-media";
 import { AdminDeploymentAdmission } from "./admin-deployment-admission";
 import {
   AdminProviderFailuresPanel,
@@ -413,7 +413,6 @@ function RecentGameRow({
   onRefresh,
   onOpenCosts,
   onOpenHighlights,
-  onOpenMedia,
   onOpenProviderFailures,
   onOpenRetry,
 }: {
@@ -424,7 +423,6 @@ function RecentGameRow({
   onRefresh: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
-  onOpenMedia: () => void;
   onOpenProviderFailures: () => void;
   onOpenRetry: () => void;
 }) {
@@ -509,13 +507,13 @@ function RecentGameRow({
             ariaLabel={`Open cost details for game ${game.slug}`}
           />
           <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
-          <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
+          <AdminPostgameMediaPill game={game} onClick={()=>router.push(`/admin/production/games/${game.id}`)} />
           <AdminProviderFailuresPill
             summary={game.providerFailures}
             onClick={onOpenProviderFailures}
             ariaLabel={`Open provider failures for game ${game.slug}`}
           />
-          {game.visualMode && <Link href={`/admin/games/${game.id}/visual`} onClick={(event) => event.stopPropagation()} className="rounded border border-white/20 px-2.5 py-1 text-xs">Visual production</Link>}
+          {game.visualMode && <Link href={`/admin/production/games/${game.id}`} onClick={(event) => event.stopPropagation()} className="rounded border border-white/20 px-2.5 py-1 text-xs">Production Studio</Link>}
           {settlementRetryIsAvailable(game, canRetrySettlement) && (
             <button
               type="button"
@@ -614,7 +612,6 @@ export function AdminPanel() {
   const canStopGame = hasPermission("stop_game");
   const canFillGame = hasPermission("fill_game");
   const canHideGame = hasPermission("hide_game");
-  const canManagePostgameMedia = hasPermission("manage_postgame_media");
   const canRetrySettlement = hasPermission("retry_game_settlement");
 
   const [games, setGames] = useState<AdminGameSummary[]>([]);
@@ -622,7 +619,6 @@ export function AdminPanel() {
   const [recentLimit, setRecentLimit] = useState(5);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
-  const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
   const [providerFailuresGame, setProviderFailuresGame] = useState<AdminGameSummary | null>(null);
   const [retryGame, setRetryGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -776,7 +772,6 @@ export function AdminPanel() {
                     canRetrySettlement={canRetrySettlement}
                     onOpenCosts={() => setCostGame(g)}
                     onOpenHighlights={() => setHighlightsGame(g)}
-                    onOpenMedia={() => setMediaGame(g)}
                     onOpenProviderFailures={() => setProviderFailuresGame(g)}
                     onOpenRetry={() => setRetryGame(g)}
                   />
@@ -860,7 +855,6 @@ export function AdminPanel() {
                     onRefresh={fetchGames}
                     onOpenCosts={() => setCostGame(g)}
                     onOpenHighlights={() => setHighlightsGame(g)}
-                    onOpenMedia={() => setMediaGame(g)}
                     onOpenProviderFailures={() => setProviderFailuresGame(g)}
                     onOpenRetry={() => setRetryGame(g)}
                   />
@@ -884,14 +878,6 @@ export function AdminPanel() {
       )}
       {highlightsGame && (
         <AdminHighlightsDiagnosticsPanel key={highlightsGame.id} game={highlightsGame} onClose={() => setHighlightsGame(null)} />
-      )}
-      {mediaGame && (
-        <AdminPostgameMediaPanel
-          key={mediaGame.id}
-          game={mediaGame}
-          canManage={canManagePostgameMedia}
-          onClose={() => setMediaGame(null)}
-        />
       )}
       {providerFailuresGame && (
         <AdminProviderFailuresPanel

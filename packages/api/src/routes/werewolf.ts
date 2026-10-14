@@ -3,10 +3,10 @@ import { isViewerGame, publicGameFilter } from "../services/game-visibility.js";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { Hono } from "hono";
 import { and, count, desc, eq, inArray, isNull, or } from "drizzle-orm";
-import { WerewolfRulesVersionError } from "@influence/engine/werewolf";
+import { WerewolfRulesVersionError, replayWerewolf } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { requireAuth, requirePermission, requireRole, type AuthEnv } from "../middleware/auth.js";
-import { createWerewolfGame, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
+import { createWerewolfGame, readWerewolfEvents, readWerewolfLiveView, readWerewolfView, WerewolfGameError } from "../services/werewolf-games.js";
 import { readWerewolfPresentation, readWerewolfCharacter, readWerewolfWatch } from "../services/werewolf-presentation.js";
 import { readWerewolfDecisions } from "../services/werewolf-decisions.js";
 import { readWerewolfThinking } from "../services/werewolf-thinking.js";
@@ -139,15 +139,20 @@ export function createWerewolfRoutes(db: DrizzleDB) {
     const id = c.req.param("id");
     const stopped = await db.transaction(async (tx) => {
       const [game] = await tx.select().from(schema.games).where(and(eq(schema.games.id, id), eq(schema.games.gameKind, "werewolf"))).for("update");
-      if (!game || !["waiting", "in_progress"].includes(game.status)) return false;
-      await tx.update(schema.games).set({ status: "cancelled", endedAt: new Date().toISOString() }).where(eq(schema.games.id, id));
-      await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: new Date().toISOString(), failureReason: "operator_stop" })
+      if (!game || !["waiting", "in_progress", "suspended"].includes(game.status)) return null;
+      const events = await readWerewolfEvents(tx, id);
+      let outcome;
+      try { outcome = events.length ? replayWerewolf(events).outcome : null; }
+      catch { throw new WerewolfGameError("Canonical history needs repair before changing execution", 409); }
+      const status = outcome ? "suspended" as const : "cancelled" as const;
+      await tx.update(schema.games).set({ status, ...(outcome ? {} : { endedAt: new Date().toISOString() }) }).where(eq(schema.games.id, id));
+      await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: new Date().toISOString(), failureReason: outcome ? "retrospective_paused" : "operator_stop" })
         .where(and(eq(schema.gameRunOwners.gameId, id), eq(schema.gameRunOwners.status, "active")));
-      return true;
+      return status;
     });
     if (!stopped) return c.json({ error: "Game is not running" }, 409);
     abortWerewolf(id);
-    return c.json({ stopped: true });
+    return c.json({ stopped: true, status: stopped });
   });
   return app;
 }

@@ -52,6 +52,7 @@ export interface StagedTurnEffects {
 }
 
 const STAGED_AGENT_METHODS = new Set<PropertyKey>([
+  "getRetrospectiveStatement",
   "getIntroduction",
   "getLobbyMessage",
   "getVotes",
@@ -252,7 +253,7 @@ function stagedAgent(
       return async (...args: unknown[]) => {
         if (!isActive()) throw new Error("Durable scratch turn is no longer active");
         const providerBinding = providerBindings[providerBindingIndex++] ?? null;
-        if (visual) {
+        if (visual && property !== "getRetrospectiveStatement") {
           const context = args[0] as PhaseContext | undefined;
           if (!providerTurnId || !context || context.selfId !== agent.id || context.gameId !== visual.committed.execution.gameId) {
             throw new Error("Visual agent turn does not match its durable game boundary");

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, gt } from "drizzle-orm";
 import { Phase } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -15,7 +15,7 @@ import {
 } from "../services/game-completion-settlement.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import {
-  createCanonicalEventFixture,
+  createCompletedCanonicalEventFixture,
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
@@ -46,7 +46,7 @@ describe("game completion settlement capture", () => {
     input: CaptureGameCompletionSettlementInput;
   }> {
     const gameId = await insertGame(db, { status: "in_progress" });
-    const events = createCanonicalEventFixture(gameId);
+    const events = createCompletedCanonicalEventFixture(gameId);
     const ownerEpoch = await insertOwner(db, gameId, {
       lastPersistedEventSequence: events.length,
       expiresAt: "2099-01-01T00:00:00.000Z",
@@ -222,6 +222,19 @@ describe("game completion settlement capture", () => {
       },
       finishedAt: FINISHED_AT,
     });
+  });
+
+  test("an outcome-only head cannot capture or apply final side effects", async () => {
+    const fixture = await createCaptureFixture();
+    const rows = await db.select().from(schema.gameEvents).where(eq(schema.gameEvents.gameId, fixture.gameId));
+    const outcome = rows.find(row => row.eventType === "jury.winner_determined")!;
+    await db.delete(schema.gameEvents).where(gt(schema.gameEvents.sequence, outcome.sequence));
+    await db.update(schema.gameRunOwners).set({ lastPersistedEventSequence: outcome.sequence }).where(eq(schema.gameRunOwners.ownerEpoch, fixture.ownerEpoch));
+    await expect(captureGameCompletionSettlement(db, { ...fixture.input, finalEventSequence: outcome.sequence, finalEventHash: outcome.eventHash })).rejects.toMatchObject({ code: "retrospective_incomplete" });
+    expect(await db.select().from(schema.gameCompletionSettlements)).toHaveLength(0);
+    expect(await db.select().from(schema.gameResults)).toHaveLength(0);
+    expect((await db.select().from(schema.games))[0]!.status).toBe("in_progress");
+    expect((await db.select().from(schema.gameRunOwners))[0]!.status).toBe("active");
   });
 
   test("returns the existing row for an identical recapture and rejects any conflicting recapture", async () => {

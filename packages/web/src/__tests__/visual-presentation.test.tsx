@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { cleanup, fireEvent, render as renderReact, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render as renderRoot, within } from "@testing-library/react";
 import { Window as HappyDOMWindow } from "happy-dom";
 import { VISUAL_SPEECH_FADE_MS } from "@influence/engine/visual-speech";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
@@ -8,17 +8,19 @@ import { sceneSpeechDurationMs, sceneSpeechOpacity, SCENE_SPEECH_START_MS, SCENE
 import { VisualPresentationFrame, type VisualPresentationBeat } from "../app/games/[slug]/components/visual-presentation";
 import { VisualSceneView } from "../app/games/[slug]/components/visual-scene-view";
 import { StageBackdrop, sceneBackdropSources } from "../app/games/[slug]/components/stage-backdrop";
-import { portraitRoomSeats } from "../app/games/[slug]/components/portrait-room";
+import { portraitRoomSeats, portraitRoomTransitionSeats } from "../app/games/[slug]/components/portrait-room";
 import { panelTransition } from "../app/games/[slug]/components/scene-image";
 
-const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver"] as const;
+const globals = ["window", "document", "navigator", "Element", "HTMLElement", "Node", "Event", "ResizeObserver", "getComputedStyle"] as const;
 const original = new Map(globals.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 let dom: HappyDOMWindow;
 beforeEach(() => {
   dom = new HappyDOMWindow({ url: "http://localhost:3000" });
-  for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : dom[key] });
+  Object.defineProperty(dom.document, "fonts", { value: { ready: Promise.resolve() } });
+  for (const key of globals) Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : key === "getComputedStyle" ? dom.getComputedStyle.bind(dom) : dom[key] });
 });
-afterEach(() => {
+afterEach(async () => {
+  await act(async () => {});
   cleanup();
   dom.close();
   for (const key of globals) {
@@ -27,6 +29,12 @@ afterEach(() => {
     else Reflect.deleteProperty(globalThis, key);
   }
 });
+function renderReact(element: Parameters<typeof renderRoot>[0]) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  // Typography probes live outside the player and must not count as visible speech.
+  return renderRoot(element, { container, baseElement: container });
+}
 function loadScene(container: HTMLElement) {
   for (const image of container.querySelectorAll<HTMLImageElement>("[data-scene-preload]")) {
     Object.defineProperty(image, "naturalWidth", { configurable: true, value: 800 });
@@ -98,6 +106,49 @@ test("a missing scene stays readable with a portrait bubble instead of blocking 
   fireEvent.error(view.container.querySelector("[data-scene-preload]")!);
   expect(view.getByText(speech.text)).not.toBeNull();
   expect(view.container.querySelector("[data-headshot-fallback]")).not.toBeNull();
+});
+
+test.each([6, 7, 8])("a %s-person room keeps larger mobile portraits and seats listeners into the back", count => {
+  const seats = portraitRoomSeats(390, count, 2, 150);
+  expect(seats[2]).toMatchObject({x: 0, z: 60, scale: 1, diameter: 100});
+  expect(seats[2]!.y).toBeCloseTo(0);
+  expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-280);
+  expect(Math.max(...seats.map(seat => Math.abs(seat.x)))).toBeGreaterThan(140);
+});
+
+test("a speaker jump across the circle rotates the whole ring instead of cutting across it", () => {
+  const count = 8;
+  const start = portraitRoomSeats(800, count, 0, 150, true);
+  const end = portraitRoomSeats(800, count, 4, 150, true);
+  expect(portraitRoomTransitionSeats(800, count, 0, 4, 0, 150, true)).toEqual(start);
+  const finished = portraitRoomTransitionSeats(800, count, 0, 4, 1, 150, true);
+  for (const [index, seat] of finished.entries()) {
+    expect(seat.x).toBeCloseTo(end[index]!.x);
+    expect(seat.y).toBeCloseTo(end[index]!.y);
+    expect(seat.z).toBeCloseTo(end[index]!.z);
+    expect(seat.scale).toBeCloseTo(end[index]!.scale);
+  }
+  const mid = portraitRoomTransitionSeats(800, count, 0, 4, .5, 150, true);
+  // Halfway through a half-turn the incoming speaker is at the side of the
+  // ring, not at its centre on the straight line between back and front.
+  expect(mid[4]!.z).toBeCloseTo(0);
+  expect(Math.abs(mid[4]!.x)).toBeGreaterThan(300);
+  // A rigid rotation keeps everyone on the ring at their seated spacing.
+  const radius = Math.max(...start.map(seat => Math.abs(seat.x)));
+  const angle = (seat: (typeof mid)[number]) => Math.atan2(seat.x / radius, seat.z / 60);
+  for (let index = 0; index < count; index++) {
+    const seat = mid[index]!;
+    expect((seat.x / radius) ** 2 + (seat.z / 60) ** 2).toBeCloseTo(1);
+    const next = mid[(index + 1) % count]!;
+    expect(Math.atan2(Math.sin(angle(next) - angle(seat)), Math.cos(angle(next) - angle(seat)))).toBeCloseTo(Math.PI / 4);
+  }
+});
+
+test.each([3, 4, 5])("a mobile room still spreads %s survivors into depth", count => {
+  const seats = portraitRoomSeats(390, count, 1, 150, true);
+  expect(seats[1]).toMatchObject({x: 0, z: 60, scale: 1});
+  expect(seats[1]!.diameter).toBeGreaterThanOrEqual(100);
+  expect(Math.min(...seats.map(seat => seat.y))).toBeLessThan(-200);
 });
 
 test("a replay without a winner tableau holds a readable last frame only at the tail", () => {

@@ -126,6 +126,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
   // xAI native APIs use the dotted ID.
   "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
+  // Meta Model API published rates (dev.meta.ai/docs/pricing-rate-limits, 2026-10-13).
+  "muse-spark-1.3": { inputPer1M: 1.25, cachedInputPer1M: 0.15, outputPer1M: 4.25 },
+  "muse-spark-1.3-contributor": { inputPer1M: 0.10, cachedInputPer1M: 0.002, outputPer1M: 0.20 },
+  "muse-wonder-1.0": { inputPer1M: 4.00, cachedInputPer1M: 0.20, outputPer1M: 20.00 },
 };
 
 /** Flex uses the current OpenAI Batch-rate card. Only Flex-supported hosted OpenAI models belong here. */

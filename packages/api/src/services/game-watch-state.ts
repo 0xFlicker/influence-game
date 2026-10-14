@@ -4,6 +4,7 @@ import {
   createEmptyProjection,
   projectViewerDecisionEvent,
   resolveGameKernel,
+  retrospectiveProgress, type RetrospectiveProgress,
   type GameKernel,
   type GameKernelContradictionDiagnostic,
   type GameKernelSource,
@@ -19,8 +20,7 @@ import {
   type PersistedEventDiagnostic,
 } from "./game-event-read-model.js";
 import {
-  getPersistedGameProjection,
-  getPersistedGameProjectionBeforeTerminalOutcome,
+  getPersistedGamePublicProjection,
   summarizeCanonicalProjection,
   type PersistedGameProjectionRead,
   type ProjectionReplayDiagnostic,
@@ -107,7 +107,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 5;
+  schemaVersion: 6;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -128,6 +128,7 @@ export interface GameWatchState {
     unknownPlayers: number;
   };
   final: GameWatchFinalState;
+  retrospective: RetrospectiveProgress;
   winner?: {
     id: string;
     name: string;
@@ -237,9 +238,7 @@ export async function buildGameWatchState(
     stored: game.gameKernel,
     events: persistedEvents.events.map((event) => event.envelope),
   });
-  const projection = game.status === "completed"
-    ? getPersistedGameProjection(persistedEvents)
-    : getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents);
+  const projection = getPersistedGamePublicProjection(persistedEvents);
   const source = classifySource(game.status, result, projection);
   const committedResult = game.status === "completed" ? result : null;
   const projectedSummary = projection.summary;
@@ -250,7 +249,8 @@ export async function buildGameWatchState(
     ? buildProjectedPlayers(players, projectedSummary.players.players, pressureByPlayerId)
     : buildFallbackPlayers(players, committedResult, source);
   const counts = countPlayers(watchPlayers);
-  const winner = buildCommittedWinner(players, committedResult, projectedSummary?.winner);
+  const winner = persistedEvents.status === "complete" && projection.status === "complete"
+    ? buildCommittedWinner(players, projectedSummary?.winner) : undefined;
   const currentRound = projectedSummary?.round
     ?? committedResult?.roundsPlayed
     ?? 0;
@@ -260,7 +260,7 @@ export async function buildGameWatchState(
   const final = buildFinalState(game.status, source, winner, committedResult);
 
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     gameId: game.id,
     slug: game.slug,
     status: game.status,
@@ -295,6 +295,8 @@ export async function buildGameWatchState(
     players: watchPlayers,
     counts,
     final,
+    retrospective: persistedEvents.status === "complete" && projection.status === "complete" && projectedSummary
+      ? projectedSummary.retrospective : retrospectiveProgress(null, null, players.length),
     ...(winner && { winner }),
   };
 }
@@ -850,10 +852,8 @@ function countPlayers(players: readonly GameWatchPlayer[]): GameWatchState["coun
 
 function buildCommittedWinner(
   players: readonly PlayerIdentity[],
-  result: TerminalResult | null,
   projectedWinner: NonNullable<PersistedGameProjectionRead["summary"]>["winner"] | undefined,
 ): GameWatchState["winner"] | undefined {
-  if (!result) return undefined;
   if (projectedWinner) {
     return {
       id: projectedWinner.id,
@@ -861,11 +861,7 @@ function buildCommittedWinner(
       method: projectedWinner.method,
     };
   }
-  if (!result.winnerId) return undefined;
-  return {
-    id: result.winnerId,
-    name: nameForPlayer(players, result.winnerId) ?? result.winnerId,
-  };
+  return undefined;
 }
 
 function buildFinalState(

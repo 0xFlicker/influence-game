@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "crypto";
+import { hashCanonicalJson } from "@influence/prompt-lab-protocol";
 import type { ProviderProfileId } from "./model-catalog";
 import { Phase, type UUID } from "./types";
 
@@ -161,6 +162,22 @@ export function durableProviderLogicalCallId(input: {
     gameId: input.gameId,
     semantic: canonicalProviderSemanticCoordinate(semantic),
   })).digest("hex")}`;
+}
+
+/** Shared engine/journal identity, including standalone and Werewolf calls. */
+export function providerLogicalCallId(gameId: string, coordinate: ProviderLogicalCallCoordinate): string {
+  if (coordinate.semantic.kind === "durable_turn") return durableProviderLogicalCallId({
+    gameId, turnId: coordinate.semantic.turnId, subcallSlot: coordinate.semantic.subcallSlot,
+  });
+  return hashCanonicalJson({ domain: "influence.provider.logical-call.v2", coordinate: {
+    gameId, actor: { name: coordinate.actor.name,
+      ...(coordinate.actor.id !== undefined && { id: coordinate.actor.id }),
+      ...(coordinate.actor.role !== undefined && { role: coordinate.actor.role }) },
+    action: coordinate.action,
+    ...(coordinate.phase !== undefined && { phase: coordinate.phase }),
+    ...(coordinate.round !== undefined && { round: coordinate.round }),
+    semantic: canonicalProviderSemanticCoordinate(coordinate.semantic),
+  } });
 }
 
 export function assertProviderSemanticCoordinate(
@@ -416,6 +433,8 @@ export interface ProviderManifestCallEntry<TResponse, TValue>
 
 export interface ExecuteProviderManifestCallOptions<TResponse, TValue> {
   entries: readonly ProviderManifestCallEntry<TResponse, TValue>[];
+  /** Admission for fresh dispatch only; accepted journal replay needs no transport. */
+  beforeDispatch?(): Promise<void>;
   cancellationSignal?: AbortSignal;
   validateAcceptedValue?(value: unknown): ProviderAcceptedValueValidation<TValue>;
 }
@@ -463,7 +482,8 @@ export function providerAcceptedDecisionId(acceptedAttemptId: string): UUID {
 export type ProviderUnavailableKind =
   | ProviderAttemptFailureKind
   | "budget_exhausted"
-  | "circuit_open";
+  | "circuit_open"
+  | "journal_exhausted";
 
 /** Gameplay-facing exhaustion shared by failed, disallowed, and over-budget manifests. */
 export class ProviderUnavailableError extends Error {
@@ -526,6 +546,14 @@ export class ProviderCircuitOpenError extends ProviderUnavailableError {
   ) {
     super(`Provider circuit is open for ${scopeKey}`, "circuit_open");
     this.name = "ProviderCircuitOpenError";
+  }
+}
+
+/** A durable entry spent its bounded retry policy before an interrupted owner returned. */
+export class ProviderJournalEntryExhaustedError extends ProviderUnavailableError {
+  constructor(readonly catalogId: string) {
+    super(`Provider entry ${catalogId} exhausted its durable retrospective retries; explicit recovery is required`, "journal_exhausted");
+    this.name = "ProviderJournalEntryExhaustedError";
   }
 }
 
@@ -630,10 +658,13 @@ export class ProviderLogicalCallExecution {
       };
     }
 
+    options.cancellationSignal?.throwIfAborted();
+    await options.beforeDispatch?.();
     let lastAttemptError: ProviderAttemptError | undefined;
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;
     let lastCompatibilityError: ProviderEntryIncompatibleError | undefined;
+    let lastJournalError: ProviderJournalEntryExhaustedError | undefined;
     for (const [manifestPosition, entry] of options.entries.entries()) {
       options.cancellationSignal?.throwIfAborted();
       const compatibility = entry.compatibility?.();
@@ -663,6 +694,10 @@ export class ProviderLogicalCallExecution {
           acceptedAttemptOrdinal: accepted.attemptOrdinal,
         };
       } catch (error) {
+        if (error instanceof ProviderJournalEntryExhaustedError) {
+          lastJournalError = error;
+          continue;
+        }
         if (error instanceof ProviderAttemptError) {
           lastAttemptError = error;
           continue;
@@ -683,7 +718,7 @@ export class ProviderLogicalCallExecution {
     // A primary entry is intentionally uncapped, so a normal exhausted
     // manifest always has an attempt error. Preserve that gameplay-facing
     // typed outcome rather than replacing it with a later budget skip.
-    throw lastAttemptError ?? lastCircuitError ?? lastBudgetError ??
+    throw lastAttemptError ?? lastJournalError ?? lastCircuitError ?? lastBudgetError ??
       lastCompatibilityError ??
       new Error("Provider manifest exhausted without an attempt");
   }
@@ -1291,6 +1326,28 @@ export function classifyResponsesTerminalOutcome(
     return { kind: "service_error", message, retryable: true };
   }
   return undefined;
+}
+
+/**
+ * Some OpenAI-compatible routers embed a provider failure inside an HTTP 200
+ * chat completion choice (`finish_reason: "error"` with a choice `error`).
+ * That is a provider attempt failure, not a model outcome: classify it so
+ * the coordinator retries/falls back instead of decoding it as empty output.
+ */
+export function classifyChatCompletionTerminalOutcome(
+  response: unknown,
+): ProviderAttemptFailureOutcome | undefined {
+  const record = asRecord(response);
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const choice = asRecord(choices[0]);
+  const error = Object.keys(asRecord(choice.error)).length > 0 ? asRecord(choice.error) : asRecord(record.error);
+  const finishReason = readString(choice.finish_reason).toLowerCase();
+  if (finishReason !== "error" && Object.keys(error).length === 0) return undefined;
+  const metadata = asRecord(error.metadata);
+  const numericCode = typeof error.code === "number" && Number.isSafeInteger(error.code) ? error.code : undefined;
+  const code = (readString(error.code) || readString(metadata.error_type) || (numericCode !== undefined ? String(numericCode) : "")).toLowerCase();
+  const message = readString(error.message) || "Chat completion ended with an embedded provider error";
+  return classifyProviderFailureDetails({ ...(numericCode !== undefined && { status: numericCode }), code, message });
 }
 
 function sanitizePreparedRequest(

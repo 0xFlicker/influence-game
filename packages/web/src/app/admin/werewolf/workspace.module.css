@@ -2,6 +2,7 @@
 .back, .small, .heading p:not(.eyebrow) { color: rgb(255 255 255 / .55); }
 .back { font-size: .875rem; }
 .heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; margin: 24px 0; }
+.headingActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .heading h1 { font-size: clamp(1.6rem, 3vw, 2.6rem); letter-spacing: -.045em; line-height: 1.12; overflow-wrap: anywhere; margin: 8px 0 14px; font-weight: 600; }
 .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: rgb(255 255 255 / .5); }
 .main button, .open, .actions a { min-height: 44px; border: 1px solid rgb(255 255 255 / .18); border-radius: 7px; padding: 10px 16px; color: inherit; transition: background .15s; cursor: pointer; }
@@ -47,7 +48,8 @@
 .receipt { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-top: 1px solid rgb(255 255 255 / .1); font-size: .85rem; overflow-wrap: anywhere; }
 .mobileNav { display: none; }
 @media (max-width: 760px) {
-  .heading { align-items: flex-start; }
+  .heading { align-items: flex-start; flex-wrap: wrap; }
+  .headingActions { width: 100%; justify-content: flex-start; }
   .heading button { padding: 8px 12px; }
   .filters { grid-template-columns: 1fr 1fr; }
   .filters label:first-child, .row > div:first-child { grid-column: 1 / -1; }

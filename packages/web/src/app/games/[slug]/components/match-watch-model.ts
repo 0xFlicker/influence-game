@@ -14,6 +14,7 @@ import type {
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
 import type { FormatPresentationSnapshot, WatchConnStatus } from "./types";
+import { INFLUENCE_PRODUCTION_FORMAT_PHASES, INFLUENCE_PRODUCTION_PHASE_ORDER } from "@influence/engine/production-moments/influence-source";
 
 const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
@@ -26,6 +27,7 @@ const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
 const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
@@ -40,48 +42,11 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "REVEAL",
   "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
+  "RETROSPECTIVE",
   "END",
 ];
-export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = [
-  "INTRODUCTION",
-  "LOBBY",
-  "VOTE",
-  "FORMAT_MENU",
-  "FORMAT_PICK",
-  "FORMAT_MINGLE",
-  "FORMAT_RESOLVE",
-  "END",
-];
-export const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
-  "INIT",
-  "INTRODUCTION",
-  "LOBBY",
-  "MINGLE_I",
-  "PRE_VOTE_HUDDLE",
-  "VOTE",
-  "FORMAT_MENU",
-  "FORMAT_PICK",
-  "FORMAT_MINGLE",
-  "FORMAT_RESOLVE",
-  "WHISPER",
-  "MINGLE",
-  "POST_VOTE_MINGLE",
-  "RUMOR",
-  "POWER",
-  "REVEAL",
-  "PRE_COUNCIL_HUDDLE",
-  "COUNCIL",
-  "PLEA",
-  "ACCUSATION",
-  "DEFENSE",
-  "DIARY_ROOM",
-  "OPENING_STATEMENTS",
-  "JURY_QUESTIONS",
-  "CLOSING_ARGUMENTS",
-  "JURY_VOTE",
-  "END",
-  "SUSPENDED",
-];
+export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = INFLUENCE_PRODUCTION_FORMAT_PHASES;
+export const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = INFLUENCE_PRODUCTION_PHASE_ORDER;
 export type MatchWatchMode = "live" | "replay";
 export type MatchWatchPhaseSegmentState = "past" | "current" | "future";
 
@@ -370,6 +335,10 @@ export function getMatchWatchRouteDecision(
       mode: "live",
       reason: "live_game",
     };
+  }
+
+  if (game.status === "suspended" && game.watchState?.retrospective.outcome) {
+    return { eligible: true, mode: "replay", reason: "replay_transcript" };
   }
 
   if (game.status === "completed") {
@@ -790,7 +759,7 @@ function currentAgentPatch(
   return fallback !== undefined ? { currentAgent: fallback } : {};
 }
 
-function selectReplayWatchFrame(
+export function selectReplayWatchFrame(
   frames: readonly GameWatchReplayFrame[],
   playbackState: MatchWatchPlaybackState,
 ): GameWatchReplayFrame | null {

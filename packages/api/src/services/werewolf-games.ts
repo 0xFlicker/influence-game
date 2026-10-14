@@ -1,13 +1,15 @@
 import { queueEpisodeCopy } from "./episode-presentation.js";
+import { forecastRetrospectiveBudget } from "@influence/engine/retrospective-budget";
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { queueHouseCuts } from "./house-cut-queue.js";
+import { insertRetrospectiveInput } from "./game-retrospective-inputs.js";
 import { parseGameVisibility } from "@influence/engine/game-visibility";
 import { enabledGameKinds } from "@influence/engine/game-availability";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
-import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, HOUSE_PERSONA_KEYS, resolveModelSelection } from "@influence/engine";
+import { DEFAULT_MODEL_CATALOG_ID, getHousePersonaDetails, normalizeProviderManifest, pickAgentNames, HOUSE_PERSONA_KEYS, resolveModelSelection, assertRetrospectiveInputBinding, materializeRetrospectiveContext, providerLogicalCallId } from "@influence/engine";
 import type { ProviderLogicalCallCoordinate } from "@influence/engine";
-import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS } from "@influence/engine/werewolf";
+import { applyWerewolfEvent, resolveWerewolfStrategy, werewolfActionPlans, observeWerewolf, projectWerewolfView, replayWerewolf, startWerewolf, werewolfConfig, WEREWOLF_PRESETS, werewolfExecutionFinished, compileWerewolfRetrospective } from "@influence/engine/werewolf";
 import type { WerewolfAudience, WerewolfEvent, WerewolfPlayer, WerewolfPreset, WerewolfStore, WerewolfVoteProgress } from "@influence/engine/werewolf";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { checkGameStartAdmissionInTransaction, checkRecoveryAdmissionInTransaction } from "./deployment-admission.js";
@@ -109,7 +111,7 @@ export async function createWerewolfGame(db: DrizzleDB, userId: string, input: {
     const initial = startWerewolf(gameId, players, rules, randomUUID());
     await tx.insert(schema.games).values({ id: gameId, slug, gameKind: "werewolf", gameKernel: null,
       createdById: userId, status: "in_progress", trackType: "custom", minPlayers: count, maxPlayers: count,
-      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
+      startedAt: new Date().toISOString(), config: JSON.stringify({ providerManifest, retrospectiveForecast: forecastRetrospectiveBudget("werewolf", count, providerManifest), serviceTier: "flex", visibility, rulesVersion: rules.rulesVersion, preset: input.preset }) });
     await tx.insert(schema.werewolfEvents).values({ gameId, sequence: initial.sequence, event: initial });
     await queueEpisodeCopy(tx, gameId);
   });
@@ -128,7 +130,7 @@ export async function claimWerewolfGame(db: DrizzleDB, gameId: string, processId
     let state;
     try {
       state = replayWerewolf(await readWerewolfEvents(tx, gameId));
-      if (state.outcome) throw new Error("Completed Werewolf has an active catalog status");
+      if (werewolfExecutionFinished(state)) throw new Error("Completed Werewolf has an active catalog status");
     } catch (error) {
       await tx.update(schema.games).set({ status: "suspended" }).where(eq(schema.games.id, gameId));
       if (owner) await tx.update(schema.gameRunOwners).set({ status: "revoked", revokedAt: now.toISOString(), failureReason: "werewolf_log_invalid" }).where(eq(schema.gameRunOwners.id, owner.id));
@@ -154,6 +156,19 @@ export async function lockWerewolfOwner(tx: Tx, gameId: string, ownerEpoch: stri
 export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: string): WerewolfStore {
   return {
     read: () => readWerewolfEvents(db, gameId),
+    readRetrospectiveInput: async () => (await db.select().from(schema.gameRetrospectiveInputs)
+      .where(eq(schema.gameRetrospectiveInputs.gameId, gameId)))[0]?.input ?? null,
+    prepareRetrospective: (state, context) => db.transaction(async tx => {
+      await lockWerewolfOwner(tx, gameId, ownerEpoch);
+      const committed = replayWerewolf(await readWerewolfEvents(tx, gameId));
+      const expected = await readWerewolfRetrospectiveContext(tx, gameId, committed);
+      if (state.sequence !== committed.sequence || sha256StableJson(expected) !== sha256StableJson(context)) throw new Error("Werewolf retrospective frontier changed");
+      const sequence = committed.sequence + 1, observationHash = sha256StableJson(expected);
+      const [prior] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, sequence)));
+      if (prior) {
+        if (prior.observationHash !== observationHash || sha256StableJson(prior.request) !== sha256StableJson(expected.request)) throw new Error("Werewolf retrospective plan changed");
+      } else await tx.insert(schema.werewolfTurns).values({ gameId, sequence, request: expected.request, observationHash });
+    }),
     prepare: (state, request, sequence = state.sequence + 1) => db.transaction(async (tx) => {
       await lockWerewolfOwner(tx, gameId, ownerEpoch);
       const committed = replayWerewolf(await readWerewolfEvents(tx, gameId));
@@ -165,10 +180,26 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
         if (prior.observationHash !== observationHash || sha256StableJson(prior.request) !== sha256StableJson(request)) throw new Error("Werewolf planned observation changed");
       } else await tx.insert(schema.werewolfTurns).values({ gameId, sequence, request, observationHash });
     }),
-    append: (event) => db.transaction(async (tx) => {
+    append: (event, retrospectiveInput) => db.transaction(async (tx) => {
       const owner = await lockWerewolfOwner(tx, gameId, ownerEpoch);
       const state = replayWerewolf(await readWerewolfEvents(tx, gameId));
       const next = applyWerewolfEvent(state, event);
+      if (event.type === "werewolf.retrospective_started") {
+        if (!retrospectiveInput) throw new Error("Werewolf retrospective start requires its frozen input");
+        const source = compileWerewolfRetrospective(await readWerewolfEvents(tx, gameId));
+        assertRetrospectiveInputBinding(source.input, event.payload);
+        await insertRetrospectiveInput(tx, retrospectiveInput, event.payload);
+      } else if (retrospectiveInput) throw new Error("Werewolf retrospective input requires its start event");
+      if (event.type === "werewolf.retrospective_statement_recorded") {
+        const context = await readWerewolfRetrospectiveContext(tx, gameId, state);
+        const [turn] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, event.sequence)));
+        if (!turn || sha256StableJson(turn.request) !== sha256StableJson(context.request)
+          || turn.observationHash !== sha256StableJson(context)
+          || event.payload.providerLogicalCallId !== providerLogicalCallId(gameId, {
+            actor: { id: context.self.id, name: context.self.name, role: "player" }, action: "retrospective-statement", round: state.day,
+            semantic: { version: 1, kind: "werewolf_action", eventSequence: event.sequence },
+          })) throw new Error("Werewolf retrospective statement was not planned");
+      }
       if (event.type === "werewolf.action_accepted") {
         const [turn] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, event.sequence)));
         const { decision: _decision, fallback: _fallback, ...request } = event.payload;
@@ -177,14 +208,24 @@ export function createWerewolfStore(db: DrizzleDB, gameId: string, ownerEpoch: s
       }
       await tx.insert(schema.werewolfEvents).values({ gameId, sequence: event.sequence, event });
       await tx.update(schema.gameRunOwners).set({ lastPersistedEventSequence: event.sequence,
-        ...(next.outcome ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
-      if (next.outcome) {
+        ...(werewolfExecutionFinished(next) ? { status: "closed" as const, closedAt: new Date().toISOString() } : {}) }).where(eq(schema.gameRunOwners.id, owner.id));
+      if (werewolfExecutionFinished(next)) {
         await tx.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() }).where(eq(schema.games.id, gameId));
         await queueHouseCuts(tx, gameId);
         await ensureWaitingPostgameMediaRow(tx, gameId);
       }
     }),
   };
+}
+
+async function readWerewolfRetrospectiveContext(db: Pick<DrizzleDB, "select">, gameId: string, state: ReturnType<typeof replayWerewolf>) {
+  if (!state.retrospective || werewolfExecutionFinished(state)) throw new Error("Werewolf retrospective is not accepting statements");
+  const source = compileWerewolfRetrospective(await readWerewolfEvents(db, gameId));
+  const [row] = await db.select().from(schema.gameRetrospectiveInputs).where(eq(schema.gameRetrospectiveInputs.gameId, gameId));
+  if (!row) throw new Error("Werewolf retrospective has no frozen input");
+  assertRetrospectiveInputBinding(source.input, state.retrospective.definition);
+  assertRetrospectiveInputBinding(row.input, state.retrospective.definition);
+  return materializeRetrospectiveContext({ input: row.input, definition: state.retrospective.definition, speakers: source.speakers }, state.retrospective);
 }
 
 /** Called within the shared provider journal's owner-fenced transaction. */
@@ -195,8 +236,17 @@ export async function assertWerewolfProviderTurn(tx: Tx, gameId: string, coordin
   if (game?.gameKind !== "werewolf" || game.status !== "in_progress") throw new Error("Werewolf is not running");
   const [turn] = await tx.select().from(schema.werewolfTurns).where(and(eq(schema.werewolfTurns.gameId, gameId), eq(schema.werewolfTurns.sequence, sequence)));
   const state = replayWerewolf(await readWerewolfEvents(tx, gameId));
+  if (coordinate.action === "retrospective-statement") {
+    const context = await readWerewolfRetrospectiveContext(tx, gameId, state);
+    if (!turn || sequence !== state.sequence + 1 || sha256StableJson(turn.request) !== sha256StableJson(context.request)
+      || turn.observationHash !== sha256StableJson(context) || coordinate.actor.role !== "player"
+      || coordinate.actor.id !== context.self.id || coordinate.actor.name !== context.self.name
+      || coordinate.round !== state.day || coordinate.phase !== undefined) throw new Error("Werewolf provider statement does not match its frozen plan");
+    return;
+  }
   const plan = werewolfActionPlans(state).find((entry) => entry.sequence === sequence);
   if (!turn || !plan
+    || "version" in turn.request
     || sha256StableJson(plan.request) !== sha256StableJson(turn.request)
     || turn.request.actorId !== coordinate.actor.id || coordinate.actor.role !== "player"
     || coordinate.actor.name !== state.players.find((player) => player.id === turn.request.actorId)?.name

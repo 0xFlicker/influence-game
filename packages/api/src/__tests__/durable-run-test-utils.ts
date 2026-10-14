@@ -13,6 +13,7 @@ import {
   createEngineBoundaryPlaceholder,
   createEmptyHouseNarrativeContinuity,
   requiredPhaseBoundaryAccumulatorIds,
+  freezeInfluenceRetrospective, prepareRetrospectiveRequest, retrospectiveCompletionProof,
   type CanonicalGameEvent,
   type GameCheckpointCapsule,
   type RuntimeSnapshotV1,
@@ -77,6 +78,45 @@ export function withJuryWinner(
       },
     },
   ];
+}
+
+/** Complete canonical epilogue for settlement fixtures; never forge completion from a vote. */
+export function withRetrospective(events: readonly CanonicalGameEvent[], firstDialogueSequence?: number): readonly CanonicalGameEvent[] {
+  const projection = replayCanonicalEvents(events);
+  const frozen = freezeInfluenceRetrospective({ events, transcript: [], transcriptThroughSequence: 0, dialogueAnchors: [],
+    seats: projection.playerOrder.map(id => ({ id, name: projection.players[id]!.name, personality: "Fixture character", backstory: "", influenceStrategy: "" })),
+    capacities: { effectiveModelIds: ["fixture"], models: [{ modelId: "fixture", maxContextBytes: 1_000_000 }] },
+  });
+  let ticks = Date.parse(events.at(-1)!.timestamp);
+  const state = GameState.fromCanonicalEvents(events, { now: () => ++ticks });
+  state.recordPhaseEntered(Phase.RETROSPECTIVE);
+  state.recordRetrospective("retrospective.started", frozen.definition);
+  for (const actorId of frozen.definition.speakerIds) {
+    const current = replayCanonicalEvents(state.getCanonicalEvents()).retrospective!, request = prepareRetrospectiveRequest(current);
+    state.recordRetrospective("retrospective.statement_recorded", { version: 1, definitionHash: request.definitionHash,
+      actorId, ordinal: request.ordinal, priorStatementsHash: request.priorStatementsHash, requestHash: sha256StableJson(request),
+      providerLogicalCallId: `fixture-retrospective-${actorId}`, speech: `${actorId}: This is my final statement.` },
+      firstDialogueSequence === undefined ? [] : [{kind: "transcript_entry", sequence: firstDialogueSequence + request.ordinal, actorId}]);
+  }
+  state.recordRetrospective("retrospective.completed", retrospectiveCompletionProof(replayCanonicalEvents(state.getCanonicalEvents()).retrospective!));
+  state.recordPhaseEntered(Phase.END);
+  return state.getCanonicalEvents();
+}
+
+export async function insertRetrospectiveTranscriptFixture(db: DrizzleDB, events: readonly CanonicalGameEvent[]) {
+  const statements = events.flatMap(event => {
+    if (event.type !== "retrospective.statement_recorded") return [];
+    const pointer = event.sourcePointers.find(pointer => pointer.kind === "transcript_entry");
+    if (pointer?.sequence === undefined) throw new Error("Retrospective presentation fixture requires canonical dialogue pointers");
+    return [{gameId: event.gameId, round: event.round, phase: Phase.RETROSPECTIVE, scope: "public", fromPlayerId: event.payload.actorId,
+      speakerPlayerId: event.payload.actorId, entrySequence: pointer.sequence, firstDurableEventSequence: event.sequence,
+      captureVersion: 1, dialogueKind: "public_speech", safeContext: { version: 1 }, audiencePlayerIds: [], text: event.payload.speech, timestamp: Date.parse(event.timestamp)}] satisfies Array<typeof schema.transcripts.$inferInsert>;
+  });
+  if (statements.length) await db.insert(schema.transcripts).values(statements);
+}
+
+export function createCompletedCanonicalEventFixture(gameId: string) {
+  return withRetrospective(withJuryWinner(createCanonicalEventFixture(gameId), "atlas"));
 }
 
 export function createResolvedRoundCanonicalEventFixture(gameId: string): readonly CanonicalGameEvent[] {

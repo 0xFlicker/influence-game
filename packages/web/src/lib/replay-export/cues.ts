@@ -10,6 +10,7 @@ import {
   buildClassicPresentationCues,
   mergeFormatAndSocialCues,
   comparePresentationCues,
+  compileReplayFrameLookup,
 } from "../../app/games/[slug]/components/influence-replay-cues";
 import {
   buildStoryScenes,
@@ -17,7 +18,7 @@ import {
 } from "../../app/games/[slug]/components/house-story";
 import {
   buildEndgamePresentationCues,
-  revealedWinnerCue,
+  compileRevealedWinnerCues,
 } from "../../app/games/[slug]/components/endgame-presentation";
 import {
   compileFormatPresentationPrefix,
@@ -30,7 +31,7 @@ import {
 } from "../../app/games/[slug]/components/visual-watch-model";
 import { influencePresentationPolicy } from "../../app/games/[slug]/components/influence-presentation-director";
 import {
-  voteLedgerForCue,
+  compileVoteLedgers,
   type VoteLedgerState,
 } from "../../app/games/[slug]/components/vote-ledger-model";
 import type { VisualPresentationBeat } from "../../app/games/[slug]/components/visual-presentation";
@@ -40,11 +41,20 @@ import type {
 } from "../../app/games/[slug]/components/types";
 import type { AcceptedVisualScene } from "@influence/engine/visual-mode";
 import type { MusicSection } from "../../components/watch/watch-music";
-import type { ReplaySource, ReadReplayJson } from "./source";
-import { loadInfluenceThought } from "./source";
+import { compileSafetyBounceLobbyLookup } from "../../app/games/[slug]/components/safety-bounce-scene-model";
+import type { ReplaySource } from "./source";
 import type { TimingInput } from "./timing";
 
 export type ExportPicture =
+  | {
+      kind: "thinking";
+      gameKind: "influence" | "werewolf";
+      actor: Extract<VisualPresentationBeat, {kind: "portrait"}>["player"];
+      roleLabel?: string;
+      scene: AcceptedVisualScene | null;
+      sourceElapsedMs: number;
+      room?: {number: number | null; players: Extract<VisualPresentationBeat, {kind:"portrait-room"}>["participants"]};
+    }
   | {kind: "werewolf-opening"; cue: WerewolfOpeningCue}
   | {
       kind: "werewolf";
@@ -56,10 +66,12 @@ export type ExportPicture =
       cue: PresentationCue;
       beat: VisualPresentationBeat | null;
       rooms: AcceptedVisualScene[];
-      roster: FormatPresentationRosterPlayer[];
+      roster: (FormatPresentationRosterPlayer & {fullBodyReferenceUrl?:string;headRectangle?:import("@influence/engine/character-portrait").HeadRectangle})[];
       ledger: VoteLedgerState | null;
     };
 export interface ExportCue {
+  /** Stable editorial identity; multiple authored shots may belong to one moment. */
+  momentId?: string;
   timing: TimingInput;
   picture: ExportPicture;
   label: string;
@@ -69,6 +81,7 @@ export interface ExportCue {
     | {
         kind: "influence";
         eventSequence: number | null;
+        transcriptId?: number;
         transcriptSequence?: number;
       };
   speech: {
@@ -81,11 +94,7 @@ export interface ExportCue {
   alignment?: import("./speech").SpeechAlignment[];
 }
 
-export async function buildExportCues(
-  source: ReplaySource,
-  thinking: boolean,
-  read?: ReadReplayJson,
-): Promise<ExportCue[]> {
+export function buildExportCues(source: ReplaySource): ExportCue[] {
   if (source.kind === "werewolf") {
     const media = Object.assign(
       {},
@@ -101,17 +110,6 @@ export async function buildExportCues(
         entries: [cue.moment.entry],
       });
       const spoken = line.spoken && !cue.ballot && !cue.nightAction;
-      const thought =
-        thinking && spoken && line.actor
-          ? source.thoughts
-              .filter(
-                (t) =>
-                  t.cursor === cue.moment.cursor &&
-                  t.actorId === line.actor!.id,
-              )
-              .map((t) => t.thinking)
-              .join("\n\n") || null
-          : null;
       return {
         timing: {
           key: cue.key,
@@ -126,7 +124,7 @@ export async function buildExportCues(
                 ? "result"
                 : "scene",
           speech: werewolfWatchPolicy.speech(cue),
-          thinking: thought,
+          thinking: null,
         },
         picture: {
           kind: "werewolf",
@@ -158,6 +156,8 @@ export async function buildExportCues(
     persona: player.persona,
     personaKey: player.personaKey,
     avatarUrl: visual.portraits[player.id] ?? player.avatarUrl,
+    fullBodyReferenceUrl:visual.fullBodies?.[player.id],
+    headRectangle:visual.fullBodyHeads?.[player.id],
   }));
   const compilation = compileFormatPresentationPrefix({
     gameId: game.id,
@@ -183,6 +183,10 @@ export async function buildExportCues(
     ),
     scenes,
   );
+  const frameForSequence = compileReplayFrameLookup(frames);
+  const lobbyMessages = compileSafetyBounceLobbyLookup(classic, scenes);
+  const winners = compileRevealedWinnerCues(cues);
+  const ledgers = compileVoteLedgers(cues);
   const result: ExportCue[] = [];
   for (const [index, cue] of cues.entries()) {
     const message =
@@ -191,58 +195,26 @@ export async function buildExportCues(
         : null;
     const prior =
       cue.source === "format"
-        ? classic
-            .filter(
-              (c) =>
-                c.round === cue.round &&
-                c.phase === "LOBBY" &&
-                c.canonicalSequence !== null &&
-                c.canonicalSequence <= cue.canonicalSequence,
-            )
-            .map((c) => scenes[c.sceneIndex]!.messages[c.messageIndex]!)
+        ? lobbyMessages(cue.round, cue.canonicalSequence)
         : [];
-    const state = frames.findLast(
-      (frame) =>
-        cue.canonicalSequence !== null &&
-        frame.sequence <= cue.canonicalSequence,
-    );
+    const state = frameForSequence(cue.canonicalSequence);
+    const playersById = new Map(state?.players.map(player => [player.id, player]));
     const activePlayers = game.players.map((player) => ({
       ...player,
-      status: state?.players.find((p) => p.id === player.id)?.status ?? "alive",
-      shielded:
-        state?.players.find((p) => p.id === player.id)?.shielded ?? false,
+      status: playersById.get(player.id)?.status ?? "alive",
+      shielded: playersById.get(player.id)?.shielded ?? false,
     }));
     const picture = visualWatchPresentation(
       visual,
-      revealedWinnerCue(cues, index) ?? cue,
+      winners[index] ?? cue,
       message,
       activePlayers,
       prior,
+      frames,
     );
     const spoken =
       picture.beat && "speech" in picture.beat ? picture.beat.speech : null;
-    const ledger = voteLedgerForCue(cues, index);
-    const actorId = spoken?.playerId;
-    let thought = thinking
-      ? (source.thoughts[cue.key] ?? message?.thinking ?? null)
-      : null;
-    if (
-      thinking &&
-      !thought &&
-      actorId &&
-      cue.canonicalSequence !== null &&
-      read
-    ) {
-      thought = await loadInfluenceThought(read, game.slug, {
-        actorId,
-        round: cue.round,
-        phase: cue.phase,
-        sequence: cue.canonicalSequence,
-        transcriptSequence: message?.entrySequence,
-        messageId: message ? String(message.id) : undefined,
-      });
-      if (thought) source.thoughts[cue.key] = thought;
-    }
+    const ledger = ledgers[index] ?? null;
     result.push({
       timing: {
         key: cue.key,
@@ -257,12 +229,15 @@ export async function buildExportCues(
               ? "result"
               : "scene",
         speech: influencePresentationPolicy.speech(cue),
-        thinking: actorId ? thought : null,
+        thinking: null,
       },
-      picture: { kind: "influence", cue, ...picture, roster, ledger },
+      picture: { kind: "influence", cue, ...picture,
+        rooms:picture.beat?.kind === "scene" ? picture.rooms.filter(room => picture.beat?.kind === "scene" && room.id === picture.beat.sceneId) : [],
+        roster, ledger },
       source: {
         kind: "influence",
         eventSequence: cue.canonicalSequence,
+        ...(message && {transcriptId: message.id}),
         ...(message?.entrySequence !== undefined && {
           transcriptSequence: message.entrySequence,
         }),
@@ -280,6 +255,5 @@ export async function buildExportCues(
       music: null,
     });
   }
-  if (!result.length) throw new Error("Game has no playable cues");
   return result;
 }

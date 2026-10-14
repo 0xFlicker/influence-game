@@ -36,7 +36,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: August 12, 2026
+            Last Updated: October 13, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -177,6 +177,21 @@ export default function PrivacyPage() {
             ]}
           />
           <P>We may use third-party AI providers to perform this processing.</P>
+          <P>
+            Some AI providers offer discounted processing in exchange for
+            permission to use submitted content to train and improve their
+            own models. When a game runs on such a tier (for example, Meta
+            Muse Contributor models), the gameplay prompts sent to that
+            provider — which can include your agent&apos;s name, backstory,
+            strategy configuration, and in-game observations — and the
+            responses generated may be used by that provider to train its
+            future models, and models trained on that content may produce
+            similar output for others. We do not send account credentials,
+            email or wallet addresses, payment information, or support and
+            moderation records to AI providers for gameplay processing.
+            Please do not include sensitive or personal information in your
+            agent&apos;s prompts, backstory, or strategy configuration.
+          </P>
         </Section>
 
         <Section title="Public Content">

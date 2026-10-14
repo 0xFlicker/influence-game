@@ -363,6 +363,10 @@ Up to three proposal/ballot attempts per night. Living wolves propose sequential
 
 The seat-scoped model input containing public facts and speech, its own character and selected strategy, and only the role's authorized secrets. Wolves know the pack, Seers know their own checks, and Doctors know their previous protection target. Spoken role claims remain unverified speech.
 
+## Game retrospective
+
+A contestant-authored epilogue after the immutable competitive result. Every original contestant receives a complete chronological game account and gives one final speech. Influence uses exit order, then nonwinning finalists in seat order, with the winner last; Werewolf uses death order followed by a frozen survivor shuffle. Earlier accepted speeches are context for later speakers. Canonical definition/statement/completion records own order and progress; speech never changes game facts. The final execution boundary follows the complete epilogue. Results can be available while execution is active or paused; completed settlement and downstream jobs require the full proof. Final statements contain bounded speech, without a gameplay choice, strategy update or private thinking. Replay reuses each original solo portrait; Studio treats the statement as ordinary speech with explicit retrospective provenance, and frozen exports retain exact selections. See [contracts](docs/game-retrospective-contract.md), [frozen context/order](docs/game-retrospective-context.md), [strict invocation](docs/game-retrospective-invocation.md) and [execution/recovery](docs/game-retrospective-runtime.md).
+
 ## Werewolf spectator mode
 
 Mystery and Omniscient are projections of the same accepted game. Mystery reveals roles only at the ending; Omniscient includes roles, pack speech, and resolved night secrets. Neither includes private reasoning or owner strategy. Replay positions count audience-visible entries; future deaths, roles, and outcomes do not leak into an earlier prefix.
@@ -664,6 +668,16 @@ The app/API-side OAuth surface that turns an existing logged-in app session into
 ## Game MCP OAuth bridge
 
 A local developer bridge that validates a producer-capable token before delegating to the existing stdio Game MCP behavior. The bridge proves the OAuth authorization-code plus PKCE loop for trusted MCP validation without packaging a production HTTP MCP endpoint.
+
+## Production moment
+
+The independently selectable editorial unit in Production Studio. Durable transcript/event/action identity is provenance; a single response can yield separate thinking, speech and accepted actions. Stable IDs use game identity, finite source references and semantic parts, never replay cursor, text, timing, pagination or media revision. A thought's camera/pages/fades and the authored opening's shots remain internal segments. Exact flat tag matching selects permitted moments in game-owned source order after the complete accepted history has been reduced. Mystery never catalogs private thinking or nighttime decisions. See `docs/production-studio.md`.
+
+Studio labels are reusable flat tags with exact values (`label.smart=true`, `label.fourth_wall=true`, `label.mistake=true`, `label.aggressive=true`). A finite cut recipe applies All / None / any checked label within each kind, over the existing normal full-export or empty baseline. Kind policies override that baseline without changing catalog authority, source order or Mystery privacy. Browser filters and Source playback preferences do not define cut membership.
+
+## Frozen production selection
+
+A local, checksummed descriptor of exact permitted moment IDs, selected tag values/revisions, accepted source/media boundary, copy, presentation settings and validated local recording evidence. It is a snapshot rather than a persistent cut project. Later tag membership changes do not alter those exact IDs. Export reauthorizes the source and prepares only selected movie payloads; publication and gameplay resume remain separate operations.
 
 ## Production Game MCP
 
