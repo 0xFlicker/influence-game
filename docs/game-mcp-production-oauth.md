@@ -126,7 +126,7 @@ Authorization failures have distinct transport shapes:
 - An unknown tool, a known but ineligible tool, or an active-match action attempt terminates with the same generic JSON-RPC error and no scope challenge.
 - A client-envelope or role lookup failure fails closed as JSON-RPC `-32603` with public message `Internal error`, no descriptor leak, and no scope challenge.
 
-The server continues to negotiate MCP `2025-06-18`. MCP `2025-11-25`, HTTP `403`, and Client ID Metadata Documents (CIMD) are deferred to a separate protocol migration.
+The server negotiates MCP `2025-11-25`, `2025-06-18`, and `2025-03-26` from the single list in `packages/api/src/game-mcp/protocol.ts`. During `initialize`, a supported proposal is echoed and any other well-formed version (including a newer one the server does not know) is answered with the latest supported version so the client can decide whether to proceed; only a missing or malformed `protocolVersion` is an error (`-32602`). The `MCP-Protocol-Version` header is not checked on `initialize`; on later requests any supported version is accepted and an unsupported one is rejected with HTTP `400` and a JSON-RPC error naming the supported versions. HTTP `403` and Client ID Metadata Documents (CIMD) remain deferred.
 
 House spectator reads still require an authenticated MCP connection and grant. Public and known-link Unlisted games are readable without participation, matching browser access. Hidden/invalid-visibility games remain inaccessible even to a producer using a spectator tool. Producer inventory does not grant a spectator bypass. Existing Influence owner transcript/cognition tools retain their independent participation policy.
 

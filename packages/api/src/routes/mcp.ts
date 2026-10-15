@@ -45,9 +45,12 @@ import {
   classifyMatchToolResult,
   type MatchToolResultClass,
 } from "../game-mcp/contracts.js";
+import {
+  isSupportedMcpProtocolVersion,
+  unsupportedProtocolVersionMessage,
+} from "../game-mcp/protocol.js";
 
 const DEFAULT_MAX_POST_BYTES = 1024 * 1024;
-const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
 const UNKNOWN_TOOL_AUDIT_NAME = "unknown_tool";
 const MATCH_TOOL_NAME_SET = new Set<string>(MATCH_COMPLETENESS_TOOL_NAMES);
 
@@ -172,10 +175,6 @@ function registerMcpResource(
       return fail(c, params.auditLogger, correlationId, auth.context, 406, "not_acceptable");
     }
 
-    if (!protocolVersionIsSupported(c.req.header("mcp-protocol-version"))) {
-      return fail(c, params.auditLogger, correlationId, auth.context, 400, "unsupported_protocol_version");
-    }
-
     let rawBody: string;
     try {
       rawBody = await c.req.text();
@@ -240,6 +239,41 @@ function registerMcpResource(
       return validation.status === 202
         ? c.body(null, 202)
         : c.json(validation.response, validation.status);
+    }
+
+    // The MCP-Protocol-Version header is only meaningful after
+    // initialize has negotiated a version, so it is not validated on
+    // initialize itself: that request negotiates via params instead.
+    // On later requests, accept any supported version (the negotiated
+    // version is always one of them) and reject only truly unsupported
+    // versions, with a JSON-RPC error naming the supported set.
+    const headerProtocolVersion = c.req.header("mcp-protocol-version")?.trim();
+    if (
+      validation.request.method !== "initialize" &&
+      headerProtocolVersion &&
+      !isSupportedMcpProtocolVersion(headerProtocolVersion)
+    ) {
+      emitAudit(params.auditLogger, {
+        event: "mcp.http.request",
+        correlationId,
+        result: "failure",
+        status: 400,
+        userId: auth.context.userId,
+        clientId: auth.context.clientId,
+        resource: auth.context.resource,
+        scope: auth.context.scope,
+        authProfile: auth.context.authProfile,
+        providerId: providerIdHint(c),
+        denialReason: "unsupported_protocol_version",
+      });
+      return c.json(
+        jsonRpcError(
+          validation.request.id ?? null,
+          -32600,
+          unsupportedProtocolVersionMessage(headerProtocolVersion),
+        ),
+        400,
+      );
     }
 
     const response = await params.server.handle(validation.request, auth.context);
@@ -512,11 +546,6 @@ function acceptsMcpResponse(accept: string | undefined): boolean {
 
 function contentTypeIsJson(contentType: string | undefined): boolean {
   return typeof contentType === "string" && contentType.includes("application/json");
-}
-
-function protocolVersionIsSupported(value: string | undefined): boolean {
-  if (!value) return true;
-  return SUPPORTED_PROTOCOL_VERSIONS.has(value.trim());
 }
 
 function bodyByteLength(body: string): number {
