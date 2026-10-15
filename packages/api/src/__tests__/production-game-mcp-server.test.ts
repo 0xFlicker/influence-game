@@ -1591,6 +1591,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       jsonrpc: "2.0",
       id: "init-guidance",
       method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } },
     }, GAMES_AUTH);
 
     const instructions = String((response?.result as { instructions?: string }).instructions);
@@ -3429,6 +3430,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         jsonrpc: "2.0",
         id: "init",
         method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } },
       }, PRODUCER_AUTH);
 
       expect(response?.error).toBeUndefined();

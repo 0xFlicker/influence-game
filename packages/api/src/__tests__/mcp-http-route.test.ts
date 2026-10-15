@@ -14,10 +14,12 @@ import {
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
-import type {
-  JsonRpcRequest,
+import {
   ProductionGameMcpJsonRpcServer,
+  type JsonRpcRequest,
 } from "../game-mcp/server.js";
+import { ProductionGameMcpReadModel } from "../game-mcp/read-model.js";
+import { MCP_SUPPORTED_PROTOCOL_VERSIONS } from "../game-mcp/protocol.js";
 import type { GameMcpAuthResult } from "../game-mcp/auth.js";
 import {
   MCP_OAUTH_AUDIENCE,
@@ -493,11 +495,140 @@ describe("/mcp Streamable HTTP route", () => {
         Authorization: "Bearer good-token",
         "MCP-Protocol-Version": "1999-01-01",
       }),
-      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "tools/list" }),
     });
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      jsonrpc: "2.0",
+      id: "init",
+      error: {
+        code: -32600,
+        message: expect.stringContaining("2025-11-25"),
+      },
+    });
     expect(calls).toEqual([]);
+  });
+
+  describe("protocol version negotiation", () => {
+    function createNegotiatingApp() {
+      const server = new ProductionGameMcpJsonRpcServer(
+        new ProductionGameMcpReadModel({} as DrizzleDB),
+        undefined,
+        async () => ({
+          clientScopes: ["agents:read", "games:read"],
+          hasProducerRole: false,
+        }),
+      );
+      return createMcpRoutes({} as DrizzleDB, {
+        server,
+        tokenValidator: async (): Promise<GameMcpAuthResult> => ({
+          ok: true,
+          context: {
+            userId: "user-1",
+            clientId: "influence-game-mcp-local",
+            resource: RESOURCE_URI,
+            scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+            scopes: ["agents:read", "games:read"],
+            authProfile: "subject",
+            expiresAt: 1_800_000_000,
+          },
+        }),
+        auditLogger: () => undefined,
+        ownerLearningConnectionRecorder: async () => undefined,
+      });
+    }
+
+    async function initialize(
+      app: ReturnType<typeof createNegotiatingApp>,
+      protocolVersion: unknown,
+      extraHeaders: Record<string, string> = {},
+    ) {
+      const response = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: "Bearer [REDACTED]", ...extraHeaders }),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "init",
+          method: "initialize",
+          params: {
+            protocolVersion,
+            capabilities: {},
+            clientInfo: { name: "negotiation-test", version: "1" },
+          },
+        }),
+      });
+      return {
+        status: response.status,
+        body: await response.json() as {
+          result?: { protocolVersion?: string };
+          error?: { code: number; message: string };
+        },
+      };
+    }
+
+    test("negotiates 2025-11-25 proposed in params and header", async () => {
+      const app = createNegotiatingApp();
+      const { status, body } = await initialize(app, "2025-11-25", {
+        "MCP-Protocol-Version": "2025-11-25",
+      });
+      expect(status).toBe(200);
+      expect(body.error).toBeUndefined();
+      expect(body.result?.protocolVersion).toBe("2025-11-25");
+      expect(body.result?.protocolVersion).toBeDefined();
+      expect(MCP_SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).toContain(body.result!.protocolVersion!);
+    });
+
+    test("echoes supported 2025-06-18 and 2025-03-26", async () => {
+      const app = createNegotiatingApp();
+      for (const version of ["2025-06-18", "2025-03-26"]) {
+        const { status, body } = await initialize(app, version);
+        expect(status).toBe(200);
+        expect(body.error).toBeUndefined();
+        expect(body.result?.protocolVersion).toBe(version);
+      }
+    });
+
+    test("downgrades a fictional future version to the latest supported version", async () => {
+      const app = createNegotiatingApp();
+      const { status, body } = await initialize(app, "2027-01-01");
+      expect(status).toBe(200);
+      expect(body.error).toBeUndefined();
+      expect(body.result?.protocolVersion).toBe(MCP_SUPPORTED_PROTOCOL_VERSIONS[0]);
+    });
+
+    test("rejects a garbage protocol version with a JSON-RPC error, not an empty 400", async () => {
+      const app = createNegotiatingApp();
+      const { status, body } = await initialize(app, "garbage");
+      expect(status).toBe(200);
+      expect(body.result).toBeUndefined();
+      expect(body.error?.code).toBe(-32602);
+      expect(body.error?.message).toContain("Supported protocol versions are:");
+      expect(body.error?.message).toContain("2025-06-18");
+    });
+
+    test("tools/list works after a downgraded negotiation in the same session", async () => {
+      const app = createNegotiatingApp();
+      const { body } = await initialize(app, "2027-01-01");
+      const negotiated = body.result?.protocolVersion;
+      expect(negotiated).toBe(MCP_SUPPORTED_PROTOCOL_VERSIONS[0]);
+
+      const response = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({
+          Authorization: "Bearer [REDACTED]",
+          "MCP-Protocol-Version": negotiated!,
+        }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "list", method: "tools/list" }),
+      });
+      expect(response.status).toBe(200);
+      const listBody = await response.json() as {
+        result?: { tools?: Array<{ name: string }> };
+        error?: unknown;
+      };
+      expect(listBody.error).toBeUndefined();
+      expect(listBody.result?.tools?.length).toBeGreaterThan(0);
+    });
   });
 
   test("fails closed when token validation throws", async () => {

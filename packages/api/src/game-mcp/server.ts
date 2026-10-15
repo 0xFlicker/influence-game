@@ -155,6 +155,10 @@ import {
   OWNER_LEARNING_MCP_WRITE_SCOPES,
 } from "../services/owner-learning-mcp-policy.js";
 import type { MatchManifestResult } from "../services/match-completeness.js";
+import {
+  McpInvalidParamsError,
+  negotiateMcpProtocolVersion,
+} from "./protocol.js";
 import type { MatchTranscriptPageResult } from "../services/match-transcript-read-model.js";
 import type { MatchCognitionPageResult } from "../services/match-cognition-read-model.js";
 import type { MatchNarrativePageResult } from "../services/match-narrative-read-model.js";
@@ -229,7 +233,11 @@ export class ProductionGameMcpJsonRpcServer {
         jsonrpc: "2.0",
         id: request.id ?? null,
         error: {
-          code: error instanceof GameMcpEligibilityDependencyError ? -32603 : -32000,
+          code: error instanceof GameMcpEligibilityDependencyError
+            ? -32603
+            : error instanceof McpInvalidParamsError
+              ? -32602
+              : -32000,
           message: error instanceof GameMcpEligibilityDependencyError
             ? "Internal error"
             : error instanceof Error ? error.message : String(error),
@@ -248,9 +256,13 @@ export class ProductionGameMcpJsonRpcServer {
     toolName: GameMcpToolName | undefined,
   ): Promise<unknown> {
     const isProducer = hasScope(auth, "producer");
+    if (method === "ping") {
+      return {};
+    }
+
     if (method === "initialize") {
       return {
-        protocolVersion: "2025-06-18",
+        protocolVersion: negotiateMcpProtocolVersion(params),
         capabilities: {
           resources: {},
           tools: {},
