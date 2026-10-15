@@ -922,11 +922,12 @@ test("House MCP Influence link opens the inspected canonical moment", async () =
 
 test("completed Influence results render without a retrospective", async () => {
   const id = "browser-no-retrospective";
-  await insertGame(database.db, {id, slug:id, status:"completed", config:{visibility:"public"}});
+  await insertGame(database.db, {id, slug:id, status:"completed"});
   await database.db.insert(schema.gamePlayers).values(["atlas","echo","mira","nyx"].map(playerId => ({
     id:playerId, gameId:id, persona:JSON.stringify({name:playerId,personality:"Fixture"}), agentConfig:"{}",
   })));
   await insertCanonicalEventRows(database.db,id,await insertOwner(database.db,id),withJuryWinner(createCanonicalEventFixture(id),"atlas"));
+  expect((await fetch(`${servers.apiUrl}/api/games/${id}`)).status).toBe(200);
   const page = await browser.newPage();
   try {
     await page.goto(`${servers.webUrl}/games/${id}/results`,{waitUntil:"networkidle0"});

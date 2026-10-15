@@ -21,7 +21,11 @@ export async function playedWerewolfReview(db: DrizzleDB, existingOwner?: string
   const wolves = initial.players.filter(p => initial.roles[p.id] === "werewolf");
   const villager = initial.players.find(p => initial.roles[p.id] === "villager")!;
   const agent: WerewolfAgent = { prepareRetrospectiveCapacity: fixtureRetrospectiveCapacity, getRetrospectiveStatement: fixtureWerewolfRetrospective, async decide({ request }) {
-    if (request.action === "open_thread") return { kind: "opening", recipientIds: request.legalRecipientIds.slice(0, 3), text: "What changed?", cue: null };
+    // One spoken thread retains public replies/answers without playing a full
+    // discussion for every seat in each owner-learning workflow test.
+    if (request.action === "open_thread") return request.actorId === wolves[0]!.id
+      ? { kind: "opening", recipientIds: request.legalRecipientIds.slice(0, 3), text: "What changed?", cue: null }
+      : { kind: "opening", recipientIds: [], text: null, cue: null };
     if (["attack", "protect", "investigate", "vote"].includes(request.action)) return {
       kind: "target", targetId: request.action === "vote" ? (request.voteMode === "plurality" ? request.legalTargetIds[0]! : null) : request.legalTargetIds.includes(villager.id) ? villager.id : request.legalTargetIds[0]!,
       thinking: `OWN_THINKING_${request.actorId}`,
