@@ -933,7 +933,7 @@ test("completed Influence results render without a retrospective", async () => {
     await page.goto(`${servers.webUrl}/games/${id}/results`,{waitUntil:"networkidle0"});
     await page.waitForSelector('[data-testid="completed-results-review"]');
     const content = await page.$eval('[data-testid="completed-results-review"]', element => element.textContent);
-    expect(content).toContain("atlas");
+    expect(content).toContain("Atlas");
     expect(content).not.toContain("Retrospective in progress");
     expect(content).not.toContain("completion proof");
     await page.reload({waitUntil:"networkidle0"});
