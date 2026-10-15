@@ -50,6 +50,7 @@ export async function readHouseGameRetrospective(db: DrizzleDB, input: Retrospec
     let head: { sequence: number; hash: string }, outcome: RetrospectiveOutcomeSource | null, retrospective: RetrospectiveStateV1 | null;
     let requiredStatements: number, speakers: Speaker[], links: Map<number, string>;
     let latestSequence = 0;
+    let executionWithoutRetrospective = false;
     const checkPinnedPrefix = (state: RetrospectiveStateV1 | null) => {
       if (previous && ((state?.definition.definitionHash ?? null) !== previous.definitionHash || (state?.statements.length ?? 0) !== previous.statementCount))
         throw new HouseInspectionError("invalid_cursor", "Pinned retrospective definition or accepted prefix changed");
@@ -66,11 +67,17 @@ export async function readHouseGameRetrospective(db: DrizzleDB, input: Retrospec
       if (game.gameKind === "werewolf") {
         const full = await readWerewolfEvents(tx, game.id);
         const completeState = replayWerewolf(full);
+        executionWithoutRetrospective = completeState.config.rulesVersion === 7 && werewolfExecutionFinished(completeState);
         if (game.status === "completed" && !werewolfExecutionFinished(completeState)) throw Error("Missing execution completion proof");
         if (previous) checkPinnedPrefix(replayWerewolf(full.filter(event => event.sequence <= previous.throughSequence)).retrospective);
         const sequence = through(full, new Map(full.map(event => [event.sequence, sha256StableJson(event)]))), events = full.filter(event => event.sequence <= sequence);
         const state = replayWerewolf(events);
         outcome = state.retrospectiveOutcomeSource; retrospective = state.retrospective; requiredStatements = state.players.length;
+        // Rules v7 records the outcome but never initializes a retrospective source.
+        if (state.config.rulesVersion === 7 && state.outcome) {
+          const completed = events.find(event => event.type === "werewolf.completed")!;
+          outcome = { gameId: game.id, gameKind: "werewolf", eventSequence: completed.sequence, eventHash: sha256StableJson(completed) };
+        }
         if (!outcome) throw new HouseInspectionError("not_completed", "The competitive outcome has not been recorded");
         const results = buildWerewolfResults(events);
         speakers = (retrospective?.definition.speakerIds ?? []).map((actorId, ordinal) => {
@@ -84,7 +91,9 @@ export async function readHouseGameRetrospective(db: DrizzleDB, input: Retrospec
         const persisted = await getPersistedGameEvents(tx, game.id);
         if (persisted.status === "invalid") throw new HouseInspectionError("unavailable", "Canonical retrospective history failed validation");
         const full = persisted.events.map(event => event.envelope), completeState = replayCanonicalEvents(full);
-        if (game.status === "completed" && (!completeState.retrospective?.completedAtEventSequence || completeState.phase !== Phase.END)) throw Error("Missing execution completion proof");
+        const enteredRetrospective = Boolean(completeState.retrospective) || full.some(event => event.phase === Phase.RETROSPECTIVE);
+        executionWithoutRetrospective = game.status === "completed" && !enteredRetrospective;
+        if (game.status === "completed" && enteredRetrospective && (!completeState.retrospective?.completedAtEventSequence || completeState.phase !== Phase.END)) throw Error("Missing execution completion proof");
         if (previous) checkPinnedPrefix(replayCanonicalEvents(full.filter(event => event.sequence <= previous.throughSequence)).retrospective);
         const sequence = through(full, new Map(persisted.events.map(event => [event.sequence, event.eventHash])));
         const state = replayCanonicalEvents(full.filter(event => event.sequence <= sequence));
@@ -112,7 +121,7 @@ export async function readHouseGameRetrospective(db: DrizzleDB, input: Retrospec
       const end = after + count, cursor: Cursor = { version: 1, gameId: game.id, gameKind: game.gameKind, throughSequence: head!.sequence, throughHash: head!.hash,
         definitionHash, statementCount: accepted.length, afterOrdinal: end, poll: false };
       const value = { schemaVersion: 1 as const, game: houseGameIdentity(game), gameKind: game.gameKind, outcome: outcome!, source: head!, initialized: retrospective !== null,
-        progress: retrospectiveProgress(outcome!, retrospective, requiredStatements), speakers,
+        progress: retrospectiveProgress(outcome!, retrospective, requiredStatements, executionWithoutRetrospective), speakers,
         statements: accepted.slice(after, end).map(statement => {
           const href = links.get(statement.eventSequence);
           if (!href) throw new HouseInspectionError("unavailable", "Accepted speech has no canonical replay link");

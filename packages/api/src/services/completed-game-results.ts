@@ -60,8 +60,9 @@ export async function getCompletedGameResults(
   const events = persistedEvents.events.map((event) => event.envelope);
   const canonical = events.length ? replayCanonicalEvents(events) : null;
   if (!canonical?.retrospectiveOutcomeSource) return { ok: false, status: game.status === "completed" ? "unavailable" : "not_completed", error: "Results are available after the canonical outcome is recorded." };
-  const retrospective = retrospectiveProgress(canonical.retrospectiveOutcomeSource, canonical.retrospective, canonical.playerOrder.length);
-  if (game.status === "completed" && (retrospective.status !== "completed" || canonical.phase !== Phase.END)) return { ok: false, status: "unavailable", error: "Completed execution has no retrospective completion proof." };
+  const enteredRetrospective = Boolean(canonical.retrospective) || events.some(event => event.phase === Phase.RETROSPECTIVE);
+  const retrospective = retrospectiveProgress(canonical.retrospectiveOutcomeSource, canonical.retrospective, canonical.playerOrder.length, game.status === "completed" && !enteredRetrospective);
+  if (game.status === "completed" && enteredRetrospective && (retrospective.status !== "completed" || canonical.phase !== Phase.END)) return { ok: false, status: "unavailable", error: "Completed execution has no retrospective completion proof." };
   const kernel = resolveGameKernel({ stored: game.gameKernel, events });
   const results = buildCompletedGameResults({
     events,

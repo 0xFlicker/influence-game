@@ -179,8 +179,8 @@ describe("provider health probes", () => {
   test("concurrent requested probes execute only one provider call", async () => {
     await openAuthCircuit(db);
     let calls = 0;
-    let release: (() => void) | undefined;
-    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const { promise: blocked, resolve: release } = Promise.withResolvers<void>();
+    const { promise: started, resolve: signalStarted } = Promise.withResolvers<void>();
     const first = executeProviderHealthProbe(db, {
       scopeKey: "provider:openai",
       owner: "admin-a",
@@ -188,25 +188,31 @@ describe("provider health probes", () => {
     }, {
       runProbe: async () => {
         calls += 1;
+        signalStarted();
         await blocked;
         return { kind: "usable" };
       },
     });
-    await waitFor(() => calls === 1);
+    try {
+      await Promise.race([
+        started,
+        first.then(() => { throw new Error("Probe completed before entering runProbe"); }),
+      ]);
 
-    await expect(executeProviderHealthProbe(db, {
-      scopeKey: "provider:openai",
-      owner: "admin-b",
-      allowBeforeCooldown: true,
-    }, {
-      runProbe: async () => {
-        calls += 1;
-        return { kind: "usable" };
-      },
-    })).rejects.toMatchObject({ code: "probe_active" });
-
-    release?.();
-    await expect(first).resolves.toMatchObject({ status: { state: "closed" } });
+      await expect(executeProviderHealthProbe(db, {
+        scopeKey: "provider:openai",
+        owner: "admin-b",
+        allowBeforeCooldown: true,
+      }, {
+        runProbe: async () => {
+          calls += 1;
+          return { kind: "usable" };
+        },
+      })).rejects.toMatchObject({ code: "probe_active" });
+    } finally {
+      release();
+      await expect(first).resolves.toMatchObject({ status: { state: "closed" } });
+    }
     expect(calls).toBe(1);
   });
 
@@ -286,12 +292,4 @@ function probeEvidence(
     disposition: "exhausted",
     rawResponse: { status: 401, body: { error: "invalid api key" } },
   };
-}
-
-async function waitFor(predicate: () => boolean): Promise<void> {
-  for (let i = 0; i < 100; i += 1) {
-    if (predicate()) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, 1));
-  }
-  throw new Error("Condition was not reached");
 }

@@ -64,6 +64,9 @@ test("outcome-only reads are pending and completed catalogs require the final pr
   expect(pending).toMatchObject({ initialized: false, speakers: [], statements: [], progress: { status: "pending" } });
   expect(pending.pollCursor).toBeString();
   await db.insert(schema.werewolfEvents).values(events.filter(event => event.sequence > outcome.sequence).map(event => ({ gameId: event.gameId, sequence: event.sequence, event })));
+  await db.update(schema.games).set({ status: "completed" }).where(eq(schema.games.id, "rt09-wolf"));
+  const pinnedOutcome = await readHouseGameRetrospective(db, { gameIdOrSlug: "rt09-wolf", cursor: forge(pending.pollCursor!, { poll: false }) });
+  expect(pinnedOutcome.progress.status).toBe("pending");
   expect((await readHouseGameRetrospective(db, { gameIdOrSlug: "rt09-wolf", cursor: pending.pollCursor! })).statements).toHaveLength(6);
   const app = createGameResultsRoutes(db);
   expect((await app.request('/api/games/rt09-wolf/retrospective?limit=0')).status).toBe(400);
