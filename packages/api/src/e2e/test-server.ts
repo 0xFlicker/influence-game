@@ -173,10 +173,11 @@ export async function startTestServers(
 
     webUrl = `http://localhost:${webPort}`;
 
-    // Wait for web server to be healthy. Preserve child output on failure;
-    // otherwise a Next startup error is hidden behind a generic timeout.
+    // The existing health rewrite checks the web listener and API connection.
+    // Page compilation and rendering are verified by the browser stories.
+    // Preserve child output so startup failures retain their actual cause.
     try {
-      await waitForHealth(webUrl, 60_000, opts.signal);
+      await waitForHealth(`${webUrl}/health`, 60_000, opts.signal);
     } catch (error) {
       await terminateProcess(webProcess, "web");
       await terminateProcess(apiProcess, "api");
