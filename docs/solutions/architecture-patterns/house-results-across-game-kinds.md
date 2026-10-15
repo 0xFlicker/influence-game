@@ -19,6 +19,7 @@ W1 extends the House results route to Werewolf. Keep the venue URL, common heade
 - `werewolf/results-contract.ts` contains browser-safe types and outcome labels. Do not import the server projection merely to share wording: its transitive rules/protocol imports are not browser-safe. Type checking passed this mistake; the real Next browser build caught it.
 - `walkWerewolfHistory` is the internal source of audience cursor counting for both watch and results. It includes silent source entries. Result evidence retains event sequence and resolved Omniscient cursor; URLs use the latter. Do not use a cue index or copy the same number into Mystery.
 - Results is an explicit spoiler destination. The regular game entry and library only offer a warning-labeled link. Result queries have a separate cache key and do not hydrate watch state. A denied refetch clears the visible result and images.
+- Both games' results must render inside `GameSiteEntry`, which owns the House navigation, centered content width and page padding. Influence's `GameViewer` renders the results content only; its immersive replay route does not use this wrapper. The completed Influence browser fixture checks navigation and desktop/mobile spacing.
 
 ## Proof without historical game samples
 
