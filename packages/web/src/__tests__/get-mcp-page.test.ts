@@ -44,6 +44,8 @@ describe("/get-mcp setup page", () => {
     const grokApp = clients.find((client) => client.id === "grok-app");
 
     expect(clients.map((client) => client.id)).toEqual([
+      "chatgpt",
+      "meta",
       "codex",
       "claude-code",
       "grok-cli",

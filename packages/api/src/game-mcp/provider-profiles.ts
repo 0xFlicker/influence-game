@@ -2,6 +2,7 @@ export type McpAppProviderId =
   | "chatgpt"
   | "claude"
   | "grok"
+  | "meta"
   | "codex"
   | "claude-code";
 
@@ -16,6 +17,7 @@ export const MCP_APP_PROVIDER_IDS: McpAppProviderId[] = [
   "chatgpt",
   "claude",
   "grok",
+  "meta",
   "codex",
   "claude-code",
 ];

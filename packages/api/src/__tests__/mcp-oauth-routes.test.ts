@@ -634,6 +634,22 @@ describe("MCP OAuth routes", () => {
     expect(staticToken.status).toBe(200);
   });
 
+  test("accepts Meta registration and rejects callback variants", async () => {
+    const callback = "https://agent.meta.ai/api/hatch/oauth/callback";
+    for (const uri of [callback, callback + "/", callback + "?extra=1", callback.replace("https:", "http:"), callback.replace("agent.meta.ai", "agent.meta.ai.evil.example")]) {
+      const response = await app.request("/api/oauth/mcp/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ client_name: "Meta / Muse", redirect_uris: [uri], scope: MCP_OAUTH_FULL_USER_SCOPE, token_endpoint_auth_method: "none" }),
+      });
+      expect(response.status).toBe(uri === callback ? 201 : 400);
+      if (uri === callback) {
+        expect(await jsonObject(response)).toMatchObject({ redirect_uris: [callback], scope: MCP_OAUTH_FULL_USER_SCOPE });
+        expect(auditEvents.at(-1)?.registrationRedirectUris?.[0]).toMatchObject({ providerId: "meta", matchSource: "provider_config" });
+      }
+    }
+  });
+
   test("accepts code-owned ChatGPT OAuth callbacks during dynamic registration", async () => {
     for (const chatGptRedirectUri of CHATGPT_REDIRECT_URIS) {
       const registration = await app.request("/api/oauth/mcp/register", {

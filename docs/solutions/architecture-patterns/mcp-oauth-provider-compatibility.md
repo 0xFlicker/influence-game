@@ -32,6 +32,10 @@ The currently supported observed hosted callbacks live in code-owned config:
 ```ts
 export const MCP_OAUTH_PROVIDER_REDIRECT_URIS = [
   {
+    providerId: "meta",
+    redirectUri: "https://agent.meta.ai/api/hatch/oauth/callback",
+  },
+  {
     providerId: "chatgpt",
     redirectUri: "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
   },

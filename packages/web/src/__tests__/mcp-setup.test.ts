@@ -28,32 +28,51 @@ describe("getMcpResourceUrl", () => {
 });
 
 describe("buildMcpSetupClients", () => {
+  it("builds a secure Muse prompt using the current environment and a guided ChatGPT flow", () => {
+    const clients = buildMcpSetupClients("https://thehouse.game/mcp");
+    const meta = clients.find((client) => client.id === "meta");
+    expect(meta?.prompt).toContain("Server: https://thehouse.game/mcp");
+    expect(meta?.prompt).toContain("https://thehouse.game/api/oauth/mcp/register");
+    expect(meta?.prompt).toContain("https://thehouse.game/.well-known/oauth-protected-resource/mcp");
+    expect(meta?.prompt).toContain("agents:read   (view my agents)");
+    expect(meta?.prompt).toContain("agents:write  (create and manage my agents)");
+    expect(meta?.prompt).toContain("games:read    (view games)");
+    expect(meta?.prompt).toContain("Do not create, modify, or enter anything");
+    expect(meta?.prompt).toContain("do not ask me to paste any token, key, or secret into chat");
+    expect(meta?.prompt).not.toContain("producer");
+    const chatgpt = clients.find((client) => client.id === "chatgpt");
+    expect(chatgpt?.steps?.join(" ")).toContain("developer mode");
+    expect(chatgpt?.steps?.join(" ")).toContain("Streamable HTTP");
+    expect(chatgpt?.steps?.join(" ")).toContain("Leave client ID and client secret blank");
+  });
   it("builds Codex, Claude Code, and Grok setup for the same MCP URL", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
 
     expect(clients.map((client) => client.id)).toEqual([
+      "chatgpt",
+      "meta",
       "codex",
       "claude-code",
       "grok-cli",
       "grok-app",
     ]);
-    expect(clients[0]?.commands).toEqual([
+    expect(clients[2]?.commands).toEqual([
       "codex mcp add the-house-influence --url https://api.influence.example/mcp",
     ]);
     expect(clients[0]).not.toHaveProperty("refreshCommands");
-    expect(clients[1]?.commands).toEqual([
+    expect(clients[3]?.commands).toEqual([
       "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
     ]);
-    expect(clients[2]?.commands).toEqual([
+    expect(clients[4]?.commands).toEqual([
       "grok mcp add --transport http the-house-influence https://api.influence.example/mcp",
     ]);
-    expect(clients[3]?.commands).toEqual([]);
-    expect(clients[3]?.steps).toEqual([
+    expect(clients[5]?.commands).toEqual([]);
+    expect(clients[5]?.steps).toEqual([
       "Open https://grok.com/connectors.",
       "Click New Connector, then select Custom.",
       "Enter the MCP server URL (https://api.influence.example/mcp), then press Add Connector.",
     ]);
-    expect(clients[3]?.authHint).toBe(
+    expect(clients[5]?.authHint).toBe(
       "Grok App prompts for OAuth after you press Add Connector.",
     );
   });
@@ -73,6 +92,6 @@ describe("buildMcpSetupClients", () => {
     expect(serialized).not.toContain("scope=mcp");
     expect(serialized).not.toContain("TOML");
     expect(serialized).not.toContain("JSON config");
-    expect(serialized).not.toContain("ChatGPT");
+    expect(serialized).toContain("ChatGPT");
   });
 });
