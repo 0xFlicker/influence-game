@@ -936,6 +936,22 @@ test("completed Influence results render without a retrospective", async () => {
     expect(content).toContain("Atlas");
     expect(content).not.toContain("Retrospective in progress");
     expect(content).not.toContain("completion proof");
+    for (const width of [1440, 390]) {
+      await page.setViewport({width, height: 900});
+      await page.waitForSelector("nav");
+      const layout = await page.$eval("main", element => {
+        const bounds = element.getBoundingClientRect();
+        const styles = element.ownerDocument.defaultView!.getComputedStyle(element);
+        return {left: bounds.left, right: bounds.right, width: bounds.width,
+          padding: parseFloat(styles.paddingLeft), topPadding: parseFloat(styles.paddingTop)};
+      });
+      expect(layout.width).toBeLessThanOrEqual(1152);
+      expect(Math.abs(layout.left - (width - layout.right))).toBeLessThan(2);
+      expect(layout.padding).toBeGreaterThanOrEqual(24);
+      expect(layout.topPadding).toBeGreaterThanOrEqual(40);
+      expect(await page.evaluate("document.documentElement.scrollWidth <= innerWidth")).toBeTrue();
+      await page.screenshot({path: `/tmp/influence-results-${width}.png`, fullPage: true});
+    }
     await page.reload({waitUntil:"networkidle0"});
     await page.waitForSelector('[data-testid="completed-results-review"]');
   } finally { await page.close(); }

@@ -67,7 +67,7 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
   if (props.mode === "entry") {
     return <GameSiteEntry><EpisodeLanding key={identity.id} slug={identity.slug} initialGame={props.initialGame} /></GameSiteEntry>;
   }
-  return <GameViewer
+  const viewer = <GameViewer
     key={identity.id}
     gameId={identity.slug}
     completedMode={props.mode}
@@ -76,4 +76,5 @@ export function HouseGameEntry(props: HouseGameEntryProps) {
     initialReplayFrames={props.initialReplayFrames}
     startSequence={props.startSequence}
   />;
+  return props.mode === "results" ? <GameSiteEntry>{viewer}</GameSiteEntry> : viewer;
 }
