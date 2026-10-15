@@ -53,12 +53,26 @@ export function GetMcpSetupContent({
             </p>
           </div>
 
-          <div className="mt-8 grid min-w-0 gap-4">
+          <nav aria-label="Choose your AI" className="mt-8 flex flex-wrap gap-2">
             {clients.map((client) => (
-              <article key={client.id} className="influence-panel min-w-0 overflow-hidden rounded-xl p-4 sm:p-6">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <a key={client.id} href={`#setup-${client.id}`} onClick={() => {
+                const section = document.getElementById(`setup-${client.id}`);
+                if (section instanceof HTMLDetailsElement) section.open = true;
+              }} className="influence-link rounded border border-border-active/45 px-3 py-2 text-sm">
+                {client.name}
+              </a>
+            ))}
+          </nav>
+
+          <div className="mt-6 grid min-w-0 gap-4">
+            {clients.map((client) => (
+              <details key={client.id} id={`setup-${client.id}`} className="influence-panel min-w-0 overflow-hidden rounded-xl p-4 sm:p-6" open={clients.length === 1 || undefined}>
+                <summary className="cursor-pointer text-lg font-semibold text-text-primary">
+                  {client.name}
+                </summary>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="text-lg font-semibold text-text-primary">{client.name}</h2>
+                    {client.docsUrl ? <a href={client.docsUrl} target="_blank" rel="noreferrer" className="influence-link text-sm">Official setup guide ↗</a> : null}
                   </div>
                   <span className="influence-chip w-fit px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">
                     HTTP MCP
@@ -86,12 +100,21 @@ export function GetMcpSetupContent({
                       ))}
                     </ol>
                   ) : null}
+                  {client.prompt ? (
+                    <div className="min-w-0 rounded-lg border border-border-active/50 bg-black/35 p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <span className="text-xs text-text-secondary">Paste into Muse chat</span>
+                        <CopyCommandButton command={client.prompt} title="Copy Muse connection prompt" />
+                      </div>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-text-primary"><code>{client.prompt}</code></pre>
+                    </div>
+                  ) : null}
                 </div>
 
                 <p className="influence-copy-muted mt-4 text-xs leading-5">
                   {client.authHint}
                 </p>
-              </article>
+              </details>
             ))}
           </div>
 

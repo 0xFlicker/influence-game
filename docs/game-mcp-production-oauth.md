@@ -324,7 +324,11 @@ Producer cognition and trace-index cursors pin a finite PostgreSQL insertion-vis
 
 ### Player Setup
 
-Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, Grok Build CLI commands, Grok App connector steps, sign-in guidance, and browser OAuth explanation for their Influence games, agents, rules, and supported pre-match queues.
+Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, Grok Build CLI commands, Grok App connector steps, ChatGPT setup, and the copyable Meta / Muse connection prompt for their Influence games, agents, rules, and supported pre-match queues. A provider index opens collapsible guides; the Muse prompt stays in a compact scrollable code block with a copy button.
+
+ChatGPT setup covers developer mode where required, custom Apps or Plugins, Streamable HTTP, OAuth with dynamic client registration (no pre-created client credentials), browser consent, and a first read. UI labels and workspace access can vary. See [OpenAI's custom MCP server guide](https://developers.openai.com/api/docs/guides/custom-mcp-server). The House has not yet been submitted to the ChatGPT directory.
+
+Meta / Muse uses the user-supplied chat connection flow and the exact hosted callback `https://agent.meta.ai/api/hatch/oauth/callback`. It requests only `agents:read agents:write games:read`, leaves consent to the human, and verifies through reads before any mutation. Its prompt derives discovery URLs from the current MCP environment. Hosted callbacks remain exact matches; do not add speculative provider domains or wildcard paths.
 
 Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
 

@@ -14,6 +14,7 @@ describe("MCP App provider audit hints", () => {
       "chatgpt",
       "claude",
       "grok",
+      "meta",
       "codex",
       "claude-code",
     ]);
@@ -26,6 +27,12 @@ describe("MCP App provider audit hints", () => {
   });
 
   test("keeps hosted OAuth callbacks in code-owned provider config", () => {
+    const metaCallback = "https://agent.meta.ai/api/hatch/oauth/callback";
+    expect(providerRedirectRuleForUri(metaCallback)).toEqual({ providerId: "meta", redirectUri: metaCallback });
+    expect(createRedirectAuditDetail(metaCallback, "provider_config").providerId).toBe("meta");
+    for (const uri of [metaCallback + "/", metaCallback + "?extra=1", metaCallback.replace("https:", "http:"), metaCallback.replace("agent.meta.ai", "agent.meta.ai.evil.example")]) {
+      expect(providerRedirectRuleForUri(uri)).toBeUndefined();
+    }
     const chatGptCallbacks = [
       "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
       "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
